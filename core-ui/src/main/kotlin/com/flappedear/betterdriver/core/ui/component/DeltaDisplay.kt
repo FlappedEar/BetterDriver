@@ -15,6 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.format.formatDelta
+import com.flappedear.betterdriver.core.ui.format.isDeltaGain
 
 /**
  * Live delta against the best lap (UI-03 option B, approved: coloured tile).
@@ -33,7 +34,7 @@ fun DeltaDisplay(
     val c = TrackTheme.colors
     val tint = when {
         deltaSeconds == null -> c.surface
-        deltaSeconds < 0 -> lerp(c.surface, c.gain, TintFraction)
+        isDeltaGain(deltaSeconds) -> lerp(c.surface, c.gain, TintFraction)
         else -> lerp(c.surface, c.loss, TintFraction)
     }
     BoxWithConstraints(

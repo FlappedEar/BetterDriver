@@ -49,8 +49,18 @@ fun formatRunningTime(millis: Long): String {
  * Gaps beyond ±99.99 s are clamped so the text width stays fixed.
  */
 fun formatDelta(seconds: Double): String {
-    val hundredths = (seconds * HundredthsPerSecond).roundToLong().coerceIn(-MaxDeltaHundredths, MaxDeltaHundredths)
+    val hundredths = deltaHundredths(seconds)
     val sign = if (hundredths < 0) Minus else "+"
     val a = abs(hundredths)
     return String.format(Locale.ROOT, "%s%d.%02d", sign, a / HundredthsPerSecond, a % HundredthsPerSecond)
 }
+
+/**
+ * True when the gap shown by [formatDelta] is a gain (shown with a minus).
+ * Colour from this, not the raw sign, so a gap that rounds to +0.00 is never
+ * coloured as a gain.
+ */
+fun isDeltaGain(seconds: Double): Boolean = deltaHundredths(seconds) < 0
+
+private fun deltaHundredths(seconds: Double): Long =
+    (seconds * HundredthsPerSecond).roundToLong().coerceIn(-MaxDeltaHundredths, MaxDeltaHundredths)

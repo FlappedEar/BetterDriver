@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.core.ui.format
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TimeFormatTest {
@@ -26,5 +28,14 @@ class TimeFormatTest {
         assertEquals("+0.00", formatDelta(-0.001))
         assertEquals("+99.99", formatDelta(250.0))
         assertEquals("${Minus}99.99", formatDelta(-250.0))
+    }
+
+    @Test
+    fun deltaGainFollowsDisplayedSign() {
+        assertTrue(isDeltaGain(-0.34))
+        assertTrue(isDeltaGain(-0.006))
+        assertFalse(isDeltaGain(-0.001))
+        assertFalse(isDeltaGain(0.0))
+        assertFalse(isDeltaGain(0.08))
     }
 }

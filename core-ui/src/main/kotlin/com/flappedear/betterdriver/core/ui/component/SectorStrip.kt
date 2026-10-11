@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.format.formatDelta
+import com.flappedear.betterdriver.core.ui.format.isDeltaGain
 import com.flappedear.betterdriver.core.ui.TrackTheme
 
 /**
@@ -34,7 +35,7 @@ fun SectorStrip(
             val d = s.deltaSeconds
             val (bg, fg) = when {
                 d == null -> c.background to c.textDim
-                d < 0 -> c.gain to c.onGain
+                isDeltaGain(d) -> c.gain to c.onGain
                 else -> c.loss to c.onLoss
             }
             var m = Modifier.weight(1f).fillMaxHeight().background(bg, shape)
