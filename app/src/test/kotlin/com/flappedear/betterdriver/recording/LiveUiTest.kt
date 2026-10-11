@@ -5,6 +5,8 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.timing.live.LiveSector
+import com.flappedear.betterdriver.timing.live.LiveTimingState
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -42,6 +44,25 @@ class LiveUiTest {
         assertEquals("25 Hz · 14 sats", s.status.single().value)
         assertEquals("142", s.tiles.first().value)
         assertNull(s.deltaSeconds)
+    }
+
+    @Test
+    fun timedSessionShowsTrackLapAndDelta() {
+        val timing = LiveTimingState(
+            lapNumber = 3, lapMillis = 47_300, deltaSeconds = -0.34, predictedMillis = 112_070,
+            lastMillis = 112_900, bestMillis = 112_410, theoreticalBestMillis = 111_800,
+            sectors = listOf(
+                LiveSector("S1", -0.1, 0.05, current = false),
+                LiveSector("S2", null, null, current = true),
+            ),
+        )
+        val s = liveTrackState(RecorderState(connected = true, live = live, place = "Tor Poznań", timing = timing))
+        assertEquals(listOf("Track", "GNSS"), s.status.map { it.label })
+        assertEquals("Tor Poznań", s.status.first().value)
+        assertEquals(-0.34, requireNotNull(s.deltaSeconds), 1e-9)
+        assertEquals(112_410L, s.bestMillis)
+        assertEquals("3", s.tiles.last().value)
+        assertEquals(listOf("S1", "S2"), s.sectors.map { it.name })
     }
 
     @Test
