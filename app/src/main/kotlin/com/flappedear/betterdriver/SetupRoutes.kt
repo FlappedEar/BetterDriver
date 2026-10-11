@@ -139,6 +139,7 @@ internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String)
             repo.update { it.removeEquipment(id) }
         },
         onBack = { nav.popBackStack() },
+        onChooseVideo = { mode -> repo.update { it.chooseVideo(id, mode) } },
     )
 }
 

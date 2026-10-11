@@ -1,14 +1,30 @@
 package com.flappedear.betterdriver.camera
 
+import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.setup.VideoSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ThermalPolicyTest {
     private val minute = 60_000_000L
 
+    private fun ladder(size: VideoSize, fps: Int) = ladderFrom(VideoMode(size, fps)).map { it.label }
+
     @Test
     fun ladderStepsResolutionBeforeFrameRate() {
-        assertEquals(listOf("4K · 60", "1080p · 60", "720p · 60", "720p · 30"), DefaultLadder.map { it.label })
+        assertEquals(listOf("4K · 60", "1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.UHD, 60))
+    }
+
+    @Test
+    fun ladderStartsAtTheChosenModeAndNeverGoesAbove() {
+        assertEquals(listOf("1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.FHD, 60))
+        assertEquals(listOf("4K · 30", "1080p · 30", "720p · 30"), ladder(VideoSize.UHD, 30))
+        assertEquals(listOf("720p · 30"), ladder(VideoSize.HD, 30))
+    }
+
+    @Test
+    fun aGoProOnlySizeStartsThePhoneAt1080p() {
+        assertEquals(listOf("1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.QHD, 60))
     }
 
     @Test

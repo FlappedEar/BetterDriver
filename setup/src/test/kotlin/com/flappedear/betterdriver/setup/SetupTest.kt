@@ -217,4 +217,40 @@ class SetupTest {
         val text = SetupJson.encode(setup).replace("\"cars\"", "\"later\": 1, \"cars\"")
         assertEquals(setup, SetupJson.decode(text))
     }
+
+    @Test
+    fun camerasDefaultTo1080p60AndKeepTheChosenMode() {
+        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, address = "AA", newId = ids)
+        val phone = s.equipment.first { it.model == EquipmentModel.PHONE_CAMERA }
+        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO11 }
+        assertEquals(VideoMode(VideoSize.FHD, 60), phone.videoMode)
+        assertEquals(VideoMode(VideoSize.FHD, 60), hero.videoMode)
+
+        s = s.chooseVideo(phone.id, VideoMode(VideoSize.HD, 30))
+        assertEquals("720p · 30", s.equipment(phone.id)?.videoMode?.label)
+        // Pairing the HERO11 again keeps its mode.
+        s = s.chooseVideo(hero.id, VideoMode(VideoSize.UHD, 60))
+        s = s.addEquipment(EquipmentModel.GOPRO_HERO11, address = "BB", newId = ids)
+        assertEquals(VideoMode(VideoSize.UHD, 60), s.equipment(hero.id)?.videoMode)
+    }
+
+    @Test
+    fun modesAModelDoesNotOfferAreRefused() {
+        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, address = "AA", newId = ids)
+        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO11 }
+        assertEquals(s, s.chooseVideo(hero.id, VideoMode(VideoSize.HD, 60)), "no 720p on a HERO11")
+        s = s.addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+        val hero8 = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO8 }
+        assertNull(hero8.videoMode, "a HERO8 is set by hand")
+        assertEquals(s, s.chooseVideo(hero8.id, VideoMode(VideoSize.FHD, 60)))
+    }
+
+    @Test
+    fun videoModeSurvivesTheFileAndOldFilesReadWithoutIt() {
+        val s = Setup.fresh(ids).let { it.chooseVideo(it.equipment.single().id, VideoMode(VideoSize.UHD, 30)) }
+        assertEquals(s, SetupJson.decode(SetupJson.encode(s)))
+        val old = SetupJson.encode(Setup.fresh(ids)).replace(Regex(""",?\s*"video": null"""), "")
+        assertFalse(old.contains("\"video\""))
+        assertEquals(VideoMode(VideoSize.FHD, 60), SetupJson.decode(old).equipment.single().videoMode)
+    }
 }

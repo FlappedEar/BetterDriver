@@ -25,12 +25,15 @@ class Hero11SourceTest {
     private var sessionUs = 0L
     private fun TestScope.context() = VideoSessionContext("s1", 1_760_000_000_000L, File(dir, "video")) { sessionUs }
 
-    private fun TestScope.source(camera: FakeGoPro) = Hero11Source(
+    private fun TestScope.source(camera: FakeGoPro, video: Hero11Video? = null) = Hero11Source(
         "gopro-test",
         camera,
         backgroundScope,
         clock = Clock.fixed(Instant.ofEpochMilli(1_760_000_000_000L), ZoneId.of("Europe/Warsaw")),
+        video = video,
     )
+
+    private val fhd60 = Hero11Video(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60")
 
     @Test
     fun `starts with the session, keeps alive and stops`() = runTest {
@@ -104,5 +107,31 @@ class Hero11SourceTest {
         camera.reachable = false
         source.stop()
         assertIs<VideoSourceState.Failed>(source.state.value)
+    }
+
+    @Test
+    fun `sets resolution then frame rate before the shutter`() = runTest {
+        val camera = FakeGoPro()
+        val source = source(camera, fhd60)
+        source.start(context())
+        runCurrent()
+        assertTrue(camera.recording)
+        // Clock, ready, resolution (2), frame rate (3), ready again, shutter.
+        assertEquals(listOf(0x0F, 0x13, 0x02, 0x03, 0x13, 0x01), camera.ids)
+        assertEquals(mapOf(2 to 9, 3 to 5), camera.settings)
+        source.stop()
+        assertEquals("1080p · 60", GoProRecordings(File(dir, "video")).all().single().videoMode)
+    }
+
+    @Test
+    fun `a refused setting still records, in the camera's own mode`() = runTest {
+        val camera = FakeGoPro().apply { refusedSettings = setOf(OpenGoPro.Setting.FRAMES_PER_SECOND) }
+        val source = source(camera, fhd60)
+        source.start(context())
+        runCurrent()
+        assertTrue(camera.recording)
+        assertIs<VideoSourceState.Recording>(source.state.value)
+        source.stop()
+        assertEquals(null, GoProRecordings(File(dir, "video")).all().single().videoMode)
     }
 }

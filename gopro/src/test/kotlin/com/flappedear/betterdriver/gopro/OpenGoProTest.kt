@@ -35,6 +35,13 @@ class OpenGoProTest {
     }
 
     @Test
+    fun `set setting writes id, length and value to the settings characteristic`() {
+        val r = OpenGoPro.Setting.set(OpenGoPro.Setting.VIDEO_RESOLUTION, OpenGoPro.Setting.RES_1080)
+        assertEquals(GoProUuids.SETTINGS, r.characteristic)
+        assertContentEquals(hex(0x02, 0x01, 0x09), r.message)
+    }
+
+    @Test
     fun `long messages use an extended header and continuation packets that reassemble`() {
         val message = ByteArray(50) { it.toByte() }
         val packets = OpenGoPro.packetize(message)

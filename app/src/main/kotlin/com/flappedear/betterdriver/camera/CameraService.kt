@@ -30,6 +30,9 @@ import com.flappedear.betterdriver.recording.RecorderService
 import com.flappedear.betterdriver.recording.RecordingChannelId
 import com.flappedear.betterdriver.recording.createRecordingChannel
 import com.flappedear.betterdriver.recording.sessionsDir
+import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.setup.VideoSize
 import com.flappedear.betterdriver.video.VideoIndex
 import java.io.File
 
@@ -60,6 +63,9 @@ class CameraService : LifecycleService() {
     private var sessionId: String? = null
     private var ending = false
 
+    /** The mode Arek chose for the phone camera (FBBD-88), from the start intent. */
+    private var mode: VideoMode = requireNotNull(EquipmentModel.PHONE_CAMERA.defaultVideo)
+
     private val incoming = Messenger(
         Handler(Looper.getMainLooper()) { msg ->
             val isState = msg.what == RecorderProtocol.MSG_STATE
@@ -86,6 +92,7 @@ class CameraService : LifecycleService() {
         super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             ACTION_START -> if (goForeground()) {
+                videoMode(intent)?.let { mode = it }
                 if (!bound) {
                     bound = bindService(Intent(this, RecorderService::class.java), connection, Context.BIND_AUTO_CREATE)
                 }
@@ -95,6 +102,12 @@ class CameraService : LifecycleService() {
         }
         // Not restarted by the system: a restarted camera service cannot know which session it belongs to.
         return START_NOT_STICKY
+    }
+
+    private fun videoMode(intent: Intent): VideoMode? {
+        val size = intent.getStringExtra(EXTRA_VIDEO_SIZE)?.let { name -> VideoSize.entries.firstOrNull { it.name == name } }
+        val fps = intent.getIntExtra(EXTRA_VIDEO_FPS, 0)
+        return if (size != null && fps > 0) VideoMode(size, fps) else null
     }
 
     private fun audioGranted() =
@@ -149,7 +162,7 @@ class CameraService : LifecycleService() {
         sessionId = id
         main.removeCallbacks(giveUp)
         val index = VideoIndex(File(sessionsDir(this), id))
-        camera = PhoneCamera(this, this, index, audioGranted()).also { it.start(RemoteSink(id, startNanos)) }
+        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode)).also { it.start(RemoteSink(id, startNanos)) }
     }
 
     /** Stops video, gives the camera a moment to finish its file, then ends the service. */
@@ -228,6 +241,10 @@ class CameraService : LifecycleService() {
     companion object {
         const val ACTION_START = "com.flappedear.betterdriver.camera.START"
         const val ACTION_STOP = "com.flappedear.betterdriver.camera.STOP"
+
+        /** The chosen video mode: [VideoSize] name and frames per second. */
+        const val EXTRA_VIDEO_SIZE = "com.flappedear.betterdriver.camera.VIDEO_SIZE"
+        const val EXTRA_VIDEO_FPS = "com.flappedear.betterdriver.camera.VIDEO_FPS"
         private const val Tag = "CameraService"
     }
 }
