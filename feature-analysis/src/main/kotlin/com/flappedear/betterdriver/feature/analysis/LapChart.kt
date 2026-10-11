@@ -72,7 +72,9 @@ fun LapChart(
         modifier
             .pointerInput(lengthMeters) { detectTapGestures { moveCursor(meters(it.x, size.width.toFloat())) } }
             .pointerInput(lengthMeters) {
-                detectHorizontalDragGestures { change, _ -> moveCursor(meters(change.position.x, size.width.toFloat())) }
+                detectHorizontalDragGestures { change, _ ->
+                    moveCursor(meters(change.position.x, size.width.toFloat()))
+                }
             },
     ) {
         if (lengthMeters <= 0.0) return@Canvas
