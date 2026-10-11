@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import java.io.File
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
@@ -77,10 +78,17 @@ class Recorder(
     private val storage: StorageProbe = StorageProbe.DEFAULT,
     private val nanoTime: () -> Long = System::nanoTime,
 ) {
+    @Suppress("TooGenericExceptionCaught") // Rethrown after releasing the lock.
     fun start(info: SessionInfo): Recording {
         var lock: SessionFiles.SessionLock? = null
-        val (id, dir) = store.createSession(info) { lock = SessionFiles.lock(it) }
-        return Recording(id, dir, info, config, storage, nanoTime).also { it.begin(checkNotNull(lock)) }
+        try {
+            val (id, dir) = store.createSession(info) { lock = SessionFiles.lock(it) }
+            return Recording(id, dir, info, config, storage, nanoTime).also { it.begin(checkNotNull(lock)) }
+        } catch (e: Exception) {
+            // Startup failed: do not leave the session locked (it would look like a live recording).
+            lock?.release()
+            throw e
+        }
     }
 }
 
@@ -101,6 +109,7 @@ class Recording internal constructor(
 
     private val startNanos = nanoTime()
     private val queue = LinkedBlockingQueue<Cmd>(config.queueCapacity)
+    private val pendingChannels = ConcurrentLinkedQueue<ChannelDef>()
     private val stopping = AtomicBoolean(false)
 
     /**
@@ -127,7 +136,7 @@ class Recording internal constructor(
     val isStopped: Boolean get() = stopped.count == 0L
 
     internal fun begin(lock: SessionFiles.SessionLock) {
-        val input = WriterInput(queue, dropped, nanoTime, ::nowMicros) { stopIntake() }
+        val input = WriterInput(queue, pendingChannels, dropped, nanoTime, ::nowMicros) { stopIntake() }
         val writer = RecordingWriter(dir, config, storage, input, listeners)
         Thread({
             val status = writer.run(info.channels)
@@ -143,7 +152,10 @@ class Recording internal constructor(
 
     override fun nowMicros(): Long = (nanoTime() - startNanos) / NanosPerMicro
 
-    override fun defineChannel(def: ChannelDef) = enqueue(Record.Channel(def))
+    /** Definitions bypass the bounded queue, so a full queue can never lose one. */
+    override fun defineChannel(def: ChannelDef) = intake.read {
+        if (!stopping.get()) pendingChannels.add(def)
+    }
 
     override fun submit(set: SampleSet) = enqueue(Record.Samples(set))
 
@@ -173,9 +185,15 @@ class Recording internal constructor(
      */
     fun stop(reason: String = "user", timeoutMs: Long = StopTimeoutMs): Boolean {
         if (stopIntake()) {
-            sources.stopAll()
-            // Sources are stopped, so the writer frees space; never discard accepted records to make room.
-            while (!isStopped && !queue.offer(Cmd.Stop(reason), StopOfferMs, TimeUnit.MILLISECONDS)) Unit
+            // Runs on its own thread so a source that blocks in stop() cannot make this call exceed timeoutMs.
+            Thread({
+                sources.stopAll()
+                // Sources are stopped, so the writer frees space; never discard accepted records to make room.
+                while (!isStopped && !queue.offer(Cmd.Stop(reason), StopOfferMs, TimeUnit.MILLISECONDS)) Unit
+            }, "recorder-stop-$id").apply {
+                isDaemon = true
+                start()
+            }
         }
         return awaitStopped(timeoutMs)
     }

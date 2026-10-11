@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import java.io.File
 import java.util.Properties
+import java.util.Queue
 import java.util.concurrent.BlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -13,6 +14,7 @@ private const val NanosPerMilli = 1_000_000L
 
 internal class WriterInput(
     val queue: BlockingQueue<Cmd>,
+    val pendingChannels: Queue<ChannelDef>,
     val dropped: AtomicLong,
     val nanoTime: () -> Long,
     val nowMicros: () -> Long,
@@ -29,6 +31,7 @@ internal class RecordingWriter(
     private val listeners: ListenerHub,
 ) {
     private val queue = input.queue
+    private val pendingChannels = input.pendingChannels
     private val dropped = input.dropped
     private val nanoTime = input.nanoTime
     private val nowMicros = input.nowMicros
@@ -59,7 +62,10 @@ internal class RecordingWriter(
     private fun loop(): String {
         var reason: String? = null
         while (reason == null) {
-            when (val cmd = queue.poll(config.flushIntervalMs, TimeUnit.MILLISECONDS)) {
+            val cmd = queue.poll(config.flushIntervalMs, TimeUnit.MILLISECONDS)
+            // Definitions first: a source defines a channel before it submits samples for it.
+            writePendingChannels()
+            when (cmd) {
                 is Cmd.Stop -> reason = cmd.reason
                 is Cmd.Write -> write(cmd.record)
                 null -> Unit
@@ -79,6 +85,7 @@ internal class RecordingWriter(
     /** Stops intake, then writes everything already accepted, so nothing accepted is lost on a storage stop. */
     private fun drainAcceptedWrites() {
         stopIntake()
+        writePendingChannels()
         var cmd = queue.poll()
         while (cmd != null) {
             if (cmd is Cmd.Write) write(cmd.record)
@@ -86,7 +93,16 @@ internal class RecordingWriter(
         }
     }
 
+    private fun writePendingChannels() {
+        var def = pendingChannels.poll()
+        while (def != null) {
+            write(Record.Channel(def))
+            def = pendingChannels.poll()
+        }
+    }
+
     private fun finish(reason: String) {
+        writePendingChannels()
         reportDrops()
         chunks.write(Record.End(nowMicros(), reason))
         chunks.close()

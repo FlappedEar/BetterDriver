@@ -55,10 +55,11 @@ object VboExporter {
     }
 
     private fun extraColumns(extra: List<ChannelDef>): List<VboColumn> {
-        val used = STANDARD.map { it.second.columnName }.toMutableSet()
+        // Unique against standard header and column names, so a custom channel can never pose as a standard one.
+        val used = STANDARD.flatMap { listOf(it.second.columnName, it.second.headerName) }.toMutableSet()
         return extra.map { c ->
             var name = c.name.replace(Regex("\\s+"), "_").ifEmpty { "ch${c.id}" }
-            if (!used.add(name)) name = "${name}_${c.id}".also { used += it }
+            if (name in VboWriter.STANDARD_CHANNELS || !used.add(name)) name = "${name}_${c.id}".also { used += it }
             VboColumn(name, name, c.unit, VboWriter.decimal(c.decimals))
         }
     }

@@ -125,6 +125,21 @@ class RecoveryAndExportTest {
     }
 
     @Test
+    fun `custom channels never take a standard VBO name`() {
+        val store = SessionStore(tmp)
+        val sats = ChannelDef(300, "satellites", "", "test", 0)
+        val lat = ChannelDef(301, "lat", "deg", "test", 1)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + sats + lat))
+        rec.submit(SampleSet(0, gnss.fix(0) + ChannelValue(sats.id, 9.0) + ChannelValue(lat.id, 1.0)))
+        rec.stop()
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out)
+        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
+        assertEquals(listOf("satellites_300", "lat_301"), p.header.drop(7))
+        assertEquals(listOf("", "deg"), p.units)
+    }
+
+    @Test
     fun `fixes without GNSS time use session start plus elapsed time`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))

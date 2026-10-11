@@ -116,6 +116,8 @@ class ChunkWriter(
     private fun closeChunk() {
         val o = out ?: return
         try {
+            // A background fsync failure must not be followed by a clean close of the session.
+            syncError?.let { throw IOException("background fsync failed", it) }
             o.flush()
             synchronized(syncLock) {
                 syncFd = null
