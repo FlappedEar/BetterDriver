@@ -48,6 +48,21 @@ internal val PreviewUi = AnalysisUi(
         LossRow(2, 3, "Corners 2–3", 0.28),
         LossRow(0, 1, "Straight 3", 0.19),
     ),
+    corners = listOf(
+        CornerDetail(
+            "Corner 1",
+            listOf(
+                CornerMetricRow("Brakes", CornerMeasure.Meters, 64.8, 58.2, 6.1),
+                CornerMetricRow("Peak braking", CornerMeasure.G, 0.83, 0.79, null),
+                CornerMetricRow("Min speed", CornerMeasure.Speed, 63.9, 62.4, 1.8),
+                CornerMetricRow("Exit speed", CornerMeasure.Speed, 67.0, 66.1, 1.5),
+                CornerMetricRow("Throttle", CornerMeasure.Meters, 31.0, 38.5, 5.2, inferred = true),
+            ),
+            speedUnit = "km/h",
+            lineWithinGps = false,
+            lineSpreadMeters = 1.4,
+        ),
+    ),
     compare = CompareUi(
         referenceNumber = 2,
         otherNumber = 3,
