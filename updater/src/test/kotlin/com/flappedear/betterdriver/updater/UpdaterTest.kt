@@ -250,6 +250,15 @@ class UpdaterTest {
     }
 
     @Test
+    fun `an oversized release APK is not downloaded`() {
+        serveReleases(release("v0.2.0", size = Updater.MaxApkBytes + 1))
+        val release = assertIs<UpdateState.Available>(updater.check()).release
+        serveDownload()
+        assertIs<UpdateState.Failed>(updater.download(release))
+        assertTrue(ApkUrl !in net.calls && SumsUrl !in net.calls)
+    }
+
+    @Test
     fun `APK signed with another key is deleted`() {
         val release = available()
         serveDownload()

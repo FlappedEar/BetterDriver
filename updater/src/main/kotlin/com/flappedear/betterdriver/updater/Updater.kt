@@ -100,6 +100,8 @@ class Updater(
     fun download(release: Release, onProgress: (Long) -> Unit = {}): UpdateState {
         if (busy()) return UpdateState.Paused
         clearDownloads()
+        // The size comes from unauthenticated release data; a cap keeps a bad release from filling storage.
+        if (release.apk.size > MaxApkBytes) return failed(release, "The release APK is too large to be BetterDriver.")
         if (!dir.isDirectory && !dir.mkdirs()) return failed(release, "Could not save the update.")
         val expected = when (val sums = checksums(release)) {
             is Sums.Ok -> sums.byName[release.apk.name]
@@ -177,6 +179,8 @@ class Updater(
         const val ReleasesUrl = "https://api.github.com/repos/FlappedEar/BetterDriver/releases?per_page=20"
         const val DayMillis = 24L * 60 * 60 * 1000
         const val OfflineRetryMillis = 60L * 60 * 1000
+        /** Far above the app's size (tens of MB); release.yml builds one APK. */
+        const val MaxApkBytes = 300L * 1024 * 1024
         private const val PartSuffix = ".part"
         private const val TooManyRequests = 429
         private const val Forbidden = 403
