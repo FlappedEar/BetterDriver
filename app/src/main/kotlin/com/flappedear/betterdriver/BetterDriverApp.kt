@@ -30,6 +30,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.feature.track.TrackScreen
+import com.flappedear.betterdriver.recording.RaceBoxRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
@@ -162,7 +163,9 @@ private fun Drive(nav: NavHostController, prefs: AppPrefs, recorder: RecorderCli
         onStart = {
             if (prefs.hasRequiredPermissions()) {
                 // While recording, START goes back to the running session.
-                if (!recorder.state.recording) recorder.start(prefs.car, track = "")
+                if (!recorder.state.recording) {
+                    recorder.start(prefs.car, track = "", prefs.raceBox?.let { RaceBoxRef(it.address, it.name) })
+                }
                 nav.navigate(Routes.Track)
             } else {
                 nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
