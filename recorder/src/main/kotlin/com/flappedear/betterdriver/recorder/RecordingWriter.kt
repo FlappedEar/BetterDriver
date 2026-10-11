@@ -163,6 +163,9 @@ internal class RecordingWriter(
         if (last != null && now - last < config.storageCheckIntervalMs * NanosPerMilli) return false
         lastStorageCheckNanos = now
         val free = runCatching { storage.usableBytes(dir) }.getOrDefault(Long.MAX_VALUE)
+        // From here on every write adds exactly its own frame: a rotation's channel table would eat
+        // the space kept for the end record.
+        if (free < config.storageStopBytes) chunks.rotate = false
         if (free < config.storageWarnBytes && !storageWarned) {
             storageWarned = true
             chunks.write(Record.Event(RecorderEvent(nowMicros(), EventKinds.STORAGE_LOW, free.toString())))

@@ -228,6 +228,43 @@ class RecorderTest {
     }
 
     @Test
+    fun `finishing on low storage starts no new chunk`() {
+        val store = SessionStore(tmp)
+        val low = java.util.concurrent.atomic.AtomicBoolean(false)
+        val probing = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val rec = Recorder(
+            store,
+            // Every write would normally rotate, adding a channel table the drain budget does not cover.
+            RecorderConfig(
+                chunkMaxBytes = 1,
+                storageCheckIntervalMs = 1,
+                storageWarnBytes = 30_000,
+                storageStopBytes = 20_000,
+            ),
+            storage = {
+                if (low.get()) {
+                    probing.countDown()
+                    release.await()
+                    15_000L
+                } else {
+                    1L shl 40
+                }
+            },
+        ).start(info())
+        low.set(true)
+        assertTrue(probing.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        val chunksBefore = SessionFiles.chunks(rec.dir).size
+        repeat(1_000) { rec.submit(SampleSet(it * 40_000L, gnss.fix(it.toLong()))) }
+        release.countDown()
+        assertTrue(rec.awaitStopped(5_000))
+        assertEquals(SessionState.FINISHED, store.state(rec.dir))
+        assertEquals(chunksBefore, SessionFiles.chunks(rec.dir).size)
+        // 15,000 free minus 10,000 kept back: a 5,000-byte budget holds some of the backlog, not all of it.
+        assertTrue(rec.droppedCount in 1L..999L, "dropped ${rec.droppedCount}")
+    }
+
+    @Test
     fun `changing the session info after start changes neither metadata nor chunks`() {
         val store = SessionStore(tmp)
         val channels = GnssChannels.ALL.toMutableList()

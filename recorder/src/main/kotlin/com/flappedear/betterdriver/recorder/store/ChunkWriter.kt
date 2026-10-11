@@ -37,6 +37,12 @@ class ChunkWriter(
     private var openedNanos = 0L
     private var dirty = false
 
+    /**
+     * When false, [write] never starts a new chunk, so a write adds exactly its own frame. Used while
+     * finishing on low storage, where a rotation's channel table would eat the space kept for the end.
+     */
+    var rotate = true
+
     private val syncLock = Any()
 
     @Volatile
@@ -71,7 +77,7 @@ class ChunkWriter(
         }
         val before = totalBytes
         val ageMs = (nanoTime() - openedNanos) / NanosPerMilli
-        if (bytes >= maxBytes || ageMs >= maxAgeMs) {
+        if (rotate && (bytes >= maxBytes || ageMs >= maxAgeMs)) {
             closeChunk()
             openChunk()
         }
