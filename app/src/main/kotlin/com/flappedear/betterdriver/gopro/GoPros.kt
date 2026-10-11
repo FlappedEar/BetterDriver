@@ -90,7 +90,7 @@ class GoPros private constructor(private val context: Context) {
     private fun begin(sessionId: String, startUtcMillis: Long, startNanos: Long) {
         liveSession = sessionId
         // At most one HERO11 is listed (EquipmentModel.single), so this is the HERO11 or none.
-        val hero11 = setup.setup.active().appCameras.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }
+        val hero11 = setup.forSession().active().appCameras.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }
         val address = hero11?.address ?: return
         if (!bluetoothGranted()) return
         val hero = Hero11Source(CameraIds.GOPRO_HERO11, GoProBleLink(context, address), scope)

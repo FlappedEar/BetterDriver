@@ -87,7 +87,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
     // Setup again if a required permission was revoked or a one-time grant expired.
     val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
-    FollowRecording(nav, recorder, sessions)
+    FollowRecording(nav, recorder, sessions, repo)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { if (route != null && route in Routes.TopLevel) BottomBar(nav, route) },
@@ -135,13 +135,14 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
  * opened from the notification), and lists a recording once it ends, recovering it if needed.
  */
 @Composable
-private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, sessions: Sessions) {
+private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, sessions: Sessions, repo: SetupRepo) {
     val recording = recorder.state.recording
     LaunchedEffect(recording) {
         if (recording) {
             val current = nav.currentDestination
             if (current != null && current.route != Routes.Track) nav.navigate(Routes.Track)
         } else {
+            repo.sessionEnded()
             sessions.recoverAndRefresh()
         }
     }
@@ -161,7 +162,8 @@ private fun Drive(
     // Starting counts too: the recorder and the cameras are already on their way.
     val recording = recorder.state.recording || recorder.state.starting
     HomeScreen(
-        setup = repo.setup,
+        // While recording, the card shows what the running session uses, not later Settings changes.
+        setup = if (recording) repo.forSession() else repo.setup,
         recording = recording,
         trackName = tracks.here?.detection?.placeName,
         lastSession = lastSessionLine(sessions.list),
@@ -179,6 +181,7 @@ private fun Drive(
                 // While recording, START goes back to the running session.
                 nav.navigate(Routes.Track)
             } else if (active.gnss != null) {
+                repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
                 val gnss = active.gnss?.let {
                     if (it.model == EquipmentModel.DEMO_GNSS) GnssRef.Demo else GnssRef(it.address.orEmpty(), it.name)
@@ -200,7 +203,7 @@ private fun Drive(
 private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, recorder: RecorderClient) {
     if (prefs.hasRequiredPermissions()) {
         TrackScreen(
-            state = liveTrackState(recorder.state, repo.setup.active().tiles),
+            state = liveTrackState(recorder.state, repo.forSession().active().tiles),
             onStop = {
                 recorder.stop()
                 nav.popBackStack()

@@ -33,6 +33,24 @@ class SetupRepo private constructor(context: Context) {
     var setup by mutableStateOf(store.load() ?: migrate(AppPrefs.legacy(context), ::newSetupId).also { save(it) })
         private set
 
+    /**
+     * The setup as it was when the running session started, so changes made in Settings while
+     * recording (a camera added, tiles changed) do not show as part of that session. Null when no
+     * session was started from this process; [forSession] then falls back to [setup].
+     */
+    private var running by mutableStateOf<Setup?>(null)
+
+    /** What the running session uses, or the next session's choice when none runs. */
+    fun forSession(): Setup = running ?: setup
+
+    /** Fixes the session's setup at START. Main thread only. */
+    fun sessionStarted(): Setup = setup.also { running = it }
+
+    /** Called when the recorder reports no running session. Main thread only. */
+    fun sessionEnded() {
+        running = null
+    }
+
     /** Applies [change] and saves the result. Main thread only. */
     fun update(change: (Setup) -> Setup) {
         val next = change(setup)
