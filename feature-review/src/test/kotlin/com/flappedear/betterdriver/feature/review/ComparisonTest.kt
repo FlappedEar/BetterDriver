@@ -39,17 +39,26 @@ class ComparisonTest {
     }
 
     @Test
-    fun lapBFollowsLapAByPlace() {
+    fun chartIsByPlaceAndPlaybackByTime() {
         val c = Comparison(lap("a", 2, 50.0, 100_000_000), lap("b", 3, 40.0, 900_000_000))
-        assertEquals(12_500_000.0, c.bMicrosAt(10_000_000).toDouble(), 1_000.0)
-        assertEquals(1.25, c.bRateAt(10_000_000), 0.01)
-        assertEquals(500.0, c.distanceAt(10_000_000), 0.5)
         assertEquals(10_000_000.0, c.aMicrosAtDistance(500.0).toDouble(), 1_000.0)
         val last = c.series.last()
         assertEquals(LengthMeters, last.distanceMeters, 1e-9)
         assertEquals(5_000_000L, last.deltaMicros)
         assertEquals(180.0, last.speedA!!, 1e-9)
         assertEquals(144.0, last.speedB!!, 1e-9)
+        // Both start at the line together; the review runs until the slower lap ends.
+        assertEquals(25_000_000L, c.lengthMicros)
+        assertEquals(0.0, c.gapMetersAt(0), 1e-9)
+        // 10 s in: A at 500 m, B at 400 m.
+        assertEquals(0.5, c.aFraction(10_000_000), 1e-3)
+        assertEquals(0.4, c.bFraction(10_000_000), 1e-3)
+        assertEquals(100.0, c.gapMetersAt(10_000_000), 0.5)
+        // A finished at 20 s and waits at the line; B (880 m) is 120 m behind.
+        assertEquals(20_000_000L, c.aMicros(22_000_000))
+        assertEquals(22_000_000L, c.bMicros(22_000_000))
+        assertEquals(120.0, c.gapMetersAt(22_000_000), 0.5)
+        assertEquals(0.0, c.gapMetersAt(25_000_000), 0.5)
     }
 
     @Test
