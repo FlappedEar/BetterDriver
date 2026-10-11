@@ -61,9 +61,9 @@ interface LiveVideoSource {
     suspend fun start(session: VideoSessionContext)
 
     /**
-     * Stops recording and returns the clips recorded since [start]. A source that downloads its
-     * files later (a HERO11 over Wi-Fi) returns clips whose [VideoClip.fileName] is not yet in
-     * the video directory and whose [VideoClip.status] is [ClipStatus.ON_CAMERA].
+     * Stops recording and returns the clips recorded since [start]. A source whose files stay on
+     * the camera until they are downloaded after the session (a HERO11) may return none here and
+     * add its clips to the [VideoIndex] when they arrive.
      */
     suspend fun stop(): List<VideoClip>
 }
