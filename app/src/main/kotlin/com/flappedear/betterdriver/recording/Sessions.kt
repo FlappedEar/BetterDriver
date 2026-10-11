@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recording
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
@@ -198,7 +199,8 @@ class Sessions private constructor(private val context: Context) {
                         }
                     }
                 } catch (e: IOException) {
-                    discard(folder) // No half export that could later be mistaken for a whole one.
+                    // No half export that could later be mistaken for a whole one.
+                    discard(context.contentResolver, folder)
                     throw e
                 }
                 ExportState.Done
@@ -230,15 +232,6 @@ class Sessions private constructor(private val context: Context) {
         val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
         val clips = present.filter { it.camera == camera }
         return if (clips.isEmpty()) null else VboVideo("BetterDriver-${id}_", clips)
-    }
-
-    @Suppress("TooGenericExceptionCaught") // Best effort: the export has already failed.
-    private fun discard(folder: Uri) {
-        try {
-            DocumentsContract.deleteDocument(context.contentResolver, folder)
-        } catch (e: Exception) {
-            android.util.Log.w(Tag, "could not remove the failed export", e)
-        }
     }
 
     private fun create(folder: Uri, mime: String, name: String) =
@@ -314,6 +307,16 @@ private const val MicrosPerSecond = 1_000_000.0
 
 private fun isVideoFile(f: File) =
     f.isFile && f.length() > 0 && f.extension.equals("mp4", ignoreCase = true) && Mp4Reader.isComplete(f)
+
+/** Removes a failed export's folder. Best effort: the export has already failed. */
+@Suppress("TooGenericExceptionCaught")
+private fun discard(resolver: ContentResolver, folder: Uri) {
+    try {
+        DocumentsContract.deleteDocument(resolver, folder)
+    } catch (e: Exception) {
+        android.util.Log.w("Sessions", "could not remove the failed export", e)
+    }
+}
 
 /** The file name offered when exporting. */
 fun vboFileName(session: SessionSummary) = "BetterDriver-${session.id}.vbo"

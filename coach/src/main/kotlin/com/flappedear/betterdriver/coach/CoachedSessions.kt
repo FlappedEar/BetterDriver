@@ -37,7 +37,7 @@ class CoachedSessions(private val sessions: SessionStore, private val file: File
 
     @Suppress("TooGenericExceptionCaught") // A damaged session counts as no cues; it is never a crash.
     private fun count(s: SessionSummary): Int = try {
-        sessions.readEvents(s.dir).events.count { it.kind == CoachEvents.CUE }
+        sessions.read(s.dir, samples = false).events.count { it.kind == CoachEvents.CUE }
     } catch (_: IOException) {
         0
     } catch (_: RuntimeException) {

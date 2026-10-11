@@ -206,12 +206,7 @@ class PhoneCamera(
         // A full file is finished and playable: the next file starts at once, and it is no restart.
         val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
         val error = !full && e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
-        val reason = when {
-            error -> "error_${e.error}"
-            full && endReason == "user" -> "file_full"
-            else -> endReason
-        }
-        sink.stopped(name, sink.nowMicros(), reason)
+        sink.stopped(name, sink.nowMicros(), stopReason(e.error, error, full))
         val next = nextStep
         when {
             stopping -> provider?.unbindAll()
@@ -228,6 +223,13 @@ class PhoneCamera(
             }
             else -> fail("Camera error")
         }
+    }
+
+    /** Why a file ended, for the session's video event. */
+    private fun stopReason(code: Int, error: Boolean, full: Boolean) = when {
+        error -> "error_$code"
+        full && endReason == "user" -> "file_full"
+        else -> endReason
     }
 
     private fun fail(text: String) {

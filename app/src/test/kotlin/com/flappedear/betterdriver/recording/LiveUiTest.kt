@@ -70,7 +70,8 @@ class LiveUiTest {
                 LiveSector("S2", null, null, current = true),
             ),
         )
-        val timed = RecorderState(connected = true, live = live, place = "Tor Poznań", placeSaved = true, timing = timing)
+        val timed =
+            RecorderState(connected = true, live = live, place = "Tor Poznań", placeSaved = true, timing = timing)
         val s = liveTrackState(timed, tiles)
         assertEquals(listOf("Track", "GNSS"), s.status.map { it.label })
         assertEquals("Tor Poznań", s.status.first().value)

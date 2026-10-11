@@ -456,7 +456,7 @@ class RecorderTest {
         rec.event("coach_cue", "brake later")
         assertTrue(rec.stop())
         val whole = store.read(rec.id)
-        val events = store.readEvents(rec.id)
+        val events = store.read(store.dir(rec.id), samples = false)
         assertTrue(whole.sampleSets.isNotEmpty())
         assertEquals(emptyList(), events.sampleSets)
         assertEquals(whole.events, events.events)
