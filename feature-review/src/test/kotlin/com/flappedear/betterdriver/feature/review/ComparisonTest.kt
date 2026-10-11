@@ -41,7 +41,9 @@ class ComparisonTest {
     @Test
     fun chartIsByPlaceAndPlaybackByTime() {
         val c = Comparison(lap("a", 2, 50.0, 100_000_000), lap("b", 3, 40.0, 900_000_000))
-        assertEquals(10_000_000.0, c.aMicrosAtDistance(500.0).toDouble(), 1_000.0)
+        // Scrubbing goes to when the later car is there, so the slower lap's end is reachable.
+        assertEquals(12_500_000.0, c.microsAtDistance(500.0).toDouble(), 1_000.0)
+        assertEquals(25_000_000.0, c.microsAtDistance(LengthMeters).toDouble(), 1_000.0)
         val last = c.series.last()
         assertEquals(LengthMeters, last.distanceMeters, 1e-9)
         assertEquals(5_000_000L, last.deltaMicros)

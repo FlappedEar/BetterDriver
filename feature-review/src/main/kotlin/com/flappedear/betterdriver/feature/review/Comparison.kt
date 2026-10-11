@@ -31,20 +31,29 @@ class Comparison(val a: ReviewLap, val b: ReviewLap, stepMeters: Double = LapAli
     /** Lap B's own time at [micros] since the line. */
     fun bMicros(micros: Long): Long = micros.coerceIn(0, b.trace.lap.timeMicros)
 
-    /** How far through its lap each car is at [micros], 0 to 1. */
-    fun aFraction(micros: Long): Double = fraction(a, aMicros(micros))
-    fun bFraction(micros: Long): Double = fraction(b, bMicros(micros))
+    /**
+     * Where each car is at [micros] since the line, as a fraction of lap A's distance. Lap B is
+     * placed by track position ([LapAlignment]), not by its own odometer, so a different line through
+     * a corner does not show as a gap.
+     */
+    fun aFraction(micros: Long): Double = aDistance(aMicros(micros)) / aLength
+    fun bFraction(micros: Long): Double = aDistance(alignment.referenceMicrosAt(bMicros(micros))) / aLength
 
-    /** Metres lap B is behind lap A at [micros] since the line (negative: ahead), on lap A's length. */
-    fun gapMetersAt(micros: Long): Double = (aFraction(micros) - bFraction(micros)) * a.trace.lengthMeters
+    /** Metres lap B is behind lap A at [micros] since the line (negative: ahead), along lap A. */
+    fun gapMetersAt(micros: Long): Double = (aFraction(micros) - bFraction(micros)) * aLength
 
-    /** Lap A's time at [meters] along it, for scrubbing on the chart. */
-    fun aMicrosAtDistance(meters: Double): Long = a.trace.lapMicrosAtDistance(meters)
-
-    private fun fraction(l: ReviewLap, lapMicros: Long): Double {
-        val length = l.trace.lengthMeters
-        return if (length > 0) (l.trace.at(lapMicros).distanceMeters / length).coerceIn(0.0, 1.0) else 0.0
+    /**
+     * The review time for a scrub to [meters] along lap A: when the later of the two cars is there,
+     * so dragging to the end reaches the end of the slower lap.
+     */
+    fun microsAtDistance(meters: Double): Long {
+        val ta = a.trace.lapMicrosAtDistance(meters)
+        return max(ta, alignment.otherMicrosAt(ta))
     }
+
+    private val aLength = max(a.trace.lengthMeters, 1.0)
+
+    private fun aDistance(lapMicros: Long): Double = a.trace.at(lapMicros).distanceMeters.coerceIn(0.0, aLength)
 }
 
 /** Where a lap's video should be: [clip] at [mediaMillis]. */

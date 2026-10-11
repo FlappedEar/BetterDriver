@@ -130,7 +130,7 @@ private class ReviewTransport(private val c: Comparison) {
     private val length = c.a.trace.lengthMeters
 
     val scrub = Scrub(
-        onMove = { f -> cursor = c.aMicrosAtDistance(f * length) },
+        onMove = { f -> cursor = c.microsAtDistance(f * length) },
         onStart = {
             playing = false
             scrubbing = true
