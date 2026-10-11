@@ -108,10 +108,18 @@ internal fun ListRow(
             Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             if (value != null) {
                 Text(
-                    if (onClick != null) "$value ›" else value,
+                    value,
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                if (onClick != null) {
+                    Icon(
+                        ShellIcons.Chevron,
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
             trailing()
         }
