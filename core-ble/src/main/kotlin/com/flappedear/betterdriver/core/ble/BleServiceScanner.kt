@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 private const val ForgetAfterMs = 5_000L
 
 /** A BLE device seen in a scan. [name] is empty when it advertises none. */
-data class FoundBleDevice(val name: String, val address: String, val rssi: Int)
+data class FoundBleDevice(val name: String, val address: String, val rssi: Int) {
+    /** Signal strength as 0 to 4 bars, on the same thresholds as [FoundRaceBox.bars]. */
+    val bars: Int get() = FoundRaceBox("", address, rssi).bars
+}
 
 /**
  * Scans while collected and emits the devices heard in the last 5 s for which [matches] (given the

@@ -2,8 +2,11 @@ package com.flappedear.betterdriver.setup
 
 import kotlinx.serialization.Serializable
 
-/** What a piece of equipment does in a session. OBD readers join in Phase 5 (FBBD-3). */
-enum class EquipmentKind { GNSS, CAMERA }
+/**
+ * What a piece of equipment does in a session. A sensor (a heart-rate monitor, FBBD-119) records
+ * with every session while it is listed. OBD readers join in Phase 5 (FBBD-3).
+ */
+enum class EquipmentKind { GNSS, CAMERA, SENSOR }
 
 /**
  * The kinds of equipment the app can work with (FBBD-105). Each is a family, not one product:
@@ -24,8 +27,17 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
      */
     NMEA_GNSS(EquipmentKind.GNSS, "Bluetooth GPS"),
 
+    /**
+     * A Bluetooth LE GPS receiver with the standard Location and Navigation Service (0x1819), as
+     * RaceChrono supports (FBBD-114). Found by a scan.
+     */
+    LNS_GNSS(EquipmentKind.GNSS, "Bluetooth LE GPS"),
+
     /** Synthetic GNSS for trying the app without hardware. Only there when added on purpose. */
     DEMO_GNSS(EquipmentKind.GNSS, "Demo GNSS"),
+
+    /** A Bluetooth LE heart-rate monitor (standard Heart Rate service, FBBD-119). Found by a scan. */
+    HEART_RATE(EquipmentKind.SENSOR, "Heart-rate monitor"),
 
     /** The phone's own camera (FBBD-21). There is only one. */
     PHONE_CAMERA(EquipmentKind.CAMERA, "Phone camera"),
@@ -60,7 +72,8 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     val actionCamera: Boolean get() = isGoPro || this == CAMERA_FILES
 
     /** True for models paired over Bluetooth, which need an address. */
-    val paired: Boolean get() = this == RACEBOX || this == NMEA_GNSS || this == GOPRO
+    val paired: Boolean get() = this == RACEBOX || this == NMEA_GNSS || this == LNS_GNSS || this == GOPRO ||
+        this == HEART_RATE
 
     val isGoPro: Boolean get() = this == GOPRO || this == GOPRO_FILES
 
@@ -264,6 +277,8 @@ data class ActiveSession(
     val gnss: Equipment?,
     val cameras: List<Equipment>,
     val tiles: List<TrackChannel>,
+    /** Sensors recorded with the session: every listed one (FBBD-119). */
+    val sensors: List<Equipment> = emptyList(),
 ) {
     val startProblem: StartProblem? get() = if (gnss == null) StartProblem.NO_GNSS else null
 
@@ -304,6 +319,7 @@ data class Setup(
             gnss = gnss,
             cameras = session.cameraIds.mapNotNull { id -> equipment(id)?.takeIf { it.kind == EquipmentKind.CAMERA } },
             tiles = session.tiles.filter { it in channelsFor(gnss) },
+            sensors = ofKind(EquipmentKind.SENSOR),
         )
     }
 
@@ -324,9 +340,7 @@ data class Setup(
     ): Setup {
         require(!model.paired || !address.isNullOrBlank()) { "${model.label} needs a Bluetooth address" }
         val camera = goProFor(model, goPro)
-        val same = equipment.firstOrNull {
-            it.model == model && (model.single || (address != null && it.address == address))
-        }
+        val same = listedAs(model, address)
         val advertised = name.takeIf { address != null && it.isNotBlank() }
         if (same != null) {
             return replace(
@@ -343,7 +357,13 @@ data class Setup(
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next
             EquipmentKind.CAMERA -> next.useCamera(item.id, true)
+            EquipmentKind.SENSOR -> next
         }
+    }
+
+    /** The item a new [model] at [address] would be: the one listed already, if any. */
+    private fun listedAs(model: EquipmentModel, address: String?): Equipment? = equipment.firstOrNull {
+        it.model == model && (model.single || (address != null && it.address == address))
     }
 
     /**

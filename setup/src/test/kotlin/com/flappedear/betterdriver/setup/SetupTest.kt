@@ -89,6 +89,19 @@ class SetupTest {
     }
 
     @Test
+    fun bluetoothLeGpsAndHeartRateMonitorsAreListed() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.LNS_GNSS, "Garmin GLO 2", "AA", ids)
+            .addEquipment(EquipmentModel.HEART_RATE, "Polar H10", "BB", ids)
+        val active = s.active()
+        assertEquals("Garmin GLO 2", active.gnss?.name, "the first receiver is the session's")
+        assertEquals(listOf("Polar H10"), active.sensors.map { it.name })
+        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP), channelsFor(active.gnss))
+        assertTrue(EquipmentModel.LNS_GNSS.paired && EquipmentModel.HEART_RATE.paired)
+        assertEquals(EquipmentKind.SENSOR, s.equipment.last().kind)
+    }
+
+    @Test
     fun repairingAGoProKeepsItsItemAndLearnsItsModel() {
         val first = Setup().addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids)
         val id = first.equipment.single().id

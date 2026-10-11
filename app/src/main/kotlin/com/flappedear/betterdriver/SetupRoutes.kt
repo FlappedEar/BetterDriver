@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +19,9 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.flappedear.betterdriver.core.ble.FoundBleDevice
+import com.flappedear.betterdriver.core.ble.hr.scanHeartRateMonitors
+import com.flappedear.betterdriver.core.ble.lns.scanLnsDevices
 import com.flappedear.betterdriver.core.ble.nmea.bondedSppDevices
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.gopro.GoPros
@@ -90,21 +94,7 @@ internal fun NavGraphBuilder.setupDestinations(
 internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo) {
     val context = LocalContext.current
     val searching = remember { prefs.hasRequiredPermissions() }
-    val found by remember(context) {
-        if (searching) {
-            // Each scanner emits only once it hears its own kind, so both start empty: a RaceBox
-            // shows even with no GoPro nearby.
-            combine(
-                scanRaceBoxes(context).onStart { emit(emptyList()) },
-                scanGoPros(context).onStart { emit(emptyList()) },
-            ) { boxes, goPros ->
-                boxes.map { NearbyDevice(EquipmentModel.RACEBOX, it.name, it.address, it.bars) } +
-                    goPros.map { NearbyDevice(EquipmentModel.GOPRO, it.name, it.address, it.bars) }
-            }
-        } else {
-            flowOf(emptyList())
-        }
-    }.collectAsState(initial = emptyList())
+    val found by rememberNearby(searching)
     val pairedGps = rememberPairedGps(searching)
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf<String?>(null) }
@@ -231,3 +221,34 @@ private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
     add(EquipmentModel.CAMERA_FILES)
     if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
 }
+
+/**
+ * What a scan hears nearby while [searching]: RaceBoxes, Open GoPro cameras, Bluetooth LE GPS
+ * receivers (FBBD-114) and heart-rate monitors (FBBD-119). Each scanner emits only once it hears
+ * its own kind, so each starts empty: a RaceBox shows even with no GoPro nearby.
+ */
+@Composable
+private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
+    val context = LocalContext.current
+    return remember(context) {
+        if (searching) {
+            combine(
+                scanRaceBoxes(context).onStart { emit(emptyList()) },
+                scanGoPros(context).onStart { emit(emptyList()) },
+                scanLnsDevices(context).onStart { emit(emptyList()) },
+                scanHeartRateMonitors(context).onStart { emit(emptyList()) },
+            ) { boxes, goPros, lns, hr ->
+                boxes.map { NearbyDevice(EquipmentModel.RACEBOX, it.name, it.address, it.bars) } +
+                    goPros.map { NearbyDevice(EquipmentModel.GOPRO, it.name, it.address, it.bars) } +
+                    lns.map { nearby(EquipmentModel.LNS_GNSS, it) } +
+                    hr.map { nearby(EquipmentModel.HEART_RATE, it) }
+            }
+        } else {
+            flowOf(emptyList())
+        }
+    }.collectAsState(initial = emptyList())
+}
+
+/** A standard-service device; one that advertises no name is shown by its model and address. */
+private fun nearby(model: EquipmentModel, d: FoundBleDevice) =
+    NearbyDevice(model, d.name.ifBlank { "${model.label} ${d.address}" }, d.address, d.bars)

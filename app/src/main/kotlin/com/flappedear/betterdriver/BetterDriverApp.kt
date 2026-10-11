@@ -38,7 +38,8 @@ import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
-import com.flappedear.betterdriver.recording.GnssRef
+import com.flappedear.betterdriver.recording.SensorRef
+import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
@@ -211,18 +212,7 @@ private fun Drive(
             } else if (active.gnss != null) {
                 repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
-                val gnss = active.gnss?.let {
-                    // The recorder tells a RaceBox Micro from a Mini by the advertised name, not Arek's name for it.
-                    if (it.model == EquipmentModel.DEMO_GNSS) {
-                        GnssRef.Demo
-                    } else {
-                        GnssRef(
-                            it.address.orEmpty(),
-                            it.advertisedName ?: it.name,
-                            nmea = it.model == EquipmentModel.NMEA_GNSS,
-                        )
-                    }
-                }
+                val gnss = active.gnss?.let(::gnssRefOf)
                 recorder.start(
                     active.car?.name.orEmpty(),
                     // Only a fresh position names the session: a stale one could name last weekend's circuit.
@@ -231,6 +221,9 @@ private fun Drive(
                     phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
                         ?.videoMode
                         ?.takeIf { prefs.cameraGranted() },
+                    sensors = active.sensors.mapNotNull { s ->
+                        s.address?.let { SensorRef(it, s.advertisedName ?: s.name) }
+                    },
                 )
                 nav.navigate(Routes.Track)
             }
