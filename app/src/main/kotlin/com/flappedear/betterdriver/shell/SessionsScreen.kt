@@ -11,10 +11,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -26,10 +32,12 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.recording.DeleteState
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.sessionDetail
 import com.flappedear.betterdriver.recording.sessionTitle
 import java.io.File
+import java.util.Locale
 
 /**
  * Saved sessions, newest first, each with VBO export (FBBD-66, FBBD-71), plus its video when it
@@ -38,6 +46,9 @@ import java.io.File
  *
  * A finished session also shows its GoPro video (FBBD-22): Download for HERO11 files still on the
  * camera (UI-31) and Add for HERO8 files (UI-32). Both are off while a session records.
+ *
+ * Delete (FBBD-90, UI-48) asks first, saying how much space the session and its video free, then
+ * removes both. It is off while the session records, exports or fetches GoPro video.
  */
 @Composable
 fun SessionsScreen(
@@ -47,6 +58,7 @@ fun SessionsScreen(
     modifier: Modifier = Modifier,
     withVideo: Set<String> = emptySet(),
     goPro: GoProCardState = GoProCardState(),
+    deleting: SessionDeleting = SessionDeleting(),
     header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -60,13 +72,22 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro)
+                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting)
                 }
             }
         }
     }
 }
 
+/** Delete state and action for the whole Sessions list (FBBD-90). */
+data class SessionDeleting(
+    /** Bytes on disk of each session, video included. */
+    val sizes: Map<String, Long> = emptyMap(),
+    val states: Map<String, DeleteState> = emptyMap(),
+    val onDelete: (SessionSummary) -> Unit = {},
+)
+
+@Suppress("LongParameterList")
 @Composable
 private fun SessionCard(
     s: SessionSummary,
@@ -74,8 +95,12 @@ private fun SessionCard(
     video: Boolean,
     onExport: (SessionSummary) -> Unit,
     goPro: GoProCardState,
+    deleting: SessionDeleting,
 ) {
     val c = TrackTheme.colors
+    val delete = deleting.states[s.id]
+    var asking by rememberSaveable(s.id) { mutableStateOf(false) }
+    val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
@@ -94,22 +119,87 @@ private fun SessionCard(
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             DimText(
-                when (export) {
-                    ExportState.Running -> "Exporting…"
-                    ExportState.Done -> "Saved"
-                    ExportState.Failed -> "Export failed"
-                    null -> ""
+                when (delete) {
+                    DeleteState.Running -> "Deleting…"
+                    DeleteState.Recording -> "Recording, not deleted"
+                    DeleteState.Failed -> "Delete failed"
+                    null -> when (export) {
+                        ExportState.Running -> "Exporting…"
+                        ExportState.Done -> "Saved"
+                        ExportState.Failed -> "Export failed"
+                        null -> ""
+                    }
                 },
                 modifier = Modifier.weight(1f),
-                color = if (export == ExportState.Failed) c.loss else Color.Unspecified,
+                color = if (delete == DeleteState.Recording || delete == DeleteState.Failed ||
+                    (delete == null && export == ExportState.Failed)
+                ) {
+                    c.loss
+                } else {
+                    Color.Unspecified
+                },
             )
+            TextButton(
+                onClick = { asking = true },
+                enabled = idle && goPro.work[s.id] == null,
+            ) { Text("Delete", color = if (idle && goPro.work[s.id] == null) c.loss else Color.Unspecified) }
             FilledTonalButton(
                 onClick = { onExport(s) },
-                enabled = s.state != SessionState.RECORDING && export != ExportState.Running,
+                enabled = idle,
             ) { Text(if (video) "Export VBO + video" else "Export VBO") }
         }
     }
+    if (asking) {
+        DeleteDialog(
+            s,
+            deleting.sizes[s.id],
+            video,
+            onDelete = {
+                asking = false
+                deleting.onDelete(s)
+            },
+            onDismiss = { asking = false },
+        )
+    }
 }
+
+/** Confirms a delete, naming the session and what it frees (UI-48 option A). */
+@Composable
+private fun DeleteDialog(
+    s: SessionSummary,
+    bytes: Long?,
+    video: Boolean,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val name = listOf(sessionTitle(s), s.info.track).filter { it.isNotBlank() }.joinToString(" · ")
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete session?") },
+        text = { Text(deleteText(name, bytes, video)) },
+        confirmButton = { TextButton(onClick = onDelete) { Text("Delete", color = TrackTheme.colors.loss) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** The delete question's text: what goes and how much space it frees. */
+internal fun deleteText(title: String, bytes: Long?, video: Boolean): String {
+    val what = if (video) "its data and video" else "its data"
+    val size = bytes?.let { " (${sizeText(it)})" }.orEmpty()
+    return "$title: $what$size will be removed from this phone. " +
+        "Files still on a GoPro stay there. This can't be undone."
+}
+
+/** "820 KB", "350 MB", "2.4 GB". */
+internal fun sizeText(bytes: Long): String = when {
+    bytes >= GB -> String.format(Locale.ROOT, "%.1f GB", bytes / GB.toDouble())
+    bytes >= MB -> "${bytes / MB} MB"
+    else -> "${maxOf(1, bytes / KB)} KB"
+}
+
+private const val KB = 1_000L
+private const val MB = 1_000_000L
+private const val GB = 1_000_000_000L
 
 @Composable
 private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState) {

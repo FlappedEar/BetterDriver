@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
@@ -34,6 +35,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Export progress of one session, shown on its card. */
 enum class ExportState { Running, Done, Failed }
 
+/** A delete in progress or one that did not happen, shown on the session's card (FBBD-90). */
+enum class DeleteState { Running, Recording, Failed }
+
 /**
  * Saved sessions, for the UI process. Created once per process; creating it recovers interrupted
  * sessions (FBBD-71). Disk work runs on one background thread; results are Compose state.
@@ -54,6 +58,13 @@ class Sessions private constructor(private val context: Context) {
     /** Ids of sessions with video files, which export as VBO plus video (FBBD-25). */
     var withVideo by mutableStateOf<Set<String>>(emptySet())
         private set
+
+    /** Bytes on disk of each session, video included, by id; shown when deleting (FBBD-90). */
+    var sizes by mutableStateOf<Map<String, Long>>(emptyMap())
+        private set
+
+    /** Sessions being deleted, and why a delete failed, by id (FBBD-90). */
+    val deletes = mutableStateMapOf<String, DeleteState>()
 
     /** GoPro video of each session, by id (FBBD-22). */
     var goPro by mutableStateOf<Map<String, SessionGoPro>>(emptyMap())
@@ -97,6 +108,34 @@ class Sessions private constructor(private val context: Context) {
     }
 
     fun refresh() = io.execute { publish() }
+
+    /**
+     * Deletes the session and everything in its folder, its video included (FBBD-90). The store
+     * refuses a session that is recording; the UI also keeps Delete off while it exports.
+     */
+    fun delete(id: String) {
+        if (exports[id] == ExportState.Running || deletes[id] == DeleteState.Running) return
+        deletes[id] = DeleteState.Running
+        io.execute {
+            val result = try {
+                store.delete(id)
+            } catch (e: SecurityException) {
+                android.util.Log.w(Tag, "delete failed", e)
+                DeleteResult.FAILED
+            }
+            publish()
+            main.post {
+                when (result) {
+                    DeleteResult.DELETED, DeleteResult.NOT_FOUND -> {
+                        deletes.remove(id)
+                        exports.remove(id)
+                    }
+                    DeleteResult.RECORDING -> deletes[id] = DeleteState.Recording
+                    DeleteResult.FAILED -> deletes[id] = DeleteState.Failed
+                }
+            }
+        }
+    }
 
     /** Writes the session as VBO to [uri], a document the user picked. */
     fun export(id: String, uri: Uri) {
@@ -179,8 +218,10 @@ class Sessions private constructor(private val context: Context) {
             File(s.dir, VideoFiles.DIR).listFiles()?.any(::isVideoFile) == true
         }.map { it.id }.toSet()
         val goPros = sessions.associate { it.id to goProOf(it.dir) }
+        val bytes = sessions.associate { it.id to store.sizeBytes(it.dir) }
         main.post {
             list = sessions
+            sizes = bytes
             withVideo = video
             goPro = goPros
         }
