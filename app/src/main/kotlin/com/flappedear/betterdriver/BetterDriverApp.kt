@@ -32,7 +32,6 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
-import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recording.GnssRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
@@ -44,7 +43,8 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
-import com.flappedear.betterdriver.shell.ListedGoPro
+import com.flappedear.betterdriver.shell.legacyGoProName
+import com.flappedear.betterdriver.shell.listedGoPros
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsScreen
@@ -251,16 +251,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
 private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
-    // Session id and camera id, kept apart because rememberSaveable stores plain strings.
-    var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
-    var addingFrom by rememberSaveable { mutableStateOf<String?>(null) }
-    val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        val id = addingTo
-        val camera = addingFrom
-        addingTo = null
-        addingFrom = null
-        if (id != null && camera != null) goPros.addFiles(id, camera, uris)
-    }
+    val addFiles = rememberGoProFilePicker(goPros)
     // Saveable: the activity can be re-created while the file picker is open.
     var exporting by rememberSaveable { mutableStateOf<String?>(null) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(VboMimeType)) { uri ->
@@ -293,14 +284,10 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
             work = goPros.work,
             problems = goPros.problems,
             enabled = !goPros.recording,
-            listed = listedGoPros(repo),
+            listed = listedGoPros(repo.setup),
             nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
             onDownload = { s, camera -> goPros.download(s.id, camera) },
-            onAddFiles = { s, camera ->
-                addingTo = s.id
-                addingFrom = camera
-                pickFiles.launch(arrayOf(Mp4MimeType))
-            },
+            onAddFiles = { s, camera -> addFiles(s.id, camera) },
         ),
         deleting = SessionDeleting(
             sizes = sessions.sizes,
@@ -390,14 +377,26 @@ private fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean)
     }
 }
 
-/** The GoPros in the equipment list, for the session cards: Open GoPro ones download, the others add files. */
-private fun listedGoPros(repo: SetupRepo): List<ListedGoPro> = repo.setup.equipment.filter { it.model.isGoPro }.map {
-    ListedGoPro(CameraIds.goPro(it.id), it.name, download = it.model == EquipmentModel.GOPRO)
-}
-
-/** Names for the cameras of sessions recorded before any number of GoPros could be listed (FBBD-105). */
-private fun legacyGoProName(sourceId: String): String = when (sourceId) {
-    CameraIds.GOPRO_HERO11 -> "GoPro HERO11"
-    CameraIds.GOPRO_HERO8 -> "GoPro HERO8"
-    else -> "GoPro"
+/**
+ * Asks for the video files of one GoPro started by hand, then adds them to the session (UI-32).
+ * Returns a function of the session id and the camera id.
+ */
+@Composable
+private fun rememberGoProFilePicker(goPros: GoPros): (String, String) -> Unit {
+    // Session id and camera id, kept apart because rememberSaveable stores plain strings. Saveable:
+    // the activity can be re-created while the file picker is open.
+    var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
+    var addingFrom by rememberSaveable { mutableStateOf<String?>(null) }
+    val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val id = addingTo
+        val camera = addingFrom
+        addingTo = null
+        addingFrom = null
+        if (id != null && camera != null) goPros.addFiles(id, camera, uris)
+    }
+    return { id, camera ->
+        addingTo = id
+        addingFrom = camera
+        pick.launch(arrayOf(Mp4MimeType))
+    }
 }

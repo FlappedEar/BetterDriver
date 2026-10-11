@@ -29,7 +29,7 @@ Info (0x3C), status query 0x13 (busy = 8, encoding = 10) and the keep-alive
 `open_gopro` 0.22.0 Python package for status ids, the keep-alive interval and the
 hardware info layout.
 
-`Hero11Source` is a `LiveVideoSource`. On start it connects, sets the camera's
+`OpenGoProSource` is a `LiveVideoSource`. On start it connects, sets the camera's
 clock from the phone, waits until the camera is not busy and sends Set Shutter on.
 It notes the session time of the camera's acknowledgement in
 `<session>/video/gopro-recordings.json`. While recording it keeps the link alive

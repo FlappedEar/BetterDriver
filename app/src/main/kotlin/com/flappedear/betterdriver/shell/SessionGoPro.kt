@@ -21,6 +21,9 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.gopro.GoProWork
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.recorder.video.CameraIds
+import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.Setup
 import java.util.Locale
 
 private const val BytesPerGb = 1_000_000_000.0
@@ -42,6 +45,18 @@ data class SessionGoPro(val cameras: List<SessionCamera> = emptyList())
  * downloads its files ([download], Open GoPro) or Arek adds them (a camera started by hand).
  */
 data class ListedGoPro(val sourceId: String, val name: String, val download: Boolean)
+
+/** The GoPros in the equipment list, for the session cards: Open GoPro ones download, the others add files. */
+internal fun listedGoPros(setup: Setup): List<ListedGoPro> = setup.equipment.filter { it.model.isGoPro }.map {
+    ListedGoPro(CameraIds.goPro(it.id), it.name, download = it.model == EquipmentModel.GOPRO)
+}
+
+/** Names for the cameras of sessions recorded before any number of GoPros could be listed (FBBD-105). */
+internal fun legacyGoProName(sourceId: String): String = when (sourceId) {
+    CameraIds.GOPRO_HERO11 -> "GoPro HERO11"
+    CameraIds.GOPRO_HERO8 -> "GoPro HERO8"
+    else -> "GoPro"
+}
 
 /** GoPro state and actions for the whole Sessions list. */
 data class GoProCardState(
