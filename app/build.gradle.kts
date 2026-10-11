@@ -57,6 +57,7 @@ dependencies {
     implementation(project(":timing"))
     implementation(project(":core-ble"))
     implementation(project(":updater"))
+    implementation(project(":transfer"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

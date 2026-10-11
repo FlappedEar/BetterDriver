@@ -51,6 +51,15 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Session bundles and track files from the other device, opened from Quick Share or a file
+                 manager (FBBD-23, FBBD-80). They have no registered type, so they arrive as generic files;
+                 the app checks the content and refuses anything else. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
         </activity>
 
         <!-- Own process: a crash in the UI, coach or analysis never stops a recording (FBBD-69). -->
@@ -76,6 +85,17 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/update_paths" />
+        </provider>
+
+        <!-- Hands prepared session bundles and track files to the share sheet (FBBD-23, FBBD-80). -->
+        <provider
+            android:name=".sharing.TransferFileProvider"
+            android:authorities="${applicationId}.transfer"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/transfer_paths" />
         </provider>
     </application>
 

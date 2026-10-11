@@ -40,6 +40,10 @@ private const val HereMeters = 100.0
  * Tracks (UI-27 option A): where you are first, from the saved tracks and the circuit list, with
  * one tap to create a track there; any other place gets a track at your position with a name you
  * type. Your tracks are listed below; each opens the editor.
+ *
+ * Share moves a track to the other device as one file (FBBD-80, UI-55): Send through the share
+ * sheet (Quick Share) or Save file; Import at the top brings one in, asking before it replaces a
+ * track with other lines.
  */
 @Composable
 fun TracksScreen(
@@ -50,14 +54,18 @@ fun TracksScreen(
     onCreateHere: (name: String, at: GeoPoint) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    transfer: TrackTransferState = TrackTransferState(),
 ) {
     var naming by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
-        ShellTopBar("Tracks", onBack = onBack)
+        ShellTopBar("Tracks", onBack = onBack) {
+            TextButton(onClick = transfer.onImport, enabled = transfer.importEnabled) { Text("Import") }
+        }
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ImportCard(transfer.incoming)
             WhereYouAre(here, onOpen, onCreateFromCircuit)
             if (here != null && here.detection !is TrackDetection.Saved) {
                 Text(
@@ -71,7 +79,15 @@ fun TracksScreen(
             ShellCard {
                 if (tracks.isEmpty()) DimText("No tracks yet")
                 tracks.forEachIndexed { i, t ->
-                    ListRow(t.displayName, trackDetail(t), divider = i > 0, onClick = { onOpen(t) })
+                    val sending = transfer.outgoing[t.id]
+                    ListRow(t.displayName, trackDetail(t), divider = i > 0, onClick = { onOpen(t) }) {
+                        ShareButton(
+                            enabled = sending?.running != true,
+                            onSend = { transfer.onSend(t) },
+                            onSave = { transfer.onSave(t) },
+                        )
+                    }
+                    TransferLine(sending)
                 }
             }
         }
