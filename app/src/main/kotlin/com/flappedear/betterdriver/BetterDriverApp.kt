@@ -42,6 +42,7 @@ import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
+import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTab
@@ -284,6 +285,11 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
                 addingTo = s.id
                 pickHero8.launch(arrayOf(Mp4MimeType))
             },
+        ),
+        deleting = SessionDeleting(
+            sizes = sessions.sizes,
+            states = sessions.deletes,
+            onDelete = { s -> sessions.delete(s.id) },
         ),
     )
 }

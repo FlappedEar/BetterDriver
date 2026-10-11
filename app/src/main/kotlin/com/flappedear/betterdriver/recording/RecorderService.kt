@@ -24,9 +24,8 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.SessionTiming
-import com.flappedear.betterdriver.timing.live.TrackEventKind
-import com.flappedear.betterdriver.timing.live.eventText
 import com.flappedear.betterdriver.timing.live.placeName
+import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
 
@@ -187,7 +186,7 @@ class RecorderService : Service() {
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
             // listener thread, so a timing failure is logged in the session and never stops it.
             val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits) { found ->
-                recording.event(TrackEventKind, found.eventText())
+                recording.event(TrackEvent.KIND, TrackEvent.text(found))
             }
             recording.listeners.add(timing)
             // Covers stops the recorder makes itself (storage full, write error).

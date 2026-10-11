@@ -3,16 +3,14 @@ package com.flappedear.betterdriver.coach
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
-import com.flappedear.betterdriver.timing.live.TrackEventKind
-import com.flappedear.betterdriver.timing.live.savedTrackId
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackEvent
 import java.io.File
 import java.io.IOException
 import java.util.Properties
 
 /** The saved track a session was recorded at, from its track event; null if none. */
-fun SessionData.savedTrackId(): String? =
-    events.firstOrNull { it.kind == TrackEventKind }?.let { savedTrackId(it.text) }
+fun SessionData.savedTrackId(): String? = TrackEvent.savedTrackId(events)
 
 /** The session's fixes, in time order. */
 fun SessionData.coachFixes(): Sequence<CoachFix> = sampleSets.asSequence().mapNotNull { it.toCoachFix() }

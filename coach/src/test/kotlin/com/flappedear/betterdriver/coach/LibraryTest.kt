@@ -9,10 +9,9 @@ import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionStore
-import com.flappedear.betterdriver.timing.live.TrackEventKind
-import com.flappedear.betterdriver.timing.live.eventText
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
+import com.flappedear.betterdriver.timing.track.TrackEvent
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
@@ -31,7 +30,7 @@ class LibraryTest {
     private fun record(store: SessionStore, at: Track?, paces: List<SimCircuit.Pace>, startUtc: Long): String {
         val rec = Recorder(store, RecorderConfig(queueCapacity = 200_000))
             .start(SessionInfo(startUtcMillis = startUtc, channels = GnssChannels.ALL))
-        rec.event(TrackEventKind, (at?.let { TrackDetection.Saved(it, 0.0) } ?: TrackDetection.Unknown).eventText())
+        rec.event(TrackEvent.KIND, TrackEvent.text(at?.let { TrackDetection.Saved(it, 0.0) } ?: TrackDetection.Unknown))
         for (f in sim.drive(paces).fixes) {
             rec.submit(
                 SampleSet(
