@@ -29,6 +29,8 @@ import kotlin.math.cos
  * line, timing gates (RaceChrono's centre-and-direction gates rebuilt across the direction),
  * clock or seconds timestamps rebased to the first row, and every value stored as float32, as
  * Telemetry stores it. Rows whose time is missing, repeated or going backwards are skipped.
+ * Aliases are resolved as Telemetry's channel_aliases.dart resolves them, and header lines are
+ * kept as metadata, where a VBO declares its units.
  */
 object VboFixture {
     fun read(name: String): TelemetrySession {
@@ -103,21 +105,141 @@ object VboFixture {
             val values = columns[c].toDoubleArray()
             if (values.any { it.isFinite() }) channels[columnName] = TelemetryChannel(columnName, timeArray, values)
         }
-        val sorted = channels.keys.sortedWith(compareBy<String> { it.lowercase() }.thenBy { it })
-        val aliases = HashMap<String, String>()
-        fun alias(semantic: String, vararg patterns: String) {
-            for (p in patterns) {
-                val match = sorted.firstOrNull { it.matches(Regex(p, RegexOption.IGNORE_CASE)) }
-                if (match != null) {
-                    aliases[semantic] = match
-                    return
+        val aliases = resolveAliases(sortedNames(channels.keys), channels)
+        preferAcceleratorPedalForThrottle(aliases, channels)
+        return TelemetrySession(channels, aliases, gates, metadata(sections))
+    }
+
+    /**
+     * `key: value` and `key = value` lines of every section but the column names, the data and the
+     * timing lines; a line without a separator is kept under `<section>.<n>`, as Telemetry's
+     * vbo_parser keeps a `[header]` line such as `velocity kmh`.
+     */
+    private fun metadata(sections: Map<String, List<String>>): Map<String, String> {
+        val metadata = LinkedHashMap<String, String>()
+        for ((key, lines) in sections) {
+            if (key.contains("column") || key.contains("data") || key == "laptiming") continue
+            for (entry in lines) {
+                val separator = entry.indexOfFirst { it == ':' || it == '=' }
+                if (separator >= 0) {
+                    metadata[entry.substring(0, separator).trim()] = entry.substring(separator + 1).trim()
+                } else {
+                    metadata["$key.${metadata.size}"] = entry
                 }
             }
         }
-        alias(Aliases.SPEED, "velocity", "gps.?speed.*", "speed")
-        alias(Aliases.LATITUDE, "latitude", "lat")
-        alias(Aliases.LONGITUDE, "longitude", "lon(?:g)?")
-        return TelemetrySession(channels, aliases, gates)
+        return metadata
+    }
+
+    private fun sortedNames(names: Collection<String>) =
+        names.sortedWith(compareBy<String> { it.lowercase() }.thenBy { it })
+
+    private fun pattern(source: String) = Regex(source, RegexOption.IGNORE_CASE)
+
+    // Telemetry's channel_aliases.dart: the semantic names and the column names that provide them.
+    private val aliasPatterns = listOf(
+        Aliases.SPEED to listOf(
+            pattern("^velocity$"),
+            pattern("^gps.?speed"),
+            pattern("^speed$"),
+            pattern("^obd.?speed"),
+        ),
+        "rpm" to listOf(pattern("^rpm(?:[-_].*)?$"), pattern("engine.?speed")),
+        Aliases.THROTTLE to listOf(pattern("throttle"), pattern("accelerator.?pedal")),
+        Aliases.BRAKE to listOf(pattern("^brake(?:[-_].*)?$"), pattern("brake.?pressure"), pattern("brake.?pedal")),
+        "heartRate" to listOf(pattern("heart.?rate"), pattern("^hr$"), pattern("^bpm$")),
+        Aliases.LATITUDE to listOf(pattern("^latitude$"), pattern("^lat$")),
+        Aliases.LONGITUDE to listOf(pattern("^longitude$"), pattern("^lon(?:g)?$")),
+        Aliases.LATERAL_ACCELERATION to listOf(
+            pattern("^latacc$"),
+            pattern("lat(?:eral)?.?(?:accel|acceleration|g)"),
+            pattern("^g.?x$"),
+        ),
+        Aliases.LONGITUDINAL_ACCELERATION to listOf(
+            pattern("^longacc$"),
+            pattern("long(?:itudinal)?.?(?:accel|acceleration|g)"),
+            pattern("^g.?y$"),
+        ),
+    )
+
+    private val calculatedAcceleration = mapOf(
+        Aliases.LATERAL_ACCELERATION to "latacc-calc",
+        Aliases.LONGITUDINAL_ACCELERATION to "longacc-calc",
+    )
+
+    /** The seconds a channel's finite samples cover, and whether its finite values vary. */
+    private fun coverage(channel: TelemetryChannel?): Pair<Double, Boolean> {
+        if (channel == null) return 0.0 to false
+        val times = ArrayList<Double>()
+        var first: Double? = null
+        var varies = false
+        for (i in channel.values.indices) {
+            val value = channel.values[i]
+            if (!value.isFinite()) continue
+            times += channel.timestamps[i]
+            if (first == null) first = value
+            if (value != first) varies = true
+        }
+        if (times.size < 2) return 0.0 to varies
+        val intervals = (1 until times.size).map { times[it] - times[it - 1] }.sorted()
+        val gap = (3.0 * intervals[intervals.size / 2]).coerceIn(1.0, 5.0)
+        var covered = 0.0
+        for (i in 1 until times.size) {
+            val interval = times[i] - times[i - 1]
+            if (interval <= gap) covered += interval
+        }
+        return covered to varies
+    }
+
+    private fun bestCandidate(candidates: List<String>, channels: Map<String, TelemetryChannel>): String? {
+        if (candidates.size <= 1) return candidates.firstOrNull()
+        val measured = candidates.map { coverage(channels[it]) }
+        val most = measured.maxOf { it.first }.coerceAtLeast(0.0)
+        fun eligible(entry: Pair<Double, Boolean>) = entry.second && entry.first > 0.0 && entry.first >= 0.05 * most
+        val anyVaries = measured.any(::eligible)
+        var best = -1
+        for (i in measured.indices) {
+            if (anyVaries && !eligible(measured[i])) continue
+            if (best < 0 || measured[i].first > measured[best].first) best = i
+        }
+        if (best == 0) return candidates.first()
+        val firstEligible = !anyVaries || eligible(measured.first())
+        return if (firstEligible && measured.first().first >= 0.5 * measured[best].first) {
+            candidates.first()
+        } else {
+            candidates[best]
+        }
+    }
+
+    private fun resolveAliases(names: List<String>, channels: Map<String, TelemetryChannel>): HashMap<String, String> {
+        val aliases = HashMap<String, String>()
+        for ((alias, patterns) in aliasPatterns) {
+            val candidates = ArrayList<String>()
+            calculatedAcceleration[alias]?.let { calculated ->
+                names.firstOrNull { it.lowercase() == calculated }?.let { candidates += it }
+            }
+            for (name in names) {
+                if (name !in candidates && patterns.any { it.containsMatchIn(name) }) candidates += name
+            }
+            bestCandidate(candidates, channels)?.let { aliases[alias] = it }
+        }
+        return aliases
+    }
+
+    private fun preferAcceleratorPedalForThrottle(
+        aliases: HashMap<String, String>,
+        channels: Map<String, TelemetryChannel>,
+    ) {
+        val current = coverage(channels[aliases[Aliases.THROTTLE] ?: ""]).first
+        val pedal = pattern("^accelerator.?(?:pedal|pos)")
+        for (name in sortedNames(channels.keys)) {
+            if (!pedal.containsMatchIn(name)) continue
+            val channel = channels.getValue(name)
+            if (channel.values.any { it.isFinite() } && coverage(channel).first >= 0.5 * current) {
+                aliases[Aliases.THROTTLE] = name
+                return
+            }
+        }
     }
 
     private fun timestamp(text: String): Double? {
