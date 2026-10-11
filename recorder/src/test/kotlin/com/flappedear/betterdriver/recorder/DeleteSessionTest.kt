@@ -19,8 +19,9 @@ class DeleteSessionTest {
     private val gnss = FakeGnss()
 
     private fun finished(store: SessionStore): String {
+        val before = store.list().map { it.id }.toSet()
         val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))
-        val id = store.list().single().id
+        val id = store.list().map { it.id }.single { it !in before }
         rec.stop()
         return id
     }
