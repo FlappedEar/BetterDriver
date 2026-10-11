@@ -5,6 +5,8 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
+    // FakeGoProFile (synthetic GoPro MP4s) is shared with :gopro's tests.
+    `java-test-fixtures`
 }
 
 kotlin {

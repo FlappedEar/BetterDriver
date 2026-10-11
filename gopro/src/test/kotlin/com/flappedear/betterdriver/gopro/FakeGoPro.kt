@@ -1,0 +1,51 @@
+package com.flappedear.betterdriver.gopro
+
+import kotlinx.coroutines.flow.MutableSharedFlow
+import java.io.IOException
+
+/** A camera on the other end of a [GoProLink]: answers every request like a HERO11 would. */
+class FakeGoPro : GoProLink {
+    val requests = mutableListOf<Pair<String, ByteArray>>()
+    var reachable = true
+    var connects = 0
+    var disconnects = 0
+    var busyPolls = 0
+    var failShutter = false
+    var recording = false
+    var ssid = "GP12345678"
+    var password = "secret-pass"
+    override val notifications = MutableSharedFlow<Pair<String, ByteArray>>(extraBufferCapacity = 64)
+    private val assemblers = mutableMapOf<String, OpenGoPro.Assembler>()
+
+    val ids: List<Int> get() = requests.map { it.second[0].toInt() and 0xFF }
+
+    override suspend fun connect() {
+        if (!reachable) throw IOException("not found")
+        connects++
+    }
+
+    override suspend fun write(characteristic: String, packet: ByteArray) {
+        if (!reachable) throw IOException("link lost")
+        val message = assemblers.getOrPut(characteristic) { OpenGoPro.Assembler() }.accept(packet) ?: return
+        requests += characteristic to message
+        val id = message[0].toInt() and 0xFF
+        val reply: ByteArray = when {
+            characteristic == GoProUuids.QUERY && id == 0x13 ->
+                byteArrayOf(0x13, 0, 8, 1, if (busyPolls-- > 0) 1 else 0)
+            id == 0x01 && failShutter -> byteArrayOf(0x01, 1)
+            id == 0x01 -> byteArrayOf(0x01, 0).also { recording = message[2].toInt() == 1 }
+            else -> byteArrayOf(message[0], 0)
+        }
+        for (p in OpenGoPro.packetize(reply)) notifications.emit(GoProUuids.responseFor(characteristic) to p)
+    }
+
+    override suspend fun read(characteristic: String): ByteArray = when (characteristic) {
+        GoProUuids.WIFI_AP_SSID -> ssid.toByteArray()
+        GoProUuids.WIFI_AP_PASSWORD -> password.toByteArray()
+        else -> throw IOException("unknown characteristic")
+    }
+
+    override suspend fun disconnect() {
+        disconnects++
+    }
+}

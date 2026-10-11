@@ -23,9 +23,10 @@ data class AlignmentResult(
  * 1. A first guess: from GPS UTC on both sides when both have it, otherwise [prior] (the camera
  *    clock or the time the camera acknowledged the start command).
  * 2. Speed matching: the camera's GPS speed is compared with the session's GNSS speed at every
- *    offset within [searchWindowUs] of the guess, first in coarse steps and then in 10 ms steps,
- *    and the offset with the smallest RMS difference wins. Speed changes all the time on track, so
- *    the match is sharp; it needs the car to move during the overlap.
+ *    offset within [searchWindowUs] or the guess's own uncertainty, whichever is larger, first
+ *    in coarse steps and then in 10 ms steps, and the offset with the smallest RMS difference wins.
+ *    Speed changes all the time on track, so the match is sharp; it needs the car to move during
+ *    the overlap.
  *
  * A match is accepted only with at least [minOverlapUs] of overlap, enough speed variation and a
  * small RMS error; otherwise the UTC guess (or the prior) is returned as it is.
@@ -66,7 +67,7 @@ class GpsAligner(
 
     /** Coarse search around the guess (or across everything without one), then a fine search. */
     private fun match(cam: List<SpeedPoint>, session: List<SpeedPoint>, guess: AlignmentResult?): Candidate? {
-        val window = if (guess == null) wholeRange(cam, session) else searchWindowUs
+        val window = guess?.let { maxOf(searchWindowUs, it.alignment.uncertaintyUs) } ?: wholeRange(cam, session)
         val center = guess?.sessionOffsetUs ?: 0L
         val grid = SpeedGrid(session)
         val coarse = search(cam, grid, center - window, center + window, CoarseStepUs) ?: return null

@@ -94,4 +94,14 @@ class GpsAlignerTest {
         val cam = camera(0, 60).map { it.copy(utcMillis = null) }
         assertEquals(prior, GpsAligner(searchWindowUs = 1_000_000).align(cam, emptyList(), prior))
     }
+
+    @Test
+    fun `a rough camera clock prior widens the search to its uncertainty`() {
+        val trueOffset = 40_000_000L
+        val prior = AlignmentResult(trueOffset + 25_000_000, Alignment(AlignmentMethod.CAMERA_CLOCK, 60_000_000))
+        val cam = camera(trueOffset, 90).map { it.copy(utcMillis = null) }
+        val result = assertNotNull(GpsAligner().align(cam, session(300, withUtc = false), prior))
+        assertEquals(AlignmentMethod.GPS_MATCH, result.alignment.method)
+        assertTrue(abs(result.sessionOffsetUs - trueOffset) <= 10_000)
+    }
 }

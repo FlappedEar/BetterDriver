@@ -21,6 +21,7 @@ include(
     ":recorder",
     ":timing",
     ":video",
+    ":gopro",
     ":core-ui",
     ":core-ble",
     ":feature-track",
