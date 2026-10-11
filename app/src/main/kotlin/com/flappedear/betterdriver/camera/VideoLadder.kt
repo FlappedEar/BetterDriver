@@ -58,10 +58,13 @@ class ThermalPolicy(
         private set
     private var lastStepAt: Long? = null
 
-    /** Starts from [index] (the first supported step), with no step taken yet. */
-    fun reset(index: Int) {
+    /**
+     * Moves to [index] when the camera binds a step: the first one, a fallback after a bind failure,
+     * or the step a step-down chose. The time of the last step-down is kept, so a rebind does not
+     * make the next step-down due at once.
+     */
+    fun moveTo(index: Int) {
         current = index
-        lastStepAt = null
     }
 
     fun onReading(nowMicros: Long, status: Int, headroom: Float?): ThermalAction {

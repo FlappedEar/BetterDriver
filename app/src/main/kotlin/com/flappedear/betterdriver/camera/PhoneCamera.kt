@@ -154,7 +154,7 @@ class PhoneCamera(
     private fun begin(stepIndex: Int) {
         val p = provider ?: return
         val step = steps[stepIndex]
-        policy.reset(stepIndex)
+        policy.moveTo(stepIndex)
         try {
             val recorder = Recorder.Builder()
                 .setQualitySelector(QualitySelector.from(phoneQuality(step.size)))
