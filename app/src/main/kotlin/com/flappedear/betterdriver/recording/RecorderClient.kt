@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.timing.live.LiveTimingState
 
 /** What the UI knows about the recorder process. */
 data class RecorderState(
@@ -26,6 +27,10 @@ data class RecorderState(
     val starting: Boolean = false,
     /** Why the last recording failed to start or ended on its own. */
     val error: String? = null,
+    /** The track or circuit the recording is at, once detected (FBBD-55). */
+    val place: String? = null,
+    /** Live timing, when the recording is at a saved track with lines (FBBD-12). */
+    val timing: LiveTimingState? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
@@ -61,6 +66,8 @@ class RecorderClient private constructor(private val context: Context) {
             starting = state.starting && !answered,
             // A local error (the recorder died) stays until a recording runs or the recorder reports its own.
             error = error ?: state.error.takeIf { live == null },
+            place = msg.data.getString(RecorderProtocol.KEY_PLACE),
+            timing = RecorderProtocol.timingFrom(msg.data),
         )
     }
 

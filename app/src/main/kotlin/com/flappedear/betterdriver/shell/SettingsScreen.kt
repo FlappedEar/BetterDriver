@@ -45,6 +45,8 @@ fun SettingsScreen(
     onRunSetup: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
+    trackCount: Int = 0,
+    onTracks: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -64,7 +66,7 @@ fun SettingsScreen(
             when (SettingsTab.entries[tab]) {
                 SettingsTab.Devices -> DevicesTab(prefs, onPair)
                 SettingsTab.Car -> CarTab(prefs)
-                SettingsTab.Recording -> RecordingTab()
+                SettingsTab.Recording -> RecordingTab(trackCount, onTracks)
                 SettingsTab.App -> AppTab(version, onRunSetup)
             }
         }
@@ -105,11 +107,13 @@ private fun CarTab(prefs: AppPrefs) {
 }
 
 @Composable
-private fun RecordingTab() {
+private fun RecordingTab(trackCount: Int, onTracks: () -> Unit) {
     val context = LocalContext.current
     val freeGb = remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
     ShellCard {
-        ListRow("Video quality", "4K · 60 fps", divider = false)
+        val tracks = if (trackCount == 1) "1 track" else "$trackCount tracks"
+        ListRow("Tracks and timing lines", tracks, divider = false, onClick = onTracks)
+        ListRow("Video quality", "4K · 60 fps")
         ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb))
     }
 }

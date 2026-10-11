@@ -54,3 +54,12 @@ unknown. It never prompts; offering to create a track belongs after the outing.
   and per-sector gains against the best lap and against the best sectors.
   `feature-track`'s `withTiming` fills the approved track screen from it.
   `timeSession` re-times a recorded session, for example after editing lines.
+
+## In the app
+
+`SessionTiming` is the recorder listener the recorder process adds to every
+recording. At the first real position it reads the saved tracks, detects the
+track, and from then on times every fix against it if it has a start/finish
+line. The detection is written into the session as a `track` event; the track's
+name, lap, delta and sectors go to the track screen with the recorder's live
+state.

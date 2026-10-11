@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.feature.track.TrackAlert
 import com.flappedear.betterdriver.feature.track.TrackScreenState
 import com.flappedear.betterdriver.feature.track.TrackTile
+import com.flappedear.betterdriver.feature.track.withTiming
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -22,8 +23,9 @@ private const val BytesPerMb = 1_000_000L
 private const val NoValue = "–"
 
 /**
- * Track screen values from the recorder. Laps, delta, sectors and coach cues come from the lap
- * timer and coach, which are not wired yet, so those slots show their empty state.
+ * Track screen values from the recorder. Laps, delta and sectors come from live timing, which runs
+ * in the recorder process once the session is at a saved track with lines (FBBD-12); until then,
+ * and for coach cues, which are not built yet, those slots show their empty state.
  */
 fun liveTrackState(state: RecorderState): TrackScreenState {
     val live = state.live
@@ -36,8 +38,10 @@ fun liveTrackState(state: RecorderState): TrackScreenState {
             GnssState.Ok -> StatusItem("GNSS", "${live.fixRateHz} Hz · ${live.sats ?: NoValue} sats")
         }
     }
-    return TrackScreenState(
-        status = listOf(gnss),
+    val timing = state.timing
+    val place = state.place?.let { StatusItem("Track", it, ok = timing != null) }
+    val screen = TrackScreenState(
+        status = listOfNotNull(place, gnss),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
         alert = trackAlert(state),
         deltaSeconds = null,
@@ -48,11 +52,12 @@ fun liveTrackState(state: RecorderState): TrackScreenState {
         tiles = listOf(
             TrackTile("Speed", live?.speedKmh?.roundToInt()?.toString() ?: NoValue, "km/h"),
             TrackTile("G", NoValue, "g"),
-            TrackTile("Lap", NoValue, ""),
+            TrackTile("Lap", timing?.lapNumber?.takeIf { it > 0 }?.toString() ?: NoValue, ""),
         ),
         coachCorner = null,
         coachCue = null,
     )
+    return if (timing == null) screen else screen.withTiming(timing)
 }
 
 /** The one interruption on the track screen (UI-08): only when recording is not as it should be. */

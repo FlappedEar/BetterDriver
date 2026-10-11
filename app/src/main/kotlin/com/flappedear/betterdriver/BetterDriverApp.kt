@@ -47,6 +47,8 @@ import com.flappedear.betterdriver.shell.SettingsTab
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
+import com.flappedear.betterdriver.timing.live.placeName
+import com.flappedear.betterdriver.tracks.Tracks
 import kotlinx.coroutines.flow.flowOf
 
 private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
@@ -75,6 +77,8 @@ private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_
 fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     val nav = rememberNavController()
     val prefs = rememberAppPrefs()
+    val context = LocalContext.current
+    val tracks = remember { Tracks.get(context) }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
@@ -91,10 +95,12 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Setup) {
                 Box(Modifier.padding(padding)) { Setup(nav, prefs) }
             }
-            composable(Routes.Drive) { Box(Modifier.padding(padding)) { Drive(nav, prefs, recorder, sessions) } }
+            composable(Routes.Drive) {
+                Box(Modifier.padding(padding)) { Drive(nav, prefs, recorder, sessions, tracks) }
+            }
             composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions) } }
             composable(Routes.Settings) {
-                Box(Modifier.padding(padding)) { Settings(nav, prefs, SettingsTab.Devices, onBack = null) }
+                Box(Modifier.padding(padding)) { Settings(nav, prefs, tracks, SettingsTab.Devices, onBack = null) }
             }
             composable(
                 Routes.SettingsTabPattern,
@@ -102,13 +108,21 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             ) { e ->
                 val tab = SettingsTab.entries.firstOrNull { it.name == e.arguments?.getString(Routes.TabArg) }
                 Box(Modifier.padding(padding)) {
-                    Settings(nav, prefs, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
+                    Settings(nav, prefs, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
                 }
             }
             composable(Routes.Pair) {
                 Box(Modifier.padding(padding)) { PairRoute(nav, prefs) }
             }
             composable(Routes.Track) { Track(nav, prefs, recorder) }
+            composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
+            composable(
+                Routes.TrackEditorPattern,
+                arguments = listOf(navArgument(Routes.TrackIdArg) { type = NavType.StringType }),
+            ) { e ->
+                val id = e.arguments?.getString(Routes.TrackIdArg).orEmpty()
+                Box(Modifier.padding(padding)) { TrackEditorRoute(nav, tracks, id) }
+            }
         }
     }
 }
@@ -155,16 +169,24 @@ private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, se
 }
 
 @Composable
-private fun Drive(nav: NavHostController, prefs: AppPrefs, recorder: RecorderClient, sessions: Sessions) {
+private fun Drive(
+    nav: NavHostController,
+    prefs: AppPrefs,
+    recorder: RecorderClient,
+    sessions: Sessions,
+    tracks: Tracks,
+) {
+    LaunchedEffect(Unit) { tracks.locate() }
     HomeScreen(
         devices = prefs.devices(),
-        trackName = null,
+        trackName = tracks.here?.detection?.placeName,
         lastSession = lastSessionLine(sessions.list),
         onStart = {
             if (prefs.hasRequiredPermissions()) {
                 // While recording, START goes back to the running session.
                 if (!recorder.state.recording) {
-                    recorder.start(prefs.car, track = "", prefs.raceBox?.let { RaceBoxRef(it.address, it.name) })
+                    val place = tracks.here?.detection?.placeName.orEmpty()
+                    recorder.start(prefs.car, track = place, prefs.raceBox?.let { RaceBoxRef(it.address, it.name) })
                 }
                 nav.navigate(Routes.Track)
             } else {
@@ -228,7 +250,7 @@ private fun Setup(nav: NavHostController, prefs: AppPrefs) {
 }
 
 @Composable
-private fun Settings(nav: NavHostController, prefs: AppPrefs, tab: SettingsTab, onBack: (() -> Unit)?) {
+private fun Settings(nav: NavHostController, prefs: AppPrefs, tracks: Tracks, tab: SettingsTab, onBack: (() -> Unit)?) {
     SettingsScreen(
         prefs = prefs,
         version = Version,
@@ -239,6 +261,8 @@ private fun Settings(nav: NavHostController, prefs: AppPrefs, tab: SettingsTab, 
             nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
         },
         onBack = onBack,
+        trackCount = tracks.list.size,
+        onTracks = { nav.navigate(Routes.Tracks) },
     )
 }
 
