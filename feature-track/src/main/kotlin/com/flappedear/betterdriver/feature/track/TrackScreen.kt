@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.view.View
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -21,12 +22,14 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.AlertBanner
@@ -74,21 +77,10 @@ data class TrackScreenState(
 @Composable
 fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
     val view = LocalView.current
-    DisposableEffect(view) {
-        view.keepScreenOn = true
-        onDispose { view.keepScreenOn = false }
-    }
     val activity = LocalContext.current.findActivity()
-    DisposableEffect(activity) {
-        val previous = activity?.requestedOrientation
-        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        onDispose {
-            // A rotation recreates the activity; restoring here would rotate it back in a loop.
-            if (activity != null && previous != null && !activity.isChangingConfigurations) {
-                activity.requestedOrientation = previous
-            }
-        }
-    }
+    KeepScreenOn(view)
+    LockLandscape(activity)
+    LightSystemBarIcons(activity, view)
     BetterDriverTheme(track = true) {
         Box(modifier.fillMaxSize().background(TrackTheme.colors.background)) {
             TrackScreenContent(
@@ -97,6 +89,50 @@ fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .pointerInput(onStop) { detectTapGestures(onLongPress = { onStop() }) },
             )
+        }
+    }
+}
+
+@Composable
+private fun KeepScreenOn(view: View) {
+    DisposableEffect(view) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
+}
+
+@Composable
+private fun LockLandscape(activity: Activity?) {
+    // Saved across the recreation that the rotation causes, so exit restores
+    // the orientation from before the track screen, not the forced landscape.
+    val originalOrientation = rememberSaveable {
+        activity?.requestedOrientation ?: ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    }
+    DisposableEffect(activity) {
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose {
+            // A rotation recreates the activity; restoring here would rotate it back in a loop.
+            if (activity != null && !activity.isChangingConfigurations) {
+                activity.requestedOrientation = originalOrientation
+            }
+        }
+    }
+}
+
+/** Light status and navigation bar icons on the dark track background. */
+@Composable
+private fun LightSystemBarIcons(activity: Activity?, view: View) {
+    DisposableEffect(activity, view) {
+        val bars = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
+        val lightStatus = bars?.isAppearanceLightStatusBars
+        val lightNavigation = bars?.isAppearanceLightNavigationBars
+        bars?.isAppearanceLightStatusBars = false
+        bars?.isAppearanceLightNavigationBars = false
+        onDispose {
+            if (bars != null && lightStatus != null && lightNavigation != null) {
+                bars.isAppearanceLightStatusBars = lightStatus
+                bars.isAppearanceLightNavigationBars = lightNavigation
+            }
         }
     }
 }

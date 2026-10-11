@@ -28,6 +28,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core-ui"))
+    implementation(libs.androidx.core.ktx)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
 }
