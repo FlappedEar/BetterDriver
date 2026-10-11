@@ -1,20 +1,27 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
+import com.flappedear.betterdriver.analysis.corners.CornerVariability
+import com.flappedear.betterdriver.analysis.corners.measureCornerLap
+import com.flappedear.betterdriver.analysis.corners.summarizeCornerVariability
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.progress.ProgressAxis
 import com.flappedear.betterdriver.analysis.progress.ProgressSegment
+import com.flappedear.betterdriver.analysis.progress.computeTrackFeatures
 import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
 import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
 import com.flappedear.betterdriver.analysis.segments.LineConsensus
 import com.flappedear.betterdriver.analysis.segments.PopulationLap
 import com.flappedear.betterdriver.analysis.segments.SegmentReview
+import com.flappedear.betterdriver.analysis.segments.SegmentReviewSmoothingMeters
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestLap
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
 import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
 import com.flappedear.betterdriver.analysis.segments.TimedLapSectors
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
+import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.computeSegmentReview
 import com.flappedear.betterdriver.analysis.segments.computeTheoreticalBest
 import com.flappedear.betterdriver.analysis.segments.lineConsensus
@@ -25,7 +32,8 @@ import com.flappedear.betterdriver.analysis.segments.timePopulation
 /**
  * One session analysed end to end: its laps, the corners and straights proposed on its fastest
  * eligible lap, every lap's sector times on that lap's axis, the theoretical best of the eligible
- * laps, and where each lap loses time against the fastest.
+ * laps, where each lap loses time against the fastest, and the Corner Analyzer's metrics of every
+ * corner on every lap.
  *
  * Telemetry stores approved segments per track configuration and adopts the best lap's proposals
  * only when no run has approved any; BetterDriver has no segment editor yet, so a session always
@@ -56,6 +64,13 @@ data class SessionAnalysis(
     val summary: TheoreticalBestSummary? = null,
     /** Every eligible lap's losses against the fastest, window by window, largest first. */
     val losses: TimeLossRanking? = null,
+    /**
+     * Speeds, braking and exit of each corner (by segment id) on every timed lap, in
+     * [LapSession.timedLaps] order, measured on [axis].
+     */
+    val cornerMetrics: Map<String, List<CornerLapMetrics>> = emptyMap(),
+    /** How repeatable each corner's braking, speeds, pickup and line are over the eligible laps. */
+    val variability: Map<String, CornerVariability> = emptyMap(),
 )
 
 /**
@@ -103,9 +118,22 @@ fun analyzeSession(
         eligible.map { TimedLapSectors(timed.times[it], population[it].start) },
         TimedLapSectors(fastestTimes, fastest.startTelemetryTime),
     )
+    val features = computeTrackFeatures(timed.axis, SegmentReviewSmoothingMeters)
+    val cornerMetrics = segments.segments.filter { it.type == TrackSegmentType.Corner }.associate { corner ->
+        corner.id to laps.timedLaps.mapIndexed { i, lap ->
+            measureCornerLap(
+                timed.axis, features, segments, corner.id, corner.startProgressMeters, corner.endProgressMeters,
+                timed.traces[i], session, lap.startTelemetryTime, lap.endTelemetryTime, lap.number,
+            )
+        }
+    }
+    val variability = segments.segments.filter { it.id in cornerMetrics }.associate { corner ->
+        val observations = eligible.map { cornerMetrics.getValue(corner.id)[it].observation }
+        corner.id to summarizeCornerVariability(corner.id, corner.name, observations)
+    }
     return SessionAnalysis(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
-        publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses,
+        publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
     )
 }
 

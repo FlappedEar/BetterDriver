@@ -128,7 +128,10 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
                 AnalysisTab.Laps -> Laps(ui, compare, width)
-                AnalysisTab.Corners -> Sectors(ui, width)
+                AnalysisTab.Corners -> {
+                    Sectors(ui, width)
+                    CornerDetails(ui, width)
+                }
             }
         }
     }
