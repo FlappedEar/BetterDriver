@@ -117,7 +117,7 @@ class RecorderClient private constructor(private val context: Context) {
     }
 
     /**
-     * [raceBox] is the paired RaceBox; with none, the recording uses the fake GNSS source.
+     * [raceBox] is the paired RaceBox; with none, nothing is recorded and the track screen says why.
      * With [phoneVideo], the camera process starts too and records once the session is running
      * (FBBD-21). It is started from here, while the app is on screen, because Android only lets a
      * camera service start from the foreground.
