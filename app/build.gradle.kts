@@ -55,6 +55,7 @@ dependencies {
     implementation(project(":gopro"))
     implementation(project(":timing"))
     implementation(project(":core-ble"))
+    implementation(project(":updater"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)

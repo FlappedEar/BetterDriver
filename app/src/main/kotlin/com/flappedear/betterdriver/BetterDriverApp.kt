@@ -4,6 +4,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -54,6 +56,12 @@ import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.tracks.Tracks
+import com.flappedear.betterdriver.update.AppUpdates
+import com.flappedear.betterdriver.update.FollowUpdates
+import com.flappedear.betterdriver.update.UpdateCard
+import com.flappedear.betterdriver.update.UpdateRow
+import com.flappedear.betterdriver.update.hasUpdate
+import com.flappedear.betterdriver.update.updatesBlocked
 import java.io.IOException
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -95,9 +103,12 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     // Setup again if a required permission was revoked or a one-time grant expired.
     val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
     FollowRecording(nav, recorder, sessions)
+    val updates = remember { AppUpdates.get(context) }
+    FollowUpdates(updates, recorder, sessions)
+    val updateDot = hasUpdate(updates.state) && !updatesBlocked(recorder, sessions)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { if (route != null && route in Routes.TopLevel) BottomBar(nav, route) },
+        bottomBar = { if (route != null && route in Routes.TopLevel) BottomBar(nav, route, updateDot) },
     ) { padding ->
         // Insets are applied per destination: the track screen owns the full
         // window so its dark background also fills the system bar areas.
@@ -304,7 +315,10 @@ private fun SessionsRoute(sessions: Sessions, prefs: AppPrefs) {
         if (uri != null && id != null) sessions.exportWithVideo(id, uri)
     }
     LaunchedEffect(Unit) { sessions.refresh() }
+    val updates = remember(context) { AppUpdates.get(context) }
+    val updatesBlocked = updatesBlocked(RecorderClient.get(context), sessions)
     SessionsScreen(
+        header = { UpdateCard(updates, updatesBlocked) },
         sessions = sessions.list,
         exports = sessions.exports,
         withVideo = sessions.withVideo,
@@ -342,7 +356,11 @@ private fun Setup(nav: NavHostController, prefs: AppPrefs) {
 
 @Composable
 private fun Settings(nav: NavHostController, prefs: AppPrefs, tracks: Tracks, tab: SettingsTab, onBack: (() -> Unit)?) {
+    val context = LocalContext.current
+    val updates = remember(context) { AppUpdates.get(context) }
+    val updatesBlocked = updatesBlocked(RecorderClient.get(context), Sessions.get(context))
     SettingsScreen(
+        updateRow = { UpdateRow(updates, updatesBlocked) },
         prefs = prefs,
         version = Version,
         initialTab = tab,
@@ -358,8 +376,9 @@ private fun Settings(nav: NavHostController, prefs: AppPrefs, tracks: Tracks, ta
     )
 }
 
+/** [updateDot]: a quiet dot on Settings when a newer version waits (FBBD-74). */
 @Composable
-private fun BottomBar(nav: NavHostController, route: String) {
+private fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         TopLevelItems.forEach { item ->
             NavigationBarItem(
@@ -372,7 +391,13 @@ private fun BottomBar(nav: NavHostController, route: String) {
                         restoreState = true
                     }
                 },
-                icon = { Icon(item.icon, contentDescription = null) },
+                icon = {
+                    if (updateDot && item.route == Routes.Settings) {
+                        BadgedBox(badge = { Badge() }) { Icon(item.icon, contentDescription = "Update available") }
+                    } else {
+                        Icon(item.icon, contentDescription = null)
+                    }
+                },
                 label = { Text(item.label) },
             )
         }

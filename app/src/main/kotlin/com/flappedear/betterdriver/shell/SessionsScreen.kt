@@ -47,9 +47,11 @@ fun SessionsScreen(
     modifier: Modifier = Modifier,
     withVideo: Set<String> = emptySet(),
     goPro: GoProCardState = GoProCardState(),
+    header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Sessions")
+        Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) { header() }
         if (sessions.isEmpty()) {
             Box(Modifier.padding(horizontal = 16.dp)) { ShellCard { DimText("No sessions yet") } }
         } else {

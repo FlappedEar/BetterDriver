@@ -48,6 +48,7 @@ fun SettingsScreen(
     trackCount: Int = 0,
     onTracks: () -> Unit = {},
     onPairGoPro: () -> Unit = {},
+    updateRow: @Composable () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -68,7 +69,7 @@ fun SettingsScreen(
                 SettingsTab.Devices -> DevicesTab(prefs, onPair, onPairGoPro)
                 SettingsTab.Car -> CarTab(prefs)
                 SettingsTab.Recording -> RecordingTab(trackCount, onTracks)
-                SettingsTab.App -> AppTab(version, onRunSetup)
+                SettingsTab.App -> AppTab(version, onRunSetup, updateRow)
             }
         }
     }
@@ -124,12 +125,13 @@ private fun RecordingTab(trackCount: Int, onTracks: () -> Unit) {
 }
 
 @Composable
-private fun AppTab(version: String, onRunSetup: () -> Unit) {
+private fun AppTab(version: String, onRunSetup: () -> Unit, updateRow: @Composable () -> Unit) {
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
         ListRow("Track screen colours", "Green / red")
         ListRow("Spoken coach cues", "Later")
         ListRow("Version", version)
+        updateRow()
         ListRow("Run setup again", onClick = onRunSetup)
     }
 }

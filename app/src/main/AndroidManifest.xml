@@ -28,6 +28,9 @@
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
 
+    <!-- In-app updates from GitHub Releases open Android's installer; the user confirms each one (FBBD-73). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Video and audio are optional (GoPro or no camera), so this hardware must not be required to install. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
@@ -63,6 +66,17 @@
             android:exported="false"
             android:foregroundServiceType="camera|microphone"
             android:process=":camera" />
+
+        <!-- Hands a downloaded, checked update to Android's installer (FBBD-73). -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.updates"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/update_paths" />
+        </provider>
     </application>
 
 </manifest>
