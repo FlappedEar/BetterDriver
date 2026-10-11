@@ -41,10 +41,17 @@ private const val MaxEditorSessions = 8
 private const val FreshPositionNanos = 10L * 60 * 1_000_000_000
 
 /**
- * Where the phone is (UI-27) and what is there. [fresh] is false when the position is old or is only
- * where the newest session started: good enough for the home card, not for naming a new session.
+ * Where the phone is (UI-27) and what is there. [atNanos] is when the position was taken
+ * ([SystemClock.elapsedRealtimeNanos]), or null when it is only where the newest session started.
  */
-data class Here(val position: GeoPoint, val detection: TrackDetection, val fresh: Boolean = true)
+data class Here(val position: GeoPoint, val detection: TrackDetection, val atNanos: Long? = null) {
+    /**
+     * Whether the position is recent enough to name a session started now: a stale one could name a
+     * road drive after last weekend's circuit. Checked at START, so a home screen left open goes stale.
+     */
+    fun fresh(nowNanos: Long = SystemClock.elapsedRealtimeNanos()) =
+        atNanos != null && nowNanos - atNanos <= FreshPositionNanos
+}
 
 /** A track opened in the editor, with the sessions recorded there. */
 data class EditorData(val track: Track, val sessions: List<EditorSession>)
@@ -92,9 +99,8 @@ class Tracks private constructor(private val context: Context) {
     /** Finds where the phone is: its last known position, else where the newest session started. */
     fun locate() = io.execute {
         val known = lastKnownPosition()
-        val fresh = known != null && SystemClock.elapsedRealtimeNanos() - known.second <= FreshPositionNanos
         val at = known?.first ?: newestSessionStart()
-        val found = at?.let { Here(it, detectTrack(it, store.all(), directory.list), fresh) }
+        val found = at?.let { Here(it, detectTrack(it, store.all(), directory.list), known?.second) }
         main.post { here = found }
     }
 
