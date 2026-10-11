@@ -100,7 +100,7 @@ class VideoTest {
     }
 
     @Test
-    fun `export with video writes the avi section and a file index and time on every row`() {
+    fun `export with video starts at the video and writes a file index and time on every row`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))
         // 10 fixes at 25 Hz: 0 to 360 ms.
@@ -122,9 +122,7 @@ class VideoTest {
         val avi = p.rows.map { it.takeLast(2) }
         assertEquals(
             listOf(
-                listOf("0001", "-00000001"), // 0 ms: before the first file
-                listOf("0001", "-00000001"), // 40
-                listOf("0001", "-00000001"), // 80
+                // 0, 40 and 80 ms are before the first file: left out, so the data starts with the video.
                 listOf("0001", "000000020"), // 120
                 listOf("0001", "000000060"), // 160
                 listOf("0001", "000000100"), // 200: last frame of file 1
@@ -153,22 +151,6 @@ class VideoTest {
         VboExporter.export(store.read(rec.id), out, video)
         val p = VboValidator.validate(out.toString(Charsets.UTF_8))
         assertEquals(listOf("s_"), p.body["[avi]"])
-        assertEquals(listOf("0.000", "0.000", "0.040"), p.rows.map { it.last() })
-    }
-
-    @Test
-    fun `rows without video can be written as file 0 at 0 ms`() {
-        val store = SessionStore(tmp)
-        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))
-        repeat(3) { rec.submit(SampleSet(it * 40_000L, gnss.fix(it.toLong()))) }
-        rec.stop()
-        val video = VboVideo("z_", listOf(VideoClip(CameraIds.PHONE, "a.mp4", 40_000, null)), noVideoAsZero = true)
-        val out = ByteArrayOutputStream()
-        VboExporter.export(store.read(rec.id), out, video)
-        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
-        assertEquals(
-            listOf(listOf("0000", "000000000"), listOf("0001", "000000000"), listOf("0001", "000000040")),
-            p.rows.map { it.takeLast(2) },
-        )
+        assertEquals(listOf("0.000", "0.040"), p.rows.map { it.last() })
     }
 }
