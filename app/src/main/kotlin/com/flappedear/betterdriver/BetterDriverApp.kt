@@ -221,7 +221,8 @@ private fun Drive(
                 }
                 recorder.start(
                     active.car?.name.orEmpty(),
-                    track = tracks.here?.detection?.placeName.orEmpty(),
+                    // Only a fresh position names the session: a stale one could name last weekend's circuit.
+                    track = tracks.here?.takeIf { it.fresh() }?.detection?.placeName.orEmpty(),
                     gnss,
                     phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
                         ?.videoMode

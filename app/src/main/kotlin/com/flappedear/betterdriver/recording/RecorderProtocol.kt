@@ -80,6 +80,9 @@ internal object RecorderProtocol {
     /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
     const val KEY_PLACE = "place"
 
+    /** In a [MSG_STATE] bundle: true when [KEY_PLACE] is a saved track, false for a circuit-list match. */
+    const val KEY_PLACE_SAVED = "placeSaved"
+
     private const val SESSION_ID = "sessionId"
     private const val START_UTC = "startUtcMillis"
     private const val ELAPSED = "elapsedMicros"

@@ -48,7 +48,24 @@ object Mp4Reader {
         }
     }
 
-    private fun findMoov(raf: RandomAccessFile): ByteArray? {
+    /**
+     * Whether [file] is a finished MP4: it has a `moov` box. A recording cut off by a crash (the camera
+     * process died, the phone switched off) has only its media data and cannot be played. Reads box
+     * headers only, so it is fast on large files.
+     */
+    fun isComplete(file: File): Boolean = try {
+        RandomAccessFile(file, "r").use { moovBody(it) != null }
+    } catch (_: IOException) {
+        false
+    }
+
+    private fun findMoov(raf: RandomAccessFile): ByteArray? = moovBody(raf)?.let { (start, size) ->
+        raf.seek(start)
+        ByteArray(size).also { raf.readFully(it) }
+    }
+
+    /** Where the `moov` box's body starts and its size, or null when there is none. */
+    private fun moovBody(raf: RandomAccessFile): Pair<Long, Int>? {
         var pos = 0L
         val length = raf.length()
         while (pos + 8 <= length) {
@@ -68,7 +85,7 @@ object Mp4Reader {
                 if (bodySize > MaxMoovBytes || pos + size > length) {
                     throw Mp4FormatException("moov too large or cut off")
                 }
-                return ByteArray(bodySize.toInt()).also { raf.readFully(it) }
+                return (pos + header) to bodySize.toInt()
             }
             pos += size
         }

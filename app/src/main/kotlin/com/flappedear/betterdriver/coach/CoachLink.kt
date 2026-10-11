@@ -37,6 +37,12 @@ internal class CoachLink(
     /** The coach that was last told the track. Listener thread only. */
     private var trackSentTo: Messenger? = null
 
+    /**
+     * Whether the session is at a saved track, the only place the coach has anything to say. Elsewhere
+     * (a road drive, a circuit with no saved track) fixes are not sent at all. Listener thread only.
+     */
+    private var atSavedTrack = false
+
     private var bound = false
 
     private val connection = object : ServiceConnection {
@@ -78,7 +84,7 @@ internal class CoachLink(
         // The track is detected at the first position; until the coach knows it there is nothing to coach.
         if (trackSentTo !== m) sendTrack(m)
         val fix = set.toCoachFix()
-        if (fix != null && trackSentTo === m) {
+        if (fix != null && trackSentTo === m && atSavedTrack) {
             send(m, CoachProtocol.MSG_FIX) {
                 putLong(CoachProtocol.T_US, fix.tMicros)
                 putDouble(CoachProtocol.LAT, fix.lat)
@@ -93,6 +99,7 @@ internal class CoachLink(
         send(m, CoachProtocol.MSG_TRACK) {
             (found as? TrackDetection.Saved)?.let { putString(CoachProtocol.TRACK_ID, it.track.id) }
         }
+        atSavedTrack = found is TrackDetection.Saved
         trackSentTo = m
     }
 

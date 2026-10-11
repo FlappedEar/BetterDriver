@@ -447,4 +447,21 @@ class RecorderTest {
         assertTrue(fixes.size in 5..15, "got ${fixes.size} fixes in 0.4 s at 25 Hz")
         assertContentEquals(fixes.indices.map { gnss.fix(it.toLong()) }, fixes.map { it.values })
     }
+
+    @Test
+    fun `reading events only leaves the samples out and keeps everything else`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        feed(rec, 50)
+        rec.event("coach_cue", "brake later")
+        assertTrue(rec.stop())
+        val whole = store.read(rec.id)
+        val events = store.read(store.dir(rec.id), samples = false)
+        assertTrue(whole.sampleSets.isNotEmpty())
+        assertEquals(emptyList(), events.sampleSets)
+        assertEquals(whole.events, events.events)
+        assertEquals(whole.channels, events.channels)
+        assertEquals(whole.info, events.info)
+        assertEquals(whole.end, events.end)
+    }
 }
