@@ -41,7 +41,7 @@ class SetupRepo private constructor(context: Context) {
         save(next)
     }
 
-    /** The HERO11 the app downloads from after a session: the first one listed. */
+    /** The HERO11 the app downloads from after a session. At most one is listed ([EquipmentModel.single]). */
     fun hero11Address(): String? = setup.equipment.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }?.address
 
     private fun save(s: Setup) = saver.execute {
