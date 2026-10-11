@@ -25,7 +25,7 @@ import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.live.placeName
-import com.flappedear.betterdriver.timing.track.TrackDetection
+import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
 
@@ -55,15 +55,6 @@ private fun gnssFrom(intent: Intent): GnssRef? = when {
 /** Track and car, the ones that are known (UI-21 option B). */
 private fun notificationDetail(info: SessionInfo) =
     listOf(info.track, info.car).filter { it.isNotBlank() }.joinToString(" · ")
-
-private const val TrackEvent = "track"
-
-/** The session's record of where it was: "saved <id> rev <n> <name>", "circuit <id> <name>" or "unknown". */
-private fun trackEventText(found: TrackDetection) = when (found) {
-    is TrackDetection.Saved -> "saved ${found.track.id} rev ${found.track.revision} ${found.track.displayName}"
-    is TrackDetection.Directory -> "circuit ${found.circuit.id} ${found.circuit.name}"
-    TrackDetection.Unknown -> "unknown"
-}
 
 /** Shown on the track screen when a recording ends without the driver stopping it. */
 private fun endedMessage(reason: String) = when (reason) {
@@ -195,7 +186,7 @@ class RecorderService : Service() {
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
             // listener thread, so a timing failure is logged in the session and never stops it.
             val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits) { found ->
-                recording.event(TrackEvent, trackEventText(found))
+                recording.event(TrackEvent.KIND, TrackEvent.text(found))
             }
             recording.listeners.add(timing)
             // Covers stops the recorder makes itself (storage full, write error).
