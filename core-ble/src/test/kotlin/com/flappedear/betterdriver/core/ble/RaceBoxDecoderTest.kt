@@ -75,10 +75,14 @@ class RaceBoxDecoderTest {
     }
 
     @Test
-    fun `heading is left out while the receiver marks it invalid`() {
+    fun `heading is kept with a fix even when the heading flag is clear`() {
         val sink = Sink()
-        RaceBoxDecoder(sink).feed(RaceBoxTestData.packet())
-        assertEquals(null, sink.sets.single().value(GnssChannels.HEADING))
+        // 271.5 degrees = 0x019E46B0; the example's fix flags (0x01) have bit 5 clear.
+        val packet = RaceBoxTestData.packet { p ->
+            intArrayOf(0xB0, 0x46, 0x9E, 0x01).forEachIndexed { i, b -> p[52 + i] = b.toByte() }
+        }
+        RaceBoxDecoder(sink).feed(packet)
+        assertEquals(271.5, sink.sets.single().value(GnssChannels.HEADING)!!, 1e-9)
     }
 
     @Test
