@@ -132,7 +132,7 @@ class Transfers private constructor(private val context: Context) {
     /** The saved track the session was timed with, as it is now. */
     @Suppress("TooGenericExceptionCaught") // A damaged session still sends, without its track.
     private fun trackOf(id: String): Track? = try {
-        TrackEvent.savedTrackId(store.read(id).events)?.let(trackStore::get)
+        TrackEvent.savedTrackId(store.read(store.dir(id), samples = false).events)?.let(trackStore::get)
     } catch (e: RuntimeException) {
         android.util.Log.w(Tag, "no track for $id", e)
         null

@@ -2,10 +2,14 @@ package com.flappedear.betterdriver
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -22,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -119,7 +124,10 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Drive) {
                 Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
             }
-            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) } }
+            composable(Routes.Sessions) {
+                Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) }
+            }
+            composable(Routes.Review) { ReviewRoute(nav, padding) }
             analysisDestination(nav, padding)
             cueReview(nav, padding)
             composable(Routes.Settings) {
@@ -213,7 +221,8 @@ private fun Drive(
                 }
                 recorder.start(
                     active.car?.name.orEmpty(),
-                    track = tracks.here?.detection?.placeName.orEmpty(),
+                    // Only a fresh position names the session: a stale one could name last weekend's circuit.
+                    track = tracks.here?.takeIf { it.fresh() }?.detection?.placeName.orEmpty(),
                     gnss,
                     phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
                         ?.videoMode
@@ -274,7 +283,7 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
     val recorder = RecorderClient.get(context)
     val updatesBlocked = updatesBlocked(recorder, sessions)
     SessionsScreen(
-        header = { UpdateCard(updates, updatesBlocked) },
+        header = { SessionsHeader(sessions.list.any(), updates, updatesBlocked) { nav.navigate(Routes.Review) } },
         transfer = rememberSessionTransfer(recording = recorder.state.recording || recorder.state.starting),
         sessions = sessions.list,
         exports = sessions.exports,
@@ -304,6 +313,24 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
         ),
         coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
     )
+}
+
+/** Above the sessions list: "Compare laps" once there are sessions, then the update card. */
+@Composable
+private fun SessionsHeader(
+    hasSessions: Boolean,
+    updates: AppUpdates,
+    updatesBlocked: Boolean,
+    onCompareLaps: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (hasSessions) {
+            FilledTonalButton(onClick = onCompareLaps, modifier = Modifier.fillMaxWidth()) {
+                Text("Compare laps")
+            }
+        }
+        UpdateCard(updates, updatesBlocked)
+    }
 }
 
 @Composable

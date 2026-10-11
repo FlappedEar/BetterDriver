@@ -38,7 +38,15 @@ data class SectorRow(
     val lapSeconds: Double?,
     /** The compared lap's time minus the best; null when either is missing. */
     val lossSeconds: Double?,
+    /** Interquartile range of the counted laps' times here; null with fewer than three. */
+    val spreadSeconds: Double? = null,
 )
+
+/** A corner or straight where the fastest lap is slower than the best time through it. */
+data class GainRow(val name: String, val lossSeconds: Double, val bestLapNumber: Int?)
+
+/** One lap's loss against the fastest lap in one corner or straight. */
+data class LossRow(val lapIndex: Int, val lapNumber: Int, val name: String, val lossSeconds: Double)
 
 /** A corner along the distance axis, shaded behind the charts. */
 data class CornerBand(val name: String, val startMeters: Double, val endMeters: Double)
@@ -67,7 +75,17 @@ data class AnalysisUi(
     /** Why there are no sectors, or null. */
     val sectorsNote: String?,
     val compare: CompareUi?,
+    /** Where the fastest lap is slowest against the best of each segment, largest first. */
+    val gains: List<GainRow> = emptyList(),
+    /** The largest single losses of the other counted laps against the fastest, largest first. */
+    val losses: List<LossRow> = emptyList(),
 )
+
+/** Losses below this are GPS timing noise and not listed. */
+const val MeaningfulLossSeconds = 0.05
+
+/** At most this many rows in each loss list. */
+const val LossRows = 5
 
 private const val MillisPerSecond = 1000.0
 
@@ -102,6 +120,7 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
     }
     val best = analysis.theoreticalBest
     val compared = comparison?.let { analysis.lapTimes.getOrNull(it.otherIndex) }
+    val summary = analysis.summary
     val sectors = best?.sectors.orEmpty().map { sector ->
         val lapSeconds = compared?.sector(sector.segmentId)?.seconds
         SectorRow(
@@ -111,6 +130,8 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
             bestLapNumber = sector.sourceLapReference as? Int,
             lapSeconds = lapSeconds,
             lossSeconds = if (lapSeconds != null && sector.seconds != null) lapSeconds - sector.seconds!! else null,
+            spreadSeconds = summary?.sectors?.firstOrNull { it.segmentId == sector.segmentId }
+                ?.consistency?.interquartileRange,
         )
     }
     val total = best?.totalSeconds
@@ -133,6 +154,8 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         gainSeconds = total?.let { fastest.durationSeconds - it },
         sectors = sectors,
         sectorsNote = sectorsNote,
+        gains = gains(analysis),
+        losses = losses(analysis),
         compare = comparison?.let {
             CompareUi(
                 referenceNumber = laps[it.referenceIndex].number,
@@ -145,6 +168,23 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
             )
         },
     )
+}
+
+private fun gains(analysis: SessionAnalysis) = analysis.summary?.gains.orEmpty()
+    .filter { (it.lossSeconds ?: 0.0) > MeaningfulLossSeconds }
+    .take(LossRows)
+    .map { GainRow(it.name, it.lossSeconds ?: 0.0, it.sourceLapReference as? Int) }
+
+private fun losses(analysis: SessionAnalysis): List<LossRow> {
+    val indexByNumber = analysis.laps.timedLaps.withIndex().associate { it.value.number to it.index }
+    return analysis.losses?.losses.orEmpty()
+        .filter { it.lossSeconds > MeaningfulLossSeconds }
+        .mapNotNull { loss ->
+            val number = loss.lapReference as? Int
+            val index = number?.let(indexByNumber::get)
+            if (number == null || index == null) null else LossRow(index, number, loss.window.name, loss.lossSeconds)
+        }
+        .take(LossRows)
 }
 
 /** The lap compared with the fastest when the screen opens: the second fastest counted lap, or null. */

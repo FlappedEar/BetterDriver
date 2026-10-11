@@ -43,7 +43,11 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         }
     }
     val timing = state.timing
-    val place = state.place?.let { StatusItem("Track", it, ok = timing != null) }
+    // A saved track without timing is amber. A circuit from the built-in list is only where the car is:
+    // a road drive can start within its 2 km, so it is shown as neutral information, not a problem.
+    val place = state.place?.let {
+        if (state.placeSaved) StatusItem("Track", it, ok = timing != null) else StatusItem("Near", it)
+    }
     // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
     val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok) }
     val screen = TrackScreenState(
