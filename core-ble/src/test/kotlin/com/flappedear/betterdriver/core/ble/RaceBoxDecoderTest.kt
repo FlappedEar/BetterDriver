@@ -115,4 +115,22 @@ class RaceBoxDecoderTest {
         assertTrue(sink.sets.isEmpty())
         assertEquals(1, decoder.checksumErrors)
     }
+
+    @Test
+    fun `a calibration levels acceleration and removes the gyro offset`() {
+        val sink = Sink()
+        val cal = ImuCalibration(
+            gyroBias = Vec3(-2.0, 0.5, 0.0),
+            level = listOf(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+            rollDeg = 0.0,
+            pitchDeg = 0.0,
+            atMillis = 0,
+        )
+        RaceBoxDecoder(sink, calibration = cal).feed(RaceBoxTestData.microPacket())
+        val set = sink.sets.single()
+        // Example packet: rotation X = -2.09, Y = 0.86 deg/s (p. 8, signed).
+        assertEquals(-0.09, set.value(RaceBoxChannels.GYRO_X)!!, 1e-9)
+        assertEquals(0.36, set.value(RaceBoxChannels.GYRO_Y)!!, 1e-9)
+        assertEquals(0.974, set.value(RaceBoxChannels.ACCEL_Z)!!, 1e-9)
+    }
 }

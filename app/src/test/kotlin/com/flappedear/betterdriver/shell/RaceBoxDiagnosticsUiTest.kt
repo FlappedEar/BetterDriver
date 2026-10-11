@@ -1,13 +1,18 @@
 package com.flappedear.betterdriver.shell
 
+import com.flappedear.betterdriver.core.ble.ImuCalibration
 import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.RaceBoxData
 import com.flappedear.betterdriver.core.ble.RaceBoxDeviceInfo
 import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsSnapshot
 import com.flappedear.betterdriver.core.ble.RaceBoxGnssConfig
 import com.flappedear.betterdriver.core.ble.RaceBoxPower
+import com.flappedear.betterdriver.core.ble.Vec3
+import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class RaceBoxDiagnosticsUiTest {
@@ -55,7 +60,7 @@ class RaceBoxDiagnosticsUiTest {
     @Test
     fun `leaves out what the device has not reported`() {
         val s = RaceBoxDiagnosticsUi.sections(snapshot(latest = null))
-        assertEquals(listOf("Data stream", "Receiver settings", "Device"), s.map { it.title })
+        assertEquals(listOf("Data stream", "Calibration", "Receiver settings", "Device"), s.map { it.title })
         assertNull(s.value("Data stream", "Bluetooth packet size"))
     }
 
@@ -68,5 +73,29 @@ class RaceBoxDiagnosticsUiTest {
         val slow = RaceBoxDiagnosticsUi.header("RaceBox Micro 3241", LinkState.Streaming(12), snapshot())
         assertEquals(DeviceState.Attention, slow.state)
         assertEquals("Connecting…", RaceBoxDiagnosticsUi.header("x", LinkState.Connecting, snapshot()).title)
+    }
+
+    @Test
+    fun `calibration shows what was corrected and applies it to the sensor values`() {
+        val cal = ImuCalibration(
+            gyroBias = Vec3(0.0, 0.0, 0.03),
+            level = listOf(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0),
+            rollDeg = 2.14,
+            pitchDeg = -0.8,
+            atMillis = 1_791_733_327_000L,
+        )
+        val s = RaceBoxDiagnosticsUi.sections(
+            snapshot().copy(calibration = cal),
+            streaming = true,
+            zone = ZoneOffset.UTC,
+        )
+        assertEquals("0.00 · 0.00 · 0.00 °/s", s.value("Motion sensors · calibrated", "Rotation X · Y · Z"))
+        assertEquals("roll 2.1° · pitch −0.8°", s.value("Calibration", "Tilt corrected"))
+        assertEquals("11 Oct, 15:42", s.value("Calibration", "Taken"))
+        val section = s.first { it.title == "Calibration" }
+        assertEquals("Calibrate again", section.action)
+        assertTrue(section.actionEnabled)
+        val busy = RaceBoxDiagnosticsUi.sections(snapshot().copy(capturing = 40), streaming = true)
+        assertFalse(busy.first { it.title == "Calibration" }.actionEnabled)
     }
 }

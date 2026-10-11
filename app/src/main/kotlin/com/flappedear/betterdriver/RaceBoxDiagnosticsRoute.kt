@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import com.flappedear.betterdriver.core.ble.ImuCalibration
 import com.flappedear.betterdriver.core.ble.LinkProbe
 import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.RaceBoxDiagnostics
@@ -21,10 +22,13 @@ import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.RaceBoxLink
 import com.flappedear.betterdriver.core.ble.RaceBoxMessages
 import com.flappedear.betterdriver.recording.RecorderClient
+import com.flappedear.betterdriver.recording.imuCalibrations
 import com.flappedear.betterdriver.setup.Equipment
+import com.flappedear.betterdriver.shell.CalibrationMs
 import com.flappedear.betterdriver.shell.DiagnosticsView
 import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsScreen
 import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsUi
+import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.delay
 
@@ -35,6 +39,9 @@ private const val RefreshMs = 250L
  * its own link to the RaceBox with a [LinkProbe] that reads the Device Information strings and sends
  * the two read-only queries (receiver settings, memory). It never sends a command that changes the
  * device. Leaving the screen closes the link.
+ *
+ * Calibrate collects 5 s of still samples and saves the result for this RaceBox, where the recorder
+ * picks it up at the next session start. The RaceBox itself has no calibration command.
  */
 @Composable
 internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, onBack: () -> Unit) {
@@ -43,29 +50,10 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
     val recording = recorder.state.recording || recorder.state.starting
     val allowed = remember { bluetoothAllowed(context) }
     // Every RaceBox is added as a Micro; a renamed or Mini item is corrected by the Model string.
-    val isMicro = !item.name.startsWith("RaceBox Mini")
-    val diag = remember(address) { RaceBoxDiagnostics(isMicro) }
-    var link by remember(address) { mutableStateOf<RaceBoxLink?>(null) }
+    val diag = remember(address) { RaceBoxDiagnostics(isMicro = !item.name.startsWith("RaceBox Mini")) }
+    val link = diagnosticsLink(address?.takeIf { allowed && !recording }, diag)
+    val calibration = rememberCalibration(address, diag)
     var view by remember { mutableStateOf<DiagnosticsView?>(null) }
-
-    DisposableEffect(address, recording, allowed) {
-        val l = if (address != null && allowed && !recording) {
-            RaceBoxLink(
-                context,
-                address,
-                onData = { diag.feed(it, SystemClock.elapsedRealtime()) },
-                onState = { if (it is LinkState.Reconnecting) diag.reset() },
-                probe = probe(diag),
-            ).also { it.start() }
-        } else {
-            null
-        }
-        link = l
-        onDispose {
-            l?.stop()
-            link = null
-        }
-    }
 
     LaunchedEffect(address, recording, allowed) {
         while (true) {
@@ -77,7 +65,7 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
                     val state = link?.state?.value ?: LinkState.Connecting
                     DiagnosticsView.Live(
                         RaceBoxDiagnosticsUi.header(item.name, state, s),
-                        RaceBoxDiagnosticsUi.sections(s),
+                        RaceBoxDiagnosticsUi.sections(s, state is LinkState.Streaming, calibration.error),
                     )
                 }
             }
@@ -85,14 +73,74 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
         }
     }
 
-    view?.let { RaceBoxDiagnosticsScreen(it, onBack) }
+    view?.let { RaceBoxDiagnosticsScreen(it, onBack, onCalibrate = calibration::start) }
+}
+
+/** The diagnostics link to [address] while it is non-null; closed when it changes or the screen goes. */
+@Composable
+private fun diagnosticsLink(address: String?, diag: RaceBoxDiagnostics): RaceBoxLink? {
+    val context = LocalContext.current
+    var link by remember { mutableStateOf<RaceBoxLink?>(null) }
+    DisposableEffect(address) {
+        val l = address?.let {
+            RaceBoxLink(
+                context,
+                it,
+                onData = { bytes -> diag.feed(bytes, SystemClock.elapsedRealtime()) },
+                onState = { s -> if (s is LinkState.Reconnecting) diag.reset() },
+                probe = probe(diag),
+            ).also(RaceBoxLink::start)
+        }
+        link = l
+        onDispose {
+            l?.stop()
+            link = null
+        }
+    }
+    return link
+}
+
+/** A calibration in progress for one RaceBox, and why the last one failed. */
+private class CalibrationState {
+    var running by mutableStateOf(false)
+    var error by mutableStateOf<String?>(null)
+
+    fun start() {
+        error = null
+        running = true
+    }
+}
+
+@Composable
+private fun rememberCalibration(address: String?, diag: RaceBoxDiagnostics): CalibrationState {
+    val context = LocalContext.current
+    val store = remember { imuCalibrations(context) }
+    val state = remember(address) { CalibrationState() }
+    LaunchedEffect(address) { diag.calibration(address?.let(store::load)) }
+    LaunchedEffect(state.running) {
+        if (!state.running) return@LaunchedEffect
+        diag.startCapture()
+        delay(CalibrationMs)
+        state.error = when (val result = ImuCalibration.from(diag.endCapture(), System.currentTimeMillis())) {
+            is ImuCalibration.Result.Failed -> result.failure.text
+            is ImuCalibration.Result.Ok -> try {
+                address?.let { store.save(it, result.calibration) }
+                diag.calibration(result.calibration)
+                null
+            } catch (e: IOException) {
+                "Could not save the calibration: ${e.message}"
+            }
+        }
+        state.running = false
+    }
+    return state
 }
 
 /** Feeds link facts into [diag] and asks only what this device's firmware answers. */
 private fun probe(diag: RaceBoxDiagnostics) = object : LinkProbe {
-    override fun onMtu(mtu: Int) = diag.mtu(mtu)
+    override fun onMtu(mtu: Int) = diag.link(mtuBytes = mtu)
 
-    override fun onRssi(dbm: Int) = diag.rssi(dbm)
+    override fun onRssi(dbm: Int) = diag.link(rssiDbm = dbm)
 
     override fun onDeviceInfo(uuid: UUID, value: String) = diag.deviceInfo { info ->
         when (uuid) {

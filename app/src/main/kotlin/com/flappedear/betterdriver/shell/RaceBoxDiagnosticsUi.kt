@@ -3,9 +3,11 @@ package com.flappedear.betterdriver.shell
 import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.RaceBoxData
 import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsSnapshot
+import com.flappedear.betterdriver.core.ble.Vec3
 import com.flappedear.betterdriver.core.ble.RaceBoxPower
 import com.flappedear.betterdriver.core.ui.format.Minus
 import java.time.Instant
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -24,8 +26,17 @@ sealed interface DiagnosticsView {
 /** One value on the diagnostics screen. */
 data class DiagRow(val label: String, val value: String)
 
-/** A titled group of values (UI-39 option A: one live list). */
-data class DiagSection(val title: String, val rows: List<DiagRow>)
+/**
+ * A titled group of values (UI-39 option A: one live list). [note] is dim text under the rows;
+ * [action] is the label of a button under them (calibration only), enabled when [actionEnabled].
+ */
+data class DiagSection(
+    val title: String,
+    val rows: List<DiagRow>,
+    val note: String? = null,
+    val action: String? = null,
+    val actionEnabled: Boolean = false,
+)
 
 /** The top card: a dot, a line and a detail line. */
 data class DiagHeader(val state: DeviceState, val title: String, val detail: String)
@@ -37,6 +48,10 @@ const val DiagNotReported = "Not reported by the RaceBox: signal level per satel
 private const val KmhPerMps = 3.6
 private const val ExpectedHz = 25
 private val UtcTime: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneOffset.UTC)
+private val TakenAt: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH)
+
+/** How long the car must stand still for a calibration (FBBD-89): 5 s gives 125 samples at 25 Hz. */
+const val CalibrationMs = 5_000L
 
 /**
  * Turns what the RaceBox reported into the screen's text (FBBD-89). Only reported values appear: a
@@ -58,11 +73,21 @@ object RaceBoxDiagnosticsUi {
         }
     }
 
-    fun sections(s: RaceBoxDiagnosticsSnapshot): List<DiagSection> = listOfNotNull(
+    /**
+     * [streaming] enables the calibrate button; [calibrationError] is why the last attempt failed.
+     * [zone] formats when the calibration was taken.
+     */
+    fun sections(
+        s: RaceBoxDiagnosticsSnapshot,
+        streaming: Boolean = false,
+        calibrationError: String? = null,
+        zone: ZoneId = ZoneId.systemDefault(),
+    ): List<DiagSection> = listOfNotNull(
         s.latest?.let { gnss(it) },
         stream(s),
         s.power?.let { power(it) },
-        s.latest?.let { sensors(it) },
+        s.latest?.let { sensors(it, s) },
+        calibration(s, streaming, calibrationError, zone),
         settings(s),
         memory(s),
         device(s),
@@ -103,13 +128,50 @@ object RaceBoxDiagnosticsUi {
         ),
     )
 
-    private fun sensors(d: RaceBoxData) = DiagSection(
-        "Motion sensors",
-        listOf(
-            DiagRow("Acceleration X · Y · Z", "${xyz(d.accelXg, d.accelYg, d.accelZg, 2)} g"),
-            DiagRow("Rotation X · Y · Z", "${xyz(d.gyroXdps, d.gyroYdps, d.gyroZdps, 2)} °/s"),
-        ),
-    )
+    /** Calibrated values when a calibration is saved, as the recorder will write them. */
+    private fun sensors(d: RaceBoxData, s: RaceBoxDiagnosticsSnapshot): DiagSection {
+        val c = s.calibration
+        val a = Vec3(d.accelXg, d.accelYg, d.accelZg).let { c?.accel(it) ?: it }
+        val g = Vec3(d.gyroXdps, d.gyroYdps, d.gyroZdps).let { c?.gyro(it) ?: it }
+        return DiagSection(
+            if (c == null) "Motion sensors" else "Motion sensors · calibrated",
+            listOf(
+                DiagRow("Acceleration X · Y · Z", "${xyz(a.x, a.y, a.z, 2)} g"),
+                DiagRow("Rotation X · Y · Z", "${xyz(g.x, g.y, g.z, 2)} °/s"),
+            ),
+        )
+    }
+
+    private fun calibration(
+        s: RaceBoxDiagnosticsSnapshot,
+        streaming: Boolean,
+        error: String?,
+        zone: ZoneId,
+    ): DiagSection {
+        val c = s.calibration
+        val rows = if (c == null) {
+            listOf(DiagRow("Status", "Not calibrated"))
+        } else {
+            listOf(
+                DiagRow("Tilt corrected", "roll ${num(c.rollDeg, 1)}° · pitch ${num(c.pitchDeg, 1)}°"),
+                DiagRow("Gyro offset removed", "${xyz(c.gyroBias.x, c.gyroBias.y, c.gyroBias.z, 2)} °/s"),
+                DiagRow("Taken", TakenAt.format(Instant.ofEpochMilli(c.atMillis).atZone(zone))),
+            )
+        }
+        val note = when {
+            s.capturing != null -> "Keep the car still… ${s.capturing} samples"
+            error != null -> error
+            else -> "Park on level ground, engine off if possible, and keep still for 5 s. " +
+                "Applied to acceleration and rotation in every new session. The RaceBox's X axis must point forward."
+        }
+        return DiagSection(
+            "Calibration",
+            rows,
+            note = note,
+            action = if (c == null) "Calibrate" else "Calibrate again",
+            actionEnabled = streaming && s.capturing == null,
+        )
+    }
 
     private fun settings(s: RaceBoxDiagnosticsSnapshot): DiagSection? {
         val c = s.gnssConfig ?: return null

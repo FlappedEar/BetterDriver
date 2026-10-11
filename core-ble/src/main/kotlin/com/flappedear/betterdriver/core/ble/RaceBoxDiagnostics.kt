@@ -116,6 +116,10 @@ data class RaceBoxDiagnosticsSnapshot(
     val memory: RaceBoxMemoryStatus?,
     /** True when the device answered a query with NACK (e.g. a command its firmware lacks). */
     val nackSeen: Boolean,
+    /** The saved motion-sensor calibration for this RaceBox, if any. */
+    val calibration: ImuCalibration? = null,
+    /** Samples taken so far while a calibration is being taken, or null when none is. */
+    val capturing: Int? = null,
 )
 
 /**
@@ -140,6 +144,8 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
     private var gnssConfig: RaceBoxGnssConfig? = null
     private var memory: RaceBoxMemoryStatus? = null
     private var nack = false
+    private var calibration: ImuCalibration? = null
+    private var capture: MutableList<ImuSample>? = null
 
     /** [nowMs] is a monotonic clock, used only for the message rate. */
     @Synchronized
@@ -158,6 +164,7 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
     private fun data(d: RaceBoxData, nowMs: Long) {
         messages++
         latest = d
+        capture?.add(ImuSample(Vec3(d.accelXg, d.accelYg, d.accelZg), Vec3(d.gyroXdps, d.gyroYdps, d.gyroZdps)))
         arrivals.addLast(nowMs)
         val previous = lastItow
         lastItow = d.iTowMs
@@ -183,13 +190,25 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
     }
 
     @Synchronized
-    fun rssi(dbm: Int) {
-        rssi = dbm
+    fun calibration(c: ImuCalibration?) {
+        calibration = c
     }
 
+    /** Starts collecting raw motion samples for a calibration. */
     @Synchronized
-    fun mtu(bytes: Int) {
-        mtu = bytes
+    fun startCapture() {
+        capture = mutableListOf()
+    }
+
+    /** Ends a capture and returns its samples (empty if none was running). */
+    @Synchronized
+    fun endCapture(): List<ImuSample> = capture.orEmpty().also { capture = null }
+
+    /** Link facts from GATT: signal strength in dBm, negotiated MTU in bytes. */
+    @Synchronized
+    fun link(rssiDbm: Int? = null, mtuBytes: Int? = null) {
+        rssiDbm?.let { rssi = it }
+        mtuBytes?.let { mtu = it }
     }
 
     /** After a reconnect: drop a partial packet and restart gap tracking. Totals are kept. */
@@ -218,6 +237,8 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
             gnssConfig = gnssConfig,
             memory = memory,
             nackSeen = nack,
+            calibration = calibration,
+            capturing = capture?.size,
         )
     }
 

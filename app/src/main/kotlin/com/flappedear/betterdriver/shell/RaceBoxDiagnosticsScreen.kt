@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,7 +23,7 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
  * The screen only reads; it never changes a RaceBox setting.
  */
 @Composable
-fun RaceBoxDiagnosticsScreen(view: DiagnosticsView, onBack: () -> Unit) {
+fun RaceBoxDiagnosticsScreen(view: DiagnosticsView, onBack: () -> Unit, onCalibrate: () -> Unit = {}) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Diagnostics", onBack = onBack)
         Column(
@@ -39,7 +40,7 @@ fun RaceBoxDiagnosticsScreen(view: DiagnosticsView, onBack: () -> Unit) {
                     "Bluetooth access needed",
                     "Allow Nearby devices for BetterDriver in Android settings to connect to the RaceBox.",
                 )
-                is DiagnosticsView.Live -> Live(view)
+                is DiagnosticsView.Live -> Live(view, onCalibrate)
             }
         }
     }
@@ -54,7 +55,7 @@ private fun Notice(title: String, text: String) {
 }
 
 @Composable
-private fun Live(view: DiagnosticsView.Live) {
+private fun Live(view: DiagnosticsView.Live, onCalibrate: () -> Unit) {
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             StatusDot(view.header.state)
@@ -71,6 +72,10 @@ private fun Live(view: DiagnosticsView.Live) {
         SectionLabel(section.title, Modifier.padding(top = 8.dp, start = 4.dp))
         ShellCard {
             section.rows.forEachIndexed { i, row -> ListRow(row.label, row.value, divider = i > 0) }
+            section.note?.let { DimText(it) }
+            section.action?.let { label ->
+                FilledTonalButton(onClick = onCalibrate, enabled = section.actionEnabled) { Text(label) }
+            }
         }
     }
     if (view.sections.isNotEmpty()) DimText(DiagNotReported, Modifier.padding(top = 8.dp, start = 4.dp))
