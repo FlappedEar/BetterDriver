@@ -18,7 +18,7 @@ RaceBox Mini / Mini S / Micro over Bluetooth LE (FBBD-8, FBBD-43, FBBD-44).
 **Source.** RaceBox BLE Protocol Description, revision 8 (16 April 2024),
 covering the Mini, Mini S and Micro on firmware 2.x and 3.x. RaceBox sends it by
 email on request ([request form](https://www.racebox.pro/products/mini-micro-protocol-documentation));
-Arek's copy is attached to Jira FBBD-42. It is not committed here. Page
+Arek has a copy (FBBD-42); it is not committed here. Page
 numbers below refer to it.
 
 **GATT (p. 1–2).** UART service `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`; the
