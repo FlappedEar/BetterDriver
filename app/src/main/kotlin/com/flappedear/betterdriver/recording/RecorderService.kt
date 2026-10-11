@@ -42,20 +42,25 @@ private const val DestroyStopTimeoutMs = 3_000L
 private const val KeyRaceBoxAddress = "racebox_address"
 private const val KeyRaceBoxName = "racebox_name"
 private const val KeyGnssDemo = "gnss_demo"
+private const val KeyGnssNmea = "gnss_nmea"
 
 /** The receiver of the recording that was running when the recorder process was killed. */
 private fun wantedGnss(wanted: SharedPreferences): GnssRef? = when {
     wanted.getBoolean(KeyGnssDemo, false) -> GnssRef.Demo
     else -> wanted.getString(KeyRaceBoxAddress, null)?.let {
-        GnssRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty())
+        GnssRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty(), nmea = wanted.getBoolean(KeyGnssNmea, false))
     }
 }
 
-/** The receiver a start intent names: Demo GNSS, a RaceBox, or none. */
+/** The receiver a start intent names: Demo GNSS, a RaceBox, a Bluetooth NMEA receiver, or none. */
 private fun gnssFrom(intent: Intent): GnssRef? = when {
     intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_DEMO, false) -> GnssRef.Demo
     else -> intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS)?.let {
-        GnssRef(it, intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty())
+        GnssRef(
+            it,
+            intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty(),
+            nmea = intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_NMEA, false),
+        )
     }
 }
 
@@ -232,7 +237,7 @@ class RecorderService : Service() {
                 cpu.acquire()
                 wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
                     .putString(KeyRaceBoxAddress, gnss.address).putString(KeyRaceBoxName, gnss.name)
-                    .putBoolean(KeyGnssDemo, gnss.demo).commit()
+                    .putBoolean(KeyGnssDemo, gnss.demo).putBoolean(KeyGnssNmea, gnss.nmea).commit()
                 getSystemService(NotificationManager::class.java)
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }

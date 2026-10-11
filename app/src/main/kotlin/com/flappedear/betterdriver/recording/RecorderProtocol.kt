@@ -16,12 +16,18 @@ internal object RecorderProtocol {
     const val EXTRA_CAR = "car"
     const val EXTRA_TRACK = "track"
 
-    /** The paired RaceBox's address and advertised name; absent when none is paired. */
+    /**
+     * The session receiver's Bluetooth address and advertised name: a RaceBox, or with
+     * [EXTRA_GNSS_NMEA] a Bluetooth NMEA receiver (FBBD-108). Absent when there is none.
+     */
     const val EXTRA_RACEBOX_ADDRESS = "racebox_address"
     const val EXTRA_RACEBOX_NAME = "racebox_name"
 
     /** True when the session uses Demo GNSS instead of a RaceBox (FBBD-83). */
     const val EXTRA_GNSS_DEMO = "gnss_demo"
+
+    /** True when the receiver at [EXTRA_RACEBOX_ADDRESS] is a Bluetooth NMEA receiver, not a RaceBox (FBBD-108). */
+    const val EXTRA_GNSS_NMEA = "gnss_nmea"
 
     /** Client to service: start sending updates to msg.replyTo. */
     const val MSG_REGISTER = 1

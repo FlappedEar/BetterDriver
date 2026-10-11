@@ -146,6 +146,7 @@ class RecorderClient private constructor(private val context: Context) {
             .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, gnss.address)
             .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, gnss.name)
             .putExtra(RecorderProtocol.EXTRA_GNSS_DEMO, gnss.demo)
+            .putExtra(RecorderProtocol.EXTRA_GNSS_NMEA, gnss.nmea)
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {

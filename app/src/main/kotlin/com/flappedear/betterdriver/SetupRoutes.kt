@@ -18,6 +18,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.flappedear.betterdriver.core.ble.nmea.bondedSppDevices
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.scanGoPros
@@ -103,6 +104,7 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
             flowOf(emptyList())
         }
     }.collectAsState(initial = emptyList())
+    val pairedGps = rememberPairedGps(searching)
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf<String?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -143,7 +145,21 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
         },
         onAddModel = { m, goPro -> addItem(m, goPro?.let(::goProName) ?: m.label, null, goPro) },
         onBack = { nav.popBackStack() },
+        pairedGps = pairedGps.filter { it.address !in listed },
     )
+}
+
+/**
+ * Bluetooth GPS receivers paired in Android's settings. Classic receivers are paired there, so
+ * they are listed, not scanned (FBBD-108). Read once per screen, and only with the permissions.
+ */
+@Composable
+private fun rememberPairedGps(allowed: Boolean): List<NearbyDevice> {
+    val context = LocalContext.current
+    return remember(allowed) {
+        val bonded = if (allowed) bondedSppDevices(context) else emptyList()
+        bonded.map { NearbyDevice(EquipmentModel.NMEA_GNSS, it.name, it.address, 0) }
+    }
 }
 
 /** The first name of a GoPro added by hand: "GoPro HERO7 Black", or "GoPro" when Arek did not say which. */

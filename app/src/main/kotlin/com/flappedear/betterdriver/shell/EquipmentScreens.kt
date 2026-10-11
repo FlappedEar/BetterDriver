@@ -152,7 +152,8 @@ private fun NameDialog(title: String, initial: String, onDone: (String) -> Unit,
  * Open GoPro cameras (HERO9 and later) heard nearby, then the models that need no Bluetooth.
  * [nearby] leaves out what is already listed. [searching] is false when the Bluetooth permissions
  * are missing. [busyAddress] is the GoPro being paired, which takes a moment; [error] says why
- * pairing failed.
+ * pairing failed. [pairedGps] are Bluetooth GPS receivers paired in Android's settings (FBBD-108),
+ * which cannot be found by a scan.
  */
 @Suppress("LongParameterList") // One callback per kind of item.
 @Composable
@@ -165,6 +166,7 @@ fun AddEquipmentScreen(
     onAddNearby: (NearbyDevice) -> Unit,
     onAddModel: (EquipmentModel, GoProModel?) -> Unit,
     onBack: () -> Unit,
+    pairedGps: List<NearbyDevice> = emptyList(),
 ) {
     // A GoPro started by hand is added by generation, picked in a dialog (FBBD-105).
     var pickingGoPro by rememberSaveable { mutableStateOf(false) }
@@ -207,30 +209,12 @@ fun AddEquipmentScreen(
                 },
             )
             if (error != null) DimText(error, color = MaterialTheme.colorScheme.error)
-            if (withoutBluetooth.isNotEmpty()) {
-                SectionLabel("Add without Bluetooth")
-                ShellCard {
-                    withoutBluetooth.forEachIndexed { i, m ->
-                        val add: () -> Unit = {
-                            if (m == EquipmentModel.GOPRO_FILES) {
-                                pickingGoPro = true
-                            } else {
-                                onAddModel(m, null)
-                            }
-                        }
-                        ListRow(m.label, withoutBluetoothNote(m), divider = i > 0, onClick = add)
-                    }
-                }
+            PairedGpsSection(pairedGps, onAddNearby)
+            WithoutBluetoothSection(withoutBluetooth) { m ->
+                if (m == EquipmentModel.GOPRO_FILES) pickingGoPro = true else onAddModel(m, null)
             }
         }
     }
-}
-
-private fun withoutBluetoothNote(model: EquipmentModel): String = when (model) {
-    EquipmentModel.GOPRO_FILES -> "HERO8 or older, MAX"
-    EquipmentModel.DEMO_GNSS -> "For trying the app"
-    EquipmentModel.PHONE_CAMERA -> "Built in"
-    else -> ""
 }
 
 @Composable
@@ -265,6 +249,7 @@ private fun AddEquipmentPreview() {
                 ),
                 searching = true,
                 withoutBluetooth = listOf(EquipmentModel.GOPRO_FILES, EquipmentModel.DEMO_GNSS),
+                pairedGps = listOf(NearbyDevice(EquipmentModel.NMEA_GNSS, "Qstarz 818XT", "CC", 0)),
                 busyAddress = null,
                 error = null,
                 onAddNearby = {},
