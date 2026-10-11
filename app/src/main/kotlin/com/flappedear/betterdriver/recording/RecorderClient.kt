@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.CameraService
+import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.setup.VideoMode
@@ -36,6 +37,8 @@ data class RecorderState(
     val place: String? = null,
     /** Live timing, when the recording is at a saved track with lines (FBBD-12). */
     val timing: LiveTimingState? = null,
+    /** The coach line (FBBD-98): the last cue, or whether the coach is learning; null when it says nothing. */
+    val coach: CoachStatus? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
@@ -79,6 +82,9 @@ class RecorderClient private constructor(private val context: Context) {
             },
             place = msg.data.getString(RecorderProtocol.KEY_PLACE),
             timing = RecorderProtocol.timingFrom(msg.data),
+            coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
+                CoachStatus(msg.data.getString(RecorderProtocol.KEY_COACH_CORNER), it)
+            },
         )
         val running = live?.takeIf { it.stoppedReason == null }
         val startNanos = if (msg.data.containsKey(RecorderProtocol.KEY_START_NANOS)) {

@@ -55,6 +55,7 @@ dependencies {
     implementation(project(":gopro"))
     implementation(project(":setup"))
     implementation(project(":timing"))
+    implementation(project(":coach"))
     implementation(project(":core-ble"))
     implementation(project(":updater"))
     implementation(project(":transfer"))

@@ -36,6 +36,13 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <!-- Spoken coach cues use the phone's text-to-speech engine (FBBD-98). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -75,6 +82,13 @@
             android:exported="false"
             android:foregroundServiceType="camera|microphone"
             android:process=":camera" />
+
+        <!-- The live coach, own process too: the recorder binds to it for each recording, and a coach
+             crash or hang never reaches the recording (FBBD-98, FBBD-69). -->
+        <service
+            android:name=".coach.CoachService"
+            android:exported="false"
+            android:process=":coach" />
 
         <!-- Hands a downloaded, checked update to Android's installer (FBBD-73). -->
         <provider
