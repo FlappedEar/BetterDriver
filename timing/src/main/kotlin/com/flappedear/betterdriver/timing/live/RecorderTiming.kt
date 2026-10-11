@@ -10,7 +10,10 @@ import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.detectTrack
 
-/** The GNSS position in a recorder sample set, or null if it has none. */
+/**
+ * The GNSS position in a recorder sample set, or null if it has none. Receivers without a fix can
+ * report 0, 0; that is no position either, so live timing and replay see the same fixes.
+ */
 fun SampleSet.toFix(): Fix? {
     var lat: Double? = null
     var lon: Double? = null
@@ -21,7 +24,8 @@ fun SampleSet.toFix(): Fix? {
         }
     }
     if (lat == null || lon == null) return null
-    return if (lat.isFinite() && lon.isFinite()) Fix(tMicros, lat, lon) else null
+    val noFix = lat == 0.0 && lon == 0.0
+    return if (lat.isFinite() && lon.isFinite() && !noFix) Fix(tMicros, lat, lon) else null
 }
 
 /**
@@ -64,8 +68,6 @@ class SessionTiming(
     override fun onSamples(set: SampleSet) {
         val fix = set.toFix() ?: return
         if (detection == null) {
-            // Receivers without a fix can report 0, 0; that is never a track.
-            if (fix.lat == 0.0 && fix.lon == 0.0) return
             val found = detectTrack(GeoPoint(fix.lat, fix.lon), tracks(), directory)
             val track = (found as? TrackDetection.Saved)?.track?.takeIf { it.timeable }
             timing = track?.let { LiveTiming(it) }

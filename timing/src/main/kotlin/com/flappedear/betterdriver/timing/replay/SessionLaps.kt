@@ -109,13 +109,12 @@ fun replayLaps(
 
 /** The fix where a session's position is first known, for picking its track. */
 fun firstPosition(sets: List<SampleSet>): GeoPoint? = sets.asSequence()
-    .mapNotNull { it.toFix() }
-    .firstOrNull { !(it.lat == 0.0 && it.lon == 0.0) }
+    .firstNotNullOfOrNull { it.toFix() }
     ?.let { runCatching { GeoPoint(it.lat, it.lon) }.getOrNull() }
 
 /** The position in [set], with its speed; null without a fix. Receivers without a fix can report 0, 0. */
 private fun sampleOf(set: SampleSet, frame: LocalFrame): Sample? {
-    val fix = set.toFix()?.takeUnless { it.lat == 0.0 && it.lon == 0.0 } ?: return null
+    val fix = set.toFix() ?: return null
     val speed = set.values.firstOrNull { it.channelId == GnssChannels.SPEED_KMH.id }?.value
     return Sample(fix.tMicros, fix.lat, fix.lon, frame.toXy(fix.lat, fix.lon), speed?.takeIf { it.isFinite() })
 }

@@ -43,25 +43,23 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.format.formatDelta
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.core.ui.format.formatRunningTime
-import com.flappedear.betterdriver.core.ui.format.isDeltaGain
 import com.flappedear.betterdriver.core.ui.numberStyle
 import java.util.Locale
+import kotlin.math.roundToInt
 
 /** Review speeds, one tap apart: real time, half and quarter. */
 private val Speeds = listOf(1.0, 0.5, 0.25)
 private val SpeedLabels = listOf("1×", "½×", "¼×")
 
 private const val MicrosPerMilli = 1_000L
-private const val MicrosPerSecond = 1_000_000.0
 
 /**
- * Two laps side by side, each with its own video (FBBD-93). Lap A's clock drives everything: lap B's
- * video plays where B was at the same place of the track, so both cars pass each corner together
- * and the delta shows how far apart they were in time. One cursor moves both; drag or tap the chart
- * to scrub. [wide] (the tablet) puts the videos side by side; a phone stacks them.
+ * Two laps with their videos (FBBD-93). Both start at the line together and run on time since the
+ * line (UI-60 B), so the faster car pulls ahead; the readout and the map show the gap as distance.
+ * One cursor moves both; drag or tap the chart to scrub. [wide] (the tablet) stacks the videos on
+ * the left with the readout, map and chart on the right (UI-59 B); a phone stacks everything.
  */
 @Composable
 internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit, modifier: Modifier = Modifier) {
@@ -83,24 +81,30 @@ internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit,
                 st.tick(if (last == 0L) 0L else now - last)
                 last = now
                 val t = st.cursor
-                pa.follow(c.a.videoAt(t), c.a.video, st.speed, st.playing, st.scrubbing, now)
-                val rateB = st.speed * c.bRateAt(t)
-                pb.follow(c.b.videoAt(c.bMicrosAt(t)), c.b.video, rateB, st.playing, st.scrubbing, now)
+                val playA = st.playing && t < c.a.trace.lap.timeMicros
+                val playB = st.playing && t < c.b.trace.lap.timeMicros
+                pa.follow(c.a.videoAt(c.aMicros(t)), c.a.video, st.speed, playA, st.scrubbing, now)
+                pb.follow(c.b.videoAt(c.bMicros(t)), c.b.video, st.speed, playB, st.scrubbing, now)
             }
         }
     }
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         CompareBar(c, onChangeLaps)
         if (wide) {
-            Row(Modifier.weight(1f).fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                LapPane(c.a, "A", LapColors.a, pa, Modifier.weight(1f).fillMaxSize())
-                LapPane(c.b, "B", LapColors.b, pb, Modifier.weight(1f).fillMaxSize())
-            }
-            TransportRow(c, st)
-            Row(Modifier.fillMaxWidth().height(ChartHeight).padding(bottom = 12.dp)) {
-                DeltaChart(c, st::cursorFraction, st.scrub, Modifier.weight(1f).fillMaxSize())
-                Spacer(Modifier.width(12.dp))
-                LapMap(c, st::cursor, Modifier.width(ChartHeight).fillMaxHeight())
+            Row(
+                Modifier.weight(1f).fillMaxWidth().padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Column(Modifier.weight(VideoShare).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LapPane(c.a, "A", LapColors.a, pa, Modifier.weight(1f).fillMaxWidth())
+                    LapPane(c.b, "B", LapColors.b, pb, Modifier.weight(1f).fillMaxWidth())
+                }
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    TransportRow(c, st)
+                    LapMap(c, st::cursor, Modifier.weight(1f).fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                    DeltaChart(c, st::cursorFractions, st.scrub, Modifier.fillMaxWidth().height(ChartHeight))
+                }
             }
         } else {
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState())) {
@@ -108,7 +112,7 @@ internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit,
                 Spacer(Modifier.height(8.dp))
                 LapPane(c.b, "B", LapColors.b, pb, Modifier.fillMaxWidth().height(PhoneVideoHeight))
                 TransportRow(c, st)
-                DeltaChart(c, st::cursorFraction, st.scrub, Modifier.fillMaxWidth().height(ChartHeight))
+                DeltaChart(c, st::cursorFractions, st.scrub, Modifier.fillMaxWidth().height(ChartHeight))
                 Spacer(Modifier.height(12.dp))
                 LapMap(c, st::cursor, Modifier.fillMaxWidth().height(ChartHeight).padding(bottom = 12.dp))
             }
@@ -116,7 +120,7 @@ internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit,
     }
 }
 
-/** The review cursor (a time in lap A), play state and speed. Compose state, changed on the main thread. */
+/** The review cursor (time since the start line), play state and speed. Compose state, changed on the main thread. */
 private class ReviewTransport(private val c: Comparison) {
     var cursor by mutableLongStateOf(0L)
     var playing by mutableStateOf(false)
@@ -126,7 +130,7 @@ private class ReviewTransport(private val c: Comparison) {
     private val length = c.a.trace.lengthMeters
 
     val scrub = Scrub(
-        onMove = { f -> cursor = c.aMicrosAtDistance(f * length) },
+        onMove = { f -> cursor = c.microsAtDistance(f * length) },
         onStart = {
             playing = false
             scrubbing = true
@@ -134,7 +138,8 @@ private class ReviewTransport(private val c: Comparison) {
         onEnd = { scrubbing = false },
     )
 
-    fun cursorFraction(): Float = (c.distanceAt(cursor) / length).toFloat()
+    /** Where each car is along the chart, 0 to 1. */
+    fun cursorFractions() = CursorFractions(c.aFraction(cursor).toFloat(), c.bFraction(cursor).toFloat())
 
     fun tick(elapsedNanos: Long) {
         if (!playing) return
@@ -153,6 +158,9 @@ private class ReviewTransport(private val c: Comparison) {
 }
 
 private val ChartHeight = 180.dp
+
+/** The videos' share of the tablet's width against the right column's 1. */
+private const val VideoShare = 1.4f
 private val PhoneVideoHeight = 200.dp
 
 /** Pauses when the app goes to the background, so video never plays unseen. */
@@ -203,36 +211,43 @@ private fun LapPane(l: ReviewLap, letter: String, color: Color, player: LapVideo
     }
 }
 
+/** Play and speed on one row, the readout under them, so it has the full width on a phone too. */
 @Composable
 private fun TransportRow(c: Comparison, st: ReviewTransport) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        FilledTonalButton(onClick = st::playPause, modifier = Modifier.width(104.dp)) {
-            Text(if (st.playing) "Pause" else "Play")
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FilledTonalButton(onClick = st::playPause, modifier = Modifier.width(104.dp)) {
+                Text(if (st.playing) "Pause" else "Play")
+            }
+            TextButton(onClick = st::nextSpeed) { Text(SpeedLabels[Speeds.indexOf(st.speed)]) }
         }
-        TextButton(onClick = st::nextSpeed) { Text(SpeedLabels[Speeds.indexOf(st.speed)]) }
-        Readout(c, st::cursor, Modifier.weight(1f))
+        Readout(c, st::cursor, Modifier.fillMaxWidth())
     }
 }
 
-/** Both laps' clocks, speeds and the delta at the cursor. Reads [cursor] here only, so only this row recomposes. */
+/**
+ * Both laps' clocks and speeds, and how far lap B is behind or ahead. Reads [cursor] here only, so
+ * only this row recomposes.
+ */
 @Composable
 private fun Readout(c: Comparison, cursor: () -> Long, modifier: Modifier) {
     val t = cursor()
-    val tb = c.bMicrosAt(t)
-    val delta = c.alignment.deltaMicrosAt(t) / MicrosPerSecond
+    val ta = c.aMicros(t)
+    val tb = c.bMicros(t)
+    val gap = c.gapMetersAt(t).roundToInt()
     val colors = TrackTheme.colors
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-        Clock("A", t, c.a.trace.at(t).speedKmh, LapColors.a)
+    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Clock("A", ta, c.a.trace.at(ta).speedKmh, LapColors.a)
         Clock("B", tb, c.b.trace.at(tb).speedKmh, LapColors.b)
         Spacer(Modifier.weight(1f))
         Text(
-            formatDelta(delta),
-            style = numberStyle(32.dp),
-            color = if (isDeltaGain(delta)) colors.gain else colors.loss,
+            when {
+                gap > 0 -> "B $gap m behind"
+                gap < 0 -> "B ${-gap} m ahead"
+                else -> "Level"
+            },
+            style = numberStyle(24.dp),
+            color = if (gap <= 0) colors.gain else colors.loss,
             modifier = Modifier.background(colors.surface, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
         )
     }
