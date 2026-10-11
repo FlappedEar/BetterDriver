@@ -54,4 +54,23 @@ class PassesTest {
         assertNotNull(passes[1])
         assertNull(passes[2])
     }
+
+    @Test
+    fun `live, a window that ends at the line closes at the crossing time`() {
+        val window = map.windows[1]
+        val meter = PassMeter(corners[1], window, 1)
+        // Positions every 10 m, 1 s apart, up to 990 m; the line is crossed 1 s after the last one.
+        var t = 0L
+        var along = window.start - 10.0
+        while (along <= 990.0) {
+            assertNull(meter.add(along, t, 100.0))
+            along += 10.0
+            t += 1_000_000
+        }
+        val lastT = t - 1_000_000
+        val pass = assertNotNull(meter.finish(lineMicros = lastT + 1_000_000, lineKmh = 100.0))
+        // The window was entered at the second position, 1 s in.
+        assertEquals(lastT + 1_000_000 - 1_000_000, pass.timeMicros)
+        assertNull(meter.finish(lineMicros = lastT + 2_000_000))
+    }
 }

@@ -128,13 +128,16 @@ class PassMeter(
 
     /**
      * The lap ended: a window that ends at the line is measured if the car got there, since no later
-     * position of this lap can be beyond it.
+     * position of this lap can be beyond it. Live, the line was crossed at [lineMicros], after the
+     * last position fed in, at [lineKmh]; offline the trace's last position is on the line already.
      */
-    fun finish(): CornerPass? {
+    fun finish(lineMicros: Long? = null, lineKmh: Double = 0.0): CornerPass? {
         val e = entry.takeUnless { finished }
         finished = true
         val last = inside.lastOrNull()?.takeIf { window.endInclusive - it.along <= MaxGapMeters }
-        return if (e == null || last == null) null else measure(e, last)
+        val line = lineMicros?.takeIf { last != null && it >= last.tMicros }
+            ?.let { Sample(window.endInclusive, it, lineKmh) }
+        return if (e == null || last == null) null else measure(e, line ?: last)
     }
 
     private fun measure(before: Sample, after: Sample): CornerPass {

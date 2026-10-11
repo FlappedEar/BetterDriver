@@ -269,7 +269,9 @@ class CueEngine(
 
     private fun onLapDone(lap: Lap, now: Long, results: MutableList<CueResult>) {
         // A corner whose window ends at the line is measured now, before its lap's passes are used.
-        for (m in meters) m.finish()?.let { pass -> onPass(pass, now)?.let(results::add) }
+        for (m in meters) {
+            m.finish(lap.endMicros, laps.speedKmh)?.let { pass -> onPass(pass, now)?.let(results::add) }
+        }
         val timed = lap.kind == LapKind.Timed
         val traced = laps.finished.lastOrNull { it.lap.number == lap.number }
         val b = book
