@@ -54,6 +54,9 @@ import java.util.Locale
  *
  * Share sends the session with its video and track to the other device (FBBD-23, UI-55): Send
  * through the share sheet (Quick Share), or Save file. Import at the top brings one in.
+ *
+ * A session the coach spoke in opens its cue review (FBBD-99): each cue and whether the next pass
+ * through that corner got better.
  */
 @Composable
 fun SessionsScreen(
@@ -65,6 +68,7 @@ fun SessionsScreen(
     goPro: GoProCardState = GoProCardState(),
     deleting: SessionDeleting = SessionDeleting(),
     transfer: SessionTransferState = SessionTransferState(),
+    coach: SessionCoach = SessionCoach(),
     header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -86,12 +90,18 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer)
+                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, coach)
                 }
             }
         }
     }
 }
+
+/** Cue counts of coached sessions, by id, and opening one's cue review (FBBD-99). */
+data class SessionCoach(
+    val cues: Map<String, Int> = emptyMap(),
+    val onOpen: (SessionSummary) -> Unit = {},
+)
 
 /** Delete state and action for the whole Sessions list (FBBD-90). */
 data class SessionDeleting(
@@ -111,6 +121,7 @@ private fun SessionCard(
     goPro: GoProCardState,
     deleting: SessionDeleting,
     transfer: SessionTransferState,
+    coach: SessionCoach,
 ) {
     val c = TrackTheme.colors
     val delete = deleting.states[s.id]
@@ -133,6 +144,7 @@ private fun SessionCard(
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        CoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
         val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
@@ -159,6 +171,13 @@ private fun SessionCard(
             onDismiss = { asking = false },
         )
     }
+}
+
+/** "Coach review · 12 cues" on a session the coach spoke in (FBBD-99). */
+@Composable
+private fun CoachRow(s: SessionSummary, coach: SessionCoach) {
+    val n = coach.cues[s.id] ?: return
+    ListRow("Coach review", if (n == 1) "1 cue" else "$n cues", onClick = { coach.onOpen(s) })
 }
 
 /** Delete, Share and Export at the bottom of a session card. */

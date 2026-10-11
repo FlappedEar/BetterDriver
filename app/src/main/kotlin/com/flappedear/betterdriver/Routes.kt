@@ -28,6 +28,12 @@ object Routes {
 
     fun car(id: String) = "cars/$id"
 
+    /** The cue review of one session (FBBD-99). */
+    const val CueReviewPattern = "sessions/{id}/cues"
+    const val SessionIdArg = "id"
+
+    fun cueReview(id: String) = "sessions/$id/cues"
+
     const val Track = "track"
     const val Tracks = "tracks"
 

@@ -43,6 +43,7 @@ import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
+import com.flappedear.betterdriver.shell.SessionCoach
 import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
@@ -117,7 +118,10 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Drive) {
                 Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
             }
-            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) } }
+            composable(Routes.Sessions) {
+                Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) { nav.navigate(Routes.cueReview(it)) } }
+            }
+            cueReview(nav, padding)
             composable(Routes.Settings) {
                 Box(Modifier.padding(padding)) {
                     Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
@@ -244,7 +248,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
  * with video asks for a folder instead, because the VBO and its video files must sit side by side.
  */
 @Composable
-private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
+private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCueReview: (String) -> Unit) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -297,6 +301,7 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
             states = sessions.deletes,
             onDelete = { s -> sessions.delete(s.id) },
         ),
+        coach = SessionCoach(sessions.cues) { s -> onCueReview(s.id) },
     )
 }
 
