@@ -65,6 +65,7 @@ fun SessionsScreen(
     goPro: GoProCardState = GoProCardState(),
     deleting: SessionDeleting = SessionDeleting(),
     transfer: SessionTransferState = SessionTransferState(),
+    onAnalyse: (SessionSummary) -> Unit = {},
     header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -86,7 +87,7 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer)
+                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse)
                 }
             }
         }
@@ -111,6 +112,7 @@ private fun SessionCard(
     goPro: GoProCardState,
     deleting: SessionDeleting,
     transfer: SessionTransferState,
+    onAnalyse: (SessionSummary) -> Unit,
 ) {
     val c = TrackTheme.colors
     val delete = deleting.states[s.id]
@@ -132,6 +134,7 @@ private fun SessionCard(
         }
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
+        AnalysisLink(s, delete, onAnalyse)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
         val (status, bad) = cardStatus(delete, export)
         val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
@@ -183,6 +186,13 @@ private fun CardButtons(
             Text(if (video) "Export VBO + video" else "Export VBO")
         }
     }
+}
+
+/** Opens lap analysis (FBBD-102): laps, theoretical best and lap comparison. */
+@Composable
+private fun AnalysisLink(s: SessionSummary, delete: DeleteState?, onAnalyse: (SessionSummary) -> Unit) {
+    if (s.state == SessionState.RECORDING || delete == DeleteState.Running) return
+    TextButton(onClick = { onAnalyse(s) }, contentPadding = PaddingValues(0.dp)) { Text("Lap analysis ›") }
 }
 
 /** The card's status line and whether it reports a failure; a delete outranks an export. */

@@ -28,6 +28,12 @@ object Routes {
 
     fun car(id: String) = "cars/$id"
 
+    /** Lap analysis of one saved session (FBBD-102). */
+    const val SessionAnalysisPattern = "sessions/{id}/analysis"
+    const val SessionIdArg = "id"
+
+    fun sessionAnalysis(id: String) = "sessions/$id/analysis"
+
     const val Track = "track"
     const val Tracks = "tracks"
 

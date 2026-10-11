@@ -35,7 +35,10 @@ data class SessionAnalysis(
     val consensus: LineConsensus = LineConsensus(),
     val segments: ApprovedSegments? = null,
     val axis: ProgressAxis? = null,
-    /** Sector times of every timed lap, in [LapSession.timedLaps] order; lap references are lap numbers. */
+    /**
+     * Sector times of every timed lap, in [LapSession.timedLaps] order (lap references are lap
+     * numbers); empty without [segments].
+     */
     val lapTimes: List<LapSectorTimes> = emptyList(),
     /** Every timed lap projected onto [axis], in the same order. */
     val traces: List<List<ProgressSegment>> = emptyList(),
@@ -43,7 +46,12 @@ data class SessionAnalysis(
     val theoreticalBest: TheoreticalBestLap? = null,
 )
 
-/** Analyses [session]: laps from its start gate, then segments, sector times and theoretical best. */
+/**
+ * Analyses [session]: laps from its start gate, the axis of the fastest eligible lap with every lap
+ * projected onto it, then segments, sector times and theoretical best. Segments are left out when
+ * the best lap cannot be split (a circle has no straight) or its line disagrees with the other laps;
+ * laps can still be compared by distance then.
+ */
 @Suppress("ReturnCount")
 fun analyzeSession(
     session: TelemetrySession,
@@ -53,25 +61,28 @@ fun analyzeSession(
     val review = computeSegmentReview(
         session, laps, fastest.number, fastest.startTelemetryTime, fastest.endTelemetryTime,
     )
-    val others = laps.lapTraces.filter { it.lapNumber != fastest.number }
-    val consensus = lineConsensus(review.axis, others)
-    if (review.unavailable != null || consensus.disagrees) {
-        return SessionAnalysis(laps, fastest.number, review, consensus)
+    val consensus = lineConsensus(review.axis, laps.lapTraces.filter { it.lapNumber != fastest.number })
+    val segments = if (review.unavailable == null && !consensus.disagrees) {
+        ApprovedSegments(
+            review.proposals.proposals.mapIndexed { i, p ->
+                TrackSegment("s$i", p.name, p.type, p.start.progressMeters, p.end.progressMeters)
+            },
+            revision = "auto-lap-${fastest.number}",
+        )
+    } else {
+        null
     }
-    val segments = ApprovedSegments(
-        review.proposals.proposals.mapIndexed { i, p ->
-            TrackSegment("s$i", p.name, p.type, p.start.progressMeters, p.end.progressMeters)
-        },
-        revision = "auto-lap-${fastest.number}",
-    )
     val population = laps.timedLaps.map {
         PopulationLap(session, it.startTelemetryTime, it.endTelemetryTime, it.number)
     }
-    val timed = timePopulation(laps, fastest.number, segments, population)
-        ?: return SessionAnalysis(laps, fastest.number, review, consensus, segments)
+    val timed = timePopulation(laps, fastest.number, segments ?: NoSegments, population)
+        ?: return SessionAnalysis(laps, fastest.number, review, consensus)
     val eligible = laps.timedLaps.map { it.referenceEligible }
-    val best = computeTheoreticalBest(segments, timed.times.filterIndexed { i, _ -> eligible[i] })
+    val best = segments?.let { computeTheoreticalBest(it, timed.times.filterIndexed { i, _ -> eligible[i] }) }
     return SessionAnalysis(
-        laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
+        laps, fastest.number, review, consensus, segments, timed.axis,
+        if (segments == null) emptyList() else timed.times, timed.traces, best,
     )
 }
+
+private val NoSegments = ApprovedSegments(emptyList(), "")
