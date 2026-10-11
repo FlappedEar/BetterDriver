@@ -18,14 +18,6 @@ import com.flappedear.betterdriver.core.ui.PlaceholderScreen
 import com.flappedear.betterdriver.feature.review.ReviewScreen
 import com.flappedear.betterdriver.feature.track.TrackScreen
 
-/** App destinations. Every screen is a placeholder until its design is approved. */
-object Routes {
-    const val Home = "home"
-    const val Track = "track"
-    const val Review = "review"
-    const val Settings = "settings"
-}
-
 @Composable
 fun BetterDriverApp(wide: Boolean) {
     val nav = rememberNavController()
