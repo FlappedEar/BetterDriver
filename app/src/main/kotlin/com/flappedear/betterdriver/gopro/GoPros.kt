@@ -227,14 +227,14 @@ internal fun hero11Video(mode: VideoMode): Hero11Video? {
         VideoSize.UHD -> OpenGoPro.Setting.RES_4K
         VideoSize.QHD -> OpenGoPro.Setting.RES_2_7K
         VideoSize.FHD -> OpenGoPro.Setting.RES_1080
-        VideoSize.HD -> return null
+        VideoSize.HD -> null
     }
     val fps = when (mode.fps) {
         HighFps -> OpenGoPro.Setting.FPS_60
         LowFps -> OpenGoPro.Setting.FPS_30
-        else -> return null
+        else -> null
     }
-    return Hero11Video(resolution, fps, mode.label)
+    return if (resolution != null && fps != null) Hero11Video(resolution, fps, mode.label) else null
 }
 
 private const val HighFps = 60

@@ -45,6 +45,14 @@ private const val SessionWaitMs = 15_000L
 /** After a stop, how long the camera gets to finish its file before the service ends anyway. */
 private const val FinishMs = 5_000L
 
+/** The video mode in a start intent ([CameraService.EXTRA_VIDEO_SIZE], [CameraService.EXTRA_VIDEO_FPS]). */
+private fun videoMode(intent: Intent): VideoMode? {
+    val name = intent.getStringExtra(CameraService.EXTRA_VIDEO_SIZE)
+    val size = VideoSize.entries.firstOrNull { it.name == name }
+    val fps = intent.getIntExtra(CameraService.EXTRA_VIDEO_FPS, 0)
+    return if (size != null && fps > 0) VideoMode(size, fps) else null
+}
+
 /**
  * Phone video (FBBD-21) in its own process, `:camera`, as a foreground service of type camera.
  * A camera crash, hang or kill ends only this process: the recorder keeps recording.
@@ -104,12 +112,6 @@ class CameraService : LifecycleService() {
         return START_NOT_STICKY
     }
 
-    private fun videoMode(intent: Intent): VideoMode? {
-        val size = intent.getStringExtra(EXTRA_VIDEO_SIZE)?.let { name -> VideoSize.entries.firstOrNull { it.name == name } }
-        val fps = intent.getIntExtra(EXTRA_VIDEO_FPS, 0)
-        return if (size != null && fps > 0) VideoMode(size, fps) else null
-    }
-
     private fun audioGranted() =
         ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
 
@@ -162,7 +164,8 @@ class CameraService : LifecycleService() {
         sessionId = id
         main.removeCallbacks(giveUp)
         val index = VideoIndex(File(sessionsDir(this), id))
-        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode)).also { it.start(RemoteSink(id, startNanos)) }
+        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode))
+            .also { it.start(RemoteSink(id, startNanos)) }
     }
 
     /** Stops video, gives the camera a moment to finish its file, then ends the service. */
