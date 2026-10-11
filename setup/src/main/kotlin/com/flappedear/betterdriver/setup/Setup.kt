@@ -46,6 +46,20 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
      */
     TCP_GNSS(EquipmentKind.GNSS, "Wi-Fi GPS"),
 
+    /**
+     * A RACELOGIC VBOX Sport (FBBD-116): the RACELOGIC Serial Stream at 10 Hz ("Serial Data Format",
+     * https://vboxmotorsport.co.uk/downloads/VBOX-Sport_Serial_Format.pdf). Bluetooth Classic, paired
+     * in Android's Bluetooth settings like [NMEA_GNSS]; it shows there as "VBSport" and its serial number.
+     */
+    VBOX_SPORT(EquipmentKind.GNSS, "VBOX Sport"),
+
+    /**
+     * A Dragy Pro / DRG70 over BLE (FBBD-117), found by a scan. Dragy publishes no protocol: this
+     * follows the community-documented one (https://github.com/jremick/dragy-dash), unverified on
+     * hardware.
+     */
+    DRAGY(EquipmentKind.GNSS, "Dragy"),
+
     /** Synthetic GNSS for trying the app without hardware. Only there when added on purpose. */
     DEMO_GNSS(EquipmentKind.GNSS, "Demo GNSS"),
 
@@ -85,7 +99,8 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     val actionCamera: Boolean get() = isGoPro || this == CAMERA_FILES
 
     /** True for models paired over Bluetooth, which need an address. */
-    val paired: Boolean get() = this in setOf(RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, GOPRO, HEART_RATE)
+    val paired: Boolean
+        get() = this in setOf(RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, VBOX_SPORT, DRAGY, GOPRO, HEART_RATE)
 
     /** True for models reached at an address: a Bluetooth one, or a Wi-Fi receiver's "host:port". */
     val needsAddress: Boolean get() = paired || this == TCP_GNSS

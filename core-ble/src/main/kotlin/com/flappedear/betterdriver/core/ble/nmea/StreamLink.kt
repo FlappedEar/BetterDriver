@@ -41,7 +41,9 @@ internal class LinkFailure(val reason: String, cause: Throwable? = null) : Excep
  *
  * [onData] gets every chunk read, on the reader thread, and must return quickly. [onState] is called
  * with each new [LinkState], one call at a time; [LinkState.Streaming] carries the number of lines
- * (line feeds, i.e. NMEA sentences) in the last second. [clockMs] is a monotonic clock in ms.
+ * (line feeds, i.e. NMEA sentences) in the last second, or, for a binary stream (the VBOX Sport,
+ * FBBD-116), how far [messageCount] (the decoder's running count) moved in it. [clockMs] is a
+ * monotonic clock in ms.
  */
 abstract class StreamLink(
     private val threadName: String,
@@ -49,6 +51,7 @@ abstract class StreamLink(
     private val onState: (LinkState) -> Unit,
     private val timing: StreamTiming,
     private val clockMs: () -> Long = { System.nanoTime() / NanosPerMs },
+    private val messageCount: (() -> Long)? = null,
 ) {
     private val lock = Any()
     private val _state = MutableStateFlow<LinkState>(LinkState.Idle)
@@ -77,6 +80,9 @@ abstract class StreamLink(
     private var closeReason: String? = null
 
     private val lines = AtomicInteger()
+
+    // Touched only on the watchdog thread.
+    private var lastMessageCount = 0L
 
     // Touched only on the reader thread.
     private val policy = ReconnectPolicy(timing.firstRetryMs, timing.maxRetryMs)
@@ -184,9 +190,13 @@ abstract class StreamLink(
         onData(buf.copyOf(n))
     }
 
-    /** Once a second: report the line rate, and close a connection that went silent. */
+    /** Once a second: report the line (or message) rate, and close a connection that went silent. */
     private fun tick() {
-        val count = lines.getAndSet(0)
+        val lineCount = lines.getAndSet(0)
+        val count = messageCount?.let {
+            val total = it()
+            (total - lastMessageCount).toInt().also { lastMessageCount = total }
+        } ?: lineCount
         val last = lastDataAt
         if (last == 0L) return
         val silentMs = clockMs() - last

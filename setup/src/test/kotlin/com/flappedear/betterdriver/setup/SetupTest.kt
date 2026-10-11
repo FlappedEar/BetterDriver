@@ -116,6 +116,19 @@ class SetupTest {
     }
 
     @Test
+    fun vboxSportAndDragyAreListedAsReceivers() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.VBOX_SPORT, "VBSport 00000300", "AA", ids)
+            .addEquipment(EquipmentModel.DRAGY, "DRG70-ABC123", "BB", ids)
+        assertEquals("VBSport 00000300", s.active().gnss?.name, "the first receiver is the session's")
+        assertEquals(listOf(EquipmentKind.GNSS, EquipmentKind.GNSS), s.equipment.map { it.kind })
+        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP), channelsFor(s.active().gnss))
+        assertTrue(EquipmentModel.VBOX_SPORT.paired && EquipmentModel.DRAGY.paired)
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.VBOX_SPORT, newId = ids) }
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.DRAGY, newId = ids) }
+    }
+
+    @Test
     fun repairingAGoProKeepsItsItemAndLearnsItsModel() {
         val first = Setup().addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids)
         val id = first.equipment.single().id

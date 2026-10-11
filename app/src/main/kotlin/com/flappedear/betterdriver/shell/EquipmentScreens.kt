@@ -51,6 +51,8 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.RACEBOX -> "Records position, speed and G for each session it is chosen for."
     EquipmentModel.NMEA_GNSS, EquipmentModel.LNS_GNSS, EquipmentModel.DIY_GNSS ->
         "Records position and speed for each session it is chosen for."
+    EquipmentModel.VBOX_SPORT, EquipmentModel.DRAGY ->
+        "Records position and speed for each session it is chosen for. Not yet tested with a real ${model.label}."
     EquipmentModel.TCP_GNSS ->
         "Connects over Wi-Fi to the address below. Records position and speed, and G from a RaceChrono DIY device."
     EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."
@@ -209,8 +211,8 @@ fun AddEquipmentScreen(
             NearbyCard(nearby, searching, busyAddress, onAddNearby)
             DimText(
                 if (searching) {
-                    "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS, RaceChrono DIY " +
-                        "and heart-rate monitors. Put a GoPro in pairing mode first."
+                    "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS, RaceChrono DIY, " +
+                        "Dragy and heart-rate monitors. Put a GoPro in pairing mode first."
                 } else {
                     "Allow nearby devices (Settings › App › Run setup again) to search for a RaceBox or GoPro."
                 },
@@ -284,7 +286,10 @@ private fun AddEquipmentPreview() {
                 ),
                 searching = true,
                 withoutBluetooth = listOf(EquipmentModel.GOPRO_FILES, EquipmentModel.DEMO_GNSS),
-                pairedGps = listOf(NearbyDevice(EquipmentModel.NMEA_GNSS, "Qstarz 818XT", "CC", 0)),
+                pairedGps = listOf(
+                    NearbyDevice(EquipmentModel.VBOX_SPORT, "VBSport 00000300", "DD", 0),
+                    NearbyDevice(EquipmentModel.NMEA_GNSS, "Qstarz 818XT", "CC", 0),
+                ),
                 busyAddress = null,
                 error = null,
                 onAddNearby = {},

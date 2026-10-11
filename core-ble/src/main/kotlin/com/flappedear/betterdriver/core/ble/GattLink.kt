@@ -27,8 +27,9 @@ private const val SetupTimeoutMs = 10_000L
 
 /**
  * Keeps a BLE link to one device (FBBD-43; generalised from the RaceBox link for the RaceChrono
- * DIY device, FBBD-118): connect, larger MTU, subscribe to the notifications of [profile], and
- * reconnect on its own after a drop, a GATT error, or 3 s without data. No bonding is needed. Every
+ * DIY device, FBBD-118): connect, larger MTU, subscribe to the notifications of [profile], answer
+ * its [GattHandshake] if it has one (the Dragy, FBBD-117), and reconnect on its own after a drop, a
+ * GATT error, 10 s without data after connecting, or 3 s without data. No bonding is needed. Every
  * GATT call runs on one private thread; [onData] is called with the characteristic and its bytes,
  * on Android's binder thread for notifications and on the link's thread for [read] results, and
  * must return quickly.
@@ -59,6 +60,9 @@ class GattLink(
 
     /** Characteristics still to subscribe to on this connection; empty once all are on. */
     private val toSubscribe = ArrayDeque<BluetoothGattCharacteristic>()
+
+    /** Between reading the handshake challenge and the answer's write being acknowledged. */
+    private var handshaking = false
     private var subscribed = false
 
     @Volatile
@@ -89,7 +93,8 @@ class GattLink(
 
     /**
      * Reads characteristic [uuid] of the profile's service once; the value goes to [onData]. Ignored
-     * until every subscription is on, and when the device lacks it. Not for a link with a
+     * until every subscription is on and the handshake (if any) is done, and when the device lacks
+     * it. Not for a link with a
      * [LinkProbe], whose own reads and writes would collide with it (GATT does one at a time).
      */
     fun read(uuid: UUID) {
@@ -161,6 +166,7 @@ class GattLink(
 
     private fun closeGatt() {
         toSubscribe.clear()
+        handshaking = false
         subscribed = false
         val g = gatt ?: return
         gatt = null
@@ -180,13 +186,20 @@ class GattLink(
 
     /**
      * Turns on the next notification in [toSubscribe]; [BluetoothGattCallback.onDescriptorWrite]
-     * calls this again for the one after. When all are on, the probe (if any) starts.
+     * calls this again for the one after. When all are on, the handshake (if any) starts, else the
+     * probe (if any).
      */
     private fun subscribeNext(g: BluetoothGatt) {
         val ch = toSubscribe.removeFirstOrNull()
         if (ch == null) {
-            subscribed = true
-            gattProbe?.start(g, SystemClock.elapsedRealtime())
+            val handshake = profile.handshake
+            if (handshake != null) {
+                handshaking = true
+                readChallenge(g, profile.service, handshake)?.let(::retry)
+            } else {
+                subscribed = true
+                gattProbe?.start(g, SystemClock.elapsedRealtime())
+            }
             return
         }
         val cccd = ch.getDescriptor(CccdUuid)
@@ -261,6 +274,11 @@ class GattLink(
         ) {
             handler.post {
                 if (g != gatt) return@post
+                val handshake = profile.handshake?.takeIf { handshaking && ch.uuid == it.characteristic }
+                if (handshake != null) {
+                    answerChallenge(g, ch, handshake, value, status)?.let(::retry)
+                    return@post
+                }
                 val ok = status == BluetoothGatt.GATT_SUCCESS
                 // A read asked for with read(); never one of the probe's Device Information reads.
                 if (ok && ch.uuid in profile.notify) data(ch.uuid, value)
@@ -277,9 +295,22 @@ class GattLink(
             }
         }
 
-        // The rest of the probe's callbacks; without a probe these never fire.
+        // The handshake's answer, then the rest of the probe's callbacks; without a probe these never fire.
         override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
-            handler.post { if (g == gatt) gattProbe?.next(g, SystemClock.elapsedRealtime()) }
+            handler.post {
+                val now = SystemClock.elapsedRealtime()
+                when {
+                    g != gatt -> Unit
+                    !handshaking || ch.uuid != profile.handshake?.characteristic -> gattProbe?.next(g, now)
+                    status != BluetoothGatt.GATT_SUCCESS -> retry("handshake write status $status")
+                    else -> {
+                        // Answered: the device starts streaming. Then the diagnostics reads, if any.
+                        handshaking = false
+                        subscribed = true
+                        gattProbe?.start(g, now)
+                    }
+                }
+            }
         }
 
         override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
@@ -312,6 +343,48 @@ private fun enableNotifications(g: BluetoothGatt, cccd: BluetoothGattDescriptor)
     } else {
         cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
         g.writeDescriptor(cccd)
+    }
+
+/** Reads the [handshake]'s challenge; null when the read started, else why it failed. */
+@SuppressLint("MissingPermission")
+private fun readChallenge(g: BluetoothGatt, service: UUID, handshake: GattHandshake): String? {
+    val ch = g.getService(service)?.getCharacteristic(handshake.characteristic)
+    return when {
+        ch == null -> "handshake characteristic ${handshake.characteristic} not found"
+        g.readCharacteristic(ch) -> null
+        else -> "handshake read failed"
+    }
+}
+
+/**
+ * Writes the [handshake]'s answer to [challenge], read with [status], back to [ch] with a response;
+ * null when the write started, else why the handshake failed.
+ */
+private fun answerChallenge(
+    g: BluetoothGatt,
+    ch: BluetoothGattCharacteristic,
+    handshake: GattHandshake,
+    challenge: ByteArray,
+    status: Int,
+): String? {
+    val answer = if (status == BluetoothGatt.GATT_SUCCESS) handshake.respond(challenge) else null
+    return when {
+        status != BluetoothGatt.GATT_SUCCESS -> "handshake read status $status"
+        answer == null -> "handshake challenge unusable (${challenge.size} bytes)"
+        writeWithResponse(g, ch, answer) -> null
+        else -> "handshake write failed"
+    }
+}
+
+@Suppress("DEPRECATION") // The pre-Android 13 characteristic write.
+@SuppressLint("MissingPermission")
+private fun writeWithResponse(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray): Boolean =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        g.writeCharacteristic(ch, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
+    } else {
+        ch.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+        ch.value = value
+        g.writeCharacteristic(ch)
     }
 
 private class SubscriptionPlan(

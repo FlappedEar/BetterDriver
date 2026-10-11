@@ -40,8 +40,9 @@ private fun withoutBluetoothNote(model: EquipmentModel): String = when (model) {
 }
 
 /**
- * Bluetooth GPS receivers (Qstarz, Garmin GLO and the like) already paired in Android's settings
- * (FBBD-108). They speak Bluetooth Classic, which the app does not scan for.
+ * Bluetooth GPS receivers already paired in Android's settings: NMEA receivers (Qstarz, Garmin GLO
+ * and the like, FBBD-108) and VBOX Sports (FBBD-116). They speak Bluetooth Classic, which the app
+ * does not scan for.
  */
 @Composable
 internal fun PairedGpsSection(pairedGps: List<NearbyDevice>, onAdd: (NearbyDevice) -> Unit) {
@@ -55,7 +56,10 @@ internal fun PairedGpsSection(pairedGps: List<NearbyDevice>, onAdd: (NearbyDevic
             }
         }
     }
-    DimText("Pair a GPS receiver that sends NMEA, such as a Qstarz or Garmin GLO, in Android's Bluetooth settings.")
+    DimText(
+        "Pair a VBOX Sport, or a GPS receiver that sends NMEA such as a Qstarz or Garmin GLO, " +
+            "in Android's Bluetooth settings.",
+    )
 }
 
 /**

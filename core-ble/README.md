@@ -326,3 +326,133 @@ to 16 payload bytes) and its filter `0x0002` (deny all, allow all, allow one
 PID, each with a notify interval) come with CAN logging in Phase 5. The
 Monitor API (`0x0005`, `0x0006`), with which a device shows values the app
 computes, is not offered.
+
+## Shared link additions (FBBD-116, FBBD-117)
+
+A `GattProfile` may have a `GattHandshake`: once per connection, after every
+notification is on, `GattLink` reads its characteristic, passes the value to a
+pure function, and writes the answer back with a response. Data reads
+(`GattLink.read`) and the diagnostics probe wait for it. A handshake that never
+leads to data is restarted by the 10 s setup timeout. `StreamLink` (and so
+`SppLink`) takes an optional `messageCount` so a binary stream reports messages
+per second instead of line ends.
+
+## VBOX Sport over Bluetooth Classic (FBBD-116)
+
+Package `vbox`: RACELOGIC VBOX Sport, RACELOGIC Serial Stream.
+
+- `bondedVboxSports(context)`: paired devices whose name starts with `VBSport`
+  (RACELOGIC's Android pairing guide shows "VBSport 00000300"). Pure filter:
+  `isVboxSport(name, leOnly)`.
+- `VboxSportSource(context, address, deviceName)`: a recorder `DataSource`
+  named `vbox_sport`, over `SppLink`.
+- `VboxSportFrameReader`, `VboxSportFix`, `VboxSportDecoder`: pure Kotlin,
+  unit tested.
+
+**Sources.** "Serial Data Format", RACELOGIC, 7/11/2014
+([PDF](https://vboxmotorsport.co.uk/downloads/VBOX-Sport_Serial_Format.pdf)),
+from the [VBOX Sport development portal](https://vboxmotorsport.co.uk/en/vbox-sport-development-portal)
+(Serial Stream at 10 Hz; NMEA optional after a firmware update), and the
+support centre's [VBOX Sport Serial (RS232) Protocol](https://en.racelogic.support/VBOX_Motorsport/Product_Info/Performance_Meters/VBOX_Sport/Knowledge_Base/VBOX_Sport_Serial_(RS232)_Protocol).
+The portal's parsing sample code (`VBSSerialParseSample.zip`) could not be
+downloaded from here.
+
+**Transport.** RACELOGIC documents only an iOS MFi External Accessory stream.
+Its Android guides (RaceChrono, Harry's) pair the unit in Android's Bluetooth
+settings, i.e. Bluetooth Classic; that the stream is on SPP is inferred. There
+is no baud rate on a virtual serial port, and the documents give none.
+
+**Message.** `$VBSPT$`, standard channel mask (4 bytes), extended mask
+(4 bytes), `,`, the channels in bit order, CRC (2 bytes). The PDF writes the
+header as `$VBSPT$nnnniiii,`, the support page as `$VBSPT$,nnnniiii,`; both are
+accepted and the CRC picks. Bluetooth default: standard `0x000003FF`, extended
+`0x00000071`, 37 data bytes, 55 bytes in all.
+
+| Channel (bit) | Bytes | Meaning | Used |
+| --- | --- | --- | --- |
+| satellites (std 0x01) | 1 | bits 0–6 count, bit 7 DGPS | `gnss_sats`, `vbox_dgps` |
+| time (0x02) | 3 | 10 ms ticks since midnight UTC | `gnss_utc_ms` |
+| latitude (0x04) | 4 | minutes × 100,000, + north | `gnss_lat` |
+| longitude (0x08) | 4 | minutes × 100,000, **+ west** | `gnss_lon` (negated) |
+| speed (0x10) | 2 | knots × 100 | `gnss_speed` |
+| heading (0x20) | 2 | degrees × 100 | `gnss_heading` |
+| height (0x40) | 3 | WGS84 m × 100, signed 24-bit | `gnss_alt` |
+| vertical velocity (0x80) | 2 | "m/s", no scale given | no |
+| long./lat. acceleration (0x100, 0x200) | 2 each | g × 100, signedness not given | no |
+| HDOP (ext 0x40) | 2 | × 100 | `vbox_hdop` |
+
+All other channel sizes are in the document and are skipped. Extended bits
+above 0x40 are undocumented; such a message cannot be split and is dropped.
+
+**Not confirmed by any VBOX Sport document, so unverified on hardware:**
+- Byte order: taken as big-endian from RACELOGIC's
+  [VBOX 4 serial protocol](https://en.racelogic.support/VBOX_Automotive/Product_Info/VBOX_Data_Loggers/VBOX_4_Product_Range/VBOX_4_Knowledge_Base/VBOX_4_Serial_(RS232)_Protocol)
+  (same family and layout: "The byte ordering format is big-endian (Motorola)").
+- CRC range: from `$` to the last data byte, as in RACELOGIC's
+  [VBOX II RS232 format](https://www.racelogic.co.uk/_downloads/vbox/Application_Notes/VBOXII_rs232_Format.pdf)
+  copy of the same checksum code. The CRC itself (polynomial 0x1021, initial 0)
+  is in the VBOX Sport document; CRC bytes are read big-endian too.
+- If either guess is wrong, every message fails its CRC, nothing is recorded,
+  and the session gets one `vbox_sport_no_valid_messages` event per connection.
+
+**Channels.** One sample set per message. The stream has no date and no fix
+flag: UTC takes its date from the phone clock (the day that puts the time
+nearest to it), and position, speed, heading, altitude and UTC are only
+included with at least 3 satellites and a position other than 0°, 0° (a design
+choice). Altitude is ellipsoidal (WGS84), not MSL as for NMEA and the RaceBox.
+VBOX Sport channels use ids 600 to 619 (`VboxSportChannels`).
+
+## Dragy Pro / DRG70 over BLE (FBBD-117)
+
+Package `dragy`. **Unverified on hardware.** Dragy publishes no protocol; this
+follows the community reverse engineering in
+[jremick/dragy-dash](https://github.com/jremick/dragy-dash) (Apache-2.0,
+`docs/DRAGY_CAPTURE.md` v0.2.0 and its Swift sources at commit `fdb8241`),
+captured on a Dragy Pro only. The Dragy Pro's IMU is not read.
+
+- `scanDragys(context)`: Dragys in range, strongest first. Pure filter
+  `isDragy(name, serviceUuids, manufacturerData)`: name contains "dragy",
+  "drg70" or "drg69" or starts with "DRG", or service `FD00` is advertised, or
+  the manufacturer data contains "dragy" (dragy-dash's rule).
+- `DragySource(context, address, deviceName)`: a recorder `DataSource` named
+  `dragy`, on a `GattLink` with `DragyGatt.PROFILE`.
+- `NavPvt`, `DragyDecoder`, `handshakeResponse`: pure Kotlin, unit tested.
+
+**GATT.** Service `FD00` (16-bit SIG base UUIDs). `FD02` notifies; `FD03`
+(read, write) is the handshake; `FD04` (device control) is not used. Live data
+starts only after reading two bytes a, b from `FD03` and writing
+`[a, b, a XOR b, a AND b]` back.
+
+**Data.** `FD02` carries UBX frames, fragmented, reassembled with the RaceBox's
+`UbxFrameReader` (same `B5 62` framing and Fletcher checksum). Only
+UBX-NAV-PVT (class `01`, id `07`, 92-byte payload, 100-byte frame) is used,
+25 Hz per RaceChrono. The payload layout is u-blox's (M8 protocol
+specification UBX-13003221, section 32.18.14); the PDF table could not be read
+here, so each offset was checked against u-blox's own `ubxlib`
+(`gnss/src/u_gnss_pos.c`) and `ublox_msgs/NavPVT.msg`:
+
+| Offset | Type | Field | Use |
+| --- | --- | --- | --- |
+| 0 | U4 | iTOW, ms | |
+| 4–10 | U2, U1 ×5 | year, month, day, hour, min, sec | `gnss_utc_ms` if valid bits 0 and 1 |
+| 11 | X1 | valid | |
+| 16 | I4 | nano, ns (signed) | `gnss_utc_ms` |
+| 20 | U1 | fixType | `dragy_fix_type` |
+| 21 | X1 | flags, bit 0 gnssFixOK | fix |
+| 23 | U1 | numSV | `gnss_sats` |
+| 24, 28 | I4 | lon, lat, 1e-7 deg | `gnss_lon`, `gnss_lat` |
+| 32, 36 | I4 | height, hMSL, mm | `gnss_alt` (MSL) |
+| 40, 44 | U4 | hAcc, vAcc, mm | `dragy_hacc` |
+| 60 | I4 | gSpeed, mm/s | `gnss_speed` |
+| 64 | I4 | headMot, 1e-5 deg | `gnss_heading` |
+| 68, 72 | U4 | sAcc mm/s, headAcc 1e-5 deg | `dragy_speed_acc` |
+| 76 | U2 | pDOP × 0.01 | `dragy_pdop` |
+
+A fix is gnssFixOK with fixType 3 (3D) or 4 (GNSS + dead reckoning); position,
+speed, heading and altitude are only included with one. Dragy channels use ids
+620 to 639 (`DragyChannels`).
+
+**Tests.** VBOX and NAV-PVT fixtures are built from the documents' field lists
+(`VboxSportTestData.kt`, `NavPvtTestData.kt`), not captured; the CRC is checked
+against the standard CRC-16/XMODEM check value. Capture real streams when a
+VBOX Sport and a Dragy are available.

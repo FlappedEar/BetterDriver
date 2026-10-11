@@ -17,7 +17,8 @@ import java.io.InputStream
  * without data, until [stop] (see [StreamLink] and [StreamTiming]). [onData] gets every chunk read,
  * on the reader thread, and must return quickly. [onState] is called with each new [LinkState], one
  * call at a time; [LinkState.Streaming] carries the number of NMEA sentences (line ends) in the last
- * second.
+ * second, or, for a binary stream (the VBOX Sport, FBBD-116), how far [messageCount] (the decoder's
+ * running count) moved in it.
  *
  * The receiver must be bonded (paired in Android settings). The secure socket is tried first; some
  * receivers only accept an unauthenticated one, so the insecure socket is the fallback. Discovery
@@ -32,7 +33,8 @@ class SppLink(
     private val address: String,
     onData: (ByteArray) -> Unit,
     onState: (LinkState) -> Unit = {},
-) : StreamLink("nmea-spp-link", onData, onState, StreamTiming(), SystemClock::elapsedRealtime) {
+    messageCount: (() -> Long)? = null,
+) : StreamLink("nmea-spp-link", onData, onState, StreamTiming(), SystemClock::elapsedRealtime, messageCount) {
     private val appContext = context.applicationContext
 
     override fun open(): InputStream {
