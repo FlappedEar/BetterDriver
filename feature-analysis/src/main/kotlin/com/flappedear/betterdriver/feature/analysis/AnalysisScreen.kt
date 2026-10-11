@@ -22,11 +22,16 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -49,10 +54,13 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * One session's analysis (FBBD-102, UI review round 12): the fastest lap and the theoretical best,
- * the lap compared with the fastest by distance (time delta and speed, corners shaded, a cursor
- * to read values), every lap's time, and the theoretical best corner by corner with the compared
- * lap's loss. Tapping a lap compares it. [topBar] is the app's bar with its back button.
+ * One session's analysis (FBBD-102 and FBBD-19, UI review round 14, UI-61 to UI-63 and UI-67): the fastest
+ * lap and the theoretical best, where time goes (what the fastest lap leaves in each corner and
+ * the other laps' largest losses), the lap compared with the fastest by distance (time delta and
+ * speed, corners shaded, a cursor to read values), every lap's time, and the theoretical best
+ * corner by corner with the compared lap's loss and the spread of the counted laps, one section
+ * per tab (UI-62 B). Tapping a lap or a loss compares it. [topBar] is the app's bar with its back
+ * button.
  */
 @Composable
 fun AnalysisScreen(
@@ -79,21 +87,50 @@ fun AnalysisScreen(
     }
 }
 
+/** The sections of the analysis, one per tab (UI-62 B). */
+internal enum class AnalysisTab(val title: String) {
+    Summary("Summary"),
+    Compare("Compare"),
+    Laps("Laps"),
+    Corners("Corners"),
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-        Summary(ui, width)
-        ui.compare?.let { Compare(it, width) }
-        Laps(ui, onCompare, width)
-        Sectors(ui, width)
+    var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
+    // Picking a lap or a loss compares it, so the Compare tab opens.
+    val compare: (Int) -> Unit = {
+        onCompare(it)
+        tab = AnalysisTab.Compare.ordinal
+    }
+    PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+        AnalysisTab.entries.forEach { t ->
+            Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }, text = { Text(t.title) })
+        }
+    }
+    // Each tab opens at its top: a new scroll state whenever the tab changes.
+    key(tab) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
+            when (AnalysisTab.entries[tab]) {
+                AnalysisTab.Summary -> {
+                    Summary(ui, width)
+                    if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, width)
+                }
+                AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
+                    ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
+                AnalysisTab.Laps -> Laps(ui, compare, width)
+                AnalysisTab.Corners -> Sectors(ui, width)
+            }
+        }
     }
 }
 
@@ -263,6 +300,7 @@ private fun Sectors(ui: AnalysisUi, modifier: Modifier) {
             Dim("", Modifier.weight(1f))
             Dim("Best", Modifier.width(76.dp))
             Dim("Lap ${ui.compare?.otherNumber ?: ""}", Modifier.width(64.dp))
+            Dim("Spread", Modifier.width(SpreadWidth))
         }
         for (s in ui.sectors) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -280,18 +318,18 @@ private fun Sectors(ui: AnalysisUi, modifier: Modifier) {
                     color = if ((s.lossSeconds ?: 0.0) > MeaningfulLossSeconds) c.loss else c.textDim,
                     modifier = Modifier.width(64.dp),
                 )
+                Dim(s.spreadSeconds?.let(::seconds) ?: "–", Modifier.width(SpreadWidth))
             }
         }
     }
 }
 
-/** Smaller losses are shown dim: within GPS timing noise. */
-private const val MeaningfulLossSeconds = 0.05
+private val SpreadWidth = 52.dp
 
-private fun seconds(value: Double) = String.format(Locale.ROOT, "%.2f", value)
+internal fun seconds(value: Double) = String.format(Locale.ROOT, "%.2f", value)
 
 @Composable
-private fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier
             .fillMaxWidth()
@@ -303,7 +341,7 @@ private fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope
 }
 
 @Composable
-private fun Dim(text: String, modifier: Modifier = Modifier, color: Color = TrackTheme.colors.textDim) {
+internal fun Dim(text: String, modifier: Modifier = Modifier, color: Color = TrackTheme.colors.textDim) {
     Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
 }
 

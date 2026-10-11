@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recording
 
+import android.content.ContentResolver
 import android.content.Context
 import android.net.Uri
 import android.os.Handler
@@ -9,6 +10,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.coach.CoachedSessions
+import com.flappedear.betterdriver.coach.coachDir
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -27,6 +30,7 @@ import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.ClipStatus
 import com.flappedear.betterdriver.video.VideoIndex
+import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -48,6 +52,7 @@ class Sessions private constructor(private val context: Context) {
     private val store = SessionStore(sessionsDir(context))
     private val io = Executors.newSingleThreadExecutor { Thread(it, "sessions-io") }
     private val main = Handler(Looper.getMainLooper())
+    private val coached = CoachedSessions(store, File(coachDir(context), "cues.properties"))
 
     /** Newest first. */
     var list by mutableStateOf<List<SessionSummary>>(emptyList())
@@ -62,6 +67,10 @@ class Sessions private constructor(private val context: Context) {
 
     /** Bytes on disk of each session, video included, by id; shown when deleting (FBBD-90). */
     var sizes by mutableStateOf<Map<String, Long>>(emptyMap())
+        private set
+
+    /** How many coach cues each session has, by id, for sessions with any (FBBD-99). */
+    var cues by mutableStateOf<Map<String, Int>>(emptyMap())
         private set
 
     /** Sessions being deleted, and why a delete failed, by id (FBBD-90). */
@@ -172,13 +181,27 @@ class Sessions private constructor(private val context: Context) {
                 val dir = store.dir(id)
                 val data = store.read(id)
                 val video = exportVideo(id, dir, VideoTimeline.from(data.events, indexedClips(dir)))
-                val folder =
+                val picked =
                     DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-                create(folder, VboMimeType, "BetterDriver-$id.vbo").use { VboExporter.export(data, it, video) }
-                video?.orderedClips?.forEachIndexed { i, clip ->
-                    create(folder, Mp4MimeType, video.fileName(i)).use { out ->
-                        File(File(dir, VideoFiles.DIR), clip.file).inputStream().use { it.copyTo(out, CopyBuffer) }
+                // Each export gets its own new folder: exporting again into the picked folder would make
+                // Android rename the new files ("… (1).MP4") while the VBO still names the old ones.
+                val folder = DocumentsContract.createDocument(
+                    context.contentResolver,
+                    picked,
+                    DocumentsContract.Document.MIME_TYPE_DIR,
+                    "BetterDriver-$id",
+                ) ?: throw IOException("cannot create a folder in $picked")
+                try {
+                    create(folder, VboMimeType, "BetterDriver-$id.vbo").use { VboExporter.export(data, it, video) }
+                    video?.orderedClips?.forEachIndexed { i, clip ->
+                        create(folder, Mp4MimeType, video.fileName(i)).use { out ->
+                            File(File(dir, VideoFiles.DIR), clip.file).inputStream().use { it.copyTo(out, CopyBuffer) }
+                        }
                     }
+                } catch (e: IOException) {
+                    // No half export that could later be mistaken for a whole one.
+                    discard(context.contentResolver, folder)
+                    throw e
                 }
                 ExportState.Done
             } catch (e: IOException) {
@@ -204,7 +227,8 @@ class Sessions private constructor(private val context: Context) {
 
     private fun exportVideo(id: String, dir: File, timeline: VideoTimeline): VboVideo? {
         val videoDir = File(dir, VideoFiles.DIR)
-        val present = timeline.clips.filter { File(videoDir, it.file).isFile }
+        // A file cut off by a crash has no index (moov) and would not play: it is left out.
+        val present = timeline.clips.filter { File(videoDir, it.file).let { f -> f.isFile && Mp4Reader.isComplete(f) } }
         val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
         val clips = present.filter { it.camera == camera }
         return if (clips.isEmpty()) null else VboVideo("BetterDriver-${id}_", clips)
@@ -228,6 +252,9 @@ class Sessions private constructor(private val context: Context) {
             withVideo = video
             goPro = goPros
         }
+        // After the list is shown: the first time, this reads each session once.
+        val cueCounts = coached.counts(sessions)
+        main.post { cues = cueCounts }
     }
 
     companion object {
@@ -287,7 +314,18 @@ internal fun alignmentText(a: Alignment): String {
 
 private const val MicrosPerSecond = 1_000_000.0
 
-private fun isVideoFile(f: File) = f.isFile && f.length() > 0 && f.extension.equals("mp4", ignoreCase = true)
+private fun isVideoFile(f: File) =
+    f.isFile && f.length() > 0 && f.extension.equals("mp4", ignoreCase = true) && Mp4Reader.isComplete(f)
+
+/** Removes a failed export's folder. Best effort: the export has already failed. */
+@Suppress("TooGenericExceptionCaught")
+private fun discard(resolver: ContentResolver, folder: Uri) {
+    try {
+        DocumentsContract.deleteDocument(resolver, folder)
+    } catch (e: Exception) {
+        android.util.Log.w("Sessions", "could not remove the failed export", e)
+    }
+}
 
 /** The file name offered when exporting. */
 fun vboFileName(session: SessionSummary) = "BetterDriver-${session.id}.vbo"

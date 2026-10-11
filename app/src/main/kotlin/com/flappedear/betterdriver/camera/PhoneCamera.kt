@@ -48,6 +48,13 @@ private const val ForecastSeconds = 10
 private const val MinFreeBytes = 1L shl 30
 
 /**
+ * A file ends and the next one starts at about this size (CameraX stops at 95 % of it): about 30 min at
+ * 1080p, 10 min at 4K. A crash or a phone switching off loses only the open file, which has no index
+ * yet, rather than the whole drive; and no file gets near the 4 GB limit of 32-bit MP4 offsets.
+ */
+private const val MaxFileBytes = 4_000_000_000L
+
+/**
  * The phone's back camera, recording with CameraX in the background while the track screen stays
  * on (FBBD-21). No preview: only a VideoCapture use case is bound.
  *
@@ -159,7 +166,8 @@ class PhoneCamera(
             p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
-            var pending = recorder.prepareRecording(context, FileOutputOptions.Builder(File(dir, name)).build())
+            val output = FileOutputOptions.Builder(File(dir, name)).setFileSizeLimit(MaxFileBytes).build()
+            var pending = recorder.prepareRecording(context, output)
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
             nextStep = null
@@ -195,12 +203,15 @@ class PhoneCamera(
 
     private fun onFinalized(name: String, e: VideoRecordEvent.Finalize) {
         recording = null
-        val error = e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
-        sink.stopped(name, sink.nowMicros(), if (error) "error_${e.error}" else endReason)
+        // A full file is finished and playable: the next file starts at once, and it is no restart.
+        val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
+        val error = !full && e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
+        sink.stopped(name, sink.nowMicros(), stopReason(e.error, error, full))
         val next = nextStep
         when {
             stopping -> provider?.unbindAll()
             next != null -> begin(next)
+            full && endReason == "user" -> begin(policy.current)
             endReason != "user" -> {
                 provider?.unbindAll()
                 sink.status(stoppedText(endReason), ok = false)
@@ -212,6 +223,13 @@ class PhoneCamera(
             }
             else -> fail("Camera error")
         }
+    }
+
+    /** Why a file ended, for the session's video event. */
+    private fun stopReason(code: Int, error: Boolean, full: Boolean) = when {
+        error -> "error_$code"
+        full && endReason == "user" -> "file_full"
+        else -> endReason
     }
 
     private fun fail(text: String) {

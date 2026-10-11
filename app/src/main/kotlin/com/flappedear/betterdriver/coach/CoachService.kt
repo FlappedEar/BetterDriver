@@ -100,10 +100,13 @@ class CoachService : Service() {
             speed.takeUnless { it.isNaN() },
         )
         val out = coach.onFix(fix, a.now())
-        for (text in out.say) {
-            if (voice?.say(text) != true) report(a, a.now(), CoachEvents.PROBLEM, "no voice text=$text")
+        val unsaid = out.say.filterNot { voice?.say(it) == true }.toSet()
+        for (e in out.events) {
+            // A cue the voice could not say is logged as a problem, so the review never lists it as said.
+            val failed = e.kind == CoachEvents.CUE && CoachEvents.parseCue(e.tMicros, e.text)?.text in unsaid
+            val kind = if (failed) CoachEvents.PROBLEM else e.kind
+            report(a, e.tMicros, kind, if (failed) "no voice ${e.text}" else e.text)
         }
-        out.events.forEach { report(a, it.tMicros, it.kind, it.text) }
         updateStatus(a, out.status)
     }
 
