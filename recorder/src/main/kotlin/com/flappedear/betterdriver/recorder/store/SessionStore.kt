@@ -1,0 +1,171 @@
+package com.flappedear.betterdriver.recorder.store
+
+import com.flappedear.betterdriver.recorder.ChannelDef
+import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.SessionInfo
+import java.io.File
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Properties
+import java.util.UUID
+
+enum class SessionState {
+    /** A process holds the session lock and is writing to it. */
+    RECORDING,
+    /** Stopped cleanly. */
+    FINISHED,
+    /** Not stopped cleanly and not yet recovered (a crash, kill or power loss). */
+    INTERRUPTED,
+    /** Interrupted, then recovered. Exports like a finished session. */
+    RECOVERED,
+}
+
+data class SessionSummary(val id: String, val dir: File, val info: SessionInfo, val state: SessionState)
+
+data class RecoveryReport(
+    val id: String,
+    val chunks: Int,
+    val records: Long,
+    val sampleSets: Long,
+    val lastSampleMicros: Long?,
+    /** Bytes of incomplete frames at chunk ends (dropped). */
+    val truncatedBytes: Long,
+    /** Bytes of damaged frames inside chunks (skipped). */
+    val skippedBytes: Long,
+)
+
+/** Everything read back from a session. */
+data class SessionData(
+    val id: String,
+    val info: SessionInfo,
+    val state: SessionState,
+    val channels: Map<Int, ChannelDef>,
+    val sampleSets: List<SampleSet>,
+    val events: List<RecorderEvent>,
+    val end: Record.End?,
+    val truncatedBytes: Long,
+    val skippedBytes: Long,
+)
+
+private const val IdSuffixChars = 8
+
+/** Session directories under [root], one per recording. */
+class SessionStore(val root: File) {
+
+    init {
+        root.mkdirs()
+    }
+
+    /**
+     * Creates the directory and writes the metadata before any sample is recorded (FBBD-70).
+     * [beforeMeta] runs on the new directory first; the recorder takes the session lock there, so the
+     * session is never listed (and never mistaken for an interrupted one) before it is locked.
+     */
+    fun createSession(info: SessionInfo, beforeMeta: (File) -> Unit = {}): Pair<String, File> {
+        val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
+            .withZone(ZoneOffset.UTC)
+            .format(Instant.ofEpochMilli(info.startUtcMillis))
+        val id = "$stamp-${UUID.randomUUID().toString().take(IdSuffixChars)}"
+        val dir = File(root, id)
+        check(dir.mkdirs()) { "could not create ${dir.path}" }
+        SessionFiles.syncDir(root)
+        beforeMeta(dir)
+        SessionFiles.writeAtomically(File(dir, SessionFiles.META), SessionFiles.metaToProps(id, info))
+        return id to dir
+    }
+
+    fun dir(id: String) = File(root, id)
+
+    fun state(dir: File): SessionState = when {
+        File(dir, SessionFiles.FINISHED).isFile -> SessionState.FINISHED
+        SessionFiles.isLocked(dir) -> SessionState.RECORDING
+        File(dir, SessionFiles.RECOVERY).isFile -> SessionState.RECOVERED
+        else -> SessionState.INTERRUPTED
+    }
+
+    /** Sessions with readable metadata, newest first. */
+    fun list(): List<SessionSummary> =
+        (root.listFiles { f -> f.isDirectory } ?: emptyArray())
+            .mapNotNull { d ->
+                val p = SessionFiles.readProps(File(d, SessionFiles.META)) ?: return@mapNotNull null
+                val info = try {
+                    SessionFiles.propsToMeta(p)
+                } catch (_: RuntimeException) {
+                    return@mapNotNull null // damaged metadata: not listed
+                }
+                SessionSummary(d.name, d, info, state(d))
+            }
+            .sortedByDescending { it.info.startUtcMillis }
+
+    /**
+     * Run at app start. Finds sessions that were not stopped cleanly and nobody is recording,
+     * checks their chunks, and marks them recovered. Chunk files are only read, never changed (FBBD-71).
+     */
+    fun recoverInterrupted(): List<RecoveryReport> =
+        list().filter { it.state == SessionState.INTERRUPTED }.map { recover(it.dir) }
+
+    private fun recover(dir: File): RecoveryReport {
+        var records = 0L
+        var sets = 0L
+        var last: Long? = null
+        var truncated = 0L
+        var skipped = 0L
+        val chunks = SessionFiles.chunks(dir)
+        for (c in chunks) {
+            val r = Frames.scan(c.readBytes()) { rec ->
+                if (rec is Record.Samples) {
+                    sets++
+                    last = maxOf(last ?: Long.MIN_VALUE, rec.set.tMicros)
+                }
+            }
+            records += r.records
+            truncated += r.truncatedTailBytes
+            skipped += r.skippedBytes
+        }
+        val report = RecoveryReport(dir.name, chunks.size, records, sets, last, truncated, skipped)
+        SessionFiles.writeAtomically(
+            File(dir, SessionFiles.RECOVERY),
+            Properties().apply {
+                setProperty("recoveredAtUtcMillis", System.currentTimeMillis().toString())
+                setProperty("chunks", report.chunks.toString())
+                setProperty("records", report.records.toString())
+                setProperty("sampleSets", report.sampleSets.toString())
+                setProperty("lastSampleMicros", report.lastSampleMicros?.toString() ?: "")
+                setProperty("truncatedBytes", report.truncatedBytes.toString())
+                setProperty("skippedBytes", report.skippedBytes.toString())
+            },
+        )
+        return report
+    }
+
+    /** Reads a whole session. Works for any state, including one still recording (up to its last sync). */
+    fun read(id: String): SessionData = read(dir(id))
+
+    fun read(dir: File): SessionData {
+        val props = SessionFiles.readProps(File(dir, SessionFiles.META))
+            ?: error("no readable ${SessionFiles.META} in ${dir.path}")
+        val info = SessionFiles.propsToMeta(props)
+        val channels = LinkedHashMap<Int, ChannelDef>()
+        info.channels.forEach { channels[it.id] = it }
+        val sets = ArrayList<SampleSet>()
+        val events = ArrayList<RecorderEvent>()
+        var end: Record.End? = null
+        var truncated = 0L
+        var skipped = 0L
+        for (c in SessionFiles.chunks(dir)) {
+            val r = Frames.scan(c.readBytes()) { rec ->
+                when (rec) {
+                    is Record.Channel -> channels[rec.def.id] = rec.def
+                    is Record.Samples -> sets += rec.set
+                    is Record.Event -> events += rec.event
+                    is Record.End -> end = rec
+                }
+            }
+            truncated += r.truncatedTailBytes
+            skipped += r.skippedBytes
+        }
+        return SessionData(dir.name, info, state(dir), channels, sets, events, end, truncated, skipped)
+    }
+}

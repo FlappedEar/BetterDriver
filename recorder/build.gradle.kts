@@ -9,6 +9,7 @@ kotlin {
 }
 
 dependencies {
+    testImplementation(kotlin("test"))
     testImplementation(platform(libs.junit5.bom))
     testImplementation(libs.junit5.jupiter)
     testRuntimeOnly(libs.junit5.launcher)
@@ -16,4 +17,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // FaultInjectionTest (FBBD-72) starts child JVMs and kills them; skip it locally with -PskipFaultInjection.
+    if (project.hasProperty("skipFaultInjection")) {
+        exclude("**/FaultInjectionTest*")
+    }
 }
