@@ -17,6 +17,11 @@ must still hold all recorded data and export as VBO, as RaceChrono does.
   nothing. A separate thread fsyncs every 500 ms, so a power loss loses at most
   about the last second. fsync runs off the writing thread so a slow disk never
   holds up writing.
+- **Queue.** Samples wait in a bounded in-memory queue (100k sets) until the
+  writer takes them; the loss limit above assumes the writer keeps up. On a
+  desktop JVM it wrote about 400k sets/s (not yet measured on the phone), so
+  25 Hz GNSS never builds a backlog. If the queue is full, new samples are
+  dropped and counted in `dropped_samples`.
 - **Metadata first.** `meta.properties` (start time, car, track, devices,
   start/finish gate, known channels) is written atomically before any sample.
 - **Isolated consumers.** Live consumers (`RecorderListener`) run on their own

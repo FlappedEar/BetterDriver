@@ -257,6 +257,25 @@ class RecorderTest {
     }
 
     @Test
+    fun `a source that never returns from stop does not keep the session from finishing`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        val hang = java.util.concurrent.CountDownLatch(1)
+        rec.attach(object : DataSource {
+            override val name = "hung"
+            override fun start(sink: SampleSink) = Unit
+            override fun stop() = hang.await()
+        })
+        feed(rec, 10)
+        try {
+            assertTrue(rec.stop(timeoutMs = 5_000))
+            assertEquals(SessionState.FINISHED, store.state(rec.dir))
+        } finally {
+            hang.countDown()
+        }
+    }
+
+    @Test
     fun `each source is stopped exactly once`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(info())

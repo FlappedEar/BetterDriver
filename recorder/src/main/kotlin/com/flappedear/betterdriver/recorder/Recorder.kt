@@ -191,15 +191,14 @@ class Recording internal constructor(
      */
     fun stop(reason: String = "user", timeoutMs: Long = StopTimeoutMs): Boolean {
         if (stopIntake()) {
-            // Runs on its own thread so a source that blocks in stop() cannot make this call exceed timeoutMs.
-            Thread({
-                sources.stopAll()
-                // Sources are stopped, so the writer frees space; never discard accepted records to make room.
+            // Intake is closed, so the queue only drains: the stop marker needs no source to stop first.
+            // Each runs on its own thread, so a source that blocks in stop() can neither keep the session
+            // from finishing nor make this call exceed timeoutMs.
+            daemon("recorder-stop-$id") {
+                // Never discard accepted records to make room.
                 while (!isStopped && !queue.offer(Cmd.Stop(reason), StopOfferMs, TimeUnit.MILLISECONDS)) Unit
-            }, "recorder-stop-$id").apply {
-                isDaemon = true
-                start()
             }
+            daemon("recorder-sources-$id") { sources.stopAll() }
         }
         return awaitStopped(timeoutMs)
     }
@@ -212,6 +211,11 @@ class Recording internal constructor(
 
     /** Stops accepting records. True for the call that actually stopped intake. */
     private fun stopIntake(): Boolean = intake.write { stopping.compareAndSet(false, true) }
+}
+
+private fun daemon(name: String, body: () -> Unit) = Thread(body, name).apply {
+    isDaemon = true
+    start()
 }
 
 /** Marks a camera starting. The event time is the video's offset to session time. */
