@@ -255,15 +255,15 @@ class RecorderService : Service() {
         super.onDestroy()
     }
 
-    private companion object {
-        const val UserStop = "user"
-        const val KeyWanted = "wanted"
-        const val KeyCar = "car"
+    companion object {
+        private const val UserStop = "user"
+        private const val KeyWanted = "wanted"
+        private const val KeyCar = "car"
 
         /** Shown on the track screen when a start has no GNSS receiver; nothing is recorded. */
         const val NoReceiver = "No GNSS receiver. Pair a RaceBox in Settings."
-        const val KeyTrack = "track"
-        const val KeyRaceBoxAddress = "racebox_address"
-        const val KeyRaceBoxName = "racebox_name"
+        private const val KeyTrack = "track"
+        private const val KeyRaceBoxAddress = "racebox_address"
+        private const val KeyRaceBoxName = "racebox_name"
     }
 }

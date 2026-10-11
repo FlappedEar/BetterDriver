@@ -123,13 +123,18 @@ class RecorderClient private constructor(private val context: Context) {
      * camera service start from the foreground.
      */
     fun start(car: String, track: String, raceBox: RaceBoxRef?, phoneVideo: Boolean = false) {
+        if (raceBox == null) {
+            // Neither the recorder nor the camera starts, so no camera notification waits for a session.
+            state = state.copy(starting = false, error = RecorderService.NoReceiver)
+            return
+        }
         state = state.copy(starting = true, error = null)
         val intent = Intent(context, RecorderService::class.java)
             .setAction(RecorderProtocol.ACTION_START)
             .putExtra(RecorderProtocol.EXTRA_CAR, car)
             .putExtra(RecorderProtocol.EXTRA_TRACK, track)
-            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, raceBox?.address)
-            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, raceBox?.name)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, raceBox.address)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, raceBox.name)
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {
