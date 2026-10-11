@@ -274,14 +274,7 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCompareLaps: ()
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), sessions)
     SessionsScreen(
         header = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (sessions.list.isNotEmpty()) {
-                    FilledTonalButton(onClick = onCompareLaps, modifier = Modifier.fillMaxWidth()) {
-                        Text("Compare laps")
-                    }
-                }
-                UpdateCard(updates, updatesBlocked)
-            }
+            SessionsHeader(sessions.list.isNotEmpty(), onCompareLaps) { UpdateCard(updates, updatesBlocked) }
         },
         sessions = sessions.list,
         exports = sessions.exports,
@@ -309,6 +302,19 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCompareLaps: ()
             onDelete = { s -> sessions.delete(s.id) },
         ),
     )
+}
+
+/** Above the sessions list: "Compare laps" once there are sessions, then [updates]. */
+@Composable
+private fun SessionsHeader(hasSessions: Boolean, onCompareLaps: () -> Unit, updates: @Composable () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (hasSessions) {
+            FilledTonalButton(onClick = onCompareLaps, modifier = Modifier.fillMaxWidth()) {
+                Text("Compare laps")
+            }
+        }
+        updates()
+    }
 }
 
 @Composable
