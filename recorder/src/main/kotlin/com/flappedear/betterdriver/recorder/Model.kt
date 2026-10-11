@@ -110,6 +110,14 @@ object EventKinds {
      * Its tMicros is the video's offset to session time.
      */
     const val VIDEO_START = "video_start"
+
+    /**
+     * Text "camera=<name> file=<file name> media_us=<n>": at tMicros the file held n microseconds
+     * of media. Refines the start and gives an end if the camera dies (video.VideoTimeline).
+     */
+    const val VIDEO_SYNC = "video_sync"
+
+    /** Text "camera=<name> file=<file name> reason=<why>". */
     const val VIDEO_STOP = "video_stop"
     const val SOURCE_ERROR = "source_error"
     const val LISTENER_ERROR = "listener_error"
