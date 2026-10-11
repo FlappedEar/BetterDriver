@@ -20,6 +20,7 @@ include(
     ":app",
     ":recorder",
     ":timing",
+    ":video",
     ":core-ui",
     ":core-ble",
     ":feature-track",
