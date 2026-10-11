@@ -21,10 +21,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.diy.scanDiyDevices
+import com.flappedear.betterdriver.core.ble.dragy.scanDragys
 import com.flappedear.betterdriver.core.ble.hr.scanHeartRateMonitors
 import com.flappedear.betterdriver.core.ble.lns.scanLnsDevices
 import com.flappedear.betterdriver.core.ble.nmea.bondedSppDevices
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
+import com.flappedear.betterdriver.core.ble.vbox.bondedVboxSports
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.scanGoPros
 import com.flappedear.betterdriver.recording.RecorderClient
@@ -39,8 +41,10 @@ import com.flappedear.betterdriver.shell.NearbyDevice
 import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.newSetupId
 import java.io.IOException
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 
@@ -139,15 +143,19 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
 }
 
 /**
- * Bluetooth GPS receivers paired in Android's settings. Classic receivers are paired there, so
- * they are listed, not scanned (FBBD-108). Read once per screen, and only with the permissions.
+ * Bluetooth GPS receivers paired in Android's settings: VBOX Sports (FBBD-116) and NMEA receivers
+ * (FBBD-108). Classic receivers are paired there, so they are listed, not scanned. A VBOX Sport is
+ * listed only as one. Read once per screen, and only with the permissions.
  */
 @Composable
 private fun rememberPairedGps(allowed: Boolean): List<NearbyDevice> {
     val context = LocalContext.current
     return remember(allowed) {
-        val bonded = if (allowed) bondedSppDevices(context) else emptyList()
-        bonded.map { NearbyDevice(EquipmentModel.NMEA_GNSS, it.name, it.address, 0) }
+        val vboxes = if (allowed) bondedVboxSports(context) else emptyList()
+        val vboxAddresses = vboxes.map { it.address }.toSet()
+        val nmea = if (allowed) bondedSppDevices(context).filter { it.address !in vboxAddresses } else emptyList()
+        vboxes.map { NearbyDevice(EquipmentModel.VBOX_SPORT, it.name, it.address, 0) } +
+            nmea.map { NearbyDevice(EquipmentModel.NMEA_GNSS, it.name, it.address, 0) }
     }
 }
 
@@ -227,28 +235,31 @@ private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
 
 /**
  * What a scan hears nearby while [searching]: RaceBoxes, Open GoPro cameras, Bluetooth LE GPS
- * receivers (FBBD-114), RaceChrono DIY devices (FBBD-118) and heart-rate monitors (FBBD-119).
- * Each scanner emits only once it hears its own kind, so each starts empty: a RaceBox shows even
- * with no GoPro nearby.
+ * receivers (FBBD-114), RaceChrono DIY devices (FBBD-118), Dragys (FBBD-117) and heart-rate
+ * monitors (FBBD-119). Each scanner emits only once it hears its own kind, so each starts empty: a
+ * RaceBox shows even with no GoPro nearby.
  */
 @Composable
 private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
     val context = LocalContext.current
     return remember(context) {
         if (searching) {
-            combine(
-                scanRaceBoxes(context).onStart { emit(emptyList()) },
-                scanGoPros(context).onStart { emit(emptyList()) },
-                scanLnsDevices(context).onStart { emit(emptyList()) },
-                scanHeartRateMonitors(context).onStart { emit(emptyList()) },
-                scanDiyDevices(context).onStart { emit(emptyList()) },
-            ) { boxes, goPros, lns, hr, diy ->
-                boxes.map { NearbyDevice(EquipmentModel.RACEBOX, it.name, it.address, it.bars) } +
-                    goPros.map { NearbyDevice(EquipmentModel.GOPRO, it.name, it.address, it.bars) } +
-                    lns.map { nearby(EquipmentModel.LNS_GNSS, it) } +
-                    hr.map { nearby(EquipmentModel.HEART_RATE, it) } +
-                    diy.map { nearby(EquipmentModel.DIY_GNSS, it) }
-            }
+            val scans: List<Flow<List<NearbyDevice>>> = listOf(
+                scanRaceBoxes(context).map { found ->
+                    found.map { NearbyDevice(EquipmentModel.RACEBOX, it.name, it.address, it.bars) }
+                },
+                scanGoPros(context).map { found ->
+                    found.map { NearbyDevice(EquipmentModel.GOPRO, it.name, it.address, it.bars) }
+                },
+                scanLnsDevices(context).map { found -> found.map { nearby(EquipmentModel.LNS_GNSS, it) } },
+                scanHeartRateMonitors(context).map { found -> found.map { nearby(EquipmentModel.HEART_RATE, it) } },
+                scanDiyDevices(context).map { found -> found.map { nearby(EquipmentModel.DIY_GNSS, it) } },
+                scanDragys(context).map { found ->
+                    found.map { nearby(EquipmentModel.DRAGY, FoundBleDevice(it.name, it.address, it.rssi)) }
+                },
+            )
+            // Six scans: more than combine's typed overloads take, so the lists are combined as one.
+            combine(scans.map { it.onStart { emit(emptyList()) } }) { lists -> lists.flatMap { it } }
         } else {
             flowOf(emptyList())
         }

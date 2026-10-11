@@ -6,10 +6,12 @@ import android.net.NetworkCapabilities
 import com.flappedear.betterdriver.core.ble.ImuCalibrationStore
 import com.flappedear.betterdriver.core.ble.RaceBoxSource
 import com.flappedear.betterdriver.core.ble.diy.DiyBleSource
+import com.flappedear.betterdriver.core.ble.dragy.DragySource
 import com.flappedear.betterdriver.core.ble.hr.HeartRateSource
 import com.flappedear.betterdriver.core.ble.lns.LnsSource
 import com.flappedear.betterdriver.core.ble.nmea.NmeaSource
 import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
+import com.flappedear.betterdriver.core.ble.vbox.VboxSportSource
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.setup.Equipment
@@ -48,6 +50,12 @@ enum class GnssType {
     /** A receiver on Wi-Fi sending NMEA or $RC2/$RC3 over TCP; its address is "host:port" (FBBD-115). */
     TCP,
 
+    /** A RACELOGIC VBOX Sport paired in Android settings, RACELOGIC Serial Stream over Bluetooth Classic (FBBD-116). */
+    VBOX,
+
+    /** A Dragy Pro / DRG70 over BLE, community-documented protocol, unverified on hardware (FBBD-117). */
+    DRAGY,
+
     /** The made-up positions of Demo GNSS, which Arek adds as equipment on purpose (FBBD-83). */
     DEMO,
 }
@@ -79,17 +87,21 @@ data class SensorRef(val address: String, val name: String) {
     }
 }
 
+/** Which source records each receiver model. */
+private val GnssTypes = mapOf(
+    EquipmentModel.DEMO_GNSS to GnssType.DEMO,
+    EquipmentModel.RACEBOX to GnssType.RACEBOX,
+    EquipmentModel.NMEA_GNSS to GnssType.NMEA,
+    EquipmentModel.LNS_GNSS to GnssType.LNS,
+    EquipmentModel.DIY_GNSS to GnssType.DIY,
+    EquipmentModel.TCP_GNSS to GnssType.TCP,
+    EquipmentModel.VBOX_SPORT to GnssType.VBOX,
+    EquipmentModel.DRAGY to GnssType.DRAGY,
+)
+
 /** The receiver an equipment item is, or null when it is not a receiver. */
 fun gnssRefOf(e: Equipment): GnssRef? {
-    val type = when (e.model) {
-        EquipmentModel.DEMO_GNSS -> GnssType.DEMO
-        EquipmentModel.RACEBOX -> GnssType.RACEBOX
-        EquipmentModel.NMEA_GNSS -> GnssType.NMEA
-        EquipmentModel.LNS_GNSS -> GnssType.LNS
-        EquipmentModel.DIY_GNSS -> GnssType.DIY
-        EquipmentModel.TCP_GNSS -> GnssType.TCP
-        else -> null
-    }
+    val type = GnssTypes[e.model]
     // The recorder tells a RaceBox Micro from a Mini by the advertised name, not Arek's name for it.
     return when (type) {
         null -> null
@@ -112,6 +124,8 @@ internal object Sources {
             GnssType.LNS -> LnsSource(app, gnss.address, gnss.name)
             GnssType.DIY -> DiyBleSource(app, gnss.address, gnss.name)
             GnssType.TCP -> tcpSource(app, gnss)
+            GnssType.VBOX -> VboxSportSource(app, gnss.address, gnss.name)
+            GnssType.DRAGY -> DragySource(app, gnss.address, gnss.name)
             GnssType.RACEBOX -> RaceBoxSource(app, gnss.address, gnss.name, imuCalibrations(context).load(gnss.address))
         }
         return listOf(receiver) + sensors.map { HeartRateSource(app, it.address, it.name) }

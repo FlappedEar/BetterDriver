@@ -74,7 +74,8 @@ private fun gnssFrom(intent: Intent): GnssRef? = when {
 
 /**
  * G for the track screen (UI-38): the RaceBox accelerometer, or a RaceChrono DIY device's $RC2/$RC3
- * lines over Bluetooth or Wi-Fi (FBBD-115). Other receivers have none.
+ * lines over Bluetooth or Wi-Fi (FBBD-115). Other receivers have none: the VBOX Sport's G channels
+ * and the Dragy Pro's IMU are not read (FBBD-116, FBBD-117).
  */
 private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
     GnssType.RACEBOX -> RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
