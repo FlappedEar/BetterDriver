@@ -137,6 +137,50 @@ class RecorderTest {
     }
 
     @Test
+    fun `a listener failing on everything cannot flood the session`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        val calls = AtomicLong()
+        rec.listeners.add(object : RecorderListener {
+            override fun onSamples(set: SampleSet) = fail()
+            override fun onEvent(event: RecorderEvent) = fail()
+            override fun onChannel(def: ChannelDef) = fail()
+            private fun fail() {
+                calls.incrementAndGet()
+                error("broken")
+            }
+        })
+        rec.event("marker", "x")
+        feed(rec, 200)
+        Thread.sleep(1_500)
+        rec.stop()
+        val errors = store.read(rec.id).events.filter { it.kind == EventKinds.LISTENER_ERROR }
+        assertTrue(calls.get() > 100, "listener called ${calls.get()} times")
+        assertTrue(errors.size in 1..3, "expected at most one error per second, got ${errors.size}")
+    }
+
+    @Test
+    fun `storage stop happens even when the queue never empties`() {
+        val store = SessionStore(tmp)
+        val free = AtomicLong(1L shl 40)
+        val rec = Recorder(
+            store,
+            RecorderConfig(storageCheckIntervalMs = 10, storageWarnBytes = 1_000, storageStopBytes = 100),
+            storage = { free.get() },
+        ).start(info())
+        val producer = Thread {
+            var i = 0L
+            while (!rec.isStopped) rec.submit(SampleSet(i * 40_000, gnss.fix(i++)))
+        }.apply { start() }
+        Thread.sleep(200)
+        free.set(50)
+        assertTrue(rec.awaitStopped(5_000), "recorder did not stop on low storage")
+        producer.join(1_000)
+        assertEquals("storage_full", rec.finalStatus?.reason)
+        assertEquals(SessionState.FINISHED, store.state(rec.dir))
+    }
+
+    @Test
     fun `a source that fails to start is logged and the recording continues`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(info())

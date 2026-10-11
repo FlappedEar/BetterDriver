@@ -23,6 +23,7 @@ private const val DefaultStorageCheckMs = 2_000L
 private const val DefaultQueueCapacity = 100_000
 private const val DefaultListenerQueueCapacity = 1_024
 private const val StopTimeoutMs = 10_000L
+private const val StopOfferMs = 100L
 
 data class RecorderConfig(
     /**
@@ -154,8 +155,8 @@ class Recording internal constructor(
     fun stop(reason: String = "user") {
         if (stopping.compareAndSet(false, true)) {
             sources.stopAll()
-            // The stop command must get through even if the queue is full.
-            while (!queue.offer(Cmd.Stop(reason))) queue.poll()
+            // Sources are stopped, so the writer frees space; never discard accepted records to make room.
+            while (!isStopped && !queue.offer(Cmd.Stop(reason), StopOfferMs, TimeUnit.MILLISECONDS)) Unit
         }
         awaitStopped()
     }

@@ -54,18 +54,22 @@ internal class RecordingWriter(
     }
 
     private fun loop(): String {
-        while (true) {
-            var cmd = queue.poll(config.flushIntervalMs, TimeUnit.MILLISECONDS)
-            while (cmd != null) {
-                if (cmd is Cmd.Stop) return cmd.reason
-                write((cmd as Cmd.Write).record)
-                if (nanoTime() - lastFlushNanos >= config.flushIntervalMs * NanosPerMilli) flush()
-                cmd = queue.poll()
+        var reason: String? = null
+        while (reason == null) {
+            when (val cmd = queue.poll(config.flushIntervalMs, TimeUnit.MILLISECONDS)) {
+                is Cmd.Stop -> reason = cmd.reason
+                is Cmd.Write -> write(cmd.record)
+                null -> Unit
             }
-            // Queue drained: hand everything to the OS. The sync thread makes it durable.
-            flush()
-            if (storageExhausted()) return STORAGE_FULL
+            if (reason == null) {
+                // Hand data to the OS when the queue drains, and at least every flush interval under load.
+                // The sync thread makes it durable.
+                if (queue.isEmpty() || nanoTime() - lastFlushNanos >= config.flushIntervalMs * NanosPerMilli) flush()
+                // Checked on every pass, so a queue that never empties cannot skip the storage stop.
+                if (storageExhausted()) reason = STORAGE_FULL
+            }
         }
+        return reason
     }
 
     private fun finish(reason: String) {
@@ -87,7 +91,10 @@ internal class RecordingWriter(
         when (record) {
             is Record.Channel -> listeners.dispatch { it.onChannel(record.def) }
             is Record.Samples -> listeners.dispatch { it.onSamples(record.set) }
-            is Record.Event -> listeners.dispatch { it.onEvent(record.event) }
+            // Listener errors are not sent back to listeners: a listener failing on them would loop.
+            is Record.Event -> if (record.event.kind != EventKinds.LISTENER_ERROR) {
+                listeners.dispatch { it.onEvent(record.event) }
+            }
             is Record.End -> Unit
         }
     }

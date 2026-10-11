@@ -7,6 +7,7 @@ import java.util.concurrent.ThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 private const val MaxErrorText = 500
+private const val ErrorLogIntervalNanos = 1_000_000_000L
 
 /**
  * Live consumers (track screen, live engine, cue engine). They run on their own thread, every call
@@ -29,6 +30,8 @@ class ListenerHub internal constructor(
     private val onError: (String) -> Unit,
 ) {
     private val listeners = CopyOnWriteArrayList<RecorderListener>()
+    private var lastErrorNanos: Long? = null
+    private var suppressedErrors = 0
     private val executor = ThreadPoolExecutor(
         1, 1, 0, TimeUnit.MILLISECONDS,
         ArrayBlockingQueue(capacity),
@@ -53,7 +56,7 @@ class ListenerHub internal constructor(
                     try {
                         block(l)
                     } catch (t: Throwable) {
-                        onError(t.toString().take(MaxErrorText))
+                        logError(t)
                     }
                 }
             }
@@ -63,4 +66,19 @@ class ListenerHub internal constructor(
     }
 
     internal fun shutdown() = executor.shutdown()
+
+    /** Logs at most one listener error per second, with a count of the ones left out, so a listener
+     * failing on every update cannot flood the session. Runs on the single listener thread. */
+    private fun logError(t: Throwable) {
+        val now = System.nanoTime()
+        val last = lastErrorNanos
+        if (last != null && now - last < ErrorLogIntervalNanos) {
+            suppressedErrors++
+            return
+        }
+        lastErrorNanos = now
+        val suppressed = if (suppressedErrors > 0) " (+$suppressedErrors earlier errors not logged)" else ""
+        suppressedErrors = 0
+        onError(t.toString().take(MaxErrorText) + suppressed)
+    }
 }
