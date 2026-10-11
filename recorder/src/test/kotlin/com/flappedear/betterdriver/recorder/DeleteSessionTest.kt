@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.recorder
 
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.recorder.store.DeleteResult
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.VideoFiles
@@ -33,7 +34,7 @@ class DeleteSessionTest {
         val video = File(store.dir(id), VideoFiles.DIR).apply { mkdirs() }
         File(video, "phone-0001.mp4").writeBytes(ByteArray(1000))
         File(video, "GX010042.MP4").writeBytes(ByteArray(500))
-        assertTrue(store.sizeBytes(store.dir(id)) >= 1500)
+        assertTrue(SessionFiles.sizeBytes(store.dir(id)) >= 1500)
 
         assertEquals(DeleteResult.DELETED, store.delete(id))
         assertFalse(store.dir(id).exists())

@@ -63,6 +63,10 @@ private const val DeletingPrefix = ".deleting-"
 
 enum class DeleteResult { DELETED, NOT_FOUND, RECORDING, FAILED }
 
+/** [target] is a directory directly under [root], and [id] is not a hidden name. */
+private fun isSessionDir(root: File, id: String, target: File): Boolean =
+    id.isNotEmpty() && !id.startsWith(".") && target.parentFile == root && target.isDirectory
+
 /** Session directories under [root], one per recording. */
 class SessionStore(val root: File) {
 
@@ -120,9 +124,6 @@ class SessionStore(val root: File) {
         return (finished ?: recovered)?.toLongOrNull()
     }
 
-    /** Bytes on disk of the session [dir], its video included. */
-    fun sizeBytes(dir: File): Long = dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
-
     /**
      * Deletes session [id] with everything in its directory: chunks, markers and its video folder
      * (phone clips, downloaded and copied GoPro files, the clip index) (FBBD-90). A session that a
@@ -133,7 +134,7 @@ class SessionStore(val root: File) {
         val target = dir(id)
         val doomed = File(root, "$DeletingPrefix$id")
         return when {
-            !isSessionDir(id, target) -> DeleteResult.NOT_FOUND
+            !isSessionDir(root, id, target) -> DeleteResult.NOT_FOUND
             state(target) == SessionState.RECORDING -> DeleteResult.RECORDING
             !target.renameTo(doomed) -> DeleteResult.FAILED
             else -> {
@@ -143,10 +144,6 @@ class SessionStore(val root: File) {
             }
         }
     }
-
-    /** [target] is a directory directly under [root], and [id] is not a hidden name. */
-    private fun isSessionDir(id: String, target: File): Boolean =
-        id.isNotEmpty() && !id.startsWith(".") && target.parentFile == root && target.isDirectory
 
     /**
      * Run at app start. Finds sessions that were not stopped cleanly and nobody is recording,

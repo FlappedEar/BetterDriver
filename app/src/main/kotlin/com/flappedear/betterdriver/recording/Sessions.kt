@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.recorder.store.DeleteResult
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
@@ -220,7 +221,7 @@ class Sessions private constructor(private val context: Context) {
             File(s.dir, VideoFiles.DIR).listFiles()?.any(::isVideoFile) == true
         }.map { it.id }.toSet()
         val goPros = sessions.associate { it.id to goProOf(it.dir) }
-        val bytes = sessions.associate { it.id to store.sizeBytes(it.dir) }
+        val bytes = sessions.associate { it.id to SessionFiles.sizeBytes(it.dir) }
         main.post {
             list = sessions
             sizes = bytes
