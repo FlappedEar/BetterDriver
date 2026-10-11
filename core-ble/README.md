@@ -132,3 +132,97 @@ date in the epoch, the last date seen, advanced at midnight. NMEA-only channels
 use ids 200 to 299 (`NmeaChannels`: fix quality, fix type, HDOP, PDOP). Fix
 changes and link drops are session events (`NmeaEvents`; the fix events share
 their kinds with the RaceBox).
+
+## Standard BLE services
+
+Devices that implement a Bluetooth SIG service instead of a vendor protocol.
+They share two Android pieces in the root package:
+
+- `GattNotifyLink(context, address, GattNotifySpec(service, characteristic, ...))`:
+  the `RaceBoxLink` life cycle for any notified characteristic, without the
+  diagnostics probe. Connect, MTU 517, subscribe (CCCD write), reconnect after
+  1 s, 2 s, 4 s, then every 5 s; a link silent for 5 s, or sending nothing
+  within 15 s of connecting, is restarted. Same `LinkState`, with
+  `Streaming.hz` counting notifications per second. No bonding is asked for; a
+  device that needs it makes Android pair on the descriptor write.
+- `scanBleDevices(context, matches)`: a Flow of `FoundBleDevice`s in range whose
+  advertised name and service UUIDs pass a pure filter, strongest first.
+
+`sigUuid(0x1819)` builds the 128-bit UUID of an assigned number; `LeReader`
+reads the GATT little-endian formats (uint8/16/24, sint24, sint32) and throws
+on a short value, so decoders drop truncated values in one place.
+
+**Sources.** Bluetooth SIG GATT Specification Supplement
+(<https://www.bluetooth.com/specifications/gss/>), sections Location and Speed,
+Heart Rate Measurement and Date Time; the Bluetooth SIG GATT XML they replaced
+(<https://github.com/oesmith/gatt-xml>) has the same layouts.
+
+### Location and Navigation Service (FBBD-114)
+
+Package `lns`: BLE GNSS receivers that implement the Location and Navigation
+Service `0x1819`.
+
+- `isLnsAdvertisement(name, serviceUuids)`: advertises `0x1819` and is not a
+  RaceBox. `scanLnsDevices(context)` scans with it.
+- `LnsSource(context, address, name)`: a recorder `DataSource` named `lns`;
+  subscribes to Location and Speed `0x2A67`.
+- `LocationAndSpeed`, `LnsDecoder`: pure Kotlin, unit tested.
+
+**Location and Speed** (little-endian, fields in this order, each only when its
+flag bit is set):
+
+| Field | Format | Scale / unit | Flag bit |
+| --- | --- | --- | --- |
+| Flags | u16 | | |
+| Instantaneous Speed | u16 | 1/100 m/s | 0 |
+| Total Distance | u24 | 1/10 m | 1 |
+| Latitude, Longitude | s32, s32 | 1e-7 deg | 2 |
+| Elevation | s24 | 1/100 m | 3 |
+| Heading | u16 | 1/100 deg | 4 |
+| Rolling Time | u8 | s | 5 |
+| UTC Time | date_time: year u16, month, day, hours, minutes, seconds | | 6 |
+
+Flag bits 7–8: Position Status (0 none, 1 OK, 2 estimated, 3 last known); bit 9:
+speed and distance 2D/3D; bits 10–11: elevation source (positioning system,
+barometric, database, other); bit 12: heading source (0 movement, 1 magnetic
+compass). A date_time with a 0 year, month or day is "not known".
+
+**Channels.** One sample set per notification, stamped with the recorder clock
+on arrival, into the same `GnssChannels` the NMEA decoder fills: `gnss_utc_ms`
+whenever the UTC time is known; position, speed (m/s × 3.6), course and
+elevation only with a fix. A fix is Position Status OK or Estimated, or No
+Position with coordinates other than exactly 0°, 0° (servers without the
+Position Status feature leave those bits at 0); Last Known Position is not a
+fix. Only notifications with a location change the fix state, so a value split
+over several notifications (when it does not fit the MTU) keeps the fix of its
+first part. A compass heading goes in `lns_compass_heading`, not the course.
+LNS-only channels use ids 300 to 399 (`LnsChannels`: position status, total
+distance, compass heading). Fix changes and link drops are session events
+(`LnsEvents`; the fix events share their kinds with the RaceBox and NMEA).
+
+### Heart Rate Service (FBBD-119)
+
+Package `hr`: chest straps, arm bands and watches in broadcast mode with the
+Heart Rate Service `0x180D`.
+
+- `isHeartRateAdvertisement(serviceUuids)`; `scanHeartRateMonitors(context)`.
+- `HeartRateSource(context, address, name)`: a recorder `DataSource` named
+  `heart_rate`; subscribes to Heart Rate Measurement `0x2A37`.
+- `HeartRateMeasurement`, `HeartRateDecoder`: pure Kotlin, unit tested.
+
+**Heart Rate Measurement**: flags u8; the value u8, or u16 when bit 0 is set
+(bpm); Energy Expended u16 kJ when bit 3; then RR-Intervals u16 in 1/1024 s,
+oldest first, as many as fit, when bit 4. Bits 1–2 are the sensor contact
+status (0–1 not supported, 2 no contact, 3 contact). A trailing odd byte where
+an RR-Interval would be is ignored.
+
+**Channels** (ids 400 to 499, `HeartRateChannels`): `heart_rate` (bpm) and
+`hr_energy` (kJ) in one set per notification on arrival; `heart_rate` is left
+out while the monitor reports no skin contact. `hr_rr_interval` (ms) gets one
+set per interval, stamped at its beat (arrival minus the newer intervals),
+never before the previous interval's stamp, the session start, or after
+arrival. Contact changes and link drops are session events (`HeartRateEvents`).
+
+**Not verified on hardware.** Both decoders are tested against values built
+from the specification only; capture notifications from a real LNS receiver and
+a heart rate strap and add them to the tests.
