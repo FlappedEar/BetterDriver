@@ -28,5 +28,12 @@ kotlin {
 
 dependencies {
     implementation(project(":core-ui"))
+    implementation(project(":timing"))
+    implementation(project(":recorder"))
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    // Lap videos (FBBD-93); the app shows phone and GoPro MP4s from the session's directory.
+    implementation(libs.androidx.media3.exoplayer)
     debugImplementation(libs.compose.ui.tooling)
+    testImplementation(libs.junit)
 }

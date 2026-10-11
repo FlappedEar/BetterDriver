@@ -28,6 +28,9 @@ object Routes {
 
     fun car(id: String) = "cars/$id"
 
+    /** Two laps side by side with their videos (FBBD-24). */
+    const val Review = "review"
+
     /** Lap analysis of one saved session (FBBD-102). */
     const val SessionAnalysisPattern = "sessions/{id}/analysis"
     const val SessionIdArg = "id"
