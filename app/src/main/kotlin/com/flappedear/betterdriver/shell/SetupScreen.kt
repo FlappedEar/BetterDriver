@@ -78,7 +78,13 @@ fun SetupScreen(
             },
             onAction = { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) },
         ),
-        SetupStep("RaceBox Micro", "Needed for lap timing", done = false, action = "Pair", onAction = onPair),
+        SetupStep(
+            "RaceBox Micro",
+            prefs.raceBox?.let { "Paired · ${it.serial}" } ?: "Needed for lap timing",
+            done = prefs.raceBox != null,
+            action = "Pair",
+            onAction = onPair,
+        ),
         SetupStep(
             "Cameras",
             if (prefs.phoneCamera) "Phone camera on · GoPro optional" else "Phone camera, GoPro (optional)",

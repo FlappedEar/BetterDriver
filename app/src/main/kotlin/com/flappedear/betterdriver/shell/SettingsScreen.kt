@@ -74,7 +74,12 @@ fun SettingsScreen(
 @Composable
 private fun DevicesTab(prefs: AppPrefs, onPair: () -> Unit) {
     ShellCard {
-        ListRow("RaceBox Micro", "Not paired", divider = false, onClick = onPair)
+        ListRow(
+            "RaceBox Micro",
+            prefs.raceBox?.let { "Paired · ${it.serial}" } ?: "Not paired",
+            divider = false,
+            onClick = onPair,
+        )
         ListRow("Phone camera") {
             Switch(checked = prefs.phoneCamera, onCheckedChange = prefs::updatePhoneCamera)
         }

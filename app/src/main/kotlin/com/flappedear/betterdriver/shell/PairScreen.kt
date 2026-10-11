@@ -27,8 +27,8 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 
 /**
  * Device pairing (UI-14 option B): one big card for the closest RaceBox, with
- * "Show all devices" as a fallback. Bluetooth scanning is not built yet, so
- * the app passes no candidate and the screen says it is searching.
+ * "Show all devices" as a fallback. The app scans while this screen is open
+ * and passes the strongest RaceBox; with none in range it shows searching.
  */
 @Composable
 fun PairScreen(
@@ -75,7 +75,7 @@ private fun SearchingCard() {
             CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             Text("Searching…", style = MaterialTheme.typography.bodyLarge)
         }
-        DimText("Bluetooth pairing is not in this build yet.")
+        DimText("Make sure Bluetooth is on.")
     }
 }
 
