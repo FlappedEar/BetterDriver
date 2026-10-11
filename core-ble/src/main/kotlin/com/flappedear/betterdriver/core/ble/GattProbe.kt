@@ -34,11 +34,13 @@ interface LinkProbe {
 internal class GattProbe(private val probe: LinkProbe) {
     private val ops = ArrayDeque<(BluetoothGatt) -> Boolean>()
     private var busySince = 0L
+    private var attempts = 0
 
     /** Forget queued work, e.g. before a reconnect. */
     fun clear() {
         ops.clear()
         busySince = 0L
+        attempts = 0
     }
 
     /** Once notifications are on: the Device Information reads, then the probe's queries. */
@@ -48,34 +50,50 @@ internal class GattProbe(private val probe: LinkProbe) {
         RaceBoxGatt.DEVICE_INFO_CHARACTERISTICS.forEach { uuid ->
             info?.getCharacteristic(uuid)?.let { ch -> ops.addLast { it.readCharacteristic(ch) } }
         }
+        // The queries depend on the firmware just read, so they are asked for here, once even if retried.
+        var queued = false
         ops.addLast { gatt ->
-            probe.queries().forEach { q -> ops.addLast { write(it, q) } }
+            if (!queued) probe.queries().forEach { q -> ops.addLast { write(it, q) } }
+            queued = true
             gatt.readRemoteRssi()
         }
         next(g, now)
     }
 
-    /** Runs queued operations until one starts; its result callback calls this again. */
+    /**
+     * Starts the next queued operation; its result callback calls this again. An operation Android
+     * refuses (often because an earlier one is still outstanding) stays queued and is retried on the
+     * next [tick], up to [MaxAttempts] times, so a slow answer does not discard the rest of the queue.
+     */
     fun next(g: BluetoothGatt, now: Long) {
         busySince = 0L
         while (ops.isNotEmpty()) {
             val started = try {
-                ops.removeFirst()(g)
+                ops.first()(g)
             } catch (_: SecurityException) {
                 false
             }
             if (started) {
+                ops.removeFirst()
+                attempts = 0
                 busySince = now
                 return
             }
+            if (++attempts < MaxAttempts) return
+            ops.removeFirst()
+            attempts = 0
         }
     }
 
-    /** Once a second while streaming: signal strength, and moving on from an operation that never answered. */
+    /**
+     * Once a second while streaming: retries a refused operation, moves on from one that never
+     * answered, and reads the signal strength when idle.
+     */
     fun tick(g: BluetoothGatt, now: Long) {
         when {
-            busySince != 0L && now - busySince > OpTimeoutMs -> next(g, now)
-            busySince == 0L && ops.isEmpty() -> {
+            busySince != 0L && now - busySince <= OpTimeoutMs -> Unit
+            ops.isNotEmpty() -> next(g, now)
+            else -> {
                 ops.addLast { it.readRemoteRssi() }
                 next(g, now)
             }
@@ -111,5 +129,6 @@ internal class GattProbe(private val probe: LinkProbe) {
 
     private companion object {
         const val OpTimeoutMs = 2_000L
+        const val MaxAttempts = 3
     }
 }

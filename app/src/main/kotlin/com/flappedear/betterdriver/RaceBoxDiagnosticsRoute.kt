@@ -14,6 +14,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.flappedear.betterdriver.core.ble.ImuCalibration
 import com.flappedear.betterdriver.core.ble.LinkProbe
 import com.flappedear.betterdriver.core.ble.LinkState
@@ -49,9 +50,15 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
     val context = LocalContext.current
     val address = item.address
     val recording = recorder.state.recording || recorder.state.starting
-    val allowed = remember { bluetoothAllowed(context) }
-    // Every RaceBox is added as a Micro; a renamed or Mini item is corrected by the Model string.
-    val diag = remember(address) { RaceBoxDiagnostics(isMicro = !item.name.startsWith("RaceBox Mini")) }
+    var allowed by remember { mutableStateOf(bluetoothAllowed(context)) }
+    // Picks up Nearby devices granted in system settings.
+    LifecycleResumeEffect(Unit) {
+        allowed = bluetoothAllowed(context)
+        onPauseOrDispose {}
+    }
+    // The advertised name tells a Mini from a Micro even after a rename; the Model string confirms it.
+    val model = item.advertisedName ?: item.name
+    val diag = remember(address) { RaceBoxDiagnostics(isMicro = !model.startsWith("RaceBox Mini")) }
     val link = diagnosticsLink(address?.takeIf { allowed && !recording }, diag)
     val calibration = rememberCalibration(address, diag)
     var view by remember { mutableStateOf<DiagnosticsView?>(null) }

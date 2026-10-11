@@ -69,7 +69,7 @@ class RaceBoxLink(
     private var lastDataAt = 0L
 
     private val received = AtomicInteger()
-    private val probe = probe?.let(::GattProbe)
+    private val gattProbe = probe?.let(::GattProbe)
 
     fun start() {
         handler.post {
@@ -97,7 +97,7 @@ class RaceBoxLink(
         setState(LinkState.Connecting)
         setupStartedAt = SystemClock.elapsedRealtime()
         lastDataAt = 0L
-        probe?.clear()
+        gattProbe?.clear()
         val failure = try {
             val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
             if (adapter == null || !adapter.isEnabled) {
@@ -139,7 +139,7 @@ class RaceBoxLink(
             last != 0L -> {
                 policy.reset()
                 setState(LinkState.Streaming(count))
-                gatt?.let { probe?.tick(it, now) }
+                gatt?.let { gattProbe?.tick(it, now) }
             }
         }
         handler.postDelayed(::watchdog, WatchdogMs)
@@ -208,7 +208,7 @@ class RaceBoxLink(
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             handler.post {
-                if (g == gatt && status == BluetoothGatt.GATT_SUCCESS) probe?.mtu(mtu)
+                if (g == gatt && status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
                 if (g == gatt && !g.discoverServices()) retry("discoverServices failed")
             }
         }
@@ -225,7 +225,7 @@ class RaceBoxLink(
                 when {
                     g != gatt -> Unit
                     status != BluetoothGatt.GATT_SUCCESS -> retry("enable notifications status $status")
-                    else -> probe?.start(g, SystemClock.elapsedRealtime())
+                    else -> gattProbe?.start(g, SystemClock.elapsedRealtime())
                 }
             }
         }
@@ -239,8 +239,8 @@ class RaceBoxLink(
         ) {
             handler.post {
                 if (g != gatt) return@post
-                if (status == BluetoothGatt.GATT_SUCCESS) probe?.deviceInfo(ch.uuid, value)
-                probe?.next(g, SystemClock.elapsedRealtime())
+                if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.deviceInfo(ch.uuid, value)
+                gattProbe?.next(g, SystemClock.elapsedRealtime())
             }
         }
 
@@ -253,14 +253,14 @@ class RaceBoxLink(
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
-            handler.post { if (g == gatt) probe?.next(g, SystemClock.elapsedRealtime()) }
+            handler.post { if (g == gatt) gattProbe?.next(g, SystemClock.elapsedRealtime()) }
         }
 
         override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                if (status == BluetoothGatt.GATT_SUCCESS) probe?.rssi(rssi)
-                probe?.next(g, SystemClock.elapsedRealtime())
+                if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.rssi(rssi)
+                gattProbe?.next(g, SystemClock.elapsedRealtime())
             }
         }
 
