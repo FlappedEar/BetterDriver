@@ -16,6 +16,11 @@ object Routes {
 
     fun equipment(id: String) = "equipment/$id"
 
+    /** Diagnostics for one RaceBox item (FBBD-89, UI-39). */
+    const val DiagnosticsPattern = "equipment/{id}/diagnostics"
+
+    fun diagnostics(id: String) = "equipment/$id/diagnostics"
+
     /** A car (UI-35 B); [NewCar] adds one. */
     const val CarPattern = "cars/{id}"
     const val CarIdArg = "id"

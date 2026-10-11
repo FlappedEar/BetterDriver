@@ -33,6 +33,12 @@ object RaceBoxEvents {
     const val DISCONNECTED = "racebox_disconnected"
     const val FIX_ACQUIRED = "gnss_fix"
     const val FIX_LOST = "gnss_fix_lost"
+
+    /**
+     * At start: the motion-sensor calibration applied to this session's acceleration and rotation
+     * channels ([ImuCalibration.encode]), or "none". With it the raw values can be recovered.
+     */
+    const val IMU_CALIBRATION = "imu_calibration"
 }
 
 private const val KmhPerMps = 3.6
@@ -42,8 +48,15 @@ private const val KmhPerMps = 3.6
  * stamped with the recorder's clock when it arrived. Position, speed, heading and altitude are only
  * included while there is a fix, so the VBO export (one row per set with a position) never gets
  * rows at 0°, 0°. Synchronized: notifications may arrive on more than one binder thread.
+ *
+ * With a [calibration] (FBBD-89), acceleration and rotation are written levelled and with the gyro
+ * offset removed.
  */
-class RaceBoxDecoder(private val sink: SampleSink, private val isMicro: Boolean = true) {
+class RaceBoxDecoder(
+    private val sink: SampleSink,
+    private val isMicro: Boolean = true,
+    private val calibration: ImuCalibration? = null,
+) {
     private val reader = UbxFrameReader()
     private var hadFix: Boolean? = null
 
@@ -98,12 +111,14 @@ class RaceBoxDecoder(private val sink: SampleSink, private val isMicro: Boolean 
             add(ChannelValue(RaceBoxChannels.H_ACC.id, d.horizontalAccM))
             add(ChannelValue(RaceBoxChannels.SPEED_ACC.id, d.speedAccMps * KmhPerMps))
         }
-        add(ChannelValue(RaceBoxChannels.ACCEL_X.id, d.accelXg))
-        add(ChannelValue(RaceBoxChannels.ACCEL_Y.id, d.accelYg))
-        add(ChannelValue(RaceBoxChannels.ACCEL_Z.id, d.accelZg))
-        add(ChannelValue(RaceBoxChannels.GYRO_X.id, d.gyroXdps))
-        add(ChannelValue(RaceBoxChannels.GYRO_Y.id, d.gyroYdps))
-        add(ChannelValue(RaceBoxChannels.GYRO_Z.id, d.gyroZdps))
+        val accel = Vec3(d.accelXg, d.accelYg, d.accelZg).let { calibration?.accel(it) ?: it }
+        val gyro = Vec3(d.gyroXdps, d.gyroYdps, d.gyroZdps).let { calibration?.gyro(it) ?: it }
+        add(ChannelValue(RaceBoxChannels.ACCEL_X.id, accel.x))
+        add(ChannelValue(RaceBoxChannels.ACCEL_Y.id, accel.y))
+        add(ChannelValue(RaceBoxChannels.ACCEL_Z.id, accel.z))
+        add(ChannelValue(RaceBoxChannels.GYRO_X.id, gyro.x))
+        add(ChannelValue(RaceBoxChannels.GYRO_Y.id, gyro.y))
+        add(ChannelValue(RaceBoxChannels.GYRO_Z.id, gyro.z))
         if (isMicro) add(ChannelValue(RaceBoxChannels.INPUT_VOLTS.id, d.microInputVolts))
     }
 }

@@ -11,12 +11,14 @@ import kotlinx.coroutines.flow.StateFlow
  * sample set per RaceBox Data Message. Connects and drops are logged as session events.
  *
  * [deviceName] is the advertised name saved at pairing; it tells a Micro (input voltage) from a Mini
- * (battery level).
+ * (battery level). [calibration] is the motion-sensor calibration taken on the diagnostics screen
+ * for this RaceBox, if any (FBBD-89).
  */
 class RaceBoxSource(
     private val context: Context,
     private val address: String,
     deviceName: String,
+    private val calibration: ImuCalibration? = null,
 ) : DataSource {
     override val name = "racebox"
     private val isMicro = deviceName.startsWith(RaceBoxGatt.MICRO_PREFIX)
@@ -28,10 +30,11 @@ class RaceBoxSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = RaceBoxDecoder(sink, isMicro)
+        val decoder = RaceBoxDecoder(sink, isMicro, calibration)
         decoder.defineChannels()
+        sink.event(RaceBoxEvents.IMU_CALIBRATION, calibration?.encode() ?: "none")
         var wasStreaming = false
-        link = RaceBoxLink(context, address, onData = decoder::feed) { s ->
+        link = RaceBoxLink(context, address, onData = decoder::feed, onState = { s ->
             val streaming = s is LinkState.Streaming
             if (streaming && !wasStreaming) sink.event(RaceBoxEvents.CONNECTED, address)
             if (s is LinkState.Reconnecting) {
@@ -39,7 +42,7 @@ class RaceBoxSource(
                 decoder.reset()
             }
             if (streaming || s is LinkState.Reconnecting) wasStreaming = streaming
-        }.also { it.start() }
+        }).also { it.start() }
     }
 
     override fun stop() {

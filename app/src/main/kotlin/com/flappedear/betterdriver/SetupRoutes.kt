@@ -21,6 +21,7 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.scanGoPros
+import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AddEquipmentScreen
 import com.flappedear.betterdriver.shell.AppPrefs
@@ -51,6 +52,20 @@ internal fun NavGraphBuilder.setupDestinations(
     ) { e ->
         val id = e.arguments?.getString(Routes.EquipmentIdArg).orEmpty()
         Box(Modifier.padding(padding)) { EquipmentRoute(nav, repo, id) }
+    }
+    composable(
+        Routes.DiagnosticsPattern,
+        arguments = listOf(navArgument(Routes.EquipmentIdArg) { type = NavType.StringType }),
+    ) { e ->
+        val item = repo.setup.equipment(e.arguments?.getString(Routes.EquipmentIdArg).orEmpty())
+        val recorder = RecorderClient.get(LocalContext.current)
+        Box(Modifier.padding(padding)) {
+            if (item == null) {
+                LaunchedEffect(Unit) { nav.popBackStack() }
+            } else {
+                RaceBoxDiagnosticsRoute(item, recorder, onBack = { nav.popBackStack() })
+            }
+        }
     }
     composable(
         Routes.CarPattern,
@@ -140,6 +155,7 @@ internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String)
     EquipmentScreen(
         item = item,
         onRename = { name -> repo.update { it.renameEquipment(id, name) } },
+        onDiagnostics = { nav.navigate(Routes.diagnostics(id)) },
         onRemove = {
             nav.popBackStack()
             repo.update { it.removeEquipment(id) }

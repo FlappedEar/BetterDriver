@@ -51,6 +51,7 @@ class RaceBoxLink(
     private val address: String,
     private val onData: (ByteArray) -> Unit,
     private val onState: (LinkState) -> Unit = {},
+    probe: LinkProbe? = null,
 ) {
     private val appContext = context.applicationContext
     private val thread = HandlerThread("racebox-link").apply { start() }
@@ -68,6 +69,7 @@ class RaceBoxLink(
     private var lastDataAt = 0L
 
     private val received = AtomicInteger()
+    private val gattProbe = probe?.let(::GattProbe)
 
     fun start() {
         handler.post {
@@ -95,6 +97,7 @@ class RaceBoxLink(
         setState(LinkState.Connecting)
         setupStartedAt = SystemClock.elapsedRealtime()
         lastDataAt = 0L
+        gattProbe?.clear()
         val failure = try {
             val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
             if (adapter == null || !adapter.isEnabled) {
@@ -136,6 +139,7 @@ class RaceBoxLink(
             last != 0L -> {
                 policy.reset()
                 setState(LinkState.Streaming(count))
+                gatt?.let { gattProbe?.tick(it, now) }
             }
         }
         handler.postDelayed(::watchdog, WatchdogMs)
@@ -204,6 +208,7 @@ class RaceBoxLink(
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             handler.post {
+                if (g == gatt && status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
                 if (g == gatt && !g.discoverServices()) retry("discoverServices failed")
             }
         }
@@ -217,7 +222,45 @@ class RaceBoxLink(
 
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             handler.post {
-                if (g == gatt && status != BluetoothGatt.GATT_SUCCESS) retry("enable notifications status $status")
+                when {
+                    g != gatt -> Unit
+                    status != BluetoothGatt.GATT_SUCCESS -> retry("enable notifications status $status")
+                    else -> gattProbe?.start(g, SystemClock.elapsedRealtime())
+                }
+            }
+        }
+
+        // The rest is for the diagnostics probe only; without one these callbacks never fire.
+        override fun onCharacteristicRead(
+            g: BluetoothGatt,
+            ch: BluetoothGattCharacteristic,
+            value: ByteArray,
+            status: Int,
+        ) {
+            handler.post {
+                if (g != gatt) return@post
+                if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.deviceInfo(ch.uuid, value)
+                gattProbe?.next(g, SystemClock.elapsedRealtime())
+            }
+        }
+
+        @Deprecated("Called instead of the overload above before Android 13")
+        @Suppress("DEPRECATION")
+        override fun onCharacteristicRead(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+                onCharacteristicRead(g, ch, ch.value?.copyOf() ?: ByteArray(0), status)
+            }
+        }
+
+        override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
+            handler.post { if (g == gatt) gattProbe?.next(g, SystemClock.elapsedRealtime()) }
+        }
+
+        override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) {
+            handler.post {
+                if (g != gatt) return@post
+                if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.rssi(rssi)
+                gattProbe?.next(g, SystemClock.elapsedRealtime())
             }
         }
 

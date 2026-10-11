@@ -69,7 +69,7 @@ internal fun EquipmentList(equipment: List<Equipment>, onOpen: (Equipment) -> Un
 
 /**
  * One item: its name (renamed in a dialog), model and Bluetooth address, the video mode of a
- * camera the app sets (UI-39), and Remove (UI-33).
+ * camera the app sets (UI-39), and Remove (UI-33). A paired RaceBox also has Diagnostics (FBBD-89).
  */
 @Composable
 fun EquipmentScreen(
@@ -78,6 +78,7 @@ fun EquipmentScreen(
     onRemove: () -> Unit,
     onBack: () -> Unit,
     onChooseVideo: (VideoMode) -> Unit = {},
+    onDiagnostics: () -> Unit = {},
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     var choosingVideo by rememberSaveable { mutableStateOf(false) }
@@ -89,6 +90,9 @@ fun EquipmentScreen(
                 ListRow("Model", item.model.label)
                 item.address?.let { ListRow("Bluetooth", "Paired · $it") }
                 if (item.videoMode != null) ListRow("Video", videoLabel(item), onClick = { choosingVideo = true })
+                if (item.model == EquipmentModel.RACEBOX_MICRO && item.address != null) {
+                    ListRow("Diagnostics", "Live", onClick = onDiagnostics)
+                }
             }
             DimText(modelNote(item.model))
             OutlinedButton(onClick = onRemove, modifier = Modifier.fillMaxWidth()) {
