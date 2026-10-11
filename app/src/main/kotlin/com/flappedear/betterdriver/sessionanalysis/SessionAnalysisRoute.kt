@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
@@ -88,9 +89,9 @@ private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
         val l = load as? Load.Done ?: return@LaunchedEffect
         progress = withContext(Dispatchers.IO) {
             val loaded = l.loaded
-            summarizeProgress(
-                loaded.analysis.laps,
-                earlierSessions(store, id, loaded.startUtcMillis, loaded.track, loaded.tracks),
+            val earlier = earlierSessions(store, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
+            summarizeProgress(loaded.analysis.laps, earlier.sessions).copy(
+                changes = earlier.previous?.let { segmentChanges(loaded.analysis, it) }.orEmpty(),
             )
         }
     }
