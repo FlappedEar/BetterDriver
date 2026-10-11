@@ -24,6 +24,10 @@ import java.util.concurrent.Executors
 private const val NotificationId = 1
 private const val DestroyStopTimeoutMs = 3_000L
 
+/** Track and car, the ones that are known (UI-21 option B). */
+private fun notificationDetail(info: SessionInfo) =
+    listOf(info.track, info.car).filter { it.isNotBlank() }.joinToString(" · ")
+
 /** Shown on the track screen when a recording ends without the driver stopping it. */
 private fun endedMessage(reason: String) = when (reason) {
     "storage_full" -> "Storage full. The session is saved."
@@ -94,8 +98,13 @@ class RecorderService : Service() {
         } else {
             0
         }
-        val since = active?.recording?.info?.startUtcMillis ?: System.currentTimeMillis()
-        ServiceCompat.startForeground(this, NotificationId, recordingNotification(this, since), type)
+        val info = active?.recording?.info
+        val notification = recordingNotification(
+            this,
+            info?.startUtcMillis ?: System.currentTimeMillis(),
+            info?.let(::notificationDetail).orEmpty(),
+        )
+        ServiceCompat.startForeground(this, NotificationId, notification, type)
         true
     } catch (e: RuntimeException) {
         lastError = "Could not start recording: ${e.message}"
@@ -132,7 +141,7 @@ class RecorderService : Service() {
                 cpu.acquire()
                 wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track).commit()
                 getSystemService(NotificationManager::class.java)
-                    .notify(NotificationId, recordingNotification(this, info.startUtcMillis))
+                    .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
         } catch (e: Exception) {
             lastError = "Could not start recording: $e"
