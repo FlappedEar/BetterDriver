@@ -133,8 +133,7 @@ class SessionStore(val root: File) {
         val target = dir(id)
         val doomed = File(root, "$DeletingPrefix$id")
         return when {
-            id.isEmpty() || id.startsWith(".") || target.parentFile != root || !target.isDirectory ->
-                DeleteResult.NOT_FOUND
+            !isSessionDir(id, target) -> DeleteResult.NOT_FOUND
             state(target) == SessionState.RECORDING -> DeleteResult.RECORDING
             !target.renameTo(doomed) -> DeleteResult.FAILED
             else -> {
@@ -144,6 +143,10 @@ class SessionStore(val root: File) {
             }
         }
     }
+
+    /** [target] is a directory directly under [root], and [id] is not a hidden name. */
+    private fun isSessionDir(id: String, target: File): Boolean =
+        id.isNotEmpty() && !id.startsWith(".") && target.parentFile == root && target.isDirectory
 
     /**
      * Run at app start. Finds sessions that were not stopped cleanly and nobody is recording,

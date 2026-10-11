@@ -124,16 +124,18 @@ class Sessions private constructor(private val context: Context) {
                 DeleteResult.FAILED
             }
             publish()
-            main.post {
-                when (result) {
-                    DeleteResult.DELETED, DeleteResult.NOT_FOUND -> {
-                        deletes.remove(id)
-                        exports.remove(id)
-                    }
-                    DeleteResult.RECORDING -> deletes[id] = DeleteState.Recording
-                    DeleteResult.FAILED -> deletes[id] = DeleteState.Failed
-                }
+            main.post { deleted(id, result) }
+        }
+    }
+
+    private fun deleted(id: String, result: DeleteResult) {
+        when (result) {
+            DeleteResult.DELETED, DeleteResult.NOT_FOUND -> {
+                deletes.remove(id)
+                exports.remove(id)
             }
+            DeleteResult.RECORDING -> deletes[id] = DeleteState.Recording
+            DeleteResult.FAILED -> deletes[id] = DeleteState.Failed
         }
     }
 

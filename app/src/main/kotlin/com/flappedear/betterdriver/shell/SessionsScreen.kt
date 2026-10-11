@@ -117,36 +117,16 @@ private fun SessionCard(
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        val (status, bad) = cardStatus(delete, export)
+        val canDelete = idle && goPro.work[s.id] == null
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            DimText(
-                when (delete) {
-                    DeleteState.Running -> "Deleting…"
-                    DeleteState.Recording -> "Recording, not deleted"
-                    DeleteState.Failed -> "Delete failed"
-                    null -> when (export) {
-                        ExportState.Running -> "Exporting…"
-                        ExportState.Done -> "Saved"
-                        ExportState.Failed -> "Export failed"
-                        null -> ""
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                color = if (delete == DeleteState.Recording || delete == DeleteState.Failed ||
-                    (delete == null && export == ExportState.Failed)
-                ) {
-                    c.loss
-                } else {
-                    Color.Unspecified
-                },
-            )
-            TextButton(
-                onClick = { asking = true },
-                enabled = idle && goPro.work[s.id] == null,
-            ) { Text("Delete", color = if (idle && goPro.work[s.id] == null) c.loss else Color.Unspecified) }
-            FilledTonalButton(
-                onClick = { onExport(s) },
-                enabled = idle,
-            ) { Text(if (video) "Export VBO + video" else "Export VBO") }
+            DimText(status, modifier = Modifier.weight(1f), color = if (bad) c.loss else Color.Unspecified)
+            TextButton(onClick = { asking = true }, enabled = canDelete) {
+                Text("Delete", color = if (canDelete) c.loss else Color.Unspecified)
+            }
+            FilledTonalButton(onClick = { onExport(s) }, enabled = idle) {
+                Text(if (video) "Export VBO + video" else "Export VBO")
+            }
         }
     }
     if (asking) {
@@ -160,6 +140,19 @@ private fun SessionCard(
             },
             onDismiss = { asking = false },
         )
+    }
+}
+
+/** The card's status line and whether it reports a failure; a delete outranks an export. */
+private fun cardStatus(delete: DeleteState?, export: ExportState?): Pair<String, Boolean> = when (delete) {
+    DeleteState.Running -> "Deleting…" to false
+    DeleteState.Recording -> "Recording, not deleted" to true
+    DeleteState.Failed -> "Delete failed" to true
+    null -> when (export) {
+        ExportState.Running -> "Exporting…" to false
+        ExportState.Done -> "Saved" to false
+        ExportState.Failed -> "Export failed" to true
+        null -> "" to false
     }
 }
 
