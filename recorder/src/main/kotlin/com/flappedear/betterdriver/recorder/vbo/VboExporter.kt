@@ -20,6 +20,8 @@ private const val MicrosPerMilli = 1_000.0
  * first value the first value is used; a channel with no values at all is left out.
  * If a fix has no GNSS UTC time, session start time plus elapsed time is used.
  * With [VboVideo], each row also gets avifileindex and avisynctime, and the VBO gets an [avi] section (FBBD-25).
+ * The data then starts at the first video's start: Circuit Tools plays video file 1 from the first
+ * data row and ignores its avisynctime offset (FBBD-51, checked by Arek with sync kit variant E).
  */
 object VboExporter {
 
@@ -112,7 +114,8 @@ object VboExporter {
         val latest = HashMap(firstValue)
         for (set in sets) {
             set.values.forEach { latest[it.channelId] = it.value }
-            if (isFix(set)) {
+            val beforeVideo = video?.startMicros?.let { set.tMicros < it } ?: false
+            if (isFix(set) && !beforeVideo) {
                 val row = DoubleArray(width)
                 STANDARD.forEachIndexed { i, (ch, _) -> row[i] = latest[ch.id] ?: 0.0 }
                 if (set.values.none { it.channelId == GnssChannels.UTC_MS.id }) {

@@ -21,9 +21,9 @@ import kotlin.test.Test
  * file 1 covers 5 s to 65 s, file 2 covers 70 s to 120 s. In Circuit Tools, the speed at the cursor
  * must equal the big number in the video, in both files. Each variant writes avisynctime differently.
  *
- * Round 2 (after Arek's first check: A and B played file 1 about 5 s early, so Circuit Tools seemed
- * to start the video at the first data row): D writes rows without video as file 0 at 0 ms;
- * E has no data before the first video, so its first row is file 1 at 0 ms.
+ * Round 1 (data from 0 s, avisynctime -1 before the video) played file 1 about 5 s early. Round 2
+ * variant E (data starting with the video) lined up, so the exporter now starts the data at the
+ * first video and every variant here does that.
  */
 class SyncKitTest {
     @Test
@@ -32,33 +32,27 @@ class SyncKitTest {
         assumeTrue(!out.isNullOrBlank(), "set -PsyncKitDir to write the kit")
         val root = File(out!!)
         val store = SessionStore(File(root, "work"))
-        val full = session(store, fromSecond = 0)
-        val fromVideo = session(store, fromSecond = FirstVideoSecond)
+        val data = session(store)
         val clips = listOf(
             VideoClip(CameraIds.PHONE, "a.mp4", FirstVideoSecond * MicrosPerSecond, 65 * MicrosPerSecond),
             VideoClip(CameraIds.PHONE, "b.mp4", 70 * MicrosPerSecond, 120 * MicrosPerSecond),
         )
         val variants = mapOf(
-            "A_millis" to (full to VboVideo("SyncA_", clips)),
-            "B_millis_no_ext_line" to (full to VboVideo("SyncB_", clips, extensionLine = false)),
-            "C_seconds" to (full to VboVideo("SyncC_", clips, syncFormat = AviSyncFormat.SECONDS)),
-            "D_no_video_as_zero" to (full to VboVideo("SyncD_", clips, noVideoAsZero = true)),
-            "E_starts_with_video" to (fromVideo to VboVideo("SyncE_", clips)),
+            "A_millis" to VboVideo("SyncA_", clips),
+            "C_seconds" to VboVideo("SyncC_", clips, syncFormat = AviSyncFormat.SECONDS),
         )
-        for ((name, pair) in variants) {
-            val (data, video) = pair
+        for ((name, video) in variants) {
             val dir = File(root, name).apply { mkdirs() }
             File(dir, video.baseName.dropLast(1) + ".vbo").outputStream().use { VboExporter.export(data, it, video) }
             File(dir, "videos.txt").writeText(video.fileNames().joinToString("\n") + "\n")
         }
     }
 
-    /** A session whose samples run from [fromSecond] to 120 s; session time is the same in both. */
-    private fun session(store: SessionStore, fromSecond: Int): SessionData {
+    private fun session(store: SessionStore): SessionData {
         val gnss = FakeGnss(rateHz = RateHz)
         val info = SessionInfo(gnss.startUtcMillis, track = "Sync test", channels = GnssChannels.ALL)
         val rec = Recorder(store).start(info)
-        (fromSecond * RateHz until Seconds * RateHz).forEach { n ->
+        repeat(Seconds * RateHz) { n ->
             val t = n * MicrosPerSecond / RateHz
             val speed = (n / RateHz).toDouble()
             val values = gnss.fix(n.toLong()).map {

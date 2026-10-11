@@ -22,9 +22,10 @@ enum class AviSyncFormat {
  *   example is `VBOX_20141207085917_`). Two public converters also write the extension, "MP4",
  *   on the next line (RaceChrono_Session_Converter rc2vbo.py, RaceSyncVideoProcessor).
  * - `avifileindex` is the 1-based file number, 4 digits.
- * - `avisynctime` is not defined anywhere public. Racelogic's example rows go from 266 to 1935 over
- *   1.7 s of data and show -1 before the video starts, which fits milliseconds (inferred, medium
- *   confidence). rc2vbo.py also writes milliseconds. Circuit Tools must confirm it (FBBD-51).
+ * - `avisynctime` is milliseconds into the file. Circuit Tools, checked with the sync kit (FBBD-51):
+ *   milliseconds line up when the data starts at the first video's start; with data rows before
+ *   the video (avisynctime -1), Circuit Tools plays file 1 from the first row and is early by that
+ *   much. So [VboExporter] leaves out rows before [startMicros].
  */
 data class VboVideo(
     val baseName: String,
@@ -33,13 +34,11 @@ data class VboVideo(
     val syncFormat: AviSyncFormat = AviSyncFormat.MILLIS,
     /** Writes [extension] as a second line of `[avi]`. */
     val extensionLine: Boolean = true,
-    /**
-     * Rows without video get avifileindex 0 and avisynctime 0, as rc2vbo.py writes them, instead of
-     * the next file and -1 (FBBD-51 round 2).
-     */
-    val noVideoAsZero: Boolean = false,
 ) {
     val orderedClips: List<VideoClip> = clips.sortedBy { it.startMicros }
+
+    /** Session time of the first video's start; the export with video starts here. */
+    val startMicros: Long? = orderedClips.firstOrNull()?.startMicros
 
     /** The name each clip gets next to the VBO, in avifileindex order. */
     fun fileNames(): List<String> = orderedClips.indices.map(::fileName)
@@ -60,7 +59,6 @@ data class VboVideo(
     }
 
     private fun noVideoAt(sessionMicros: Long): Pair<Double, Double> {
-        if (noVideoAsZero) return 0.0 to 0.0
         // Point at the next file to come (or the last one) with "no time".
         val upcoming = orderedClips.indexOfFirst { it.startMicros > sessionMicros }
         val next = if (upcoming < 0) orderedClips.lastIndex else upcoming
