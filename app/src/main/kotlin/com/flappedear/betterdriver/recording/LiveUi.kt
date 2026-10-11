@@ -40,8 +40,10 @@ fun liveTrackState(state: RecorderState): TrackScreenState {
     }
     val timing = state.timing
     val place = state.place?.let { StatusItem("Track", it, ok = timing != null) }
+    // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
+    val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok) }
     val screen = TrackScreenState(
-        status = listOfNotNull(place, gnss),
+        status = listOfNotNull(place, gnss, camera),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
         alert = trackAlert(state),
         deltaSeconds = null,

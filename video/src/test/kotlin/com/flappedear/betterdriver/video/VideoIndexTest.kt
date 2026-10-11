@@ -17,6 +17,21 @@ class VideoIndexTest {
         VideoClip(name, kind, "src", offsetUs, Alignment(method, 20_000), durationUs)
 
     @Test
+    fun `writers on separate instances and threads lose no clip`() {
+        // The phone camera (its own process) and GoPro import (UI process) both write the index.
+        val threads = (0 until 4).map { t ->
+            Thread {
+                val index = VideoIndex(dir)
+                repeat(10) { i -> index.put(clip("c${t}_$i.mp4", (t * 10 + i).toLong())) }
+            }
+        }
+        threads.forEach(Thread::start)
+        threads.forEach(Thread::join)
+        assertEquals(40, VideoIndex(dir).clips().size)
+        assertTrue(File(dir, "video/clips.json.lock").isFile)
+    }
+
+    @Test
     fun `empty when there is no index`() {
         assertEquals(emptyList(), VideoIndex(dir).clips())
     }

@@ -30,6 +30,37 @@ internal object RecorderProtocol {
     /** In a [MSG_STATE] bundle: why the last start failed, if it did. */
     const val KEY_ERROR = "error"
 
+    /**
+     * In a [MSG_STATE] bundle while recording: System.nanoTime() at session time 0. Cameras in other
+     * processes use it to stamp their reports on the session clock (CLOCK_MONOTONIC is shared).
+     */
+    const val KEY_START_NANOS = "startNanos"
+
+    /** In a [MSG_STATE] bundle: the camera's short status for the status strip, and whether it is OK. */
+    const val KEY_CAMERA_STATUS = "cameraStatus"
+    const val KEY_CAMERA_OK = "cameraOk"
+
+    /**
+     * Camera to service: one [com.flappedear.betterdriver.recorder.video.VideoSink] call, in msg.data.
+     * Ignored unless [VIDEO_SESSION] is the running session.
+     */
+    const val MSG_VIDEO = 4
+
+    const val VIDEO_SESSION = "session"
+    const val VIDEO_CAMERA = "camera"
+    const val VIDEO_KIND = "kind"
+    const val VIDEO_FILE = "file"
+    const val VIDEO_AT_US = "atMicros"
+    const val VIDEO_MEDIA_US = "mediaMicros"
+    const val VIDEO_TEXT = "text"
+    const val VIDEO_OK = "ok"
+
+    /** Values of [VIDEO_KIND]. */
+    const val VIDEO_STARTED = 1
+    const val VIDEO_SYNCED = 2
+    const val VIDEO_STOPPED = 3
+    const val VIDEO_STATUS = 4
+
     /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
     const val KEY_PLACE = "place"
 

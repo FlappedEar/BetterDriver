@@ -53,8 +53,13 @@ class VideoTimeline(clips: List<VideoClip>) {
     }
 
     companion object {
-        /** Clips from the live video events of a session, plus clips imported after it ([ImportedClips]). */
-        fun from(events: List<RecorderEvent>, imported: List<VideoClip> = emptyList()): VideoTimeline {
+        /**
+         * Clips from the live video events of a session, merged with [indexed]: the app's clip index
+         * (`<session>/video/clips.json`, the `:video` module), which also holds clips added after the
+         * session. An indexed clip wins over the events for the same camera and file; the events fill
+         * in files the index lacks, such as one whose camera process died before indexing it.
+         */
+        fun from(events: List<RecorderEvent>, indexed: List<VideoClip> = emptyList()): VideoTimeline {
             val byFile = LinkedHashMap<Pair<String, String>, Acc>()
             for (e in events.filter { it.kind in VideoKinds }) {
                 val f = VideoEventText.parse(e.text)
@@ -62,9 +67,10 @@ class VideoTimeline(clips: List<VideoClip>) {
                 val file = f[VideoEventText.FILE]
                 if (camera != null && file != null) byFile.getOrPut(camera to file) { Acc() }.add(e, f)
             }
-            val live = byFile.mapNotNull { (key, acc) -> acc.clip(key.first, key.second) }
-            val liveKeys = live.map { it.camera to it.file }.toSet()
-            return VideoTimeline(live + imported.filter { (it.camera to it.file) !in liveKeys })
+            val indexedKeys = indexed.map { it.camera to it.file }.toSet()
+            val live = byFile.filterKeys { it !in indexedKeys }
+                .mapNotNull { (key, acc) -> acc.clip(key.first, key.second) }
+            return VideoTimeline(indexed + live)
         }
 
         private val VideoKinds = setOf(EventKinds.VIDEO_START, EventKinds.VIDEO_SYNC, EventKinds.VIDEO_STOP)

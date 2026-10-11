@@ -34,6 +34,9 @@ class AppPrefs(private val context: Context) {
     )
         private set
 
+    /** Phone video records with the session when it is on in settings and camera access is granted (FBBD-21). */
+    fun phoneVideoReady(): Boolean = phoneCamera && context.allGranted(listOf(Manifest.permission.CAMERA))
+
     /** False when a required permission was revoked or expired (one-time grants) since setup. */
     fun hasRequiredPermissions(): Boolean = context.allGranted(requiredPermissions())
 

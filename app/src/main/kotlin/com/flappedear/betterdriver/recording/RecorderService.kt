@@ -68,7 +68,11 @@ class RecorderService : Service() {
     private val control = Executors.newSingleThreadExecutor { Thread(it, "recorder-control") }
     private lateinit var store: SessionStore
     private lateinit var cpu: CpuLock
-    private val clients = LiveClients(::state)
+
+    /** Camera reports (FBBD-21) from the camera process are logged into the running recording. */
+    private val clients = LiveClients(::state) { data ->
+        active?.recording?.let { logVideoReport(it, data) { text, ok -> cameraStatus = text to ok } }
+    }
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
 
     /** Read once, on the control thread; names circuits for tracks not saved yet (FBBD-79). */
@@ -79,6 +83,9 @@ class RecorderService : Service() {
 
     @Volatile
     private var lastError: String? = null
+
+    /** The camera's last status for the status strip, for the running recording. Main thread. */
+    private var cameraStatus: Pair<String, Boolean>? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -166,6 +173,7 @@ class RecorderService : Service() {
                     if (status is RecorderStatus.Stopped) main.post { onEnded(recording, status.reason) }
                 }
             })
+            main.post { cameraStatus = null }
             active = Active(recording, tracker, timing)
             sources.forEach(recording::attach)
             main.post {
@@ -215,6 +223,13 @@ class RecorderService : Service() {
     private fun state(): Bundle {
         val a = active
         val state = a?.tracker?.snapshot()?.let(RecorderProtocol::toBundle) ?: Bundle()
+        if (a != null) {
+            state.putLong(RecorderProtocol.KEY_START_NANOS, a.recording.startNanos)
+            cameraStatus?.let { (text, ok) ->
+                state.putString(RecorderProtocol.KEY_CAMERA_STATUS, text)
+                state.putBoolean(RecorderProtocol.KEY_CAMERA_OK, ok)
+            }
+        }
         a?.timing?.detection?.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }

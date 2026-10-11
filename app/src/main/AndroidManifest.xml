@@ -18,6 +18,9 @@
     <!-- The recorder runs as a foreground service and keeps the CPU awake while recording (FBBD-69). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- Phone video runs as its own foreground service (FBBD-21). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Video and audio are optional (GoPro or no camera), so this hardware must not be required to install. -->
@@ -47,6 +50,13 @@
             android:exported="false"
             android:foregroundServiceType="location"
             android:process=":recorder" />
+
+        <!-- Own process too: a camera crash or hang never reaches the recorder (FBBD-21, FBBD-69). -->
+        <service
+            android:name=".camera.CameraService"
+            android:exported="false"
+            android:foregroundServiceType="camera|microphone"
+            android:process=":camera" />
     </application>
 
 </manifest>

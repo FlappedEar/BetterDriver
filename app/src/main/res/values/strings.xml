@@ -3,4 +3,6 @@
     <!-- Recording notification (required for the recorder's foreground service, FBBD-69). -->
     <string name="recording_channel">Recording</string>
     <string name="recording_title">Recording session</string>
+    <!-- Phone video notification (required for the camera's foreground service, FBBD-21). -->
+    <string name="video_title">Recording phone video</string>
 </resources>
