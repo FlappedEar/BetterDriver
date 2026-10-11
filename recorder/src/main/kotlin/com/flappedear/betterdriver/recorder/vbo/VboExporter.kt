@@ -58,8 +58,14 @@ object VboExporter {
         // Unique against standard header and column names, so a custom channel can never pose as a standard one.
         val used = STANDARD.flatMap { listOf(it.second.columnName, it.second.headerName) }.toMutableSet()
         return extra.map { c ->
-            var name = c.name.replace(Regex("\\s+"), "_").ifEmpty { "ch${c.id}" }
-            if (name in VboWriter.STANDARD_CHANNELS || !used.add(name)) name = "${name}_${c.id}".also { used += it }
+            val base = c.name.replace(Regex("\\s+"), "_").ifEmpty { "ch${c.id}" }
+            var name = base
+            var attempt = 0
+            // A suffixed name can itself be taken (channel 299 named "x_300", channel 300 named "x"): retry.
+            while (name in VboWriter.STANDARD_CHANNELS || !used.add(name)) {
+                attempt++
+                name = if (attempt == 1) "${base}_${c.id}" else "${base}_${c.id}_$attempt"
+            }
             VboColumn(name, name, c.unit, VboWriter.decimal(c.decimals))
         }
     }

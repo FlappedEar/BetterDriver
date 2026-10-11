@@ -24,7 +24,9 @@ must still hold all recorded data and export as VBO, as RaceChrono does.
   that stalls loses its oldest updates. Neither affects what is written. A data
   source that fails to start is logged as `source_error`.
 - **Storage.** Below 200 MB free the recorder logs `storage_low` and tells
-  listeners; below 50 MB it stops cleanly with the data intact.
+  listeners; below 50 MB it stops cleanly with the data intact. Records already
+  queued are written first, unless they would eat into the space kept for the
+  end record; any left over are counted in `droppedSamples`.
 
 ## Session directory
 

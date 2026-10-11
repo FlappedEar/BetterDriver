@@ -82,13 +82,21 @@ internal class RecordingWriter(
         return reason
     }
 
-    /** Stops intake, then writes everything already accepted, so nothing accepted is lost on a storage stop. */
+    /**
+     * Stops intake, then writes what was already accepted, so a storage stop normally loses nothing.
+     * Writing stops at half the stop margin, keeping the rest for the end record: a backlog too big for
+     * the space left is counted as dropped (and logged) rather than filling the disk.
+     */
     private fun drainAcceptedWrites() {
         stopIntake()
         writePendingChannels()
+        val free = runCatching { storage.usableBytes(dir) }.getOrDefault(Long.MAX_VALUE)
+        var budget = free - config.storageStopBytes / 2
         var cmd = queue.poll()
         while (cmd != null) {
-            if (cmd is Cmd.Write) write(cmd.record)
+            if (cmd is Cmd.Write) {
+                if (budget > 0) budget -= write(cmd.record) else dropped.incrementAndGet()
+            }
             cmd = queue.poll()
         }
     }
@@ -116,8 +124,9 @@ internal class RecordingWriter(
         )
     }
 
-    private fun write(record: Record) {
-        chunks.write(record)
+    /** Returns the bytes written. */
+    private fun write(record: Record): Long {
+        val written = chunks.write(record)
         when (record) {
             is Record.Channel -> listeners.dispatch { it.onChannel(record.def) }
             is Record.Samples -> listeners.dispatch { it.onSamples(record.set) }
@@ -127,6 +136,7 @@ internal class RecordingWriter(
             }
             is Record.End -> Unit
         }
+        return written
     }
 
     private fun flush() {

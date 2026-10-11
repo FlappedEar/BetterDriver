@@ -140,6 +140,20 @@ class RecoveryAndExportTest {
     }
 
     @Test
+    fun `a suffixed VBO name that is already taken gets another suffix`() {
+        val store = SessionStore(tmp)
+        val first = ChannelDef(299, "satellites_300", "", "test", 0)
+        val second = ChannelDef(300, "satellites", "", "test", 0)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + first + second))
+        rec.submit(SampleSet(0, gnss.fix(0) + ChannelValue(first.id, 1.0) + ChannelValue(second.id, 2.0)))
+        rec.stop()
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out)
+        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
+        assertEquals(listOf("satellites_300", "satellites_300_2"), p.header.drop(7))
+    }
+
+    @Test
     fun `fixes without GNSS time use session start plus elapsed time`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))

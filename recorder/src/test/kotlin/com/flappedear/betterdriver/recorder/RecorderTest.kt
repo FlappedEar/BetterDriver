@@ -195,6 +195,51 @@ class RecorderTest {
     }
 
     @Test
+    fun `a backlog bigger than the space left is counted as dropped, not written`() {
+        val store = SessionStore(tmp)
+        val low = java.util.concurrent.atomic.AtomicBoolean(false)
+        val probing = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val rec = Recorder(
+            store,
+            RecorderConfig(storageCheckIntervalMs = 1, storageWarnBytes = 1_000, storageStopBytes = 100),
+            storage = {
+                if (low.get()) {
+                    probing.countDown()
+                    release.await()
+                    50L
+                } else {
+                    1L shl 40
+                }
+            },
+        ).start(info())
+        low.set(true)
+        // The writer is now held inside the storage check; build a backlog behind it.
+        assertTrue(probing.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        repeat(1_000) { rec.submit(SampleSet(it * 40_000L, gnss.fix(it.toLong()))) }
+        release.countDown()
+        assertTrue(rec.awaitStopped(5_000))
+        assertEquals("storage_full", rec.finalStatus?.reason)
+        assertEquals(SessionState.FINISHED, store.state(rec.dir))
+        // 50 bytes free, 50 kept back for the end record: nothing in the backlog fits.
+        assertEquals(1_000, rec.droppedCount)
+        val finished = SessionFiles.readProps(File(rec.dir, SessionFiles.FINISHED))!!
+        assertEquals("1000", finished.getProperty("droppedSamples"))
+    }
+
+    @Test
+    fun `changing the session info after start changes neither metadata nor chunks`() {
+        val store = SessionStore(tmp)
+        val channels = GnssChannels.ALL.toMutableList()
+        val rec = Recorder(store).start(info(channels))
+        channels.add(obdLike)
+        rec.stop()
+        val data = store.read(rec.id)
+        assertEquals(GnssChannels.ALL, data.info.channels)
+        assertEquals(GnssChannels.IDS, data.channels.keys)
+    }
+
+    @Test
     fun `a source attached after stop is not started`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(info())

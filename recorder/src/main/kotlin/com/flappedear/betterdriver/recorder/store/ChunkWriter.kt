@@ -33,6 +33,7 @@ class ChunkWriter(
     private var fos: FileOutputStream? = null
     private var out: BufferedOutputStream? = null
     private var bytes = 0L
+    private var totalBytes = 0L
     private var openedNanos = 0L
     private var dirty = false
 
@@ -59,18 +60,23 @@ class ChunkWriter(
         syncThread.start()
     }
 
-    /** Appends [record]. A channel definition already in the table is not written again. */
-    fun write(record: Record) {
+    /**
+     * Appends [record]. A channel definition already in the table is not written again.
+     * Returns the bytes added to the chunk files, including a rotated chunk's channel table.
+     */
+    fun write(record: Record): Long {
         if (record is Record.Channel) {
-            if (channels[record.def.id] == record.def) return
+            if (channels[record.def.id] == record.def) return 0
             channels[record.def.id] = record.def
         }
+        val before = totalBytes
         val ageMs = (nanoTime() - openedNanos) / NanosPerMilli
         if (bytes >= maxBytes || ageMs >= maxAgeMs) {
             closeChunk()
             openChunk()
         }
         writeFrame(record)
+        return totalBytes - before
     }
 
     /** Hands buffered frames to the OS and asks the sync thread for an fsync. */
@@ -96,6 +102,7 @@ class ChunkWriter(
         val b = Frames.encode(record)
         checkNotNull(out) { "chunk not open" }.write(b)
         bytes += b.size
+        totalBytes += b.size
         dirty = true
     }
 
@@ -120,6 +127,8 @@ class ChunkWriter(
             syncError?.let { throw IOException("background fsync failed", it) }
             o.flush()
             synchronized(syncLock) {
+                // Checked again under the lock: a background sync that was running above may have failed since.
+                syncError?.let { throw IOException("background fsync failed", it) }
                 syncFd = null
                 fos?.fd?.sync()
             }

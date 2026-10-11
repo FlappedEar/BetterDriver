@@ -80,6 +80,8 @@ class Recorder(
 ) {
     @Suppress("TooGenericExceptionCaught") // Rethrown after releasing the lock.
     fun start(info: SessionInfo): Recording {
+        // One snapshot for both the metadata and the writer thread, so a caller's later changes reach neither.
+        val info = info.copy(devices = info.devices.toList(), channels = info.channels.toList())
         var lock: SessionFiles.SessionLock? = null
         try {
             val (id, dir) = store.createSession(info) { lock = SessionFiles.lock(it) }
