@@ -40,8 +40,8 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
         here = tracks.here,
         tracks = tracks.list,
         onOpen = { t -> nav.navigate(Routes.trackEditor(t.id)) },
-        onCreateFromCircuit = { c -> tracks.save(newTrackFrom(c), openNew) },
-        onCreateHere = { name, at -> tracks.save(newTrackAt(at, name), openNew) },
+        onCreateFromCircuit = { c -> tracks.save(newTrackFrom(c), onSaved = openNew) },
+        onCreateHere = { name, at -> tracks.save(newTrackAt(at, name), onSaved = openNew) },
         onBack = { nav.popBackStack() },
         transfer = rememberTrackTransfer(),
     )

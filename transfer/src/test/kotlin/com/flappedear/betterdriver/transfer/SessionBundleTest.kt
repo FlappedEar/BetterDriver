@@ -84,6 +84,7 @@ class SessionBundleTest {
         File(video, "phone_0002.mp4").writeBytes(Random(2).nextBytes(70_001))
         File(video, "clips.json").writeText("""{"version":1,"clips":[]}""")
         File(video, "clips.json.lock").writeText("")
+        File(video, "hero11-0001.mp4.part").writeText("half a download")
         File(dir, SessionFiles.LOCK).writeText("")
         return dir
     }
@@ -121,7 +122,7 @@ class SessionBundleTest {
         assertTrue(inbox.accept(received, replace = false))
 
         val arrived = tablet.dir(dir.name)
-        val expected = files(dir) - SessionFiles.LOCK - "video/clips.json.lock"
+        val expected = files(dir) - SessionFiles.LOCK - "video/clips.json.lock" - "video/hero11-0001.mp4.part"
         assertEquals(expected, files(arrived))
         assertEquals(SessionState.FINISHED, tablet.list().single().state)
         assertEquals(phone.read(dir.name).sampleSets, tablet.read(dir.name).sampleSets)

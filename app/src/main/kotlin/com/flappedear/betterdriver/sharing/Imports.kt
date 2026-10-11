@@ -85,12 +85,12 @@ class Imports private constructor(private val context: Context) {
     }
 
     private fun importNow(uri: Uri) {
-        if (store.list().any { it.state == SessionState.RECORDING }) {
-            throw IOException("A session is recording. Import after it stops.")
-        }
+        refuseWhileRecording(store)
         when (IncomingFiles.kindOf(read(uri, IncomingFiles::head))) {
             IncomingKind.SESSION -> receiveSession(uri)
-            IncomingKind.TRACK -> addTrack(read(uri, TrackTransfer::read)) { finish(it) }
+            IncomingKind.TRACK -> addTrack(read(uri, TrackTransfer::read), { finish(it) }) { name ->
+                finish("could not store track $name", failed = true)
+            }
             IncomingKind.UNKNOWN -> throw BundleFormatException("this is not a BetterDriver session or track")
         }
     }
@@ -102,6 +102,7 @@ class Imports private constructor(private val context: Context) {
         val total = sizeOf(context, uri)
         val progress = progressOf(main, total) { f -> state = TransferState("Importing…", f, running = true) }
         val received = read(uri) { inbox.receive(it, progress) }
+        refuseWhileRecording(store) { inbox.discard(received) }
         val title = sessionTitle(SessionSummary(received.sessionId, File(""), received.info, SessionState.FINISHED))
         val decide = { replace: Boolean -> io.execute { guarded { accept(received, replace, title) } } }
         if (inbox.exists(received)) {
@@ -118,26 +119,35 @@ class Imports private constructor(private val context: Context) {
     }
 
     private fun accept(received: SessionBundle.Received, replace: Boolean, title: String) {
+        refuseWhileRecording(store) { inbox.discard(received) }
         val added = inbox.accept(received, replace)
         Sessions.get(context).refresh()
         val what = if (added) "Imported the session of $title." else "Kept the session of $title already here."
         val track = received.track
-        if (track == null) finish(what) else addTrack(track) { t -> finish("$what $t") }
+        if (track == null) {
+            finish(what)
+        } else {
+            addTrack(track, { t -> finish("$what $t") }) { name ->
+                finish("$what Could not store track $name.", failed = true, prefixed = false)
+            }
+        }
     }
 
-    /** Adds [track] if it is new, asks if it differs from the one here; [done] gets the outcome. io thread. */
-    private fun addTrack(track: Track, done: (String) -> Unit) {
+    /**
+     * Adds [track] if it is new, asks if it differs from the one here; [done] gets the outcome,
+     * [failed] the track's name when it could not be stored. io thread.
+     */
+    private fun addTrack(track: Track, done: (String) -> Unit, failed: (String) -> Unit) {
         val tracks = Tracks.get(context)
         val name = track.displayName
+        val save = { message: String -> tracks.save(track, onFailed = { failed(name) }) { done(message) } }
         when (TrackTransfer.match(track, trackStore.get(track.id))) {
-            TrackMatch.NEW -> tracks.save(track) { done("Added track $name.") }
+            TrackMatch.NEW -> save("Added track $name.")
             TrackMatch.SAME -> done("Track $name is already here.")
             TrackMatch.DIFFERENT -> ask(
                 "Track differs",
                 "$name on this device has other lines. Keep the one here, or replace it with the one received?",
-                onAnswer = { replace ->
-                    if (replace) tracks.save(track) { done("Replaced track $name.") } else done("Kept track $name.")
-                },
+                onAnswer = { replace -> if (replace) save("Replaced track $name.") else done("Kept track $name.") },
                 onCancel = { done("Kept track $name.") },
             )
         }
@@ -152,8 +162,8 @@ class Imports private constructor(private val context: Context) {
         }
     }
 
-    private fun finish(message: String, failed: Boolean = false) =
-        main.post { state = TransferState(if (failed) "Import failed: $message" else message, failed = failed) }
+    private fun finish(message: String, failed: Boolean = false, prefixed: Boolean = failed) =
+        main.post { state = TransferState(if (prefixed) "Import failed: $message" else message, failed = failed) }
 
     private fun guarded(block: () -> Unit) {
         try {
@@ -180,6 +190,17 @@ class Imports private constructor(private val context: Context) {
         fun get(context: Context): Imports = instance ?: synchronized(this) {
             instance ?: Imports(context.applicationContext).also { instance = it }
         }
+    }
+}
+
+/**
+ * A recording can start while a long import runs, so this is checked before reading, again before
+ * asking and before anything is stored. [onRefused] cleans up first.
+ */
+private fun refuseWhileRecording(store: SessionStore, onRefused: () -> Unit = {}) {
+    if (store.list().any { it.state == SessionState.RECORDING }) {
+        onRefused()
+        throw IOException("A session is recording. Import after it stops.")
     }
 }
 

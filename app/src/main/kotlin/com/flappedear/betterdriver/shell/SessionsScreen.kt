@@ -142,17 +142,19 @@ private fun SessionCard(
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
         AnalysisLink(s, delete, onAnalyse)
-        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = sending?.running == true)
         SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
-        val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
+        // A share copies the session folder, so it must not run while GoPro video is being added, and the
+        // other way round (GoProSection).
+        val free = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
         TransferLine(sending)
         SaveInstead(sending) { transfer.onSave(s) }
         CardButtons(
             video = video,
-            idle = idle && sending?.running != true,
-            canDelete = canDelete,
+            idle = free,
+            canDelete = free,
             onDelete = { asking = true },
             onShare = { transfer.onSend(s) },
             onExport = { onExport(s) },
@@ -254,13 +256,13 @@ private const val MB = 1_000_000L
 private const val GB = 1_000_000_000L
 
 @Composable
-private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState) {
+private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState, sharing: Boolean) {
     val work = goPro.work[s.id]
     GoProLines(
         goPro = goPro.sessions[s.id] ?: SessionGoPro(),
         work = work,
         problems = goPro.problems[s.id].orEmpty(),
-        enabled = goPro.enabled && work == null && export != ExportState.Running,
+        enabled = goPro.enabled && work == null && export != ExportState.Running && !sharing,
         hero8Listed = goPro.hero8Listed,
         canDownload = goPro.canDownload,
         onDownload = { goPro.onDownload(s) },

@@ -89,8 +89,8 @@ class Tracks private constructor(private val context: Context) {
         main.post { here = found }
     }
 
-    /** Stores [track] (new or edited) and hands back the stored copy. */
-    fun save(track: Track, onSaved: (Track) -> Unit) = io.execute {
+    /** Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be written. */
+    fun save(track: Track, onFailed: () -> Unit = {}, onSaved: (Track) -> Unit) = io.execute {
         val stored = try {
             store.save(track)
         } catch (e: IOException) {
@@ -98,7 +98,7 @@ class Tracks private constructor(private val context: Context) {
             null
         }
         publish()
-        main.post { if (stored != null) onSaved(stored) }
+        main.post { if (stored != null) onSaved(stored) else onFailed() }
     }
 
     /** The track and the sessions recorded there, newest first; null if the track is gone. */
