@@ -6,17 +6,21 @@ so a GoPro failure cannot affect data recording (FBBD-69).
 
 | Camera | During the session | After the session |
 | --- | --- | --- |
-| HERO11 Black | `Hero11Source` starts and stops it over Open GoPro BLE | `GoProDownloader` fetches the files over the camera's Wi-Fi and aligns them |
-| HERO8 Black | Started by hand (no Open GoPro support) | Files are copied into the session and `GoProImporter` aligns them |
+| Open GoPro: HERO9 Black to HERO13 Black, HERO11 Black Mini, MAX2, and newer models | `OpenGoProSource` starts and stops it over Open GoPro BLE | `GoProDownloader` fetches its files over the camera's Wi-Fi and aligns them |
+| Any GoPro started by hand: HERO8 Black and older, the first MAX | Started by hand (no Open GoPro support) | Files are copied into the session and `GoProImporter` aligns them |
 
-Open GoPro supports the HERO11 from firmware v01.10.00; the HERO8 is not on its
-list ([docs](https://gopro.github.io/OpenGoPro/docs)).
+Any number of cameras can record with one session (FBBD-105); each has its own
+source id, and its files are saved as `<source id>-<camera file name>`. Which
+cameras speak Open GoPro, their model numbers and the video modes each takes are
+from the Open GoPro spec (`git clone -b gh-pages https://github.com/gopro/OpenGoPro`,
+`references.json` and `http/openapi.json`) and kept in `GoProModel` in `:setup`.
 
-## HERO11 control
+## Open GoPro control
 
 `OpenGoPro` holds the BLE protocol: packet framing (general, extended 13-bit and
 16-bit headers, continuation packets, 20-byte packets) and the TLV commands used:
-Set Shutter (0x01), Set Local Date Time (0x0F), Set AP Control (0x17), Get Hardware
+Set Shutter (0x01), Set Local Date Time (0x0F, HERO11 and later) or Set Date Time
+(0x0D, HERO9 and HERO10), Set AP Control (0x17), Get Hardware
 Info (0x3C), status query 0x13 (busy = 8, encoding = 10) and the keep-alive
 (setting 0x5B = 0x42, every 3 s like the Open GoPro Python SDK). Sources:
 [BLE setup](https://gopro.github.io/OpenGoPro/ble/protocol/ble_setup.html),
@@ -42,10 +46,11 @@ and imports them. It must not run while a session is recording.
 
 `GoProImporter` reads each file's GPMF GPS (see `:video`) and aligns it to the
 session's GNSS speed. Starting guesses, best first: the previous chapter's end, the
-HERO11 start acknowledgement, then the file's creation time on the camera's clock.
-Files that land outside the session are reported and not indexed.
+Open GoPro start acknowledgement, then the file's creation time on the camera's
+clock. A camera without GPS (the HERO12 Black has none) is placed by those guesses
+alone. Files that land outside the session are reported and not indexed.
 
 ## Not yet verified
 
-Everything above is tested against synthetic files and a fake camera. Real HERO11
-and HERO8 tests are in Jira for Arek.
+Everything above is tested against synthetic files and a fake camera. Real-camera
+tests are in Jira (FBBD-82).

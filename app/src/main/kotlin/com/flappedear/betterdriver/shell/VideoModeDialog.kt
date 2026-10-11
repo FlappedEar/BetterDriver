@@ -46,11 +46,12 @@ private const val HighFps = 60
 
 /**
  * The modes a camera can be set to (FBBD-88). For the phone, only what its back camera reports,
- * read once when shown; null while reading. For a HERO11, the modes it is known to take.
+ * read once when shown; null while reading. For a GoPro, the modes its model is known to take
+ * (GoProModel, from the Open GoPro spec).
  */
 @Composable
 internal fun rememberVideoModes(item: Equipment): List<VideoMode>? {
-    if (item.model != EquipmentModel.PHONE_CAMERA) return item.model.videoModes
+    if (item.model != EquipmentModel.PHONE_CAMERA) return item.videoModes
     val context = LocalContext.current
     var modes by remember { mutableStateOf<List<VideoMode>?>(null) }
     DisposableEffect(Unit) {
@@ -100,7 +101,7 @@ internal fun VideoModeDialog(
                     modes == null -> DimText("Checking the camera…")
                     modes.isEmpty() -> DimText("This phone did not report any video modes.")
                     else -> modes.forEach { m ->
-                        ModeRow(m, picked == m, m == item.model.defaultVideo) { picked = m }
+                        ModeRow(m, picked == m, m == item.defaultVideo) { picked = m }
                     }
                 }
                 DimText(

@@ -5,7 +5,10 @@ import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.recorder.video.CameraIds
+import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
 import com.flappedear.betterdriver.setup.migrate
@@ -66,8 +69,16 @@ class SetupRepo private constructor(context: Context) {
         save(store, next)
     }
 
-    /** The HERO11 the app downloads from after a session. At most one is listed ([EquipmentModel.single]). */
-    fun hero11Address(): String? = setup.equipment.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }?.address
+    /**
+     * The Open GoPro camera that recorded as [sourceId] ([CameraIds.goPro]), to download from after
+     * a session. Sessions from before FBBD-105 name the one HERO11 of that time; a listed HERO11
+     * answers for it.
+     */
+    fun goProFor(sourceId: String): Equipment? {
+        val cameras = setup.equipment.filter { it.model == EquipmentModel.GOPRO && it.address != null }
+        return cameras.firstOrNull { CameraIds.goPro(it.id) == sourceId }
+            ?: cameras.firstOrNull { sourceId == CameraIds.GOPRO_HERO11 && it.goPro == GoProModel.HERO11_BLACK }
+    }
 
     private fun save(to: SetupStore, s: Setup) = saver.execute {
         try {

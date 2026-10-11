@@ -45,6 +45,7 @@ object GoProUuids {
  * TLV: a request is an id followed by parameters, each a 1-byte length and its value; a response
  * is the id, a status byte (0 success, 1 error, 2 invalid parameter) and an optional payload.
  */
+@Suppress("TooManyFunctions") // One function per Open GoPro message.
 object OpenGoPro {
     const val MaxPacketBytes = 20
     private const val GeneralMaxLength = 0x1F
@@ -126,6 +127,19 @@ object OpenGoPro {
     fun hardwareInfo() = Request(GoProUuids.COMMAND, byteArrayOf(0x3C))
 
     /**
+     * Set Date Time, command 0x0D: year (2 bytes), month, day, hour, minute, second, without time
+     * zone. The HERO9 and HERO10 take only this one (Open GoPro references.json).
+     */
+    fun setDateTime(local: LocalDateTime): Request {
+        val b = byteArrayOf(
+            (local.year shr 8).toByte(), local.year.toByte(),
+            local.monthValue.toByte(), local.dayOfMonth.toByte(),
+            local.hour.toByte(), local.minute.toByte(), local.second.toByte(),
+        )
+        return Request(GoProUuids.COMMAND, byteArrayOf(0x0D, b.size.toByte()) + b)
+    }
+
+    /**
      * Set Local Date Time, command 0x0F (HERO11 and later): year (2 bytes), month, day, hour,
      * minute, second, UTC offset in minutes (signed, 2 bytes) and a DST flag.
      */
@@ -150,9 +164,9 @@ object OpenGoPro {
     const val KeepAliveIntervalMillis = 3_000L
 
     /**
-     * Setting ids and values (open_gopro 0.22.0, models/constants/settings.py). Which values a
-     * HERO11 Black takes is from the Open GoPro openapi.json (gh-pages, Setting_2 and Setting_3
-     * x-option-metadata): resolutions 1, 4, 6, 9, 18, 26, 27, 28, 100, no 720p (12).
+     * Setting ids and values (open_gopro 0.22.0, models/constants/settings.py). Which values each
+     * camera takes is from the Open GoPro openapi.json (gh-pages, Setting_2 and Setting_3
+     * x-option-metadata); the app's per-camera list is GoProModel in :setup.
      */
     object Setting {
         /**
@@ -167,6 +181,7 @@ object OpenGoPro {
         const val RES_4K = 1
         const val RES_2_7K = 4
         const val RES_1080 = 9
+        const val RES_720 = 12
 
         const val FPS_60 = 5
         const val FPS_30 = 8

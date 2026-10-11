@@ -15,7 +15,7 @@ data class SetupStep(
     val onAction: () -> Unit,
 )
 
-/** A RaceBox or GoPro HERO11 heard nearby while adding equipment (UI-34 B). [bars] is 0 to 4. */
+/** A RaceBox or Open GoPro camera heard nearby while adding equipment (UI-34 B). [bars] is 0 to 4. */
 data class NearbyDevice(val model: EquipmentModel, val name: String, val address: String, val bars: Int)
 
 /** What the session card on home can change (UI-36 A). [update] applies a change to the setup and saves it. */

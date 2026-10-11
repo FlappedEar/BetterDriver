@@ -28,13 +28,20 @@ private const val BytesPerGb = 1_000_000_000.0
 /** Lined-up clips of one GoPro in a session: how many, and how they were placed ("by GPS ±0.05 s"). */
 data class GoProClips(val count: Int, val how: String, val byGps: Boolean)
 
-/** A session's GoPro video, for its card (UI-31, UI-32). */
-data class SessionGoPro(
-    /** A HERO11 recorded with the session and its files are still on the camera. */
-    val hero11OnCamera: Boolean = false,
-    val hero11: GoProClips? = null,
-    val hero8: GoProClips? = null,
-)
+/**
+ * One GoPro's video in a session. [sourceId] is the camera (CameraIds.goPro); [onCamera] is true
+ * while an Open GoPro camera still holds files it recorded with the session.
+ */
+data class SessionCamera(val sourceId: String, val onCamera: Boolean = false, val clips: GoProClips? = null)
+
+/** A session's GoPro video, for its card (UI-31, UI-32), one entry per camera that has any. */
+data class SessionGoPro(val cameras: List<SessionCamera> = emptyList())
+
+/**
+ * A GoPro in the equipment list, as the session cards need it: its name, and whether the app
+ * downloads its files ([download], Open GoPro) or Arek adds them (a camera started by hand).
+ */
+data class ListedGoPro(val sourceId: String, val name: String, val download: Boolean)
 
 /** GoPro state and actions for the whole Sessions list. */
 data class GoProCardState(
@@ -43,19 +50,19 @@ data class GoProCardState(
     val problems: Map<String, List<String>> = emptyMap(),
     /** False while a session records: nothing is downloaded or copied then. */
     val enabled: Boolean = true,
-    /** A HERO8 is in the equipment list; only then does each session offer Add (FBBD-83). */
-    val hero8Listed: Boolean = false,
-    /** A HERO11 is in the equipment list to download from. */
-    val canDownload: Boolean = false,
-    val onDownload: (SessionSummary) -> Unit = {},
-    val onAddHero8: (SessionSummary) -> Unit = {},
+    /** The GoPros in the equipment list (FBBD-83, FBBD-105); only these offer Download or Add. */
+    val listed: List<ListedGoPro> = emptyList(),
+    /** The name to show for a camera id that is no longer listed, such as one from an older session. */
+    val nameOf: (String) -> String = { "GoPro" },
+    val onDownload: (SessionSummary, String) -> Unit = { _, _ -> },
+    val onAddFiles: (SessionSummary, String) -> Unit = { _, _ -> },
 )
 
 /**
- * The GoPro lines of a session card, built to option A of UI-31 (tap Download) and UI-32 (add
- * HERO8 files from the session). [enabled] is false while a session records or other work runs.
- * A session without GoPro video shows no GoPro line unless a HERO8 is listed ([hero8Listed]);
- * Download needs a listed HERO11 ([canDownload]).
+ * The GoPro lines of a session card, built to option A of UI-31 (tap Download) and UI-32 (add a
+ * GoPro's files from the session), one line per camera. A camera with video in the session shows
+ * its state; each listed camera started by hand that has none yet offers Add. Download needs the
+ * camera to be listed. [enabled] is false while a session records or other work runs.
  */
 @Suppress("LongParameterList")
 @Composable
@@ -64,35 +71,55 @@ internal fun GoProLines(
     work: GoProWork?,
     problems: List<String>,
     enabled: Boolean,
-    hero8Listed: Boolean,
-    canDownload: Boolean,
-    onDownload: () -> Unit,
-    onAddHero8: () -> Unit,
+    listed: List<ListedGoPro>,
+    nameOf: (String) -> String,
+    onDownload: (String) -> Unit,
+    onAddFiles: (String) -> Unit,
 ) {
     val c = TrackTheme.colors
-    when {
-        work is GoProWork.Downloading -> {
-            val file = "GoPro HERO11 · downloading file ${work.index}"
-            ValueLine(c.warning, file, if (work.total > 0) gb(work.bytes, work.total) else null)
-            Progress(work.bytes, work.total)
-            DimText("Keep the camera on and close to the phone.")
-        }
-        goPro.hero11OnCamera -> StatusLine(c.warning, "GoPro HERO11 · video on the camera") {
-            if (canDownload) FilledTonalButton(onClick = onDownload, enabled = enabled) { Text("Download") }
-        }
-        goPro.hero11 != null -> ClipsLine("GoPro HERO11", goPro.hero11)
+    val withVideo = goPro.cameras.map { it.sourceId }.toSet()
+    for (cam in goPro.cameras) {
+        val name = listed.firstOrNull { it.sourceId == cam.sourceId }?.name ?: nameOf(cam.sourceId)
+        val canDownload = listed.any { it.sourceId == cam.sourceId && it.download }
+        CameraLine(cam, name, work, enabled, canDownload) { onDownload(cam.sourceId) }
     }
-    when {
-        work is GoProWork.Adding -> {
-            ValueLine(c.warning, "Copying and lining up ${files(work.files)}", null)
+    for (cam in listed.filter { !it.download && it.sourceId !in withVideo }) {
+        if (work is GoProWork.Adding && work.sourceId == cam.sourceId) {
+            ValueLine(c.warning, "${cam.name} · copying and lining up ${files(work.files)}", null)
             Progress(work.bytes, work.total)
-        }
-        goPro.hero8 != null -> ClipsLine("GoPro HERO8", goPro.hero8)
-        hero8Listed -> StatusLine(MaterialTheme.colorScheme.outline, "GoPro HERO8 video") {
-            OutlinedButton(onClick = onAddHero8, enabled = enabled) { Text("Add") }
+        } else {
+            StatusLine(MaterialTheme.colorScheme.outline, "${cam.name} video") {
+                OutlinedButton(onClick = { onAddFiles(cam.sourceId) }, enabled = enabled) { Text("Add") }
+            }
         }
     }
     problems.take(MaxProblems).forEach { DimText(it, color = c.loss) }
+}
+
+/** One camera's video in the session: downloading, still on the camera, or lined up. */
+@Suppress("LongParameterList")
+@Composable
+private fun CameraLine(
+    cam: SessionCamera,
+    name: String,
+    work: GoProWork?,
+    enabled: Boolean,
+    canDownload: Boolean,
+    onDownload: () -> Unit,
+) {
+    val c = TrackTheme.colors
+    when {
+        work is GoProWork.Downloading && work.sourceId == cam.sourceId -> {
+            val size = if (work.total > 0) gb(work.bytes, work.total) else null
+            ValueLine(c.warning, "$name · downloading file ${work.index}", size)
+            Progress(work.bytes, work.total)
+            DimText("Keep the camera on and close to the phone.")
+        }
+        cam.onCamera -> StatusLine(c.warning, "$name · video on the camera") {
+            if (canDownload) FilledTonalButton(onClick = onDownload, enabled = enabled) { Text("Download") }
+        }
+        cam.clips != null -> ClipsLine(name, cam.clips)
+    }
 }
 
 @Composable

@@ -21,12 +21,12 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.gopro.GoProRecordings
 import com.flappedear.betterdriver.shell.GoProClips
+import com.flappedear.betterdriver.shell.SessionCamera
 import com.flappedear.betterdriver.shell.SessionGoPro
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.ClipStatus
 import com.flappedear.betterdriver.video.VideoIndex
-import com.flappedear.betterdriver.video.VideoSourceKind
 import java.io.File
 import java.io.IOException
 import java.util.Locale
@@ -245,21 +245,30 @@ class Sessions private constructor(private val context: Context) {
     }
 }
 
-/** What a session holds from GoPros: HERO11 files still on the camera, and lined-up clips per camera. */
+/**
+ * What a session holds from GoPros, per camera: files an Open GoPro camera still holds, and
+ * lined-up clips. Any number of cameras; older sessions name their one HERO11 or HERO8.
+ */
 private fun goProOf(dir: File): SessionGoPro {
     val clips = try {
-        VideoIndex(dir).clips().filter { it.status == ClipStatus.LOCAL }
+        VideoIndex(dir).clips().filter { it.status == ClipStatus.LOCAL && it.kind.isGoPro }
     } catch (e: IOException) {
         android.util.Log.w("Sessions", "unreadable clip index in $dir", e)
         emptyList()
     }
-    fun of(kind: VideoSourceKind) = clips.filter { it.kind == kind }.takeIf { it.isNotEmpty() }?.let { own ->
-        val worst = own.maxBy { it.alignment.uncertaintyUs }.alignment
-        val byGps = worst.method == AlignmentMethod.GPS_MATCH || worst.method == AlignmentMethod.GPS_UTC
-        GoProClips(own.size, alignmentText(worst), byGps)
-    }
-    val onCamera = GoProRecordings(File(dir, VideoFiles.DIR)).all().any { !it.downloaded }
-    return SessionGoPro(onCamera, of(VideoSourceKind.GOPRO_HERO11), of(VideoSourceKind.GOPRO_HERO8))
+    val onCamera = GoProRecordings(File(dir, VideoFiles.DIR)).all().filter { !it.downloaded }.map { it.sourceId }
+    val ids = (clips.map { it.sourceId } + onCamera).distinct()
+    return SessionGoPro(
+        ids.map { id ->
+            val own = clips.filter { it.sourceId == id }
+            val lined = own.takeIf { it.isNotEmpty() }?.let {
+                val worst = it.maxBy { c -> c.alignment.uncertaintyUs }.alignment
+                val byGps = worst.method == AlignmentMethod.GPS_MATCH || worst.method == AlignmentMethod.GPS_UTC
+                GoProClips(it.size, alignmentText(worst), byGps)
+            }
+            SessionCamera(id, onCamera = id in onCamera, clips = lined)
+        },
+    )
 }
 
 /** How a clip was placed, for its card: "by GPS ±0.05 s". */

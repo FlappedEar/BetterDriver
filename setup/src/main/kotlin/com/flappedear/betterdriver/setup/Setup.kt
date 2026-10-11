@@ -5,11 +5,24 @@ import kotlinx.serialization.Serializable
 /** What a piece of equipment does in a session. OBD readers join in Phase 5 (FBBD-3). */
 enum class EquipmentKind { GNSS, CAMERA }
 
-/** The models the app can work with. Which of them Arek owns is up to him (FBBD-83). */
+/**
+ * The kinds of equipment the app can work with (FBBD-105). Each is a family, not one product:
+ * which RaceBox, Bluetooth GPS or GoPro it is comes from the device itself or from Arek, so a new
+ * camera or receiver of a known family needs no new entry here.
+ */
 @Serializable
 enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
-    /** RaceBox Micro over BLE (FBBD-43). */
-    RACEBOX_MICRO(EquipmentKind.GNSS, "RaceBox Micro"),
+    /**
+     * A RaceBox Mini, Mini S or Micro over BLE (FBBD-43). All three speak the same protocol
+     * (RaceBox BLE protocol rev. 8); the advertised name tells them apart ([Equipment.advertisedName]).
+     */
+    RACEBOX(EquipmentKind.GNSS, "RaceBox"),
+
+    /**
+     * A Bluetooth GPS receiver that sends NMEA 0183 over the serial port profile, such as a Qstarz
+     * or a Garmin GLO (FBBD-108). Paired in Android's Bluetooth settings first.
+     */
+    NMEA_GNSS(EquipmentKind.GNSS, "Bluetooth GPS"),
 
     /** Synthetic GNSS for trying the app without hardware. Only there when added on purpose. */
     DEMO_GNSS(EquipmentKind.GNSS, "Demo GNSS"),
@@ -18,42 +31,101 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     PHONE_CAMERA(EquipmentKind.CAMERA, "Phone camera"),
 
     /**
-     * Started and stopped with the session through Open GoPro (FBBD-22). One at most: the app
-     * drives a single HERO11, so pairing another one replaces it.
+     * An Open GoPro camera (HERO9 Black and later, MAX2), started and stopped with the session
+     * (FBBD-22). Which camera it is, and so which video modes it offers, is [Equipment.goPro].
      */
-    GOPRO_HERO11(EquipmentKind.CAMERA, "GoPro HERO11"),
+    GOPRO(EquipmentKind.CAMERA, "GoPro"),
 
-    /** Started by hand; its files are added to the session afterwards (FBBD-22). */
-    GOPRO_HERO8(EquipmentKind.CAMERA, "GoPro HERO8"),
+    /**
+     * A GoPro started by hand whose files are added to the session afterwards: cameras without
+     * Open GoPro (HERO8 and earlier, the first MAX), or any GoPro Arek prefers to run that way.
+     */
+    GOPRO_FILES(EquipmentKind.CAMERA, "GoPro, files added after the session"),
     ;
 
-    /** True when the app starts and stops it; a HERO8 is started by hand. */
-    val controlledByApp: Boolean get() = this != GOPRO_HERO8
+    /** True when the app starts and stops it; a GoPro whose files are added is started by hand. */
+    val controlledByApp: Boolean get() = this != GOPRO_FILES
 
     /** True for models paired over Bluetooth, which need an address. */
-    val paired: Boolean get() = this == RACEBOX_MICRO || this == GOPRO_HERO11
+    val paired: Boolean get() = this == RACEBOX || this == NMEA_GNSS || this == GOPRO
 
-    val isGoPro: Boolean get() = this == GOPRO_HERO11 || this == GOPRO_HERO8
+    val isGoPro: Boolean get() = this == GOPRO || this == GOPRO_FILES
 
-    /**
-     * Listed once at most: there is one phone camera, the app drives one HERO11, and HERO8 imports
-     * go to one folder per session, so two HERO8s could overwrite each other's clips.
-     */
-    val single: Boolean get() = this == PHONE_CAMERA || this == GOPRO_HERO11 || this == GOPRO_HERO8
+    /** Listed once at most: there is one phone camera. Any number of GoPros and receivers can be listed. */
+    val single: Boolean get() = this == PHONE_CAMERA
 
     /**
-     * The video modes Arek can choose from (FBBD-88), best first; empty for models the app does
-     * not set. The phone's list is narrowed at run time to what the phone reports. The HERO11 has
-     * no 720p (Open GoPro openapi.json, Setting_2 option metadata), so it offers 2.7K instead.
+     * The phone camera's video modes (FBBD-88), best first, narrowed at run time to what the phone
+     * reports. A GoPro's modes depend on the camera: see [Equipment.videoModes].
      */
-    val videoModes: List<VideoMode> get() = when (this) {
-        PHONE_CAMERA -> PhoneVideoModes
-        GOPRO_HERO11 -> Hero11VideoModes
-        else -> emptyList()
+    val videoModes: List<VideoMode> get() = if (this == PHONE_CAMERA) PhoneVideoModes else emptyList()
+
+    /** The phone camera's mode until Arek chooses one. */
+    val defaultVideo: VideoMode? get() = videoModes.defaultMode()
+}
+
+/**
+ * GoPro cameras by generation (FBBD-105). Open GoPro cameras and their model ids, frame sizes and
+ * frame rates are from the Open GoPro spec (github.com/gopro/OpenGoPro, gh-pages branch,
+ * references.json "cameras" and http/openapi.json Setting_2 and Setting_3 option metadata):
+ * every Open GoPro camera takes 4K (1) and 1080p (9) at 60 (5) and 30 (8) fps; HERO9 to HERO12
+ * also take 2.7K (4); only the HERO13 takes 720p (12). Cameras before the HERO9 have no Open GoPro,
+ * so their files are added after the session ([EquipmentModel.GOPRO_FILES]).
+ */
+@Suppress("MagicNumber") // Model numbers from the Open GoPro spec.
+@Serializable
+enum class GoProModel(
+    val label: String,
+    /** The model number the camera reports in Get Hardware Info; null for cameras without Open GoPro. */
+    val modelId: Int?,
+    private val sizes: List<VideoSize>,
+) {
+    HERO13_BLACK("HERO13 Black", 65, listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD, VideoSize.HD)),
+    MAX_2("MAX2", 64, listOf(VideoSize.UHD, VideoSize.FHD)),
+    HERO12_BLACK("HERO12 Black", 62, listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD)),
+    HERO11_BLACK_MINI("HERO11 Black Mini", 60, listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD)),
+    HERO11_BLACK("HERO11 Black", 58, listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD)),
+    HERO10_BLACK("HERO10 Black", 57, listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD)),
+    HERO9_BLACK("HERO9 Black", 55, listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD)),
+
+    /** An Open GoPro camera this build does not know yet, such as a newer model: the modes all of them take. */
+    OTHER_OPEN_GOPRO("GoPro", null, listOf(VideoSize.UHD, VideoSize.FHD)),
+
+    HERO8_BLACK("HERO8 Black", null, emptyList()),
+    MAX("MAX", null, emptyList()),
+    HERO7_BLACK("HERO7 Black", null, emptyList()),
+    HERO6_BLACK("HERO6 Black", null, emptyList()),
+    HERO5_BLACK("HERO5 Black", null, emptyList()),
+
+    /** Any other GoPro whose files are added after the session. */
+    OTHER("Other GoPro", null, emptyList()),
+    ;
+
+    /** True for cameras the app can start, stop and set over Open GoPro. */
+    val openGoPro: Boolean get() = modelId != null || this == OTHER_OPEN_GOPRO
+
+    /** The video modes the app can set on this camera, best first; empty for cameras without Open GoPro. */
+    val videoModes: List<VideoMode> get() = sizes.flatMap { listOf(VideoMode(it, HighFps), VideoMode(it, LowFps)) }
+
+    companion object {
+        /** Open GoPro cameras, newest first, for choosing a camera that was paired before its model was known. */
+        val OpenGoPro: List<GoProModel> = entries.filter { it.openGoPro }
+
+        /** Cameras whose files are added after the session, newest first. */
+        val FileImport: List<GoProModel> = entries.filterNot { it.openGoPro }
+
+        /**
+         * The camera for the model number from Get Hardware Info. A number this build does not
+         * know is an Open GoPro camera too, such as a model newer than this build.
+         */
+        fun ofModelId(id: Int?): GoProModel =
+            entries.firstOrNull { it.modelId != null && it.modelId == id } ?: OTHER_OPEN_GOPRO
+
+        /** The camera for the model name from Get Hardware Info ("HERO12 Black"), or null. */
+        fun ofName(name: String?): GoProModel? = entries.firstOrNull {
+            it.modelId != null && name != null && name.trim().equals(it.label, ignoreCase = true)
+        }
     }
-
-    /** The mode used until Arek chooses one: 1080p at 60, lighter on heat, storage and download than 4K. */
-    val defaultVideo: VideoMode? get() = if (videoModes.isEmpty()) null else VideoMode(VideoSize.FHD, HighFps)
 }
 
 /** Video frame sizes, largest first. */
@@ -72,17 +144,13 @@ private const val LowFps = 30
 private val PhoneVideoModes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
     .flatMap { listOf(VideoMode(it, HighFps), VideoMode(it, LowFps)) }
 
-private val Hero11VideoModes = listOf(
-    VideoMode(VideoSize.UHD, HighFps),
-    VideoMode(VideoSize.UHD, LowFps),
-    VideoMode(VideoSize.QHD, HighFps),
-    VideoMode(VideoSize.FHD, HighFps),
-    VideoMode(VideoSize.FHD, LowFps),
-)
+/** The mode used until Arek chooses one: 1080p at 60, lighter on heat, storage and download than 4K. */
+private fun List<VideoMode>.defaultMode(): VideoMode? = VideoMode(VideoSize.FHD, HighFps).takeIf { it in this }
+
 
 /**
  * One item in Arek's equipment list. [address] is the Bluetooth address of a paired model.
- * [video] is the chosen video mode of a camera the app sets; null means the model's default.
+ * [video] is the chosen video mode of a camera the app sets; null means the camera's default.
  */
 @Serializable
 data class Equipment(
@@ -96,11 +164,52 @@ data class Equipment(
      */
     val advertisedName: String? = null,
     val video: VideoMode? = null,
+    /** Which GoPro this is, for [EquipmentModel.GOPRO] and [EquipmentModel.GOPRO_FILES]; null for other models. */
+    val goPro: GoProModel? = null,
 ) {
     val kind: EquipmentKind get() = model.kind
 
+    /** The video modes the app can set on this camera, best first; empty when the app does not set it. */
+    val videoModes: List<VideoMode> get() = when (model) {
+        EquipmentModel.GOPRO -> (goPro ?: GoProModel.OTHER_OPEN_GOPRO).videoModes
+        else -> model.videoModes
+    }
+
+    /** The mode used until Arek chooses one. */
+    val defaultVideo: VideoMode? get() = videoModes.defaultMode()
+
     /** The video mode this camera records with, or null when the app does not set it. */
-    val videoMode: VideoMode? get() = video?.takeIf { it in model.videoModes } ?: model.defaultVideo
+    val videoMode: VideoMode? get() = video?.takeIf { it in videoModes } ?: defaultVideo
+
+    /** What it is, for the equipment screen: "GoPro HERO12 Black", "RaceBox Mini S", "Bluetooth GPS". */
+    val modelLabel: String get() = when (model) {
+        EquipmentModel.GOPRO, EquipmentModel.GOPRO_FILES -> when (goPro) {
+            null, GoProModel.OTHER_OPEN_GOPRO, GoProModel.OTHER -> model.label
+            else -> "GoPro ${goPro.label}"
+        }
+        EquipmentModel.RACEBOX -> raceBoxModel(advertisedName) ?: model.label
+        else -> model.label
+    }
+}
+
+/** Which GoPro a new [model] item is: an Open GoPro camera of unknown model is listed as one. */
+private fun goProFor(model: EquipmentModel, goPro: GoProModel?): GoProModel? = when (model) {
+    EquipmentModel.GOPRO -> goPro?.takeIf { it.openGoPro } ?: GoProModel.OTHER_OPEN_GOPRO
+    EquipmentModel.GOPRO_FILES -> goPro ?: GoProModel.OTHER
+    else -> null
+}
+
+/**
+ * The RaceBox model from its advertised name ("RaceBox Mini S 1234" is a Mini S), or null for a
+ * name that is not a RaceBox's. The RaceBox BLE protocol (rev. 8) names the devices "RaceBox Mini
+ * ", "RaceBox Mini S " and "RaceBox Micro " followed by the serial number.
+ */
+fun raceBoxModel(advertisedName: String?): String? = when {
+    advertisedName == null -> null
+    advertisedName.startsWith("RaceBox Micro") -> "RaceBox Micro"
+    advertisedName.startsWith("RaceBox Mini S") -> "RaceBox Mini S"
+    advertisedName.startsWith("RaceBox Mini") -> "RaceBox Mini"
+    else -> null
 }
 
 /** One of Arek's cars. The PID set for car data attaches here in Phase 5 (FBBD-16). */
@@ -188,16 +297,20 @@ data class Setup(
     /**
      * Adds an item. The first GNSS receiver becomes the session's receiver, and a new camera is
      * used in the next session; Arek can turn either off. A model paired over Bluetooth that is
-     * already listed at the same address is updated instead of listed twice. The phone camera, the
-     * HERO11 and the HERO8 are listed once at most; pairing another HERO11 replaces the listed one.
+     * already listed at the same address is updated instead of listed twice. Only the phone camera
+     * is listed once at most; any number of GoPros and receivers can be listed. [goPro] says which
+     * GoPro a GoPro is; an Open GoPro camera whose model is not known is listed as one.
      */
+    @Suppress("LongParameterList") // Each is a property of the new item.
     fun addEquipment(
         model: EquipmentModel,
         name: String = model.label,
         address: String? = null,
         newId: () -> String,
+        goPro: GoProModel? = null,
     ): Setup {
         require(!model.paired || !address.isNullOrBlank()) { "${model.label} needs a Bluetooth address" }
+        val camera = goProFor(model, goPro)
         val same = equipment.firstOrNull {
             it.model == model && (model.single || (address != null && it.address == address))
         }
@@ -208,15 +321,27 @@ data class Setup(
                     name = name.ifBlank { model.label },
                     address = address ?: same.address,
                     advertisedName = advertised ?: same.advertisedName,
+                    goPro = goPro?.let { camera } ?: same.goPro,
                 ),
             )
         }
-        val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised)
+        val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised, goPro = camera)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next
             EquipmentKind.CAMERA -> next.useCamera(item.id, true)
         }
+    }
+
+    /**
+     * Says which GoPro item [id] is. A camera driven over Open GoPro takes only Open GoPro models;
+     * a chosen video mode the new model lacks falls back to its default ([Equipment.videoMode]).
+     */
+    fun chooseGoPro(id: String, goPro: GoProModel): Setup {
+        val item = equipment(id)?.takeIf {
+            it.model == EquipmentModel.GOPRO_FILES || (it.model == EquipmentModel.GOPRO && goPro.openGoPro)
+        }
+        return if (item == null) this else replace(item.copy(goPro = goPro))
     }
 
     fun renameEquipment(id: String, name: String): Setup {
@@ -226,7 +351,7 @@ data class Setup(
 
     /** Sets a camera's video mode; ignored for items and modes the model does not offer. */
     fun chooseVideo(id: String, mode: VideoMode): Setup {
-        val item = equipment(id)?.takeIf { mode in it.model.videoModes } ?: return this
+        val item = equipment(id)?.takeIf { mode in it.videoModes } ?: return this
         return replace(item.copy(video = mode))
     }
 
@@ -294,11 +419,13 @@ data class Setup(
 }
 
 /**
- * Channels a session can show with [gnss] as its receiver. Lap needs only a position; G needs the
- * RaceBox accelerometer. Without a receiver there is nothing to show.
+ * Channels a session can show with [gnss] as its receiver. Lap needs only a position; G needs an
+ * accelerometer, which every RaceBox has (Mini, Mini S and Micro send acceleration in each data
+ * message, RaceBox BLE protocol rev. 8) and an NMEA receiver does not report. Without a receiver
+ * there is nothing to show.
  */
 fun channelsFor(gnss: Equipment?): Set<TrackChannel> = when (gnss?.model) {
     null -> emptySet()
-    EquipmentModel.RACEBOX_MICRO -> setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G)
+    EquipmentModel.RACEBOX -> setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G)
     else -> setOf(TrackChannel.SPEED, TrackChannel.LAP)
 }

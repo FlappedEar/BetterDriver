@@ -17,7 +17,7 @@ class GoProImporterTest {
     lateinit var dir: File
 
     private val videoDir get() = File(dir, "video").apply { mkdirs() }
-    private val hero8 = GoProImporter.Source(VideoSourceKind.GOPRO_HERO8, "hero8")
+    private val hero8 = GoProImporter.Source(VideoSourceKind.GOPRO_FILES, "hero8")
 
     /**
      * A HERO8-style chapter: 1 Hz GPS5 payloads of 18 samples whose video time 0 is at session

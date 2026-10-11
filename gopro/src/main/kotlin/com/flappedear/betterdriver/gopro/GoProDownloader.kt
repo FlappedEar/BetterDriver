@@ -19,7 +19,7 @@ interface WifiJoiner {
 }
 
 /**
- * Downloads a session's HERO11 files after the session and aligns them (FBBD-22).
+ * Downloads the files one Open GoPro camera recorded with a session and aligns them (FBBD-22).
  *
  * Over BLE it turns on the camera's access point and reads its SSID and password
  * (https://gopro.github.io/OpenGoPro/tutorials/connect-wifi); it then joins that network, lists
@@ -38,14 +38,20 @@ class GoProDownloader(
 
     data class Result(val downloaded: List<String>, val problems: List<String>)
 
+    /**
+     * Downloads the recordings of camera [sourceId], or of every camera when null (sessions from
+     * builds with one GoPro). Several cameras name their files alike (GX010001.MP4), so a file is
+     * saved as `<sourceId>-<name>` unless it is from such an older session.
+     */
     suspend fun download(
         sessionDir: File,
         session: SessionData,
+        sourceId: String? = null,
         onProgress: (Progress) -> Unit = {},
     ): Result {
         val videoDir = File(sessionDir, "video")
         val store = GoProRecordings(videoDir)
-        val pending = store.all().filter { !it.downloaded }
+        val pending = store.all().filter { !it.downloaded && (sourceId == null || it.sourceId == sourceId) }
         if (pending.isEmpty()) return Result(emptyList(), emptyList())
         val client = GoProClient(link, scope)
         val downloaded = mutableListOf<String>()
@@ -65,7 +71,7 @@ class GoProDownloader(
                     continue
                 }
                 val local = files.map { f ->
-                    val target = File(videoDir, f.name)
+                    val target = File(videoDir, localName(recording.sourceId, f.name))
                     if (!(target.isFile && target.length() == f.size)) {
                         withContext(Dispatchers.IO) {
                             http.download(f, target) { bytes, total -> onProgress(Progress(f.name, bytes, total)) }
@@ -75,7 +81,7 @@ class GoProDownloader(
                     target
                 }
                 val result = withContext(Dispatchers.Default) {
-                    val source = GoProImporter.Source(VideoSourceKind.GOPRO_HERO11, recording.sourceId)
+                    val source = GoProImporter.Source(VideoSourceKind.GOPRO, recording.sourceId)
                     importer.import(sessionDir, session, local, source, recording)
                 }
                 problems += result.problems
@@ -106,7 +112,14 @@ class GoProDownloader(
         client.close()
     }
 
-    private companion object {
-        const val ConnectTimeoutMillis = 20_000L
+    companion object {
+        private const val ConnectTimeoutMillis = 20_000L
+
+        /** The single HERO11 of builds before FBBD-105; its files kept their own names. */
+        const val LegacySourceId = "gopro_hero11"
+
+        /** The name a camera's file is saved under in the session. */
+        fun localName(sourceId: String, name: String): String =
+            if (sourceId == LegacySourceId) name else "$sourceId-$name"
     }
 }

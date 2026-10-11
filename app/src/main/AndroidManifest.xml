@@ -23,7 +23,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- GoPro HERO11 download after a session: join the camera's own Wi-Fi (FBBD-22). -->
+    <!-- Open GoPro download after a session: join the camera's own Wi-Fi (FBBD-22). -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />

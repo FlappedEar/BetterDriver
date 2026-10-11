@@ -18,8 +18,10 @@ import java.io.IOException
 import java.time.Clock
 
 /**
- * A GoPro HERO11 Black that starts and stops recording with the session over Open GoPro BLE
- * (supported from firmware v01.10.00, https://gopro.github.io/OpenGoPro/docs).
+ * An Open GoPro camera (HERO9 Black and later, MAX2) that starts and stops recording with the
+ * session over Open GoPro BLE (https://gopro.github.io/OpenGoPro/docs). The commands used here
+ * are listed for all of them in the spec (references.json); only the clock command differs, see
+ * [setClock].
  *
  * On [start] it connects, sets the camera's clock from the phone (so file times can be matched to
  * the session), waits until the camera is not busy, applies [video] if given (FBBD-88; a refused
@@ -34,18 +36,18 @@ import java.time.Clock
  * [start] or [stop], and reports problems through [state].
  */
 @Suppress("LongParameterList", "TooManyFunctions") // Clock and timeouts are test hooks; one step per function.
-class Hero11Source(
+class OpenGoProSource(
     override val id: String,
     private val link: GoProLink,
     private val scope: CoroutineScope,
     /** The phone's wall clock and time zone, used to set the camera's clock. */
     private val clock: Clock = Clock.systemDefaultZone(),
     /** The resolution and frame rate to set before recording, or null to keep the camera's own. */
-    private val video: Hero11Video? = null,
+    private val video: GoProVideo? = null,
     private val connectTimeoutMillis: Long = 20_000,
     private val readyTimeoutMillis: Long = 10_000,
 ) : LiveVideoSource {
-    override val kind = VideoSourceKind.GOPRO_HERO11
+    override val kind = VideoSourceKind.GOPRO
 
     private val _state = MutableStateFlow<VideoSourceState>(VideoSourceState.Idle)
     override val state: StateFlow<VideoSourceState> = _state.asStateFlow()
@@ -133,23 +135,27 @@ class Hero11Source(
         save(session, started)
     }
 
-    /** Sets the camera's clock to the phone's local time; null if the camera refuses. */
+    /**
+     * Sets the camera's clock to the phone's local time; null if the camera refuses. Set Local Date
+     * Time (0x0F) carries the time zone, but the HERO9 and HERO10 lack it (references.json), so a
+     * refusal falls back to Set Date Time (0x0D), the same local time without the zone. Either way
+     * the camera's file times are the phone's local time at [clock]'s offset.
+     */
     private suspend fun setClock(): Int? {
         val now = clock.instant()
         val rules = clock.zone.rules
         val offsetMinutes = rules.getOffset(now).totalSeconds / SecondsPerMinute
         val local = now.atZone(clock.zone).toLocalDateTime()
-        return try {
-            client.send(OpenGoPro.setLocalDateTime(local, offsetMinutes, rules.isDaylightSavings(now)))
-            offsetMinutes
-        } catch (_: GoProException) {
-            null
+        return when {
+            accepted(OpenGoPro.setLocalDateTime(local, offsetMinutes, rules.isDaylightSavings(now))) -> offsetMinutes
+            accepted(OpenGoPro.setDateTime(local)) -> offsetMinutes
+            else -> null
         }
     }
 
     /**
      * Sets resolution, then frame rate, so the frame rate is checked against the new resolution.
-     * Returns what the camera took: [Hero11Video.label] for both, the size alone when it refused
+     * Returns what the camera took: [GoProVideo.label] for both, the size alone when it refused
      * only the frame rate, or null when it refused the resolution and records with its own mode.
      */
     private suspend fun applyVideo(): String? {

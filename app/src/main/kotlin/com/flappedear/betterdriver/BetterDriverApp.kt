@@ -32,6 +32,7 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
+import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recording.GnssRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
@@ -43,6 +44,7 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.ListedGoPro
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsScreen
@@ -74,7 +76,7 @@ private val TopLevelItems = listOf(
 /** VBO has no registered type; a generic one keeps the .vbo file name. */
 private const val VboMimeType = "application/octet-stream"
 
-/** GoPro HERO8 files the user adds to a session (UI-32). */
+/** GoPro files the user adds to a session (UI-32). */
 private const val Mp4MimeType = "video/mp4"
 
 private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
@@ -202,7 +204,7 @@ private fun Drive(
                 repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
                 val gnss = active.gnss?.let {
-                    // The recorder tells a Micro from a Mini by the advertised name, not Arek's name for it.
+                    // The recorder tells a RaceBox Micro from a Mini by the advertised name, not Arek's name for it.
                     if (it.model == EquipmentModel.DEMO_GNSS) {
                         GnssRef.Demo
                     } else {
@@ -249,11 +251,15 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
 private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
+    // Session id and camera id, kept apart because rememberSaveable stores plain strings.
     var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
-    val pickHero8 = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+    var addingFrom by rememberSaveable { mutableStateOf<String?>(null) }
+    val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
         val id = addingTo
+        val camera = addingFrom
         addingTo = null
-        if (id != null) goPros.addHero8(id, uris)
+        addingFrom = null
+        if (id != null && camera != null) goPros.addFiles(id, camera, uris)
     }
     // Saveable: the activity can be re-created while the file picker is open.
     var exporting by rememberSaveable { mutableStateOf<String?>(null) }
@@ -287,12 +293,13 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
             work = goPros.work,
             problems = goPros.problems,
             enabled = !goPros.recording,
-            hero8Listed = repo.setup.equipment.any { it.model == EquipmentModel.GOPRO_HERO8 },
-            canDownload = repo.hero11Address() != null,
-            onDownload = { s -> goPros.download(s.id) },
-            onAddHero8 = { s ->
+            listed = listedGoPros(repo),
+            nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
+            onDownload = { s, camera -> goPros.download(s.id, camera) },
+            onAddFiles = { s, camera ->
                 addingTo = s.id
-                pickHero8.launch(arrayOf(Mp4MimeType))
+                addingFrom = camera
+                pickFiles.launch(arrayOf(Mp4MimeType))
             },
         ),
         deleting = SessionDeleting(
@@ -381,4 +388,16 @@ private fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean)
             )
         }
     }
+}
+
+/** The GoPros in the equipment list, for the session cards: Open GoPro ones download, the others add files. */
+private fun listedGoPros(repo: SetupRepo): List<ListedGoPro> = repo.setup.equipment.filter { it.model.isGoPro }.map {
+    ListedGoPro(CameraIds.goPro(it.id), it.name, download = it.model == EquipmentModel.GOPRO)
+}
+
+/** Names for the cameras of sessions recorded before any number of GoPros could be listed (FBBD-105). */
+private fun legacyGoProName(sourceId: String): String = when (sourceId) {
+    CameraIds.GOPRO_HERO11 -> "GoPro HERO11"
+    CameraIds.GOPRO_HERO8 -> "GoPro HERO8"
+    else -> "GoPro"
 }

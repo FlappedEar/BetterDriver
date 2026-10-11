@@ -12,7 +12,7 @@ class VideoIndexTest {
     @TempDir
     lateinit var dir: File
 
-    private fun clip(name: String, offsetUs: Long, kind: VideoSourceKind = VideoSourceKind.GOPRO_HERO11,
+    private fun clip(name: String, offsetUs: Long, kind: VideoSourceKind = VideoSourceKind.GOPRO,
         method: AlignmentMethod = AlignmentMethod.GPS_MATCH, durationUs: Long? = 60_000_000) =
         VideoClip(name, kind, "src", offsetUs, Alignment(method, 20_000), durationUs)
 
@@ -57,7 +57,7 @@ class VideoIndexTest {
         ))
         assertEquals("a.mp4", index.clipAt(30_000_000)?.fileName)
         assertEquals("b.mp4", index.clipAt(65_000_000)?.fileName)
-        assertEquals("b.mp4", index.clipAt(30_000_000, VideoSourceKind.GOPRO_HERO11)?.fileName)
+        assertEquals("b.mp4", index.clipAt(30_000_000, VideoSourceKind.GOPRO)?.fileName)
         assertNull(index.clipAt(-1))
         assertNull(index.clipAt(71_000_001))
     }

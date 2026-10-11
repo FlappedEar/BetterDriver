@@ -18,14 +18,14 @@ import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 @OptIn(ExperimentalCoroutinesApi::class)
-class Hero11SourceTest {
+class OpenGoProSourceTest {
     @TempDir
     lateinit var dir: File
 
     private var sessionUs = 0L
     private fun TestScope.context() = VideoSessionContext("s1", 1_760_000_000_000L, File(dir, "video")) { sessionUs }
 
-    private fun TestScope.source(camera: FakeGoPro, video: Hero11Video? = null) = Hero11Source(
+    private fun TestScope.source(camera: FakeGoPro, video: GoProVideo? = null) = OpenGoProSource(
         "gopro-test",
         camera,
         backgroundScope,
@@ -33,7 +33,23 @@ class Hero11SourceTest {
         video = video,
     )
 
-    private val fhd60 = Hero11Video(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60", "1080p")
+    private val fhd60 = GoProVideo(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60", "1080p")
+
+    @Test
+    fun `a camera without Set Local Date Time gets Set Date Time`() = runTest {
+        val camera = FakeGoPro().apply { refusedCommands = setOf(0x0F) }
+        val source = source(camera)
+        source.start(context())
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertTrue(camera.recording)
+        assertEquals(listOf(0x0F, 0x0D, 0x13, 0x01), camera.ids)
+        // 2025-10-09 10:53:20 in Warsaw (UTC+2), without the zone.
+        val dateTime = camera.requests[1].second.map { it.toInt() and 0xFF }
+        assertEquals(listOf(0x0D, 7, 0x07, 0xE9, 10, 9, 10, 53, 20), dateTime)
+        source.stop()
+        assertEquals(120, GoProRecordings(File(dir, "video")).all().single().cameraUtcOffsetMinutes)
+    }
 
     @Test
     fun `starts with the session, keeps alive and stops`() = runTest {
