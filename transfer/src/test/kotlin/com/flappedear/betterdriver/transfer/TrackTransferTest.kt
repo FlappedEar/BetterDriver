@@ -55,6 +55,23 @@ class TrackTransferTest {
     }
 
     @Test
+    fun `the first bytes tell a session from a track, also from a stream that gives one byte at a time`() {
+        val bundle = BundleFile.Magic + ByteArray(100)
+        assertEquals(IncomingKind.SESSION, IncomingFiles.kindOf(IncomingFiles.head(Trickle(bundle))))
+        val track = TrackJson.encode(poznan).toByteArray()
+        assertEquals(IncomingKind.TRACK, IncomingFiles.kindOf(IncomingFiles.head(Trickle(track))))
+        assertEquals(IncomingKind.UNKNOWN, IncomingFiles.kindOf(IncomingFiles.head("BD".byteInputStream())))
+        assertEquals(poznan, TrackTransfer.read(Trickle(track)))
+    }
+
+    /** Hands out one byte per read, as some content providers do. */
+    private class Trickle(bytes: ByteArray) : java.io.InputStream() {
+        private val inner = bytes.inputStream()
+        override fun read() = inner.read()
+        override fun read(b: ByteArray, off: Int, len: Int) = inner.read(b, off, minOf(len, 1))
+    }
+
+    @Test
     fun `file names are plain`() {
         assertEquals("Tor-Poznań-Full.bdtrack", TrackTransfer.fileName(poznan))
         assertEquals("track.bdtrack", TrackTransfer.fileName(poznan.copy(name = "///", layout = "")))

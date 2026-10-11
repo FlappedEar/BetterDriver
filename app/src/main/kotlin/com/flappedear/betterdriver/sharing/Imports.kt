@@ -88,7 +88,7 @@ class Imports private constructor(private val context: Context) {
         if (store.list().any { it.state == SessionState.RECORDING }) {
             throw IOException("A session is recording. Import after it stops.")
         }
-        when (IncomingFiles.kindOf(read(uri) { it.readNBytes(IncomingFiles.PeekBytes) })) {
+        when (IncomingFiles.kindOf(read(uri, IncomingFiles::head))) {
             IncomingKind.SESSION -> receiveSession(uri)
             IncomingKind.TRACK -> addTrack(read(uri, TrackTransfer::read)) { finish(it) }
             IncomingKind.UNKNOWN -> throw BundleFormatException("this is not a BetterDriver session or track")
