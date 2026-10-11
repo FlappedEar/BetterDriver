@@ -7,6 +7,9 @@ object Routes {
     const val Sessions = "sessions"
     const val Settings = "settings"
 
+    /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
+    const val CoachSettings = "settings/coach"
+
     /** Add equipment (UI-34 B): scan for a RaceBox or HERO11, or add one without Bluetooth. */
     const val AddEquipment = "add-equipment"
 
