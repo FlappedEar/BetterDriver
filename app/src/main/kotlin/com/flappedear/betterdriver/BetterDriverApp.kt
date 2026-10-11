@@ -29,6 +29,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recording.GnssRef
@@ -327,6 +328,7 @@ private fun Settings(
     val context = LocalContext.current
     val updates = remember(context) { AppUpdates.get(context) }
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), Sessions.get(context))
+    val coach = remember(context) { CoachPrefs.get(context) }
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
         setup = repo.setup,
@@ -345,6 +347,8 @@ private fun Settings(
         onTracks = { nav.navigate(Routes.Tracks) },
         onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
+        coach = coach.settings,
+        onCoach = coach::update,
     )
 }
 

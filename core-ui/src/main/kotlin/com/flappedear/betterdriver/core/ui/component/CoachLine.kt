@@ -37,9 +37,8 @@ private val Speaker: ImageVector = ImageVector.Builder(
 ).build()
 
 /**
- * Text copy of the last spoken cue (UI-09 option A, text enlarged at Arek's request). Phase 5 feature; the
- * slot exists now so the layout does not change when the coach arrives.
- * Null [cue] keeps the slot empty.
+ * Text copy of the last spoken cue (UI-09 option A, text enlarged at Arek's request), or whether the
+ * coach is learning (FBBD-98). Null [cue] keeps the slot empty, so the layout never moves.
  */
 @Composable
 fun CoachLine(corner: String?, cue: String?, modifier: Modifier = Modifier) {

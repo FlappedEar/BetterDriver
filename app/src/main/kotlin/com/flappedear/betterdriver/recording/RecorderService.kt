@@ -12,6 +12,10 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
+import com.flappedear.betterdriver.coach.CoachLink
+import com.flappedear.betterdriver.coach.CoachStatus
+import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
@@ -30,6 +34,8 @@ import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
 
 private const val NotificationId = 1
+
+/** Event kinds the coach process may log (FBBD-98), and the longest text it may log. */
 private const val DestroyStopTimeoutMs = 3_000L
 
 private const val KeyRaceBoxAddress = "racebox_address"
@@ -73,7 +79,12 @@ private fun endedMessage(reason: String) = when (reason) {
  */
 class RecorderService : Service() {
 
-    private class Active(val recording: Recording, val tracker: LiveTracker, val timing: SessionTiming)
+    private class Active(
+        val recording: Recording,
+        val tracker: LiveTracker,
+        val timing: SessionTiming,
+        val coach: CoachLink?,
+    )
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -83,9 +94,15 @@ class RecorderService : Service() {
     private lateinit var cpu: CpuLock
 
     /** Camera reports (FBBD-21) from the camera process are logged into the running recording. */
-    private val clients = LiveClients(::state) { data ->
-        active?.recording?.let { logVideoReport(it, data) { text, ok -> cameraStatus = text to ok } }
-    }
+    private val clients = LiveClients(
+        state = ::state,
+        onVideo = { data ->
+            active?.recording?.let { logVideoReport(it, data) { text, ok -> cameraStatus = text to ok } }
+        },
+        onCoach = { what, data ->
+            active?.recording?.let { logCoachReport(it, what, data) { status -> coachStatus = status } }
+        },
+    )
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
 
     /** Read once, on the control thread; names circuits for tracks not saved yet (FBBD-79). */
@@ -99,6 +116,9 @@ class RecorderService : Service() {
 
     /** The camera's last status for the status strip, for the running recording. Main thread. */
     private var cameraStatus: Pair<String, Boolean>? = null
+
+    /** The coach line, for the running recording (FBBD-98). Main thread. */
+    private var coachStatus: CoachStatus = CoachStatus.None
 
     override fun onCreate() {
         super.onCreate()
@@ -189,16 +209,25 @@ class RecorderService : Service() {
                 recording.event(TrackEvent.KIND, TrackEvent.text(found))
             }
             recording.listeners.add(timing)
+            // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
+            val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
+                null
+            } else {
+                CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger)
+            }
+            coach?.let(recording.listeners::add)
             // Covers stops the recorder makes itself (storage full, write error).
             recording.listeners.add(object : RecorderListener {
                 override fun onStatus(status: RecorderStatus) {
                     if (status is RecorderStatus.Stopped) main.post { onEnded(recording, status.reason) }
                 }
             })
-            main.post { cameraStatus = null }
-            active = Active(recording, tracker, timing)
+            active = Active(recording, tracker, timing, coach)
             sources.forEach(recording::attach)
             main.post {
+                cameraStatus = null
+                coachStatus = CoachStatus.None
+                coach?.bind()
                 cpu.acquire()
                 wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
                     .putString(KeyRaceBoxAddress, gnss.address).putString(KeyRaceBoxName, gnss.name)
@@ -228,7 +257,9 @@ class RecorderService : Service() {
 
     /** Main thread. Runs once per recording, whichever of the user stop or the recorder's own stop comes first. */
     private fun onEnded(recording: Recording, reason: String) {
-        if (active?.recording !== recording) return
+        val ended = active
+        if (ended == null || ended.recording !== recording) return
+        ended.coach?.unbind()
         active = null
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
@@ -254,12 +285,17 @@ class RecorderService : Service() {
             }
         }
         a?.timing?.detection?.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
+        if (a != null) {
+            coachStatus.corner?.let { state.putString(RecorderProtocol.KEY_COACH_CORNER, it) }
+            coachStatus.text?.let { state.putString(RecorderProtocol.KEY_COACH_TEXT, it) }
+        }
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }
         return state
     }
 
     override fun onDestroy() {
+        active?.coach?.unbind()
         clients.close()
         // Only reached with a recording running if the system destroys the service: finish it cleanly.
         active?.recording?.stop("service_destroyed", DestroyStopTimeoutMs)

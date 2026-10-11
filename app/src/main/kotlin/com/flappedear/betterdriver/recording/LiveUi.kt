@@ -27,8 +27,8 @@ private const val NoValue = "–"
 
 /**
  * Track screen values from the recorder. Laps, delta and sectors come from live timing, which runs
- * in the recorder process once the session is at a saved track with lines (FBBD-12); until then,
- * and for coach cues, which are not built yet, those slots show their empty state. [tiles] are the
+ * in the recorder process once the session is at a saved track with lines (FBBD-12); until then
+ * those slots show their empty state. The coach line is the coach's last cue (FBBD-98). [tiles] are the
  * tiles set in Settings (UI-38 A), already limited to what the session's receiver can fill.
  */
 fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreenState {
@@ -56,8 +56,8 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         bestMillis = null,
         sectors = listOf(SectorState("S1", null, current = true), SectorState("S2", null), SectorState("S3", null)),
         tiles = tiles.map { ch -> TrackTile(ch.label, tileValue(ch, live, timing) ?: NoValue, ch.unit) },
-        coachCorner = null,
-        coachCue = null,
+        coachCorner = state.coach?.corner,
+        coachCue = state.coach?.text,
     )
     return if (timing == null) screen else screen.withTiming(timing)
 }

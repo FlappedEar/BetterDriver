@@ -64,6 +64,19 @@ internal object RecorderProtocol {
     const val VIDEO_STOPPED = 3
     const val VIDEO_STATUS = 4
 
+    /**
+     * Coach to service (FBBD-98): an event to log in the running session, in msg.data with
+     * [com.flappedear.betterdriver.coach.CoachProtocol] keys. Ignored unless its session is running.
+     */
+    const val MSG_COACH_EVENT = 5
+
+    /** Coach to service: the coach line for the track screen. */
+    const val MSG_COACH_STATUS = 6
+
+    /** In a [MSG_STATE] bundle: the coach line's corner label and text, each absent when empty (FBBD-98). */
+    const val KEY_COACH_CORNER = "coachCorner"
+    const val KEY_COACH_TEXT = "coachText"
+
     /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
     const val KEY_PLACE = "place"
 
