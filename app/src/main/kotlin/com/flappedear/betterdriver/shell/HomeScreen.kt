@@ -11,7 +11,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -32,7 +34,9 @@ import com.flappedear.betterdriver.setup.Setup
  * Home (UI-12 option B, UI-36 option A): what this session uses as a card on top, one big start
  * button, and the last session below. Without a GNSS receiver START is greyed out and a card
  * offers to add one (UI-37 option B), so nothing is recorded from made-up positions. While a
- * session records, START goes back to it.
+ * session starts or records ([recording]), START goes back to it and the session card is locked,
+ * because the running session has already started what it uses. The page scrolls when the card
+ * lists many cameras or the font is large.
  */
 @Suppress("LongParameterList") // Home links to every part of the session choice.
 @Composable
@@ -50,18 +54,18 @@ fun HomeScreen(
     Column(modifier.fillMaxSize()) {
         ShellTopBar("BetterDriver")
         Column(
-            Modifier.weight(1f).padding(horizontal = 16.dp),
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SessionCard(setup, actions)
-            Spacer(Modifier.weight(1f))
+            SessionCard(setup, actions, locked = recording)
+            Spacer(Modifier.size(12.dp))
             StartButton(
                 if (canStart) trackName ?: "No track detected" else "No GNSS receiver",
                 enabled = canStart,
                 onStart = onStart,
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             )
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.size(12.dp))
             if (canStart) {
                 ShellCard {
                     SectionLabel("Last session")

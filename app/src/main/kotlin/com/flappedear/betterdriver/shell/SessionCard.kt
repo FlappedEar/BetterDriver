@@ -33,29 +33,35 @@ private enum class Picker { Car, Gnss, Tiles }
 /**
  * "This session" on home (UI-36 option A): the car, the GNSS receiver, a switch per camera and the
  * track-screen tiles (UI-38 option B, per session). The last choice is kept, so on a normal day
- * Arek only presses START. A camera turned off here does not start.
+ * Arek only presses START. A camera turned off here does not start. While a session starts or
+ * records the card is [locked]: it shows what the running session uses and nothing can change.
  */
 @Composable
-internal fun SessionCard(setup: Setup, actions: SessionCardActions) {
+internal fun SessionCard(setup: Setup, actions: SessionCardActions, locked: Boolean = false) {
     val active = setup.active()
     var picker by rememberSaveable { mutableStateOf<Picker?>(null) }
     ShellCard {
         SectionLabel("This session")
         val car = active.car?.name ?: if (setup.cars.isEmpty()) "Add a car" else "None"
-        ListRow("Car", car, divider = false, onClick = { picker = Picker.Car })
-        ListRow("GNSS", active.gnss?.name ?: "None", onClick = { picker = Picker.Gnss })
+        ListRow("Car", car, divider = false, onClick = { picker = Picker.Car }.takeUnless { locked })
+        ListRow("GNSS", active.gnss?.name ?: "None", onClick = { picker = Picker.Gnss }.takeUnless { locked })
         setup.ofKind(EquipmentKind.CAMERA).forEach { cam ->
             val on = cam.id in setup.session.cameraIds
             ListRow(cam.name, if (cam.model.controlledByApp) null else "Start by hand") {
-                Switch(checked = on, onCheckedChange = { v -> actions.update { it.useCamera(cam.id, v) } })
+                Switch(
+                    checked = on,
+                    onCheckedChange = { v -> actions.update { it.useCamera(cam.id, v) } },
+                    enabled = !locked,
+                )
             }
         }
         if (active.gnss != null) {
             val tiles = active.tiles.joinToString(" · ") { it.label }.ifEmpty { "None" }
-            ListRow("Tiles", tiles, onClick = { picker = Picker.Tiles })
+            ListRow("Tiles", tiles, onClick = { picker = Picker.Tiles }.takeUnless { locked })
         }
+        if (locked) DimText("Recording. This session's choice is fixed until it stops.")
     }
-    when (picker) {
+    when (picker.takeUnless { locked }) {
         Picker.Car -> ChoiceDialog(
             title = "Car",
             options = setup.cars.map { it.id to it.name },

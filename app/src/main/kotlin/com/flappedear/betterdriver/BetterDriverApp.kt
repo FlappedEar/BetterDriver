@@ -158,7 +158,8 @@ private fun Drive(
     tracks: Tracks,
 ) {
     LaunchedEffect(Unit) { tracks.locate() }
-    val recording = recorder.state.recording
+    // Starting counts too: the recorder and the cameras are already on their way.
+    val recording = recorder.state.recording || recorder.state.starting
     HomeScreen(
         setup = repo.setup,
         recording = recording,
