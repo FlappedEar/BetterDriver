@@ -127,13 +127,12 @@ jobs:
       # and the android-sign job re-signs the APK. Nothing caches a key.
       - uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: 8.14.3
           cache-read-only: true
       - name: Build the APK (release)
         env:
           VERSION: ${{ needs.version.outputs.version }}
           BUILD: ${{ needs.version.outputs.build }}
-        run: gradle :app:assembleRelease -Pbetterdriver.version="$VERSION" -Pbetterdriver.build="$BUILD"
+        run: ./gradlew :app:assembleRelease -Pbetterdriver.version="$VERSION" -Pbetterdriver.build="$BUILD"
       - uses: actions/upload-artifact@v4
         with:
           name: build-android-unsigned

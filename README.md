@@ -20,12 +20,11 @@ The screens are placeholders until each design is approved.
 
 ## Build
 
-JDK 17, Gradle 8.14.3 and the Android SDK (compile SDK 36). The Gradle
-wrapper is not committed yet.
+JDK 17 and the Android SDK (compile SDK 36).
 
 ```
-gradle build detekt        # build, unit tests, Android lint, detekt
-gradle :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
+./gradlew build detekt        # build, unit tests, Android lint, detekt
+./gradlew :app:assembleDebug  # app/build/outputs/apk/debug/app-debug.apk
 ```
 
 ## CI and releases
