@@ -112,8 +112,8 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String):
     }
     val track = trackFor(data, tracks.all()) ?: return Load.Failed(
         AnalysisState.Unavailable(
-            "This session has no track with a start/finish line. Set the line in the track editor, " +
-                "then open the analysis again.",
+            "No laps: this session was not recorded at a track with a start/finish line, such as a road " +
+                "drive. If it was at a track, set the line in the track editor, then open the analysis again.",
             action = "Tracks",
         ),
     )
