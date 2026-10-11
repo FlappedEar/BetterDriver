@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -126,22 +129,16 @@ private fun SessionCard(
     val sending = transfer.outgoing[s.id]
     var asking by rememberSaveable(s.id) { mutableStateOf(false) }
     val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running
-    ShellCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                sessionTitle(s),
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                modifier = Modifier.weight(1f),
-            )
-            when (s.state) {
-                SessionState.RECORDING -> DimText("Recording", color = c.loss)
-                SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
-                SessionState.FINISHED -> Unit
-            }
-        }
+    // The whole card opens lap analysis (UI-61 B), except while it records or is being deleted.
+    val opens = s.state != SessionState.RECORDING && delete != DeleteState.Running
+    ShellCard(
+        Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = opens, onClickLabel = "Lap analysis") { onAnalyse(s) },
+    ) {
+        CardTitle(s, opens)
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
-        AnalysisLink(s, delete, onAnalyse)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
         SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
@@ -172,6 +169,25 @@ private fun SessionCard(
     }
 }
 
+/** The session's title, its state and, when the card opens lap analysis, a chevron. */
+@Composable
+private fun CardTitle(s: SessionSummary, opens: Boolean) {
+    val c = TrackTheme.colors
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            sessionTitle(s),
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.weight(1f),
+        )
+        when (s.state) {
+            SessionState.RECORDING -> DimText("Recording", color = c.loss)
+            SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
+            SessionState.FINISHED -> Unit
+        }
+        if (opens) DimText("›")
+    }
+}
+
 /** Delete, Share and Export at the bottom of a session card. */
 @Suppress("LongParameterList")
 @Composable
@@ -194,13 +210,6 @@ private fun CardButtons(
             Text(if (video) "Export VBO + video" else "Export VBO")
         }
     }
-}
-
-/** Opens lap analysis (FBBD-102): laps, theoretical best and lap comparison. */
-@Composable
-private fun AnalysisLink(s: SessionSummary, delete: DeleteState?, onAnalyse: (SessionSummary) -> Unit) {
-    if (s.state == SessionState.RECORDING || delete == DeleteState.Running) return
-    TextButton(onClick = { onAnalyse(s) }, contentPadding = PaddingValues(0.dp)) { Text("Lap analysis ›") }
 }
 
 /** The card's status line and whether it reports a failure; a delete outranks an export. */
