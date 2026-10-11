@@ -189,7 +189,17 @@ class SessionStore(val root: File) {
     /** Reads a whole session. Works for any state, including one still recording (up to its last sync). */
     fun read(id: String): SessionData = read(dir(id))
 
-    fun read(dir: File): SessionData {
+    fun read(dir: File): SessionData = read(dir, samples = true)
+
+    /**
+     * Reads a session without its sample sets: metadata, channels and events only. For screens that
+     * only need events (cue counts, the track used), so an hour at 25 Hz is not held in memory.
+     */
+    fun readEvents(dir: File): SessionData = read(dir, samples = false)
+
+    fun readEvents(id: String): SessionData = readEvents(dir(id))
+
+    private fun read(dir: File, samples: Boolean): SessionData {
         val props = SessionFiles.readProps(File(dir, SessionFiles.META))
             ?: error("no readable ${SessionFiles.META} in ${dir.path}")
         val info = SessionFiles.propsToMeta(props)
@@ -204,7 +214,7 @@ class SessionStore(val root: File) {
             val r = Frames.scan(c.readBytes()) { rec ->
                 when (rec) {
                     is Record.Channel -> channels[rec.def.id] = rec.def
-                    is Record.Samples -> sets += rec.set
+                    is Record.Samples -> if (samples) sets += rec.set
                     is Record.Event -> events += rec.event
                     is Record.End -> end = rec
                 }
