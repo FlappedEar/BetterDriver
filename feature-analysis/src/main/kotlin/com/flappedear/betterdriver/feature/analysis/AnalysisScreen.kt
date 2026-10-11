@@ -123,6 +123,7 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
             when (AnalysisTab.entries[tab]) {
                 AnalysisTab.Summary -> {
                     Summary(ui, width)
+                    if (ui.focus.isNotEmpty()) Focus(ui, compare, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, width)
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }

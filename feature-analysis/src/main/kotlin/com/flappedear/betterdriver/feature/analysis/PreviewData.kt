@@ -63,6 +63,26 @@ internal val PreviewUi = AnalysisUi(
             lineSpreadMeters = 1.4,
         ),
     ),
+    focus = listOf(
+        FocusRow(
+            "Best lap gap",
+            "Corners 2–3",
+            "Your best lap (lap 2) was 0.210 s slower through Corners 2–3 than lap 1, the fastest recorded there.",
+            "Comparing the two laps through Corners 2–3 may show where the time went: where braking starts, " +
+                "the lowest speed, and when the throttle comes back.",
+            0,
+            1,
+        ),
+        FocusRow(
+            "Repeated loss",
+            "Corner 4",
+            "In 3 of 4 compared laps you lost time through Corner 4 against lap 2 (median 0.190 s).",
+            "Because it repeats, comparing a typical lap with lap 2 through Corner 4 may show a pattern " +
+                "rather than a one-off.",
+            2,
+            3,
+        ),
+    ),
     compare = CompareUi(
         referenceNumber = 2,
         otherNumber = 3,
