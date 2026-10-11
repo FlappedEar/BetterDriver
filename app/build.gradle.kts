@@ -64,6 +64,9 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.video)
+    // CameraX hands out ListenableFuture. Media3 (lap review) brings Guava, which swaps the standalone
+    // listenablefuture jar for an empty one but keeps Guava itself off the compile classpath.
+    implementation(libs.guava)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.compose.material3.window.size)
     debugImplementation(libs.compose.ui.tooling)
