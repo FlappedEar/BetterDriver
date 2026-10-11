@@ -33,7 +33,7 @@ class Hero11SourceTest {
         video = video,
     )
 
-    private val fhd60 = Hero11Video(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60")
+    private val fhd60 = Hero11Video(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60", "1080p")
 
     @Test
     fun `starts with the session, keeps alive and stops`() = runTest {
@@ -124,8 +124,8 @@ class Hero11SourceTest {
     }
 
     @Test
-    fun `a refused setting still records, in the camera's own mode`() = runTest {
-        val camera = FakeGoPro().apply { refusedSettings = setOf(OpenGoPro.Setting.FRAMES_PER_SECOND) }
+    fun `a refused resolution still records, in the camera's own mode`() = runTest {
+        val camera = FakeGoPro().apply { refusedSettings = setOf(OpenGoPro.Setting.VIDEO_RESOLUTION) }
         val source = source(camera, fhd60)
         source.start(context())
         runCurrent()
@@ -133,5 +133,16 @@ class Hero11SourceTest {
         assertIs<VideoSourceState.Recording>(source.state.value)
         source.stop()
         assertEquals(null, GoProRecordings(File(dir, "video")).all().single().videoMode)
+    }
+
+    @Test
+    fun `a refused frame rate records the size that was taken`() = runTest {
+        val camera = FakeGoPro().apply { refusedSettings = setOf(OpenGoPro.Setting.FRAMES_PER_SECOND) }
+        val source = source(camera, fhd60)
+        source.start(context())
+        runCurrent()
+        assertTrue(camera.recording)
+        source.stop()
+        assertEquals("1080p · camera's frame rate", GoProRecordings(File(dir, "video")).all().single().videoMode)
     }
 }

@@ -149,19 +149,31 @@ class Hero11Source(
 
     /**
      * Sets resolution, then frame rate, so the frame rate is checked against the new resolution.
-     * Returns [Hero11Video.label] when both were taken, or null when the camera refused one and
-     * records with its own mode.
+     * Returns what the camera took: [Hero11Video.label] for both, the size alone when it refused
+     * only the frame rate, or null when it refused the resolution and records with its own mode.
      */
     private suspend fun applyVideo(): String? {
         val v = video ?: return null
-        return try {
-            client.send(OpenGoPro.Setting.set(OpenGoPro.Setting.VIDEO_RESOLUTION, v.resolution))
-            client.send(OpenGoPro.Setting.set(OpenGoPro.Setting.FRAMES_PER_SECOND, v.fps))
-            waitUntilReady()
-            v.label
-        } catch (_: GoProException) {
-            null
+        val applied = when {
+            !accepted(OpenGoPro.Setting.set(OpenGoPro.Setting.VIDEO_RESOLUTION, v.resolution)) -> null
+            accepted(OpenGoPro.Setting.set(OpenGoPro.Setting.FRAMES_PER_SECOND, v.fps)) -> v.label
+            else -> "${v.size} · camera's frame rate"
         }
+        if (applied != null) {
+            try {
+                waitUntilReady()
+            } catch (_: GoProException) {
+                // The shutter that follows reports a camera that is still busy.
+            }
+        }
+        return applied
+    }
+
+    private suspend fun accepted(request: OpenGoPro.Request): Boolean = try {
+        client.send(request)
+        true
+    } catch (_: GoProException) {
+        false
     }
 
     private suspend fun waitUntilReady() {

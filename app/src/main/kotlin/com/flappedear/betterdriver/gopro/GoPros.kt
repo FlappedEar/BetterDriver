@@ -234,7 +234,7 @@ internal fun hero11Video(mode: VideoMode): Hero11Video? {
         LowFps -> OpenGoPro.Setting.FPS_30
         else -> null
     }
-    return if (resolution != null && fps != null) Hero11Video(resolution, fps, mode.label) else null
+    return if (resolution != null && fps != null) Hero11Video(resolution, fps, mode.label, mode.size.label) else null
 }
 
 private const val HighFps = 60
