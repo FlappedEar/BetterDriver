@@ -22,8 +22,7 @@ import com.flappedear.betterdriver.recording.sessionDetail
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
-import com.flappedear.betterdriver.timing.geo.distanceMeters
-import com.flappedear.betterdriver.timing.replay.firstPosition
+import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
@@ -81,13 +80,8 @@ class ReviewLaps private constructor(context: Context) {
     @Suppress("TooGenericExceptionCaught")
     private fun read(s: SessionSummary, saved: List<Track>): Cached = try {
         val data = store.read(s.id)
-        val at = firstPosition(data.sampleSets)
-        val track = at?.let { p ->
-            saved.map { it to distanceMeters(p, it.center) }
-                .filter { (t, d) -> d <= t.radiusMeters }
-                .minByOrNull { it.second }
-                ?.first
-        }
+        // The track the session recorded at, else the nearest one (as the lap analysis picks it).
+        val track = trackFor(data, saved)
         if (track == null) {
             Cached(null, null, revisions(saved), videoStamp(s.dir))
         } else {

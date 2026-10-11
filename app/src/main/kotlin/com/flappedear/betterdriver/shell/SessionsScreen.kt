@@ -139,19 +139,21 @@ private fun SessionCard(
         CardTitle(s, opens)
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
-        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = sending?.running == true)
         SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
-        val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
+        // A share copies the session folder, so it must not run while GoPro video is being added, and the
+        // other way round (GoProSection).
+        val free = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
         TransferLine(sending)
+        if (free) SaveInstead(sending) { transfer.onSave(s) }
         CardButtons(
             video = video,
-            idle = idle && sending?.running != true,
-            canDelete = canDelete,
+            idle = free,
+            canDelete = free,
             onDelete = { asking = true },
-            onSend = { transfer.onSend(s) },
-            onSave = { transfer.onSave(s) },
+            onShare = { transfer.onSend(s) },
             onExport = { onExport(s) },
         )
     }
@@ -196,15 +198,14 @@ private fun CardButtons(
     idle: Boolean,
     canDelete: Boolean,
     onDelete: () -> Unit,
-    onSend: () -> Unit,
-    onSave: () -> Unit,
+    onShare: () -> Unit,
     onExport: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onDelete, enabled = canDelete) {
             Text("Delete", color = if (canDelete) TrackTheme.colors.loss else Color.Unspecified)
         }
-        ShareButton(enabled = idle, onSend = onSend, onSave = onSave)
+        ShareButton(enabled = idle, onShare = onShare)
         Spacer(Modifier.weight(1f))
         FilledTonalButton(onClick = onExport, enabled = idle) {
             Text(if (video) "Export VBO + video" else "Export VBO")
@@ -264,13 +265,13 @@ private const val MB = 1_000_000L
 private const val GB = 1_000_000_000L
 
 @Composable
-private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState) {
+private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState, sharing: Boolean) {
     val work = goPro.work[s.id]
     GoProLines(
         goPro = goPro.sessions[s.id] ?: SessionGoPro(),
         work = work,
         problems = goPro.problems[s.id].orEmpty(),
-        enabled = goPro.enabled && work == null && export != ExportState.Running,
+        enabled = goPro.enabled && work == null && export != ExportState.Running && !sharing,
         listed = goPro.listed,
         nameOf = goPro.nameOf,
         onDownload = { id -> goPro.onDownload(s, id) },

@@ -141,16 +141,19 @@ object Aliases {
     const val LONGITUDINAL_ACCELERATION = "longitudinalAcceleration"
     const val THROTTLE = "throttle"
     const val BRAKE = "brake"
+    const val ACCURACY = "accuracy"
 }
 
 /**
  * One recording ready for analysis. Times are seconds from the first sample. [aliases] maps a
- * semantic name ([Aliases]) to a channel name.
+ * semantic name ([Aliases]) to a channel name. [metadata] keeps a recording's header lines (a VBO
+ * declares channel units there, as `header.N` = "velocity kmh").
  */
 class TelemetrySession(
     val channels: Map<String, TelemetryChannel>,
     val aliases: Map<String, String>,
     val timingGates: List<TimingGate> = emptyList(),
+    val metadata: Map<String, String> = emptyMap(),
 ) {
     /** The channel named [name], or the channel an alias of that name points to. */
     fun channel(name: String): TelemetryChannel? = channels[aliases[name] ?: name]

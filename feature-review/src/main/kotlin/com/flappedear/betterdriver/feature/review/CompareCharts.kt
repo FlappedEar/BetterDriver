@@ -25,16 +25,19 @@ internal object LapColors {
     val b: Color @Composable get() = TrackTheme.colors.cold
 }
 
+/** Where each car is along the chart, as a fraction of its own lap. */
+internal class CursorFractions(val a: Float, val b: Float)
+
 /** Scrubbing on the chart: a drag or tap at a fraction of the lap's distance. */
 internal class Scrub(val onMove: (fraction: Float) -> Unit, val onStart: () -> Unit, val onEnd: () -> Unit)
 
 /**
  * Delta (top) and both laps' speeds (bottom) over lap A's distance, with the cursor (FBBD-93).
- * Delta below the zero line is time lap B gained. [cursorFraction] is read while drawing, so the
- * cursor moves every frame without recomposing the screen.
+ * Delta below the zero line is time lap B gained. Each car has a cursor in its colour; [cursor] is
+ * read while drawing, so the cursors move every frame without recomposing the screen.
  */
 @Composable
-internal fun DeltaChart(c: Comparison, cursorFraction: () -> Float, scrub: Scrub, modifier: Modifier = Modifier) {
+internal fun DeltaChart(c: Comparison, cursor: () -> CursorFractions, scrub: Scrub, modifier: Modifier = Modifier) {
     val colors = TrackTheme.colors
     val a = LapColors.a
     val b = LapColors.b
@@ -67,8 +70,11 @@ internal fun DeltaChart(c: Comparison, cursorFraction: () -> Float, scrub: Scrub
         val gap = 8.dp.toPx()
         drawDelta(c, range, split - gap / 2, colors)
         drawSpeeds(c, range, split + gap / 2, a, b)
-        val x = cursorFraction().coerceIn(0f, 1f) * size.width
-        drawLine(colors.textDim, Offset(x, 0f), Offset(x, size.height), strokeWidth = 2.dp.toPx())
+        val f = cursor()
+        val xb = f.b.coerceIn(0f, 1f) * size.width
+        val xa = f.a.coerceIn(0f, 1f) * size.width
+        drawLine(b, Offset(xb, 0f), Offset(xb, size.height), strokeWidth = 2.dp.toPx())
+        drawLine(a, Offset(xa, 0f), Offset(xa, size.height), strokeWidth = 2.dp.toPx())
     }
 }
 
@@ -146,8 +152,8 @@ internal fun LapMap(c: Comparison, cursorMicros: () -> Long, modifier: Modifier 
         }
         drawPath(path, line, style = Stroke(width = 4.dp.toPx()))
         val t = cursorMicros()
-        val pb = c.b.trace.at(c.bMicrosAt(t)).xy
-        val pa = c.a.trace.at(t).xy
+        val pb = c.b.trace.at(c.bMicros(t)).xy
+        val pa = c.a.trace.at(c.aMicros(t)).xy
         drawCircle(b, radius = 6.dp.toPx(), center = at(pb.x, pb.y))
         drawCircle(a, radius = 6.dp.toPx(), center = at(pa.x, pa.y))
     }

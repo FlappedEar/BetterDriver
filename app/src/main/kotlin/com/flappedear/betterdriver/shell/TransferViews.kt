@@ -1,53 +1,35 @@
 package com.flappedear.betterdriver.shell
 
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.TransferQuestion
 import com.flappedear.betterdriver.sharing.TransferState
-import com.flappedear.betterdriver.timing.track.Track
 
 /**
- * Share on a session card or a track row (UI-55 option A): one quiet button that opens a two-item
- * menu, Send (the share sheet, with Quick Share) and Save file (a file the user picks, for USB or a
- * file manager). Both carry the session's video and its track (FBBD-23, FBBD-80).
+ * Share on a session card (FBBD-23): prepares the session as one file, with its video and its
+ * track, then opens Android's own share sheet (Quick Share, Files, Drive and the rest). Arek asked
+ * for the system sharing options instead of an app menu (UI-55, 2026-10-11).
  */
 @Composable
-internal fun ShareButton(enabled: Boolean, onSend: () -> Unit, onSave: () -> Unit) {
-    var open by remember { mutableStateOf(false) }
-    Box {
-        TextButton(onClick = { open = true }, enabled = enabled) { Text("Share") }
-        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-            DropdownMenuItem(
-                text = { Text("Send (Quick Share)") },
-                onClick = {
-                    open = false
-                    onSend()
-                },
-            )
-            DropdownMenuItem(
-                text = { Text("Save file") },
-                onClick = {
-                    open = false
-                    onSave()
-                },
-            )
-        }
-    }
+internal fun ShareButton(enabled: Boolean, onShare: () -> Unit) {
+    TextButton(onClick = onShare, enabled = enabled) { Text("Share") }
+}
+
+/**
+ * Offered only when Share could not prepare the file (usually too little free space for the copy
+ * the share sheet needs): Save file writes straight to a file the user picks, with no copy.
+ */
+@Composable
+internal fun SaveInstead(state: TransferState?, onSave: () -> Unit) {
+    if (state?.failed == true) TextButton(onClick = onSave) { Text("Save file instead") }
 }
 
 /** Progress or result of a send, save or import, as one line; a bar while it runs. */
@@ -97,13 +79,9 @@ data class SessionTransferState(
     val onImport: () -> Unit = {},
 )
 
-/** Send, save and import on the Tracks screen (FBBD-80). */
+/** Import on the Tracks screen (FBBD-80); a track is shared from its editor (UI-56 option B). */
 data class TrackTransferState(
-    /** By track id. */
-    val outgoing: Map<String, TransferState> = emptyMap(),
     val incoming: TransferState? = null,
     val importEnabled: Boolean = true,
-    val onSend: (Track) -> Unit = {},
-    val onSave: (Track) -> Unit = {},
     val onImport: () -> Unit = {},
 )

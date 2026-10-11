@@ -41,9 +41,8 @@ private const val HereMeters = 100.0
  * one tap to create a track there; any other place gets a track at your position with a name you
  * type. Your tracks are listed below; each opens the editor.
  *
- * Share moves a track to the other device as one file (FBBD-80, UI-55): Send through the share
- * sheet (Quick Share) or Save file; Import at the top brings one in, asking before it replaces a
- * track with other lines.
+ * Import at the top brings in a track file from the other device (FBBD-80), asking before it
+ * replaces a track with other lines. A track is shared from its editor (UI-56 option B).
  */
 @Composable
 fun TracksScreen(
@@ -79,15 +78,7 @@ fun TracksScreen(
             ShellCard {
                 if (tracks.isEmpty()) DimText("No tracks yet")
                 tracks.forEachIndexed { i, t ->
-                    val sending = transfer.outgoing[t.id]
-                    ListRow(t.displayName, trackDetail(t), divider = i > 0, onClick = { onOpen(t) }) {
-                        ShareButton(
-                            enabled = sending?.running != true,
-                            onSend = { transfer.onSend(t) },
-                            onSave = { transfer.onSave(t) },
-                        )
-                    }
-                    TransferLine(sending)
+                    ListRow(t.displayName, trackDetail(t), divider = i > 0, onClick = { onOpen(t) })
                 }
             }
         }

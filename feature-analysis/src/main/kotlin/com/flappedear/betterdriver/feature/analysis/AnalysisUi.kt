@@ -79,6 +79,8 @@ data class AnalysisUi(
     val gains: List<GainRow> = emptyList(),
     /** The largest single losses of the other counted laps against the fastest, largest first. */
     val losses: List<LossRow> = emptyList(),
+    /** Braking, speeds and pickup of each corner on the fastest and the compared lap. */
+    val corners: List<CornerDetail> = emptyList(),
 )
 
 /** Losses below this are GPS timing noise and not listed. */
@@ -156,6 +158,7 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         sectorsNote = sectorsNote,
         gains = gains(analysis),
         losses = losses(analysis),
+        corners = cornerDetails(analysis, fastestIndex, comparison?.otherIndex),
         compare = comparison?.let {
             CompareUi(
                 referenceNumber = laps[it.referenceIndex].number,
