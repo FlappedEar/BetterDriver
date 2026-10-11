@@ -59,9 +59,9 @@ class RaceBoxDecoderTest {
         val sink = Sink()
         val decoder = RaceBoxDecoder(sink)
         sink.now = 1_000
-        decoder.feed(RaceBoxTestData.packet())
+        decoder.feed(RaceBoxTestData.microPacket())
         sink.now = 41_000
-        decoder.feed(RaceBoxTestData.packet())
+        decoder.feed(RaceBoxTestData.microPacket())
         assertEquals(listOf(1_000L, 41_000L), sink.sets.map { it.tMicros })
         val s = sink.sets.first()
         assertEquals(42.6719035, s.value(GnssChannels.LAT)!!, 1e-9)
@@ -70,7 +70,7 @@ class RaceBoxDecoderTest {
         assertEquals(590.095, s.value(GnssChannels.ALT_M)!!, 1e-9)
         assertEquals(11.0, s.value(GnssChannels.SATS)!!, 0.0)
         assertEquals(0.974, s.value(RaceBoxChannels.ACCEL_Z)!!, 1e-9)
-        assertEquals(12.3, s.value(RaceBoxChannels.INPUT_VOLTS)!!, 1e-9)
+        assertEquals(12.1, s.value(RaceBoxChannels.INPUT_VOLTS)!!, 1e-9)
         assertEquals(2, decoder.messages)
     }
 

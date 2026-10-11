@@ -10,15 +10,16 @@ import org.junit.Test
 class RaceBoxDeviceTest {
     @Test
     fun `recognises models and serials from the advertised name`() {
-        val micro = FoundRaceBox("RaceBox Micro 3241", "AA:BB:CC:DD:EE:FF", -55)
+        val micro = FoundRaceBox("RaceBox Micro 1234563241", "AA:BB:CC:DD:EE:FF", -55)
         assertTrue(micro.isMicro)
         assertEquals("RaceBox Micro", micro.model)
-        assertEquals("3241", micro.serial)
-        val mini = FoundRaceBox("RaceBox Mini S 1234567", "AA:BB:CC:DD:EE:00", -75)
+        assertEquals("1234563241", micro.serial)
+        val mini = FoundRaceBox("RaceBox Mini S 1234567890", "AA:BB:CC:DD:EE:00", -75)
         assertFalse(mini.isMicro)
         assertEquals("RaceBox Mini S", mini.model)
-        assertEquals("1234567", mini.serial)
-        assertTrue(FoundRaceBox.isRaceBox("RaceBox Mini 1"))
+        assertEquals("1234567890", mini.serial)
+        assertTrue(FoundRaceBox.isRaceBox("RaceBox Mini 1234567890"))
+        assertFalse(FoundRaceBox.isRaceBox("RaceBoxer 1"))
         assertFalse(FoundRaceBox.isRaceBox("Pixel Buds"))
         assertFalse(FoundRaceBox.isRaceBox(null))
     }

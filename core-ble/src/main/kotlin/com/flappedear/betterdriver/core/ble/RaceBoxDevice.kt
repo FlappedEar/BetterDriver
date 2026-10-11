@@ -2,7 +2,7 @@ package com.flappedear.betterdriver.core.ble
 
 import java.util.UUID
 
-/** BLE identifiers of the RaceBox Mini, Mini S and Micro (see core-ble/README.md for sources). */
+/** BLE identifiers of the RaceBox Mini, Mini S and Micro (RaceBox BLE Protocol Description rev 8). */
 object RaceBoxGatt {
     /** Nordic UART Service: UBX packets. */
     val UART_SERVICE: UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
@@ -16,11 +16,12 @@ object RaceBoxGatt {
     /** Client Characteristic Configuration descriptor, written to turn notifications on. */
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
 
-    const val NAME_PREFIX = "RaceBox"
+    /** Advertised names are one of these, a space and a 10-digit serial number. */
+    val NAME_PREFIXES = listOf("RaceBox Mini ", "RaceBox Mini S ", "RaceBox Micro ")
     const val MICRO_PREFIX = "RaceBox Micro"
 }
 
-/** A RaceBox seen in a scan. [serial] is the advertised name after the model, e.g. "3241". */
+/** A RaceBox seen in a scan. [serial] is the advertised name after the model (10 digits). */
 data class FoundRaceBox(val name: String, val address: String, val rssi: Int) {
     val isMicro: Boolean get() = name.startsWith(RaceBoxGatt.MICRO_PREFIX)
 
@@ -39,7 +40,7 @@ data class FoundRaceBox(val name: String, val address: String, val rssi: Int) {
         }
 
     companion object {
-        fun isRaceBox(name: String?): Boolean = name != null && name.startsWith(RaceBoxGatt.NAME_PREFIX)
+        fun isRaceBox(name: String?): Boolean = name != null && RaceBoxGatt.NAME_PREFIXES.any(name::startsWith)
     }
 }
 

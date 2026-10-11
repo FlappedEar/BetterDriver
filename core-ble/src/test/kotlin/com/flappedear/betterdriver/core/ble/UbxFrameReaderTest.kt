@@ -21,6 +21,13 @@ class UbxFrameReaderTest {
     }
 
     @Test
+    fun `checksum matches RaceBox's documented example packet`() {
+        val official = RaceBoxTestData.officialPacket
+        assertTrue(RaceBoxTestData.packet().contentEquals(official))
+        assertEquals(1, read(official).size)
+    }
+
+    @Test
     fun `reads a whole packet`() {
         val frames = read(RaceBoxTestData.packet())
         assertEquals(1, frames.size)

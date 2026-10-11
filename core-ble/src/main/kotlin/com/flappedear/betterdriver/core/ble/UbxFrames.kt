@@ -3,7 +3,7 @@
 package com.flappedear.betterdriver.core.ble
 
 /**
- * RaceBox packets use u-blox UBX framing (see core-ble/README.md for sources):
+ * RaceBox packets use u-blox UBX framing (RaceBox BLE Protocol Description rev 8, "Packets Format"):
  * sync `B5 62`, class (u8), id (u8), payload length (u16, little-endian), payload, then the
  * two-byte Fletcher checksum CK_A, CK_B over class, id, length and payload.
  */
@@ -21,7 +21,7 @@ private const val HeaderBytes = 6
 private const val ChecksumBytes = 2
 private const val ByteMask = 0xFF
 
-/** Largest payload a RaceBox packet carries, per the RaceBox documentation as quoted by the reference client. */
+/** Largest payload a RaceBox packet carries (protocol rev 8: the device limits whole packets to 512 bytes). */
 const val MaxUbxPayload = 504
 
 /** Fletcher-8 checksum over [length] bytes of [data] from [offset]. Returns CK_A in the low byte, CK_B in the next. */

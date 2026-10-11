@@ -14,7 +14,7 @@ class RaceBoxDataTest {
         checkNotNull(RaceBoxData.parse(RaceBoxTestData.payload().also(edit)))
 
     @Test
-    fun `decodes every field with the reference client's example values`() {
+    fun `decodes every field of RaceBox's documented example`() {
         val d = parse()
         assertEquals(Instant.parse("2022-01-10T08:51:08.239Z").toEpochMilli(), d.utcMillis)
         assertEquals(3, d.fixType)
@@ -35,13 +35,19 @@ class RaceBoxDataTest {
         assertEquals(0.208, d.speedAccMps, 1e-9)
         assertEquals(145.26856, d.headingAccDeg, 1e-9)
         assertEquals(3.0, d.pdop, 1e-9)
-        assertEquals(12.3, d.microInputVolts, 1e-9)
+        assertEquals(0x59, d.batteryStatus) // Mini: 89 %, not charging
         assertEquals(-0.003, d.accelXg, 1e-9)
         assertEquals(0.113, d.accelYg, 1e-9)
         assertEquals(0.974, d.accelZg, 1e-9)
-        assertEquals(1.0, d.gyroXdps, 1e-9)
-        assertEquals(-2.0, d.gyroYdps, 1e-9)
-        assertEquals(3.0, d.gyroZdps, 1e-9)
+        // The document prints these without signs (2.09, 0.86, 0.04); the fields are Int16, so FF2F is -209.
+        assertEquals(-2.09, d.gyroXdps, 1e-9)
+        assertEquals(0.86, d.gyroYdps, 1e-9)
+        assertEquals(-0.04, d.gyroZdps, 1e-9)
+    }
+
+    @Test
+    fun `Micro input voltage is the byte divided by 10`() {
+        assertEquals(12.1, parse { it[67] = 0x79 }.microInputVolts, 1e-9)
     }
 
     @Test
@@ -81,12 +87,12 @@ class RaceBoxDataTest {
     }
 
     @Test
-    fun `no fix without the fix OK flag, a 2D or 3D fix type, and valid coordinates`() {
+    fun `a fix needs the fix OK flag, a 3D fix and valid coordinates, as RaceBox recommends`() {
+        assertTrue(parse().hasFix)
         assertFalse(parse { it[21] = 0x00 }.hasFix)
         assertFalse(parse { it[20] = 0x00 }.hasFix)
-        assertFalse(parse { it[20] = 0x05 }.hasFix)
+        assertFalse(parse { it[20] = 0x02 }.hasFix)
         assertFalse(parse { it[66] = 0x01 }.hasFix)
-        assertTrue(parse { it[20] = 0x02 }.hasFix)
     }
 
     @Test

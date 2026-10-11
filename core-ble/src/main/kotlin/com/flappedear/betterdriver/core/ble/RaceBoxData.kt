@@ -15,6 +15,7 @@ const val RaceBoxDataLength = 80
 
 /**
  * One RaceBox Data Message, in SI-like units. Field layout and scaling are in core-ble/README.md.
+ * Axes: acceleration X front/back, Y right/left, Z up/down; rotation X roll, Y pitch, Z yaw.
  * [utcMillis] is null unless the receiver flags both date and time as valid.
  */
 data class RaceBoxData(
@@ -46,10 +47,10 @@ data class RaceBoxData(
     val gyroZdps: Double,
 ) {
     /**
-     * A position fix worth logging: the receiver says the fix is OK, the fix type is 2D, 3D or
-     * GNSS + dead reckoning, and the coordinates are valid.
+     * A position fix worth logging. RaceBox recommends checking that fix flag bit 0 is set and the
+     * fix status is 3 (3D); the coordinates must also not be flagged invalid.
      */
-    val hasFix: Boolean get() = fixOk && fixType in FixTypes2DTo3DDr && !coordinatesInvalid
+    val hasFix: Boolean get() = fixOk && fixType == Fix3D && !coordinatesInvalid
 
     val speedKmh: Double get() = speedMps * MpsToKmh
 
@@ -57,7 +58,7 @@ data class RaceBoxData(
     val microInputVolts: Double get() = batteryStatus / VoltScale
 
     companion object {
-        private val FixTypes2DTo3DDr = 2..4
+        private const val Fix3D = 3
         private const val MpsToKmh = 3.6
         private const val VoltScale = 10.0
         private const val DegScale = 1e7
