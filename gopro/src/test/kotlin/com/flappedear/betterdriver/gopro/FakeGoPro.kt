@@ -3,7 +3,7 @@ package com.flappedear.betterdriver.gopro
 import kotlinx.coroutines.flow.MutableSharedFlow
 import java.io.IOException
 
-/** A camera on the other end of a [GoProLink]: answers every request like a HERO11 would. */
+/** A camera on the other end of a [GoProLink]: answers every request like a HERO11 would, unless told otherwise. */
 class FakeGoPro : GoProLink {
     val requests = mutableListOf<Pair<String, ByteArray>>()
     var reachable = true
@@ -14,6 +14,9 @@ class FakeGoPro : GoProLink {
 
     /** Settings the camera answers with status 2 (invalid parameter). */
     var refusedSettings = emptySet<Int>()
+
+    /** Commands the camera does not have, answered with status 1 (a HERO9 lacks Set Local Date Time, 0x0F). */
+    var refusedCommands = emptySet<Int>()
 
     /** Last value written for each setting id. */
     val settings = mutableMapOf<Int, Int>()
@@ -39,12 +42,15 @@ class FakeGoPro : GoProLink {
             characteristic == GoProUuids.QUERY && id == 0x13 ->
                 byteArrayOf(0x13, 0, 8, 1, if (busyPolls-- > 0) 1 else 0)
             characteristic == GoProUuids.SETTINGS && id != 0x5B -> setting(id, message[2].toInt() and 0xFF)
-            id == 0x01 && failShutter -> byteArrayOf(0x01, 1)
+            refused(characteristic, id) -> byteArrayOf(message[0], 1)
             id == 0x01 -> byteArrayOf(0x01, 0).also { recording = message[2].toInt() == 1 }
             else -> byteArrayOf(message[0], 0)
         }
         for (p in OpenGoPro.packetize(reply)) notifications.emit(GoProUuids.responseFor(characteristic) to p)
     }
+
+    private fun refused(characteristic: String, id: Int) =
+        characteristic == GoProUuids.COMMAND && (id in refusedCommands || (id == 0x01 && failShutter))
 
     /** Set Setting: refused with status 2, or noted and answered with success. */
     private fun setting(id: Int, value: Int): ByteArray {

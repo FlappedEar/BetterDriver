@@ -7,7 +7,7 @@ object Routes {
     const val Sessions = "sessions"
     const val Settings = "settings"
 
-    /** Add equipment (UI-34 B): scan for a RaceBox or HERO11, or add one without Bluetooth. */
+    /** Add equipment (UI-34 B): scan for a RaceBox or Open GoPro camera, or add one without Bluetooth. */
     const val AddEquipment = "add-equipment"
 
     /** One equipment item (UI-33 B): rename or remove. */

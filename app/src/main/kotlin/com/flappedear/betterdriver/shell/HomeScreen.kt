@@ -28,6 +28,7 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.NumberFont
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 
 /**
@@ -125,9 +126,10 @@ private fun HomeScreenPreview() {
     var n = 0
     val ids = { "id${++n}" }
     val setup = Setup.fresh(ids)
-        .addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Micro 3241", "AA", ids)
-        .addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 1234", "BB", ids)
-        .addCar("FR-S", "2013 Scion FR-S", ids)
+        .addEquipment(EquipmentModel.RACEBOX, "RaceBox Mini S 3241", "AA", ids)
+        .addEquipment(EquipmentModel.GOPRO, "GoPro 1234", "BB", ids, GoProModel.HERO13_BLACK)
+        .addEquipment(EquipmentModel.GOPRO, "GoPro 5678", "CC", ids, GoProModel.HERO10_BLACK)
+        .addCar("Track car", "Any car", ids)
     BetterDriverTheme(darkTheme = true) {
         Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
             HomeScreen(

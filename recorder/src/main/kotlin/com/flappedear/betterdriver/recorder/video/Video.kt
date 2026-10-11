@@ -7,8 +7,15 @@ package com.flappedear.betterdriver.recorder.video
  */
 object CameraIds {
     const val PHONE = "phone"
+
+    /** The single HERO11 of builds before FBBD-105, in sessions they recorded. */
     const val GOPRO_HERO11 = "gopro_hero11"
+
+    /** The single HERO8 of builds before FBBD-105, in sessions they recorded. */
     const val GOPRO_HERO8 = "gopro_hero8"
+
+    /** A GoPro in the equipment list, by its equipment id: any number of them can record with a session (FBBD-105). */
+    fun goPro(equipmentId: String): String = "gopro-$equipmentId"
 }
 
 /**

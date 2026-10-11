@@ -5,7 +5,6 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.OpenableColumns
 import com.flappedear.betterdriver.recorder.store.SessionStore
-import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.video.VideoSourceKind
 import java.io.File
@@ -14,19 +13,22 @@ import java.io.InputStream
 import java.io.OutputStream
 
 private const val CopyBuffer = 1 shl 20
-private val GoProName = Regex("G[HXL](\\d{2})(\\d{4})\\.MP4", RegexOption.IGNORE_CASE)
+/** A GoPro file name, after the camera prefix the import adds ([plainName]): chapter, then recording number. */
+private val GoProName = Regex("(?:.*-)?G[HXL](\\d{2})(\\d{4})\\.MP4", RegexOption.IGNORE_CASE)
 private val PlainName = Regex("[A-Za-z0-9._-]+")
 
 /**
- * Adds HERO8 files the user picked to a session (FBBD-22, UI-32). The HERO8 has no Open GoPro
- * support, so its files come from a card reader or the GoPro Quik app.
+ * Adds files the user picked for one GoPro to a session (FBBD-22, UI-32, FBBD-105): a camera
+ * without Open GoPro (HERO8 and earlier, the first MAX) or any GoPro started by hand. Its files
+ * come from a card reader or the GoPro Quik app. [sourceId] is the camera ([CameraIds.goPro]); the
+ * copies are named after it, so files of two cameras with the same name never meet.
  *
  * Copies each file into `<session>/video`, then lines up each recording with [GoProImporter]:
  * files of one recording (chapters GH01xxxx, GH02xxxx, ...) together, in chapter order. A file
  * that cannot be placed in the session is reported and its copy deleted. Blocking; run it off the
  * main thread.
  */
-internal class Hero8Import(private val context: Context) {
+internal class GoProFileImport(private val context: Context, private val sourceId: String) {
 
     fun sizeOf(uri: Uri): Long = query(uri, OpenableColumns.SIZE) { it.getLong(0) } ?: 0L
 
@@ -37,7 +39,7 @@ internal class Hero8Import(private val context: Context) {
         val copies = mutableListOf<File>()
         var copied = 0L
         for ((i, uri) in uris.withIndex()) {
-            val target = File(videoDir, plainName(displayName(uri), i))
+            val target = File(videoDir, plainName(sourceId, displayName(uri), i))
             try {
                 copy(uri, target) { n ->
                     copied += n
@@ -66,7 +68,7 @@ internal class Hero8Import(private val context: Context) {
     private fun lineUp(sessionDir: File, copies: List<File>, problems: MutableList<String>): Set<String> {
         val data = SessionStore(sessionDir.parentFile ?: sessionDir).read(sessionDir)
         val importer = GoProImporter()
-        val source = GoProImporter.Source(VideoSourceKind.GOPRO_HERO8, CameraIds.GOPRO_HERO8)
+        val source = GoProImporter.Source(VideoSourceKind.GOPRO_FILES, sourceId)
         val placed = mutableSetOf<String>()
         for (recording in byRecording(copies)) {
             val result = importer.import(sessionDir, data, recording, source)
@@ -107,16 +109,20 @@ private fun copyStream(src: InputStream, out: OutputStream, onBytes: (Long) -> U
     }
 }
 
-/** A safe file name for the [index]th picked file: its own name if it is a plain .MP4 name. */
-internal fun plainName(name: String?, index: Int): String {
+/**
+ * A safe file name for the [index]th file picked for camera [sourceId]: its own name after the
+ * camera's id if it is a plain .MP4 name, else a numbered name.
+ */
+internal fun plainName(sourceId: String, name: String?, index: Int): String {
     val clean = name?.substringAfterLast('/')?.trim().orEmpty()
     val ok = clean.matches(PlainName) && clean.endsWith(".mp4", ignoreCase = true)
-    return if (ok) clean else VideoFiles.liveName(CameraIds.GOPRO_HERO8, index + 1, "MP4")
+    return if (ok) "$sourceId-$clean" else VideoFiles.liveName(sourceId, index + 1, "MP4")
 }
 
 /**
- * Groups GoPro files by recording, chapters in order: GH010031.MP4 and GH020031.MP4 are chapters 1
- * and 2 of recording 0031. Files with other names are each their own recording.
+ * Groups GoPro files by recording, chapters in order: GH010031.MP4 and GH020031.MP4 (with or
+ * without the camera prefix) are chapters 1 and 2 of recording 0031. Files with other names are
+ * each their own recording.
  */
 internal fun byRecording(files: List<File>): List<List<File>> {
     fun part(f: File, group: Int) = GoProName.matchEntire(f.name)?.groupValues?.get(group).orEmpty()

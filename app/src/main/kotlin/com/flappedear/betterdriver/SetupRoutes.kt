@@ -23,6 +23,7 @@ import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.scanGoPros
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.shell.AddEquipmentScreen
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.CarScreen
@@ -77,9 +78,11 @@ internal fun NavGraphBuilder.setupDestinations(
 }
 
 /**
- * Add equipment (UI-34 option B). Scans for RaceBoxes and GoPro HERO11s while open, if the
- * Bluetooth permissions are granted. A RaceBox is added at once; the recorder connects to it when a
- * session starts (FBBD-43). A HERO11 is paired first, which needs it in pairing mode (FBBD-22).
+ * Add equipment (UI-34 option B). Scans for RaceBoxes (Mini, Mini S, Micro) and Open GoPro cameras
+ * (HERO9 and later) while open, if the Bluetooth permissions are granted. A RaceBox is added at
+ * once; the recorder connects to it when a session starts (FBBD-43). A GoPro is paired first,
+ * which needs it in pairing mode, and tells the app which camera it is (FBBD-22, FBBD-105). Any
+ * number of GoPros can be added.
  */
 @Composable
 internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo) {
@@ -93,8 +96,8 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
                 scanRaceBoxes(context).onStart { emit(emptyList()) },
                 scanGoPros(context).onStart { emit(emptyList()) },
             ) { boxes, goPros ->
-                boxes.map { NearbyDevice(EquipmentModel.RACEBOX_MICRO, it.name, it.address, it.bars) } +
-                    goPros.map { NearbyDevice(EquipmentModel.GOPRO_HERO11, it.name, it.address, it.bars) }
+                boxes.map { NearbyDevice(EquipmentModel.RACEBOX, it.name, it.address, it.bars) } +
+                    goPros.map { NearbyDevice(EquipmentModel.GOPRO, it.name, it.address, it.bars) }
             }
         } else {
             flowOf(emptyList())
@@ -105,9 +108,9 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
     var error by remember { mutableStateOf<String?>(null) }
     val setup = repo.setup
     val listed = setup.equipment.mapNotNull { it.address }.toSet()
-    val addItem: (EquipmentModel, String, String?) -> Unit = { model, name, address ->
-        repo.update { it.addEquipment(model, name, address, ::newSetupId) }
-        // A HERO11 pairs for a while; Arek may have left this screen meanwhile.
+    val addItem: (EquipmentModel, String, String?, GoProModel?) -> Unit = { model, name, address, goPro ->
+        repo.update { it.addEquipment(model, name, address, ::newSetupId, goPro) }
+        // A GoPro pairs for a while; Arek may have left this screen meanwhile.
         if (nav.currentDestination?.route == Routes.AddEquipment) nav.popBackStack()
     }
     AddEquipmentScreen(
@@ -115,19 +118,19 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
         searching = searching,
         withoutBluetooth = buildList {
             if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
-            if (setup.equipment.none { it.model == EquipmentModel.GOPRO_HERO8 }) add(EquipmentModel.GOPRO_HERO8)
+            add(EquipmentModel.GOPRO_FILES)
             if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
         },
         busyAddress = busy,
         error = error,
         onAddNearby = { d ->
-            if (d.model == EquipmentModel.GOPRO_HERO11) {
+            if (d.model == EquipmentModel.GOPRO) {
                 busy = d.address
                 error = null
                 scope.launch {
                     try {
-                        GoPros.get(context).pair(d.address)
-                        addItem(d.model, d.name, d.address)
+                        val paired = GoPros.get(context).pair(d.address)
+                        addItem(d.model, d.name, d.address, paired.model)
                     } catch (e: IOException) {
                         error = "Pairing failed: ${e.message}"
                     } finally {
@@ -135,12 +138,18 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
                     }
                 }
             } else {
-                addItem(d.model, d.name, d.address)
+                addItem(d.model, d.name, d.address, null)
             }
         },
-        onAddModel = { m -> addItem(m, m.label, null) },
+        onAddModel = { m, goPro -> addItem(m, goPro?.let(::goProName) ?: m.label, null, goPro) },
         onBack = { nav.popBackStack() },
     )
+}
+
+/** The first name of a GoPro added by hand: "GoPro HERO7 Black", or "GoPro" when Arek did not say which. */
+private fun goProName(goPro: GoProModel): String = when (goPro) {
+    GoProModel.OTHER, GoProModel.OTHER_OPEN_GOPRO -> "GoPro"
+    else -> "GoPro ${goPro.label}"
 }
 
 /** One equipment item (UI-33 B). Removing it drops it from the session choice too. */
@@ -162,6 +171,7 @@ internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String)
         },
         onBack = { nav.popBackStack() },
         onChooseVideo = { mode -> repo.update { it.chooseVideo(id, mode) } },
+        onChooseGoPro = { m -> repo.update { it.chooseGoPro(id, m) } },
     )
 }
 

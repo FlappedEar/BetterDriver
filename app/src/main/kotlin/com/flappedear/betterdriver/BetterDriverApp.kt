@@ -37,6 +37,7 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
+import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
 import com.flappedear.betterdriver.recording.GnssRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
@@ -48,6 +49,8 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.legacyGoProName
+import com.flappedear.betterdriver.shell.listedGoPros
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionCoach
 import com.flappedear.betterdriver.shell.SessionDeleting
@@ -79,9 +82,6 @@ private val TopLevelItems = listOf(
 
 /** VBO has no registered type; a generic one keeps the .vbo file name. */
 private const val VboMimeType = "application/octet-stream"
-
-/** GoPro HERO8 files the user adds to a session (UI-32). */
-private const val Mp4MimeType = "video/mp4"
 
 private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
 
@@ -212,7 +212,7 @@ private fun Drive(
                 repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
                 val gnss = active.gnss?.let {
-                    // The recorder tells a Micro from a Mini by the advertised name, not Arek's name for it.
+                    // The recorder tells a RaceBox Micro from a Mini by the advertised name, not Arek's name for it.
                     if (it.model == EquipmentModel.DEMO_GNSS) {
                         GnssRef.Demo
                     } else {
@@ -260,12 +260,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
 private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
-    var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
-    val pickHero8 = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
-        val id = addingTo
-        addingTo = null
-        if (id != null) goPros.addHero8(id, uris)
-    }
+    val addFiles = rememberGoProFilePicker(goPros)
     // Saveable: the activity can be re-created while the file picker is open.
     var exporting by rememberSaveable { mutableStateOf<String?>(null) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(VboMimeType)) { uri ->
@@ -298,13 +293,10 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
             work = goPros.work,
             problems = goPros.problems,
             enabled = !goPros.recording,
-            hero8Listed = repo.setup.equipment.any { it.model == EquipmentModel.GOPRO_HERO8 },
-            canDownload = repo.hero11Address() != null,
-            onDownload = { s -> goPros.download(s.id) },
-            onAddHero8 = { s ->
-                addingTo = s.id
-                pickHero8.launch(arrayOf(Mp4MimeType))
-            },
+            listed = listedGoPros(repo.setup),
+            nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
+            onDownload = { s, camera -> goPros.download(s.id, camera) },
+            onAddFiles = { s, camera -> addFiles(s.id, camera) },
         ),
         deleting = SessionDeleting(
             sizes = sessions.sizes,

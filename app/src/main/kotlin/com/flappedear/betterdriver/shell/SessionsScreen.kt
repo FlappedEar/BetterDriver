@@ -49,8 +49,8 @@ import java.util.Locale
  * has any (FBBD-25). A session recovered after a crash is marked and exports like any other. Built
  * from the approved shell parts; the layout is on the UI review page for approval.
  *
- * A finished session also shows its GoPro video (FBBD-22): Download for HERO11 files still on the
- * camera (UI-31) and Add for HERO8 files (UI-32). Both are off while a session records.
+ * A finished session also shows its GoPro video (FBBD-22): Download for files still on an Open GoPro
+ * camera (UI-31) and Add for a GoPro started by hand (UI-32), per camera. Both are off while a session records.
  *
  * Delete (FBBD-90, UI-48) asks first, saying how much space the session and its video free, then
  * removes both. It is off while the session records, exports or fetches GoPro video.
@@ -272,10 +272,10 @@ private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCa
         work = work,
         problems = goPro.problems[s.id].orEmpty(),
         enabled = goPro.enabled && work == null && export != ExportState.Running && !sharing,
-        hero8Listed = goPro.hero8Listed,
-        canDownload = goPro.canDownload,
-        onDownload = { goPro.onDownload(s) },
-        onAddHero8 = { goPro.onAddHero8(s) },
+        listed = goPro.listed,
+        nameOf = goPro.nameOf,
+        onDownload = { id -> goPro.onDownload(s, id) },
+        onAddFiles = { id -> goPro.onAddFiles(s, id) },
     )
 }
 
@@ -285,7 +285,7 @@ private fun SessionsScreenPreview() {
     fun session(id: String, start: Long, state: SessionState, minutes: Long?) = SessionSummary(
         id,
         File(id),
-        SessionInfo(start, car = "2023 Toyota Corolla", track = "Tor Poznań"),
+        SessionInfo(start, car = "Club car", track = "Tor Poznań"),
         state,
         minutes?.let { it * 60_000_000 },
     )
@@ -306,8 +306,12 @@ private fun SessionsScreenPreview() {
                 withVideo = setOf("a"),
                 goPro = GoProCardState(
                     sessions = mapOf(
-                        "a" to SessionGoPro(hero11 = GoProClips(2, "by GPS ±0.05 s", byGps = true)),
-                        "b" to SessionGoPro(hero11OnCamera = true),
+                        "a" to SessionGoPro(listOf(SessionCamera("g1", clips = GoProClips(2, "by GPS ±0.05 s", true)))),
+                        "b" to SessionGoPro(listOf(SessionCamera("g1", onCamera = true))),
+                    ),
+                    listed = listOf(
+                        ListedGoPro("g1", "Helmet HERO13", download = true),
+                        ListedGoPro("g2", "Rear HERO7", download = false),
                     ),
                 ),
             )
