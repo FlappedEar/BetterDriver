@@ -1,8 +1,9 @@
 name: CI
 
-# Build, unit tests, Android lint and detekt on every pull request and on main.
-# The debug APK of each run is kept as an artifact (signed with a throwaway
-# key made on the runner, so it does not install over a release build).
+# Unit tests, Android lint, detekt and the APK build on every pull request and
+# on main. They run as parallel jobs, so the slowest one sets the wait. Any
+# failing job fails the run, and release.yml only publishes a commit whose
+# whole run succeeded.
 on:
   pull_request:
   push:
@@ -17,31 +18,58 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build:
-    name: Build, test, lint
+  check:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    strategy:
+      # Report every failing check, not only the first one.
+      fail-fast: false
+      matrix:
+        include:
+          - name: Unit tests
+            tasks: test
+          - name: Android lint
+            tasks: lint
+          - name: detekt
+            tasks: detekt
+          # assemble builds the debug and release variants of every module;
+          # the release build also runs lintVitalRelease.
+          - name: Build APKs
+            tasks: assemble
+            apk: true
     steps:
       - uses: actions/checkout@v4
         with:
-          # The build number is the commit count, so it needs the history.
-          fetch-depth: 0
+          # The build number is the commit count (git rev-list --count HEAD),
+          # which needs the full history. Only the APK job stamps it; the
+          # other jobs use a shallow clone and the default build number 1.
+          # (A quoted '0': a bare 0 is falsy and would select 1.)
+          fetch-depth: ${{ matrix.apk && '0' || '1' }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: 17
-      # Also validates the Gradle wrapper jar.
+      # Also validates the Gradle wrapper jar. Caches are written on main
+      # and read by pull requests.
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build, unit tests, lint and detekt
-        run: ./gradlew build detekt --continue -Pbetterdriver.build="$(git rev-list --count HEAD)" --stacktrace
+      - name: Build number
+        id: build
+        if: matrix.apk
+        run: echo "args=-Pbetterdriver.build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+      - name: ./gradlew ${{ matrix.tasks }}
+        run: ./gradlew ${{ matrix.tasks }} ${{ steps.build.outputs.args }} --continue --stacktrace
       - name: Upload reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: reports
+          name: reports-${{ matrix.tasks }}
           path: '**/build/reports/'
           retention-days: 7
-      - uses: actions/upload-artifact@v4
+      # Pull requests do not keep the APK; run CI manually on a branch to get one.
+      - name: Upload the debug APK
+        if: matrix.apk && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
         with:
           name: betterdriver-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
