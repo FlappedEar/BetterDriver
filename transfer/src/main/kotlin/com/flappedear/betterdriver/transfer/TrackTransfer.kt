@@ -43,7 +43,7 @@ object TrackTransfer {
 
     /** Reads a track file; throws [BundleFormatException] for anything else. */
     fun read(input: InputStream): Track {
-        val bytes = input.readNBytes(MaxTrackBytes + 1)
+        val bytes = readUpTo(input, MaxTrackBytes + 1)
         if (bytes.size > MaxTrackBytes) throw BundleFormatException("file too large for a track")
         return try {
             TrackJson.decode(bytes.toString(Charsets.UTF_8))
@@ -62,10 +62,25 @@ object IncomingFiles {
     /** Bytes [kindOf] needs from the start of the file. */
     val PeekBytes = BundleFile.Magic.size
 
+    /** The first [PeekBytes] bytes of [input] (fewer if it is shorter), for [kindOf]. */
+    fun head(input: InputStream): ByteArray = readUpTo(input, PeekBytes)
+
     fun kindOf(head: ByteArray): IncomingKind = when {
         head.size >= BundleFile.Magic.size && head.copyOf(BundleFile.Magic.size).contentEquals(BundleFile.Magic) ->
             IncomingKind.SESSION
         head.firstOrNull { !it.toInt().toChar().isWhitespace() }?.toInt()?.toChar() == '{' -> IncomingKind.TRACK
         else -> IncomingKind.UNKNOWN
     }
+}
+
+/** Reads up to [limit] bytes. InputStream.readNBytes needs Android API 33; the app runs from API 26. */
+internal fun readUpTo(input: InputStream, limit: Int): ByteArray {
+    val out = java.io.ByteArrayOutputStream()
+    val buf = ByteArray(minOf(limit, DEFAULT_BUFFER_SIZE))
+    while (out.size() < limit) {
+        val n = input.read(buf, 0, minOf(buf.size, limit - out.size()))
+        if (n < 0) break
+        out.write(buf, 0, n)
+    }
+    return out.toByteArray()
 }

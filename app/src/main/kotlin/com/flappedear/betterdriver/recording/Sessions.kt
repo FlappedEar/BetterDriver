@@ -9,6 +9,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.coach.CoachedSessions
+import com.flappedear.betterdriver.coach.coachDir
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -48,6 +50,7 @@ class Sessions private constructor(private val context: Context) {
     private val store = SessionStore(sessionsDir(context))
     private val io = Executors.newSingleThreadExecutor { Thread(it, "sessions-io") }
     private val main = Handler(Looper.getMainLooper())
+    private val coached = CoachedSessions(store, File(coachDir(context), "cues.properties"))
 
     /** Newest first. */
     var list by mutableStateOf<List<SessionSummary>>(emptyList())
@@ -62,6 +65,10 @@ class Sessions private constructor(private val context: Context) {
 
     /** Bytes on disk of each session, video included, by id; shown when deleting (FBBD-90). */
     var sizes by mutableStateOf<Map<String, Long>>(emptyMap())
+        private set
+
+    /** How many coach cues each session has, by id, for sessions with any (FBBD-99). */
+    var cues by mutableStateOf<Map<String, Int>>(emptyMap())
         private set
 
     /** Sessions being deleted, and why a delete failed, by id (FBBD-90). */
@@ -228,6 +235,9 @@ class Sessions private constructor(private val context: Context) {
             withVideo = video
             goPro = goPros
         }
+        // After the list is shown: the first time, this reads each session once.
+        val cueCounts = coached.counts(sessions)
+        main.post { cues = cueCounts }
     }
 
     companion object {

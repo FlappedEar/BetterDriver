@@ -34,6 +34,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recording.GnssRef
@@ -42,11 +43,13 @@ import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.vboFileName
+import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
+import com.flappedear.betterdriver.shell.SessionCoach
 import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
@@ -55,6 +58,8 @@ import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
+import com.flappedear.betterdriver.sharing.FollowTransfers
+import com.flappedear.betterdriver.sharing.rememberSessionTransfer
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.tracks.Tracks
 import com.flappedear.betterdriver.update.AppUpdates
@@ -102,6 +107,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     // Setup again if a required permission was revoked or a one-time grant expired.
     val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
     FollowRecording(nav, recorder, sessions)
+    FollowTransfers(nav, recorder)
     val updates = remember { AppUpdates.get(context) }
     FollowUpdates(updates, recorder, sessions)
     val updateDot = hasUpdate(updates.state) && !updatesBlocked(recorder, sessions)
@@ -119,9 +125,11 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
                 Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
             }
             composable(Routes.Sessions) {
-                Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) { nav.navigate(Routes.Review) } }
+                Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) }
             }
             composable(Routes.Review) { ReviewRoute(nav, padding) }
+            analysisDestination(nav, padding)
+            cueReview(nav, padding)
             composable(Routes.Settings) {
                 Box(Modifier.padding(padding)) {
                     Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
@@ -248,7 +256,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
  * with video asks for a folder instead, because the VBO and its video files must sit side by side.
  */
 @Composable
-private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCompareLaps: () -> Unit) {
+private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -271,14 +279,15 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCompareLaps: ()
     }
     LaunchedEffect(Unit) { sessions.refresh() }
     val updates = remember(context) { AppUpdates.get(context) }
-    val updatesBlocked = updatesBlocked(RecorderClient.get(context), sessions)
+    val recorder = RecorderClient.get(context)
+    val updatesBlocked = updatesBlocked(recorder, sessions)
     SessionsScreen(
-        header = {
-            SessionsHeader(sessions.list.isNotEmpty(), onCompareLaps) { UpdateCard(updates, updatesBlocked) }
-        },
+        header = { SessionsHeader(sessions.list.any(), updates, updatesBlocked) { nav.navigate(Routes.Review) } },
+        transfer = rememberSessionTransfer(recording = recorder.state.recording || recorder.state.starting),
         sessions = sessions.list,
         exports = sessions.exports,
         withVideo = sessions.withVideo,
+        onAnalyse = { s -> nav.navigate(Routes.sessionAnalysis(s.id)) },
         onExport = { s ->
             exporting = s.id
             if (s.id in sessions.withVideo) pickFolder.launch(null) else pickFile.launch(vboFileName(s))
@@ -301,19 +310,25 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCompareLaps: ()
             states = sessions.deletes,
             onDelete = { s -> sessions.delete(s.id) },
         ),
+        coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
     )
 }
 
-/** Above the sessions list: "Compare laps" once there are sessions, then [updates]. */
+/** Above the sessions list: "Compare laps" once there are sessions, then the update card. */
 @Composable
-private fun SessionsHeader(hasSessions: Boolean, onCompareLaps: () -> Unit, updates: @Composable () -> Unit) {
+private fun SessionsHeader(
+    hasSessions: Boolean,
+    updates: AppUpdates,
+    updatesBlocked: Boolean,
+    onCompareLaps: () -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         if (hasSessions) {
             FilledTonalButton(onClick = onCompareLaps, modifier = Modifier.fillMaxWidth()) {
                 Text("Compare laps")
             }
         }
-        updates()
+        UpdateCard(updates, updatesBlocked)
     }
 }
 
@@ -345,6 +360,7 @@ private fun Settings(
     val context = LocalContext.current
     val updates = remember(context) { AppUpdates.get(context) }
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), Sessions.get(context))
+    val coach = remember(context) { CoachPrefs.get(context) }
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
         setup = repo.setup,
@@ -363,6 +379,8 @@ private fun Settings(
         onTracks = { nav.navigate(Routes.Tracks) },
         onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
+        coach = coach.settings,
+        onCoach = coach::update,
     )
 }
 

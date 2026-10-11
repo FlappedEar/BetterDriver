@@ -36,6 +36,13 @@
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
+    <!-- Spoken coach cues use the phone's text-to-speech engine (FBBD-98). -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
@@ -50,6 +57,15 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- Session bundles and track files from the other device, opened from Quick Share or a file
+                 manager (FBBD-23, FBBD-80). They have no registered type, so they arrive as generic files;
+                 the app checks the content and refuses anything else. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
         </activity>
 
@@ -67,6 +83,13 @@
             android:foregroundServiceType="camera|microphone"
             android:process=":camera" />
 
+        <!-- The live coach, own process too: the recorder binds to it for each recording, and a coach
+             crash or hang never reaches the recording (FBBD-98, FBBD-69). -->
+        <service
+            android:name=".coach.CoachService"
+            android:exported="false"
+            android:process=":coach" />
+
         <!-- Hands a downloaded, checked update to Android's installer (FBBD-73). -->
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -76,6 +99,17 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/update_paths" />
+        </provider>
+
+        <!-- Hands prepared session bundles and track files to the share sheet (FBBD-23, FBBD-80). -->
+        <provider
+            android:name=".sharing.TransferFileProvider"
+            android:authorities="${applicationId}.transfer"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/transfer_paths" />
         </provider>
     </application>
 

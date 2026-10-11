@@ -25,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
@@ -58,6 +59,8 @@ fun SettingsScreen(
     onChooseTiles: (List<TrackChannel>) -> Unit = {},
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
     updateRow: @Composable () -> Unit = {},
+    coach: CoachSettings = CoachSettings(),
+    onCoach: (CoachSettings) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -78,7 +81,7 @@ fun SettingsScreen(
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
                 SettingsTab.Recording -> RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
-                SettingsTab.App -> AppTab(version, onRunSetup, updateRow)
+                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, coach, onCoach)
             }
         }
     }
@@ -126,15 +129,23 @@ private fun RecordingTab(
 }
 
 @Composable
-private fun AppTab(version: String, onRunSetup: () -> Unit, updateRow: @Composable () -> Unit) {
+private fun AppTab(
+    version: String,
+    onRunSetup: () -> Unit,
+    updateRow: @Composable () -> Unit,
+    coach: CoachSettings,
+    onCoach: (CoachSettings) -> Unit,
+) {
+    var choosingCoach by rememberSaveable { mutableStateOf(false) }
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
         ListRow("Track screen colours", "Green / red")
-        ListRow("Spoken coach cues", "Later")
+        ListRow("Spoken coach", coachLabel(coach), onClick = { choosingCoach = true })
         ListRow("Version", version)
         updateRow()
         ListRow("Run setup again", onClick = onRunSetup)
     }
+    if (choosingCoach) CoachDialog(coach, onCoach, onClose = { choosingCoach = false })
 }
 
 @Preview(widthDp = 411, heightDp = 700)

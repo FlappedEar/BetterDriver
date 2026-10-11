@@ -41,6 +41,9 @@ class DeltaReference(points: List<Xy>, timesMicros: List<Long>) {
         private var along0 = 0.0
         private var last: Xy? = null
 
+        /** Metres along the reference path at the last match; the coach places corners by it. */
+        val alongMeters: Double get() = along0
+
         /**
          * Reference time, in microseconds since its lap start, at the point nearest [p]; null when
          * [p] is more than [MaxOffPathMeters] from the reference path (pit lane, off track).

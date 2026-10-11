@@ -31,6 +31,17 @@ object Routes {
     /** Two laps side by side with their videos (FBBD-24). */
     const val Review = "review"
 
+    /** Lap analysis of one saved session (FBBD-102). */
+    const val SessionAnalysisPattern = "sessions/{id}/analysis"
+    const val SessionIdArg = "id"
+
+    fun sessionAnalysis(id: String) = "sessions/$id/analysis"
+
+    /** The cue review of one session (FBBD-99). */
+    const val CueReviewPattern = "sessions/{id}/cues"
+
+    fun cueReview(id: String) = "sessions/$id/cues"
+
     const val Track = "track"
     const val Tracks = "tracks"
 

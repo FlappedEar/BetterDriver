@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.feature.track.editor.TrackEditorScreen
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorState
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.TracksScreen
+import com.flappedear.betterdriver.sharing.rememberTrackTransfer
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.newTrackAt
 import com.flappedear.betterdriver.timing.track.newTrackFrom
@@ -41,6 +42,7 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
         onCreateFromCircuit = { c -> tracks.save(newTrackFrom(c), openNew) },
         onCreateHere = { name, at -> tracks.save(newTrackAt(at, name), openNew) },
         onBack = { nav.popBackStack() },
+        transfer = rememberTrackTransfer(),
     )
 }
 

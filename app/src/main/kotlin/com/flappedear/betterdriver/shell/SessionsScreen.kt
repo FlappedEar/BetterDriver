@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -36,6 +37,7 @@ import com.flappedear.betterdriver.recording.DeleteState
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.sessionDetail
 import com.flappedear.betterdriver.recording.sessionTitle
+import com.flappedear.betterdriver.sharing.TransferState
 import java.io.File
 import java.util.Locale
 
@@ -49,6 +51,12 @@ import java.util.Locale
  *
  * Delete (FBBD-90, UI-48) asks first, saying how much space the session and its video free, then
  * removes both. It is off while the session records, exports or fetches GoPro video.
+ *
+ * Share sends the session with its video and track to the other device (FBBD-23, UI-55): Send
+ * through the share sheet (Quick Share), or Save file. Import at the top brings one in.
+ *
+ * A session the coach spoke in opens its cue review (FBBD-99): each cue and whether the next pass
+ * through that corner got better.
  */
 @Composable
 fun SessionsScreen(
@@ -59,11 +67,22 @@ fun SessionsScreen(
     withVideo: Set<String> = emptySet(),
     goPro: GoProCardState = GoProCardState(),
     deleting: SessionDeleting = SessionDeleting(),
+    transfer: SessionTransferState = SessionTransferState(),
+    coach: SessionCoach = SessionCoach(),
+    onAnalyse: (SessionSummary) -> Unit = {},
     header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
-        ShellTopBar("Sessions")
-        Box(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp)) { header() }
+        ShellTopBar("Sessions") {
+            TextButton(onClick = transfer.onImport, enabled = transfer.importEnabled) { Text("Import") }
+        }
+        Column(
+            Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            header()
+            ImportCard(transfer.incoming)
+        }
         if (sessions.isEmpty()) {
             Box(Modifier.padding(horizontal = 16.dp)) { ShellCard { DimText("No sessions yet") } }
         } else {
@@ -72,7 +91,9 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting)
+                    SessionCard(
+                        s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach,
+                    )
                 }
             }
         }
@@ -96,9 +117,13 @@ private fun SessionCard(
     onExport: (SessionSummary) -> Unit,
     goPro: GoProCardState,
     deleting: SessionDeleting,
+    transfer: SessionTransferState,
+    onAnalyse: (SessionSummary) -> Unit,
+    coach: SessionCoach,
 ) {
     val c = TrackTheme.colors
     val delete = deleting.states[s.id]
+    val sending = transfer.outgoing[s.id]
     var asking by rememberSaveable(s.id) { mutableStateOf(false) }
     val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running
     ShellCard {
@@ -116,18 +141,22 @@ private fun SessionCard(
         }
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
+        AnalysisLink(s, delete, onAnalyse)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
-        val canDelete = idle && goPro.work[s.id] == null
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            DimText(status, modifier = Modifier.weight(1f), color = if (bad) c.loss else Color.Unspecified)
-            TextButton(onClick = { asking = true }, enabled = canDelete) {
-                Text("Delete", color = if (canDelete) c.loss else Color.Unspecified)
-            }
-            FilledTonalButton(onClick = { onExport(s) }, enabled = idle) {
-                Text(if (video) "Export VBO + video" else "Export VBO")
-            }
-        }
+        val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
+        if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
+        TransferLine(sending)
+        CardButtons(
+            video = video,
+            idle = idle && sending?.running != true,
+            canDelete = canDelete,
+            onDelete = { asking = true },
+            onSend = { transfer.onSend(s) },
+            onSave = { transfer.onSave(s) },
+            onExport = { onExport(s) },
+        )
     }
     if (asking) {
         DeleteDialog(
@@ -141,6 +170,37 @@ private fun SessionCard(
             onDismiss = { asking = false },
         )
     }
+}
+
+/** Delete, Share and Export at the bottom of a session card. */
+@Suppress("LongParameterList")
+@Composable
+private fun CardButtons(
+    video: Boolean,
+    idle: Boolean,
+    canDelete: Boolean,
+    onDelete: () -> Unit,
+    onSend: () -> Unit,
+    onSave: () -> Unit,
+    onExport: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        TextButton(onClick = onDelete, enabled = canDelete) {
+            Text("Delete", color = if (canDelete) TrackTheme.colors.loss else Color.Unspecified)
+        }
+        ShareButton(enabled = idle, onSend = onSend, onSave = onSave)
+        Spacer(Modifier.weight(1f))
+        FilledTonalButton(onClick = onExport, enabled = idle) {
+            Text(if (video) "Export VBO + video" else "Export VBO")
+        }
+    }
+}
+
+/** Opens lap analysis (FBBD-102): laps, theoretical best and lap comparison. */
+@Composable
+private fun AnalysisLink(s: SessionSummary, delete: DeleteState?, onAnalyse: (SessionSummary) -> Unit) {
+    if (s.state == SessionState.RECORDING || delete == DeleteState.Running) return
+    TextButton(onClick = { onAnalyse(s) }, contentPadding = PaddingValues(0.dp)) { Text("Lap analysis ›") }
 }
 
 /** The card's status line and whether it reports a failure; a delete outranks an export. */
@@ -229,6 +289,10 @@ private fun SessionsScreenPreview() {
                 ),
                 exports = mapOf("a" to ExportState.Done),
                 onExport = {},
+                transfer = SessionTransferState(
+                    outgoing = mapOf("b" to TransferState("Preparing…", 0.42f, running = true)),
+                    incoming = TransferState("Imported the session of 11 Oct 10:42. Added track Tor Poznań."),
+                ),
                 withVideo = setOf("a"),
                 goPro = GoProCardState(
                     sessions = mapOf(

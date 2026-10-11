@@ -16,8 +16,14 @@ import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.R
+import com.flappedear.betterdriver.coach.CoachEvents
+import com.flappedear.betterdriver.coach.CoachProtocol
+import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.RecordingVideoSink
+
+private val CoachEventKinds = setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM)
+private const val MaxCoachEventChars = 1_000
 
 /** The low-importance channel for the recorder and camera notifications. */
 internal const val RecordingChannelId = "recording"
@@ -76,10 +82,14 @@ internal class CpuLock(context: Context) {
 }
 
 /**
- * The UI processes bound to the service. Each registered client gets [state] every [TickMs] while
- * any client is registered. Main thread only.
+ * The UI processes bound to the service, and the camera and coach processes that report into it.
+ * Each registered client gets [state] every [TickMs] while any client is registered. Main thread only.
  */
-internal class LiveClients(private val state: () -> Bundle, private val onVideo: (Bundle) -> Unit = {}) {
+internal class LiveClients(
+    private val state: () -> Bundle,
+    private val onVideo: (Bundle) -> Unit = {},
+    private val onCoach: (Int, Bundle) -> Unit = { _, _ -> },
+) {
     private val main = Handler(Looper.getMainLooper())
     private val clients = mutableListOf<Messenger>()
     private val ticker = object : Runnable {
@@ -96,6 +106,10 @@ internal class LiveClients(private val state: () -> Bundle, private val onVideo:
         return when {
             msg.what == RecorderProtocol.MSG_VIDEO -> {
                 onVideo(msg.data)
+                true
+            }
+            msg.what == RecorderProtocol.MSG_COACH_EVENT || msg.what == RecorderProtocol.MSG_COACH_STATUS -> {
+                onCoach(msg.what, msg.data)
                 true
             }
             client == null -> false
@@ -146,5 +160,24 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
         RecorderProtocol.VIDEO_SYNCED -> sink.synced(file, at, data.getLong(RecorderProtocol.VIDEO_MEDIA_US))
         RecorderProtocol.VIDEO_STOPPED -> sink.stopped(file, at, text)
         RecorderProtocol.VIDEO_STATUS -> sink.status(text, data.getBoolean(RecorderProtocol.VIDEO_OK))
+    }
+}
+
+/**
+ * Logs a coach report (FBBD-98) at the session time the coach stamped. Only coach event kinds, and
+ * only for the running session, so nothing the coach sends can stop the recording. The coach line
+ * goes to [onStatus].
+ */
+internal fun logCoachReport(recording: Recording, what: Int, data: Bundle, onStatus: (CoachStatus) -> Unit) {
+    if (data.getString(CoachProtocol.SESSION) != recording.id) return
+    when (what) {
+        RecorderProtocol.MSG_COACH_EVENT -> {
+            val kind = data.getString(CoachProtocol.EVENT_KIND).orEmpty()
+            val text = data.getString(CoachProtocol.EVENT_TEXT).orEmpty().take(MaxCoachEventChars)
+            if (kind in CoachEventKinds) recording.eventAt(data.getLong(CoachProtocol.T_US), kind, text)
+        }
+        RecorderProtocol.MSG_COACH_STATUS -> onStatus(
+            CoachStatus(data.getString(CoachProtocol.STATUS_CORNER), data.getString(CoachProtocol.STATUS_TEXT)),
+        )
     }
 }

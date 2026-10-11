@@ -20,6 +20,7 @@ include(
     ":app",
     ":recorder",
     ":timing",
+    ":coach",
     ":analysis",
     ":video",
     ":gopro",
@@ -30,4 +31,5 @@ include(
     ":core-ble",
     ":feature-track",
     ":feature-review",
+    ":feature-analysis",
 )
