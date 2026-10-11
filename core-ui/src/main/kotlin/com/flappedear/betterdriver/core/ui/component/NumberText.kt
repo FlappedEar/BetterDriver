@@ -10,6 +10,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -24,7 +26,8 @@ private const val Digits = "0123456789"
  * The approved number font (Saira Semi Condensed, UI-02 option C) has no
  * tabular figures, so each digit is drawn centred in a cell as wide as the
  * widest digit. Other characters (":", ".", "+", "−") keep their own width;
- * the formatters put them in fixed positions.
+ * the formatters put them in fixed positions. Accessibility services read the
+ * whole value as one node, not glyph by glyph.
  */
 @Composable
 fun NumberText(
@@ -41,7 +44,10 @@ fun NumberText(
         val widest = Digits.maxOf { measurer.measure(it.toString(), style).size.width }
         with(density) { widest.toDp() }
     }
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        modifier.clearAndSetSemantics { contentDescription = text },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         text.forEach { ch ->
             if (ch.isDigit()) {
                 Box(Modifier.width(cell), contentAlignment = Alignment.Center) { Glyph(ch, style, color) }
