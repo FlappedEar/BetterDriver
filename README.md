@@ -29,8 +29,9 @@ JDK 17 and the Android SDK (compile SDK 36).
 
 ## CI and releases
 
-- `.github/workflows/ci.yml`: build, tests, lint and detekt on every pull
-  request and on `main`; the debug APK is kept as a run artifact.
+- `.github/workflows/ci.yml`: unit tests (`test`), Android lint (`lint`),
+  detekt and `assemble` as parallel jobs on every pull request and on `main`.
+  The debug APK is kept as an artifact of runs on `main` and manual runs.
 - `.github/workflows/release.yml`: a tag `vX.Y.Z` on `main` (or a manual run
   with the version) publishes `BetterDriver-X.Y.Z-android.apk` and
   `SHA256SUMS.txt` on GitHub Releases, once CI is green on that commit. The
