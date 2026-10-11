@@ -1,0 +1,24 @@
+// Pure Kotlin/JVM: post-session analysis (FBBD-4), a port of FlappedEar Telemetry's analysis core.
+// No Android dependencies, so all of it is tested on the JVM, against Telemetry's own parity
+// fixtures. It reads recorded sessions; the recorder never depends on it.
+plugins {
+    alias(libs.plugins.kotlin.jvm)
+}
+
+kotlin {
+    jvmToolchain(17)
+}
+
+dependencies {
+    implementation(project(":recorder"))
+    implementation(project(":timing"))
+    testImplementation(kotlin("test"))
+    testImplementation(libs.kotlinx.serialization.json)
+    testImplementation(platform(libs.junit5.bom))
+    testImplementation(libs.junit5.jupiter)
+    testRuntimeOnly(libs.junit5.launcher)
+}
+
+tasks.test {
+    useJUnitPlatform()
+}
