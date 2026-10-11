@@ -29,6 +29,7 @@ import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.live.placeName
+import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
@@ -284,7 +285,10 @@ class RecorderService : Service() {
                 state.putBoolean(RecorderProtocol.KEY_CAMERA_OK, ok)
             }
         }
-        a?.timing?.detection?.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
+        a?.timing?.detection?.let { found ->
+            found.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
+            state.putBoolean(RecorderProtocol.KEY_PLACE_SAVED, found is TrackDetection.Saved)
+        }
         if (a != null) {
             coachStatus.corner?.let { state.putString(RecorderProtocol.KEY_COACH_CORNER, it) }
             coachStatus.text?.let { state.putString(RecorderProtocol.KEY_COACH_TEXT, it) }

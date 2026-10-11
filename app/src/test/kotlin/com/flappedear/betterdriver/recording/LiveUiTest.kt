@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.recording
 
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
+import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -69,7 +70,7 @@ class LiveUiTest {
                 LiveSector("S2", null, null, current = true),
             ),
         )
-        val timed = RecorderState(connected = true, live = live, place = "Tor Poznań", timing = timing)
+        val timed = RecorderState(connected = true, live = live, place = "Tor Poznań", placeSaved = true, timing = timing)
         val s = liveTrackState(timed, tiles)
         assertEquals(listOf("Track", "GNSS"), s.status.map { it.label })
         assertEquals("Tor Poznań", s.status.first().value)
@@ -77,6 +78,14 @@ class LiveUiTest {
         assertEquals(112_410L, s.bestMillis)
         assertEquals("3", s.tiles.last().value)
         assertEquals(listOf("S1", "S2"), s.sectors.map { it.name })
+    }
+
+    @Test
+    fun circuitFromTheListIsNeutralAndASavedTrackWithoutLinesIsAmber() {
+        val road = liveTrackState(RecorderState(connected = true, live = live, place = "Tor Kielce"), tiles)
+        assertEquals(StatusItem("Near", "Tor Kielce", ok = true), road.status.first())
+        val untimed = RecorderState(connected = true, live = live, place = "Tor Kielce", placeSaved = true)
+        assertEquals(StatusItem("Track", "Tor Kielce", ok = false), liveTrackState(untimed, tiles).status.first())
     }
 
     @Test
