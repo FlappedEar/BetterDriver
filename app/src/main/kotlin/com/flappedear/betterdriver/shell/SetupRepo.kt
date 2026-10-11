@@ -30,23 +30,43 @@ class SetupRepo private constructor(context: Context) {
     private val saver = Executors.newSingleThreadExecutor { r -> Thread(r, "setup-save").apply { isDaemon = true } }
 
     // Read once at startup on the main thread: one small file.
-    var setup by mutableStateOf(store.load() ?: migrate(AppPrefs.legacy(context), ::newSetupId).also { save(it) })
+    var setup by mutableStateOf(
+        store.load() ?: migrate(AppPrefs.legacy(context), ::newSetupId).also { save(store, it) },
+    )
         private set
+
+    /**
+     * The setup as it was at the last START, so changes made in Settings while recording (a camera
+     * added, tiles changed) do not reach the running session. Saved to its own file, so a UI
+     * process restarted mid-session reconnects to the same cameras and tiles. Only read while a
+     * session runs; the next START replaces it.
+     */
+    private val runningStore = SetupStore(File(context.filesDir, RunningFileName))
+    private var running by mutableStateOf(runningStore.load())
+
+    /** What the running session uses. Falls back to [setup] if no session was ever started. */
+    fun forSession(): Setup = running ?: setup
+
+    /** Fixes the session's setup at START. Main thread only. */
+    fun sessionStarted(): Setup = setup.also {
+        running = it
+        save(runningStore, it)
+    }
 
     /** Applies [change] and saves the result. Main thread only. */
     fun update(change: (Setup) -> Setup) {
         val next = change(setup)
         if (next == setup) return
         setup = next
-        save(next)
+        save(store, next)
     }
 
     /** The HERO11 the app downloads from after a session. At most one is listed ([EquipmentModel.single]). */
     fun hero11Address(): String? = setup.equipment.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }?.address
 
-    private fun save(s: Setup) = saver.execute {
+    private fun save(to: SetupStore, s: Setup) = saver.execute {
         try {
-            store.save(s)
+            to.save(s)
         } catch (e: IOException) {
             Log.e(Tag, "setup not saved", e)
         }
@@ -54,6 +74,7 @@ class SetupRepo private constructor(context: Context) {
 
     companion object {
         private const val FileName = "setup.json"
+        private const val RunningFileName = "session-setup.json"
         private const val Tag = "SetupRepo"
 
         @Volatile

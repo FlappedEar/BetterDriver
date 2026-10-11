@@ -161,7 +161,8 @@ private fun Drive(
     // Starting counts too: the recorder and the cameras are already on their way.
     val recording = recorder.state.recording || recorder.state.starting
     HomeScreen(
-        setup = repo.setup,
+        // While recording, the card shows what the running session uses, not later Settings changes.
+        setup = if (recording) repo.forSession() else repo.setup,
         recording = recording,
         trackName = tracks.here?.detection?.placeName,
         lastSession = lastSessionLine(sessions.list),
@@ -171,6 +172,7 @@ private fun Drive(
             onAddReceiver = { nav.navigate(Routes.AddEquipment) },
         ),
         onAddReceiver = { nav.navigate(Routes.AddEquipment) },
+        cameraAllowed = prefs.cameraGranted(),
         onStart = {
             val active = repo.setup.active()
             if (!prefs.hasRequiredPermissions()) {
@@ -179,9 +181,15 @@ private fun Drive(
                 // While recording, START goes back to the running session.
                 nav.navigate(Routes.Track)
             } else if (active.gnss != null) {
+                repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
                 val gnss = active.gnss?.let {
-                    if (it.model == EquipmentModel.DEMO_GNSS) GnssRef.Demo else GnssRef(it.address.orEmpty(), it.name)
+                    // The recorder tells a Micro by its name, so it gets the model, not Arek's name for it.
+                    if (it.model == EquipmentModel.DEMO_GNSS) {
+                        GnssRef.Demo
+                    } else {
+                        GnssRef(it.address.orEmpty(), it.model.label)
+                    }
                 }
                 recorder.start(
                     active.car?.name.orEmpty(),
@@ -202,7 +210,7 @@ private fun Drive(
 private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, recorder: RecorderClient) {
     if (prefs.hasRequiredPermissions()) {
         TrackScreen(
-            state = liveTrackState(recorder.state, repo.setup.active().tiles),
+            state = liveTrackState(recorder.state, repo.forSession().active().tiles),
             onStop = {
                 recorder.stop()
                 nav.popBackStack()

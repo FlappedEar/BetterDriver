@@ -69,6 +69,13 @@ class SetupTest {
     }
 
     @Test
+    fun hero8IsListedOnce() {
+        val s = Setup().addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+            .addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+        assertEquals(1, s.equipment.size)
+    }
+
+    @Test
     fun goProShowsOnlyWhenListedAndStartsOnlyWhenChosen() {
         var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 11", "AA", ids)
         assertTrue(s.hasGoPro)
