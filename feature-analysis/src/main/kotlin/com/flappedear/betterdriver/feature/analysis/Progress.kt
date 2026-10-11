@@ -7,6 +7,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.analysis.summary.quicker
+import com.flappedear.betterdriver.analysis.summary.slower
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.format.formatDelta
@@ -17,8 +19,9 @@ import kotlin.math.roundToLong
 private const val MillisPerSecond = 1000.0
 
 /**
- * Session summary (FBBD-122, UI-70): this session's best lap against the best of every earlier
- * session at the track, and how repeatable its laps were against the session before.
+ * Session summary (FBBD-122, FBBD-123, UI-70): this session's best lap against the best of every
+ * earlier session at the track, how repeatable its laps were against the session before, and the
+ * corners and straights whose typical time moved most since then.
  */
 @Composable
 internal fun Progress(progress: SessionProgress, modifier: Modifier) {
@@ -59,6 +62,34 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier) {
             }
             progress.previousLabel?.takeIf { progress.spreadDeltaSeconds != null }?.let { Dim("Against $it") }
         }
+        Changes(progress)
         Dim("${progress.eligibleLapCount} counted laps. Spread: the middle half of your lap times.")
+    }
+}
+
+/** At most this many corners or straights in each of the quicker and slower lists. */
+private const val ChangeRows = 3
+
+/** The corners and straights whose typical time moved most since the session before. */
+@Composable
+private fun Changes(progress: SessionProgress) {
+    val c = TrackTheme.colors
+    if (progress.changes.isEmpty()) return
+    val quicker = quicker(progress.changes).take(ChangeRows)
+    val slower = slower(progress.changes).take(ChangeRows)
+    Dim("Typical time by corner since ${progress.previousLabel.orEmpty()}")
+    if (quicker.isEmpty() && slower.isEmpty()) {
+        Dim("Every corner and straight within 0.05 s of the session before.")
+        return
+    }
+    for (change in quicker + slower) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(change.name, Modifier.weight(1f), color = c.text)
+            Text(
+                formatDelta(change.deltaSeconds),
+                color = if (change.deltaSeconds < 0) c.gain else c.loss,
+                fontWeight = FontWeight.SemiBold,
+            )
+        }
     }
 }

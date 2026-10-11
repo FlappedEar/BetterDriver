@@ -31,6 +31,8 @@ data class SessionProgress(
     val previousLabel: String? = null,
     val previousBestSeconds: Double? = null,
     val previousSpreadSeconds: Double? = null,
+    /** Each segment's typical time against the session before, in track order. */
+    val changes: List<SegmentChange> = emptyList(),
 ) {
     /** Best lap minus the earlier best, rounded to the millisecond as times are shown; negative is quicker. */
     val bestDeltaSeconds: Double?
