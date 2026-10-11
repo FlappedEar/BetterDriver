@@ -148,13 +148,13 @@ private fun SessionCard(
         val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
         TransferLine(sending)
+        SaveInstead(sending) { transfer.onSave(s) }
         CardButtons(
             video = video,
             idle = idle && sending?.running != true,
             canDelete = canDelete,
             onDelete = { asking = true },
-            onSend = { transfer.onSend(s) },
-            onSave = { transfer.onSave(s) },
+            onShare = { transfer.onSend(s) },
             onExport = { onExport(s) },
         )
     }
@@ -180,15 +180,14 @@ private fun CardButtons(
     idle: Boolean,
     canDelete: Boolean,
     onDelete: () -> Unit,
-    onSend: () -> Unit,
-    onSave: () -> Unit,
+    onShare: () -> Unit,
     onExport: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onDelete, enabled = canDelete) {
             Text("Delete", color = if (canDelete) TrackTheme.colors.loss else Color.Unspecified)
         }
-        ShareButton(enabled = idle, onSend = onSend, onSave = onSave)
+        ShareButton(enabled = idle, onShare = onShare)
         Spacer(Modifier.weight(1f))
         FilledTonalButton(onClick = onExport, enabled = idle) {
             Text(if (video) "Export VBO + video" else "Export VBO")

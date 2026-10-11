@@ -36,10 +36,10 @@ data class TransferState(
 /**
  * Sending sessions (with video) and tracks to the other device (FBBD-23, FBBD-80).
  *
- * - Send prepares the file in the app's cache, then opens Android's share sheet, where Quick Share
+ * - Share prepares the file in the app's cache, then opens Android's share sheet, where Quick Share
  *   is one of the targets. Prepared files are removed after a few hours.
- * - Save file writes straight to a file the user picks (Downloads, a USB drive, any folder), with
- *   no copy in between, so it also works when the phone is short of space.
+ * - Save file (sessions) writes straight to a file the user picks (Downloads, a USB drive, any
+ *   folder), with no copy in between, so it also works when the phone is short of space.
  *
  * Imports are in [Imports]. One per process; disk work runs on one background thread.
  */
@@ -92,11 +92,6 @@ class Transfers private constructor(private val context: Context) {
         file.writeText(trackText(track))
         handOver(file, onReady)
         "Ready to send"
-    }
-
-    fun saveTrack(track: Track, uri: Uri) = work(trackKey(track.id)) { _ ->
-        open(uri).use { it.write(trackText(track).toByteArray(Charsets.UTF_8)) }
-        "Saved"
     }
 
     /** The saved copy, so an edit made since the list loaded is sent too. */

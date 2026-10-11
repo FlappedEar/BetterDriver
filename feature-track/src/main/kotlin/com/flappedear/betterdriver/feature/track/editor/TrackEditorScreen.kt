@@ -65,7 +65,9 @@ private const val FitMarginPx = 48f
  * background where one is available (UI-26 option A).
  *
  * [sessions] are the recorded sessions at this track, newest first. [onSave] stores the track;
- * [onBack] leaves (the caller asks about unsaved changes).
+ * [onBack] leaves (the caller asks about unsaved changes). [onShare], when given, sends the saved
+ * track to the other device (FBBD-80, UI-56 option B); it is off while there are unsaved changes,
+ * so what is sent is what is shown.
  */
 @Composable
 fun TrackEditorScreen(
@@ -76,6 +78,7 @@ fun TrackEditorScreen(
     onSave: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    onShare: (() -> Unit)? = null,
 ) {
     var books by remember { mutableStateOf<List<LapBook>>(emptyList()) }
     LaunchedEffect(state.track, sessions) {
@@ -94,7 +97,7 @@ fun TrackEditorScreen(
             Row(Modifier.fillMaxSize()) {
                 map(Modifier.weight(1f).fillMaxHeight())
                 Column(Modifier.width(PanelWidth).fillMaxHeight().padding(horizontal = 16.dp)) {
-                    EditorBar(state, backIcon, back, onSave)
+                    EditorBar(state, backIcon, back, onSave, onShare)
                     Column(
                         Modifier.weight(1f).verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -106,7 +109,7 @@ fun TrackEditorScreen(
             }
         } else {
             Column(Modifier.fillMaxSize()) {
-                EditorBar(state, backIcon, back, onSave, Modifier.padding(horizontal = 4.dp))
+                EditorBar(state, backIcon, back, onSave, onShare, Modifier.padding(horizontal = 4.dp))
                 map(Modifier.weight(1f).fillMaxWidth())
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState())
@@ -151,6 +154,7 @@ private fun EditorBar(
     backIcon: ImageVector,
     onBack: () -> Unit,
     onSave: () -> Unit,
+    onShare: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -167,6 +171,7 @@ private fun EditorBar(
         if (state.selected != null) {
             Button(onClick = state::done, enabled = state.selectedLine != null) { Text("Done") }
         } else {
+            if (onShare != null) TextButton(onClick = onShare, enabled = !state.changed) { Text("Share") }
             Button(onClick = onSave, enabled = state.changed) { Text("Save") }
         }
     }

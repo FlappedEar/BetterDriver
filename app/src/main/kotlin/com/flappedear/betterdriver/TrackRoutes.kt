@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.feature.track.editor.TrackEditorScreen
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorState
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.TracksScreen
+import com.flappedear.betterdriver.sharing.rememberTrackShare
 import com.flappedear.betterdriver.sharing.rememberTrackTransfer
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.newTrackAt
@@ -71,6 +72,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         }
     }
     BackHandler(onBack = back)
+    val share = rememberTrackShare()
     TrackEditorScreen(
         state = state,
         sessions = loaded.sessions,
@@ -81,6 +83,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
             tracks.save(sent) { stored -> state.saved(sent, stored) }
         },
         onBack = back,
+        onShare = { share(state.track) },
     )
     if (leaving) {
         AlertDialog(
