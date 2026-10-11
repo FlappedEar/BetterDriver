@@ -64,8 +64,15 @@ class SetupTest {
         val first = Setup().addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 1111", "AA", ids)
         val id = first.equipment.single().id
         val s = first.addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", ids)
-        assertEquals(listOf(Equipment(id, EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB")), s.equipment)
+        assertEquals(listOf(Equipment(id, EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", "GoPro 2222")), s.equipment)
         assertEquals(listOf(id), s.session.cameraIds, "still on for the session")
+    }
+
+    @Test
+    fun renamingKeepsTheAdvertisedName() {
+        val s = Setup().addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Mini 0042", "AA", ids)
+        val renamed = s.renameEquipment(s.equipment.single().id, "Track box")
+        assertEquals("RaceBox Mini 0042", renamed.equipment.single().advertisedName)
     }
 
     @Test

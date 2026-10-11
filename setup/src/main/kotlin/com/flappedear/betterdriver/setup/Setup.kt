@@ -49,6 +49,11 @@ data class Equipment(
     val model: EquipmentModel,
     val name: String,
     val address: String? = null,
+    /**
+     * The name the device advertised when it was paired. It tells a RaceBox Micro from a Mini;
+     * [name] is Arek's and can be anything.
+     */
+    val advertisedName: String? = null,
 ) {
     val kind: EquipmentKind get() = model.kind
 }
@@ -151,10 +156,17 @@ data class Setup(
         val same = equipment.firstOrNull {
             it.model == model && (model.single || (address != null && it.address == address))
         }
+        val advertised = name.takeIf { address != null && it.isNotBlank() }
         if (same != null) {
-            return replace(same.copy(name = name.ifBlank { model.label }, address = address ?: same.address))
+            return replace(
+                same.copy(
+                    name = name.ifBlank { model.label },
+                    address = address ?: same.address,
+                    advertisedName = advertised ?: same.advertisedName,
+                ),
+            )
         }
-        val item = Equipment(newId(), model, name.ifBlank { model.label }, address)
+        val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next

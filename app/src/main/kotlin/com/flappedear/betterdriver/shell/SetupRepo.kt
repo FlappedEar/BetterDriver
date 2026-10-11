@@ -47,10 +47,15 @@ class SetupRepo private constructor(context: Context) {
     /** What the running session uses. Falls back to [setup] if no session was ever started. */
     fun forSession(): Setup = running ?: setup
 
-    /** Fixes the session's setup at START. Main thread only. */
+    /** Fixes the session's setup at START. Main thread only; one small file, written at once. */
     fun sessionStarted(): Setup = setup.also {
         running = it
-        save(runningStore, it)
+        // Written before the recorder starts, so a UI restarted right after START still finds it.
+        try {
+            runningStore.save(it)
+        } catch (e: IOException) {
+            Log.e(Tag, "session setup not saved", e)
+        }
     }
 
     /** Applies [change] and saves the result. Main thread only. */

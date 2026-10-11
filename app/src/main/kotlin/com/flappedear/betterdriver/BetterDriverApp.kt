@@ -184,11 +184,11 @@ private fun Drive(
                 repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
                 val gnss = active.gnss?.let {
-                    // The recorder tells a Micro by its name, so it gets the model, not Arek's name for it.
+                    // The recorder tells a Micro from a Mini by the advertised name, not Arek's name for it.
                     if (it.model == EquipmentModel.DEMO_GNSS) {
                         GnssRef.Demo
                     } else {
-                        GnssRef(it.address.orEmpty(), it.model.label)
+                        GnssRef(it.address.orEmpty(), it.advertisedName ?: it.name)
                     }
                 }
                 recorder.start(
