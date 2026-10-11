@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.recorder
 
 import com.flappedear.betterdriver.recorder.store.ChunkWriter
+import com.flappedear.betterdriver.recorder.store.Frames
 import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import java.io.File
@@ -95,7 +96,9 @@ internal class RecordingWriter(
         var cmd = queue.poll()
         while (cmd != null) {
             if (cmd is Cmd.Write) {
-                if (budget > 0) budget -= write(cmd.record) else dropped.incrementAndGet()
+                // Sized before writing, so a frame larger than what is left is never started.
+                val size = Frames.encode(cmd.record).size.toLong()
+                if (size <= budget) budget -= write(cmd.record) else dropped.incrementAndGet()
             }
             cmd = queue.poll()
         }

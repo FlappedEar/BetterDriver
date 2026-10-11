@@ -99,12 +99,12 @@ class VboWriter(private val out: Writer) {
         blank()
 
         line("[channel units]")
-        columns.filterNot { it.isStandard }.forEach { line(it.unit) }
+        columns.filterNot { it.isStandard }.forEach { line(oneLine(it.unit)) }
         blank()
 
         if (doc.comments.isNotEmpty()) {
             line("[comments]")
-            doc.comments.forEach { line(it.replace("\r", " ").replace("\n", " ")) }
+            doc.comments.forEach { line(oneLine(it)) }
             blank()
         }
 
@@ -114,7 +114,7 @@ class VboWriter(private val out: Writer) {
                 line(
                     String.format(
                         Locale.ROOT, "%-7s %+.6f %+.6f %+.6f %+.6f ¬ %s",
-                        g.type, g.long1, g.lat1, g.long2, g.lat2, g.name,
+                        g.type, g.long1, g.lat1, g.long2, g.lat2, oneLine(g.name),
                     ),
                 )
             }
@@ -123,7 +123,7 @@ class VboWriter(private val out: Writer) {
 
         if (doc.aviBaseName != null) {
             line("[avi]")
-            line(doc.aviBaseName)
+            line(oneLine(doc.aviBaseName))
             blank()
         }
 
@@ -143,6 +143,9 @@ class VboWriter(private val out: Writer) {
         }
         out.flush()
     }
+
+    /** The format is line-based: free text must not be able to start a new line or a fake section. */
+    private fun oneLine(s: String) = s.replace('\r', ' ').replace('\n', ' ')
 
     private fun line(s: String) {
         out.write(s)

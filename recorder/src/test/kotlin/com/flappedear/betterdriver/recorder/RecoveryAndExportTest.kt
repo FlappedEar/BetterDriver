@@ -154,6 +154,36 @@ class RecoveryAndExportTest {
     }
 
     @Test
+    fun `a late-queued sample is held from its own time, not from when it arrived`() {
+        val store = SessionStore(tmp)
+        val obd = ChannelDef(100, "water", "C", "test", 1)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + obd))
+        rec.submit(SampleSet(0, gnss.fix(0) + ChannelValue(obd.id, 1.0)))
+        rec.submit(SampleSet(100_000, gnss.fix(1)))
+        // Taken at 90 ms but queued after the 100 ms fix.
+        rec.submit(SampleSet(90_000, listOf(ChannelValue(obd.id, 2.0))))
+        rec.stop()
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out)
+        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
+        assertEquals(listOf("1.0", "2.0"), p.rows.map { it.last() })
+    }
+
+    @Test
+    fun `line breaks in a unit cannot break the VBO structure`() {
+        val store = SessionStore(tmp)
+        val odd = ChannelDef(100, "odd", "m/s\n[data]", "test", 1)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + odd))
+        rec.submit(SampleSet(0, gnss.fix(0) + ChannelValue(odd.id, 1.0)))
+        rec.stop()
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out)
+        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
+        assertEquals(listOf("m/s [data]"), p.units)
+        assertEquals(1, p.rows.size)
+    }
+
+    @Test
     fun `fixes without GNSS time use session start plus elapsed time`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))

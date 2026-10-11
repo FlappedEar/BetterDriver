@@ -34,8 +34,11 @@ object VboExporter {
     )
 
     fun export(session: SessionData, out: OutputStream, aviBaseName: String? = null) {
+        // Sources queue independently, so file order is not time order; sample-and-hold needs time order.
+        // The sort is stable: sets with equal times keep their file order.
+        val sets = session.sampleSets.sortedBy { it.tMicros }
         val firstValue = HashMap<Int, Double>()
-        for (set in session.sampleSets) for (v in set.values) firstValue.putIfAbsent(v.channelId, v.value)
+        for (set in sets) for (v in set.values) firstValue.putIfAbsent(v.channelId, v.value)
         val extra = session.channels.values
             .filter { it.id !in GnssChannels.IDS && it.id in firstValue }
             .sortedBy { it.id }
@@ -48,7 +51,7 @@ object VboExporter {
                 comments = comments(session),
                 gates = gates(session),
                 aviBaseName = aviBaseName,
-                rows = rows(session, extra.map { it.id }, firstValue),
+                rows = rows(session, sets, extra.map { it.id }, firstValue),
             ),
         )
         writer.flush()
@@ -94,9 +97,14 @@ object VboExporter {
         },
     )
 
-    private fun rows(session: SessionData, extraIds: List<Int>, firstValue: Map<Int, Double>) = sequence {
+    private fun rows(
+        session: SessionData,
+        sets: List<SampleSet>,
+        extraIds: List<Int>,
+        firstValue: Map<Int, Double>,
+    ) = sequence {
         val latest = HashMap(firstValue)
-        for (set in session.sampleSets) {
+        for (set in sets) {
             set.values.forEach { latest[it.channelId] = it.value }
             if (isFix(set)) {
                 val row = DoubleArray(STANDARD.size + extraIds.size)

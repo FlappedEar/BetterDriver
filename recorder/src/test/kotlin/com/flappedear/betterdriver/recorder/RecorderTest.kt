@@ -207,7 +207,7 @@ class RecorderTest {
                 if (low.get()) {
                     probing.countDown()
                     release.await()
-                    50L
+                    90L
                 } else {
                     1L shl 40
                 }
@@ -221,7 +221,7 @@ class RecorderTest {
         assertTrue(rec.awaitStopped(5_000))
         assertEquals("storage_full", rec.finalStatus?.reason)
         assertEquals(SessionState.FINISHED, store.state(rec.dir))
-        // 50 bytes free, 50 kept back for the end record: nothing in the backlog fits.
+        // 90 bytes free, 50 kept back for the end record: 40 bytes left, less than one GNSS frame.
         assertEquals(1_000, rec.droppedCount)
         val finished = SessionFiles.readProps(File(rec.dir, SessionFiles.FINISHED))!!
         assertEquals("1000", finished.getProperty("droppedSamples"))
