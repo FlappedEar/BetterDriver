@@ -19,6 +19,7 @@ rootProject.name = "BetterDriver"
 include(
     ":app",
     ":recorder",
+    ":timing",
     ":core-ui",
     ":core-ble",
     ":feature-track",
