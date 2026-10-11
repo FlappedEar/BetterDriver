@@ -9,6 +9,7 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -100,7 +101,19 @@ fun BetterDriverApp(wide: Boolean) {
                     PairScreen(candidate = null, onConnect = {}, onShowAll = {}, onBack = { nav.popBackStack() })
                 }
             }
-            composable(Routes.Track) { TrackScreen(onStop = { nav.popBackStack() }) }
+            composable(Routes.Track) { Track(nav, prefs) }
+        }
+    }
+}
+
+/** A restored back stack can reopen Track after a one-time grant expired, so it checks again here. */
+@Composable
+private fun Track(nav: NavHostController, prefs: AppPrefs) {
+    if (prefs.hasRequiredPermissions()) {
+        TrackScreen(onStop = { nav.popBackStack() })
+    } else {
+        LaunchedEffect(Unit) {
+            nav.navigate(Routes.Setup) { popUpTo(nav.graph.id) { inclusive = true } }
         }
     }
 }
