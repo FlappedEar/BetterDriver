@@ -40,6 +40,20 @@ class SessionAnalysisTest {
     }
 
     @Test
+    fun `every corner is measured on every lap, with braking from the brake channel`() {
+        val analysis = analyzeSession(VboFixture.read("corners_measured.vbo"))
+        val corners = assertNotNull(analysis.segments).segments.filter { it.type == TrackSegmentType.Corner }
+        assertTrue(corners.isNotEmpty())
+        assertEquals(corners.map { it.id }.toSet(), analysis.cornerMetrics.keys)
+        assertEquals(corners.map { it.id }.toSet(), analysis.variability.keys)
+        for (laps in analysis.cornerMetrics.values) {
+            assertEquals(analysis.laps.timedLaps.size, laps.size)
+        }
+        val braking = analysis.cornerMetrics.values.flatten().map { it.braking }
+        assertTrue(braking.any { it.method == "measuredBrake" && it.brakingPointMeters != null })
+    }
+
+    @Test
     fun `a session without laps has no segments`() {
         val analysis = analyzeSession(VboFixture.read("event-laps.vbo"))
         assertNull(analysis.segments)

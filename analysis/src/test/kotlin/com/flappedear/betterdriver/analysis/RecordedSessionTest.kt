@@ -2,7 +2,9 @@ package com.flappedear.betterdriver.analysis
 
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.Aliases
+import com.flappedear.betterdriver.analysis.recorded.ForwardAcceleration
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -66,6 +68,41 @@ class RecordedSessionTest {
         left = GeoPoint(centerLat + (-200.0 + 15) / metersPerDegreeLat, centerLon),
         right = GeoPoint(centerLat + (-200.0 - 15) / metersPerDegreeLat, centerLon),
     )
+
+    /** Speeding up then braking in a straight line, with accel_x of sign [sign] (+1: forward positive). */
+    private fun straightRun(sign: Double): SessionData {
+        val accelX = ChannelDef(110, "accel_x", "g", "racebox", 3)
+        var speed = 10.0
+        val sets = (0 until 500).map { i ->
+            val a = if (i < 250) 0.3 else -0.6 // g
+            speed += a * 9.80665 * 0.04
+            SampleSet(
+                i * 40_000L,
+                listOf(
+                    ChannelValue(GnssChannels.LAT.id, centerLat + i * 1e-5),
+                    ChannelValue(GnssChannels.LON.id, centerLon),
+                    ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
+                    ChannelValue(accelX.id, sign * a),
+                ),
+            )
+        }
+        val channels = GnssChannels.ALL + accelX
+        return SessionData(
+            "s", SessionInfo(startUtcMillis = 0, channels = channels), SessionState.FINISHED,
+            channels.associateBy { it.id }, sets, emptyList(), null, 0, 0,
+        )
+    }
+
+    @Test
+    fun `the RaceBox X acceleration is signed so braking reads negative`() {
+        for (sign in listOf(1.0, -1.0)) {
+            val session = telemetrySessionOf(straightRun(sign), null)
+            assertEquals(ForwardAcceleration, session.aliases[Aliases.LONGITUDINAL_ACCELERATION])
+            val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION))
+            assertEquals(0.3, forward.values.first(), 1e-9, "sign $sign")
+            assertEquals(-0.6, forward.values.last(), 1e-9, "sign $sign")
+        }
+    }
 
     @Test
     fun `channels are in time order with aliases and the start line as gate`() {
