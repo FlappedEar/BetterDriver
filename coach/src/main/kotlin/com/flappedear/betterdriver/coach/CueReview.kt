@@ -29,11 +29,13 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
         /**
          * The review of a session's [events]; events other than the coach's are ignored. A restarted
          * coach process numbers its cues from 1 again, so a result belongs to the latest cue with its
-         * number before it, not to any cue with that number.
+         * number before it, not to any cue with that number. A cue that was not said (too late or no
+         * voice) ends its number too, so its result is dropped; coach errors are not counted as cues.
          */
         fun of(events: List<RecorderEvent>): CueReview {
             val cues = mutableListOf<ReviewedCue>()
             val latest = HashMap<Int, Int>()
+            var unsaid = 0
             for (e in events.sortedBy { it.tMicros }) {
                 when (e.kind) {
                     CoachEvents.CUE -> CoachEvents.parseCue(e.tMicros, e.text)?.let {
@@ -44,10 +46,22 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
                         val i = latest.remove(r.seq) ?: return@let
                         cues[i] = cues[i].copy(result = r)
                     }
+                    CoachEvents.PROBLEM -> unsaidSeq(e.text)?.let {
+                        latest.remove(it)
+                        unsaid++
+                    }
                 }
             }
-            return CueReview(cues, events.count { it.kind == CoachEvents.PROBLEM })
+            return CueReview(cues, unsaid)
         }
+
+        /** The cue number of a "late seq=…" or "no voice seq=…" problem; null for any other problem. */
+        private fun unsaidSeq(text: String): Int? {
+            val rest = UnsaidPrefixes.firstOrNull { text.startsWith(it) }?.let { text.removePrefix(it) }
+            return rest?.substringBefore(' ')?.removePrefix("seq=")?.toIntOrNull()
+        }
+
+        private val UnsaidPrefixes = listOf("late ", "no voice ")
     }
 }
 

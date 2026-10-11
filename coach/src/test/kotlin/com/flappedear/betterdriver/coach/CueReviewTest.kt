@@ -65,8 +65,31 @@ class CueReviewTest {
 
     @Test
     fun `no coach events is an empty review`() {
-        val review = CueReview.of(listOf(RecorderEvent(0, CoachEvents.PROBLEM, "late seq=1 text=x")))
+        val review = CueReview.of(
+            listOf(
+                RecorderEvent(0, CoachEvents.PROBLEM, "late seq=1 text=x"),
+                RecorderEvent(1, CoachEvents.PROBLEM, "error java.lang.IllegalStateException"),
+            ),
+        )
         assertEquals("No cues", review.summary)
+        assertEquals(1, review.problems, "an error is not an unsaid cue")
+    }
+
+    @Test
+    fun `the result of a cue that was not said goes to no earlier cue`() {
+        val once = coachedEvents()
+        val cue = once.first { it.kind == CoachEvents.CUE && "kind=Corner" in it.text }
+        val result = once.first { it.kind == CoachEvents.RESULT }
+        val later = 600_000_000L
+        // After a restart the same number was not said, and its pass was still judged.
+        val events = listOf(
+            cue,
+            RecorderEvent(cue.tMicros + later, CoachEvents.PROBLEM, "no voice ${cue.text}"),
+            result.copy(tMicros = result.tMicros + later),
+        )
+        val review = CueReview.of(events)
+        assertEquals(1, review.cues.size)
+        assertNull(review.cues.single().result)
         assertEquals(1, review.problems)
     }
 
