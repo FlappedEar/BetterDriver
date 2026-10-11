@@ -25,6 +25,7 @@ include(
     ":gopro",
     ":setup",
     ":updater",
+    ":transfer",
     ":core-ui",
     ":core-ble",
     ":feature-track",
