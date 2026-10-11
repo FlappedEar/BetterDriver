@@ -58,11 +58,23 @@ data class SessionData(
 
 private const val IdSuffixChars = 8
 
+/** Name prefix of a session directory being deleted; such directories are never listed. */
+private const val DeletingPrefix = ".deleting-"
+
+enum class DeleteResult { DELETED, NOT_FOUND, RECORDING, FAILED }
+
+/** [target] is a directory directly under [root], and [id] is not a hidden name. */
+private fun isSessionDir(root: File, id: String, target: File): Boolean =
+    id.isNotEmpty() && !id.startsWith(".") && target.parentFile == root && target.isDirectory
+
 /** Session directories under [root], one per recording. */
 class SessionStore(val root: File) {
 
     init {
         root.mkdirs()
+        // A delete cut short by a crash leaves a hidden directory; finish it.
+        (root.listFiles { f -> f.isDirectory && f.name.startsWith(DeletingPrefix) } ?: emptyArray())
+            .forEach { it.deleteRecursively() }
     }
 
     /**
@@ -94,7 +106,7 @@ class SessionStore(val root: File) {
 
     /** Sessions with readable metadata, newest first. */
     fun list(): List<SessionSummary> =
-        (root.listFiles { f -> f.isDirectory } ?: emptyArray())
+        (root.listFiles { f -> f.isDirectory && !f.name.startsWith(DeletingPrefix) } ?: emptyArray())
             .mapNotNull { d ->
                 val p = SessionFiles.readProps(File(d, SessionFiles.META)) ?: return@mapNotNull null
                 val info = try {
@@ -110,6 +122,27 @@ class SessionStore(val root: File) {
         val finished = SessionFiles.readProps(File(dir, SessionFiles.FINISHED))?.getProperty("endMicros")
         val recovered = SessionFiles.readProps(File(dir, SessionFiles.RECOVERY))?.getProperty("lastSampleMicros")
         return (finished ?: recovered)?.toLongOrNull()
+    }
+
+    /**
+     * Deletes session [id] with everything in its directory: chunks, markers and its video folder
+     * (phone clips, downloaded and copied GoPro files, the clip index) (FBBD-90). A session that a
+     * process is recording is refused. The directory is first renamed to a hidden name, so it
+     * leaves the list at once and a delete cut short is finished by the next [SessionStore].
+     */
+    fun delete(id: String): DeleteResult {
+        val target = dir(id)
+        val doomed = File(root, "$DeletingPrefix$id")
+        return when {
+            !isSessionDir(root, id, target) -> DeleteResult.NOT_FOUND
+            state(target) == SessionState.RECORDING -> DeleteResult.RECORDING
+            !target.renameTo(doomed) -> DeleteResult.FAILED
+            else -> {
+                SessionFiles.syncDir(root)
+                doomed.deleteRecursively()
+                DeleteResult.DELETED
+            }
+        }
     }
 
     /**

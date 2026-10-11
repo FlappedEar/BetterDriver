@@ -61,6 +61,9 @@ object SessionFiles {
         }
     }
 
+    /** Bytes on disk of the session [dir], its video included. */
+    fun sizeBytes(dir: File): Long = dir.walkBottomUp().filter { it.isFile }.sumOf { it.length() }
+
     fun readProps(file: File): Properties? {
         if (!file.isFile) return null
         return try {
