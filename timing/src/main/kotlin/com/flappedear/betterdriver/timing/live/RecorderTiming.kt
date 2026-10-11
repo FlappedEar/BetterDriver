@@ -89,3 +89,19 @@ val TrackDetection.placeName: String?
 fun Track.startFinishGate(): Gate? = startFinish?.let {
     Gate("Start / Finish", it.left.lat, it.left.lon, it.right.lat, it.right.lon)
 }
+
+/** Kind of the session event that records where a recording was (FBBD-55). */
+const val TrackEventKind = "track"
+
+/** The session's record of where it was: "saved <id> rev <n> <name>", "circuit <id> <name>" or "unknown". */
+fun TrackDetection.eventText(): String = when (this) {
+    is TrackDetection.Saved -> "saved ${track.id} rev ${track.revision} ${track.displayName}"
+    is TrackDetection.Directory -> "circuit ${circuit.id} ${circuit.name}"
+    TrackDetection.Unknown -> "unknown"
+}
+
+/** The saved track's id in a [TrackEventKind] event's text, or null when it was not at a saved track. */
+fun savedTrackId(eventText: String): String? {
+    val parts = eventText.split(' ')
+    return if (parts.size >= 2 && parts[0] == "saved") parts[1] else null
+}

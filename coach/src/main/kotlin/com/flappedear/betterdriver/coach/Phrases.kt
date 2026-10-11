@@ -1,0 +1,49 @@
+package com.flappedear.betterdriver.coach
+
+/**
+ * What the coach says (FBBD-97): short English phrases, numbers allowed (Arek, FBBD-6). Corners are
+ * named by the coach's own numbers, which the review screen shows on the map.
+ */
+object Phrases {
+    fun corner(corner: Corner, advice: Advice): String {
+        val name = "Turn ${corner.number}"
+        return when (advice) {
+            is Advice.BrakeLater -> "$name, brake ${advice.meters} metres later"
+            Advice.BrakeEarlier -> "$name, brake earlier"
+            is Advice.CarrySpeed -> "$name, carry ${advice.kmh} more"
+        }
+    }
+
+    /** "1 32 point 4", read by text-to-speech as "one thirty-two point four"; "Best lap, ..." for a new best. */
+    fun lapTime(millis: Long, best: Boolean): String {
+        val tenths = (millis + HalfTenth) / MillisPerTenth
+        val minutes = tenths / TenthsPerMinute
+        val seconds = tenths % TenthsPerMinute / TenthsPerSecond
+        val tenth = tenths % TenthsPerSecond
+        val time = if (minutes > 0) {
+            "$minutes ${"%02d".format(seconds)} point $tenth"
+        } else {
+            "$seconds point $tenth"
+        }
+        return if (best) "Best lap, $time" else time
+    }
+
+    /**
+     * About how long text-to-speech takes to say [text] at normal rate: a fixed start plus a time per
+     * word, counting a two-digit number as two words. An estimate; the audio delay setting covers lag.
+     */
+    fun durationMicros(text: String): Long {
+        val words = text.split(' ', ',').filter { it.isNotBlank() }.sumOf { w ->
+            if (w.all(Char::isDigit) && w.length >= 2 && w.toInt() > SpokenAsOneWord) 2L else 1L
+        }
+        return StartMicros + words * WordMicros
+    }
+
+    private const val HalfTenth = 50L
+    private const val MillisPerTenth = 100L
+    private const val TenthsPerSecond = 10L
+    private const val TenthsPerMinute = 600L
+    private const val SpokenAsOneWord = 20
+    private const val StartMicros = 200_000L
+    private const val WordMicros = 400_000L
+}
