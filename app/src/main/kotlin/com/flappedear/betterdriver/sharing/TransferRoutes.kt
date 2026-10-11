@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.sharing
 
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -72,11 +73,18 @@ internal fun rememberTrackTransfer(): TrackTransferState {
     )
 }
 
-/** Share in the track editor (FBBD-80, UI-56 option B): the saved track, through Android's share sheet. */
+/**
+ * Share in the track editor (FBBD-80, UI-56 option B): the saved track, through Android's share
+ * sheet. The editor has no status line, so a failure to prepare the file shows as a toast.
+ */
 @Composable
-internal fun rememberTrackShare(): (Track) -> Unit {
+internal fun rememberTrackShare(trackId: String): (Track) -> Unit {
     val context = LocalContext.current
     val transfers = remember(context) { Transfers.get(context) }
+    val state = transfers.outgoing[Transfers.trackKey(trackId)]
+    LaunchedEffect(state) {
+        if (state?.failed == true) Toast.makeText(context, "Share failed: ${state.text}", Toast.LENGTH_LONG).show()
+    }
     return { t -> transfers.sendTrack(t) { uri -> share(context, uri, "Share track") } }
 }
 

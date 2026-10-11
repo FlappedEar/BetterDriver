@@ -72,7 +72,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         }
     }
     BackHandler(onBack = back)
-    val share = rememberTrackShare()
+    val share = rememberTrackShare(id)
     TrackEditorScreen(
         state = state,
         sessions = loaded.sessions,
