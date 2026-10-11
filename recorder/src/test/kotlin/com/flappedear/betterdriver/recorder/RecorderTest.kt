@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class RecorderTest {
@@ -191,6 +192,29 @@ class RecorderTest {
         producer.join(1_000)
         assertEquals("storage_full", rec.finalStatus?.reason)
         assertEquals(SessionState.FINISHED, store.state(rec.dir))
+    }
+
+    @Test
+    fun `a source attached after stop is not started`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        assertTrue(rec.stop())
+        val started = AtomicLong()
+        val accepted = rec.attach(object : DataSource {
+            override val name = "late"
+            override fun start(sink: SampleSink) {
+                started.incrementAndGet()
+            }
+            override fun stop() = Unit
+        })
+        assertEquals(false, accepted)
+        assertEquals(0, started.get())
+    }
+
+    @Test
+    fun `channel ids outside 16 bits are rejected before they reach the file`() {
+        assertFailsWith<IllegalArgumentException> { ChannelValue(65_536, 1.0) }
+        assertFailsWith<IllegalArgumentException> { ChannelValue(-1, 1.0) }
     }
 
     @Test

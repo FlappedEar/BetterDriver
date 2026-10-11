@@ -21,7 +21,11 @@ private const val MaxChannelId = 0xFFFF
 private const val MaxDecimals = 9
 
 /** One value of one channel. */
-data class ChannelValue(val channelId: Int, val value: Double)
+data class ChannelValue(val channelId: Int, val value: Double) {
+    init {
+        require(channelId in 0..MaxChannelId) { "channel id out of range: $channelId" }
+    }
+}
 
 /**
  * Values taken at the same instant. [tMicros] is microseconds since the session started,

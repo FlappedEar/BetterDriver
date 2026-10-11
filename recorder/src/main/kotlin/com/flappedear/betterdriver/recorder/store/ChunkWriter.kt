@@ -45,6 +45,9 @@ class ChunkWriter(
     private var syncPending = false
 
     @Volatile
+    private var syncError: IOException? = null
+
+    @Volatile
     private var closed = false
 
     private val syncThread = Thread(::syncLoop, "recorder-sync-${dir.name}").apply { isDaemon = true }
@@ -72,6 +75,8 @@ class ChunkWriter(
 
     /** Hands buffered frames to the OS and asks the sync thread for an fsync. */
     fun flush() {
+        // An fsync failure means data may not be durable: fail the recording rather than carry on.
+        syncError?.let { throw IOException("background fsync failed", it) }
         val o = out ?: return
         if (dirty) {
             o.flush()
@@ -135,8 +140,9 @@ class ChunkWriter(
                 synchronized(syncLock) {
                     try {
                         syncFd?.sync()
-                    } catch (_: IOException) {
-                        // A failing disk shows up as a write error on the writing thread.
+                    } catch (e: IOException) {
+                        // Reported by the writing thread on its next flush, unless the chunk was just closed.
+                        if (syncFd != null) syncError = e
                     }
                 }
             }

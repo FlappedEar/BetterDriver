@@ -149,25 +149,35 @@ class Recording internal constructor(
 
     override fun event(kind: String, text: String) = enqueue(Record.Event(RecorderEvent(nowMicros(), kind, text)))
 
-    /** Starts [source] pushing into this recording. A source that throws on start is logged, not fatal. */
+    /**
+     * Starts [source] pushing into this recording. A source that throws on start is logged, not fatal.
+     * Returns false, without starting it, once the recording is stopping.
+     */
     @Suppress("TooGenericExceptionCaught") // Isolation: no source failure may stop the recording.
-    fun attach(source: DataSource) {
-        sources.add(source)
+    fun attach(source: DataSource): Boolean {
+        val added = intake.read { !stopping.get() && sources.add(source) }
+        if (!added) return false
         try {
             source.start(this)
         } catch (e: Exception) {
             event(EventKinds.SOURCE_ERROR, "${source.name}: start failed: $e")
         }
+        // A stop that ran while the source was starting may have missed it.
+        if (stopping.get()) sources.stopOne(source)
+        return true
     }
 
-    /** Stops sources, writes the end record, syncs and marks the session finished. */
-    fun stop(reason: String = "user") {
+    /**
+     * Stops sources, writes the end record, syncs and marks the session finished.
+     * Returns true once all of that is done, or false if it did not finish within [timeoutMs].
+     */
+    fun stop(reason: String = "user", timeoutMs: Long = StopTimeoutMs): Boolean {
         if (stopIntake()) {
             sources.stopAll()
             // Sources are stopped, so the writer frees space; never discard accepted records to make room.
             while (!isStopped && !queue.offer(Cmd.Stop(reason), StopOfferMs, TimeUnit.MILLISECONDS)) Unit
         }
-        awaitStopped()
+        return awaitStopped(timeoutMs)
     }
 
     fun awaitStopped(timeoutMs: Long = StopTimeoutMs): Boolean = stopped.await(timeoutMs, TimeUnit.MILLISECONDS)
@@ -188,7 +198,16 @@ fun SampleSink.videoStopped(camera: String, file: String) = event(EventKinds.VID
 private class Sources {
     private val list = mutableListOf<DataSource>()
 
-    fun add(source: DataSource) = synchronized(list) { list += source }
+    fun add(source: DataSource): Boolean = synchronized(list) { list.add(source) }
+
+    @Suppress("TooGenericExceptionCaught") // A source failing to stop must not affect the recording.
+    fun stopOne(source: DataSource) {
+        try {
+            source.stop()
+        } catch (_: Exception) {
+            // Nothing to do: the source is being dropped anyway.
+        }
+    }
 
     @Suppress("TooGenericExceptionCaught") // A source failing to stop must not block the others.
     fun stopAll() = synchronized(list) {
