@@ -43,6 +43,8 @@ data class VboDocument(
     val comments: List<String> = emptyList(),
     val gates: List<VboGate> = emptyList(),
     val aviBaseName: String? = null,
+    /** Written on the line after [aviBaseName] when set, as Racelogic-compatible tools do (for example "MP4"). */
+    val aviExtension: String? = null,
     val rows: Sequence<DoubleArray>,
 )
 
@@ -86,6 +88,12 @@ class VboWriter(private val out: Writer) {
         fun velocity(kmh: Double) = String.format(Locale.ROOT, "%07.3f", kmh)
         fun heading(deg: Double) = String.format(Locale.ROOT, "%06.2f", ((deg % 360.0) + 360.0) % 360.0)
         fun height(m: Double) = String.format(Locale.ROOT, "%+09.2f", m)
+        /** 1-based video file number, 4 digits as in Racelogic's example. */
+        fun aviFileIndex(v: Double) = String.format(Locale.ROOT, "%04d", v.toLong().coerceIn(0, 9_999))
+
+        /** Milliseconds into the video file, 9 characters as in Racelogic's example ("000000266", "-00000001"). */
+        fun aviSyncMillis(v: Double) = String.format(Locale.ROOT, "%09d", Math.round(v))
+
         fun decimal(decimals: Int): (Double) -> String = { v -> String.format(Locale.ROOT, "%.${decimals}f", v) }
     }
 
@@ -124,6 +132,7 @@ class VboWriter(private val out: Writer) {
         if (doc.aviBaseName != null) {
             line("[avi]")
             line(oneLine(doc.aviBaseName))
+            doc.aviExtension?.let { line(oneLine(it)) }
             blank()
         }
 
