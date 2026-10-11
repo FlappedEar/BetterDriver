@@ -21,6 +21,8 @@ data class GoProRecording(
     val stopAckUtcMillis: Long? = null,
     /** The UTC offset the app set on the camera's clock, or null if setting the clock failed. */
     val cameraUtcOffsetMinutes: Int? = null,
+    /** The video mode the app set ("1080p · 60"), or null if the camera kept its own (FBBD-88). */
+    val videoMode: String? = null,
     val downloaded: Boolean = false,
 )
 

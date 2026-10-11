@@ -30,6 +30,7 @@ import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.TrackChannel
+import com.flappedear.betterdriver.setup.VideoMode
 import java.util.Locale
 
 private const val BytesPerGb = 1_000_000_000.0
@@ -55,6 +56,7 @@ fun SettingsScreen(
     trackCount: Int = 0,
     onTracks: () -> Unit = {},
     onChooseTiles: (List<TrackChannel>) -> Unit = {},
+    onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -74,7 +76,7 @@ fun SettingsScreen(
             when (SettingsTab.entries[tab]) {
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
-                SettingsTab.Recording -> RecordingTab(setup.session.tiles, onChooseTiles, trackCount, onTracks)
+                SettingsTab.Recording -> RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
                 SettingsTab.App -> AppTab(version, onRunSetup)
             }
         }
@@ -90,25 +92,36 @@ private fun CarTab(setup: Setup, onOpenCar: (CarProfile) -> Unit, onAddCar: () -
     }
 }
 
-/** Recording settings, including the track-screen tiles for every session (UI-38 option A). */
+/**
+ * Recording settings, including the track-screen tiles for every session (UI-38 option A) and one
+ * Video row per camera the app sets (UI-39).
+ */
 @Composable
 private fun RecordingTab(
-    tiles: List<TrackChannel>,
+    setup: Setup,
     onChooseTiles: (List<TrackChannel>) -> Unit,
+    onChooseVideo: (Equipment, VideoMode) -> Unit,
     trackCount: Int,
     onTracks: () -> Unit,
 ) {
+    val tiles = setup.session.tiles
     val context = LocalContext.current
     val freeGb = remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
     var choosingTiles by rememberSaveable { mutableStateOf(false) }
+    var choosingVideo by rememberSaveable { mutableStateOf<String?>(null) }
     ShellCard {
         val tracks = if (trackCount == 1) "1 track" else "$trackCount tracks"
         ListRow("Tracks and timing lines", tracks, divider = false, onClick = onTracks)
         ListRow("Track screen tiles", tilesLabel(tiles), onClick = { choosingTiles = true })
-        ListRow("Video quality", "4K · 60 fps")
+        setup.equipment.filter { it.videoMode != null }.forEach { cam ->
+            ListRow("Video · ${cam.name}", videoLabel(cam), onClick = { choosingVideo = cam.id })
+        }
         ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb))
     }
     if (choosingTiles) TilesDialog(tiles, onChooseTiles, onClose = { choosingTiles = false })
+    setup.equipment(choosingVideo)?.let { cam ->
+        VideoModeDialog(cam, rememberVideoModes(cam), { onChooseVideo(cam, it) }, onClose = { choosingVideo = null })
+    }
 }
 
 @Composable

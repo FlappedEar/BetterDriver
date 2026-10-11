@@ -36,6 +36,7 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentKind
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.VideoMode
 
 /** "GNSS" or "Camera", the value next to an item in the equipment list. */
 internal fun kindLabel(e: Equipment): String = when (e.kind) {
@@ -67,8 +68,8 @@ internal fun EquipmentList(equipment: List<Equipment>, onOpen: (Equipment) -> Un
 }
 
 /**
- * One item: its name (renamed in a dialog), model and Bluetooth address, and Remove (UI-33).
- * A paired RaceBox also has Diagnostics (FBBD-89).
+ * One item: its name (renamed in a dialog), model and Bluetooth address, the video mode of a
+ * camera the app sets (UI-39), and Remove (UI-33). A paired RaceBox also has Diagnostics (FBBD-89).
  */
 @Composable
 fun EquipmentScreen(
@@ -76,9 +77,11 @@ fun EquipmentScreen(
     onRename: (String) -> Unit,
     onRemove: () -> Unit,
     onBack: () -> Unit,
+    onChooseVideo: (VideoMode) -> Unit = {},
     onDiagnostics: () -> Unit = {},
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
+    var choosingVideo by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         ShellTopBar(item.name, onBack = onBack)
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -86,6 +89,7 @@ fun EquipmentScreen(
                 ListRow("Name", item.name, divider = false, onClick = { renaming = true })
                 ListRow("Model", item.model.label)
                 item.address?.let { ListRow("Bluetooth", "Paired · $it") }
+                if (item.videoMode != null) ListRow("Video", videoLabel(item), onClick = { choosingVideo = true })
                 if (item.model == EquipmentModel.RACEBOX_MICRO && item.address != null) {
                     ListRow("Diagnostics", "Live", onClick = onDiagnostics)
                 }
@@ -95,6 +99,9 @@ fun EquipmentScreen(
                 Text("Remove", color = TrackTheme.colors.loss)
             }
         }
+    }
+    if (choosingVideo) {
+        VideoModeDialog(item, rememberVideoModes(item), onChooseVideo, onClose = { choosingVideo = false })
     }
     if (renaming) {
         NameDialog(

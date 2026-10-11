@@ -195,7 +195,9 @@ private fun Drive(
                     active.car?.name.orEmpty(),
                     track = tracks.here?.detection?.placeName.orEmpty(),
                     gnss,
-                    phoneVideo = active.uses(EquipmentModel.PHONE_CAMERA) && prefs.cameraGranted(),
+                    phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
+                        ?.videoMode
+                        ?.takeIf { prefs.cameraGranted() },
                 )
                 nav.navigate(Routes.Track)
             }
@@ -313,6 +315,7 @@ private fun Settings(
         trackCount = tracks.list.size,
         onTracks = { nav.navigate(Routes.Tracks) },
         onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
+        onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
     )
 }
 
