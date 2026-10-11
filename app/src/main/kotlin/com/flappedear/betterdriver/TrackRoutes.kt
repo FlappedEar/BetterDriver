@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.feature.track.editor.TrackEditorScreen
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorState
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.TracksScreen
+import com.flappedear.betterdriver.sharing.rememberTrackShare
 import com.flappedear.betterdriver.sharing.rememberTrackTransfer
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.newTrackAt
@@ -39,8 +40,8 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
         here = tracks.here,
         tracks = tracks.list,
         onOpen = { t -> nav.navigate(Routes.trackEditor(t.id)) },
-        onCreateFromCircuit = { c -> tracks.save(newTrackFrom(c), openNew) },
-        onCreateHere = { name, at -> tracks.save(newTrackAt(at, name), openNew) },
+        onCreateFromCircuit = { c -> tracks.save(newTrackFrom(c), onSaved = openNew) },
+        onCreateHere = { name, at -> tracks.save(newTrackAt(at, name), onSaved = openNew) },
         onBack = { nav.popBackStack() },
         transfer = rememberTrackTransfer(),
     )
@@ -71,6 +72,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         }
     }
     BackHandler(onBack = back)
+    val share = rememberTrackShare(id)
     TrackEditorScreen(
         state = state,
         sessions = loaded.sessions,
@@ -81,6 +83,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
             tracks.save(sent) { stored -> state.saved(sent, stored) }
         },
         onBack = back,
+        onShare = { share(state.track) },
     )
     if (leaving) {
         AlertDialog(
