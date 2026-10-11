@@ -22,8 +22,8 @@ private const val Percent = 100
 
 /**
  * Tells the updater whether a session is recording, starting or not yet saved (FBBD-74), and runs
- * the daily check on launch and after each session. Until the recorder has answered and the first
- * recovery pass has listed the sessions, it counts as recording.
+ * the daily check on launch and after each session. Until the recorder has answered, and while a
+ * recovery pass may still find an interrupted session, it counts as recording.
  */
 @Composable
 fun FollowUpdates(updates: AppUpdates, recorder: RecorderClient, sessions: Sessions) {
@@ -38,7 +38,7 @@ fun FollowUpdates(updates: AppUpdates, recorder: RecorderClient, sessions: Sessi
 fun updatesBlocked(recorder: RecorderClient, sessions: Sessions): Boolean {
     val r = recorder.state
     val unsaved = sessions.list.any { it.state == SessionState.RECORDING || it.state == SessionState.INTERRUPTED }
-    return !r.connected || !sessions.loaded || r.recording || r.starting || unsaved
+    return !r.connected || sessions.recovering || r.recording || r.starting || unsaved
 }
 
 /** A newer version waits, for the quiet dot on the Settings tab. */
