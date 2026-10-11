@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed (monochrome) version of the app icon, UI-18 option A.
+     Ears from the FlappedEar Telemetry icon (Apache 2.0); the 1024 px artwork fills the 72 dp visible area. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:scaleX="0.0703125"
+        android:scaleY="0.0703125"
+        android:translateX="18"
+        android:translateY="18">
+        <group
+            android:pivotX="512"
+            android:pivotY="512"
+            android:scaleX="0.86"
+            android:scaleY="0.86">
+            <group
+                android:translateX="-3"
+                android:translateY="-8">
+                <group
+                    android:scaleX="0.112"
+                    android:scaleY="-0.112"
+                    android:translateX="-76"
+                    android:translateY="1030.32">
+                    <path
+                        android:fillColor="#FFFFFFFF"
+                        android:pathData="M3059 7240 c-48 -25 -108 -94 -147 -168 -107 -200 -170 -633 -142 -977 20 -250 63 -450 172 -790 80 -250 96 -323 109 -474 19 -238 49 -313 214 -530 169 -224 168 -216 96 -567 -28 -137 -51 -253 -51 -257 0 -3 38 23 84 58 140 105 344 218 541 300 141 58 430 151 543 175 125 26 162 41 229 92 98 75 160 198 207 409 70 312 121 825 88 885 -31 59 -79 69 -239 51 -67 -8 -72 -7 -78 12 -20 65 -348 620 -473 801 -407 593 -824 986 -1057 997 -45 2 -69 -2 -96 -17z m437 -492 c299 -311 659 -963 778 -1407 l25 -91 -22 -12 c-43 -22 -207 -148 -291 -223 -100 -89 -191 -199 -284 -344 -36 -56 -68 -98 -70 -92 -12 37 122 334 233 516 67 110 86 165 92 266 12 189 -59 479 -197 810 -75 179 -230 472 -322 607 -16 23 -25 42 -20 42 5 0 40 -33 78 -72z M6381 6364 c-84 -22 -167 -72 -249 -148 -142 -134 -259 -299 -437 -619 l-87 -158 -72 8 c-140 16 -172 12 -208 -25 l-33 -33 3 -127 c5 -243 60 -638 117 -837 50 -176 140 -312 243 -364 23 -12 99 -35 169 -51 440 -105 806 -263 1076 -466 45 -34 83 -61 85 -59 2 1 -9 58 -23 126 -81 380 -86 437 -47 518 10 20 63 97 119 172 98 132 128 178 121 183 -395 284 -658 745 -758 1331 -22 129 -25 175 -11 175 5 0 18 -24 29 -52 62 -165 119 -302 166 -401 174 -371 403 -670 640 -838 90 -64 164 -92 247 -93 57 -1 70 3 102 27 70 53 129 213 179 490 30 166 33 516 5 616 -26 91 -53 145 -102 199 -63 70 -121 97 -282 131 -164 34 -267 73 -493 187 -234 118 -360 145 -499 108z" />
+                </group>
+                <path
+                    android:pathData="M250 800 C320 800 340 740 380 740 C420 740 430 812 470 812 C510 812 520 720 560 720 C600 720 610 800 650 800 C700 800 720 770 780 770"
+                    android:strokeWidth="18"
+                    android:strokeColor="#FFFFFFFF"
+                    android:strokeLineCap="round" />
+                <path
+                    android:pathData="M250 812 C320 812 345 760 385 760 C425 760 435 830 475 830 C515 830 525 748 565 748 C605 748 615 818 655 818 C705 818 725 790 780 790"
+                    android:strokeWidth="18"
+                    android:strokeColor="#FFFFFFFF"
+                    android:strokeLineCap="round" />
+            </group>
+        </group>
+    </group>
+</vector>

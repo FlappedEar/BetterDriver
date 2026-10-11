@@ -19,12 +19,19 @@ private val LightScheme = lightColorScheme(
     onSurface = Color(0xFF14191D),
 )
 
+/** App screens outside the car (UI-17 option A: always dark), colours from the round 2 mockups. */
 private val DarkScheme = darkColorScheme(
     primary = AccentDark,
-    background = Color(0xFF0E1215),
-    surface = Color(0xFF161C20),
-    onBackground = Color(0xFFE8EDF0),
-    onSurface = Color(0xFFE8EDF0),
+    onPrimary = Color(0xFF06141A),
+    background = Color(0xFF0B0F12),
+    surface = Color(0xFF151B20),
+    surfaceVariant = Color(0xFF1C242A),
+    surfaceContainer = Color(0xFF151B20),
+    onBackground = Color(0xFFEEF2F4),
+    onSurface = Color(0xFFEEF2F4),
+    onSurfaceVariant = Color(0xFF8C9AA5),
+    outline = Color(0xFF26313A),
+    outlineVariant = Color(0xFF26313A),
 )
 
 private fun trackScheme(c: TrackColors) = darkColorScheme(
@@ -38,7 +45,8 @@ private fun trackScheme(c: TrackColors) = darkColorScheme(
 
 /**
  * App theme (FBBD-38). [track] selects the fixed dark, high-contrast variant
- * used on the in-car screen; other screens follow the system light/dark mode.
+ * used on the in-car screen. The app passes `darkTheme = true` everywhere
+ * (UI-17: always dark); the light scheme is kept for previews and later use.
  */
 @Composable
 fun BetterDriverTheme(
