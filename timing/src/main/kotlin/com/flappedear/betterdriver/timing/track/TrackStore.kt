@@ -1,0 +1,94 @@
+package com.flappedear.betterdriver.timing.track
+
+import java.io.File
+import java.io.FileOutputStream
+import java.io.IOException
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
+
+/**
+ * Arek's tracks, one JSON file each in [dir] (FBBD-54). Writes go to a temporary file that is
+ * synced and then renamed over the old one, so a crash or power loss leaves either the old or the
+ * new track, never half of one. A file that cannot be read is moved aside, never overwritten or
+ * deleted, so a damaged file or one from a newer app keeps its lines.
+ *
+ * Not thread-safe; the app keeps one instance and calls it off the main thread.
+ */
+class TrackStore(private val dir: File) {
+
+    /** Every readable track, by name. Unreadable files are moved aside and reported in [setAside]. */
+    fun all(): List<Track> {
+        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
+        return files.mapNotNull(::readOrSetAside).sortedBy { it.displayName.lowercase() }
+    }
+
+    fun get(id: String): Track? {
+        val file = fileFor(id)
+        return if (file.isFile) readOrSetAside(file) else null
+    }
+
+    /**
+     * Saves [track], replacing any track with the same id. The stored copy has the next revision
+     * and [nowUtcMillis] as its update time; it is returned.
+     */
+    fun save(track: Track, nowUtcMillis: Long = System.currentTimeMillis()): Track {
+        dir.mkdirs()
+        val previous = get(track.id)
+        val stored = track.copy(
+            revision = maxOf(track.revision, (previous?.revision ?: 0) + 1),
+            updatedUtcMillis = nowUtcMillis,
+        )
+        writeAtomically(fileFor(track.id), TrackJson.encode(stored))
+        return stored
+    }
+
+    /** Deletes the track; false when there was none. */
+    fun delete(id: String): Boolean = fileFor(id).delete()
+
+    /** Files moved aside because they could not be read. */
+    fun setAside(): List<File> = dir.listFiles { f -> f.name.contains(UnreadableMarker) }.orEmpty().toList()
+
+    private fun fileFor(id: String): File {
+        require(id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_" }) { "bad track id: $id" }
+        return File(dir, id + Suffix)
+    }
+
+    private fun readOrSetAside(file: File): Track? = try {
+        TrackJson.decode(file.readText()).takeIf { it.id + Suffix == file.name }
+            ?: throw TrackFormatException("id does not match file name")
+    } catch (_: TrackFormatException) {
+        setAside(file)
+    } catch (_: IOException) {
+        setAside(file)
+    }
+
+    /** Renamed so it no longer ends in [Suffix] and is not read again. */
+    private fun setAside(file: File): Track? {
+        file.renameTo(File(dir, file.name + UnreadableMarker + System.currentTimeMillis()))
+        return null
+    }
+
+    private fun writeAtomically(target: File, text: String) {
+        val tmp = File(dir, target.name + ".tmp")
+        FileOutputStream(tmp).use { out ->
+            out.write(text.toByteArray(Charsets.UTF_8))
+            out.fd.sync()
+        }
+        try {
+            Files.move(
+                tmp.toPath(),
+                target.toPath(),
+                StandardCopyOption.ATOMIC_MOVE,
+                StandardCopyOption.REPLACE_EXISTING,
+            )
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+        }
+    }
+
+    private companion object {
+        const val Suffix = ".track.json"
+        const val UnreadableMarker = ".unreadable-"
+    }
+}

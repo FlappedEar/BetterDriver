@@ -32,8 +32,11 @@ internal fun createRecordingChannel(context: Context) {
     context.getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
 }
 
-/** The ongoing notification Android requires for a foreground service: a title and a running clock. */
-internal fun recordingNotification(context: Context, startMillis: Long): Notification {
+/**
+ * The ongoing notification Android requires for a foreground service: a title, a running clock and,
+ * when known, track and car on a second line (UI-21 option B).
+ */
+internal fun recordingNotification(context: Context, startMillis: Long, detail: String = ""): Notification {
     val open = PendingIntent.getActivity(
         context,
         0,
@@ -43,6 +46,7 @@ internal fun recordingNotification(context: Context, startMillis: Long): Notific
     return NotificationCompat.Builder(context, ChannelId)
         .setSmallIcon(R.drawable.ic_launcher_monochrome)
         .setContentTitle(context.getString(R.string.recording_title))
+        .apply { if (detail.isNotBlank()) setContentText(detail) }
         .setWhen(startMillis)
         .setUsesChronometer(true)
         .setOngoing(true)

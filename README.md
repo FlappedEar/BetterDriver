@@ -11,6 +11,7 @@ work is tracked in Jira project FBBD.
 | --- | --- |
 | `app` | Activity, navigation, app wiring |
 | `recorder` | Recording service and crash-safe session store; runs in its own process (FBBD-69 to FBBD-72) |
+| `timing` | Tracks, circuit directory, track detection, lap and sector timing, predictive delta; pure Kotlin |
 | `core-ui` | Theme and shared Compose components |
 | `core-ble` | RaceBox Micro over BLE |
 | `feature-track` | Always-on track screen |
