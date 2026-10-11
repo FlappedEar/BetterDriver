@@ -2,12 +2,19 @@ package com.flappedear.betterdriver.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.params.StreamConfigurationMap
+import android.media.MediaCodec
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.StatFs
 import android.util.Range
+import android.util.Size
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.DynamicRange
@@ -257,22 +264,38 @@ class PhoneCamera(
 }
 
 /**
- * The [modes] the back camera reports it can record: its CameraX video qualities and frame-rate
- * ranges. The ranges are for the camera as a whole, so a phone may still refuse a rate at its
- * largest size; [PhoneCamera] then falls to the next step. Used by the camera and by the screen
- * where Arek picks a mode, so both offer the same list.
+ * The [modes] the back camera reports it can record: its CameraX video qualities, a frame-rate
+ * range covering the rate, and a minimum frame duration at that quality's own frame size short
+ * enough for the rate (Camera2 stream configuration), so 60 fps offered only at 1080p is not
+ * offered at 4K. CameraX 1.4 still treats the rate as a target, so a phone may record at another
+ * rate; [PhoneCamera] falls to the next step when binding fails. Used by the camera and by the
+ * screen where Arek picks a mode, so both offer the same list.
  */
+@OptIn(ExperimentalCamera2Interop::class)
 fun supportedPhoneModes(p: ProcessCameraProvider, modes: List<VideoMode>): List<VideoMode> {
     val info: CameraInfo = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
         ?: return emptyList()
     val qualities = Recorder.getVideoCapabilities(info).getSupportedQualities(DynamicRange.SDR)
     val ranges = info.supportedFrameRateRanges
+    val streams = Camera2CameraInfo.from(info)
+        .getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
     return modes.filter { mode ->
+        val quality = phoneQuality(mode.size)
         mode.size in PhoneSizes &&
-            phoneQuality(mode.size) in qualities &&
-            (ranges.isEmpty() || ranges.any { it.lower <= mode.fps && mode.fps <= it.upper })
+            quality in qualities &&
+            (ranges.isEmpty() || ranges.any { it.lower <= mode.fps && mode.fps <= it.upper }) &&
+            fastEnough(streams, QualitySelector.getResolution(info, quality), mode.fps)
     }
 }
+
+/** Whether the camera can deliver [fps] at [size]; unknown (no map, no size) counts as yes. */
+private fun fastEnough(streams: StreamConfigurationMap?, size: Size?, fps: Int): Boolean {
+    if (streams == null || size == null) return true
+    val minNanos = runCatching { streams.getOutputMinFrameDuration(MediaCodec::class.java, size) }.getOrNull()
+    return minNanos == null || minNanos <= 0 || minNanos <= NanosPerSecond / fps
+}
+
+private const val NanosPerSecond = 1_000_000_000L
 
 /** The CameraX quality for a phone frame size; 2.7K is not a phone size and maps to 1080p. */
 internal fun phoneQuality(size: VideoSize): Quality = when (size) {

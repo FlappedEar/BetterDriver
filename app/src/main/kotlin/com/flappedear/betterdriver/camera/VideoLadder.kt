@@ -8,14 +8,14 @@ val PhoneSizes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
 
 /**
  * The modes phone video steps down through when the phone heats up (FBBD-21), starting from the
- * mode Arek chose (FBBD-88): smaller frames at the same rate first, then 720p at 30. It never goes
- * above the chosen mode. A size the phone cannot use starts the ladder at 1080p.
+ * mode Arek chose (FBBD-88): at each size, the chosen rate and then 30 fps, then the next smaller
+ * size. So a phone without 60 fps at a size still records that size at 30 rather than a smaller
+ * one. It never goes above the chosen mode. A size the phone cannot use starts the ladder at 1080p.
  */
 fun ladderFrom(start: VideoMode): List<VideoMode> {
     val size = start.size.takeIf { it in PhoneSizes } ?: VideoSize.FHD
-    val steps = PhoneSizes.dropWhile { it != size }.map { VideoMode(it, start.fps) }
-    val last = VideoMode(VideoSize.HD, LowFps)
-    return if (start.fps > LowFps) steps + last else steps
+    val rates = if (start.fps > LowFps) listOf(start.fps, LowFps) else listOf(start.fps)
+    return PhoneSizes.dropWhile { it != size }.flatMap { s -> rates.map { VideoMode(s, it) } }
 }
 
 private const val LowFps = 30
