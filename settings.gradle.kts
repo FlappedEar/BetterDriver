@@ -20,6 +20,7 @@ include(
     ":app",
     ":recorder",
     ":timing",
+    ":analysis",
     ":video",
     ":gopro",
     ":setup",
