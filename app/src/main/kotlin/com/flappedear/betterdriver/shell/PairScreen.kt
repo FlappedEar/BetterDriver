@@ -26,9 +26,11 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 
 /**
- * Device pairing (UI-14 option B): one big card for the closest RaceBox, with
+ * Device pairing (UI-14 option B): one big card for the closest device, with
  * "Show all devices" as a fallback. The app scans while this screen is open
- * and passes the strongest RaceBox; with none in range it shows searching.
+ * and passes the strongest one; with none in range it shows searching. Used
+ * for the RaceBox and, with its own [title] and [hint], the GoPro HERO11.
+ * [busy] shows while pairing takes a moment; [error] says why it failed.
  */
 @Composable
 fun PairScreen(
@@ -37,12 +39,17 @@ fun PairScreen(
     onShowAll: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
+    title: String = "Pair RaceBox",
+    hint: String = "Power the RaceBox Micro. It shows up here.",
+    busy: Boolean = false,
+    error: String? = null,
 ) {
     Column(modifier.fillMaxSize()) {
-        ShellTopBar("Pair RaceBox", onBack = onBack)
+        ShellTopBar(title, onBack = onBack)
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            DimText("Power the RaceBox Micro. It shows up here.")
-            if (candidate != null) BestMatchCard(candidate, onConnect) else SearchingCard()
+            DimText(hint)
+            if (candidate != null) BestMatchCard(candidate, busy, onConnect) else SearchingCard()
+            if (error != null) DimText(error, color = MaterialTheme.colorScheme.error)
             TextButton(onClick = onShowAll, modifier = Modifier.align(Alignment.CenterHorizontally)) {
                 Text("Not yours? Show all devices")
             }
@@ -51,7 +58,7 @@ fun PairScreen(
 }
 
 @Composable
-private fun BestMatchCard(candidate: PairCandidate, onConnect: (PairCandidate) -> Unit) {
+private fun BestMatchCard(candidate: PairCandidate, busy: Boolean, onConnect: (PairCandidate) -> Unit) {
     ShellCard {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             SectionLabel("Found")
@@ -62,8 +69,12 @@ private fun BestMatchCard(candidate: PairCandidate, onConnect: (PairCandidate) -
                 DimText(if (candidate.bars >= 3) "strong signal" else "weak signal")
             }
         }
-        Button(onClick = { onConnect(candidate) }, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-            Text("Connect", style = MaterialTheme.typography.titleMedium)
+        Button(
+            onClick = { onConnect(candidate) },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+        ) {
+            Text(if (busy) "Pairing…" else "Connect", style = MaterialTheme.typography.titleMedium)
         }
     }
 }

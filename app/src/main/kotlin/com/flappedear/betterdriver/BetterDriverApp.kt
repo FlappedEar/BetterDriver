@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -30,6 +31,8 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.feature.track.TrackScreen
+import com.flappedear.betterdriver.gopro.GoPros
+import com.flappedear.betterdriver.gopro.scanGoPros
 import com.flappedear.betterdriver.recording.RaceBoxRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
@@ -37,9 +40,11 @@ import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.vboFileName
 import com.flappedear.betterdriver.shell.AppPrefs
+import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.PairCandidate
 import com.flappedear.betterdriver.shell.PairScreen
+import com.flappedear.betterdriver.shell.PairedGoPro
 import com.flappedear.betterdriver.shell.PairedRaceBox
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
@@ -49,7 +54,9 @@ import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.tracks.Tracks
+import java.io.IOException
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
 
 private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
 
@@ -61,6 +68,9 @@ private val TopLevelItems = listOf(
 
 /** VBO has no registered type; a generic one keeps the .vbo file name. */
 private const val VboMimeType = "application/octet-stream"
+
+/** GoPro HERO8 files the user adds to a session (UI-32). */
+private const val Mp4MimeType = "video/mp4"
 
 private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
 
@@ -98,7 +108,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Drive) {
                 Box(Modifier.padding(padding)) { Drive(nav, prefs, recorder, sessions, tracks) }
             }
-            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions) } }
+            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions, prefs) } }
             composable(Routes.Settings) {
                 Box(Modifier.padding(padding)) { Settings(nav, prefs, tracks, SettingsTab.Devices, onBack = null) }
             }
@@ -113,6 +123,9 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             }
             composable(Routes.Pair) {
                 Box(Modifier.padding(padding)) { PairRoute(nav, prefs) }
+            }
+            composable(Routes.PairGoPro) {
+                Box(Modifier.padding(padding)) { PairGoProRoute(nav, prefs) }
             }
             composable(Routes.Track) { Track(nav, prefs, recorder) }
             composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
@@ -145,6 +158,48 @@ private fun PairRoute(nav: NavHostController, prefs: AppPrefs) {
             val name = found.firstOrNull { it.address == c.address }?.name ?: "${c.name} ${c.serial}"
             prefs.updateRaceBox(PairedRaceBox(name, c.address))
             nav.popBackStack()
+        },
+        onShowAll = {},
+        onBack = { nav.popBackStack() },
+    )
+}
+
+/**
+ * Pairs the GoPro HERO11 (FBBD-22) on the same screen as the RaceBox (UI-14 B). Connect pairs with
+ * the camera over Bluetooth, which needs the camera in pairing mode, and saves it once it answers;
+ * from then on it starts and stops with each session.
+ */
+@Composable
+private fun PairGoProRoute(nav: NavHostController, prefs: AppPrefs) {
+    val context = LocalContext.current
+    val found by remember(context) {
+        if (prefs.hasRequiredPermissions()) scanGoPros(context) else flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
+    val scope = rememberCoroutineScope()
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val best = found.firstOrNull()
+    PairScreen(
+        candidate = best?.let { PairCandidate("GoPro", it.serial, it.bars, it.address) },
+        title = "Pair GoPro HERO11",
+        hint = "Turn on the HERO11 and put it in pairing mode on the camera. It shows up here.",
+        busy = busy,
+        error = error,
+        onConnect = { c ->
+            val name = found.firstOrNull { it.address == c.address }?.name ?: "GoPro ${c.serial}"
+            busy = true
+            error = null
+            scope.launch {
+                try {
+                    GoPros.get(context).pair(c.address)
+                    prefs.updateGoPro(PairedGoPro(name, c.address))
+                    nav.popBackStack()
+                } catch (e: IOException) {
+                    error = "Pairing failed: ${e.message}"
+                } finally {
+                    busy = false
+                }
+            }
         },
         onShowAll = {},
         onBack = { nav.popBackStack() },
@@ -224,7 +279,15 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, recorder: RecorderCli
  * with video asks for a folder instead, because the VBO and its video files must sit side by side.
  */
 @Composable
-private fun SessionsRoute(sessions: Sessions) {
+private fun SessionsRoute(sessions: Sessions, prefs: AppPrefs) {
+    val context = LocalContext.current
+    val goPros = remember(context) { GoPros.get(context) }
+    var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
+    val pickHero8 = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+        val id = addingTo
+        addingTo = null
+        if (id != null) goPros.addHero8(id, uris)
+    }
     // Saveable: the activity can be re-created while the file picker is open.
     var exporting by rememberSaveable { mutableStateOf<String?>(null) }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(VboMimeType)) { uri ->
@@ -246,6 +309,17 @@ private fun SessionsRoute(sessions: Sessions) {
             exporting = s.id
             if (s.id in sessions.withVideo) pickFolder.launch(null) else pickFile.launch(vboFileName(s))
         },
+        goPro = GoProCardState(
+            sessions = sessions.goPro,
+            work = goPros.work,
+            problems = goPros.problems,
+            enabled = !goPros.recording,
+            onDownload = { s -> if (prefs.goPro != null) goPros.download(s.id) },
+            onAddHero8 = { s ->
+                addingTo = s.id
+                pickHero8.launch(arrayOf(Mp4MimeType))
+            },
+        ),
     )
 }
 
@@ -277,6 +351,7 @@ private fun Settings(nav: NavHostController, prefs: AppPrefs, tracks: Tracks, ta
         onBack = onBack,
         trackCount = tracks.list.size,
         onTracks = { nav.navigate(Routes.Tracks) },
+        onPairGoPro = { nav.navigate(Routes.PairGoPro) },
     )
 }
 

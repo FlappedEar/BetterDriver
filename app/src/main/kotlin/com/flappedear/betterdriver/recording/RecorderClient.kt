@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.CameraService
+import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.timing.live.LiveTimingState
 
@@ -78,6 +79,13 @@ class RecorderClient private constructor(private val context: Context) {
             place = msg.data.getString(RecorderProtocol.KEY_PLACE),
             timing = RecorderProtocol.timingFrom(msg.data),
         )
+        val running = live?.takeIf { it.stoppedReason == null }
+        val startNanos = if (msg.data.containsKey(RecorderProtocol.KEY_START_NANOS)) {
+            msg.data.getLong(RecorderProtocol.KEY_START_NANOS)
+        } else {
+            null
+        }
+        GoPros.get(context).onRecorderState(running?.sessionId, running?.startUtcMillis ?: 0L, startNanos)
     }
 
     private val connection = object : ServiceConnection {
@@ -90,6 +98,7 @@ class RecorderClient private constructor(private val context: Context) {
             service = null
             val error = if (state.recording) "The recorder stopped unexpectedly. The session is saved." else state.error
             state = RecorderState(connected = false, error = error)
+            GoPros.get(context).onRecorderState(null, 0L, null)
             Sessions.get(context).recoverAndRefresh()
         }
     }

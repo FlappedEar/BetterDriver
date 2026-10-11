@@ -35,6 +35,9 @@ import java.io.File
  * Saved sessions, newest first, each with VBO export (FBBD-66, FBBD-71), plus its video when it
  * has any (FBBD-25). A session recovered after a crash is marked and exports like any other. Built
  * from the approved shell parts; the layout is on the UI review page for approval.
+ *
+ * A finished session also shows its GoPro video (FBBD-22): Download for HERO11 files still on the
+ * camera (UI-31) and Add for HERO8 files (UI-32). Both are off while a session records.
  */
 @Composable
 fun SessionsScreen(
@@ -43,6 +46,7 @@ fun SessionsScreen(
     onExport: (SessionSummary) -> Unit,
     modifier: Modifier = Modifier,
     withVideo: Set<String> = emptySet(),
+    goPro: GoProCardState = GoProCardState(),
 ) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Sessions")
@@ -53,14 +57,22 @@ fun SessionsScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(sessions, key = { it.id }) { s -> SessionCard(s, exports[s.id], s.id in withVideo, onExport) }
+                items(sessions, key = { it.id }) { s ->
+                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro)
+                }
             }
         }
     }
 }
 
 @Composable
-private fun SessionCard(s: SessionSummary, export: ExportState?, video: Boolean, onExport: (SessionSummary) -> Unit) {
+private fun SessionCard(
+    s: SessionSummary,
+    export: ExportState?,
+    video: Boolean,
+    onExport: (SessionSummary) -> Unit,
+    goPro: GoProCardState,
+) {
     val c = TrackTheme.colors
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -77,6 +89,7 @@ private fun SessionCard(s: SessionSummary, export: ExportState?, video: Boolean,
         }
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
+        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             DimText(
                 when (export) {
@@ -94,6 +107,19 @@ private fun SessionCard(s: SessionSummary, export: ExportState?, video: Boolean,
             ) { Text(if (video) "Export VBO + video" else "Export VBO") }
         }
     }
+}
+
+@Composable
+private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState) {
+    val work = goPro.work[s.id]
+    GoProLines(
+        goPro = goPro.sessions[s.id] ?: SessionGoPro(),
+        work = work,
+        problems = goPro.problems[s.id].orEmpty(),
+        enabled = goPro.enabled && work == null && export != ExportState.Running,
+        onDownload = { goPro.onDownload(s) },
+        onAddHero8 = { goPro.onAddHero8(s) },
+    )
 }
 
 @Preview(widthDp = 411, heightDp = 860)
@@ -117,6 +143,12 @@ private fun SessionsScreenPreview() {
                 exports = mapOf("a" to ExportState.Done),
                 onExport = {},
                 withVideo = setOf("a"),
+                goPro = GoProCardState(
+                    sessions = mapOf(
+                        "a" to SessionGoPro(hero11 = GoProClips(2, "by GPS ±0.05 s", byGps = true)),
+                        "b" to SessionGoPro(hero11OnCamera = true),
+                    ),
+                ),
             )
         }
     }

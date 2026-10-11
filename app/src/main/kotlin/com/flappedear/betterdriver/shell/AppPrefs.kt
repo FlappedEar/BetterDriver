@@ -17,7 +17,7 @@ val Cars = listOf("2023 Toyota Corolla", "2013 Scion FR-S")
  * update when they change.
  */
 class AppPrefs(private val context: Context) {
-    private val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
+    private val prefs = context.getSharedPreferences(FileName, Context.MODE_PRIVATE)
 
     var setupDone by mutableStateOf(prefs.getBoolean(KeySetupDone, false))
         private set
@@ -30,6 +30,14 @@ class AppPrefs(private val context: Context) {
     var raceBox by mutableStateOf(
         prefs.getString(KeyRaceBoxAddress, null)?.let { address ->
             PairedRaceBox(prefs.getString(KeyRaceBoxName, null).orEmpty(), address)
+        },
+    )
+        private set
+
+    /** The paired GoPro HERO11, or null. It starts and stops with each session (FBBD-22). */
+    var goPro by mutableStateOf(
+        prefs.getString(KeyGoProAddress, null)?.let { address ->
+            PairedGoPro(prefs.getString(KeyGoProName, null).orEmpty(), address)
         },
     )
         private set
@@ -60,15 +68,21 @@ class AppPrefs(private val context: Context) {
         prefs.edit().putString(KeyRaceBoxAddress, value.address).putString(KeyRaceBoxName, value.name).apply()
     }
 
+    fun updateGoPro(value: PairedGoPro) {
+        goPro = value
+        prefs.edit().putString(KeyGoProAddress, value.address).putString(KeyGoProName, value.name).apply()
+    }
+
     /**
-     * Device states for the ready check. The RaceBox shows as paired once one
-     * is saved; it connects when a session starts. GoPro pairing is not built
-     * yet. The phone camera shows as ready only while camera access is granted.
+     * Device states for the ready check. The RaceBox and the HERO11 show as
+     * paired once one is saved; they connect when a session starts. The phone
+     * camera shows as ready only while camera access is granted.
      */
     fun devices(): List<DeviceStatus> = listOf(
         raceBox?.let { DeviceStatus("RaceBox Micro", "RaceBox", "Paired", DeviceState.Ready) }
             ?: DeviceStatus("RaceBox Micro", "RaceBox", "Not paired", DeviceState.Off),
-        DeviceStatus("GoPro HERO11", "GoPro 11", "Not paired", DeviceState.Off),
+        goPro?.let { DeviceStatus("GoPro HERO11", "GoPro 11", "Paired", DeviceState.Ready) }
+            ?: DeviceStatus("GoPro HERO11", "GoPro 11", "Not paired", DeviceState.Off),
         when {
             !phoneCamera -> DeviceStatus("Phone camera", "Phone cam", "Off", DeviceState.Off)
             !context.allGranted(listOf(Manifest.permission.CAMERA)) ->
@@ -78,12 +92,16 @@ class AppPrefs(private val context: Context) {
         DeviceStatus("GoPro HERO8", "GoPro 8", "Start by hand", DeviceState.Off),
     )
 
-    private companion object {
-        const val KeySetupDone = "setup_done"
-        const val KeyPhoneCamera = "phone_camera"
-        const val KeyCar = "car"
-        const val KeyRaceBoxAddress = "racebox_address"
-        const val KeyRaceBoxName = "racebox_name"
+    companion object {
+        /** The SharedPreferences file, also read by the GoPro code outside Compose. */
+        const val FileName = "app"
+        const val KeyGoProAddress = "gopro_address"
+        private const val KeyGoProName = "gopro_name"
+        private const val KeySetupDone = "setup_done"
+        private const val KeyPhoneCamera = "phone_camera"
+        private const val KeyCar = "car"
+        private const val KeyRaceBoxAddress = "racebox_address"
+        private const val KeyRaceBoxName = "racebox_name"
     }
 }
 
