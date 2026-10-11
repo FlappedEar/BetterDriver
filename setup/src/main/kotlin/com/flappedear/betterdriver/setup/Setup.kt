@@ -101,6 +101,7 @@ data class ActiveSession(
  * drop out of the session choice. Tiles are kept as Arek chose them and [active] leaves out the
  * ones the chosen receiver cannot fill, so switching receivers back and forth loses nothing.
  */
+@Suppress("TooManyFunctions") // One small operation per thing Arek can change.
 @Serializable
 data class Setup(
     val equipment: List<Equipment> = emptyList(),
@@ -131,12 +132,19 @@ data class Setup(
      * already listed at the same address is updated instead of listed twice, and the phone camera
      * is listed once at most.
      */
-    fun addEquipment(model: EquipmentModel, name: String = model.label, address: String? = null, newId: () -> String): Setup {
+    fun addEquipment(
+        model: EquipmentModel,
+        name: String = model.label,
+        address: String? = null,
+        newId: () -> String,
+    ): Setup {
         require(!model.paired || !address.isNullOrBlank()) { "${model.label} needs a Bluetooth address" }
         val same = equipment.firstOrNull {
             it.model == model && (model == EquipmentModel.PHONE_CAMERA || (address != null && it.address == address))
         }
-        if (same != null) return replace(same.copy(name = name.ifBlank { model.label }, address = address ?: same.address))
+        if (same != null) {
+            return replace(same.copy(name = name.ifBlank { model.label }, address = address ?: same.address))
+        }
         val item = Equipment(newId(), model, name.ifBlank { model.label }, address)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
@@ -175,7 +183,8 @@ data class Setup(
     fun updateCar(car: CarProfile): Setup {
         require(car.name.isNotBlank()) { "a car needs a name" }
         if (car(car.id) == null) return this
-        return copy(cars = cars.map { if (it.id == car.id) car.copy(name = car.name.trim(), notes = car.notes.trim()) else it })
+        val trimmed = car.copy(name = car.name.trim(), notes = car.notes.trim())
+        return copy(cars = cars.map { if (it.id == car.id) trimmed else it })
     }
 
     fun removeCar(id: String): Setup = copy(

@@ -42,6 +42,8 @@ object SetupJson {
         ),
     )
 
+    /** Throws [SetupFormatException] for anything that is not a setup file of a known version. */
+    @Suppress("ThrowsCount")
     fun decode(text: String): Setup = try {
         val root = json.parseToJsonElement(text).jsonObject
         if (root["format"]?.jsonPrimitive?.content != SetupFileFormat) throw SetupFormatException("not a setup file")
