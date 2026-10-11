@@ -19,7 +19,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.labelStyle
-import com.flappedear.betterdriver.core.ui.numberStyle
 import com.flappedear.betterdriver.core.ui.textStyle
 
 /** One source in the status strip. [ok] false shows a warning-coloured dot. */
@@ -46,7 +45,7 @@ fun StatusStrip(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Dot(if (item.ok) c.gain else c.warning)
                 Text(item.label, style = textStyle(13.dp, FontWeight.Medium), color = c.textDim, maxLines = 1)
-                Text(item.value, style = numberStyle(15.dp, FontWeight.SemiBold), color = c.text, maxLines = 1)
+                NumberText(item.value, size = 15.dp, color = c.text, weight = FontWeight.SemiBold)
             }
         }
         Spacer(Modifier.weight(1f))
@@ -54,7 +53,7 @@ fun StatusStrip(
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Dot(c.loss)
                 Text("REC", style = labelStyle(13.dp), color = c.textDim)
-                Text(recordingTime, style = numberStyle(15.dp, FontWeight.SemiBold), color = c.text)
+                NumberText(recordingTime, size = 15.dp, color = c.text, weight = FontWeight.SemiBold)
             }
         }
     }
@@ -99,7 +98,7 @@ fun AlertBanner(
             modifier = Modifier.weight(1f),
         )
         if (recordingTime != null) {
-            Text("● $recordingTime", style = numberStyle(15.dp, FontWeight.SemiBold), color = fg)
+            NumberText("● $recordingTime", size = 15.dp, color = fg, weight = FontWeight.SemiBold)
         }
     }
 }

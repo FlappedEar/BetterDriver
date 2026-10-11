@@ -167,7 +167,7 @@ fun TrackScreenContent(state: TrackScreenState, modifier: Modifier = Modifier) {
             DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight())
             LapTimes(state.predictedMillis, state.lastMillis, state.bestMillis, Modifier.weight(0.38f).fillMaxHeight())
         }
-        CoachLine(state.coachCorner, state.coachCue, Modifier.fillMaxWidth().height(36.dp))
+        CoachLine(state.coachCorner, state.coachCue, Modifier.fillMaxWidth().height(44.dp))
         Row(Modifier.fillMaxWidth().height(80.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
             SectorStrip(state.sectors, Modifier.weight(0.62f).fillMaxHeight())
             Row(Modifier.weight(0.38f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {

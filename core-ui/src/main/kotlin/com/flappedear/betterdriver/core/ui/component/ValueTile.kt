@@ -57,13 +57,7 @@ fun ValueTile(
         ) {
             TrackLabel(label, color = labelColor)
             Row(verticalAlignment = Alignment.Bottom) {
-                Text(
-                    value,
-                    style = numberStyle(valueSize, FontWeight.SemiBold),
-                    color = valueColor,
-                    maxLines = 1,
-                    softWrap = false,
-                )
+                NumberText(value, size = valueSize, color = valueColor, weight = FontWeight.SemiBold)
                 if (unit.isNotEmpty()) {
                     Spacer(Modifier.width(2.dp))
                     Text(

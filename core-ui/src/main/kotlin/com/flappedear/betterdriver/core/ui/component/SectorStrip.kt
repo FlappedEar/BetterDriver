@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,7 +14,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.format.formatDelta
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.numberStyle
 
 /**
  * Sector strip (UI-05 option A: colour plus time). Finished sectors are
@@ -44,13 +42,7 @@ fun SectorStrip(
             Column(m, verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 TrackLabel(s.name, color = fg)
                 if (showTimes) {
-                    Text(
-                        text = d?.let(::formatDelta) ?: "···",
-                        style = numberStyle(numberSize),
-                        color = fg,
-                        maxLines = 1,
-                        softWrap = false,
-                    )
+                    NumberText(text = d?.let(::formatDelta) ?: "···", size = numberSize, color = fg)
                 }
             }
         }

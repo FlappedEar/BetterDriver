@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -17,7 +16,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.numberStyle
 
 private const val NoTime = "—:——.——"
 
@@ -54,12 +52,11 @@ private fun LapRow(label: String, millis: Long?, size: Dp, weight: FontWeight, c
         verticalAlignment = Alignment.CenterVertically,
     ) {
         TrackLabel(label)
-        Text(
+        NumberText(
             text = millis?.let(::formatLapTime) ?: NoTime,
-            style = numberStyle(size, weight),
+            size = size,
             color = if (millis == null) TrackTheme.colors.textDim else color,
-            maxLines = 1,
-            softWrap = false,
+            weight = weight,
         )
     }
 }

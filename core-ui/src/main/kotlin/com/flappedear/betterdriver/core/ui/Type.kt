@@ -13,11 +13,11 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 
-/** UI-02 option A: Barlow Condensed for numbers. */
+/** UI-02 option C (approved): Saira Semi Condensed for numbers. Draw numbers with NumberText. */
 val NumberFont = FontFamily(
-    Font(R.font.barlow_condensed_medium, FontWeight.Medium),
-    Font(R.font.barlow_condensed_semibold, FontWeight.SemiBold),
-    Font(R.font.barlow_condensed_bold, FontWeight.Bold),
+    Font(R.font.saira_semi_condensed_medium, FontWeight.Medium),
+    Font(R.font.saira_semi_condensed_semibold, FontWeight.SemiBold),
+    Font(R.font.saira_semi_condensed_bold, FontWeight.Bold),
 )
 
 /** Labels and running text. */
@@ -27,11 +27,6 @@ val LabelFont = FontFamily(
     Font(R.font.barlow_semibold, FontWeight.SemiBold),
 )
 
-/**
- * Barlow's default digits are proportional; "tnum" switches to fixed-width
- * figures so values never shift as digits change (FBBD-39, FBBD-62).
- */
-const val TabularFigures = "tnum"
 
 /**
  * Text size that ignores the system font scale. The track screen is a fixed
@@ -48,7 +43,6 @@ fun numberStyle(size: Dp, weight: FontWeight = FontWeight.Bold): TextStyle = Tex
     fontWeight = weight,
     fontSize = size.fixedSp(),
     lineHeight = size.fixedSp(),
-    fontFeatureSettings = TabularFigures,
 )
 
 @Composable

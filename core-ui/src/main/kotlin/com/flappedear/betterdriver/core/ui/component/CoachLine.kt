@@ -37,7 +37,7 @@ private val Speaker: ImageVector = ImageVector.Builder(
 ).build()
 
 /**
- * Text copy of the last spoken cue (UI-09 option A). Phase 5 feature; the
+ * Text copy of the last spoken cue (UI-09 option A, text enlarged at Arek's request). Phase 5 feature; the
  * slot exists now so the layout does not change when the coach arrives.
  * Null [cue] keeps the slot empty.
  */
@@ -50,11 +50,11 @@ fun CoachLine(corner: String?, cue: String?, modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (cue != null) {
-            Icon(Speaker, contentDescription = null, tint = c.textDim, modifier = Modifier.size(16.dp))
-            if (corner != null) Text(corner, style = numberStyle(16.dp, FontWeight.Bold), color = c.textDim)
+            Icon(Speaker, contentDescription = null, tint = c.textDim, modifier = Modifier.size(20.dp))
+            if (corner != null) Text(corner, style = numberStyle(20.dp, FontWeight.Bold), color = c.textDim)
             Text(
                 cue,
-                style = textStyle(16.dp, FontWeight.Medium),
+                style = textStyle(20.dp, FontWeight.Medium),
                 color = c.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
