@@ -60,12 +60,12 @@ data class TrackScreenState(
  * landscape for the whole outing, hides the system bars (a swipe shows them
  * briefly) so the layout gets the full height, and always uses the dark track
  * theme across the full window. The caller must not pad it for
- * insets; it pads its own content. Live data is not wired yet, so it shows
- * [ExampleTrackState]. Holding a finger anywhere for 3 s stops the session
+ * insets; it pads its own content. [state] holds the live values; it defaults
+ * to [ExampleTrackState]. Holding a finger anywhere for 3 s stops the session
  * (UI-16 option A).
  */
 @Composable
-fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
+fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier, state: TrackScreenState = ExampleTrackState) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
     KeepScreenOn(view)
@@ -75,7 +75,7 @@ fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
     BetterDriverTheme(track = true) {
         HoldToStop(onStop, modifier.fillMaxSize().background(TrackTheme.colors.background)) {
             TrackScreenContent(
-                state = ExampleTrackState,
+                state = state,
                 modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
             )
         }
