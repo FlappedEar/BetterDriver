@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import org.junit.jupiter.api.Test
 import kotlin.math.abs
@@ -51,6 +52,19 @@ class SessionAnalysisTest {
         }
         val braking = analysis.cornerMetrics.values.flatten().map { it.braking }
         assertTrue(braking.any { it.method == "measuredBrake" && it.brakingPointMeters != null })
+    }
+
+    @Test
+    fun `a session gets at most three focus areas, each with laps to compare`() {
+        val analysis = analyzeSession(VboFixture.read("corners_measured.vbo"))
+        val areas = sessionFocusAreas(analysis)
+        assertTrue(areas.size <= 3)
+        assertEquals(areas.size, areas.map { it.segmentId }.toSet().size)
+        for (area in areas) {
+            assertNotNull(area.lap)
+            assertNotNull(area.against)
+            assertTrue(area.observation.isNotEmpty() && area.hypothesis.isNotEmpty())
+        }
     }
 
     @Test

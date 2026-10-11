@@ -64,6 +64,13 @@ class AnalysisUiTest {
         )!!
         assertEquals(listOf(GainRow("Corner 1", 0.2, 3)), ui.gains)
         assertEquals(listOf(LossRow(2, 3, "Corner 1", 0.4)), ui.losses)
+        // Next session: the best lap's gap in Corner 1, compared on the lap that set the best time there.
+        val focus = ui.focus.single()
+        assertEquals("Best lap gap", focus.kind)
+        assertEquals("Corner 1", focus.name)
+        assertEquals(true, focus.observation.contains("0.200 s slower through Corner 1 than lap 3"))
+        assertEquals(2, focus.compareIndex)
+        assertEquals(3, focus.compareNumber)
     }
 
     @Test

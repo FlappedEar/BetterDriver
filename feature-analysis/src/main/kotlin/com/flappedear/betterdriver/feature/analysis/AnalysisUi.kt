@@ -3,6 +3,8 @@ package com.flappedear.betterdriver.feature.analysis
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
+import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
+import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import kotlin.math.roundToLong
@@ -48,6 +50,20 @@ data class GainRow(val name: String, val lossSeconds: Double, val bestLapNumber:
 /** One lap's loss against the fastest lap in one corner or straight. */
 data class LossRow(val lapIndex: Int, val lapNumber: Int, val name: String, val lossSeconds: Double)
 
+/**
+ * One area to look at before the next session: the measured [observation], kept apart from the
+ * [hypothesis] of what may be worth comparing. [compareIndex] is the lap of the pair to compare
+ * with the fastest, or null when both are the fastest.
+ */
+data class FocusRow(
+    val kind: String,
+    val name: String,
+    val observation: String,
+    val hypothesis: String,
+    val compareIndex: Int?,
+    val compareNumber: Int?,
+)
+
 /** A corner along the distance axis, shaded behind the charts. */
 data class CornerBand(val name: String, val startMeters: Double, val endMeters: Double)
 
@@ -81,6 +97,8 @@ data class AnalysisUi(
     val losses: List<LossRow> = emptyList(),
     /** Braking, speeds and pickup of each corner on the fastest and the compared lap. */
     val corners: List<CornerDetail> = emptyList(),
+    /** Up to three areas to look at before the next session. */
+    val focus: List<FocusRow> = emptyList(),
 )
 
 /** Losses below this are GPS timing noise and not listed. */
@@ -159,6 +177,7 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         gains = gains(analysis),
         losses = losses(analysis),
         corners = cornerDetails(analysis, fastestIndex, comparison?.otherIndex),
+        focus = focus(analysis),
         compare = comparison?.let {
             CompareUi(
                 referenceNumber = laps[it.referenceIndex].number,
@@ -188,6 +207,34 @@ private fun losses(analysis: SessionAnalysis): List<LossRow> {
             if (number == null || index == null) null else LossRow(index, number, loss.window.name, loss.lossSeconds)
         }
         .take(LossRows)
+}
+
+private fun kindLabel(kind: FocusAreaKind) = when (kind) {
+    FocusAreaKind.SectorGap -> "Best lap gap"
+    FocusAreaKind.RepeatedLoss -> "Repeated loss"
+    FocusAreaKind.BrakingSpread -> "Braking point spread"
+    FocusAreaKind.MinimumSpeedSpread -> "Minimum speed spread"
+}
+
+/**
+ * The session's focus areas. The Compare tab sets one lap against the fastest, so an area's pair
+ * opens as whichever of its laps is not the fastest (the first, when neither is).
+ */
+fun focus(analysis: SessionAnalysis): List<FocusRow> {
+    val laps = analysis.laps.timedLaps
+    val fastest = analysis.laps.fastestLapIndex?.let { laps[it].number }
+    val indexByNumber = laps.withIndex().associate { it.value.number to it.index }
+    return sessionFocusAreas(analysis).map { area ->
+        val number = listOf(area.lap, area.against).filterIsInstance<Int>().firstOrNull { it != fastest }
+        FocusRow(
+            kind = kindLabel(area.kind),
+            name = area.name,
+            observation = area.observation,
+            hypothesis = area.hypothesis,
+            compareIndex = number?.let(indexByNumber::get),
+            compareNumber = number,
+        )
+    }
 }
 
 /** The lap compared with the fastest when the screen opens: the second fastest counted lap, or null. */
