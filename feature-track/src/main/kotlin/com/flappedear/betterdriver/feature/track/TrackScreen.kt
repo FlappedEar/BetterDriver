@@ -1,9 +1,7 @@
 package com.flappedear.betterdriver.feature.track
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
@@ -64,8 +61,8 @@ data class TrackScreenState(
  * briefly) so the layout gets the full height, and always uses the dark track
  * theme across the full window. The caller must not pad it for
  * insets; it pads its own content. Live data is not wired yet, so it shows
- * [ExampleTrackState]. A long press anywhere stops the session; this stop
- * control is provisional until its design is approved.
+ * [ExampleTrackState]. Holding a finger anywhere for 3 s stops the session
+ * (UI-16 option A).
  */
 @Composable
 fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
@@ -76,12 +73,10 @@ fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
     LightSystemBarIcons(activity, view)
     HideSystemBars(activity, view)
     BetterDriverTheme(track = true) {
-        Box(modifier.fillMaxSize().background(TrackTheme.colors.background)) {
+        HoldToStop(onStop, modifier.fillMaxSize().background(TrackTheme.colors.background)) {
             TrackScreenContent(
                 state = ExampleTrackState,
-                modifier = Modifier
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
-                    .pointerInput(onStop) { detectTapGestures(onLongPress = { onStop() }) },
+                modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
             )
         }
     }

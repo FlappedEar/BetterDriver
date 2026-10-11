@@ -1,3 +1,6 @@
 <resources>
-    <style name="Theme.BetterDriver" parent="android:Theme.Material.NoActionBar" />
+    <!-- Always dark (UI-17 option A); the window colour matches the app background. -->
+    <style name="Theme.BetterDriver" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/app_background</item>
+    </style>
 </resources>
