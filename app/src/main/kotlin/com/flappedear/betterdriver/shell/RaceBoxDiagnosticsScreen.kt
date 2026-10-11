@@ -104,7 +104,7 @@ private fun RaceBoxDiagnosticsPreview() {
     BetterDriverTheme {
         RaceBoxDiagnosticsScreen(
             DiagnosticsView.Live(
-                DiagHeader(DeviceState.Ready, "Connected · 25 Hz", "RaceBox Micro 3241 · 3D · 18 satellites"),
+                DiagHeader(DeviceState.Ready, "Connected · 25 Hz", "RaceBox Mini S 3241 · 3D · 18 satellites"),
                 listOf(
                     DiagSection("GNSS", listOf(DiagRow("Fix", "3D · OK"), DiagRow("Satellites", "18"))),
                     DiagSection("Power", listOf(DiagRow("Input voltage", "12.1 V"))),

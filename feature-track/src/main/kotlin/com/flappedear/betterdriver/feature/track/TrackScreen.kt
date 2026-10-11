@@ -84,8 +84,8 @@ fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier, state: TrackS
 
 /**
  * In-car track screen, layout UI-10 option A: delta left, lap times right,
- * coach line, then sectors and info tiles. Designed for the Pixel 6 in
- * landscape (914 x 411 dp); every slot has a fixed size so values never move.
+ * coach line, then sectors and info tiles. Designed on a phone in landscape
+ * (914 x 411 dp, a Pixel 6); every slot has a fixed size so values never move.
  */
 @Composable
 fun TrackScreenContent(state: TrackScreenState, modifier: Modifier = Modifier) {
