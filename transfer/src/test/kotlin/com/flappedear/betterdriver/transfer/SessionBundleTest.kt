@@ -209,6 +209,31 @@ class SessionBundleTest {
     }
 
     @Test
+    fun `a replace cut short by the app dying keeps the session that was here`() {
+        val phone = SessionStore(File(tmp, "phone"))
+        val dir = session(phone, fixes = 50)
+        val tablet = SessionStore(File(tmp, "tablet"))
+        val staging = File(tmp, "staging")
+        val inbox = SessionInbox(tablet, staging)
+        assertTrue(inbox.accept(inbox.receive(bundle(phone, dir).inputStream()), replace = false))
+        val here = files(tablet.dir(dir.name))
+
+        // Killed after the old session was moved aside, before the new one was moved in.
+        inbox.receive(bundle(phone, dir).inputStream())
+        assertTrue(tablet.dir(dir.name).renameTo(File(staging, "old-" + dir.name)))
+        inbox.clearStaging()
+        assertEquals(here, files(tablet.dir(dir.name)))
+        assertEquals(emptyList(), staging.listFiles()!!.toList())
+
+        // Killed after the swap, before the old copy was deleted: the new one stays.
+        tablet.dir(dir.name).copyRecursively(File(staging, "old-" + dir.name))
+        File(tablet.dir(dir.name), "video/new.mp4").writeBytes(ByteArray(10))
+        inbox.clearStaging()
+        assertTrue(File(tablet.dir(dir.name), "video/new.mp4").exists())
+        assertEquals(emptyList(), staging.listFiles()!!.toList())
+    }
+
+    @Test
     fun `a session still recording is not sent`() {
         val store = SessionStore(File(tmp, "s"))
         val (_, dir) = store.createSession(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))

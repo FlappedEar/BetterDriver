@@ -6,7 +6,6 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
-import java.util.UUID
 
 /**
  * Brings session bundles into [store] (FBBD-23). A bundle is first unpacked into [staging] and
@@ -46,7 +45,8 @@ class SessionInbox(private val store: SessionStore, private val staging: File) {
 
     private fun swap(incoming: File, target: File) {
         if (store.state(target) == SessionState.RECORDING) throw IOException("that session is recording")
-        val old = File(staging, "old-" + UUID.randomUUID())
+        // Named after the session so [clearStaging] can put it back if the app dies before the swap ends.
+        val old = File(staging, OldPrefix + target.name)
         move(target, old)
         try {
             move(incoming, target)
@@ -62,9 +62,20 @@ class SessionInbox(private val store: SessionStore, private val staging: File) {
         received.staged.deleteRecursively()
     }
 
-    /** Removes whatever an earlier import left in [staging] (an app killed mid-import). Not while importing. */
+    /**
+     * Cleans up after an app killed mid-import. Not while importing. A session moved aside by a
+     * replace goes back if its replacement never arrived; everything else in [staging] is dropped.
+     */
     fun clearStaging() {
-        staging.listFiles()?.forEach { it.deleteRecursively() }
+        staging.listFiles()?.forEach { f ->
+            val id = f.name.removePrefix(OldPrefix)
+            val target = store.dir(id)
+            if (f.name.startsWith(OldPrefix) && validId(id) && !target.exists()) {
+                move(f, target)
+            } else {
+                f.deleteRecursively()
+            }
+        }
     }
 
     private fun move(from: File, to: File) {
@@ -74,6 +85,7 @@ class SessionInbox(private val store: SessionStore, private val staging: File) {
 
     companion object {
         private const val MaxIdChars = 64
+        private const val OldPrefix = "old-"
 
         /** Session ids are made by [SessionStore.createSession]; anything else could escape the folder. */
         fun validId(id: String) = id.isNotEmpty() && id.length <= MaxIdChars &&

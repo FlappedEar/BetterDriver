@@ -150,7 +150,7 @@ private fun SessionCard(
         val free = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
         TransferLine(sending)
-        SaveInstead(sending) { transfer.onSave(s) }
+        if (free) SaveInstead(sending) { transfer.onSave(s) }
         CardButtons(
             video = video,
             idle = free,

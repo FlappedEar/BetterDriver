@@ -94,8 +94,8 @@ class Transfers private constructor(private val context: Context) {
         "Ready to send"
     }
 
-    /** The saved copy, so an edit made since the list loaded is sent too. */
-    private fun trackText(track: Track) = TrackJson.encode(trackStore.get(track.id) ?: track)
+    /** The track as the editor shows it (Share needs it saved), not whatever is on disk by now. */
+    private fun trackText(track: Track) = TrackJson.encode(track)
 
     private fun handOver(file: File, onReady: (Uri) -> Unit) {
         val uri = FileProvider.getUriForFile(context, context.packageName + AuthoritySuffix, file)
