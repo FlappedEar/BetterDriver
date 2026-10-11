@@ -100,7 +100,7 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
         searching = searching,
         withoutBluetooth = buildList {
             if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
-            add(EquipmentModel.GOPRO_HERO8)
+            if (setup.equipment.none { it.model == EquipmentModel.GOPRO_HERO8 }) add(EquipmentModel.GOPRO_HERO8)
             if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
         },
         busyAddress = busy,

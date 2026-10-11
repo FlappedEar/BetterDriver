@@ -20,7 +20,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentKind
+import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
 
 private enum class Picker { Car, Gnss }
@@ -30,9 +32,15 @@ private enum class Picker { Car, Gnss }
  * Track-screen tiles are set once in Settings › Recording. The last choice is kept, so on a normal
  * day Arek only presses START. A camera turned off here does not start. While a session starts or
  * records the card is [locked]: it shows what the running session uses and nothing can change.
+ * Without camera access ([cameraAllowed] false) the phone camera says so instead of silently not recording.
  */
 @Composable
-internal fun SessionCard(setup: Setup, actions: SessionCardActions, locked: Boolean = false) {
+internal fun SessionCard(
+    setup: Setup,
+    actions: SessionCardActions,
+    locked: Boolean = false,
+    cameraAllowed: Boolean = true,
+) {
     val active = setup.active()
     var picker by rememberSaveable { mutableStateOf<Picker?>(null) }
     ShellCard {
@@ -42,13 +50,19 @@ internal fun SessionCard(setup: Setup, actions: SessionCardActions, locked: Bool
         ListRow("GNSS", active.gnss?.name ?: "None", onClick = { picker = Picker.Gnss }.takeUnless { locked })
         setup.ofKind(EquipmentKind.CAMERA).forEach { cam ->
             val on = cam.id in setup.session.cameraIds
-            ListRow(cam.name, if (cam.model.controlledByApp) null else "Start by hand") {
+            ListRow(cam.name, cameraNote(cam, cameraAllowed)) {
                 Switch(
                     checked = on,
                     onCheckedChange = { v -> actions.update { it.useCamera(cam.id, v) } },
                     enabled = !locked,
                 )
             }
+        }
+        if (!cameraAllowed && active.uses(EquipmentModel.PHONE_CAMERA)) {
+            DimText(
+                "The phone camera won't record without camera access. " +
+                    "Allow it in Settings › App › Run setup again.",
+            )
         }
         if (locked) DimText("Recording. This session's choice is fixed until it stops.")
     }
@@ -73,6 +87,12 @@ internal fun SessionCard(setup: Setup, actions: SessionCardActions, locked: Bool
         )
         null -> Unit
     }
+}
+
+private fun cameraNote(cam: Equipment, cameraAllowed: Boolean): String? = when {
+    !cam.model.controlledByApp -> "Start by hand"
+    cam.model == EquipmentModel.PHONE_CAMERA && !cameraAllowed -> "No camera access"
+    else -> null
 }
 
 /** A radio list with "None" last and an Add button; choosing closes it. */

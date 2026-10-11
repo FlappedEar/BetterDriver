@@ -49,6 +49,7 @@ fun HomeScreen(
     onStart: () -> Unit,
     onAddReceiver: () -> Unit,
     modifier: Modifier = Modifier,
+    cameraAllowed: Boolean = true,
 ) {
     val canStart = recording || setup.active().gnss != null
     Column(modifier.fillMaxSize()) {
@@ -57,7 +58,7 @@ fun HomeScreen(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            SessionCard(setup, actions, locked = recording)
+            SessionCard(setup, actions, locked = recording, cameraAllowed = cameraAllowed)
             Spacer(Modifier.size(12.dp))
             StartButton(
                 if (canStart) trackName ?: "No track detected" else "No GNSS receiver",

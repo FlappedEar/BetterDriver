@@ -172,6 +172,7 @@ private fun Drive(
             onAddReceiver = { nav.navigate(Routes.AddEquipment) },
         ),
         onAddReceiver = { nav.navigate(Routes.AddEquipment) },
+        cameraAllowed = prefs.cameraGranted(),
         onStart = {
             val active = repo.setup.active()
             if (!prefs.hasRequiredPermissions()) {
@@ -183,7 +184,12 @@ private fun Drive(
                 repo.sessionStarted()
                 // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
                 val gnss = active.gnss?.let {
-                    if (it.model == EquipmentModel.DEMO_GNSS) GnssRef.Demo else GnssRef(it.address.orEmpty(), it.name)
+                    // The recorder tells a Micro by its name, so it gets the model, not Arek's name for it.
+                    if (it.model == EquipmentModel.DEMO_GNSS) {
+                        GnssRef.Demo
+                    } else {
+                        GnssRef(it.address.orEmpty(), it.model.label)
+                    }
                 }
                 recorder.start(
                     active.car?.name.orEmpty(),
