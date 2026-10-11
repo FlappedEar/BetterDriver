@@ -58,6 +58,10 @@ class Sessions private constructor(private val context: Context) {
     var goPro by mutableStateOf<Map<String, SessionGoPro>>(emptyMap())
         private set
 
+    /** The first list is published, after the recovery pass that creating this runs (FBBD-74). */
+    var loaded by mutableStateOf(false)
+        private set
+
     init {
         recoverAndRefresh()
     }
@@ -163,6 +167,7 @@ class Sessions private constructor(private val context: Context) {
             list = sessions
             withVideo = video
             goPro = goPros
+            loaded = true
         }
     }
 

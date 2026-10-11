@@ -296,6 +296,20 @@ class UpdaterTest {
     }
 
     @Test
+    fun `a session starting during the checksum fetch stops before the APK request`() {
+        val release = available()
+        serveDownload()
+        val sums = net.answers.getValue(SumsUrl)
+        net.answers[SumsUrl] = {
+            recording = true
+            sums()
+        }
+        assertEquals(UpdateState.Paused, updater.download(release))
+        assertTrue(ApkUrl !in net.calls)
+        assertTrue(dir.listFiles()!!.isEmpty())
+    }
+
+    @Test
     fun `pinned certificate matches release yml`() {
         val workflow = File("../.github/workflows/release.yml").readText()
         assertTrue("RELEASE_CERT_SHA256: ${ReleaseCert.Sha256}" in workflow)

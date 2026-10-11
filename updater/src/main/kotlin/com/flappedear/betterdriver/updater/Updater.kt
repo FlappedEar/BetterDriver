@@ -106,6 +106,8 @@ class Updater(
                 ?: return failed(release, "The release has no checksum for its APK, so it was not downloaded.")
             is Sums.Error -> return failed(release, sums.message)
         }
+        // A session may have started while the checksums were fetched.
+        if (busy()) return UpdateState.Paused
         val part = File(dir, release.apk.name + PartSuffix)
         val response = try {
             FileOutputStream(part).use { out ->
