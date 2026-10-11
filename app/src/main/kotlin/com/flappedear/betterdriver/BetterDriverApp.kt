@@ -87,7 +87,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
     // Setup again if a required permission was revoked or a one-time grant expired.
     val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
-    FollowRecording(nav, recorder, sessions, repo)
+    FollowRecording(nav, recorder, sessions)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { if (route != null && route in Routes.TopLevel) BottomBar(nav, route) },
@@ -135,14 +135,13 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
  * opened from the notification), and lists a recording once it ends, recovering it if needed.
  */
 @Composable
-private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, sessions: Sessions, repo: SetupRepo) {
+private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, sessions: Sessions) {
     val recording = recorder.state.recording
     LaunchedEffect(recording) {
         if (recording) {
             val current = nav.currentDestination
             if (current != null && current.route != Routes.Track) nav.navigate(Routes.Track)
         } else {
-            repo.sessionEnded()
             sessions.recoverAndRefresh()
         }
     }

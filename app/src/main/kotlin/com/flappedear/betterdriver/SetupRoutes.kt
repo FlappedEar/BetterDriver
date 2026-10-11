@@ -32,6 +32,7 @@ import com.flappedear.betterdriver.shell.newSetupId
 import java.io.IOException
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.launch
 
 /** Equipment and car screens (UI-33 to UI-35), reached from Settings, home and the checklist. */
@@ -71,7 +72,12 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
     val searching = remember { prefs.hasRequiredPermissions() }
     val found by remember(context) {
         if (searching) {
-            combine(scanRaceBoxes(context), scanGoPros(context)) { boxes, goPros ->
+            // Each scanner emits only once it hears its own kind, so both start empty: a RaceBox
+            // shows even with no GoPro nearby.
+            combine(
+                scanRaceBoxes(context).onStart { emit(emptyList()) },
+                scanGoPros(context).onStart { emit(emptyList()) },
+            ) { boxes, goPros ->
                 boxes.map { NearbyDevice(EquipmentModel.RACEBOX_MICRO, it.name, it.address, it.bars) } +
                     goPros.map { NearbyDevice(EquipmentModel.GOPRO_HERO11, it.name, it.address, it.bars) }
             }
