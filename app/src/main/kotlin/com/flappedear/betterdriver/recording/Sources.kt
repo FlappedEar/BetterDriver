@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recording
 import android.content.Context
 import com.flappedear.betterdriver.core.ble.ImuCalibrationStore
 import com.flappedear.betterdriver.core.ble.RaceBoxSource
+import com.flappedear.betterdriver.core.ble.nmea.NmeaSource
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import java.io.File
@@ -20,27 +21,36 @@ internal fun imuCalibrations(context: Context) = ImuCalibrationStore(File(contex
 internal fun circuitsDir(context: Context) = File(context.filesDir, "circuits")
 
 /**
- * The session's GNSS receiver: a paired RaceBox by Bluetooth address and advertised name, or, with
- * [demo], the made-up positions of Demo GNSS, which Arek adds as equipment on purpose (FBBD-83).
+ * The session's GNSS receiver: a paired RaceBox (Mini, Mini S or Micro) by Bluetooth address and
+ * advertised name; with [nmea], a Bluetooth NMEA receiver paired in Android settings (FBBD-108);
+ * or, with [demo], the made-up positions of Demo GNSS, which Arek adds as equipment on purpose
+ * (FBBD-83).
  */
-data class GnssRef(val address: String, val name: String, val demo: Boolean = false) {
+data class GnssRef(
+    val address: String,
+    val name: String,
+    val demo: Boolean = false,
+    val nmea: Boolean = false,
+) {
     companion object {
         val Demo = GnssRef("", "Demo GNSS", demo = true)
     }
 }
 
 /**
- * Data sources for a new recording: the chosen RaceBox (FBBD-43), which reconnects on its own if
- * the link drops, or Demo GNSS. There is no fallback: without a receiver nothing is recorded,
- * never simulated positions (FBBD-83).
+ * Data sources for a new recording: the chosen RaceBox (FBBD-43) or Bluetooth NMEA receiver
+ * (FBBD-108), each of which reconnects on its own if the link drops, or Demo GNSS. There is no
+ * fallback: without a receiver nothing is recorded, never simulated positions (FBBD-83).
  */
 internal object Sources {
     fun create(context: Context, gnss: GnssRef): List<DataSource> = listOf(
-        if (gnss.demo) {
-            FakeGnssSource()
-        } else {
-            val calibration = imuCalibrations(context).load(gnss.address)
-            RaceBoxSource(context.applicationContext, gnss.address, gnss.name, calibration)
+        when {
+            gnss.demo -> FakeGnssSource()
+            gnss.nmea -> NmeaSource(context.applicationContext, gnss.address, gnss.name)
+            else -> {
+                val calibration = imuCalibrations(context).load(gnss.address)
+                RaceBoxSource(context.applicationContext, gnss.address, gnss.name, calibration)
+            }
         },
     )
 }

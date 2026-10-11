@@ -59,8 +59,8 @@ internal fun LightSystemBarIcons(activity: Activity?, view: View) {
 }
 
 /**
- * Hides the status and navigation bars while driving. On the Pixel 6 in
- * landscape they would take about 40 dp of the 411 dp height.
+ * Hides the status and navigation bars while driving. On a phone in landscape
+ * they take about 40 dp of the height (411 dp on a Pixel 6).
  */
 @Composable
 internal fun HideSystemBars(activity: Activity?, view: View) {

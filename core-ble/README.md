@@ -98,3 +98,37 @@ The decoding tests use RaceBox's own example packet (p. 7, from a Mini) and
 check its checksum. Note the document prints the example's rotation rates
 without their sign; the fields are Int16, so `2F FF` is −2.09 deg/s. Capture
 real packets from our Micro during the soak test (FBBD-46) and add them.
+
+## NMEA receivers over Bluetooth Classic (FBBD-108)
+
+Package `nmea`: generic NMEA 0183 GNSS receivers (Qstarz BT-Q818XT / BL-818GT,
+Garmin GLO / GLO 2, XGPS, ...) that stream NMEA over the Serial Port Profile
+(RFCOMM, UUID `00001101-0000-1000-8000-00805F9B34FB`).
+
+- `bondedSppDevices(context)`: devices paired in Android's Bluetooth settings
+  that may be receivers. RaceBoxes, GoPros, LE-only devices and computers,
+  phones and audio devices (by device class) are left out; everything else is
+  offered.
+- `NmeaSource(context, address, name)`: a recorder `DataSource` named `nmea`.
+- `SppLink`: secure RFCOMM socket, insecure as fallback, discovery cancelled
+  first; reads on its own thread; reconnects after 1 s, 2 s, 4 s, then every
+  5 s; a link silent for 5 s is restarted. State is the same `LinkState` as the
+  RaceBox's, with `Streaming.hz` counting sentences per second.
+- `NmeaLineReader`, `NmeaParser`, `NmeaEpochAssembler`, `NmeaDecoder`: pure
+  Kotlin, unit tested.
+
+**Parsing.** Only sentences with a valid `*hh` checksum are used. RMC, GGA, VTG
+and GSA from any talker (GP, GN, GL, GA, GB, BD, ...). Sentences are grouped
+into one epoch per fix by the UTC time of RMC and GGA; an epoch is passed on as
+soon as it has both, or when a sentence with a new time arrives. VTG and GSA
+have no time and join the open epoch; one that arrives after its epoch was
+passed on is dropped.
+
+**Channels.** One sample set per epoch, stamped with the recorder clock when
+the epoch's first sentence arrived. Position, speed (RMC knots × 1.852, else
+VTG km/h), heading and MSL altitude only with a valid fix (RMC status A and not
+mode N, GGA quality 1–6). `gnss_utc_ms` from the RMC date and time; without a
+date in the epoch, the last date seen, advanced at midnight. NMEA-only channels
+use ids 200 to 299 (`NmeaChannels`: fix quality, fix type, HDOP, PDOP). Fix
+changes and link drops are session events (`NmeaEvents`; the fix events share
+their kinds with the RaceBox).

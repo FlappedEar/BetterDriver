@@ -216,7 +216,11 @@ private fun Drive(
                     if (it.model == EquipmentModel.DEMO_GNSS) {
                         GnssRef.Demo
                     } else {
-                        GnssRef(it.address.orEmpty(), it.advertisedName ?: it.name)
+                        GnssRef(
+                            it.address.orEmpty(),
+                            it.advertisedName ?: it.name,
+                            nmea = it.model == EquipmentModel.NMEA_GNSS,
+                        )
                     }
                 }
                 recorder.start(
