@@ -21,9 +21,12 @@ enum class VideoSourceKind {
 
     /** Written by builds before FBBD-105 for a HERO8; read as [GOPRO_FILES]. */
     GOPRO_HERO8,
+
+    /** Another action camera started by hand whose files were added after the session (FBBD-120). */
+    CAMERA_FILES,
     ;
 
-    /** True for any GoPro, including kinds written by older builds. */
+    /** True for any camera other than the phone's (a GoPro or another action camera), older kinds included. */
     val isGoPro: Boolean get() = this != PHONE
 }
 

@@ -41,10 +41,23 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
      * Open GoPro (HERO8 and earlier, the first MAX), or any GoPro Arek prefers to run that way.
      */
     GOPRO_FILES(EquipmentKind.CAMERA, "GoPro, files added after the session"),
+
+    /**
+     * Any other action camera started by hand (DJI Action, Insta360, Garmin, ...), whose MP4 files
+     * are added after the session and lined up by the camera's clock (FBBD-120). Their GPS formats
+     * are not documented, so no GPS alignment.
+     */
+    CAMERA_FILES(EquipmentKind.CAMERA, "Other action camera"),
     ;
 
-    /** True when the app starts and stops it; a GoPro whose files are added is started by hand. */
-    val controlledByApp: Boolean get() = this != GOPRO_FILES
+    /** True when the app starts and stops it; a camera whose files are added is started by hand. */
+    val controlledByApp: Boolean get() = !filesAdded
+
+    /** True for a camera started by hand whose files are added after the session. */
+    val filesAdded: Boolean get() = this == GOPRO_FILES || this == CAMERA_FILES
+
+    /** True for a camera other than the phone's: its video shows per camera on the session card. */
+    val actionCamera: Boolean get() = isGoPro || this == CAMERA_FILES
 
     /** True for models paired over Bluetooth, which need an address. */
     val paired: Boolean get() = this == RACEBOX || this == NMEA_GNSS || this == GOPRO
@@ -282,7 +295,7 @@ data class Setup(
 
     fun ofKind(kind: EquipmentKind): List<Equipment> = equipment.filter { it.kind == kind }
 
-    val hasGoPro: Boolean get() = equipment.any { it.model.isGoPro }
+    val hasGoPro: Boolean get() = equipment.any { it.model.actionCamera }
 
     fun active(): ActiveSession {
         val gnss = equipment(session.gnssId)?.takeIf { it.kind == EquipmentKind.GNSS }

@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.gopro.scanGoPros
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
+import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.shell.AddEquipmentScreen
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.CarScreen
@@ -118,11 +119,7 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
     AddEquipmentScreen(
         nearby = found.filter { it.address !in listed }.sortedByDescending { it.bars },
         searching = searching,
-        withoutBluetooth = buildList {
-            if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
-            add(EquipmentModel.GOPRO_FILES)
-            if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
-        },
+        withoutBluetooth = withoutBluetooth(setup),
         busyAddress = busy,
         error = error,
         onAddNearby = { d ->
@@ -222,4 +219,15 @@ internal fun CarRoute(nav: NavHostController, repo: SetupRepo, id: String) {
         },
         onBack = { nav.popBackStack() },
     )
+}
+
+/**
+ * What can be added without Bluetooth: the phone camera and the demo receiver once, cameras run by
+ * hand any number of times.
+ */
+private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
+    if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
+    add(EquipmentModel.GOPRO_FILES)
+    add(EquipmentModel.CAMERA_FILES)
+    if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
 }

@@ -54,6 +54,8 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.PHONE_CAMERA -> "Records video with each session it is turned on for."
     EquipmentModel.GOPRO -> "Starts and stops with each session it is turned on for."
     EquipmentModel.GOPRO_FILES -> "Start it by hand. Add its videos to the session afterwards."
+    EquipmentModel.CAMERA_FILES ->
+        "Start it by hand. Add its MP4 videos to the session afterwards; they are lined up by the camera's clock."
 }
 
 /**

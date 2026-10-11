@@ -19,6 +19,7 @@ internal fun WithoutBluetoothSection(models: List<EquipmentModel>, onAdd: (Equip
 
 private fun withoutBluetoothNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.GOPRO_FILES -> "HERO8 or older, MAX"
+    EquipmentModel.CAMERA_FILES -> "DJI Action, Insta360, Garmin and others"
     EquipmentModel.DEMO_GNSS -> "For trying the app"
     EquipmentModel.PHONE_CAMERA -> "Built in"
     else -> ""
