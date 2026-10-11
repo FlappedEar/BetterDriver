@@ -89,12 +89,14 @@ fun computeTheoreticalBest(approved: ApprovedSegments, population: List<LapSecto
     )
 }
 
-/** One lap of a population: its recording, its timed span and its identity. */
+/** One lap of a population: its recording, its timed span, its identity and its run. */
 data class PopulationLap(
     val session: TelemetrySession,
     val start: Double,
     val end: Double,
     val reference: Any?,
+    /** The recording it comes from; a run's fastest lap stands for it in time-loss ranking. */
+    val runId: String = "",
 )
 
 /** Sector times of a population on one shared axis, and their theoretical best. */

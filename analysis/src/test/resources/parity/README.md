@@ -3,5 +3,5 @@ Copied from FlappedEar Telemetry (https://github.com/FlappedEar/Telemetry, Apach
 files are synthetic; the JSON files are the output of FlappedEar Overlays' C++ over them.
 
 `segments_reference.json` and `theoretical_best_reference.json` are trimmed to what this port
-checks: the segment-storage results (random ids, approval), the published summary, time loss and
-consistency are left out.
+checks: the segment-storage results (random ids, approval) and the published summary's track map
+are left out, and lap references are kept only as labels.

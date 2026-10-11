@@ -26,22 +26,28 @@ internal val PreviewUi = AnalysisUi(
     sectors = listOf(
         SectorRow(
             "Corner 1", corner = true, bestSeconds = 3.39, bestLapNumber = 2,
-            lapSeconds = 3.52, lossSeconds = 0.13,
+            lapSeconds = 3.52, lossSeconds = 0.13, spreadSeconds = 0.09,
         ),
         SectorRow(
             "Straight 1", corner = false, bestSeconds = 1.33, bestLapNumber = 3,
-            lapSeconds = 1.34, lossSeconds = 0.01,
+            lapSeconds = 1.34, lossSeconds = 0.01, spreadSeconds = 0.02,
         ),
         SectorRow(
             "Corners 2–3", corner = true, bestSeconds = 3.53, bestLapNumber = 1,
-            lapSeconds = 3.81, lossSeconds = 0.28,
+            lapSeconds = 3.81, lossSeconds = 0.28, spreadSeconds = 0.17,
         ),
         SectorRow(
             "Straight 2", corner = false, bestSeconds = 3.51, bestLapNumber = 2,
-            lapSeconds = 3.52, lossSeconds = 0.01,
+            lapSeconds = 3.52, lossSeconds = 0.01, spreadSeconds = 0.04,
         ),
     ),
     sectorsNote = null,
+    gains = listOf(GainRow("Corners 2–3", 0.21, 1), GainRow("Corner 4", 0.12, 3)),
+    losses = listOf(
+        LossRow(0, 1, "Corner 4", 0.44),
+        LossRow(2, 3, "Corners 2–3", 0.28),
+        LossRow(0, 1, "Straight 3", 0.19),
+    ),
     compare = CompareUi(
         referenceNumber = 2,
         otherNumber = 3,
