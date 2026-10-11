@@ -30,6 +30,7 @@ import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -108,24 +109,27 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
             Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }, text = { Text(t.title) })
         }
     }
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-        when (AnalysisTab.entries[tab]) {
-            AnalysisTab.Summary -> {
-                Summary(ui, width)
-                if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, width)
+    // Each tab opens at its top: a new scroll state whenever the tab changes.
+    key(tab) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
+            when (AnalysisTab.entries[tab]) {
+                AnalysisTab.Summary -> {
+                    Summary(ui, width)
+                    if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, width)
+                }
+                AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
+                    ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
+                AnalysisTab.Laps -> Laps(ui, compare, width)
+                AnalysisTab.Corners -> Sectors(ui, width)
             }
-            AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
-                ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
-            AnalysisTab.Laps -> Laps(ui, compare, width)
-            AnalysisTab.Corners -> Sectors(ui, width)
         }
     }
 }
