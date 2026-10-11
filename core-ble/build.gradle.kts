@@ -23,5 +23,9 @@ kotlin {
 }
 
 dependencies {
+    // RaceBoxSource is a recorder DataSource and writes recorder channels.
+    api(project(":recorder"))
+    // The scanner and link state are Flows.
+    api(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
 }

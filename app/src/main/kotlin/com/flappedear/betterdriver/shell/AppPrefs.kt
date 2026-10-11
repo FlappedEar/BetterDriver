@@ -26,6 +26,14 @@ class AppPrefs(private val context: Context) {
     var car by mutableStateOf(prefs.getString(KeyCar, null) ?: Cars.first())
         private set
 
+    /** The paired RaceBox, or null. The recorder connects to it when a session starts. */
+    var raceBox by mutableStateOf(
+        prefs.getString(KeyRaceBoxAddress, null)?.let { address ->
+            PairedRaceBox(prefs.getString(KeyRaceBoxName, null).orEmpty(), address)
+        },
+    )
+        private set
+
     /** False when a required permission was revoked or expired (one-time grants) since setup. */
     fun hasRequiredPermissions(): Boolean = context.allGranted(requiredPermissions())
 
@@ -44,13 +52,19 @@ class AppPrefs(private val context: Context) {
         prefs.edit().putString(KeyCar, value).apply()
     }
 
+    fun updateRaceBox(value: PairedRaceBox) {
+        raceBox = value
+        prefs.edit().putString(KeyRaceBoxAddress, value.address).putString(KeyRaceBoxName, value.name).apply()
+    }
+
     /**
-     * Device states for the ready check. Bluetooth pairing is not built yet,
-     * so the RaceBox and the HERO11 always show as not paired for now. The
-     * phone camera shows as ready only while camera access is granted.
+     * Device states for the ready check. The RaceBox shows as paired once one
+     * is saved; it connects when a session starts. GoPro pairing is not built
+     * yet. The phone camera shows as ready only while camera access is granted.
      */
     fun devices(): List<DeviceStatus> = listOf(
-        DeviceStatus("RaceBox Micro", "RaceBox", "Not paired", DeviceState.Off),
+        raceBox?.let { DeviceStatus("RaceBox Micro", "RaceBox", "Paired", DeviceState.Ready) }
+            ?: DeviceStatus("RaceBox Micro", "RaceBox", "Not paired", DeviceState.Off),
         DeviceStatus("GoPro HERO11", "GoPro 11", "Not paired", DeviceState.Off),
         when {
             !phoneCamera -> DeviceStatus("Phone camera", "Phone cam", "Off", DeviceState.Off)
@@ -65,6 +79,8 @@ class AppPrefs(private val context: Context) {
         const val KeySetupDone = "setup_done"
         const val KeyPhoneCamera = "phone_camera"
         const val KeyCar = "car"
+        const val KeyRaceBoxAddress = "racebox_address"
+        const val KeyRaceBoxName = "racebox_name"
     }
 }
 

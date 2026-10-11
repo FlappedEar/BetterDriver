@@ -16,7 +16,13 @@ data class SetupStep(
 )
 
 /** A RaceBox found nearby. [bars] is signal strength from 0 to 4. */
-data class PairCandidate(val name: String, val serial: String, val bars: Int)
+data class PairCandidate(val name: String, val serial: String, val bars: Int, val address: String = "")
+
+/** The RaceBox saved at pairing: its advertised name and Bluetooth address. */
+data class PairedRaceBox(val name: String, val address: String) {
+    /** The serial part of the advertised name, e.g. "3241". */
+    val serial: String get() = name.substringAfterLast(' ', "")
+}
 
 /** Settings tabs (UI-15 option B). */
 enum class SettingsTab(val title: String) { Devices("Devices"), Car("Car"), Recording("Recording"), App("App") }

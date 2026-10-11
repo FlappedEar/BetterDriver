@@ -51,6 +51,7 @@ dependencies {
     implementation(project(":feature-track"))
     implementation(project(":feature-review"))
     implementation(project(":recorder"))
+    implementation(project(":core-ble"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
