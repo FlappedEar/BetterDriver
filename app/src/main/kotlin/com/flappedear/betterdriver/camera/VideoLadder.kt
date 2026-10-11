@@ -1,25 +1,23 @@
 package com.flappedear.betterdriver.camera
 
-/** Video resolutions, highest first. Maps to CameraX qualities in [PhoneCamera]. */
-enum class VideoResolution(val label: String) { UHD("4K"), FHD("1080p"), HD("720p") }
+import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.setup.VideoSize
 
-/** One phone video setting: a resolution and a frame rate. */
-data class VideoStep(val resolution: VideoResolution, val fps: Int) {
-    val label: String get() = "${resolution.label} · $fps"
-}
+/** The frame sizes phone video can use, largest first. 2.7K is a GoPro size only. */
+val PhoneSizes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
 
 /**
- * The settings phone video steps down through when the phone heats up (FBBD-21): resolution first,
- * then frame rate. Data recording is never reduced; only video is.
+ * The modes phone video steps down through when the phone heats up (FBBD-21), starting from the
+ * mode Arek chose (FBBD-88): at each size, the chosen rate and then 30 fps, then the next smaller
+ * size. So a phone without 60 fps at a size still records that size at 30 rather than a smaller
+ * one. It never goes above the chosen mode. A size the phone cannot use starts the ladder at 1080p.
  */
-val DefaultLadder = listOf(
-    VideoStep(VideoResolution.UHD, HighFps),
-    VideoStep(VideoResolution.FHD, HighFps),
-    VideoStep(VideoResolution.HD, HighFps),
-    VideoStep(VideoResolution.HD, LowFps),
-)
+fun ladderFrom(start: VideoMode): List<VideoMode> {
+    val size = start.size.takeIf { it in PhoneSizes } ?: VideoSize.FHD
+    val rates = if (start.fps > LowFps) listOf(start.fps, LowFps) else listOf(start.fps)
+    return PhoneSizes.dropWhile { it != size }.flatMap { s -> rates.map { VideoMode(s, it) } }
+}
 
-private const val HighFps = 60
 private const val LowFps = 30
 
 /**

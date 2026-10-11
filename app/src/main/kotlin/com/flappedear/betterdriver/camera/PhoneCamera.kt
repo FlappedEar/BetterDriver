@@ -2,12 +2,19 @@ package com.flappedear.betterdriver.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.params.StreamConfigurationMap
+import android.media.MediaCodec
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.StatFs
 import android.util.Range
+import android.util.Size
+import androidx.annotation.OptIn
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.DynamicRange
@@ -25,6 +32,8 @@ import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoSink
 import com.flappedear.betterdriver.recorder.video.VideoSource
+import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.setup.VideoSize
 import com.flappedear.betterdriver.video.VideoIndex
 import java.io.File
 
@@ -54,7 +63,8 @@ class PhoneCamera(
     private val lifecycle: LifecycleOwner,
     index: VideoIndex,
     private val audio: Boolean,
-    private val ladder: List<VideoStep> = DefaultLadder,
+    /** The chosen mode first, then the thermal step-downs ([ladderFrom]). */
+    private val ladder: List<VideoMode>,
 ) : VideoSource {
     private val dir: File = index.videoDir
     private val clips = ClipIndexer(index)
@@ -65,7 +75,7 @@ class PhoneCamera(
     private val power = context.getSystemService(PowerManager::class.java)
     private lateinit var sink: VideoSink
     private var provider: ProcessCameraProvider? = null
-    private var steps: List<VideoStep> = ladder
+    private var steps: List<VideoMode> = ladder
     private var policy = ThermalPolicy(ladder.size)
 
     private var recording: Recording? = null
@@ -128,23 +138,8 @@ class PhoneCamera(
         if (r != null) r.stop() else provider?.unbindAll()
     }
 
-    /** The ladder steps the back camera supports: its video qualities and frame-rate ranges. */
-    private fun supportedSteps(p: ProcessCameraProvider): List<VideoStep> {
-        val info: CameraInfo = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
-            ?: return emptyList()
-        val qualities = Recorder.getVideoCapabilities(info).getSupportedQualities(DynamicRange.SDR)
-        val ranges = info.supportedFrameRateRanges
-        return ladder.filter { step ->
-            quality(step.resolution) in qualities &&
-                (ranges.isEmpty() || ranges.any { it.lower <= step.fps && step.fps <= it.upper })
-        }
-    }
-
-    private fun quality(r: VideoResolution): Quality = when (r) {
-        VideoResolution.UHD -> Quality.UHD
-        VideoResolution.FHD -> Quality.FHD
-        VideoResolution.HD -> Quality.HD
-    }
+    /** The ladder steps the back camera supports. */
+    private fun supportedSteps(p: ProcessCameraProvider): List<VideoMode> = supportedPhoneModes(p, ladder)
 
     /** Binds the camera at [stepIndex] of [steps] and starts the next file. Falls down the ladder if binding fails. */
     @SuppressLint("MissingPermission") // Audio is only enabled when RECORD_AUDIO is granted (CameraService).
@@ -155,7 +150,7 @@ class PhoneCamera(
         policy.reset(stepIndex)
         try {
             val recorder = Recorder.Builder()
-                .setQualitySelector(QualitySelector.from(quality(step.resolution)))
+                .setQualitySelector(QualitySelector.from(phoneQuality(step.size)))
                 .build()
             val capture = VideoCapture.Builder(recorder)
                 .setTargetFrameRate(Range(step.fps, step.fps))
@@ -266,4 +261,45 @@ class PhoneCamera(
     private companion object {
         const val Tag = "PhoneCamera"
     }
+}
+
+/**
+ * The [modes] the back camera reports it can record: its CameraX video qualities, a frame-rate
+ * range covering the rate, and a minimum frame duration at that quality's own frame size short
+ * enough for the rate (Camera2 stream configuration), so 60 fps offered only at 1080p is not
+ * offered at 4K. CameraX 1.4 still treats the rate as a target, so a phone may record at another
+ * rate; [PhoneCamera] falls to the next step when binding fails. Used by the camera and by the
+ * screen where Arek picks a mode, so both offer the same list.
+ */
+@OptIn(ExperimentalCamera2Interop::class)
+fun supportedPhoneModes(p: ProcessCameraProvider, modes: List<VideoMode>): List<VideoMode> {
+    val info: CameraInfo = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
+        ?: return emptyList()
+    val qualities = Recorder.getVideoCapabilities(info).getSupportedQualities(DynamicRange.SDR)
+    val ranges = info.supportedFrameRateRanges
+    val streams = Camera2CameraInfo.from(info)
+        .getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+    return modes.filter { mode ->
+        val quality = phoneQuality(mode.size)
+        mode.size in PhoneSizes &&
+            quality in qualities &&
+            (ranges.isEmpty() || ranges.any { it.lower <= mode.fps && mode.fps <= it.upper }) &&
+            fastEnough(streams, QualitySelector.getResolution(info, quality), mode.fps)
+    }
+}
+
+/** Whether the camera can deliver [fps] at [size]; unknown (no map, no size) counts as yes. */
+private fun fastEnough(streams: StreamConfigurationMap?, size: Size?, fps: Int): Boolean {
+    if (streams == null || size == null) return true
+    val minNanos = runCatching { streams.getOutputMinFrameDuration(MediaCodec::class.java, size) }.getOrNull()
+    return minNanos == null || minNanos <= 0 || minNanos <= NanosPerSecond / fps
+}
+
+private const val NanosPerSecond = 1_000_000_000L
+
+/** The CameraX quality for a phone frame size; 2.7K is not a phone size and maps to 1080p. */
+internal fun phoneQuality(size: VideoSize): Quality = when (size) {
+    VideoSize.UHD -> Quality.UHD
+    VideoSize.QHD, VideoSize.FHD -> Quality.FHD
+    VideoSize.HD -> Quality.HD
 }

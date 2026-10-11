@@ -16,6 +16,8 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.setup.VideoSize
 import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.video.VideoSessionContext
 import java.io.File
@@ -93,7 +95,12 @@ class GoPros private constructor(private val context: Context) {
         val hero11 = setup.forSession().active().appCameras.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }
         val address = hero11?.address ?: return
         if (!bluetoothGranted()) return
-        val hero = Hero11Source(CameraIds.GOPRO_HERO11, GoProBleLink(context, address), scope)
+        val hero = Hero11Source(
+            CameraIds.GOPRO_HERO11,
+            GoProBleLink(context, address),
+            scope,
+            video = hero11.videoMode?.let(::hero11Video),
+        )
         source = hero
         // Logged for the real-camera test (FBBD-82); the track screen does not show the GoPro yet.
         sourceLog = scope.launch { hero.state.collect { android.util.Log.i(Tag, "HERO11: $it") } }
@@ -213,3 +220,22 @@ class GoPros private constructor(private val context: Context) {
         }
     }
 }
+
+/** Open GoPro setting values for a HERO11 mode (FBBD-88); null for a mode the HERO11 lacks. */
+internal fun hero11Video(mode: VideoMode): Hero11Video? {
+    val resolution = when (mode.size) {
+        VideoSize.UHD -> OpenGoPro.Setting.RES_4K
+        VideoSize.QHD -> OpenGoPro.Setting.RES_2_7K
+        VideoSize.FHD -> OpenGoPro.Setting.RES_1080
+        VideoSize.HD -> null
+    }
+    val fps = when (mode.fps) {
+        HighFps -> OpenGoPro.Setting.FPS_60
+        LowFps -> OpenGoPro.Setting.FPS_30
+        else -> null
+    }
+    return if (resolution != null && fps != null) Hero11Video(resolution, fps, mode.label, mode.size.label) else null
+}
+
+private const val HighFps = 60
+private const val LowFps = 30

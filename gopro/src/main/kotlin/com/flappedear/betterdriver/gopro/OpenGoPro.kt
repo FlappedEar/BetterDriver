@@ -149,6 +149,29 @@ object OpenGoPro {
 
     const val KeepAliveIntervalMillis = 3_000L
 
+    /**
+     * Setting ids and values (open_gopro 0.22.0, models/constants/settings.py). Which values a
+     * HERO11 Black takes is from the Open GoPro openapi.json (gh-pages, Setting_2 and Setting_3
+     * x-option-metadata): resolutions 1, 4, 6, 9, 18, 26, 27, 28, 100, no 720p (12).
+     */
+    object Setting {
+        /**
+         * Set Setting: the setting id, then a 1-byte value, written to the settings characteristic.
+         * The camera answers on the settings response with the setting id and a status.
+         */
+        fun set(id: Int, value: Int) = Request(GoProUuids.SETTINGS, byteArrayOf(id.toByte(), 0x01, value.toByte()))
+
+        const val VIDEO_RESOLUTION = 2
+        const val FRAMES_PER_SECOND = 3
+
+        const val RES_4K = 1
+        const val RES_2_7K = 4
+        const val RES_1080 = 9
+
+        const val FPS_60 = 5
+        const val FPS_30 = 8
+    }
+
     /** Get Status Values, query 0x13, for [ids]. */
     fun statuses(vararg ids: Int) = Request(GoProUuids.QUERY, byteArrayOf(0x13) + ids.map { it.toByte() })
 
