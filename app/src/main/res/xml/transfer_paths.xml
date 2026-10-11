@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Session bundles and track files prepared for sending (FBBD-23, FBBD-80). Only this cache folder is shared. -->
+<paths>
+    <cache-path name="outgoing" path="outgoing/" />
+</paths>

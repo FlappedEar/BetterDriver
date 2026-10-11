@@ -50,6 +50,8 @@ import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
+import com.flappedear.betterdriver.sharing.FollowTransfers
+import com.flappedear.betterdriver.sharing.rememberSessionTransfer
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.tracks.Tracks
 import com.flappedear.betterdriver.update.AppUpdates
@@ -97,6 +99,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     // Setup again if a required permission was revoked or a one-time grant expired.
     val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
     FollowRecording(nav, recorder, sessions)
+    FollowTransfers(nav, recorder)
     val updates = remember { AppUpdates.get(context) }
     FollowUpdates(updates, recorder, sessions)
     val updateDot = hasUpdate(updates.state) && !updatesBlocked(recorder, sessions)
@@ -263,9 +266,11 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
     }
     LaunchedEffect(Unit) { sessions.refresh() }
     val updates = remember(context) { AppUpdates.get(context) }
-    val updatesBlocked = updatesBlocked(RecorderClient.get(context), sessions)
+    val recorder = RecorderClient.get(context)
+    val updatesBlocked = updatesBlocked(recorder, sessions)
     SessionsScreen(
         header = { UpdateCard(updates, updatesBlocked) },
+        transfer = rememberSessionTransfer(recording = recorder.state.recording || recorder.state.starting),
         sessions = sessions.list,
         exports = sessions.exports,
         withVideo = sessions.withVideo,
