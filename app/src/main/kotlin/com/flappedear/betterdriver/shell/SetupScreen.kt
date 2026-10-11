@@ -36,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 
-/** Runtime permissions the app asks for: location, nearby devices, camera and mic, notifications. */
+/** Permissions needed to log a session: location (GNSS) and nearby devices (RaceBox). */
 internal fun requiredPermissions(): List<String> = buildList {
     add(Manifest.permission.ACCESS_FINE_LOCATION)
     add(Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -44,6 +44,10 @@ internal fun requiredPermissions(): List<String> = buildList {
         add(Manifest.permission.BLUETOOTH_SCAN)
         add(Manifest.permission.BLUETOOTH_CONNECT)
     }
+}
+
+/** Asked for with the required ones, but setup can finish without them (phone video, mic, notifications). */
+internal fun optionalPermissions(): List<String> = buildList {
     add(Manifest.permission.CAMERA)
     add(Manifest.permission.RECORD_AUDIO)
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -69,18 +73,21 @@ fun SetupScreen(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
-    val permissions = remember { requiredPermissions() }
-    var granted by remember { mutableStateOf(context.allGranted(permissions)) }
+    val required = remember { requiredPermissions() }
+    val all = remember { required + optionalPermissions() }
+    var granted by remember { mutableStateOf(context.allGranted(required)) }
+    var allGranted by remember { mutableStateOf(context.allGranted(all)) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        granted = context.allGranted(permissions)
+        granted = context.allGranted(required)
+        allGranted = context.allGranted(all)
     }
     val steps = listOf(
         SetupStep(
             "Permissions",
-            "Location, nearby devices, camera and mic, notifications",
+            "Location and nearby devices · camera, mic and notifications optional",
             done = granted,
-            action = if (granted) null else "Allow",
-            onAction = { launcher.launch(permissions.toTypedArray()) },
+            action = if (allGranted) null else "Allow",
+            onAction = { launcher.launch(all.toTypedArray()) },
         ),
         SetupStep("RaceBox Micro", "Needed for lap timing", done = false, action = "Pair", onAction = onPair),
         SetupStep(
@@ -115,7 +122,9 @@ internal fun SetupChecklist(
             Button(onClick = onDone, enabled = canFinish, modifier = Modifier.fillMaxWidth().height(56.dp)) {
                 Text("Done", style = MaterialTheme.typography.titleMedium)
             }
-            if (!canFinish) DimText("Allow the permissions first.", Modifier.align(Alignment.CenterHorizontally))
+            if (!canFinish) {
+                DimText("Allow location and nearby devices first.", Modifier.align(Alignment.CenterHorizontally))
+            }
         }
     }
 }
