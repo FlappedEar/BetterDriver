@@ -50,6 +50,7 @@ dependencies {
     implementation(project(":core-ui"))
     implementation(project(":feature-track"))
     implementation(project(":feature-review"))
+    implementation(project(":feature-analysis"))
     implementation(project(":recorder"))
     implementation(project(":video"))
     implementation(project(":gopro"))

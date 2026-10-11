@@ -69,6 +69,7 @@ fun SessionsScreen(
     deleting: SessionDeleting = SessionDeleting(),
     transfer: SessionTransferState = SessionTransferState(),
     coach: SessionCoach = SessionCoach(),
+    onAnalyse: (SessionSummary) -> Unit = {},
     header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -90,18 +91,14 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, coach)
+                    SessionCard(
+                        s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach,
+                    )
                 }
             }
         }
     }
 }
-
-/** Cue counts of coached sessions, by id, and opening one's cue review (FBBD-99). */
-data class SessionCoach(
-    val cues: Map<String, Int> = emptyMap(),
-    val onOpen: (SessionSummary) -> Unit = {},
-)
 
 /** Delete state and action for the whole Sessions list (FBBD-90). */
 data class SessionDeleting(
@@ -121,6 +118,7 @@ private fun SessionCard(
     goPro: GoProCardState,
     deleting: SessionDeleting,
     transfer: SessionTransferState,
+    onAnalyse: (SessionSummary) -> Unit,
     coach: SessionCoach,
 ) {
     val c = TrackTheme.colors
@@ -143,8 +141,9 @@ private fun SessionCard(
         }
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
+        AnalysisLink(s, delete, onAnalyse)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
-        CoachRow(s, coach)
+        SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
         val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
@@ -173,13 +172,6 @@ private fun SessionCard(
     }
 }
 
-/** "Coach review · 12 cues" on a session the coach spoke in (FBBD-99). */
-@Composable
-private fun CoachRow(s: SessionSummary, coach: SessionCoach) {
-    val n = coach.cues[s.id] ?: return
-    ListRow("Coach review", if (n == 1) "1 cue" else "$n cues", onClick = { coach.onOpen(s) })
-}
-
 /** Delete, Share and Export at the bottom of a session card. */
 @Suppress("LongParameterList")
 @Composable
@@ -202,6 +194,13 @@ private fun CardButtons(
             Text(if (video) "Export VBO + video" else "Export VBO")
         }
     }
+}
+
+/** Opens lap analysis (FBBD-102): laps, theoretical best and lap comparison. */
+@Composable
+private fun AnalysisLink(s: SessionSummary, delete: DeleteState?, onAnalyse: (SessionSummary) -> Unit) {
+    if (s.state == SessionState.RECORDING || delete == DeleteState.Running) return
+    TextButton(onClick = { onAnalyse(s) }, contentPadding = PaddingValues(0.dp)) { Text("Lap analysis ›") }
 }
 
 /** The card's status line and whether it reports a failure; a delete outranks an export. */

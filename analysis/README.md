@@ -28,6 +28,12 @@ Kotlin file comes from.
   best, the fastest real time of each sector with the lap it came from.
 - **Session analysis** (`analyzeSession`): all of the above for one session, with segments taken
   from its fastest eligible lap. BetterDriver has no segment editor yet, so nothing is stored.
+  Without segments (a lap that cannot be split, or a line far from the other laps) the axis and
+  every lap's projection are still there for comparison.
+- **Recorded sessions** (`recorded`, FBBD-102): a recorder session as analysis input, with the
+  track's start/finish line as the start gate.
+- **Lap comparison** (`compare`, FBBD-102): two laps by distance on the session's axis, the time
+  delta and both speed traces, for the charts.
 
 ## Tests
 

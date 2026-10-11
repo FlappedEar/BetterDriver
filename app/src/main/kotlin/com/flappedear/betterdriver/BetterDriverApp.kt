@@ -38,6 +38,7 @@ import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.vboFileName
+import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
@@ -118,9 +119,8 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Drive) {
                 Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
             }
-            composable(Routes.Sessions) {
-                Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) { nav.navigate(Routes.cueReview(it)) } }
-            }
+            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) } }
+            analysisDestination(nav, padding)
             cueReview(nav, padding)
             composable(Routes.Settings) {
                 Box(Modifier.padding(padding)) {
@@ -248,7 +248,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
  * with video asks for a folder instead, because the VBO and its video files must sit side by side.
  */
 @Composable
-private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCueReview: (String) -> Unit) {
+private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -279,6 +279,7 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCueReview: (Str
         sessions = sessions.list,
         exports = sessions.exports,
         withVideo = sessions.withVideo,
+        onAnalyse = { s -> nav.navigate(Routes.sessionAnalysis(s.id)) },
         onExport = { s ->
             exporting = s.id
             if (s.id in sessions.withVideo) pickFolder.launch(null) else pickFile.launch(vboFileName(s))
@@ -301,7 +302,7 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCueReview: (Str
             states = sessions.deletes,
             onDelete = { s -> sessions.delete(s.id) },
         ),
-        coach = SessionCoach(sessions.cues) { s -> onCueReview(s.id) },
+        coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
     )
 }
 

@@ -31,4 +31,5 @@ include(
     ":core-ble",
     ":feature-track",
     ":feature-review",
+    ":feature-analysis",
 )
