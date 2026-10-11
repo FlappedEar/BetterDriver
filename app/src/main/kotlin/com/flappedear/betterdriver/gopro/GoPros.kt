@@ -15,7 +15,8 @@ import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionsDir
-import com.flappedear.betterdriver.shell.AppPrefs
+import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.video.VideoSessionContext
 import java.io.File
 import java.io.IOException
@@ -47,10 +48,11 @@ sealed interface GoProWork {
 /**
  * GoPro support in the UI process (FBBD-22).
  *
- * During a session it runs a [Hero11Source] for the paired HERO11: started when the recorder
- * reports a running session, stopped when that session ends. It lives here, not in the recorder
- * process, and every failure stays inside the source, so a GoPro problem never reaches the
- * recording (FBBD-69).
+ * During a session it runs a [Hero11Source] for the HERO11 turned on for that session on home
+ * (UI-36): started when the recorder reports a running session, stopped when that session ends. A
+ * HERO11 that is listed but turned off, or not listed at all, is never started (FBBD-83). It lives
+ * here, not in the recorder process, and every failure stays inside the source, so a GoPro problem
+ * never reaches the recording (FBBD-69).
  *
  * After a session it downloads the HERO11's files over the camera's Wi-Fi ([GoProDownloader]) and
  * adds HERO8 files the user picks ([GoProImporter]). Neither runs while a session records.
@@ -58,7 +60,7 @@ sealed interface GoProWork {
  */
 class GoPros private constructor(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val prefs = context.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE)
+    private val setup = SetupRepo.get(context)
 
     /** By session id. */
     val work = mutableStateMapOf<String, GoProWork>()
@@ -87,7 +89,8 @@ class GoPros private constructor(private val context: Context) {
 
     private fun begin(sessionId: String, startUtcMillis: Long, startNanos: Long) {
         liveSession = sessionId
-        val address = pairedAddress() ?: return
+        val hero11 = setup.setup.active().appCameras.firstOrNull { it.model == EquipmentModel.GOPRO_HERO11 }
+        val address = hero11?.address ?: return
         if (!bluetoothGranted()) return
         val hero = Hero11Source(CameraIds.GOPRO_HERO11, GoProBleLink(context, address), scope)
         source = hero
@@ -136,7 +139,7 @@ class GoPros private constructor(private val context: Context) {
     /** Downloads the HERO11 files of session [id] and lines them up (UI-31). */
     fun download(id: String) {
         if (recording || id in work) return
-        val address = pairedAddress() ?: return
+        val address = setup.hero11Address() ?: return
         work[id] = GoProWork.Downloading(1, 0, 0)
         problems.remove(id)
         scope.launch {
@@ -195,8 +198,6 @@ class GoPros private constructor(private val context: Context) {
         if (result.isNotEmpty()) problems[id] = result
         Sessions.get(context).refresh()
     }
-
-    private fun pairedAddress(): String? = prefs.getString(AppPrefs.KeyGoProAddress, null)
 
     private fun bluetoothGranted(): Boolean = Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
         ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) ==

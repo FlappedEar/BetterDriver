@@ -6,8 +6,23 @@ object Routes {
     const val Drive = "drive"
     const val Sessions = "sessions"
     const val Settings = "settings"
-    const val Pair = "pair"
-    const val PairGoPro = "pair/gopro"
+
+    /** Add equipment (UI-34 B): scan for a RaceBox or HERO11, or add one without Bluetooth. */
+    const val AddEquipment = "add-equipment"
+
+    /** One equipment item (UI-33 B): rename or remove. */
+    const val EquipmentPattern = "equipment/{id}"
+    const val EquipmentIdArg = "id"
+
+    fun equipment(id: String) = "equipment/$id"
+
+    /** A car (UI-35 B); [NewCar] adds one. */
+    const val CarPattern = "cars/{id}"
+    const val CarIdArg = "id"
+    const val NewCar = "new"
+
+    fun car(id: String) = "cars/$id"
+
     const val Track = "track"
     const val Tracks = "tracks"
 

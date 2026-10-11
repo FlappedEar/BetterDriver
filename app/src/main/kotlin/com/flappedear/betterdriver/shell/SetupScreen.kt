@@ -32,21 +32,25 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.setup.Setup
 
 /**
- * First run (UI-13 option B): one checklist page, steps in any order. Only
- * permissions are needed to start; the other steps are optional for now
- * because pairing is not built yet.
+ * First run (UI-13 option B): one checklist page, steps in any order. Only permissions are needed
+ * to finish. The other steps show what Arek has set up (FBBD-83); without a GNSS receiver home
+ * says so and START stays greyed out (UI-37 B).
  */
+@Suppress("LongParameterList") // One callback per step.
 @Composable
 fun SetupScreen(
-    prefs: AppPrefs,
-    onPair: () -> Unit,
+    setup: Setup,
+    onAddReceiver: () -> Unit,
     onCameras: () -> Unit,
     onCar: () -> Unit,
+    onAddCar: () -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val active = setup.active()
     val context = LocalContext.current
     val required = remember { requiredPermissions() }
     val all = remember { required + optionalPermissions() }
@@ -79,20 +83,26 @@ fun SetupScreen(
             onAction = { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) },
         ),
         SetupStep(
-            "RaceBox Micro",
-            prefs.raceBox?.let { "Paired · ${it.serial}" } ?: "Needed for lap timing",
-            done = prefs.raceBox != null,
-            action = "Pair",
-            onAction = onPair,
+            "GNSS receiver",
+            active.gnss?.name ?: "Needed for lap timing",
+            done = active.gnss != null,
+            action = if (active.gnss == null) "Add" else null,
+            onAction = onAddReceiver,
         ),
         SetupStep(
             "Cameras",
-            if (prefs.phoneCamera) "Phone camera on · GoPro optional" else "Phone camera, GoPro (optional)",
-            done = prefs.phoneCamera,
+            active.cameras.joinToString(", ") { it.name }.ifEmpty { "None (optional)" },
+            done = active.cameras.isNotEmpty(),
             action = "Set up",
             onAction = onCameras,
         ),
-        SetupStep("Car", "${prefs.car} (optional)", done = true, action = "Choose", onAction = onCar),
+        SetupStep(
+            "Car",
+            active.car?.name ?: "Optional",
+            done = active.car != null,
+            action = if (setup.cars.isEmpty()) "Add" else "Choose",
+            onAction = if (setup.cars.isEmpty()) onAddCar else onCar,
+        ),
     )
     SetupChecklist(steps, canFinish = granted, onDone = onDone, modifier = modifier)
 }
@@ -153,9 +163,9 @@ private fun SetupChecklistPreview() {
             SetupChecklist(
                 steps = listOf(
                     SetupStep("Permissions", "Location, nearby devices, camera", true, null) {},
-                    SetupStep("RaceBox Micro", "Needed for lap timing", false, "Pair") {},
-                    SetupStep("Cameras", "Phone camera, GoPro (optional)", false, "Set up") {},
-                    SetupStep("Car", "2023 Toyota Corolla (optional)", true, "Choose") {},
+                    SetupStep("GNSS receiver", "Needed for lap timing", false, "Add") {},
+                    SetupStep("Cameras", "Phone camera", true, "Set up") {},
+                    SetupStep("Car", "Optional", false, "Add") {},
                 ),
                 canFinish = true,
                 onDone = {},

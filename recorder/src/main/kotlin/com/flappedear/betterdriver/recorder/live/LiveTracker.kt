@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.SampleSet
+import kotlin.math.hypot
 
 private const val MicrosPerSecond = 1_000_000L
 
@@ -38,6 +39,8 @@ data class LiveSnapshot(
     /** Why the recording stopped, or null while it runs. */
     val stoppedReason: String?,
     val droppedSamples: Long,
+    /** Combined horizontal acceleration in g from the receiver's accelerometer; null without one. */
+    val gCombined: Double? = null,
 ) {
     val gnss: GnssState
         get() = when {
@@ -57,6 +60,8 @@ class LiveTracker(
     /** The recording's clock ([com.flappedear.betterdriver.recorder.Recording.nowMicros]). */
     private val nowMicros: () -> Long,
     private val droppedSamples: () -> Long = { 0L },
+    /** Channel ids of the receiver's X and Y acceleration in g, when it has an accelerometer. */
+    private val accelIds: Pair<Int, Int>? = null,
 ) : RecorderListener {
 
     private val recentFixes = ArrayDeque<Long>()
@@ -64,6 +69,8 @@ class LiveTracker(
     private var lastFixMicros: Long? = null
     private var sats: Int? = null
     private var speedKmh: Double? = null
+    private var accelX: Double? = null
+    private var accelY: Double? = null
     private var storageLowBytes: Long? = null
     private var stoppedReason: String? = null
 
@@ -76,6 +83,8 @@ class LiveTracker(
                 GnssChannels.LON.id -> lon = true
                 GnssChannels.SATS.id -> sats = v.value.toInt()
                 GnssChannels.SPEED_KMH.id -> speedKmh = v.value
+                accelIds?.first -> accelX = v.value
+                accelIds?.second -> accelY = v.value
             }
         }
         if (lat && lon) {
@@ -108,6 +117,7 @@ class LiveTracker(
             storageLowBytes = storageLowBytes,
             stoppedReason = stoppedReason,
             droppedSamples = droppedSamples(),
+            gCombined = accelX?.let { x -> accelY?.let { y -> hypot(x, y) } },
         )
     }
 

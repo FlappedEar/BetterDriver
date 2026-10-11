@@ -6,16 +6,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -28,82 +25,89 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.NumberFont
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.Setup
 
 /**
- * Home (UI-12 option B): devices as small status chips, one big start
- * button, and the last session below. Track detection is not built yet, so
- * the button says so instead of naming a track.
+ * Home (UI-12 option B, UI-36 option A): what this session uses as a card on top, one big start
+ * button, and the last session below. Without a GNSS receiver START is greyed out and a card
+ * offers to add one (UI-37 option B), so nothing is recorded from made-up positions. While a
+ * session records, START goes back to it.
  */
+@Suppress("LongParameterList") // Home links to every part of the session choice.
 @Composable
 fun HomeScreen(
-    devices: List<DeviceStatus>,
+    setup: Setup,
+    recording: Boolean,
     trackName: String?,
     lastSession: String?,
+    actions: SessionCardActions,
     onStart: () -> Unit,
+    onAddReceiver: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val canStart = recording || setup.active().gnss != null
     Column(modifier.fillMaxSize()) {
         ShellTopBar("BetterDriver")
         Column(
             Modifier.weight(1f).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            DeviceChips(devices)
+            SessionCard(setup, actions)
             Spacer(Modifier.weight(1f))
-            StartButton(trackName, onStart, Modifier.align(Alignment.CenterHorizontally))
+            StartButton(
+                if (canStart) trackName ?: "No track detected" else "No GNSS receiver",
+                enabled = canStart,
+                onStart = onStart,
+                modifier = Modifier.align(Alignment.CenterHorizontally),
+            )
             Spacer(Modifier.weight(1f))
-            ShellCard {
-                SectionLabel("Last session")
-                DimText(lastSession ?: "No sessions yet")
+            if (canStart) {
+                ShellCard {
+                    SectionLabel("Last session")
+                    DimText(lastSession ?: "No sessions yet")
+                }
+            } else {
+                ShellCard {
+                    Text(
+                        "Add a GNSS receiver to start",
+                        style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                    )
+                    DimText("Lap timing needs one. Add a RaceBox, or Demo GNSS to try the app.")
+                    FilledTonalButton(onClick = onAddReceiver) { Text("Add receiver") }
+                }
             }
             Spacer(Modifier.size(4.dp))
         }
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun DeviceChips(devices: List<DeviceStatus>) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        devices.forEach { d ->
-            Row(
-                Modifier
-                    .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(50))
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                StatusDot(d.state)
-                Text(d.shortName, style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
-@Composable
-private fun StartButton(trackName: String?, onStart: () -> Unit, modifier: Modifier = Modifier) {
+private fun StartButton(label: String, enabled: Boolean, onStart: () -> Unit, modifier: Modifier = Modifier) {
     val c = TrackTheme.colors
+    val fill = if (enabled) c.gain else MaterialTheme.colorScheme.outline
+    val text = if (enabled) c.onGain else MaterialTheme.colorScheme.onSurfaceVariant
     Box(
         modifier
             .size(190.dp)
-            .border(10.dp, c.gain.copy(alpha = 0.25f), CircleShape)
+            .border(10.dp, if (enabled) c.gain.copy(alpha = 0.25f) else fill, CircleShape)
             .padding(10.dp)
-            .background(c.gain, CircleShape)
-            .clickable(role = Role.Button, onClickLabel = "Start session", onClick = onStart),
+            .background(fill, CircleShape)
+            .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Start session", onClick = onStart),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
                 "START",
-                color = c.onGain,
+                color = text,
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontFamily = NumberFont,
                     fontWeight = FontWeight.Bold,
                 ),
             )
             Text(
-                trackName ?: "No track detected",
-                color = c.onGain,
+                label,
+                color = text,
                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
             )
         }
@@ -113,18 +117,40 @@ private fun StartButton(trackName: String?, onStart: () -> Unit, modifier: Modif
 @Preview(widthDp = 411, heightDp = 860)
 @Composable
 private fun HomeScreenPreview() {
+    var n = 0
+    val ids = { "id${++n}" }
+    val setup = Setup.fresh(ids)
+        .addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Micro 3241", "AA", ids)
+        .addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 1234", "BB", ids)
+        .addCar("FR-S", "2013 Scion FR-S", ids)
     BetterDriverTheme(darkTheme = true) {
         Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
             HomeScreen(
-                devices = listOf(
-                    DeviceStatus("RaceBox Micro", "RaceBox", "25 Hz", DeviceState.Ready),
-                    DeviceStatus("GoPro HERO11", "GoPro 11", "Ready", DeviceState.Ready),
-                    DeviceStatus("Phone camera", "Phone cam", "4K", DeviceState.Ready),
-                    DeviceStatus("GoPro HERO8", "GoPro 8", "Start by hand", DeviceState.Off),
-                ),
+                setup = setup,
+                recording = false,
                 trackName = "Tor Poznań",
                 lastSession = "Yesterday · 14 laps · best 1:52.41",
+                actions = SessionCardActions(),
                 onStart = {},
+                onAddReceiver = {},
+            )
+        }
+    }
+}
+
+@Preview(widthDp = 411, heightDp = 860)
+@Composable
+private fun HomeNothingSetUpPreview() {
+    BetterDriverTheme(darkTheme = true) {
+        Box(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
+            HomeScreen(
+                setup = Setup.fresh { "phone" },
+                recording = false,
+                trackName = null,
+                lastSession = null,
+                actions = SessionCardActions(),
+                onStart = {},
+                onAddReceiver = {},
             )
         }
     }

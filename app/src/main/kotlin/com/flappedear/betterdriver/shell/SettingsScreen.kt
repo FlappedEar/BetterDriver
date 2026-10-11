@@ -12,8 +12,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.PrimaryTabRow
-import androidx.compose.material3.RadioButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +25,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.setup.CarProfile
+import com.flappedear.betterdriver.setup.Equipment
+import com.flappedear.betterdriver.setup.Setup
 import java.util.Locale
 
 private const val BytesPerGb = 1_000_000_000.0
@@ -36,18 +37,21 @@ private const val BytesPerGb = 1_000_000_000.0
  * [initialTab] lets the first-run checklist open a tab directly.
  */
 @OptIn(ExperimentalMaterial3Api::class)
+@Suppress("LongParameterList") // One callback per place Settings links to.
 @Composable
 fun SettingsScreen(
-    prefs: AppPrefs,
+    setup: Setup,
     version: String,
     initialTab: SettingsTab,
-    onPair: () -> Unit,
+    onOpenEquipment: (Equipment) -> Unit,
+    onAddEquipment: () -> Unit,
+    onOpenCar: (CarProfile) -> Unit,
+    onAddCar: () -> Unit,
     onRunSetup: () -> Unit,
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     trackCount: Int = 0,
     onTracks: () -> Unit = {},
-    onPairGoPro: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -65,8 +69,8 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (SettingsTab.entries[tab]) {
-                SettingsTab.Devices -> DevicesTab(prefs, onPair, onPairGoPro)
-                SettingsTab.Car -> CarTab(prefs)
+                SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
+                SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
                 SettingsTab.Recording -> RecordingTab(trackCount, onTracks)
                 SettingsTab.App -> AppTab(version, onRunSetup)
             }
@@ -75,36 +79,8 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun DevicesTab(prefs: AppPrefs, onPair: () -> Unit, onPairGoPro: () -> Unit) {
-    ShellCard {
-        ListRow(
-            "RaceBox Micro",
-            prefs.raceBox?.let { "Paired · ${it.serial}" } ?: "Not paired",
-            divider = false,
-            onClick = onPair,
-        )
-        ListRow("Phone camera") {
-            Switch(checked = prefs.phoneCamera, onCheckedChange = prefs::updatePhoneCamera)
-        }
-        ListRow(
-            "GoPro HERO11",
-            prefs.goPro?.let { "Paired · ${it.serial}" } ?: "Not paired",
-            onClick = onPairGoPro,
-        )
-        ListRow("GoPro HERO8", "Start by hand")
-    }
-    DimText("GoPro HERO8 cannot be started from the app. Press record by hand; videos are lined up after the session.")
-}
-
-@Composable
-private fun CarTab(prefs: AppPrefs) {
-    ShellCard {
-        Cars.forEachIndexed { i, car ->
-            ListRow(car, divider = i > 0, onClick = { prefs.updateCar(car) }) {
-                RadioButton(selected = prefs.car == car, onClick = { prefs.updateCar(car) })
-            }
-        }
-    }
+private fun CarTab(setup: Setup, onOpenCar: (CarProfile) -> Unit, onAddCar: () -> Unit) {
+    CarCards(setup.cars, setup.session.carId, onOpenCar, onAddCar)
     ShellCard {
         ListRow("Units", "km/h, °C", divider = false)
         ListRow("Car data (OBD-II)", "Later")
@@ -139,14 +115,16 @@ private fun AppTab(version: String, onRunSetup: () -> Unit) {
 private fun SettingsScreenPreview() {
     BetterDriverTheme(darkTheme = true) {
         Box(Modifier.background(MaterialTheme.colorScheme.background)) {
-            Column(Modifier.padding(16.dp)) {
-                ShellCard {
-                    ListRow("RaceBox Micro", "Not paired", divider = false, onClick = {})
-                    ListRow("Phone camera") { Switch(checked = true, onCheckedChange = {}) }
-                    ListRow("GoPro HERO11", "Not paired")
-                    ListRow("GoPro HERO8", "Start by hand")
-                }
-            }
+            SettingsScreen(
+                setup = Setup.fresh { "phone" },
+                version = "0.1.4",
+                initialTab = SettingsTab.Devices,
+                onOpenEquipment = {},
+                onAddEquipment = {},
+                onOpenCar = {},
+                onAddCar = {},
+                onRunSetup = {},
+            )
         }
     }
 }

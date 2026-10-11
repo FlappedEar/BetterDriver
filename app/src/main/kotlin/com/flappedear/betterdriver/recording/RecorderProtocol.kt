@@ -20,6 +20,9 @@ internal object RecorderProtocol {
     const val EXTRA_RACEBOX_ADDRESS = "racebox_address"
     const val EXTRA_RACEBOX_NAME = "racebox_name"
 
+    /** True when the session uses Demo GNSS instead of a RaceBox (FBBD-83). */
+    const val EXTRA_GNSS_DEMO = "gnss_demo"
+
     /** Client to service: start sending updates to msg.replyTo. */
     const val MSG_REGISTER = 1
     const val MSG_UNREGISTER = 2
@@ -75,6 +78,7 @@ internal object RecorderProtocol {
     private const val STORAGE_LOW = "storageLowBytes"
     private const val STOPPED = "stoppedReason"
     private const val DROPPED = "droppedSamples"
+    private const val G_COMBINED = "gCombined"
 
     private const val LAP = "timing.lap"
     private const val LAP_MS = "timing.lapMillis"
@@ -99,6 +103,7 @@ internal object RecorderProtocol {
         s.storageLowBytes?.let { putLong(STORAGE_LOW, it) }
         s.stoppedReason?.let { putString(STOPPED, it) }
         putLong(DROPPED, s.droppedSamples)
+        s.gCombined?.let { putDouble(G_COMBINED, it) }
     }
 
     /** Null for an idle service (no session id). */
@@ -116,6 +121,7 @@ internal object RecorderProtocol {
             storageLowBytes = if (b.containsKey(STORAGE_LOW)) b.getLong(STORAGE_LOW) else null,
             stoppedReason = b.getString(STOPPED),
             droppedSamples = b.getLong(DROPPED),
+            gCombined = if (b.containsKey(G_COMBINED)) b.getDouble(G_COMBINED) else null,
         )
     }
 

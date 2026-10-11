@@ -8,8 +8,11 @@ import com.flappedear.betterdriver.feature.track.TrackScreenState
 import com.flappedear.betterdriver.feature.track.TrackTile
 import com.flappedear.betterdriver.feature.track.withTiming
 import com.flappedear.betterdriver.recorder.live.GnssState
+import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.setup.TrackChannel
+import com.flappedear.betterdriver.timing.live.LiveTimingState
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -25,9 +28,10 @@ private const val NoValue = "–"
 /**
  * Track screen values from the recorder. Laps, delta and sectors come from live timing, which runs
  * in the recorder process once the session is at a saved track with lines (FBBD-12); until then,
- * and for coach cues, which are not built yet, those slots show their empty state.
+ * and for coach cues, which are not built yet, those slots show their empty state. [tiles] are the
+ * session's tiles (UI-38 B), already limited to what its receiver can fill.
  */
-fun liveTrackState(state: RecorderState): TrackScreenState {
+fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreenState {
     val live = state.live
     val gnss = if (live == null) {
         StatusItem("GNSS", NoValue, ok = false)
@@ -51,15 +55,17 @@ fun liveTrackState(state: RecorderState): TrackScreenState {
         lastMillis = null,
         bestMillis = null,
         sectors = listOf(SectorState("S1", null, current = true), SectorState("S2", null), SectorState("S3", null)),
-        tiles = listOf(
-            TrackTile("Speed", live?.speedKmh?.roundToInt()?.toString() ?: NoValue, "km/h"),
-            TrackTile("G", NoValue, "g"),
-            TrackTile("Lap", timing?.lapNumber?.takeIf { it > 0 }?.toString() ?: NoValue, ""),
-        ),
+        tiles = tiles.map { ch -> TrackTile(ch.label, tileValue(ch, live, timing) ?: NoValue, ch.unit) },
         coachCorner = null,
         coachCue = null,
     )
     return if (timing == null) screen else screen.withTiming(timing)
+}
+
+private fun tileValue(ch: TrackChannel, live: LiveSnapshot?, timing: LiveTimingState?): String? = when (ch) {
+    TrackChannel.SPEED -> live?.speedKmh?.roundToInt()?.toString()
+    TrackChannel.G -> live?.gCombined?.let { String.format(Locale.ROOT, "%.2f", it) }
+    TrackChannel.LAP -> timing?.lapNumber?.takeIf { it > 0 }?.toString()
 }
 
 /** The one interruption on the track screen (UI-08): only when recording is not as it should be. */
