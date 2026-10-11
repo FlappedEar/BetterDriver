@@ -17,10 +17,17 @@ import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
+import com.flappedear.betterdriver.gopro.GoProRecordings
+import com.flappedear.betterdriver.shell.GoProClips
+import com.flappedear.betterdriver.shell.SessionGoPro
+import com.flappedear.betterdriver.video.Alignment
+import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.ClipStatus
 import com.flappedear.betterdriver.video.VideoIndex
+import com.flappedear.betterdriver.video.VideoSourceKind
 import java.io.File
 import java.io.IOException
+import java.util.Locale
 import java.util.concurrent.Executors
 
 /** Export progress of one session, shown on its card. */
@@ -45,6 +52,10 @@ class Sessions private constructor(private val context: Context) {
 
     /** Ids of sessions with video files, which export as VBO plus video (FBBD-25). */
     var withVideo by mutableStateOf<Set<String>>(emptySet())
+        private set
+
+    /** GoPro video of each session, by id (FBBD-22). */
+    var goPro by mutableStateOf<Map<String, SessionGoPro>>(emptyMap())
         private set
 
     init {
@@ -147,9 +158,11 @@ class Sessions private constructor(private val context: Context) {
         val video = sessions.filter { s ->
             File(s.dir, VideoFiles.DIR).listFiles()?.any(::isVideoFile) == true
         }.map { it.id }.toSet()
+        val goPros = sessions.associate { it.id to goProOf(it.dir) }
         main.post {
             list = sessions
             withVideo = video
+            goPro = goPros
         }
     }
 
@@ -167,6 +180,39 @@ class Sessions private constructor(private val context: Context) {
         }
     }
 }
+
+/** What a session holds from GoPros: HERO11 files still on the camera, and lined-up clips per camera. */
+private fun goProOf(dir: File): SessionGoPro {
+    val clips = try {
+        VideoIndex(dir).clips().filter { it.status == ClipStatus.LOCAL }
+    } catch (e: IOException) {
+        android.util.Log.w("Sessions", "unreadable clip index in $dir", e)
+        emptyList()
+    }
+    fun of(kind: VideoSourceKind) = clips.filter { it.kind == kind }.takeIf { it.isNotEmpty() }?.let { own ->
+        val worst = own.maxBy { it.alignment.uncertaintyUs }.alignment
+        val byGps = worst.method == AlignmentMethod.GPS_MATCH || worst.method == AlignmentMethod.GPS_UTC
+        GoProClips(own.size, alignmentText(worst), byGps)
+    }
+    val onCamera = GoProRecordings(File(dir, VideoFiles.DIR)).all().any { !it.downloaded }
+    return SessionGoPro(onCamera, of(VideoSourceKind.GOPRO_HERO11), of(VideoSourceKind.GOPRO_HERO8))
+}
+
+/** How a clip was placed, for its card: "by GPS ±0.05 s". */
+internal fun alignmentText(a: Alignment): String {
+    val how = when (a.method) {
+        AlignmentMethod.GPS_MATCH, AlignmentMethod.GPS_UTC -> "by GPS"
+        AlignmentMethod.COMMAND_ACK -> "by start time"
+        AlignmentMethod.CAMERA_CLOCK -> "by camera clock"
+        AlignmentMethod.CAPTURE_CLOCK -> "by phone clock"
+        AlignmentMethod.MANUAL -> "by hand"
+    }
+    val seconds = a.uncertaintyUs / MicrosPerSecond
+    val format = if (seconds < 1) "%.2f s" else "%.0f s"
+    return "$how ±" + String.format(Locale.ROOT, format, seconds)
+}
+
+private const val MicrosPerSecond = 1_000_000.0
 
 private fun isVideoFile(f: File) = f.isFile && f.length() > 0 && f.extension.equals("mp4", ignoreCase = true)
 

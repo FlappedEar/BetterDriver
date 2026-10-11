@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Plain HTTP is allowed only to the GoPro's own address on its Wi-Fi access point, where the
+    camera serves its media (http://10.5.5.9:8080, Open GoPro HTTP API). Everything else stays HTTPS.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.5.5.9</domain>
+    </domain-config>
+</network-security-config>

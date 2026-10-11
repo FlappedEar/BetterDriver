@@ -24,5 +24,11 @@ data class PairedRaceBox(val name: String, val address: String) {
     val serial: String get() = name.substringAfterLast(' ', "")
 }
 
+/** A paired GoPro HERO11. [name] is its advertised name, such as "GoPro 1234". */
+data class PairedGoPro(val name: String, val address: String) {
+    /** The part of the advertised name after "GoPro", e.g. "1234". */
+    val serial: String get() = name.removePrefix("GoPro").trim()
+}
+
 /** Settings tabs (UI-15 option B). */
 enum class SettingsTab(val title: String) { Devices("Devices"), Car("Car"), Recording("Recording"), App("App") }

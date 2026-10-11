@@ -7,6 +7,7 @@ object Routes {
     const val Sessions = "sessions"
     const val Settings = "settings"
     const val Pair = "pair"
+    const val PairGoPro = "pair/gopro"
     const val Track = "track"
     const val Tracks = "tracks"
 

@@ -47,6 +47,7 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     trackCount: Int = 0,
     onTracks: () -> Unit = {},
+    onPairGoPro: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -64,7 +65,7 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (SettingsTab.entries[tab]) {
-                SettingsTab.Devices -> DevicesTab(prefs, onPair)
+                SettingsTab.Devices -> DevicesTab(prefs, onPair, onPairGoPro)
                 SettingsTab.Car -> CarTab(prefs)
                 SettingsTab.Recording -> RecordingTab(trackCount, onTracks)
                 SettingsTab.App -> AppTab(version, onRunSetup)
@@ -74,7 +75,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun DevicesTab(prefs: AppPrefs, onPair: () -> Unit) {
+private fun DevicesTab(prefs: AppPrefs, onPair: () -> Unit, onPairGoPro: () -> Unit) {
     ShellCard {
         ListRow(
             "RaceBox Micro",
@@ -85,7 +86,11 @@ private fun DevicesTab(prefs: AppPrefs, onPair: () -> Unit) {
         ListRow("Phone camera") {
             Switch(checked = prefs.phoneCamera, onCheckedChange = prefs::updatePhoneCamera)
         }
-        ListRow("GoPro HERO11", "Not paired")
+        ListRow(
+            "GoPro HERO11",
+            prefs.goPro?.let { "Paired · ${it.serial}" } ?: "Not paired",
+            onClick = onPairGoPro,
+        )
         ListRow("GoPro HERO8", "Start by hand")
     }
     DimText("GoPro HERO8 cannot be started from the app. Press record by hand; videos are lined up after the session.")
