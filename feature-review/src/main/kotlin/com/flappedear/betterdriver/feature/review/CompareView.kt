@@ -100,7 +100,7 @@ internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit,
                     LapPane(c.b, "B", LapColors.b, pb, Modifier.weight(1f).fillMaxWidth())
                 }
                 Column(Modifier.weight(1f).fillMaxHeight()) {
-                    TransportRow(c, st, stacked = true)
+                    TransportRow(c, st)
                     LapMap(c, st::cursor, Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.height(12.dp))
                     DeltaChart(c, st::cursorFractions, st.scrub, Modifier.fillMaxWidth().height(ChartHeight))
@@ -211,31 +211,17 @@ private fun LapPane(l: ReviewLap, letter: String, color: Color, player: LapVideo
     }
 }
 
-/** Play, speed and the readout; [stacked] puts the readout under the buttons, for a narrow column. */
+/** Play and speed on one row, the readout under them, so it has the full width on a phone too. */
 @Composable
-private fun TransportRow(c: Comparison, st: ReviewTransport, stacked: Boolean = false) {
-    val buttons = @Composable {
-        FilledTonalButton(onClick = st::playPause, modifier = Modifier.width(104.dp)) {
-            Text(if (st.playing) "Pause" else "Play")
-        }
-        TextButton(onClick = st::nextSpeed) { Text(SpeedLabels[Speeds.indexOf(st.speed)]) }
-    }
-    if (stacked) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                buttons()
+private fun TransportRow(c: Comparison, st: ReviewTransport) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FilledTonalButton(onClick = st::playPause, modifier = Modifier.width(104.dp)) {
+                Text(if (st.playing) "Pause" else "Play")
             }
-            Readout(c, st::cursor, Modifier.fillMaxWidth())
+            TextButton(onClick = st::nextSpeed) { Text(SpeedLabels[Speeds.indexOf(st.speed)]) }
         }
-    } else {
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            buttons()
-            Readout(c, st::cursor, Modifier.weight(1f))
-        }
+        Readout(c, st::cursor, Modifier.fillMaxWidth())
     }
 }
 
