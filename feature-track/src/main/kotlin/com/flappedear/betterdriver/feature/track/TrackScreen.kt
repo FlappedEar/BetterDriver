@@ -1,20 +1,29 @@
 package com.flappedear.betterdriver.feature.track
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -55,10 +64,12 @@ data class TrackScreenState(
 )
 
 /**
- * Track screen entry point used by the app. Keeps the screen on for the whole
- * outing and always uses the dark track theme. Live data is not wired yet, so
- * it shows [ExampleTrackState]. A long press anywhere stops the session; this
- * stop control is provisional until its design is approved.
+ * Track screen entry point used by the app. Keeps the screen on and in
+ * landscape for the whole outing, and always uses the dark track theme across
+ * the full window, system bar areas included. The caller must not pad it for
+ * insets; it pads its own content. Live data is not wired yet, so it shows
+ * [ExampleTrackState]. A long press anywhere stops the session; this stop
+ * control is provisional until its design is approved.
  */
 @Composable
 fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
@@ -67,12 +78,33 @@ fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
-    BetterDriverTheme(track = true) {
-        TrackScreenContent(
-            state = ExampleTrackState,
-            modifier = modifier.pointerInput(onStop) { detectTapGestures(onLongPress = { onStop() }) },
-        )
+    val activity = LocalContext.current.findActivity()
+    DisposableEffect(activity) {
+        val previous = activity?.requestedOrientation
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        onDispose {
+            // A rotation recreates the activity; restoring here would rotate it back in a loop.
+            if (activity != null && previous != null && !activity.isChangingConfigurations) {
+                activity.requestedOrientation = previous
+            }
+        }
     }
+    BetterDriverTheme(track = true) {
+        Box(modifier.fillMaxSize().background(TrackTheme.colors.background)) {
+            TrackScreenContent(
+                state = ExampleTrackState,
+                modifier = Modifier
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .pointerInput(onStop) { detectTapGestures(onLongPress = { onStop() }) },
+            )
+        }
+    }
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 /**

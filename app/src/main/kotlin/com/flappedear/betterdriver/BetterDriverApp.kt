@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -30,21 +31,21 @@ object Routes {
 fun BetterDriverApp(wide: Boolean) {
     val nav = rememberNavController()
     Scaffold { padding ->
-        NavHost(
-            navController = nav,
-            startDestination = Routes.Home,
-            modifier = Modifier.padding(padding),
-        ) {
+        // Insets are applied per destination: the track screen owns the full
+        // window so its dark background also fills the system bar areas.
+        NavHost(navController = nav, startDestination = Routes.Home) {
             composable(Routes.Home) {
-                HomeScreen(
-                    onStartSession = { nav.navigate(Routes.Track) },
-                    onReview = { nav.navigate(Routes.Review) },
-                    onSettings = { nav.navigate(Routes.Settings) },
-                )
+                Box(Modifier.padding(padding)) {
+                    HomeScreen(
+                        onStartSession = { nav.navigate(Routes.Track) },
+                        onReview = { nav.navigate(Routes.Review) },
+                        onSettings = { nav.navigate(Routes.Settings) },
+                    )
+                }
             }
             composable(Routes.Track) { TrackScreen(onStop = { nav.popBackStack() }) }
-            composable(Routes.Review) { ReviewScreen(wide = wide) }
-            composable(Routes.Settings) { SettingsScreen() }
+            composable(Routes.Review) { Box(Modifier.padding(padding)) { ReviewScreen(wide = wide) } }
+            composable(Routes.Settings) { Box(Modifier.padding(padding)) { SettingsScreen() } }
         }
     }
 }
