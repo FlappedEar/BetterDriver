@@ -28,6 +28,7 @@ import com.flappedear.betterdriver.shell.CalibrationMs
 import com.flappedear.betterdriver.shell.DiagnosticsView
 import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsScreen
 import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsUi
+import com.flappedear.betterdriver.shell.recordingRows
 import java.io.IOException
 import java.util.UUID
 import kotlinx.coroutines.delay
@@ -58,7 +59,7 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
     LaunchedEffect(address, recording, allowed) {
         while (true) {
             view = when {
-                recording -> DiagnosticsView.Recording
+                recording -> DiagnosticsView.Recording(recordingRows(recorder.state.live))
                 !allowed -> DiagnosticsView.NoPermission
                 else -> {
                     val s = diag.snapshot(SystemClock.elapsedRealtime())

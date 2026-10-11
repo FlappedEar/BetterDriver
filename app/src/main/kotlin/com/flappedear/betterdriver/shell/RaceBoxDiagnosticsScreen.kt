@@ -1,11 +1,15 @@
 package com.flappedear.betterdriver.shell
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -17,9 +21,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.core.ui.TrackTheme
 
 /**
- * RaceBox diagnostics (UI-39 option A): every value the RaceBox reports, in one live list.
+ * RaceBox diagnostics (UI-39 option A): every value the RaceBox reports, in one live list. While a
+ * session records, only what the recorder receives (UI-40 option B).
  * The screen only reads; it never changes a RaceBox setting.
  */
 @Composable
@@ -31,11 +37,7 @@ fun RaceBoxDiagnosticsScreen(view: DiagnosticsView, onBack: () -> Unit, onCalibr
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             when (view) {
-                DiagnosticsView.Recording -> Notice(
-                    "A session is recording",
-                    "The recorder is using the RaceBox. Diagnostics opens its own connection, so it waits " +
-                        "until the session stops. The track screen's status strip still shows rate and satellites.",
-                )
+                is DiagnosticsView.Recording -> Recording(view)
                 DiagnosticsView.NoPermission -> Notice(
                     "Bluetooth access needed",
                     "Allow Nearby devices for BetterDriver in Android settings to connect to the RaceBox.",
@@ -52,6 +54,21 @@ private fun Notice(title: String, text: String) {
         Text(title, style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
         DimText(text)
     }
+}
+
+@Composable
+private fun Recording(view: DiagnosticsView.Recording) {
+    ShellCard {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(10.dp).background(TrackTheme.colors.loss, CircleShape))
+            Text("Recording. Showing what the recorder receives.", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+    if (view.rows.isNotEmpty()) {
+        SectionLabel("From the recording", Modifier.padding(top = 8.dp, start = 4.dp))
+        ShellCard { view.rows.forEachIndexed { i, row -> ListRow(row.label, row.value, divider = i > 0) } }
+    }
+    DimText("Everything else is shown when no session is recording.", Modifier.padding(top = 8.dp, start = 4.dp))
 }
 
 @Composable

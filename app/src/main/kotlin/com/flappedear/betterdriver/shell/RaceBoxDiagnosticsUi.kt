@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsSnapshot
 import com.flappedear.betterdriver.core.ble.Vec3
 import com.flappedear.betterdriver.core.ble.RaceBoxPower
 import com.flappedear.betterdriver.core.ui.format.Minus
+import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import java.time.Instant
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -14,8 +15,11 @@ import java.util.Locale
 
 /** What the diagnostics screen shows (FBBD-89). */
 sealed interface DiagnosticsView {
-    /** A session is recording: the recorder owns the link, so nothing connects (UI-40 option A). */
-    data object Recording : DiagnosticsView
+    /**
+     * A session is recording: the recorder owns the link, so nothing connects. [rows] are what the
+     * recorder itself receives (UI-40 option B).
+     */
+    data class Recording(val rows: List<DiagRow>) : DiagnosticsView
 
     /** Bluetooth permission is missing. */
     data object NoPermission : DiagnosticsView
@@ -217,6 +221,23 @@ object RaceBoxDiagnosticsUi {
 }
 
 /** Fix status values of the data message (p. 5). */
+private const val MicrosPerSecond = 1_000_000.0
+
+/**
+ * What the recorder receives from the RaceBox during a session (UI-40 option B). The recorder does
+ * not pass the fix type to the screen, so the age of the last fix stands in for it.
+ */
+fun recordingRows(live: LiveSnapshot?): List<DiagRow> = live?.let {
+    listOf(
+        DiagRow("Rate", "${it.fixRateHz} Hz"),
+        DiagRow("Satellites", it.sats?.toString() ?: "None yet"),
+        DiagRow(
+            "Last fix",
+            it.lastFixAgeMicros?.let { age -> "${num(age / MicrosPerSecond, 1)} s ago" } ?: "None yet",
+        ),
+    )
+}.orEmpty()
+
 private const val FixNone = 0
 private const val Fix2D = 2
 private const val Fix3D = 3

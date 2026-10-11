@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsSnapshot
 import com.flappedear.betterdriver.core.ble.RaceBoxGnssConfig
 import com.flappedear.betterdriver.core.ble.RaceBoxPower
 import com.flappedear.betterdriver.core.ble.Vec3
+import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -97,5 +98,20 @@ class RaceBoxDiagnosticsUiTest {
         assertTrue(section.actionEnabled)
         val busy = RaceBoxDiagnosticsUi.sections(snapshot().copy(capturing = 40), streaming = true)
         assertFalse(busy.first { it.title == "Calibration" }.actionEnabled)
+    }
+
+    @Test
+    fun `during a session shows what the recorder receives`() {
+        val live = LiveSnapshot(
+            sessionId = "s", startUtcMillis = 0, elapsedMicros = 0, fixes = 100, fixRateHz = 25,
+            lastFixAgeMicros = 40_000, sats = 18, speedKmh = 0.0, storageLowBytes = null,
+            stoppedReason = null, droppedSamples = 0,
+        )
+        assertEquals(
+            listOf(DiagRow("Rate", "25 Hz"), DiagRow("Satellites", "18"), DiagRow("Last fix", "0.0 s ago")),
+            recordingRows(live),
+        )
+        assertEquals("None yet", recordingRows(live.copy(lastFixAgeMicros = null, sats = null))[1].value)
+        assertTrue(recordingRows(null).isEmpty())
     }
 }
