@@ -33,6 +33,11 @@ data class VboVideo(
     val syncFormat: AviSyncFormat = AviSyncFormat.MILLIS,
     /** Writes [extension] as a second line of `[avi]`. */
     val extensionLine: Boolean = true,
+    /**
+     * Rows without video get avifileindex 0 and avisynctime 0, as rc2vbo.py writes them, instead of
+     * the next file and -1 (FBBD-51 round 2).
+     */
+    val noVideoAsZero: Boolean = false,
 ) {
     val orderedClips: List<VideoClip> = clips.sortedBy { it.startMicros }
 
@@ -51,7 +56,12 @@ data class VboVideo(
             val sync = if (syncFormat == AviSyncFormat.MILLIS) media else media / MillisPerSecond
             return (pos.index + 1).toDouble() to sync
         }
-        // No video here: point at the next file to come (or the last one) with "no time".
+        return noVideoAt(sessionMicros)
+    }
+
+    private fun noVideoAt(sessionMicros: Long): Pair<Double, Double> {
+        if (noVideoAsZero) return 0.0 to 0.0
+        // Point at the next file to come (or the last one) with "no time".
         val upcoming = orderedClips.indexOfFirst { it.startMicros > sessionMicros }
         val next = if (upcoming < 0) orderedClips.lastIndex else upcoming
         val none = if (syncFormat == AviSyncFormat.MILLIS) -1.0 else 0.0
