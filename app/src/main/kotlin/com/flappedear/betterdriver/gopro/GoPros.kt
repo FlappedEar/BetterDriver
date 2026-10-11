@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.VideoMode
 import com.flappedear.betterdriver.setup.VideoSize
 import com.flappedear.betterdriver.shell.SetupRepo
+import com.flappedear.betterdriver.video.VideoSourceKind
 import com.flappedear.betterdriver.video.VideoSessionContext
 import java.io.File
 import java.io.IOException
@@ -202,7 +203,11 @@ class GoPros private constructor(private val context: Context) {
      */
     fun addFiles(id: String, sourceId: String, uris: List<Uri>) {
         if (recording || id in work || uris.isEmpty()) return
-        val adding = GoProFileImport(context, sourceId)
+        val other = setup.setup.equipment.any {
+            it.model == EquipmentModel.CAMERA_FILES && CameraIds.goPro(it.id) == sourceId
+        }
+        val kind = if (other) VideoSourceKind.CAMERA_FILES else VideoSourceKind.GOPRO_FILES
+        val adding = GoProFileImport(context, sourceId, kind)
         val total = uris.sumOf(adding::sizeOf)
         work[id] = GoProWork.Adding(sourceId, uris.size, 0, total)
         problems.remove(id)

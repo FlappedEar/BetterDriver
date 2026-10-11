@@ -20,7 +20,9 @@ private val PlainName = Regex("[A-Za-z0-9._-]+")
 /**
  * Adds files the user picked for one GoPro to a session (FBBD-22, UI-32, FBBD-105): a camera
  * without Open GoPro (HERO8 and earlier, the first MAX) or any GoPro started by hand. Its files
- * come from a card reader or the GoPro Quik app. [sourceId] is the camera ([CameraIds.goPro]); the
+ * come from a card reader or the GoPro Quik app. Another action camera's MP4 files are added the same
+ * way ([kind] CAMERA_FILES, FBBD-120); with no GoPro GPS in them, they are placed by the camera's
+ * clock. [sourceId] is the camera ([CameraIds.goPro]); the
  * copies are named after it, so files of two cameras with the same name never meet.
  *
  * Copies each file into `<session>/video`, then lines up each recording with [GoProImporter]:
@@ -28,7 +30,11 @@ private val PlainName = Regex("[A-Za-z0-9._-]+")
  * that cannot be placed in the session is reported and its copy deleted. Blocking; run it off the
  * main thread.
  */
-internal class GoProFileImport(private val context: Context, private val sourceId: String) {
+internal class GoProFileImport(
+    private val context: Context,
+    private val sourceId: String,
+    private val kind: VideoSourceKind = VideoSourceKind.GOPRO_FILES,
+) {
 
     fun sizeOf(uri: Uri): Long = query(uri, OpenableColumns.SIZE) { it.getLong(0) } ?: 0L
 
@@ -68,7 +74,7 @@ internal class GoProFileImport(private val context: Context, private val sourceI
     private fun lineUp(sessionDir: File, copies: List<File>, problems: MutableList<String>): Set<String> {
         val data = SessionStore(sessionDir.parentFile ?: sessionDir).read(sessionDir)
         val importer = GoProImporter()
-        val source = GoProImporter.Source(VideoSourceKind.GOPRO_FILES, sourceId)
+        val source = GoProImporter.Source(kind, sourceId)
         val placed = mutableSetOf<String>()
         for (recording in byRecording(copies)) {
             val result = importer.import(sessionDir, data, recording, source)

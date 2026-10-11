@@ -12,12 +12,13 @@ import com.flappedear.betterdriver.setup.Setup
 data class ListedGoPro(val sourceId: String, val name: String, val download: Boolean)
 
 /**
- * The GoPros in the equipment list, for the session cards: Open GoPro ones download, the others add
- * files. Sessions from before FBBD-105 name their camera [CameraIds.GOPRO_HERO11]; the first paired
- * HERO11 Black answers for it too, as in SetupRepo.goProFor, so those files stay downloadable.
+ * The GoPros and other action cameras in the equipment list, for the session cards: Open GoPro
+ * ones download, the others add files. Sessions from before FBBD-105 name their camera
+ * [CameraIds.GOPRO_HERO11]; the first paired HERO11 Black answers for it too, as in
+ * SetupRepo.goProFor, so those files stay downloadable.
  */
 internal fun listedGoPros(setup: Setup): List<ListedGoPro> {
-    val listed = setup.equipment.filter { it.model.isGoPro }.map {
+    val listed = setup.equipment.filter { it.model.actionCamera }.map {
         ListedGoPro(CameraIds.goPro(it.id), it.name, download = it.model == EquipmentModel.GOPRO)
     }
     val hero11 = setup.equipment.firstOrNull {

@@ -76,6 +76,19 @@ class SetupTest {
     }
 
     @Test
+    fun otherActionCamerasAreAddedByFiles() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.CAMERA_FILES, "DJI Action 4", newId = ids)
+            .addEquipment(EquipmentModel.CAMERA_FILES, "Insta360", newId = ids)
+        assertEquals(listOf("Other action camera", "Other action camera"), s.equipment.map { it.modelLabel })
+        assertEquals(listOf("DJI Action 4", "Insta360"), s.active().manualCameras.map { it.name })
+        assertTrue(s.active().appCameras.isEmpty())
+        assertTrue(s.hasGoPro, "shows the per-camera lines on session cards")
+        assertNull(s.equipment.first().goPro)
+        assertNull(s.equipment.first().videoMode, "set on the camera itself")
+    }
+
+    @Test
     fun repairingAGoProKeepsItsItemAndLearnsItsModel() {
         val first = Setup().addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids)
         val id = first.equipment.single().id
