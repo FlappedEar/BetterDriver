@@ -16,8 +16,11 @@ import android.os.RemoteException
 import androidx.core.app.NotificationCompat
 import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.R
+import com.flappedear.betterdriver.recorder.Recording
+import com.flappedear.betterdriver.recorder.RecordingVideoSink
 
-private const val ChannelId = "recording"
+/** The low-importance channel for the recorder and camera notifications. */
+internal const val RecordingChannelId = "recording"
 private const val TickMs = 250L
 
 /** Longer than any outing; the lock is released when the recording stops. */
@@ -25,7 +28,7 @@ private const val WakeLockTimeoutMs = 8 * 60 * 60 * 1_000L
 
 internal fun createRecordingChannel(context: Context) {
     val channel = NotificationChannel(
-        ChannelId,
+        RecordingChannelId,
         context.getString(R.string.recording_channel),
         NotificationManager.IMPORTANCE_LOW,
     )
@@ -43,7 +46,7 @@ internal fun recordingNotification(context: Context, startMillis: Long, detail: 
         Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
         PendingIntent.FLAG_IMMUTABLE,
     )
-    return NotificationCompat.Builder(context, ChannelId)
+    return NotificationCompat.Builder(context, RecordingChannelId)
         .setSmallIcon(R.drawable.ic_launcher_monochrome)
         .setContentTitle(context.getString(R.string.recording_title))
         .apply { if (detail.isNotBlank()) setContentText(detail) }
@@ -76,7 +79,7 @@ internal class CpuLock(context: Context) {
  * The UI processes bound to the service. Each registered client gets [state] every [TickMs] while
  * any client is registered. Main thread only.
  */
-internal class LiveClients(private val state: () -> Bundle) {
+internal class LiveClients(private val state: () -> Bundle, private val onVideo: (Bundle) -> Unit = {}) {
     private val main = Handler(Looper.getMainLooper())
     private val clients = mutableListOf<Messenger>()
     private val ticker = object : Runnable {
@@ -91,6 +94,10 @@ internal class LiveClients(private val state: () -> Bundle) {
     private fun onMessage(msg: Message): Boolean {
         val client = msg.replyTo
         return when {
+            msg.what == RecorderProtocol.MSG_VIDEO -> {
+                onVideo(msg.data)
+                true
+            }
             client == null -> false
             msg.what == RecorderProtocol.MSG_REGISTER -> {
                 clients += client
@@ -120,4 +127,24 @@ internal class LiveClients(private val state: () -> Bundle) {
     }
 
     fun close() = main.removeCallbacks(ticker)
+}
+
+/**
+ * Logs a camera report ([RecorderProtocol.MSG_VIDEO]) as a video event at the session time the
+ * camera stamped, so nothing about the camera can stop or delay the recording. Reports for another
+ * session are dropped. Status goes to [onStatus] for the status strip.
+ */
+internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (String, Boolean) -> Unit) {
+    val camera = data.getString(RecorderProtocol.VIDEO_CAMERA)
+    if (camera == null || data.getString(RecorderProtocol.VIDEO_SESSION) != recording.id) return
+    val file = data.getString(RecorderProtocol.VIDEO_FILE).orEmpty()
+    val at = data.getLong(RecorderProtocol.VIDEO_AT_US)
+    val text = data.getString(RecorderProtocol.VIDEO_TEXT).orEmpty()
+    val sink = RecordingVideoSink(recording, camera) { _, status, ok -> onStatus(status, ok) }
+    when (data.getInt(RecorderProtocol.VIDEO_KIND)) {
+        RecorderProtocol.VIDEO_STARTED -> sink.started(file, at)
+        RecorderProtocol.VIDEO_SYNCED -> sink.synced(file, at, data.getLong(RecorderProtocol.VIDEO_MEDIA_US))
+        RecorderProtocol.VIDEO_STOPPED -> sink.stopped(file, at, text)
+        RecorderProtocol.VIDEO_STATUS -> sink.status(text, data.getBoolean(RecorderProtocol.VIDEO_OK))
+    }
 }

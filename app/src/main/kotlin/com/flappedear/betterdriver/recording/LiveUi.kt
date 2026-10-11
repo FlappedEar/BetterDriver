@@ -36,8 +36,10 @@ fun liveTrackState(state: RecorderState): TrackScreenState {
             GnssState.Ok -> StatusItem("GNSS", "${live.fixRateHz} Hz · ${live.sats ?: NoValue} sats")
         }
     }
+    // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
+    val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok) }
     return TrackScreenState(
-        status = listOf(gnss),
+        status = listOfNotNull(gnss, camera),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
         alert = trackAlert(state),
         deltaSeconds = null,

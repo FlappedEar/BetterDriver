@@ -32,9 +32,9 @@ import com.flappedear.betterdriver.recording.sessionTitle
 import java.io.File
 
 /**
- * Saved sessions, newest first, each with VBO export (FBBD-66, FBBD-71). A session recovered after
- * a crash is marked and exports like any other. Built from the approved shell parts; the layout is
- * on the UI review page for approval.
+ * Saved sessions, newest first, each with VBO export (FBBD-66, FBBD-71), plus its video when it
+ * has any (FBBD-25). A session recovered after a crash is marked and exports like any other. Built
+ * from the approved shell parts; the layout is on the UI review page for approval.
  */
 @Composable
 fun SessionsScreen(
@@ -42,6 +42,7 @@ fun SessionsScreen(
     exports: Map<String, ExportState>,
     onExport: (SessionSummary) -> Unit,
     modifier: Modifier = Modifier,
+    withVideo: Set<String> = emptySet(),
 ) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Sessions")
@@ -52,14 +53,14 @@ fun SessionsScreen(
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                items(sessions, key = { it.id }) { s -> SessionCard(s, exports[s.id], onExport) }
+                items(sessions, key = { it.id }) { s -> SessionCard(s, exports[s.id], s.id in withVideo, onExport) }
             }
         }
     }
 }
 
 @Composable
-private fun SessionCard(s: SessionSummary, export: ExportState?, onExport: (SessionSummary) -> Unit) {
+private fun SessionCard(s: SessionSummary, export: ExportState?, video: Boolean, onExport: (SessionSummary) -> Unit) {
     val c = TrackTheme.colors
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -90,7 +91,7 @@ private fun SessionCard(s: SessionSummary, export: ExportState?, onExport: (Sess
             FilledTonalButton(
                 onClick = { onExport(s) },
                 enabled = s.state != SessionState.RECORDING && export != ExportState.Running,
-            ) { Text("Export VBO") }
+            ) { Text(if (video) "Export VBO + video" else "Export VBO") }
         }
     }
 }
@@ -115,6 +116,7 @@ private fun SessionsScreenPreview() {
                 ),
                 exports = mapOf("a" to ExportState.Done),
                 onExport = {},
+                withVideo = setOf("a"),
             )
         }
     }

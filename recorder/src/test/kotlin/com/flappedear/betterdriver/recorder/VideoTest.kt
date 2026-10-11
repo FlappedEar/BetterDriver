@@ -6,7 +6,6 @@ import com.flappedear.betterdriver.recorder.vbo.AviSyncFormat
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
 import com.flappedear.betterdriver.recorder.vbo.VboVideo
 import com.flappedear.betterdriver.recorder.video.CameraIds
-import com.flappedear.betterdriver.recorder.video.ImportedClips
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoEventText
 import com.flappedear.betterdriver.recorder.video.VideoFiles
@@ -58,22 +57,19 @@ class VideoTest {
     }
 
     @Test
-    fun `cameras are kept apart and imported clips are added`() {
-        val imported = listOf(VideoClip(CameraIds.GOPRO_HERO8, "GX010123.MP4", -2_000_000, 600_000_000))
-        val t = VideoTimeline.from(listOf(ev(0, EventKinds.VIDEO_START, "phone_0001.mp4")), imported)
+    fun `cameras are kept apart and indexed clips win over events`() {
+        val indexed = listOf(
+            VideoClip(CameraIds.GOPRO_HERO8, "GX010123.MP4", -2_000_000, 600_000_000),
+            VideoClip(CameraIds.PHONE, "phone_0001.mp4", 40_000, 9_000_000),
+        )
+        val events = listOf(
+            ev(0, EventKinds.VIDEO_START, "phone_0001.mp4"),
+            ev(10_000_000, EventKinds.VIDEO_START, "phone_0002.mp4"),
+        )
+        val t = VideoTimeline.from(events, indexed)
         assertEquals(listOf(CameraIds.GOPRO_HERO8, CameraIds.PHONE), t.cameras)
         assertEquals(3_000_000, t.locate(CameraIds.GOPRO_HERO8, 1_000_000)!!.mediaMicros)
-    }
-
-    @Test
-    fun `imported clips survive a write and read`() {
-        val clips = listOf(
-            VideoClip(CameraIds.GOPRO_HERO8, "GX010123.MP4", -2_000_000, 600_000_000),
-            VideoClip(CameraIds.GOPRO_HERO8, "GX020123.MP4", 600_000_000, null),
-        )
-        ImportedClips.write(tmp, clips)
-        assertEquals(clips, ImportedClips.read(tmp))
-        assertEquals(emptyList(), ImportedClips.read(File(tmp, "missing")))
+        assertEquals(listOf(40_000L, 10_000_000L), t.clips(CameraIds.PHONE).map { it.startMicros })
     }
 
     @Test

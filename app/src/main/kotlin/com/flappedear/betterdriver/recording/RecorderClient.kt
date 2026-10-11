@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.camera.CameraService
 
 /** What the UI knows about the recorder process. */
 data class RecorderState(
@@ -26,9 +27,14 @@ data class RecorderState(
     val starting: Boolean = false,
     /** Why the last recording failed to start or ended on its own. */
     val error: String? = null,
+    /** Phone video's short status ("4K · 60", "Stopped: too hot"), or null when no camera reports. */
+    val camera: StatusText? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
+
+/** A short status line and whether it is OK (green) or needs attention (amber). */
+data class StatusText(val text: String, val ok: Boolean)
 
 /**
  * The UI side of [RecorderService]. Starts and stops recordings and follows the live state. It only
@@ -61,6 +67,9 @@ class RecorderClient private constructor(private val context: Context) {
             starting = state.starting && !answered,
             // A local error (the recorder died) stays until a recording runs or the recorder reports its own.
             error = error ?: state.error.takeIf { live == null },
+            camera = msg.data.getString(RecorderProtocol.KEY_CAMERA_STATUS)?.let {
+                StatusText(it, msg.data.getBoolean(RecorderProtocol.KEY_CAMERA_OK))
+            },
         )
     }
 
@@ -91,8 +100,13 @@ class RecorderClient private constructor(private val context: Context) {
         bound = false
     }
 
-    /** [raceBox] is the paired RaceBox; with none, the recording uses the fake GNSS source. */
-    fun start(car: String, track: String, raceBox: RaceBoxRef?) {
+    /**
+     * [raceBox] is the paired RaceBox; with none, the recording uses the fake GNSS source.
+     * With [phoneVideo], the camera process starts too and records once the session is running
+     * (FBBD-21). It is started from here, while the app is on screen, because Android only lets a
+     * camera service start from the foreground.
+     */
+    fun start(car: String, track: String, raceBox: RaceBoxRef?, phoneVideo: Boolean = false) {
         state = state.copy(starting = true, error = null)
         val intent = Intent(context, RecorderService::class.java)
             .setAction(RecorderProtocol.ACTION_START)
@@ -104,10 +118,29 @@ class RecorderClient private constructor(private val context: Context) {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {
             state = state.copy(starting = false, error = "Could not start recording: ${e.message}")
+            return
+        }
+        if (phoneVideo) startCamera()
+    }
+
+    /** A failure here only means no phone video; the recording is already running. */
+    private fun startCamera() {
+        try {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, CameraService::class.java).setAction(CameraService.ACTION_START),
+            )
+        } catch (e: IllegalStateException) {
+            android.util.Log.w("RecorderClient", "phone video not started", e)
         }
     }
 
     fun stop() {
+        try {
+            context.startService(Intent(context, CameraService::class.java).setAction(CameraService.ACTION_STOP))
+        } catch (_: IllegalStateException) {
+            // Not running, or not allowed: it stops on its own when the session ends.
+        }
         try {
             context.startService(Intent(context, RecorderService::class.java).setAction(RecorderProtocol.ACTION_STOP))
         } catch (e: IllegalStateException) {

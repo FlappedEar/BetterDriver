@@ -164,7 +164,12 @@ private fun Drive(nav: NavHostController, prefs: AppPrefs, recorder: RecorderCli
             if (prefs.hasRequiredPermissions()) {
                 // While recording, START goes back to the running session.
                 if (!recorder.state.recording) {
-                    recorder.start(prefs.car, track = "", prefs.raceBox?.let { RaceBoxRef(it.address, it.name) })
+                    recorder.start(
+                        prefs.car,
+                        track = "",
+                        prefs.raceBox?.let { RaceBoxRef(it.address, it.name) },
+                        phoneVideo = prefs.phoneVideoReady(),
+                    )
                 }
                 nav.navigate(Routes.Track)
             } else {
@@ -192,7 +197,10 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, recorder: RecorderCli
     }
 }
 
-/** Sessions list; export asks where to save the VBO file, then writes it in the background. */
+/**
+ * Sessions list. Export asks where to save the VBO file, then writes it in the background. A session
+ * with video asks for a folder instead, because the VBO and its video files must sit side by side.
+ */
 @Composable
 private fun SessionsRoute(sessions: Sessions) {
     // Saveable: the activity can be re-created while the file picker is open.
@@ -202,13 +210,19 @@ private fun SessionsRoute(sessions: Sessions) {
         exporting = null
         if (uri != null && id != null) sessions.export(id, uri)
     }
+    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        val id = exporting
+        exporting = null
+        if (uri != null && id != null) sessions.exportWithVideo(id, uri)
+    }
     LaunchedEffect(Unit) { sessions.refresh() }
     SessionsScreen(
         sessions = sessions.list,
         exports = sessions.exports,
+        withVideo = sessions.withVideo,
         onExport = { s ->
             exporting = s.id
-            pickFile.launch(vboFileName(s))
+            if (s.id in sessions.withVideo) pickFolder.launch(null) else pickFile.launch(vboFileName(s))
         },
     )
 }

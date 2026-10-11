@@ -41,7 +41,7 @@ interface VideoSink {
     fun status(text: String, ok: Boolean)
 }
 
-/** Video files of a session live in its directory under [DIR]. */
+/** Video files of a session live in its directory under [DIR], next to the clip index (clips.json). */
 object VideoFiles {
     const val DIR = "video"
 
