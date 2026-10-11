@@ -43,12 +43,15 @@ import com.flappedear.betterdriver.setup.VideoMode
 internal fun kindLabel(e: Equipment): String = when (e.kind) {
     EquipmentKind.GNSS -> "GNSS"
     EquipmentKind.CAMERA -> "Camera"
+    EquipmentKind.SENSOR -> "Sensor"
 }
 
 /** What a model does, under its details. */
 private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.RACEBOX -> "Records position, speed and G for each session it is chosen for."
     EquipmentModel.NMEA_GNSS -> "Records position and speed for each session it is chosen for."
+    EquipmentModel.LNS_GNSS -> "Records position and speed for each session it is chosen for."
+    EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."
     EquipmentModel.DEMO_GNSS ->
         "Made-up positions on a circle, for trying the app without a receiver. Sessions with it are not real data."
     EquipmentModel.PHONE_CAMERA -> "Records video with each session it is turned on for."
@@ -205,7 +208,8 @@ fun AddEquipmentScreen(
             }
             DimText(
                 if (searching) {
-                    "Searching for RaceBox and GoPro HERO9 or later. Put a GoPro in pairing mode first."
+                    "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS and heart-rate monitors. " +
+                        "Put a GoPro in pairing mode first."
                 } else {
                     "Allow nearby devices (Settings › App › Run setup again) to search for a RaceBox or GoPro."
                 },

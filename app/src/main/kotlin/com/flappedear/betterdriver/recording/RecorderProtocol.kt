@@ -29,6 +29,12 @@ internal object RecorderProtocol {
     /** True when the receiver at [EXTRA_RACEBOX_ADDRESS] is a Bluetooth NMEA receiver, not a RaceBox (FBBD-108). */
     const val EXTRA_GNSS_NMEA = "gnss_nmea"
 
+    /** The receiver's [GnssType] name; when absent (an older client), [EXTRA_GNSS_DEMO] and [EXTRA_GNSS_NMEA] say. */
+    const val EXTRA_GNSS_TYPE = "gnss_type"
+
+    /** Sensors to record too, each [SensorRef.encode] (FBBD-119). */
+    const val EXTRA_SENSORS = "sensors"
+
     /** Client to service: start sending updates to msg.replyTo. */
     const val MSG_REGISTER = 1
     const val MSG_UNREGISTER = 2
