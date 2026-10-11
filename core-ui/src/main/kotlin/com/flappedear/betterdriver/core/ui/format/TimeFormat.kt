@@ -4,7 +4,7 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
-/** U+2212, the same width as "+" in Barlow Condensed, unlike the hyphen. */
+/** U+2212, close to the width of "+", unlike the hyphen. NumberText keeps it in place. */
 const val Minus = "−"
 
 private const val MillisPerHundredth = 10.0

@@ -30,6 +30,8 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.AlertBanner
@@ -68,8 +70,9 @@ data class TrackScreenState(
 
 /**
  * Track screen entry point used by the app. Keeps the screen on and in
- * landscape for the whole outing, and always uses the dark track theme across
- * the full window, system bar areas included. The caller must not pad it for
+ * landscape for the whole outing, hides the system bars (a swipe shows them
+ * briefly) so the layout gets the full height, and always uses the dark track
+ * theme across the full window. The caller must not pad it for
  * insets; it pads its own content. Live data is not wired yet, so it shows
  * [ExampleTrackState]. A long press anywhere stops the session; this stop
  * control is provisional until its design is approved.
@@ -81,6 +84,7 @@ fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier) {
     KeepScreenOn(view)
     LockLandscape(activity)
     LightSystemBarIcons(activity, view)
+    HideSystemBars(activity, view)
     BetterDriverTheme(track = true) {
         Box(modifier.fillMaxSize().background(TrackTheme.colors.background)) {
             TrackScreenContent(
@@ -134,6 +138,20 @@ private fun LightSystemBarIcons(activity: Activity?, view: View) {
                 bars.isAppearanceLightNavigationBars = lightNavigation
             }
         }
+    }
+}
+
+/**
+ * Hides the status and navigation bars while driving. On the Pixel 6 in
+ * landscape they would take about 40 dp of the 411 dp height.
+ */
+@Composable
+private fun HideSystemBars(activity: Activity?, view: View) {
+    DisposableEffect(activity, view) {
+        val bars = activity?.window?.let { WindowCompat.getInsetsController(it, view) }
+        bars?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        bars?.hide(WindowInsetsCompat.Type.systemBars())
+        onDispose { bars?.show(WindowInsetsCompat.Type.systemBars()) }
     }
 }
 
@@ -202,6 +220,13 @@ val ExampleTrackState = TrackScreenState(
 @Preview(name = "Track screen", widthDp = 914, heightDp = 411)
 @Composable
 private fun TrackScreenPreview() {
+    BetterDriverTheme(track = true) { TrackScreenContent(ExampleTrackState) }
+}
+
+/** Short window, e.g. system bars shown by a swipe or a cutout inset: the delta shrinks to fit. */
+@Preview(name = "Track screen, short window", widthDp = 914, heightDp = 340)
+@Composable
+private fun TrackScreenShortPreview() {
     BetterDriverTheme(track = true) { TrackScreenContent(ExampleTrackState) }
 }
 
