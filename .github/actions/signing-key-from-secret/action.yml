@@ -1,0 +1,48 @@
+name: Signing key from the repository secret
+description: >
+  Writes $RUNNER_TEMP/release.keystore from the base64 text in the secret
+  ANDROID_RELEASE_KEYSTORE_BASE64 (on a fresh runner; nothing is cached) and
+  checks its certificate SHA-256 against the pinned release certificate, so a
+  wrong secret never signs an APK.
+inputs:
+  expected-sha256:
+    description: The certificate SHA-256 (lower-case hex) the key must have; any other key is deleted and the step fails.
+    required: true
+  keystore-base64:
+    description: The secret's value (empty when the secret is not set).
+    required: false
+    default: ''
+outputs:
+  restored:
+    description: 'true when the keystore was written from the secret.'
+    value: ${{ steps.restore.outputs.restored }}
+runs:
+  using: composite
+  steps:
+    - name: Write the keystore from the secret
+      id: restore
+      shell: bash
+      env:
+        KEYSTORE_BASE64: ${{ inputs.keystore-base64 }}
+        EXPECTED_SHA256: ${{ inputs.expected-sha256 }}
+      run: |
+        echo "restored=false" >> "$GITHUB_OUTPUT"
+        if [ -z "$KEYSTORE_BASE64" ]; then
+          echo "::warning::The secret ANDROID_RELEASE_KEYSTORE_BASE64 is not set."
+          exit 0
+        fi
+        keystore="$RUNNER_TEMP/release.keystore"
+        if ! printf '%s' "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$keystore" 2>/dev/null \
+          || [ ! -s "$keystore" ]; then
+          rm -f "$keystore"
+          echo "::error::The secret ANDROID_RELEASE_KEYSTORE_BASE64 is not valid base64."
+          exit 1
+        fi
+        actual=$(bash "$GITHUB_ACTION_PATH/../../scripts/keystore-cert.sh" "$keystore" || true)
+        if [ "$actual" != "$EXPECTED_SHA256" ]; then
+          rm -f "$keystore"
+          echo "::error::The secret ANDROID_RELEASE_KEYSTORE_BASE64 holds key '$actual', not the release key $EXPECTED_SHA256."
+          exit 1
+        fi
+        echo "Wrote the signing key from the repository secret."
+        echo "restored=true" >> "$GITHUB_OUTPUT"

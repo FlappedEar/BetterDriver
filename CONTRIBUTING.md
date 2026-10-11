@@ -1,0 +1,8 @@
+# Contributing
+
+- Work is tracked in Jira project FBBD; name the issue in the pull request.
+- Every pull request gets a Codex review. If Codex has not started on its
+  own, comment `@codex review` on the pull request.
+- Merge only when CI is green on the latest commit, the Codex review has run,
+  and every Codex comment is fixed or answered.
+- Run `./gradlew build detekt` before pushing.

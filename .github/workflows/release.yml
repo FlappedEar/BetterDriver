@@ -1,0 +1,241 @@
+name: Release
+
+# Publishes a GitHub Release with the signed Android APK and SHA256SUMS.txt.
+# Modelled on FlappedEar/Telemetry release.yml.
+#
+# Start it either way:
+# - push a tag such as v0.1.0 on main, or
+# - run this workflow from the Actions tab on main and give the version
+#   (0.1.0); the release then creates the tag v0.1.0 at that commit.
+# The version must be betterdriver.version in gradle.properties.
+# Versions below 1.0.0 are marked as pre-releases.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, as in gradle.properties (for example 0.1.0)'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  # Certificate SHA-256 of the release key on installed apps. Any other key
+  # stops the release: phones would refuse the update.
+  RELEASE_CERT_SHA256: 0e12358c264f8fa04e448098cb1ed0302256a1e749018a2d2065fea17167ec05
+
+jobs:
+  version:
+    name: Check the version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      build: ${{ steps.version.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Version from the tag or the input, checked against gradle.properties
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            version="${GITHUB_REF_NAME#v}"
+            # A tag off main could carry a build number main reaches later.
+            git merge-base --is-ancestor HEAD origin/main \
+              || { echo "::error::The tag $GITHUB_REF_NAME is not on main."; exit 1; }
+          else
+            [ "$GITHUB_REF" = refs/heads/main ] || { echo "::error::Run the release from main."; exit 1; }
+            version="${INPUT_VERSION#v}"
+          fi
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "::error::'$version' is not a version like 0.1.0."; exit 1; }
+          declared=$(sed -n 's/^betterdriver\.version=\([0-9.]*\)$/\1/p' gradle.properties)
+          [ "$declared" = "$version" ] \
+            || { echo "::error::gradle.properties declares $declared, not $version."; exit 1; }
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
+            echo "::error::The tag v$version already exists."; exit 1
+          fi
+          # Same build number as the CI build of this commit (ci.yml), so
+          # Android installs a later build over an earlier one.
+          build=$(git rev-list --count HEAD)
+          echo "Version $version, build $build"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  # The release goes out only for a commit whose own CI run (ci.yml on the
+  # push to main) finished green. A release can start while that run is still
+  # going, so wait for it here.
+  ci-green:
+    name: CI is green on this commit
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for the CI run of this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          started=$SECONDS
+          while :; do
+            runs=$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&branch=main&per_page=50" \
+              --jq '[.workflow_runs[] | select(.head_sha == "'"$GITHUB_SHA"'") | {status, conclusion, url: .html_url}]')
+            if [ "$(jq 'any(.conclusion == "success")' <<<"$runs")" = true ]; then
+              echo "CI is green on $GITHUB_SHA: $(jq -r '[.[] | select(.conclusion == "success")][0].url' <<<"$runs")"
+              exit 0
+            fi
+            if [ "$(jq 'length > 0 and all(.status == "completed")' <<<"$runs")" = true ]; then
+              jq -r '.[] | "\(.conclusion): \(.url)"' <<<"$runs"
+              echo "::error::CI did not succeed on $GITHUB_SHA. Fix main, then release the fixed commit."
+              exit 1
+            fi
+            if [ "$(jq 'length' <<<"$runs")" = 0 ] && [ $((SECONDS - started)) -gt 600 ]; then
+              echo "::error::No CI run of ci.yml found for $GITHUB_SHA on main."
+              exit 1
+            fi
+            if [ $((SECONDS - started)) -gt 3900 ]; then
+              echo "::error::CI on $GITHUB_SHA did not finish in time."
+              exit 1
+            fi
+            echo "Waiting for CI on $GITHUB_SHA ($(jq -r 'map(.status) | join(",")' <<<"$runs"))"
+            sleep 60
+          done
+
+  android:
+    name: Android APK (build)
+    needs: version
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # The build runs project and third-party build code, so it never sees the
+      # release key: it signs with a throwaway debug key made on this runner,
+      # and the android-sign job re-signs the APK. Nothing caches a key.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+      - name: Build the APK (release)
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          BUILD: ${{ needs.version.outputs.build }}
+        run: ./gradlew :app:assembleRelease -Pbetterdriver.version="$VERSION" -Pbetterdriver.build="$BUILD"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: build-android-unsigned
+          path: app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
+          retention-days: 1
+
+  # The only job with the release key. It runs no project code: it downloads
+  # the built APK and signs it with apksigner (.github/scripts/sign-apk.sh),
+  # and only after CI is green on this commit. The key comes from the
+  # repository secret (see docs/signing-key.md); its certificate is pinned.
+  android-sign:
+    name: Android APK (sign)
+    needs: [version, android, ci-green]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      # Scripts and the key action only; no Gradle.
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-android-unsigned
+          path: unsigned
+      - name: Write the release key from the secret
+        id: secret
+        uses: ./.github/actions/signing-key-from-secret
+        with:
+          expected-sha256: ${{ env.RELEASE_CERT_SHA256 }}
+          keystore-base64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      - name: Stop if the signing key is missing
+        if: steps.secret.outputs.restored != 'true'
+        run: |
+          echo "::error::The secret ANDROID_RELEASE_KEYSTORE_BASE64 is not set. Add it as docs/signing-key.md says, then release again."
+          exit 1
+      - name: Sign the APK and check the certificate
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          mkdir dist
+          out="dist/BetterDriver-$VERSION-android.apk"
+          bash .github/scripts/sign-apk.sh unsigned/app-release.apk "$RUNNER_TEMP/release.keystore" "$out"
+          actual=$(bash .github/scripts/apk-cert.sh "$out")
+          [ "$actual" = "$RELEASE_CERT_SHA256" ] || {
+            echo "::error::The signing key is $actual, not the release key $RELEASE_CERT_SHA256 that installed apps have."
+            exit 1
+          }
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-android
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    name: Publish the release
+    needs: [version, ci-green, android-sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: docs/release-notes
+      # Only release-android; build-android-unsigned (throwaway key) must never
+      # reach the release.
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-android
+          path: dist
+      - name: Create the release, or replace its files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          (cd dist && sha256sum BetterDriver-* > SHA256SUMS.txt)
+          ls -l dist
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/* --repo "$GITHUB_REPOSITORY" --clobber
+            exit 0
+          fi
+          prerelease=
+          case "$VERSION" in 0.*) prerelease=--prerelease ;; esac
+          notes="docs/release-notes/v$VERSION.md"
+          {
+            if [ -f "$notes" ]; then cat "$notes"; echo; fi
+            echo "Install: download BetterDriver-$VERSION-android.apk on the phone or tablet and open it. Checksums are in SHA256SUMS.txt."
+          } > "$RUNNER_TEMP/notes.md"
+          since=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 \
+            --exclude-drafts --json tagName --jq '.[0].tagName // ""')
+          start=()
+          [ -n "$since" ] && start=(--notes-start-tag "$since")
+          gh release create "$tag" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "BetterDriver $VERSION" \
+            --generate-notes "${start[@]}" $prerelease \
+            --notes-file "$RUNNER_TEMP/notes.md"
