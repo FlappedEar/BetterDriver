@@ -34,6 +34,11 @@ object Routes {
 
     fun sessionAnalysis(id: String) = "sessions/$id/analysis"
 
+    /** The cue review of one session (FBBD-99). */
+    const val CueReviewPattern = "sessions/{id}/cues"
+
+    fun cueReview(id: String) = "sessions/$id/cues"
+
     const val Track = "track"
     const val Tracks = "tracks"
 

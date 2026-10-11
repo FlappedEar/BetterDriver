@@ -44,6 +44,7 @@ import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
+import com.flappedear.betterdriver.shell.SessionCoach
 import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
@@ -120,6 +121,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             }
             composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) } }
             analysisDestination(nav, padding)
+            cueReview(nav, padding)
             composable(Routes.Settings) {
                 Box(Modifier.padding(padding)) {
                     Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
@@ -300,6 +302,7 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
             states = sessions.deletes,
             onDelete = { s -> sessions.delete(s.id) },
         ),
+        coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
     )
 }
 

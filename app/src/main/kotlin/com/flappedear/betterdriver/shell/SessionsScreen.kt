@@ -54,6 +54,9 @@ import java.util.Locale
  *
  * Share sends the session with its video and track to the other device (FBBD-23, UI-55): Send
  * through the share sheet (Quick Share), or Save file. Import at the top brings one in.
+ *
+ * A session the coach spoke in opens its cue review (FBBD-99): each cue and whether the next pass
+ * through that corner got better.
  */
 @Composable
 fun SessionsScreen(
@@ -65,6 +68,7 @@ fun SessionsScreen(
     goPro: GoProCardState = GoProCardState(),
     deleting: SessionDeleting = SessionDeleting(),
     transfer: SessionTransferState = SessionTransferState(),
+    coach: SessionCoach = SessionCoach(),
     onAnalyse: (SessionSummary) -> Unit = {},
     header: @Composable () -> Unit = {},
 ) {
@@ -87,7 +91,9 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
-                    SessionCard(s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse)
+                    SessionCard(
+                        s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach,
+                    )
                 }
             }
         }
@@ -113,6 +119,7 @@ private fun SessionCard(
     deleting: SessionDeleting,
     transfer: SessionTransferState,
     onAnalyse: (SessionSummary) -> Unit,
+    coach: SessionCoach,
 ) {
     val c = TrackTheme.colors
     val delete = deleting.states[s.id]
@@ -136,6 +143,7 @@ private fun SessionCard(
         if (detail.isNotEmpty()) DimText(detail)
         AnalysisLink(s, delete, onAnalyse)
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
         val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
