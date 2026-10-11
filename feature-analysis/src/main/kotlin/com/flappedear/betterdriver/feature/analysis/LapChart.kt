@@ -3,7 +3,7 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -72,7 +72,9 @@ fun LapChart(
         modifier
             .pointerInput(lengthMeters) { detectTapGestures { moveCursor(meters(it.x, size.width.toFloat())) } }
             .pointerInput(lengthMeters) {
-                detectDragGestures { change, _ -> moveCursor(meters(change.position.x, size.width.toFloat())) }
+                detectHorizontalDragGestures { change, _ ->
+                    moveCursor(meters(change.position.x, size.width.toFloat()))
+                }
             },
     ) {
         if (lengthMeters <= 0.0) return@Canvas
