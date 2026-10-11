@@ -53,6 +53,33 @@ class SetupTest {
             .addEquipment(EquipmentModel.PHONE_CAMERA, newId = ids)
             .addEquipment(EquipmentModel.PHONE_CAMERA, newId = ids)
         assertEquals(listOf("New", "Phone camera"), s.equipment.map { it.name })
+        val boxes = Setup()
+            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB 1", "AA", ids)
+            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB 2", "BB", ids)
+        assertEquals(listOf("RB 1", "RB 2"), boxes.equipment.map { it.name })
+    }
+
+    @Test
+    fun pairingAnotherHero11ReplacesTheListedOne() {
+        val first = Setup().addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 1111", "AA", ids)
+        val id = first.equipment.single().id
+        val s = first.addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", ids)
+        assertEquals(listOf(Equipment(id, EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", "GoPro 2222")), s.equipment)
+        assertEquals(listOf(id), s.session.cameraIds, "still on for the session")
+    }
+
+    @Test
+    fun renamingKeepsTheAdvertisedName() {
+        val s = Setup().addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Mini 0042", "AA", ids)
+        val renamed = s.renameEquipment(s.equipment.single().id, "Track box")
+        assertEquals("RaceBox Mini 0042", renamed.equipment.single().advertisedName)
+    }
+
+    @Test
+    fun hero8IsListedOnce() {
+        val s = Setup().addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+            .addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+        assertEquals(1, s.equipment.size)
     }
 
     @Test

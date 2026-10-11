@@ -136,3 +136,17 @@ internal fun DimText(text: String, modifier: Modifier = Modifier, color: Color =
         color = if (color == Color.Unspecified) MaterialTheme.colorScheme.onSurfaceVariant else color,
     )
 }
+
+/** "+ Add …" as the last row of a list card, in the accent colour (UI-33, UI-35). */
+@Composable
+internal fun AddRow(text: String, onClick: () -> Unit, divider: Boolean = true) {
+    Column {
+        if (divider) HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        Text(
+            "+ $text",
+            modifier = Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 12.dp),
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}

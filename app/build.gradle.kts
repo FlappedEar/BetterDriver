@@ -53,6 +53,7 @@ dependencies {
     implementation(project(":recorder"))
     implementation(project(":video"))
     implementation(project(":gopro"))
+    implementation(project(":setup"))
     implementation(project(":timing"))
     implementation(project(":core-ble"))
     implementation(libs.androidx.core.ktx)

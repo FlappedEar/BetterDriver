@@ -17,7 +17,10 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     /** The phone's own camera (FBBD-21). There is only one. */
     PHONE_CAMERA(EquipmentKind.CAMERA, "Phone camera"),
 
-    /** Started and stopped with the session through Open GoPro (FBBD-22). */
+    /**
+     * Started and stopped with the session through Open GoPro (FBBD-22). One at most: the app
+     * drives a single HERO11, so pairing another one replaces it.
+     */
     GOPRO_HERO11(EquipmentKind.CAMERA, "GoPro HERO11"),
 
     /** Started by hand; its files are added to the session afterwards (FBBD-22). */
@@ -31,6 +34,12 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     val paired: Boolean get() = this == RACEBOX_MICRO || this == GOPRO_HERO11
 
     val isGoPro: Boolean get() = this == GOPRO_HERO11 || this == GOPRO_HERO8
+
+    /**
+     * Listed once at most: there is one phone camera, the app drives one HERO11, and HERO8 imports
+     * go to one folder per session, so two HERO8s could overwrite each other's clips.
+     */
+    val single: Boolean get() = this == PHONE_CAMERA || this == GOPRO_HERO11 || this == GOPRO_HERO8
 }
 
 /** One item in Arek's equipment list. [address] is the Bluetooth address of a paired model. */
@@ -40,6 +49,11 @@ data class Equipment(
     val model: EquipmentModel,
     val name: String,
     val address: String? = null,
+    /**
+     * The name the device advertised when it was paired. It tells a RaceBox Micro from a Mini;
+     * [name] is Arek's and can be anything.
+     */
+    val advertisedName: String? = null,
 ) {
     val kind: EquipmentKind get() = model.kind
 }
@@ -129,8 +143,8 @@ data class Setup(
     /**
      * Adds an item. The first GNSS receiver becomes the session's receiver, and a new camera is
      * used in the next session; Arek can turn either off. A model paired over Bluetooth that is
-     * already listed at the same address is updated instead of listed twice, and the phone camera
-     * is listed once at most.
+     * already listed at the same address is updated instead of listed twice. The phone camera, the
+     * HERO11 and the HERO8 are listed once at most; pairing another HERO11 replaces the listed one.
      */
     fun addEquipment(
         model: EquipmentModel,
@@ -140,12 +154,19 @@ data class Setup(
     ): Setup {
         require(!model.paired || !address.isNullOrBlank()) { "${model.label} needs a Bluetooth address" }
         val same = equipment.firstOrNull {
-            it.model == model && (model == EquipmentModel.PHONE_CAMERA || (address != null && it.address == address))
+            it.model == model && (model.single || (address != null && it.address == address))
         }
+        val advertised = name.takeIf { address != null && it.isNotBlank() }
         if (same != null) {
-            return replace(same.copy(name = name.ifBlank { model.label }, address = address ?: same.address))
+            return replace(
+                same.copy(
+                    name = name.ifBlank { model.label },
+                    address = address ?: same.address,
+                    advertisedName = advertised ?: same.advertisedName,
+                ),
+            )
         }
-        val item = Equipment(newId(), model, name.ifBlank { model.label }, address)
+        val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next

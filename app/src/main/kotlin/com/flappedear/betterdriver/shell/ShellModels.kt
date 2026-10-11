@@ -1,10 +1,10 @@
 package com.flappedear.betterdriver.shell
 
+import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.Setup
+
 /** How ready a device is: green when ready, amber when it needs attention, grey when off or missing. */
 enum class DeviceState { Ready, Attention, Off }
-
-/** One device in the ready check: RaceBox, phone camera or a GoPro. */
-data class DeviceStatus(val name: String, val shortName: String, val detail: String, val state: DeviceState)
 
 /** One line of the first-run checklist. */
 data class SetupStep(
@@ -15,20 +15,15 @@ data class SetupStep(
     val onAction: () -> Unit,
 )
 
-/** A RaceBox found nearby. [bars] is signal strength from 0 to 4. */
-data class PairCandidate(val name: String, val serial: String, val bars: Int, val address: String = "")
+/** A RaceBox or GoPro HERO11 heard nearby while adding equipment (UI-34 B). [bars] is 0 to 4. */
+data class NearbyDevice(val model: EquipmentModel, val name: String, val address: String, val bars: Int)
 
-/** The RaceBox saved at pairing: its advertised name and Bluetooth address. */
-data class PairedRaceBox(val name: String, val address: String) {
-    /** The serial part of the advertised name, e.g. "3241". */
-    val serial: String get() = name.substringAfterLast(' ', "")
-}
-
-/** A paired GoPro HERO11. [name] is its advertised name, such as "GoPro 1234". */
-data class PairedGoPro(val name: String, val address: String) {
-    /** The part of the advertised name after "GoPro", e.g. "1234". */
-    val serial: String get() = name.removePrefix("GoPro").trim()
-}
+/** What the session card on home can change (UI-36 A). [update] applies a change to the setup and saves it. */
+data class SessionCardActions(
+    val update: ((Setup) -> Setup) -> Unit = {},
+    val onAddCar: () -> Unit = {},
+    val onAddReceiver: () -> Unit = {},
+)
 
 /** Settings tabs (UI-15 option B). */
 enum class SettingsTab(val title: String) { Devices("Devices"), Car("Car"), Recording("Recording"), App("App") }
