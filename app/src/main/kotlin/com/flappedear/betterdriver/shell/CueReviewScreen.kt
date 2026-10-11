@@ -52,7 +52,8 @@ fun CueReviewScreen(title: String, review: CueReview?, onBack: () -> Unit, modif
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 item(span = { GridItemSpan(maxLineSpan) }) { ReviewHeader(title, review) }
-                items(review.cues, key = { it.cue.seq }) { CueCard(it) }
+                // No key by cue number: a restarted coach numbers its cues from 1 again.
+                items(review.cues) { CueCard(it) }
             }
         }
     }

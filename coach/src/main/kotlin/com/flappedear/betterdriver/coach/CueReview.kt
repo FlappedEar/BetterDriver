@@ -26,14 +26,26 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
         }
 
     companion object {
-        /** The review of a session's [events]; events other than the coach's are ignored. */
+        /**
+         * The review of a session's [events]; events other than the coach's are ignored. A restarted
+         * coach process numbers its cues from 1 again, so a result belongs to the latest cue with its
+         * number before it, not to any cue with that number.
+         */
         fun of(events: List<RecorderEvent>): CueReview {
-            val results = events.filter { it.kind == CoachEvents.RESULT }
-                .mapNotNull { CoachEvents.parseResult(it.text) }
-                .associateBy { it.seq }
-            val cues = events.filter { it.kind == CoachEvents.CUE }
-                .mapNotNull { CoachEvents.parseCue(it.tMicros, it.text) }
-                .map { ReviewedCue(it, results[it.seq]) }
+            val cues = mutableListOf<ReviewedCue>()
+            val latest = HashMap<Int, Int>()
+            for (e in events.sortedBy { it.tMicros }) {
+                when (e.kind) {
+                    CoachEvents.CUE -> CoachEvents.parseCue(e.tMicros, e.text)?.let {
+                        latest[it.seq] = cues.size
+                        cues += ReviewedCue(it, null)
+                    }
+                    CoachEvents.RESULT -> CoachEvents.parseResult(e.text)?.let { r ->
+                        val i = latest.remove(r.seq) ?: return@let
+                        cues[i] = cues[i].copy(result = r)
+                    }
+                }
+            }
             return CueReview(cues, events.count { it.kind == CoachEvents.PROBLEM })
         }
     }

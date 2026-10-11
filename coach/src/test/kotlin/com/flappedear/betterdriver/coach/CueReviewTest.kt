@@ -51,6 +51,19 @@ class CueReviewTest {
     }
 
     @Test
+    fun `a restarted coach numbering cues from 1 again keeps each result with its own cue`() {
+        val once = coachedEvents()
+        val later = 600_000_000L
+        // The restarted coach said the same cues again, but the session stopped before any pass after them.
+        val again = once.filter { it.kind == CoachEvents.CUE }.map { it.copy(tMicros = it.tMicros + later) }
+        val review = CueReview.of(once + again)
+        assertEquals(2 * again.size, review.cues.size)
+        val (first, second) = review.cues.partition { it.cue.tMicros < later }
+        assertEquals(once.count { it.kind == CoachEvents.RESULT }, first.count { it.result != null })
+        assertTrue(second.all { it.result == null }, "no result of the first run goes to a later cue")
+    }
+
+    @Test
     fun `no coach events is an empty review`() {
         val review = CueReview.of(listOf(RecorderEvent(0, CoachEvents.PROBLEM, "late seq=1 text=x")))
         assertEquals("No cues", review.summary)
