@@ -60,6 +60,19 @@ class RecorderTest {
     }
 
     @Test
+    fun `metadata keeps non-Latin text`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(
+            info().copy(car = "Scion FR-S «86»", track = "Tor Łódź 東京", devices = listOf("RaceBox ü")),
+        )
+        rec.stop()
+        val read = store.read(rec.id).info
+        assertEquals("Scion FR-S «86»", read.car)
+        assertEquals("Tor Łódź 東京", read.track)
+        assertEquals(listOf("RaceBox ü"), read.devices)
+    }
+
+    @Test
     fun `a clean recording reads back every sample`() {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(info())

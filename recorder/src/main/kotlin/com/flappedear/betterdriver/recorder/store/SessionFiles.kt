@@ -5,7 +5,6 @@ import com.flappedear.betterdriver.recorder.Gate
 import com.flappedear.betterdriver.recorder.SessionInfo
 import java.io.File
 import java.io.FileOutputStream
-import java.io.StringWriter
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.StandardOpenOption
@@ -39,10 +38,11 @@ object SessionFiles {
 
     /** Writes [props] to [target] via a synced temp file and a rename, so readers never see half a file. */
     fun writeAtomically(target: File, props: Properties) {
-        val text = StringWriter().also { props.store(it, null) }.toString()
+        // store(OutputStream) writes ISO-8859-1 with \uXXXX escapes, so any Unicode text survives.
+        val bytes = java.io.ByteArrayOutputStream().also { props.store(it, null) }.toByteArray()
         val tmp = File(target.parentFile, target.name + ".tmp")
         FileOutputStream(tmp).use { out ->
-            out.write(text.toByteArray(Charsets.ISO_8859_1))
+            out.write(bytes)
             out.fd.sync()
         }
         if (!tmp.renameTo(target)) {

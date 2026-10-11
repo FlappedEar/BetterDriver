@@ -16,6 +16,8 @@ internal class WriterInput(
     val dropped: AtomicLong,
     val nanoTime: () -> Long,
     val nowMicros: () -> Long,
+    /** Stops the recording accepting new records. */
+    val stopIntake: () -> Unit,
 )
 
 /** The recording's writing thread: drains the queue into chunk files and watches free space. */
@@ -30,6 +32,7 @@ internal class RecordingWriter(
     private val dropped = input.dropped
     private val nanoTime = input.nanoTime
     private val nowMicros = input.nowMicros
+    private val stopIntake = input.stopIntake
     private val chunks = ChunkWriter(dir, config.chunkMaxBytes, config.chunkMaxAgeMs, config.syncIntervalMs, nanoTime)
     private var lastFlushNanos = 0L
     private var lastStorageCheckNanos: Long? = null
@@ -69,7 +72,18 @@ internal class RecordingWriter(
                 if (storageExhausted()) reason = STORAGE_FULL
             }
         }
+        if (reason == STORAGE_FULL) drainAcceptedWrites()
         return reason
+    }
+
+    /** Stops intake, then writes everything already accepted, so nothing accepted is lost on a storage stop. */
+    private fun drainAcceptedWrites() {
+        stopIntake()
+        var cmd = queue.poll()
+        while (cmd != null) {
+            if (cmd is Cmd.Write) write(cmd.record)
+            cmd = queue.poll()
+        }
     }
 
     private fun finish(reason: String) {

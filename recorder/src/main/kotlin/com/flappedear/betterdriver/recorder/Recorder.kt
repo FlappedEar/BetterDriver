@@ -9,6 +9,9 @@ import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantReadWriteLock
+import kotlin.concurrent.read
+import kotlin.concurrent.write
 
 private const val NanosPerMicro = 1_000L
 private const val MaxSyncIntervalMs = 1_000L
@@ -99,6 +102,12 @@ class Recording internal constructor(
     private val startNanos = nanoTime()
     private val queue = LinkedBlockingQueue<Cmd>(config.queueCapacity)
     private val stopping = AtomicBoolean(false)
+
+    /**
+     * Orders submissions against the stop: once [stopIntake] returns, no accepted record can still be
+     * on its way into the queue, so none can land behind the stop command.
+     */
+    private val intake = ReentrantReadWriteLock()
     private val stopped = CountDownLatch(1)
     private val dropped = AtomicLong()
     private val sources = Sources()
@@ -118,11 +127,11 @@ class Recording internal constructor(
     val isStopped: Boolean get() = stopped.count == 0L
 
     internal fun begin(lock: SessionFiles.SessionLock) {
-        val input = WriterInput(queue, dropped, nanoTime, ::nowMicros)
+        val input = WriterInput(queue, dropped, nanoTime, ::nowMicros) { stopIntake() }
         val writer = RecordingWriter(dir, config, storage, input, listeners)
         Thread({
             val status = writer.run(info.channels)
-            stopping.set(true)
+            stopIntake()
             sources.stopAll()
             lock.release()
             finalStatus = status
@@ -153,7 +162,7 @@ class Recording internal constructor(
 
     /** Stops sources, writes the end record, syncs and marks the session finished. */
     fun stop(reason: String = "user") {
-        if (stopping.compareAndSet(false, true)) {
+        if (stopIntake()) {
             sources.stopAll()
             // Sources are stopped, so the writer frees space; never discard accepted records to make room.
             while (!isStopped && !queue.offer(Cmd.Stop(reason), StopOfferMs, TimeUnit.MILLISECONDS)) Unit
@@ -163,10 +172,12 @@ class Recording internal constructor(
 
     fun awaitStopped(timeoutMs: Long = StopTimeoutMs): Boolean = stopped.await(timeoutMs, TimeUnit.MILLISECONDS)
 
-    private fun enqueue(record: Record) {
-        if (stopping.get()) return
-        if (!queue.offer(Cmd.Write(record))) dropped.incrementAndGet()
+    private fun enqueue(record: Record) = intake.read {
+        if (!stopping.get() && !queue.offer(Cmd.Write(record))) dropped.incrementAndGet()
     }
+
+    /** Stops accepting records. True for the call that actually stopped intake. */
+    private fun stopIntake(): Boolean = intake.write { stopping.compareAndSet(false, true) }
 }
 
 /** Marks a camera starting. The event time is the video's offset to session time. */
