@@ -1,0 +1,50 @@
+name: CI
+
+# Build, unit tests, Android lint and detekt on every pull request and on main.
+# The debug APK of each run is kept as an artifact (signed with a throwaway
+# key made on the runner, so it does not install over a release build).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build, test, lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The build number is the commit count, so it needs the history.
+          fetch-depth: 0
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.14.3
+      - name: Build, unit tests, lint and detekt
+        run: gradle build detekt -Pbetterdriver.build="$(git rev-list --count HEAD)" --stacktrace
+      - name: Upload reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: '**/build/reports/'
+          retention-days: 7
+      - uses: actions/upload-artifact@v4
+        with:
+          name: betterdriver-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14

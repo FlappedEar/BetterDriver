@@ -1,0 +1,41 @@
+name: Keep the Android signing key
+
+# The release APK is signed with one key (docs/signing-key.md). Its only copy
+# in GitHub is the repository secret ANDROID_RELEASE_KEYSTORE_BASE64, read by
+# release.yml in its signing job and nowhere else. Every day this checks that
+# the secret still holds the key whose certificate is on installed apps, so a
+# missing or wrong key is found before a release. GitHub turns scheduled
+# workflows off after 60 days without repository activity; turn it back on in
+# the Actions tab if that happens.
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Check the signing key secret
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+          persist-credentials: false
+      - name: Write the key from the secret and check its certificate
+        id: secret
+        uses: ./.github/actions/signing-key-from-secret
+        with:
+          expected-sha256: 0e12358c264f8fa04e448098cb1ed0302256a1e749018a2d2065fea17167ec05
+          keystore-base64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+      - name: Stop if the secret is missing
+        if: steps.secret.outputs.restored != 'true'
+        run: |
+          echo "::error::The secret ANDROID_RELEASE_KEYSTORE_BASE64 is not set. Releases cannot sign APKs; do not replace the key (installed apps could not update)."
+          exit 1
+      - name: Remove the key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/release.keystore"
