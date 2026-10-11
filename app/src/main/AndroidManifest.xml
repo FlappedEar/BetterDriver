@@ -12,6 +12,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- The recorder runs as a foreground service and keeps the CPU awake while recording (FBBD-69). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <!-- Video and audio are optional (GoPro or no camera), so this hardware must not be required to install. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
@@ -32,6 +37,13 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Own process: a crash in the UI, coach or analysis never stops a recording (FBBD-69). -->
+        <service
+            android:name=".recording.RecorderService"
+            android:exported="false"
+            android:foregroundServiceType="location"
+            android:process=":recorder" />
     </application>
 
 </manifest>

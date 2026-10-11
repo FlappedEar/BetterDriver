@@ -22,7 +22,14 @@ enum class SessionState {
     RECOVERED,
 }
 
-data class SessionSummary(val id: String, val dir: File, val info: SessionInfo, val state: SessionState)
+data class SessionSummary(
+    val id: String,
+    val dir: File,
+    val info: SessionInfo,
+    val state: SessionState,
+    /** From the clean stop, or from the last sample found by recovery. Null while recording or before recovery. */
+    val durationMicros: Long? = null,
+)
 
 data class RecoveryReport(
     val id: String,
@@ -95,9 +102,15 @@ class SessionStore(val root: File) {
                 } catch (_: RuntimeException) {
                     return@mapNotNull null // damaged metadata: not listed
                 }
-                SessionSummary(d.name, d, info, state(d))
+                SessionSummary(d.name, d, info, state(d), durationMicros(d))
             }
             .sortedByDescending { it.info.startUtcMillis }
+
+    private fun durationMicros(dir: File): Long? {
+        val finished = SessionFiles.readProps(File(dir, SessionFiles.FINISHED))?.getProperty("endMicros")
+        val recovered = SessionFiles.readProps(File(dir, SessionFiles.RECOVERY))?.getProperty("lastSampleMicros")
+        return (finished ?: recovered)?.toLongOrNull()
+    }
 
     /**
      * Run at app start. Finds sessions that were not stopped cleanly and nobody is recording,

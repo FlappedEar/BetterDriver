@@ -67,6 +67,24 @@ are minutes, longitude positive west; time is UTC `hhmmss.sss`. The start/finish
 gate goes in `[laptiming]`. Not yet verified in Circuit Tools or RaceChrono
 (FBBD-68).
 
+## Live values
+
+`LiveTracker` is a `RecorderListener` that keeps what the track screen needs
+(recording time, GNSS rate, satellites, speed, storage warnings) as a small
+`LiveSnapshot`. Like any listener it runs on the listener thread, so it cannot
+affect the recording.
+
+## In the app
+
+`RecorderService` (app, `recording/`) runs the recorder as a foreground service
+in its own process (`:recorder`) with a partial wake lock. The UI process starts
+and stops it with intents and receives `LiveSnapshot`s over a Messenger. Killing
+or crashing the UI leaves the recording running; reopening the app reconnects and
+returns to the track screen. While a recording runs, the app keeps the screen on.
+At app start, and whenever the recorder process ends, the UI process runs
+`recoverInterrupted()`. Sessions are listed on the Sessions tab and exported as
+VBO through Android's save dialog.
+
 ## Fakes
 
 `FakeGnss` / `FakeGnssSource` produce a deterministic 25 Hz lap around a
