@@ -14,11 +14,21 @@ data class ChannelDef(
     init {
         require(id in 0..MaxChannelId) { "channel id out of range: $id" }
         require(decimals in 0..MaxDecimals) { "decimals out of range: $decimals" }
+        // Checked here, on the caller's thread, so a bad definition can never fail the writer.
+        require(name.length <= MaxNameChars && unit.length <= MaxNameChars && source.length <= MaxNameChars) {
+            "channel name, unit and source must be at most $MaxNameChars characters"
+        }
     }
 }
 
 private const val MaxChannelId = 0xFFFF
 private const val MaxDecimals = 9
+
+/** At most 3 encoded bytes per char, far below the 65,535-byte limit of the record format. */
+internal const val MaxNameChars = 256
+
+/** Most values one [SampleSet] can hold in the record format. */
+internal const val MaxValuesPerSet = 0xFFFF
 
 /** One value of one channel. */
 data class ChannelValue(val channelId: Int, val value: Double) {
@@ -31,7 +41,11 @@ data class ChannelValue(val channelId: Int, val value: Double) {
  * Values taken at the same instant. [tMicros] is microseconds since the session started,
  * on the recorder's monotonic clock.
  */
-data class SampleSet(val tMicros: Long, val values: List<ChannelValue>)
+data class SampleSet(val tMicros: Long, val values: List<ChannelValue>) {
+    init {
+        require(values.size <= MaxValuesPerSet) { "too many values in one set: ${values.size}" }
+    }
+}
 
 /** A timestamped event, such as "gnss_lost" or "lap". */
 data class RecorderEvent(val tMicros: Long, val kind: String, val text: String)

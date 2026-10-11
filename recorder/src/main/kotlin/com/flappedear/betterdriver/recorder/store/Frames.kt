@@ -42,6 +42,7 @@ object Frames {
     const val HEADER_BYTES = MAGIC_BYTES + 1 + INT_BYTES
     const val TRAILER_BYTES = INT_BYTES
     const val MAX_PAYLOAD = 1 shl 20
+    const val MAX_TEXT_CHARS = 8_192
 
     private const val T_CHANNEL: Int = 1
     private const val T_SAMPLES: Int = 2
@@ -72,13 +73,13 @@ object Frames {
             }
             is Record.Event -> {
                 out.writeLong(record.event.tMicros)
-                out.writeUTF(record.event.kind)
-                out.writeUTF(record.event.text)
+                out.writeUTF(bounded(record.event.kind))
+                out.writeUTF(bounded(record.event.text))
                 T_EVENT
             }
             is Record.End -> {
                 out.writeLong(record.tMicros)
-                out.writeUTF(record.reason)
+                out.writeUTF(bounded(record.reason))
                 T_END
             }
         }
@@ -91,6 +92,16 @@ object Frames {
         frame.put(body)
         frame.putInt(crc(type, body))
         return frame.array()
+    }
+
+    /**
+     * Free text (events, stop reasons) can come from anywhere; cut it so writeUTF can never throw
+     * on the writer thread. [MAX_TEXT_CHARS] chars encode to at most 3 bytes each, under 65,535.
+     */
+    private fun bounded(s: String): String {
+        if (s.length <= MAX_TEXT_CHARS) return s
+        val end = if (s[MAX_TEXT_CHARS - 1].isHighSurrogate()) MAX_TEXT_CHARS - 1 else MAX_TEXT_CHARS
+        return s.substring(0, end)
     }
 
     private fun crc(type: Int, body: ByteArray): Int {

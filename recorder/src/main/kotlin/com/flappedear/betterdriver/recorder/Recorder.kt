@@ -141,12 +141,14 @@ class Recording internal constructor(
         Thread({
             val status = writer.run(info.channels)
             stopIntake()
-            sources.stopAll()
             lock.release()
             finalStatus = status
             listeners.dispatch { it.onStatus(status) }
             listeners.shutdown()
             stopped.countDown()
+            // Last, so a source that blocks in stop() cannot hold up the finished recording.
+            // Sources a user stop already stopped are not stopped again.
+            sources.stopAll()
         }, "recorder-writer-$id").start()
     }
 
@@ -157,7 +159,8 @@ class Recording internal constructor(
         if (!stopping.get()) pendingChannels.add(def)
     }
 
-    override fun submit(set: SampleSet) = enqueue(Record.Samples(set))
+    /** The values are copied here: the writer reads them later, and the source may reuse its list. */
+    override fun submit(set: SampleSet) = enqueue(Record.Samples(set.copy(values = set.values.toList())))
 
     override fun event(kind: String, text: String) = enqueue(Record.Event(RecorderEvent(nowMicros(), kind, text)))
 
@@ -167,15 +170,16 @@ class Recording internal constructor(
      */
     @Suppress("TooGenericExceptionCaught") // Isolation: no source failure may stop the recording.
     fun attach(source: DataSource): Boolean {
-        val added = intake.read { !stopping.get() && sources.add(source) }
+        val added = intake.read { !stopping.get() && sources.beginStart(source) }
         if (!added) return false
         try {
             source.start(this)
         } catch (e: Exception) {
             event(EventKinds.SOURCE_ERROR, "${source.name}: start failed: $e")
+        } finally {
+            // Stops it now if a stop ran while it was starting; otherwise the next stopAll does.
+            sources.endStart(source)
         }
-        // A stop that ran while the source was starting may have missed it.
-        if (stopping.get()) sources.stopOne(source)
         return true
     }
 
@@ -213,28 +217,44 @@ fun SampleSink.videoStarted(camera: String, file: String) = event(EventKinds.VID
 
 fun SampleSink.videoStopped(camera: String, file: String) = event(EventKinds.VIDEO_STOP, "camera=$camera file=$file")
 
+/**
+ * The attached sources. Each source is stopped exactly once: [DataSource.stop] need not be idempotent.
+ * A source still starting when [stopAll] runs is stopped by [endStart] once its start returns.
+ */
 private class Sources {
-    private val list = mutableListOf<DataSource>()
+    private val starting = mutableListOf<DataSource>()
+    private val started = mutableListOf<DataSource>()
+    private var closed = false
 
-    fun add(source: DataSource): Boolean = synchronized(list) { list.add(source) }
+    /** False once [stopAll] has run. */
+    fun beginStart(source: DataSource): Boolean = synchronized(this) {
+        if (!closed) starting.add(source)
+        !closed
+    }
 
-    @Suppress("TooGenericExceptionCaught") // A source failing to stop must not affect the recording.
-    fun stopOne(source: DataSource) {
+    fun endStart(source: DataSource) {
+        val stopNow = synchronized(this) {
+            starting.remove(source)
+            if (!closed) started.add(source)
+            closed
+        }
+        if (stopNow) stopQuietly(source)
+    }
+
+    fun stopAll() {
+        val toStop = synchronized(this) {
+            closed = true
+            started.toList().also { started.clear() }
+        }
+        toStop.forEach(::stopQuietly)
+    }
+
+    @Suppress("TooGenericExceptionCaught") // A source failing to stop must not affect the recording or the others.
+    private fun stopQuietly(source: DataSource) {
         try {
             source.stop()
         } catch (_: Exception) {
             // Nothing to do: the source is being dropped anyway.
-        }
-    }
-
-    @Suppress("TooGenericExceptionCaught") // A source failing to stop must not block the others.
-    fun stopAll() = synchronized(list) {
-        list.forEach {
-            try {
-                it.stop()
-            } catch (_: Exception) {
-                // Nothing to do: the source is being dropped anyway.
-            }
         }
     }
 }

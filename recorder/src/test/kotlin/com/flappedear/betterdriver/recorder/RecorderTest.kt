@@ -212,6 +212,59 @@ class RecorderTest {
     }
 
     @Test
+    fun `each source is stopped exactly once`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        val stops = AtomicLong()
+        rec.attach(object : DataSource {
+            override val name = "counting"
+            override fun start(sink: SampleSink) = Unit
+            override fun stop() {
+                stops.incrementAndGet()
+            }
+        })
+        assertTrue(rec.stop())
+        // The writer thread runs its own stopAll after the stop completes; give it time to.
+        Thread.sleep(200)
+        assertEquals(1, stops.get())
+    }
+
+    @Test
+    fun `a source reusing its value list after submit does not change what was recorded`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        val values = mutableListOf(ChannelValue(obdLike.id, 1.0))
+        rec.defineChannel(obdLike)
+        rec.submit(SampleSet(0, values))
+        values[0] = ChannelValue(obdLike.id, 2.0)
+        values.add(ChannelValue(obdLike.id, 3.0))
+        rec.stop()
+        val set = store.read(rec.id).sampleSets.single { s -> s.values.any { it.channelId == obdLike.id } }
+        assertEquals(listOf(ChannelValue(obdLike.id, 1.0)), set.values)
+    }
+
+    @Test
+    fun `oversized event text is cut, not fatal`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        rec.event("x".repeat(70_000), "y".repeat(70_000))
+        feed(rec, 10)
+        assertTrue(rec.stop())
+        assertEquals("user", rec.finalStatus?.reason)
+        val data = store.read(rec.id)
+        assertTrue(data.events.any { it.text.length == 8_192 })
+        assertEquals(10, data.sampleSets.count { s -> s.values.any { it.channelId == GnssChannels.LAT.id } })
+    }
+
+    @Test
+    fun `channel names and oversized sets are rejected on the caller's thread`() {
+        assertFailsWith<IllegalArgumentException> { ChannelDef(9, "n".repeat(257), "", "test") }
+        assertFailsWith<IllegalArgumentException> {
+            SampleSet(0, List(65_536) { ChannelValue(1, 0.0) })
+        }
+    }
+
+    @Test
     fun `channel ids outside 16 bits are rejected before they reach the file`() {
         assertFailsWith<IllegalArgumentException> { ChannelValue(65_536, 1.0) }
         assertFailsWith<IllegalArgumentException> { ChannelValue(-1, 1.0) }
