@@ -67,9 +67,19 @@ class ThermalPolicyTest {
     }
 
     @Test
-    fun resetStartsFromTheGivenStep() {
+    fun moveToStartsFromTheGivenStep() {
         val p = ThermalPolicy(4)
-        p.reset(2)
+        p.moveTo(2)
         assertEquals(ThermalAction.StepDown(3), p.onReading(0, Thermal.SEVERE, null))
+    }
+
+    @Test
+    fun rebindingAfterAStepDownKeepsTheInterval() {
+        val p = ThermalPolicy(4, minStepMicros = minute)
+        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
+        // The camera rebinds at the new step (PhoneCamera.begin) before the next 5 s check.
+        p.moveTo(1)
+        assertEquals(ThermalAction.Keep, p.onReading(minute / 12, Thermal.MODERATE, null))
+        assertEquals(ThermalAction.StepDown(2), p.onReading(minute, Thermal.MODERATE, null))
     }
 }
