@@ -79,7 +79,8 @@ class Sessions private constructor(private val context: Context) {
     @Suppress("TooGenericExceptionCaught") // A damaged session must not stop the others from listing.
     fun recoverAndRefresh() {
         recoveries.incrementAndGet()
-        main.post { recovering = true }
+        // Set at once on the main thread, so nothing can see the stale list as recovered.
+        if (Looper.myLooper() == Looper.getMainLooper()) recovering = true else main.post { recovering = true }
         io.execute {
             try {
                 store.recoverInterrupted()

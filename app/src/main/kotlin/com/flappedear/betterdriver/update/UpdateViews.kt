@@ -29,13 +29,16 @@ private const val Percent = 100
 fun FollowUpdates(updates: AppUpdates, recorder: RecorderClient, sessions: Sessions) {
     val busy = updatesBlocked(recorder, sessions)
     LaunchedEffect(busy) {
-        updates.setBusy(busy)
+        updates.watch { blockedNow(recorder, sessions) }
         if (!busy) updates.checkIfDue()
     }
 }
 
 @Composable
-fun updatesBlocked(recorder: RecorderClient, sessions: Sessions): Boolean {
+fun updatesBlocked(recorder: RecorderClient, sessions: Sessions): Boolean = blockedNow(recorder, sessions)
+
+/** Reads Compose state, so it is current from any thread; the worker checks it before each step. */
+private fun blockedNow(recorder: RecorderClient, sessions: Sessions): Boolean {
     val r = recorder.state
     val unsaved = sessions.list.any { it.state == SessionState.RECORDING || it.state == SessionState.INTERRUPTED }
     return !r.connected || sessions.recovering || r.recording || r.starting || unsaved

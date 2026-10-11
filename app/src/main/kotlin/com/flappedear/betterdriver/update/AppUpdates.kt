@@ -44,9 +44,9 @@ class AppUpdates private constructor(private val context: Context) {
     /** True when this build is signed with the release key, so releases install over it. */
     val enabled: Boolean = installedInfo()?.certSha256 == setOf(ReleaseCert.Sha256)
 
-    /** Read on the worker thread, written from the UI. */
+    /** Read live by the worker before each step; busy until the UI connects it ([watch]). */
     @Volatile
-    private var busy = true
+    private var busy: () -> Boolean = { true }
 
     private val worker = Executors.newSingleThreadExecutor { Thread(it, "updates") }
     private val main = Handler(Looper.getMainLooper())
@@ -59,7 +59,7 @@ class AppUpdates private constructor(private val context: Context) {
             dir = File(context.cacheDir, UpdatesDir),
             inspect = ::archiveInfo,
             apkCheck = ApkCheck(context.packageName, BuildConfig.VERSION_CODE.toLong()),
-            busy = { busy },
+            busy = { busy() },
             log = object : CheckLog {
                 override var nextAutoCheck: Long
                     get() = prefs.getLong(KeyNextCheck, 0L)
@@ -71,9 +71,12 @@ class AppUpdates private constructor(private val context: Context) {
         )
     }
 
-    /** A session is recording, starting or not saved yet. Starting one stops a download. */
-    fun setBusy(value: Boolean) {
-        busy = value
+    /**
+     * [blocked] says whether a session is recording, starting or not saved yet. It reads the live
+     * recorder and session state, so a session starting stops a download at its next chunk.
+     */
+    fun watch(blocked: () -> Boolean) {
+        busy = blocked
     }
 
     /** On launch and after a session: at most once a day. */
