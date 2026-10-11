@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -28,12 +29,13 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.Setup
+import com.flappedear.betterdriver.setup.TrackChannel
 import java.util.Locale
 
 private const val BytesPerGb = 1_000_000_000.0
 
 /**
- * Settings (UI-15 option B): tabs for Devices, Car, Recording and App.
+ * Settings (UI-15 option B): tabs for Devices, Car, Recording (with the track-screen tiles) and App.
  * [initialTab] lets the first-run checklist open a tab directly.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -52,6 +54,7 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     trackCount: Int = 0,
     onTracks: () -> Unit = {},
+    onChooseTiles: (List<TrackChannel>) -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -71,7 +74,7 @@ fun SettingsScreen(
             when (SettingsTab.entries[tab]) {
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
-                SettingsTab.Recording -> RecordingTab(trackCount, onTracks)
+                SettingsTab.Recording -> RecordingTab(setup.session.tiles, onChooseTiles, trackCount, onTracks)
                 SettingsTab.App -> AppTab(version, onRunSetup)
             }
         }
@@ -87,16 +90,25 @@ private fun CarTab(setup: Setup, onOpenCar: (CarProfile) -> Unit, onAddCar: () -
     }
 }
 
+/** Recording settings, including the track-screen tiles for every session (UI-38 option A). */
 @Composable
-private fun RecordingTab(trackCount: Int, onTracks: () -> Unit) {
+private fun RecordingTab(
+    tiles: List<TrackChannel>,
+    onChooseTiles: (List<TrackChannel>) -> Unit,
+    trackCount: Int,
+    onTracks: () -> Unit,
+) {
     val context = LocalContext.current
     val freeGb = remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
+    var choosingTiles by rememberSaveable { mutableStateOf(false) }
     ShellCard {
         val tracks = if (trackCount == 1) "1 track" else "$trackCount tracks"
         ListRow("Tracks and timing lines", tracks, divider = false, onClick = onTracks)
+        ListRow("Track screen tiles", tilesLabel(tiles), onClick = { choosingTiles = true })
         ListRow("Video quality", "4K · 60 fps")
         ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb))
     }
+    if (choosingTiles) TilesDialog(tiles, onChooseTiles, onClose = { choosingTiles = false })
 }
 
 @Composable

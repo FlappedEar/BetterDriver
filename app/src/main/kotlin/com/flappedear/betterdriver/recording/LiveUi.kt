@@ -29,7 +29,7 @@ private const val NoValue = "–"
  * Track screen values from the recorder. Laps, delta and sectors come from live timing, which runs
  * in the recorder process once the session is at a saved track with lines (FBBD-12); until then,
  * and for coach cues, which are not built yet, those slots show their empty state. [tiles] are the
- * session's tiles (UI-38 B), already limited to what its receiver can fill.
+ * tiles set in Settings (UI-38 A), already limited to what the session's receiver can fill.
  */
 fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreenState {
     val live = state.live

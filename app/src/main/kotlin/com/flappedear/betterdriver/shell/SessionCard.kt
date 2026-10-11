@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Switch
@@ -16,24 +15,20 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.setup.EquipmentKind
-import com.flappedear.betterdriver.setup.MaxTiles
 import com.flappedear.betterdriver.setup.Setup
-import com.flappedear.betterdriver.setup.TrackChannel
-import com.flappedear.betterdriver.setup.channelsFor
 
-private enum class Picker { Car, Gnss, Tiles }
+private enum class Picker { Car, Gnss }
 
 /**
- * "This session" on home (UI-36 option A): the car, the GNSS receiver, a switch per camera and the
- * track-screen tiles (UI-38 option B, per session). The last choice is kept, so on a normal day
- * Arek only presses START. A camera turned off here does not start. While a session starts or
+ * "This session" on home (UI-36 option A): the car, the GNSS receiver and a switch per camera.
+ * Track-screen tiles are set once in Settings › Recording. The last choice is kept, so on a normal
+ * day Arek only presses START. A camera turned off here does not start. While a session starts or
  * records the card is [locked]: it shows what the running session uses and nothing can change.
  */
 @Composable
@@ -55,10 +50,6 @@ internal fun SessionCard(setup: Setup, actions: SessionCardActions, locked: Bool
                 )
             }
         }
-        if (active.gnss != null) {
-            val tiles = active.tiles.joinToString(" · ") { it.label }.ifEmpty { "None" }
-            ListRow("Tiles", tiles, onClick = { picker = Picker.Tiles }.takeUnless { locked })
-        }
         if (locked) DimText("Recording. This session's choice is fixed until it stops.")
     }
     when (picker.takeUnless { locked }) {
@@ -78,12 +69,6 @@ internal fun SessionCard(setup: Setup, actions: SessionCardActions, locked: Bool
             addLabel = "Add receiver",
             onChoose = { id -> actions.update { it.chooseGnss(id) } },
             onAdd = actions.onAddReceiver,
-            onClose = { picker = null },
-        )
-        Picker.Tiles -> TilesDialog(
-            chosen = setup.session.tiles,
-            available = channelsFor(active.gnss),
-            onDone = { tiles -> actions.update { it.chooseTiles(tiles) } },
             onClose = { picker = null },
         )
         null -> Unit
@@ -136,54 +121,4 @@ private fun RadioLine(text: String, selected: Boolean, onClick: () -> Unit) {
         RadioButton(selected = selected, onClick = onClick)
         Text(text, style = MaterialTheme.typography.bodyLarge)
     }
-}
-
-/**
- * Up to [MaxTiles] tiles, in the order they were ticked. A tile the receiver cannot fill is shown
- * but cannot be ticked; one ticked before stays saved and comes back with a receiver that fills it.
- */
-@Composable
-private fun TilesDialog(
-    chosen: List<TrackChannel>,
-    available: Set<TrackChannel>,
-    onDone: (List<TrackChannel>) -> Unit,
-    onClose: () -> Unit,
-) {
-    var picked by remember { mutableStateOf(chosen) }
-    AlertDialog(
-        onDismissRequest = onClose,
-        title = { Text("Track screen tiles") },
-        text = {
-            Column {
-                TrackChannel.entries.forEach { ch ->
-                    val on = ch in picked
-                    val usable = ch in available
-                    val full = picked.count { it in available } >= MaxTiles
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Checkbox(
-                            checked = on && usable,
-                            enabled = usable && (on || !full),
-                            onCheckedChange = { v -> picked = if (v) picked - ch + ch else picked - ch },
-                        )
-                        Column {
-                            Text(ch.label, style = MaterialTheme.typography.bodyLarge)
-                            if (!usable) DimText("Needs a RaceBox")
-                        }
-                    }
-                }
-                DimText("Up to $MaxTiles, in the order you tick them.")
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                onDone(picked.filter { it in available } + picked.filter { it !in available })
-                onClose()
-            }) { Text("Done") }
-        },
-        dismissButton = { TextButton(onClick = onClose) { Text("Cancel") } },
-    )
 }

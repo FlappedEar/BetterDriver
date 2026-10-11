@@ -304,6 +304,7 @@ private fun Settings(
         onBack = onBack,
         trackCount = tracks.list.size,
         onTracks = { nav.navigate(Routes.Tracks) },
+        onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
     )
 }
 
