@@ -50,6 +50,9 @@ private const val MinCueSpeedKmh = 20.0
 /** A lap time not spoken this long after the line is dropped. */
 private const val LapCueExpiryMicros = 20_000_000L
 
+/** [CornerBook.cuedOnLap] of a corner not cued yet: far enough below any lap that it is always rested. */
+private const val NeverCued = Int.MIN_VALUE / 2
+
 /** Losses kept per corner for picking focus corners. */
 private const val LossHistory = 3
 
@@ -73,7 +76,7 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>) {
     val targets = arrayOfNulls<CornerPass>(n)
     val lastPass = arrayOfNulls<CornerPass>(n)
     private val losses = Array(n) { ArrayDeque<Long>() }
-    val cuedOnLap = IntArray(n) { Int.MIN_VALUE / 2 }
+    val cuedOnLap = IntArray(n) { NeverCued }
 
     init {
         initialTargets.forEach { t -> if (t.corner in 1..n) targets[t.corner - 1] = t }
@@ -122,6 +125,14 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>) {
     }
 }
 
+/** The first timed lap of a session without an earlier reference sets the corners. */
+private fun cornersFrom(traced: TracedLap): CornerBook? {
+    val found = findCorners(traced.trace)
+    if (found.isEmpty()) return null
+    val m = CornerMap(traced.trace, found)
+    return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)))
+}
+
 /**
  * When a phrase can be spoken (FBBD-97): the car's recent speeds, whether it is braking, and whether
  * a phrase started now is heard in full before a braking zone.
@@ -166,6 +177,11 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
     fun said(cue: Cue): Cue {
         speakingUntil = cue.tMicros + needMicros(cue.text)
         return cue
+    }
+
+    /** [cue] was never played, so nothing is being said. */
+    fun unsaid(cue: Cue) {
+        if (speakingUntil == cue.tMicros + needMicros(cue.text)) speakingUntil = Long.MIN_VALUE
     }
 
     private companion object {
@@ -234,9 +250,10 @@ class CueEngine(
     fun update(fix: CoachFix): CoachUpdate {
         val events = laps.update(fix)
         speech.onSpeed(fix.tMicros, laps.speedKmh)
-        for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, fix.tMicros)
-        val along = laps.position?.let { p -> cursor?.along(p) }
         val results = mutableListOf<CueResult>()
+        for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, fix.tMicros, results)
+        val along = laps.position?.let { p -> cursor?.along(p) }
+        if (along == null) meters.forEach(PassMeter::lost)
         if (along != null) {
             for (m in meters) {
                 m.add(along, fix.tMicros, laps.speedKmh)?.let { pass -> onPass(pass, fix.tMicros)?.let(results::add) }
@@ -250,7 +267,9 @@ class CueEngine(
         return if (cue == null && results.isEmpty()) CoachUpdate.None else CoachUpdate(listOfNotNull(cue), results)
     }
 
-    private fun onLapDone(lap: Lap, now: Long) {
+    private fun onLapDone(lap: Lap, now: Long, results: MutableList<CueResult>) {
+        // A corner whose window ends at the line is measured now, before its lap's passes are used.
+        for (m in meters) m.finish()?.let { pass -> onPass(pass, now)?.let(results::add) }
         val timed = lap.kind == LapKind.Timed
         val traced = laps.finished.lastOrNull { it.lap.number == lap.number }
         val b = book
@@ -265,14 +284,6 @@ class CueEngine(
         meters = book?.map?.meters(laps.timer.lapNumber).orEmpty()
         plan = null
         openCues.clear()
-    }
-
-    /** The first timed lap of a session without an earlier reference sets the corners. */
-    private fun cornersFrom(traced: TracedLap): CornerBook? {
-        val found = findCorners(traced.trace)
-        if (found.isEmpty()) return null
-        val m = CornerMap(traced.trace, found)
-        return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)))
     }
 
     private fun onTimedLap(lap: Lap, now: Long) {
@@ -295,6 +306,17 @@ class CueEngine(
         } else {
             CueResult(now, cue, pass, improved(cue.advice, before, pass), before.timeMicros - pass.timeMicros)
         }
+    }
+
+    /**
+     * [cue] was not heard (it came too late to say, or the voice refused it): nothing is measured
+     * against it, and its corner may be cued again on the next lap.
+     */
+    fun unsaid(cue: Cue) {
+        speech.unsaid(cue)
+        val corner = cue.corner ?: return
+        if (openCues[corner]?.seq == cue.seq) openCues.remove(corner)
+        book?.cuedOnLap?.let { if (it[corner - 1] == cue.lap) it[corner - 1] = NeverCued }
     }
 
     /** At most one cue for this fix, with the car [along] the reference path. */

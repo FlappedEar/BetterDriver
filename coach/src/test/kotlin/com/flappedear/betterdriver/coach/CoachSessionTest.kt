@@ -29,9 +29,8 @@ class CoachSessionTest {
         val events = mutableListOf<CoachEvent>()
         val said = mutableListOf<String>()
         for (f in sim.drive(List(5) { early2 }).fixes) {
-            val out = session.onFix(f, f.tMicros)
+            val out = session.onFix(f, f.tMicros) { said.add(it) }
             events += out.events
-            said += out.say
         }
         val cueEvent = events.single { it.kind == CoachEvents.CUE && "kind=Corner" in it.text }
         val cue = assertNotNull(CoachEvents.parseCue(cueEvent.tMicros, cueEvent.text))
@@ -52,12 +51,32 @@ class CoachSessionTest {
         val events = mutableListOf<CoachEvent>()
         val said = mutableListOf<String>()
         for (f in sim.drive(List(2) { SimCircuit.Pace() }).fixes) {
-            val out = session.onFix(f, f.tMicros + 1_000_000)
+            val out = session.onFix(f, f.tMicros + 1_000_000) { said.add(it) }
             events += out.events
-            said += out.say
         }
         assertTrue(said.isEmpty())
         assertTrue(events.isNotEmpty() && events.all { it.kind == CoachEvents.PROBLEM && it.text.startsWith("late") })
+    }
+
+    @Test
+    fun `a cue the voice refuses is logged as a problem, gets no result and is tried again next lap`() {
+        val session = CoachSession(CoachSettings(Verbosity.Full), track, reference())
+        val events = mutableListOf<CoachEvent>()
+        var refused = 0
+        val say = { text: String -> !(text.startsWith("Turn 2") && refused++ == 0) }
+        for (f in sim.drive(List(6) { early2 }).fixes) events += session.onFix(f, f.tMicros, say).events
+        assertEquals(1, refused - 1, "the first turn 2 cue was refused, the second said")
+        val problem = events.single { it.kind == CoachEvents.PROBLEM }
+        assertTrue(problem.text.startsWith("no voice seq="), problem.text)
+        val unsaidSeq = problem.text.removePrefix("no voice ").let { CoachEvents.parseCue(problem.tMicros, it) }!!.seq
+        val cues = events.filter { it.kind == CoachEvents.CUE }.mapNotNull { CoachEvents.parseCue(it.tMicros, it.text) }
+        assertTrue(cues.none { it.seq == unsaidSeq })
+        val corner2 = cues.single { it.corner == 2 }
+        val results = events.filter { it.kind == CoachEvents.RESULT }.mapNotNull { CoachEvents.parseResult(it.text) }
+        assertEquals(listOf(corner2.seq), results.map { it.seq })
+        // Retried on the very next lap, not rested for one.
+        val refusedLap = CoachEvents.parseCue(problem.tMicros, problem.text.removePrefix("no voice "))!!.lap
+        assertEquals(refusedLap + 1, corner2.lap)
     }
 
     @Test
@@ -65,8 +84,8 @@ class CoachSessionTest {
         val off = CoachSession(CoachSettings(Verbosity.Off), track, null)
         val none = CoachSession(CoachSettings(), null, null)
         for (f in sim.drive(List(2) { SimCircuit.Pace() }).fixes) {
-            assertTrue(off.onFix(f, f.tMicros).say.isEmpty())
-            assertTrue(none.onFix(f, f.tMicros).say.isEmpty())
+            off.onFix(f, f.tMicros) { error("said $it") }
+            none.onFix(f, f.tMicros) { error("said $it") }
         }
         assertEquals(CoachStatus.None, none.status)
     }
