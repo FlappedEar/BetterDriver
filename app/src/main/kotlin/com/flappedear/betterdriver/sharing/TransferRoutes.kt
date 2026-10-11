@@ -81,9 +81,13 @@ internal fun rememberTrackTransfer(): TrackTransferState {
 internal fun rememberTrackShare(trackId: String): (Track) -> Unit {
     val context = LocalContext.current
     val transfers = remember(context) { Transfers.get(context) }
-    val state = transfers.outgoing[Transfers.trackKey(trackId)]
+    val key = Transfers.trackKey(trackId)
+    val state = transfers.outgoing[key]
     LaunchedEffect(state) {
-        if (state?.failed == true) Toast.makeText(context, "Share failed: ${state.text}", Toast.LENGTH_LONG).show()
+        if (state?.failed == true) {
+            Toast.makeText(context, "Share failed: ${state.text}", Toast.LENGTH_LONG).show()
+            transfers.outgoing.remove(key) // shown once, not again when the editor reopens
+        }
     }
     return { t -> transfers.sendTrack(t) { uri -> share(context, uri, "Share track") } }
 }
