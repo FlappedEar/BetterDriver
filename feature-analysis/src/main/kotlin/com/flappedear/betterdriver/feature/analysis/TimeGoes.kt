@@ -18,7 +18,7 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.format.formatDelta
 
 /**
- * Where time goes (FBBD-103, UI-64): the corners and straights where the fastest lap is slowest
+ * Where time goes (FBBD-103, UI-67): the corners and straights where the fastest lap is slowest
  * against the best time through them, with the lap that set it, then the other laps' largest
  * single losses against the fastest. Tapping a loss compares that lap.
  */

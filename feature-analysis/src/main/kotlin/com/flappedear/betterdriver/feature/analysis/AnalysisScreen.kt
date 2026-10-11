@@ -49,7 +49,7 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * One session's analysis (FBBD-102 and FBBD-19, UI review round 14, UI-61 to UI-64): the fastest
+ * One session's analysis (FBBD-102 and FBBD-19, UI review round 14, UI-61 to UI-63 and UI-67): the fastest
  * lap and the theoretical best, where time goes (what the fastest lap leaves in each corner and
  * the other laps' largest losses), the lap compared with the fastest by distance (time delta and
  * speed, corners shaded, a cursor to read values), every lap's time, and the theoretical best
