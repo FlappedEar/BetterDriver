@@ -49,10 +49,12 @@ import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
- * One session's analysis (FBBD-102, UI review round 12): the fastest lap and the theoretical best,
- * the lap compared with the fastest by distance (time delta and speed, corners shaded, a cursor
- * to read values), every lap's time, and the theoretical best corner by corner with the compared
- * lap's loss. Tapping a lap compares it. [topBar] is the app's bar with its back button.
+ * One session's analysis (FBBD-102 and FBBD-19, UI review round 14, UI-61 to UI-63 and UI-67): the fastest
+ * lap and the theoretical best, where time goes (what the fastest lap leaves in each corner and
+ * the other laps' largest losses), the lap compared with the fastest by distance (time delta and
+ * speed, corners shaded, a cursor to read values), every lap's time, and the theoretical best
+ * corner by corner with the compared lap's loss and the spread of the counted laps. Tapping a lap
+ * or a loss compares it. [topBar] is the app's bar with its back button.
  */
 @Composable
 fun AnalysisScreen(
@@ -91,6 +93,7 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
     ) {
         val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
         Summary(ui, width)
+        if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, onCompare, width)
         ui.compare?.let { Compare(it, width) }
         Laps(ui, onCompare, width)
         Sectors(ui, width)
@@ -263,6 +266,7 @@ private fun Sectors(ui: AnalysisUi, modifier: Modifier) {
             Dim("", Modifier.weight(1f))
             Dim("Best", Modifier.width(76.dp))
             Dim("Lap ${ui.compare?.otherNumber ?: ""}", Modifier.width(64.dp))
+            Dim("Spread", Modifier.width(SpreadWidth))
         }
         for (s in ui.sectors) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -280,18 +284,18 @@ private fun Sectors(ui: AnalysisUi, modifier: Modifier) {
                     color = if ((s.lossSeconds ?: 0.0) > MeaningfulLossSeconds) c.loss else c.textDim,
                     modifier = Modifier.width(64.dp),
                 )
+                Dim(s.spreadSeconds?.let(::seconds) ?: "–", Modifier.width(SpreadWidth))
             }
         }
     }
 }
 
-/** Smaller losses are shown dim: within GPS timing noise. */
-private const val MeaningfulLossSeconds = 0.05
+private val SpreadWidth = 52.dp
 
-private fun seconds(value: Double) = String.format(Locale.ROOT, "%.2f", value)
+internal fun seconds(value: Double) = String.format(Locale.ROOT, "%.2f", value)
 
 @Composable
-private fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier
             .fillMaxWidth()
@@ -303,7 +307,7 @@ private fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope
 }
 
 @Composable
-private fun Dim(text: String, modifier: Modifier = Modifier, color: Color = TrackTheme.colors.textDim) {
+internal fun Dim(text: String, modifier: Modifier = Modifier, color: Color = TrackTheme.colors.textDim) {
     Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
 }
 

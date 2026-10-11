@@ -26,6 +26,11 @@ Kotlin file comes from.
   gaps and short straights; a check that the lap's line agrees with the other laps; every lap's
   sector times on the shared axis (only fully covered sectors are timed); and the theoretical
   best, the fastest real time of each sector with the lap it came from.
+- **Where time goes** (`segments`, FBBD-103): time-loss windows between two laps, one per segment
+  (a straight right after a corner is marked as that corner's continuation), with the running
+  delta at each end; every lap's losses against a reference lap, largest first; how repeatable
+  each segment is (median and interquartile range, from three laps); and the theoretical best as
+  the screens show it, with what the best lap leaves in each segment, largest first.
 - **Session analysis** (`analyzeSession`): all of the above for one session, with segments taken
   from its fastest eligible lap. BetterDriver has no segment editor yet, so nothing is stored.
   Without segments (a lap that cannot be split, or a line far from the other laps) the axis and
@@ -44,5 +49,6 @@ stored as float32 like Telemetry) and requires the same results to 1e-9:
 - `ProgressParityTest` (`progress_reference.json`): laps, axis, features, projections and deltas.
 - `SegmentsParityTest` (`segments_reference.json`): every lap's proposals, coverage gaps and
   proposals on the reference lap's axis, and option and gap variants.
-- `TheoreticalBestParityTest` (`theoretical_best_reference.json`): sector times and theoretical
-  best for each file's segments, shifted segments and every other segment, plus hand-made cases.
+- `TheoreticalBestParityTest` (`theoretical_best_reference.json`): sector times, theoretical best,
+  its published summary with consistency, and time-loss rankings and windows for each file's
+  segments, shifted segments and every other segment, plus hand-made cases.

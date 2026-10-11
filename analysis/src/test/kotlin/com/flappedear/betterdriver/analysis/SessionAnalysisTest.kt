@@ -25,6 +25,18 @@ class SessionAnalysisTest {
         val best = assertNotNull(analysis.theoreticalBest?.totalSeconds)
         val fastest = analysis.laps.timedLaps[analysis.laps.fastestLapIndex!!].durationSeconds
         assertTrue(best <= fastest + 1e-9, "theoretical best $best is slower than the fastest lap $fastest")
+
+        // What the fastest lap leaves in each segment adds up to the gap to the theoretical best.
+        val summary = assertNotNull(analysis.summary)
+        val left = summary.sectors.sumOf { assertNotNull(it.lossSeconds) }
+        assertEquals(assertNotNull(summary.differenceSeconds), left, 1e-9)
+        assertTrue(summary.sectors.all { it.lossSeconds!! >= -1e-12 })
+        // Every loss is another lap's, largest first.
+        val losses = assertNotNull(analysis.losses).losses
+        assertTrue(losses.isNotEmpty())
+        val fastestNumber = analysis.laps.timedLaps[analysis.laps.fastestLapIndex!!].number
+        assertTrue(losses.none { it.lapReference == fastestNumber })
+        assertEquals(losses.sortedByDescending { it.lossSeconds }, losses)
     }
 
     @Test

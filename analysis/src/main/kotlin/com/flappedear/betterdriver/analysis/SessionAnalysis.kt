@@ -11,16 +11,21 @@ import com.flappedear.betterdriver.analysis.segments.LineConsensus
 import com.flappedear.betterdriver.analysis.segments.PopulationLap
 import com.flappedear.betterdriver.analysis.segments.SegmentReview
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestLap
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
+import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
+import com.flappedear.betterdriver.analysis.segments.TimedLapSectors
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.computeSegmentReview
 import com.flappedear.betterdriver.analysis.segments.computeTheoreticalBest
 import com.flappedear.betterdriver.analysis.segments.lineConsensus
+import com.flappedear.betterdriver.analysis.segments.publishTheoreticalBest
+import com.flappedear.betterdriver.analysis.segments.rankTimeLosses
 import com.flappedear.betterdriver.analysis.segments.timePopulation
 
 /**
  * One session analysed end to end: its laps, the corners and straights proposed on its fastest
- * eligible lap, every lap's sector times on that lap's axis and the theoretical best of the
- * eligible laps.
+ * eligible lap, every lap's sector times on that lap's axis, the theoretical best of the eligible
+ * laps, and where each lap loses time against the fastest.
  *
  * Telemetry stores approved segments per track configuration and adopts the best lap's proposals
  * only when no run has approved any; BetterDriver has no segment editor yet, so a session always
@@ -44,6 +49,13 @@ data class SessionAnalysis(
     val traces: List<List<ProgressSegment>> = emptyList(),
     /** From eligible laps only. */
     val theoreticalBest: TheoreticalBestLap? = null,
+    /**
+     * The theoretical best as the screens show it: what the fastest lap loses in each segment,
+     * largest first, and how repeatable each segment is over the eligible laps.
+     */
+    val summary: TheoreticalBestSummary? = null,
+    /** Every eligible lap's losses against the fastest, window by window, largest first. */
+    val losses: TimeLossRanking? = null,
 )
 
 /**
@@ -57,7 +69,8 @@ fun analyzeSession(
     session: TelemetrySession,
     laps: LapSession = deriveSourceLapSession(session),
 ): SessionAnalysis {
-    val fastest = laps.fastestLapIndex?.let { laps.timedLaps[it] } ?: return SessionAnalysis(laps)
+    val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps)
+    val fastest = laps.timedLaps[fastestIndex]
     val review = computeSegmentReview(
         session, laps, fastest.number, fastest.startTelemetryTime, fastest.endTelemetryTime,
     )
@@ -77,11 +90,22 @@ fun analyzeSession(
     }
     val timed = timePopulation(laps, fastest.number, segments ?: NoSegments, population)
         ?: return SessionAnalysis(laps, fastest.number, review, consensus)
-    val eligible = laps.timedLaps.map { it.referenceEligible }
-    val best = segments?.let { computeTheoreticalBest(it, timed.times.filterIndexed { i, _ -> eligible[i] }) }
+    if (segments == null) {
+        return SessionAnalysis(laps, fastest.number, review, consensus, axis = timed.axis, traces = timed.traces)
+    }
+    val eligible = laps.timedLaps.indices.filter { laps.timedLaps[it].referenceEligible }
+    val eligibleTimes = eligible.map { timed.times[it] }
+    val best = computeTheoreticalBest(segments, eligibleTimes)
+    val fastestTimes = timed.times[fastestIndex]
+    val losses = rankTimeLosses(
+        segments,
+        timed.axis.lengthMeters,
+        eligible.map { TimedLapSectors(timed.times[it], population[it].start) },
+        TimedLapSectors(fastestTimes, fastest.startTelemetryTime),
+    )
     return SessionAnalysis(
-        laps, fastest.number, review, consensus, segments, timed.axis,
-        if (segments == null) emptyList() else timed.times, timed.traces, best,
+        laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
+        publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses,
     )
 }
 
