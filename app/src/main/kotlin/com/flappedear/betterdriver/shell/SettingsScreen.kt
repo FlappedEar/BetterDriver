@@ -57,6 +57,7 @@ fun SettingsScreen(
     onTracks: () -> Unit = {},
     onChooseTiles: (List<TrackChannel>) -> Unit = {},
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
+    updateRow: @Composable () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -77,7 +78,7 @@ fun SettingsScreen(
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
                 SettingsTab.Recording -> RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
-                SettingsTab.App -> AppTab(version, onRunSetup)
+                SettingsTab.App -> AppTab(version, onRunSetup, updateRow)
             }
         }
     }
@@ -125,12 +126,13 @@ private fun RecordingTab(
 }
 
 @Composable
-private fun AppTab(version: String, onRunSetup: () -> Unit) {
+private fun AppTab(version: String, onRunSetup: () -> Unit, updateRow: @Composable () -> Unit) {
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
         ListRow("Track screen colours", "Green / red")
         ListRow("Spoken coach cues", "Later")
         ListRow("Version", version)
+        updateRow()
         ListRow("Run setup again", onClick = onRunSetup)
     }
 }

@@ -23,6 +23,7 @@ include(
     ":video",
     ":gopro",
     ":setup",
+    ":updater",
     ":core-ui",
     ":core-ble",
     ":feature-track",

@@ -29,6 +29,7 @@ import java.io.File
 import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 /** Export progress of one session, shown on its card. */
 enum class ExportState { Running, Done, Failed }
@@ -58,6 +59,15 @@ class Sessions private constructor(private val context: Context) {
     var goPro by mutableStateOf<Map<String, SessionGoPro>>(emptyMap())
         private set
 
+    /**
+     * A recovery pass is queued or running, so [list] may still miss an interrupted session. True
+     * from creation until the first pass has published the list (FBBD-74).
+     */
+    var recovering by mutableStateOf(true)
+        private set
+
+    private val recoveries = AtomicInteger()
+
     init {
         recoverAndRefresh()
     }
@@ -67,13 +77,23 @@ class Sessions private constructor(private val context: Context) {
      * then reloads the list. A session being recorded is locked, so it is never touched.
      */
     @Suppress("TooGenericExceptionCaught") // A damaged session must not stop the others from listing.
-    fun recoverAndRefresh() = io.execute {
-        try {
-            store.recoverInterrupted()
-        } catch (e: RuntimeException) {
-            android.util.Log.w(Tag, "recovery failed", e)
+    fun recoverAndRefresh() {
+        recoveries.incrementAndGet()
+        // Set at once on the main thread, so nothing can see the stale list as recovered.
+        if (Looper.myLooper() == Looper.getMainLooper()) recovering = true else main.post { recovering = true }
+        io.execute {
+            try {
+                store.recoverInterrupted()
+            } catch (e: RuntimeException) {
+                android.util.Log.w(Tag, "recovery failed", e)
+            }
+            try {
+                publish()
+            } finally {
+                // Posted after publish's own post, so the list is current when this clears.
+                if (recoveries.decrementAndGet() == 0) main.post { recovering = recoveries.get() > 0 }
+            }
         }
-        publish()
     }
 
     fun refresh() = io.execute { publish() }
