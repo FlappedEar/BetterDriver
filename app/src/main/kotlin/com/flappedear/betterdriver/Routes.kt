@@ -28,6 +28,9 @@ object Routes {
 
     fun car(id: String) = "cars/$id"
 
+    /** Two laps side by side with their videos (FBBD-24). */
+    const val Review = "review"
+
     const val Track = "track"
     const val Tracks = "tracks"
 

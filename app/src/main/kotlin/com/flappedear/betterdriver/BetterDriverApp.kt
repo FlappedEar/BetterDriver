@@ -2,10 +2,14 @@ package com.flappedear.betterdriver
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -22,6 +26,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -113,7 +118,10 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Drive) {
                 Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
             }
-            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) } }
+            composable(Routes.Sessions) {
+                Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) { nav.navigate(Routes.Review) } }
+            }
+            composable(Routes.Review) { ReviewRoute(nav, padding) }
             composable(Routes.Settings) {
                 Box(Modifier.padding(padding)) {
                     Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
@@ -240,7 +248,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
  * with video asks for a folder instead, because the VBO and its video files must sit side by side.
  */
 @Composable
-private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
+private fun SessionsRoute(sessions: Sessions, repo: SetupRepo, onCompareLaps: () -> Unit) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -265,7 +273,16 @@ private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
     val updates = remember(context) { AppUpdates.get(context) }
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), sessions)
     SessionsScreen(
-        header = { UpdateCard(updates, updatesBlocked) },
+        header = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (sessions.list.isNotEmpty()) {
+                    FilledTonalButton(onClick = onCompareLaps, modifier = Modifier.fillMaxWidth()) {
+                        Text("Compare laps")
+                    }
+                }
+                UpdateCard(updates, updatesBlocked)
+            }
+        },
         sessions = sessions.list,
         exports = sessions.exports,
         withVideo = sessions.withVideo,
