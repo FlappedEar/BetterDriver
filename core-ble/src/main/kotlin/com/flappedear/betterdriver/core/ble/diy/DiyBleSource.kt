@@ -1,12 +1,20 @@
 package com.flappedear.betterdriver.core.ble.diy
 
 import android.content.Context
+import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.GattLink
 import com.flappedear.betterdriver.core.ble.LinkState
+import com.flappedear.betterdriver.core.ble.advertisesService
 import com.flappedear.betterdriver.core.ble.linkEvents
+import com.flappedear.betterdriver.core.ble.scanBleDevices
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+
+/** RaceChrono DIY devices in range that advertise service 0x1FF8, strongest first (FBBD-118). */
+fun scanDiyDevices(context: Context): Flow<List<FoundBleDevice>> =
+    scanBleDevices(context) { _, uuids -> advertisesService(uuids, DiyGatt.SERVICE) }
 
 /**
  * A RaceChrono DIY BLE GPS device (service 0x1FF8, https://github.com/aollin/racechrono-ble-diy-device)

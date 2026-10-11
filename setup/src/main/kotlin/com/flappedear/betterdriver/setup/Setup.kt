@@ -33,6 +33,19 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
      */
     LNS_GNSS(EquipmentKind.GNSS, "Bluetooth LE GPS"),
 
+    /**
+     * A RaceChrono DIY Bluetooth LE GPS device (service 0x1FF8,
+     * https://github.com/aollin/racechrono-ble-diy-device), as RaceChrono supports (FBBD-118). Found by a scan.
+     */
+    DIY_GNSS(EquipmentKind.GNSS, "RaceChrono DIY GPS"),
+
+    /**
+     * A receiver on Wi-Fi that sends NMEA 0183, or a RaceChrono DIY device sending $RC2/$RC3 lines,
+     * over TCP (FBBD-115, https://racechrono.com/article/2572). Its address is "host:port"
+     * ([TcpAddress]), typed in when it is added.
+     */
+    TCP_GNSS(EquipmentKind.GNSS, "Wi-Fi GPS"),
+
     /** Synthetic GNSS for trying the app without hardware. Only there when added on purpose. */
     DEMO_GNSS(EquipmentKind.GNSS, "Demo GNSS"),
 
@@ -72,8 +85,10 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     val actionCamera: Boolean get() = isGoPro || this == CAMERA_FILES
 
     /** True for models paired over Bluetooth, which need an address. */
-    val paired: Boolean get() = this == RACEBOX || this == NMEA_GNSS || this == LNS_GNSS || this == GOPRO ||
-        this == HEART_RATE
+    val paired: Boolean get() = this in setOf(RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, GOPRO, HEART_RATE)
+
+    /** True for models reached at an address: a Bluetooth one, or a Wi-Fi receiver's "host:port". */
+    val needsAddress: Boolean get() = paired || this == TCP_GNSS
 
     val isGoPro: Boolean get() = this == GOPRO || this == GOPRO_FILES
 
@@ -338,7 +353,7 @@ data class Setup(
         newId: () -> String,
         goPro: GoProModel? = null,
     ): Setup {
-        require(!model.paired || !address.isNullOrBlank()) { "${model.label} needs a Bluetooth address" }
+        require(!model.needsAddress || !address.isNullOrBlank()) { "${model.label} needs an address" }
         val camera = goProFor(model, goPro)
         val same = listedAs(model, address)
         val advertised = name.takeIf { address != null && it.isNotBlank() }

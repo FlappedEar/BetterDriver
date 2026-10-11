@@ -102,6 +102,20 @@ class SetupTest {
     }
 
     @Test
+    fun wifiGpsIsListedByHostAndPort() {
+        val s = Setup().addEquipment(EquipmentModel.TCP_GNSS, "Wi-Fi GPS", "192.168.4.1:2000", ids)
+        assertEquals("192.168.4.1:2000", s.active().gnss?.address)
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.TCP_GNSS, newId = ids) }
+        assertEquals(TcpAddress("gps.local", 10110), TcpAddress.parse(" gps.local ", "10110"))
+        assertEquals(TcpAddress("192.168.4.1", 2000), TcpAddress.parse("192.168.4.1:2000"))
+        assertNull(TcpAddress.parse("192.168.4.1", "0"))
+        assertNull(TcpAddress.parse("192.168.4.1", "70000"))
+        assertNull(TcpAddress.parse("", "2000"))
+        assertNull(TcpAddress.parse("192.168.4.1"))
+        assertTrue(EquipmentModel.DIY_GNSS.paired)
+    }
+
+    @Test
     fun repairingAGoProKeepsItsItemAndLearnsItsModel() {
         val first = Setup().addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids)
         val id = first.equipment.single().id

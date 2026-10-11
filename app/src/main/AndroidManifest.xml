@@ -24,6 +24,8 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Open GoPro download after a session: join the camera's own Wi-Fi (FBBD-22). -->
+    <!-- A Wi-Fi GPS receiver's socket is kept on Wi-Fi (FBBD-115). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />

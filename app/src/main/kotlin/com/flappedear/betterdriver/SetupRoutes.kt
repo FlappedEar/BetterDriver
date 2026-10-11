@@ -20,6 +20,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.core.ble.FoundBleDevice
+import com.flappedear.betterdriver.core.ble.diy.scanDiyDevices
 import com.flappedear.betterdriver.core.ble.hr.scanHeartRateMonitors
 import com.flappedear.betterdriver.core.ble.lns.scanLnsDevices
 import com.flappedear.betterdriver.core.ble.nmea.bondedSppDevices
@@ -133,6 +134,7 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
         onAddModel = { m, goPro -> addItem(m, goPro?.let(::goProName) ?: m.label, null, goPro) },
         onBack = { nav.popBackStack() },
         pairedGps = pairedGps.filter { it.address !in listed },
+        onAddWifiGps = { address -> addItem(EquipmentModel.TCP_GNSS, EquipmentModel.TCP_GNSS.label, address, null) },
     )
 }
 
@@ -213,19 +215,21 @@ internal fun CarRoute(nav: NavHostController, repo: SetupRepo, id: String) {
 
 /**
  * What can be added without Bluetooth: the phone camera and the demo receiver once, cameras run by
- * hand any number of times.
+ * hand and Wi-Fi receivers any number of times.
  */
 private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
     if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
     add(EquipmentModel.GOPRO_FILES)
     add(EquipmentModel.CAMERA_FILES)
+    add(EquipmentModel.TCP_GNSS)
     if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
 }
 
 /**
  * What a scan hears nearby while [searching]: RaceBoxes, Open GoPro cameras, Bluetooth LE GPS
- * receivers (FBBD-114) and heart-rate monitors (FBBD-119). Each scanner emits only once it hears
- * its own kind, so each starts empty: a RaceBox shows even with no GoPro nearby.
+ * receivers (FBBD-114), RaceChrono DIY devices (FBBD-118) and heart-rate monitors (FBBD-119).
+ * Each scanner emits only once it hears its own kind, so each starts empty: a RaceBox shows even
+ * with no GoPro nearby.
  */
 @Composable
 private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
@@ -237,11 +241,13 @@ private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
                 scanGoPros(context).onStart { emit(emptyList()) },
                 scanLnsDevices(context).onStart { emit(emptyList()) },
                 scanHeartRateMonitors(context).onStart { emit(emptyList()) },
-            ) { boxes, goPros, lns, hr ->
+                scanDiyDevices(context).onStart { emit(emptyList()) },
+            ) { boxes, goPros, lns, hr, diy ->
                 boxes.map { NearbyDevice(EquipmentModel.RACEBOX, it.name, it.address, it.bars) } +
                     goPros.map { NearbyDevice(EquipmentModel.GOPRO, it.name, it.address, it.bars) } +
                     lns.map { nearby(EquipmentModel.LNS_GNSS, it) } +
-                    hr.map { nearby(EquipmentModel.HEART_RATE, it) }
+                    hr.map { nearby(EquipmentModel.HEART_RATE, it) } +
+                    diy.map { nearby(EquipmentModel.DIY_GNSS, it) }
             }
         } else {
             flowOf(emptyList())

@@ -1,16 +1,23 @@
 package com.flappedear.betterdriver.recording
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import com.flappedear.betterdriver.core.ble.ImuCalibrationStore
 import com.flappedear.betterdriver.core.ble.RaceBoxSource
+import com.flappedear.betterdriver.core.ble.diy.DiyBleSource
 import com.flappedear.betterdriver.core.ble.hr.HeartRateSource
 import com.flappedear.betterdriver.core.ble.lns.LnsSource
 import com.flappedear.betterdriver.core.ble.nmea.NmeaSource
+import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.TcpAddress
 import java.io.File
+import java.io.IOException
+import javax.net.SocketFactory
 
 /** Where sessions are stored. Both processes use the same app-private directories. */
 internal fun sessionsDir(context: Context) = File(context.filesDir, "sessions")
@@ -34,6 +41,12 @@ enum class GnssType {
 
     /** A Bluetooth LE receiver with the Location and Navigation Service (FBBD-114). */
     LNS,
+
+    /** A RaceChrono DIY Bluetooth LE GPS device, service 0x1FF8 (FBBD-118). */
+    DIY,
+
+    /** A receiver on Wi-Fi sending NMEA or $RC2/$RC3 over TCP; its address is "host:port" (FBBD-115). */
+    TCP,
 
     /** The made-up positions of Demo GNSS, which Arek adds as equipment on purpose (FBBD-83). */
     DEMO,
@@ -73,6 +86,8 @@ fun gnssRefOf(e: Equipment): GnssRef? {
         EquipmentModel.RACEBOX -> GnssType.RACEBOX
         EquipmentModel.NMEA_GNSS -> GnssType.NMEA
         EquipmentModel.LNS_GNSS -> GnssType.LNS
+        EquipmentModel.DIY_GNSS -> GnssType.DIY
+        EquipmentModel.TCP_GNSS -> GnssType.TCP
         else -> null
     }
     // The recorder tells a RaceBox Micro from a Mini by the advertised name, not Arek's name for it.
@@ -95,8 +110,29 @@ internal object Sources {
             GnssType.DEMO -> FakeGnssSource()
             GnssType.NMEA -> NmeaSource(app, gnss.address, gnss.name)
             GnssType.LNS -> LnsSource(app, gnss.address, gnss.name)
+            GnssType.DIY -> DiyBleSource(app, gnss.address, gnss.name)
+            GnssType.TCP -> tcpSource(app, gnss)
             GnssType.RACEBOX -> RaceBoxSource(app, gnss.address, gnss.name, imuCalibrations(context).load(gnss.address))
         }
         return listOf(receiver) + sensors.map { HeartRateSource(app, it.address, it.name) }
     }
+}
+
+/** A Wi-Fi receiver's source; its socket goes over Wi-Fi even when Wi-Fi has no internet. */
+private fun tcpSource(context: Context, gnss: GnssRef): DataSource {
+    val at = TcpAddress.parse(gnss.address) ?: throw IOException("Not a host and port: ${gnss.address}")
+    return TcpNmeaSource(at.host, at.port, gnss.name, wifiSocketFactory(context))
+}
+
+/**
+ * The Wi-Fi network's socket factory. A receiver that runs its own access point has no internet,
+ * and Android then sends other sockets over mobile data. Falls back to the default with no Wi-Fi.
+ */
+@Suppress("DEPRECATION") // allNetworks: the callback API would need a listener for one lookup.
+private fun wifiSocketFactory(context: Context): SocketFactory {
+    val cm = context.getSystemService(ConnectivityManager::class.java)
+    val wifi = cm?.allNetworks?.firstOrNull {
+        cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
+    }
+    return wifi?.socketFactory ?: SocketFactory.getDefault()
 }
