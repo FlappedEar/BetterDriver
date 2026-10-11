@@ -60,7 +60,7 @@ fun SettingsScreen(
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
     updateRow: @Composable () -> Unit = {},
     coach: CoachSettings = CoachSettings(),
-    onCoach: (CoachSettings) -> Unit = {},
+    onOpenCoach: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -81,7 +81,7 @@ fun SettingsScreen(
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
                 SettingsTab.Recording -> RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
-                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, coach, onCoach)
+                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, coach, onOpenCoach)
             }
         }
     }
@@ -134,18 +134,16 @@ private fun AppTab(
     onRunSetup: () -> Unit,
     updateRow: @Composable () -> Unit,
     coach: CoachSettings,
-    onCoach: (CoachSettings) -> Unit,
+    onOpenCoach: () -> Unit,
 ) {
-    var choosingCoach by rememberSaveable { mutableStateOf(false) }
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
         ListRow("Track screen colours", "Green / red")
-        ListRow("Spoken coach", coachLabel(coach), onClick = { choosingCoach = true })
+        ListRow("Spoken coach", coachLabel(coach), onClick = onOpenCoach)
         ListRow("Version", version)
         updateRow()
         ListRow("Run setup again", onClick = onRunSetup)
     }
-    if (choosingCoach) CoachDialog(coach, onCoach, onClose = { choosingCoach = false })
 }
 
 @Preview(widthDp = 411, heightDp = 700)

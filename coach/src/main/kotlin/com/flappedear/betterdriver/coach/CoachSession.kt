@@ -12,8 +12,8 @@ data class CoachStatus(val corner: String?, val text: String?) {
 /** A session event the coach asks the recorder to log. */
 data class CoachEvent(val tMicros: Long, val kind: String, val text: String)
 
-/** What one fix led to: phrases to say now, events to log, and the coach line. */
-data class CoachOutput(val say: List<String>, val events: List<CoachEvent>, val status: CoachStatus)
+/** What one fix led to: events to log, and the coach line. */
+data class CoachOutput(val events: List<CoachEvent>, val status: CoachStatus)
 
 /** A cue asked for more than this long before it could be spoken is dropped: it would land too late. */
 const val MaxCueAgeMicros = 400_000L
@@ -23,6 +23,8 @@ const val MaxCueAgeMicros = 400_000L
  * recorder detected, null if none; without a start/finish line there are no laps and nothing to say.
  * Each fix comes with [onFix]'s `nowMicros`, the session clock when it is handled: a fix that waited
  * in a queue (the reference was still loading) can no longer time a cue, so its cues are dropped.
+ * [onFix]'s `say` plays a phrase and returns false if the voice refused it. A dropped or refused cue
+ * is logged as a problem, never as a cue, and no result is measured against it.
  */
 class CoachSession(settings: CoachSettings, track: Track?, reference: CoachReference?) {
     private val engine = track?.takeIf { it.timeable && settings.verbosity != Verbosity.Off }
@@ -45,22 +47,26 @@ class CoachSession(settings: CoachSettings, track: Track?, reference: CoachRefer
             }
         }
 
-    fun onFix(fix: CoachFix, nowMicros: Long): CoachOutput {
-        val e = engine ?: return CoachOutput(emptyList(), emptyList(), status)
+    fun onFix(fix: CoachFix, nowMicros: Long, say: (String) -> Boolean): CoachOutput {
+        val e = engine ?: return CoachOutput(emptyList(), status)
         val u = e.update(fix)
-        val say = mutableListOf<String>()
         val events = mutableListOf<CoachEvent>()
+        for (r in u.results) events += CoachEvent(r.tMicros, CoachEvents.RESULT, CoachEvents.resultText(r))
         for (cue in u.cues) {
-            if (nowMicros - cue.tMicros > MaxCueAgeMicros) {
-                events += CoachEvent(cue.tMicros, CoachEvents.PROBLEM, "late seq=${cue.seq} text=${cue.text}")
-            } else {
-                say += cue.text
+            val problem = when {
+                nowMicros - cue.tMicros > MaxCueAgeMicros -> "late seq=${cue.seq} text=${cue.text}"
+                !say(cue.text) -> "no voice ${CoachEvents.cueText(cue)}"
+                else -> null
+            }
+            if (problem == null) {
                 events += CoachEvent(cue.tMicros, CoachEvents.CUE, CoachEvents.cueText(cue))
                 lastCue = cue
+            } else {
+                e.unsaid(cue)
+                events += CoachEvent(cue.tMicros, CoachEvents.PROBLEM, problem)
             }
         }
-        for (r in u.results) events += CoachEvent(r.tMicros, CoachEvents.RESULT, CoachEvents.resultText(r))
-        return CoachOutput(say, events, status)
+        return CoachOutput(events, status)
     }
 
     /** The cue without "Turn N, ", since the corner is shown beside it: "Brake 15 metres later". */

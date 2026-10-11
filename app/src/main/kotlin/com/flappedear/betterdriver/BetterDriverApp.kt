@@ -145,6 +145,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
                     Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
                 }
             }
+            coachSettings(nav, padding)
             setupDestinations(nav, prefs, repo, padding)
             composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
             composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
@@ -370,7 +371,7 @@ private fun Settings(
         onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
         coach = coach.settings,
-        onCoach = coach::update,
+        onOpenCoach = { nav.navigate(Routes.CoachSettings) },
     )
 }
 

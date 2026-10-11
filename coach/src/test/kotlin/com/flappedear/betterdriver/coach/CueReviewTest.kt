@@ -29,7 +29,7 @@ class CueReviewTest {
         val session = CoachSession(CoachSettings(Verbosity.Full), track, reference)
         val early2 = SimCircuit.Pace(earlierM = listOf(0.0, 15.0, 0.0, 0.0))
         val paces = List(3) { early2 } + List(2) { SimCircuit.Pace() }
-        return sim.drive(paces).fixes.flatMap { f -> session.onFix(f, f.tMicros).events }
+        return sim.drive(paces).fixes.flatMap { f -> session.onFix(f, f.tMicros) { true }.events }
             .map { RecorderEvent(it.tMicros, it.kind, it.text) }
     }
 
