@@ -69,6 +69,7 @@ class RecoveryAndExportTest {
         assertEquals(249 * 40_000L, r.lastSampleMicros)
         assertTrue(r.truncatedBytes > 0)
         assertEquals(SessionState.RECOVERED, store.list().single().state)
+        assertEquals(249 * 40_000L, store.list().single().durationMicros)
         assertEquals(emptyList(), store.recoverInterrupted(), "recovering twice does nothing")
 
         val data = store.read(id)
