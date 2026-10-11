@@ -115,10 +115,22 @@ data class ImuCalibration(
             }
         }
 
-        /** Rodrigues rotation taking the unit vector of [gravity] onto +Z. */
+        /**
+         * Rotation taking the unit vector of [gravity] onto +Z. A RaceBox mounted label down (gravity
+         * on -Z) is first turned 180° about X, which keeps X pointing forward; the smallest rotation
+         * there would be about an axis set by sensor noise and could swap or flip X and Y (FBBD-126).
+         */
         private fun levelling(gravity: Vec3): List<Double> {
             val n = gravity.length
             val u = Vec3(gravity.x / n, gravity.y / n, gravity.z / n)
+            if (u.z >= 0) return rodrigues(u)
+            // R = R' · diag(1, -1, -1): negate the Y and Z columns of the levelling of the flipped vector.
+            val r = rodrigues(Vec3(u.x, -u.y, -u.z))
+            return r.mapIndexed { i, v -> if (i % 3 == 0) v else -v }
+        }
+
+        /** Rodrigues rotation taking the unit vector [u] onto +Z. */
+        private fun rodrigues(u: Vec3): List<Double> {
             // Axis u × z = (u.y, -u.x, 0); angle between u and z.
             val kx = u.y
             val ky = -u.x

@@ -53,6 +53,23 @@ class ImuCalibrationTest {
     }
 
     @Test
+    fun `a RaceBox mounted label down keeps X forward`() {
+        for (roll in listOf(180.0, 177.0, -175.0)) {
+            val c = ok(ImuCalibration.from(still(roll, Vec3(0.0, 0.0, 0.0)), 1))
+            val r = Math.toRadians(roll)
+            val gravity = c.accel(Vec3(0.0, sin(r), cos(r)))
+            assertEquals(1.0, gravity.z, 1e-3)
+            // Braking along the car's X axis stays on X, and a sideways push stays on Y with its sign.
+            val brake = c.accel(Vec3(-0.8, 0.0, 0.0))
+            assertEquals(-0.8, brake.x, 5e-3)
+            assertEquals(0.0, brake.y, 5e-3)
+            val side = c.accel(Vec3(0.0, 0.5 * cos(r), -0.5 * sin(r)))
+            assertEquals(0.5, side.y, 5e-3)
+            assertEquals(0.0, side.x, 5e-3)
+        }
+    }
+
+    @Test
     fun `refuses when the car moves or too little data came`() {
         val moving = still(0.0, Vec3(0.0, 0.0, 0.0), noise = 0.2)
         assertEquals(
