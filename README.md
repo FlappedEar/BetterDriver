@@ -1,8 +1,8 @@
 # BetterDriver
 
 Android track-day coach: logging and live timing, in-car spoken cues, and
-post-session analysis with video. Personal use, Android only (Pixel 6 in the
-car, Galaxy Tab for review). Plan: Confluence "BetterDriver Build Plan";
+post-session analysis with video. Personal use, Android only: a phone in the
+car, a tablet for review. Plan: Confluence "BetterDriver Build Plan";
 work is tracked in Jira project FBBD.
 
 ## Modules
@@ -14,7 +14,7 @@ work is tracked in Jira project FBBD.
 | `timing` | Tracks, circuit directory, track detection, lap and sector timing, predictive delta; pure Kotlin |
 | `coach` | Live coach: corners, per-track reference from earlier sessions, cue engine; pure Kotlin |
 | `core-ui` | Theme and shared Compose components |
-| `core-ble` | RaceBox Micro over BLE |
+| `core-ble` | RaceBox Mini, Mini S and Micro over BLE; Bluetooth NMEA 0183 receivers over SPP |
 | `feature-track` | Always-on track screen |
 | `feature-review` | Session review (phone and tablet layouts) |
 

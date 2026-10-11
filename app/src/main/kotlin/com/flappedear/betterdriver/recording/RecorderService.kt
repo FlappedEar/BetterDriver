@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
+import com.flappedear.betterdriver.core.ble.nmea.RcChannels
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderListener
@@ -29,6 +30,7 @@ import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.live.placeName
+import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
@@ -41,22 +43,51 @@ private const val DestroyStopTimeoutMs = 3_000L
 private const val KeyRaceBoxAddress = "racebox_address"
 private const val KeyRaceBoxName = "racebox_name"
 private const val KeyGnssDemo = "gnss_demo"
+private const val KeyGnssNmea = "gnss_nmea"
+private const val KeyGnssType = "gnss_type"
+private const val KeySensors = "sensors"
+
+/** The receiver type by name, else from the flags older builds wrote. */
+private fun gnssType(name: String?, nmea: Boolean): GnssType =
+    GnssType.entries.firstOrNull { it.name == name } ?: if (nmea) GnssType.NMEA else GnssType.RACEBOX
 
 /** The receiver of the recording that was running when the recorder process was killed. */
 private fun wantedGnss(wanted: SharedPreferences): GnssRef? = when {
     wanted.getBoolean(KeyGnssDemo, false) -> GnssRef.Demo
     else -> wanted.getString(KeyRaceBoxAddress, null)?.let {
-        GnssRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty())
+        val type = gnssType(wanted.getString(KeyGnssType, null), wanted.getBoolean(KeyGnssNmea, false))
+        GnssRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty(), type)
     }
 }
 
-/** The receiver a start intent names: Demo GNSS, a RaceBox, or none. */
+/** The receiver a start intent names: Demo GNSS, a RaceBox, another receiver, or none. */
 private fun gnssFrom(intent: Intent): GnssRef? = when {
     intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_DEMO, false) -> GnssRef.Demo
     else -> intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS)?.let {
-        GnssRef(it, intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty())
+        val type = gnssType(
+            intent.getStringExtra(RecorderProtocol.EXTRA_GNSS_TYPE),
+            intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_NMEA, false),
+        )
+        GnssRef(it, intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty(), type)
     }
 }
+
+/**
+ * G for the track screen (UI-38): the RaceBox accelerometer, or a RaceChrono DIY device's $RC2/$RC3
+ * lines over Bluetooth or Wi-Fi (FBBD-115). Other receivers have none: the VBOX Sport's G channels
+ * and the Dragy Pro's IMU are not read (FBBD-116, FBBD-117).
+ */
+private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
+    GnssType.RACEBOX -> RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
+    GnssType.NMEA, GnssType.TCP -> RcChannels.ACCEL_X.id to RcChannels.ACCEL_Y.id
+    else -> null
+}
+
+private fun sensorsFrom(intent: Intent): List<SensorRef> =
+    intent.getStringArrayExtra(RecorderProtocol.EXTRA_SENSORS).orEmpty().mapNotNull(SensorRef::decode)
+
+private fun wantedSensors(wanted: SharedPreferences): List<SensorRef> =
+    wanted.getString(KeySensors, "").orEmpty().lines().mapNotNull(SensorRef::decode)
 
 /** Track and car, the ones that are known (UI-21 option B). */
 private fun notificationDetail(info: SessionInfo) =
@@ -135,14 +166,14 @@ class RecorderService : Service() {
                 lastError = null
                 val car = intent.getStringExtra(RecorderProtocol.EXTRA_CAR).orEmpty()
                 val track = intent.getStringExtra(RecorderProtocol.EXTRA_TRACK).orEmpty()
-                if (goForeground()) startRecording(car, track, gnssFrom(intent))
+                if (goForeground()) startRecording(car, track, gnssFrom(intent), sensorsFrom(intent))
             }
             RecorderProtocol.ACTION_STOP -> stopRecording()
             // Restarted by the system after this process was killed (START_STICKY). If a recording was
             // running, the old session is recovered at the next app start and a new one carries on.
             null -> if (wanted.getBoolean(KeyWanted, false) && goForeground()) {
                 val car = wanted.getString(KeyCar, "").orEmpty()
-                startRecording(car, wanted.getString(KeyTrack, "").orEmpty(), wantedGnss(wanted))
+                startRecording(car, wanted.getString(KeyTrack, "").orEmpty(), wantedGnss(wanted), wantedSensors(wanted))
             } else {
                 stopSelf(startId)
             }
@@ -172,7 +203,7 @@ class RecorderService : Service() {
     }
 
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
-    private fun startRecording(car: String, track: String, gnss: GnssRef?) = control.execute {
+    private fun startRecording(car: String, track: String, gnss: GnssRef?, sensors: List<SensorRef>) = control.execute {
         if (active != null) return@execute
         if (gnss == null) {
             // Only reachable from an older app build or a stale restart; home needs a receiver to start.
@@ -184,7 +215,7 @@ class RecorderService : Service() {
             return@execute
         }
         try {
-            val sources = Sources.create(this, gnss)
+            val sources = Sources.create(this, gnss, sensors)
             val info = SessionInfo(
                 startUtcMillis = System.currentTimeMillis(),
                 car = car,
@@ -193,14 +224,12 @@ class RecorderService : Service() {
                 channels = GnssChannels.ALL,
             )
             val recording = Recorder(store).start(info)
-            // G for the track screen comes from the RaceBox accelerometer; Demo GNSS has none (UI-38).
-            val accel = if (gnss.demo) null else RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
             val tracker = LiveTracker(
                 recording.id,
                 info.startUtcMillis,
                 recording::nowMicros,
                 droppedSamples = { recording.droppedCount },
-                accelIds = accel,
+                accelIds = accelIdsFor(gnss),
             )
             recording.listeners.add(tracker)
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
@@ -231,7 +260,8 @@ class RecorderService : Service() {
                 cpu.acquire()
                 wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
                     .putString(KeyRaceBoxAddress, gnss.address).putString(KeyRaceBoxName, gnss.name)
-                    .putBoolean(KeyGnssDemo, gnss.demo).commit()
+                    .putBoolean(KeyGnssDemo, gnss.demo).putString(KeyGnssType, gnss.type.name)
+                    .putString(KeySensors, sensors.joinToString("\n") { it.encode() }).commit()
                 getSystemService(NotificationManager::class.java)
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
@@ -284,7 +314,10 @@ class RecorderService : Service() {
                 state.putBoolean(RecorderProtocol.KEY_CAMERA_OK, ok)
             }
         }
-        a?.timing?.detection?.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
+        a?.timing?.detection?.let { found ->
+            found.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
+            state.putBoolean(RecorderProtocol.KEY_PLACE_SAVED, found is TrackDetection.Saved)
+        }
         if (a != null) {
             coachStatus.corner?.let { state.putString(RecorderProtocol.KEY_COACH_CORNER, it) }
             coachStatus.text?.let { state.putString(RecorderProtocol.KEY_COACH_TEXT, it) }

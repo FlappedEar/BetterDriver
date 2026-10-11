@@ -35,6 +35,8 @@ data class RecorderState(
     val camera: StatusText? = null,
     /** The track or circuit the recording is at, once detected (FBBD-55). */
     val place: String? = null,
+    /** [place] is a saved track; false when it is only a circuit from the built-in list (FBBD-79). */
+    val placeSaved: Boolean = false,
     /** Live timing, when the recording is at a saved track with lines (FBBD-12). */
     val timing: LiveTimingState? = null,
     /** The coach line (FBBD-98): the last cue, or whether the coach is learning; null when it says nothing. */
@@ -81,6 +83,7 @@ class RecorderClient private constructor(private val context: Context) {
                 StatusText(it, msg.data.getBoolean(RecorderProtocol.KEY_CAMERA_OK))
             },
             place = msg.data.getString(RecorderProtocol.KEY_PLACE),
+            placeSaved = msg.data.getBoolean(RecorderProtocol.KEY_PLACE_SAVED),
             timing = RecorderProtocol.timingFrom(msg.data),
             coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
                 CoachStatus(msg.data.getString(RecorderProtocol.KEY_COACH_CORNER), it)
@@ -129,7 +132,13 @@ class RecorderClient private constructor(private val context: Context) {
      * is running (FBBD-21, FBBD-88). It is started from here, while the app is on screen, because Android only lets a
      * camera service start from the foreground.
      */
-    fun start(car: String, track: String, gnss: GnssRef?, phoneVideo: VideoMode? = null) {
+    fun start(
+        car: String,
+        track: String,
+        gnss: GnssRef?,
+        phoneVideo: VideoMode? = null,
+        sensors: List<SensorRef> = emptyList(),
+    ) {
         if (gnss == null) {
             // Neither the recorder nor the camera starts, so no camera notification waits for a session.
             state = state.copy(starting = false, error = RecorderService.NoReceiver)
@@ -143,6 +152,8 @@ class RecorderClient private constructor(private val context: Context) {
             .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, gnss.address)
             .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, gnss.name)
             .putExtra(RecorderProtocol.EXTRA_GNSS_DEMO, gnss.demo)
+            .putExtra(RecorderProtocol.EXTRA_GNSS_TYPE, gnss.type.name)
+            .putExtra(RecorderProtocol.EXTRA_SENSORS, sensors.map { it.encode() }.toTypedArray())
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {

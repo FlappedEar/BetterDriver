@@ -29,7 +29,7 @@ class SetupTest {
 
     @Test
     fun firstReceiverIsChosenAndCanStart() {
-        val s = Setup.fresh(ids).addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Micro 3241", "AA:BB", ids)
+        val s = Setup.fresh(ids).addEquipment(EquipmentModel.RACEBOX, "RaceBox Micro 3241", "AA:BB", ids)
         val a = s.active()
         assertEquals("RaceBox Micro 3241", a.gnss?.name)
         assertNull(a.startProblem)
@@ -39,65 +39,182 @@ class SetupTest {
     @Test
     fun secondReceiverDoesNotTakeOver() {
         val s = Setup()
-            .addEquipment(EquipmentModel.RACEBOX_MICRO, address = "AA", newId = ids)
+            .addEquipment(EquipmentModel.RACEBOX, address = "AA", newId = ids)
             .addEquipment(EquipmentModel.DEMO_GNSS, newId = ids)
-        assertEquals(EquipmentModel.RACEBOX_MICRO, s.active().gnss?.model)
+        assertEquals(EquipmentModel.RACEBOX, s.active().gnss?.model)
     }
 
     @Test
     fun pairedModelsNeedAnAddressAndAreNotListedTwice() {
-        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.GOPRO_HERO11, newId = ids) }
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.GOPRO, newId = ids) }
         val s = Setup()
-            .addEquipment(EquipmentModel.GOPRO_HERO11, "Old", "AA", ids)
-            .addEquipment(EquipmentModel.GOPRO_HERO11, "New", "AA", ids)
+            .addEquipment(EquipmentModel.GOPRO, "Old", "AA", ids)
+            .addEquipment(EquipmentModel.GOPRO, "New", "AA", ids)
             .addEquipment(EquipmentModel.PHONE_CAMERA, newId = ids)
             .addEquipment(EquipmentModel.PHONE_CAMERA, newId = ids)
         assertEquals(listOf("New", "Phone camera"), s.equipment.map { it.name })
         val boxes = Setup()
-            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB 1", "AA", ids)
-            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB 2", "BB", ids)
+            .addEquipment(EquipmentModel.RACEBOX, "RB 1", "AA", ids)
+            .addEquipment(EquipmentModel.RACEBOX, "RB 2", "BB", ids)
         assertEquals(listOf("RB 1", "RB 2"), boxes.equipment.map { it.name })
     }
 
     @Test
-    fun pairingAnotherHero11ReplacesTheListedOne() {
-        val first = Setup().addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 1111", "AA", ids)
+    fun anyNumberOfGoProsCanBeListed() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids, GoProModel.HERO11_BLACK)
+            .addEquipment(EquipmentModel.GOPRO, "GoPro 2222", "BB", ids, GoProModel.HERO13_BLACK)
+            .addEquipment(EquipmentModel.GOPRO_FILES, newId = ids, goPro = GoProModel.HERO8_BLACK)
+            .addEquipment(EquipmentModel.GOPRO_FILES, newId = ids, goPro = GoProModel.HERO5_BLACK)
+        assertEquals(
+            listOf("GoPro HERO11 Black", "GoPro HERO13 Black", "GoPro HERO8 Black", "GoPro HERO5 Black"),
+            s.equipment.map { it.modelLabel },
+        )
+        assertEquals(s.equipment.map { it.id }, s.session.cameraIds, "all on for the next session")
+        assertEquals(2, s.active().appCameras.size)
+        assertEquals(2, s.active().manualCameras.size)
+    }
+
+    @Test
+    fun otherActionCamerasAreAddedByFiles() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.CAMERA_FILES, "DJI Action 4", newId = ids)
+            .addEquipment(EquipmentModel.CAMERA_FILES, "Insta360", newId = ids)
+        assertEquals(listOf("Other action camera", "Other action camera"), s.equipment.map { it.modelLabel })
+        assertEquals(listOf("DJI Action 4", "Insta360"), s.active().manualCameras.map { it.name })
+        assertTrue(s.active().appCameras.isEmpty())
+        assertTrue(s.hasGoPro, "shows the per-camera lines on session cards")
+        assertNull(s.equipment.first().goPro)
+        assertNull(s.equipment.first().videoMode, "set on the camera itself")
+    }
+
+    @Test
+    fun bluetoothLeGpsAndHeartRateMonitorsAreListed() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.LNS_GNSS, "Garmin GLO 2", "AA", ids)
+            .addEquipment(EquipmentModel.HEART_RATE, "Polar H10", "BB", ids)
+        val active = s.active()
+        assertEquals("Garmin GLO 2", active.gnss?.name, "the first receiver is the session's")
+        assertEquals(listOf("Polar H10"), active.sensors.map { it.name })
+        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP), channelsFor(active.gnss))
+        assertTrue(EquipmentModel.LNS_GNSS.paired && EquipmentModel.HEART_RATE.paired)
+        assertEquals(EquipmentKind.SENSOR, s.equipment.last().kind)
+    }
+
+    @Test
+    fun wifiGpsIsListedByHostAndPort() {
+        val s = Setup().addEquipment(EquipmentModel.TCP_GNSS, "Wi-Fi GPS", "192.168.4.1:2000", ids)
+        assertEquals("192.168.4.1:2000", s.active().gnss?.address)
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.TCP_GNSS, newId = ids) }
+        assertEquals(TcpAddress("gps.local", 10110), TcpAddress.parse(" gps.local ", "10110"))
+        assertEquals(TcpAddress("192.168.4.1", 2000), TcpAddress.parse("192.168.4.1:2000"))
+        assertNull(TcpAddress.parse("192.168.4.1", "0"))
+        assertNull(TcpAddress.parse("192.168.4.1", "70000"))
+        assertNull(TcpAddress.parse("", "2000"))
+        assertNull(TcpAddress.parse("192.168.4.1"))
+        assertTrue(EquipmentModel.DIY_GNSS.paired)
+    }
+
+    @Test
+    fun vboxSportAndDragyAreListedAsReceivers() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.VBOX_SPORT, "VBSport 00000300", "AA", ids)
+            .addEquipment(EquipmentModel.DRAGY, "DRG70-ABC123", "BB", ids)
+        assertEquals("VBSport 00000300", s.active().gnss?.name, "the first receiver is the session's")
+        assertEquals(listOf(EquipmentKind.GNSS, EquipmentKind.GNSS), s.equipment.map { it.kind })
+        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP), channelsFor(s.active().gnss))
+        assertTrue(EquipmentModel.VBOX_SPORT.paired && EquipmentModel.DRAGY.paired)
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.VBOX_SPORT, newId = ids) }
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.DRAGY, newId = ids) }
+    }
+
+    @Test
+    fun repairingAGoProKeepsItsItemAndLearnsItsModel() {
+        val first = Setup().addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids)
         val id = first.equipment.single().id
-        val s = first.addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", ids)
-        assertEquals(listOf(Equipment(id, EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", "GoPro 2222")), s.equipment)
-        assertEquals(listOf(id), s.session.cameraIds, "still on for the session")
+        assertEquals(GoProModel.OTHER_OPEN_GOPRO, first.equipment.single().goPro)
+        val s = first.addEquipment(EquipmentModel.GOPRO, "GoPro 1111", "AA", ids, GoProModel.HERO12_BLACK)
+        assertEquals(listOf(id), s.equipment.map { it.id })
+        assertEquals(GoProModel.HERO12_BLACK, s.equipment.single().goPro)
+    }
+
+    @Test
+    fun goProModelsFromTheOpenGoProSpec() {
+        assertEquals(GoProModel.HERO13_BLACK, GoProModel.ofModelId(65))
+        assertEquals(GoProModel.MAX_2, GoProModel.ofModelId(64))
+        assertEquals(GoProModel.HERO9_BLACK, GoProModel.ofModelId(55))
+        assertEquals(GoProModel.OTHER_OPEN_GOPRO, GoProModel.ofModelId(99), "a newer camera is still Open GoPro")
+        assertEquals(GoProModel.HERO12_BLACK, GoProModel.ofName("HERO12 Black"))
+        assertNull(GoProModel.ofName("HERO8 Black"), "no Open GoPro, never reported by one")
+        assertTrue(GoProModel.OpenGoPro.all { it.openGoPro })
+        assertTrue(GoProModel.FileImport.none { it.openGoPro })
+        assertTrue(GoProModel.HERO8_BLACK in GoProModel.FileImport)
+        assertTrue(VideoMode(VideoSize.HD, 60) in GoProModel.HERO13_BLACK.videoModes)
+        assertFalse(VideoMode(VideoSize.QHD, 60) in GoProModel.MAX_2.videoModes)
+        assertTrue(GoProModel.OpenGoPro.all { VideoMode(VideoSize.FHD, 60) in it.videoModes })
+    }
+
+    @Test
+    fun choosingAGoProModel() {
+        var s = Setup()
+            .addEquipment(EquipmentModel.GOPRO, "GoPro 1", "AA", ids)
+            .addEquipment(EquipmentModel.GOPRO_FILES, newId = ids)
+        val (open, files) = s.equipment
+        s = s.chooseVideo(open.id, VideoMode(VideoSize.UHD, 60))
+        assertEquals(s, s.chooseGoPro(open.id, GoProModel.HERO7_BLACK), "no Open GoPro on a HERO7")
+        s = s.chooseGoPro(open.id, GoProModel.MAX_2).chooseGoPro(files.id, GoProModel.MAX)
+        assertEquals("GoPro MAX2", s.equipment(open.id)?.modelLabel)
+        assertEquals(VideoMode(VideoSize.UHD, 60), s.equipment(open.id)?.videoMode)
+        assertEquals("GoPro MAX", s.equipment(files.id)?.modelLabel)
+        s = s.chooseVideo(open.id, VideoMode(VideoSize.FHD, 30)).chooseGoPro(open.id, GoProModel.HERO13_BLACK)
+        assertEquals(VideoMode(VideoSize.FHD, 30), s.equipment(open.id)?.videoMode)
+    }
+
+    @Test
+    fun raceBoxModelsByAdvertisedName() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.RACEBOX, "RaceBox Mini 0042", "AA", ids)
+            .addEquipment(EquipmentModel.RACEBOX, "RaceBox Mini S 0043", "BB", ids)
+            .addEquipment(EquipmentModel.RACEBOX, "RaceBox Micro 3241", "CC", ids)
+        assertEquals(listOf("RaceBox Mini", "RaceBox Mini S", "RaceBox Micro"), s.equipment.map { it.modelLabel })
+        for (box in s.equipment) {
+            assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G), channelsFor(box), box.name)
+        }
+    }
+
+    @Test
+    fun nmeaReceiverHasNoG() {
+        val s = Setup().addEquipment(EquipmentModel.NMEA_GNSS, "Qstarz 818XT", "AA", ids)
+            .chooseTiles(listOf(TrackChannel.SPEED, TrackChannel.G))
+        assertEquals("Qstarz 818XT", s.active().gnss?.name)
+        assertEquals(listOf(TrackChannel.SPEED), s.active().tiles)
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.NMEA_GNSS, newId = ids) }
     }
 
     @Test
     fun renamingKeepsTheAdvertisedName() {
-        val s = Setup().addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Mini 0042", "AA", ids)
+        val s = Setup().addEquipment(EquipmentModel.RACEBOX, "RaceBox Mini 0042", "AA", ids)
         val renamed = s.renameEquipment(s.equipment.single().id, "Track box")
         assertEquals("RaceBox Mini 0042", renamed.equipment.single().advertisedName)
     }
 
     @Test
-    fun hero8IsListedOnce() {
-        val s = Setup().addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
-            .addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
-        assertEquals(1, s.equipment.size)
-    }
-
-    @Test
     fun goProShowsOnlyWhenListedAndStartsOnlyWhenChosen() {
-        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 11", "AA", ids)
+        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO, "GoPro 11", "AA", ids)
         assertTrue(s.hasGoPro)
-        val hero = s.equipment.single { it.model == EquipmentModel.GOPRO_HERO11 }
+        val hero = s.equipment.single { it.model == EquipmentModel.GOPRO }
         assertEquals(listOf(hero), s.active().appCameras.filter { it.model.isGoPro })
         s = s.useCamera(hero.id, false)
-        assertFalse(s.active().uses(EquipmentModel.GOPRO_HERO11))
+        assertFalse(s.active().uses(EquipmentModel.GOPRO))
         assertTrue(s.hasGoPro, "still listed, just not used this session")
         s = s.removeEquipment(hero.id)
         assertFalse(s.hasGoPro)
     }
 
     @Test
-    fun hero8IsAManualCamera() {
-        val s = Setup().addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+    fun goProWithAddedFilesIsAManualCamera() {
+        val s = Setup()
+            .addEquipment(EquipmentModel.GOPRO_FILES, "GoPro HERO8", newId = ids, goPro = GoProModel.HERO8_BLACK)
         assertEquals(listOf("GoPro HERO8"), s.active().manualCameras.map { it.name })
         assertTrue(s.active().appCameras.isEmpty())
     }
@@ -105,7 +222,7 @@ class SetupTest {
     @Test
     fun removingTheReceiverFallsBackToAnotherOrNone() {
         var s = Setup()
-            .addEquipment(EquipmentModel.RACEBOX_MICRO, address = "AA", newId = ids)
+            .addEquipment(EquipmentModel.RACEBOX, address = "AA", newId = ids)
             .addEquipment(EquipmentModel.DEMO_GNSS, newId = ids)
         s = s.removeEquipment(s.active().gnss!!.id)
         assertEquals(EquipmentModel.DEMO_GNSS, s.active().gnss?.model)
@@ -146,7 +263,7 @@ class SetupTest {
     @Test
     fun tilesFollowTheReceiverAndAreKeptAcrossSwitches() {
         var s = Setup()
-            .addEquipment(EquipmentModel.RACEBOX_MICRO, address = "AA", newId = ids)
+            .addEquipment(EquipmentModel.RACEBOX, address = "AA", newId = ids)
             .addEquipment(EquipmentModel.DEMO_GNSS, newId = ids)
             .chooseTiles(listOf(TrackChannel.G, TrackChannel.SPEED, TrackChannel.G, TrackChannel.LAP))
         assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED, TrackChannel.LAP), s.active().tiles)
@@ -179,13 +296,14 @@ class SetupTest {
             ids,
         )
         assertEquals(
-            listOf(EquipmentModel.RACEBOX_MICRO, EquipmentModel.PHONE_CAMERA, EquipmentModel.GOPRO_HERO11),
+            listOf(EquipmentModel.RACEBOX, EquipmentModel.PHONE_CAMERA, EquipmentModel.GOPRO),
             s.equipment.map { it.model },
         )
+        assertEquals(GoProModel.HERO11_BLACK, s.equipment.last().goPro)
         assertEquals("RaceBox Micro 3241", s.active().gnss?.name)
         assertEquals(listOf("Phone camera", "GoPro 1234"), s.active().cameras.map { it.name })
         assertTrue(s.cars.isEmpty(), "the old default car was not a choice")
-        assertFalse(s.equipment.any { it.model == EquipmentModel.GOPRO_HERO8 })
+        assertFalse(s.equipment.any { it.model == EquipmentModel.GOPRO_FILES })
     }
 
     @Test
@@ -203,7 +321,7 @@ class SetupTest {
         val store = SetupStore(file)
         assertNull(store.load())
         val s = Setup.fresh(ids)
-            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB", "AA", ids)
+            .addEquipment(EquipmentModel.RACEBOX, "RB", "AA", ids)
             .addCar("FR-S", newId = ids)
             .chooseTiles(listOf(TrackChannel.LAP))
         store.save(s)
@@ -234,27 +352,29 @@ class SetupTest {
 
     @Test
     fun camerasDefaultTo1080p60AndKeepTheChosenMode() {
-        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, address = "AA", newId = ids)
+        var s = Setup.fresh(ids)
+            .addEquipment(EquipmentModel.GOPRO, address = "AA", newId = ids, goPro = GoProModel.HERO11_BLACK)
         val phone = s.equipment.first { it.model == EquipmentModel.PHONE_CAMERA }
-        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO11 }
+        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO }
         assertEquals(VideoMode(VideoSize.FHD, 60), phone.videoMode)
         assertEquals(VideoMode(VideoSize.FHD, 60), hero.videoMode)
 
         s = s.chooseVideo(phone.id, VideoMode(VideoSize.HD, 30))
         assertEquals("720p · 30", s.equipment(phone.id)?.videoMode?.label)
-        // Pairing the HERO11 again keeps its mode.
+        // Pairing the camera again keeps its mode.
         s = s.chooseVideo(hero.id, VideoMode(VideoSize.UHD, 60))
-        s = s.addEquipment(EquipmentModel.GOPRO_HERO11, address = "BB", newId = ids)
+        s = s.addEquipment(EquipmentModel.GOPRO, address = "AA", newId = ids)
         assertEquals(VideoMode(VideoSize.UHD, 60), s.equipment(hero.id)?.videoMode)
     }
 
     @Test
     fun modesAModelDoesNotOfferAreRefused() {
-        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, address = "AA", newId = ids)
-        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO11 }
+        var s = Setup.fresh(ids)
+            .addEquipment(EquipmentModel.GOPRO, address = "AA", newId = ids, goPro = GoProModel.HERO11_BLACK)
+        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO }
         assertEquals(s, s.chooseVideo(hero.id, VideoMode(VideoSize.HD, 60)), "no 720p on a HERO11")
-        s = s.addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
-        val hero8 = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO8 }
+        s = s.addEquipment(EquipmentModel.GOPRO_FILES, newId = ids, goPro = GoProModel.HERO8_BLACK)
+        val hero8 = s.equipment.first { it.model == EquipmentModel.GOPRO_FILES }
         assertNull(hero8.videoMode, "a HERO8 is set by hand")
         assertEquals(s, s.chooseVideo(hero8.id, VideoMode(VideoSize.FHD, 60)))
     }
@@ -266,5 +386,32 @@ class SetupTest {
         val old = SetupJson.encode(Setup.fresh(ids)).replace(Regex(""",?\s*"video": null"""), "")
         assertFalse(old.contains("\"video\""))
         assertEquals(VideoMode(VideoSize.FHD, 60), SetupJson.decode(old).equipment.single().videoMode)
+    }
+
+    @Test
+    fun readsVersion1FilesWithSingleProducts() {
+        val v1 = """
+            {"format":"betterdriver-setup","version":1,"setup":{"equipment":[
+              {"id":"a","model":"RACEBOX_MICRO","name":"RB","address":"AA","advertisedName":"RaceBox Mini S 0001"},
+              {"id":"b","model":"GOPRO_HERO11","name":"Helmet","address":"BB","video":{"size":"UHD","fps":60}},
+              {"id":"c","model":"GOPRO_HERO8","name":"Rear"},
+              {"id":"d","model":"PHONE_CAMERA","name":"Phone camera"}
+            ],"cars":[],"session":{"gnssId":"a","cameraIds":["b","c"]}}}
+        """.trimIndent()
+        val s = SetupJson.decode(v1)
+        assertEquals(
+            listOf(
+                EquipmentModel.RACEBOX,
+                EquipmentModel.GOPRO,
+                EquipmentModel.GOPRO_FILES,
+                EquipmentModel.PHONE_CAMERA,
+            ),
+            s.equipment.map { it.model },
+        )
+        assertEquals(listOf(null, GoProModel.HERO11_BLACK, GoProModel.HERO8_BLACK, null), s.equipment.map { it.goPro })
+        assertEquals("RaceBox Mini S", s.equipment(s.session.gnssId)?.modelLabel)
+        assertEquals(VideoMode(VideoSize.UHD, 60), s.equipment("b")?.videoMode)
+        assertEquals(s, SetupJson.decode(SetupJson.encode(s)), "written back as version 2")
+        assertTrue(SetupJson.encode(s).contains("\"version\": 2"))
     }
 }

@@ -10,7 +10,7 @@ object Routes {
     /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
     const val CoachSettings = "settings/coach"
 
-    /** Add equipment (UI-34 B): scan for a RaceBox or HERO11, or add one without Bluetooth. */
+    /** Add equipment (UI-34 B): scan for a RaceBox or Open GoPro camera, or add one without Bluetooth. */
     const val AddEquipment = "add-equipment"
 
     /** One equipment item (UI-33 B): rename or remove. */
@@ -30,6 +30,9 @@ object Routes {
     const val NewCar = "new"
 
     fun car(id: String) = "cars/$id"
+
+    /** Two laps side by side with their videos (FBBD-24). */
+    const val Review = "review"
 
     /** Lap analysis of one saved session (FBBD-102). */
     const val SessionAnalysisPattern = "sessions/{id}/analysis"

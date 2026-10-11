@@ -24,7 +24,7 @@ import java.time.ZoneId
  * Each file is aligned with [GpsAligner]: the camera's GPMF GPS speed against the session's GNSS
  * speed. The starting guess, best first:
  * - the chapter before it, plus that chapter's duration (chapters of one recording are back to back);
- * - for the first HERO11 chapter, the session time at which the camera acknowledged Set Shutter on;
+ * - for the first chapter of an Open GoPro recording, the session time at which the camera acknowledged Set Shutter on;
  * - the file's creation time on the camera's clock, read as local time in [zone].
  * GPS UTC on both sides, when present, beats all of these inside the aligner.
  *
@@ -41,7 +41,7 @@ class GoProImporter(
 
     /**
      * [files] are already in the session's video directory, all from one recording, in chapter
-     * order. [recording] is the HERO11's start record, if there is one.
+     * order. [recording] is the Open GoPro start record, if there is one.
      */
     fun import(
         sessionDir: File,
@@ -129,7 +129,7 @@ class GoProImporter(
         /** Clock set by the app at start; mvhd has whole seconds. */
         const val SetClockUncertaintyUs = 5_000_000L
 
-        /** HERO8 clock set by someone else at some point: allow half an hour either way. */
+        /** Clock of a GoPro started by hand, set by someone else at some point: allow half an hour either way. */
         const val UnsetClockUncertaintyUs = 30L * 60 * 1_000_000
     }
 }

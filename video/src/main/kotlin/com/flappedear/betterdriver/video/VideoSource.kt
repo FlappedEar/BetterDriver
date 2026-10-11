@@ -10,11 +10,24 @@ enum class VideoSourceKind {
     /** The phone's own camera, the default source (FBBD-21). */
     PHONE,
 
-    /** GoPro HERO11 Black, started and stopped with the session through Open GoPro (FBBD-22). */
+    /** A GoPro started and stopped with the session through Open GoPro, HERO9 and later (FBBD-22, FBBD-105). */
+    GOPRO,
+
+    /** A GoPro started by hand whose files were added after the session (FBBD-22, FBBD-105). */
+    GOPRO_FILES,
+
+    /** Written by builds before FBBD-105 for a HERO11; read as [GOPRO]. Kept so older clip indexes still read. */
     GOPRO_HERO11,
 
-    /** GoPro HERO8 Black: no Open GoPro support, so it is started by hand and imported afterwards (FBBD-22). */
+    /** Written by builds before FBBD-105 for a HERO8; read as [GOPRO_FILES]. */
     GOPRO_HERO8,
+
+    /** Another action camera started by hand whose files were added after the session (FBBD-120). */
+    CAMERA_FILES,
+    ;
+
+    /** True for any camera other than the phone's (a GoPro or another action camera), older kinds included. */
+    val isGoPro: Boolean get() = this != PHONE
 }
 
 /**

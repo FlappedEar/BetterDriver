@@ -13,7 +13,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
- * Deterministic stand-in for a RaceBox Micro: fixes around a circular "track", so tests and the
+ * Deterministic stand-in for a GNSS receiver: fixes around a circular "track", so tests and the
  * alpha build can record without hardware. Fix n is always the same, which lets tests check that a
  * recovered session holds exactly the fixes that were sent.
  */

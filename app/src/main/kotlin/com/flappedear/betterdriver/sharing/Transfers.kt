@@ -36,10 +36,10 @@ data class TransferState(
 /**
  * Sending sessions (with video) and tracks to the other device (FBBD-23, FBBD-80).
  *
- * - Send prepares the file in the app's cache, then opens Android's share sheet, where Quick Share
+ * - Share prepares the file in the app's cache, then opens Android's share sheet, where Quick Share
  *   is one of the targets. Prepared files are removed after a few hours.
- * - Save file writes straight to a file the user picks (Downloads, a USB drive, any folder), with
- *   no copy in between, so it also works when the phone is short of space.
+ * - Save file (sessions) writes straight to a file the user picks (Downloads, a USB drive, any
+ *   folder), with no copy in between, so it also works when the phone is short of space.
  *
  * Imports are in [Imports]. One per process; disk work runs on one background thread.
  */
@@ -94,13 +94,8 @@ class Transfers private constructor(private val context: Context) {
         "Ready to send"
     }
 
-    fun saveTrack(track: Track, uri: Uri) = work(trackKey(track.id)) { _ ->
-        open(uri).use { it.write(trackText(track).toByteArray(Charsets.UTF_8)) }
-        "Saved"
-    }
-
-    /** The saved copy, so an edit made since the list loaded is sent too. */
-    private fun trackText(track: Track) = TrackJson.encode(trackStore.get(track.id) ?: track)
+    /** The track as the editor shows it (Share needs it saved), not whatever is on disk by now. */
+    private fun trackText(track: Track) = TrackJson.encode(track)
 
     private fun handOver(file: File, onReady: (Uri) -> Unit) {
         val uri = FileProvider.getUriForFile(context, context.packageName + AuthoritySuffix, file)
@@ -137,7 +132,7 @@ class Transfers private constructor(private val context: Context) {
     /** The saved track the session was timed with, as it is now. */
     @Suppress("TooGenericExceptionCaught") // A damaged session still sends, without its track.
     private fun trackOf(id: String): Track? = try {
-        TrackEvent.savedTrackId(store.read(id).events)?.let(trackStore::get)
+        TrackEvent.savedTrackId(store.read(store.dir(id), samples = false).events)?.let(trackStore::get)
     } catch (e: RuntimeException) {
         android.util.Log.w(Tag, "no track for $id", e)
         null

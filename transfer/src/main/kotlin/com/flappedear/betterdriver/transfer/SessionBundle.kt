@@ -163,5 +163,6 @@ object SessionBundle {
 
     /** Whether a file in a session directory goes into the bundle. */
     private fun travels(name: String) =
-        name != SessionFiles.LOCK && !name.endsWith(".tmp") && !name.endsWith(".lock") && !name.contains(".unreadable-")
+        name != SessionFiles.LOCK && !name.endsWith(".tmp") && !name.endsWith(".part") &&
+            !name.endsWith(".lock") && !name.contains(".unreadable-")
 }

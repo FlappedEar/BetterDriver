@@ -77,4 +77,17 @@ class SessionTimingTest {
         timing.onSamples(SampleSet(2, gnss.fix(0)))
         assertIs<TrackDetection.Saved>(timing.detection)
     }
+
+    @Test
+    fun `no-fix samples during the outing do not count`() {
+        val timing = SessionTiming({ listOf(lined) }, circuits)
+        val noFix = listOf(ChannelValue(GnssChannels.LAT.id, 0.0), ChannelValue(GnssChannels.LON.id, 0.0))
+        for (n in 0L..(25 * 140)) {
+            // A dropout every 2 s: the jumps to 0, 0 and back must not cross the line.
+            timing.onSamples(SampleSet(n * 40_000, if (n % 50 == 25L) noFix else gnss.fix(n)))
+        }
+        val state = assertNotNull(timing.state)
+        assertEquals(40_000L, state.bestMillis)
+        assertEquals(40_000L, state.lastMillis)
+    }
 }

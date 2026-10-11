@@ -7,7 +7,7 @@ import java.io.File
 import java.io.IOException
 
 /**
- * What the app knows about a HERO11 recording made with a session, kept until its files are
+ * What the app knows about an Open GoPro recording made with a session, kept until its files are
  * downloaded: when the camera acknowledged start and stop on the session clock and on the phone's
  * wall clock, and the UTC offset the camera's clock was set to.
  */
@@ -26,7 +26,7 @@ data class GoProRecording(
     val downloaded: Boolean = false,
 )
 
-/** `<session>/video/gopro-recordings.json`: HERO11 recordings of a session. */
+/** `<session>/video/gopro-recordings.json`: Open GoPro recordings of a session, of any number of cameras. */
 class GoProRecordings(private val videoDir: File) {
     private val file = File(videoDir, FileName)
 

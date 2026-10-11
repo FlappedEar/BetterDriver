@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
@@ -24,6 +26,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -46,8 +49,8 @@ import java.util.Locale
  * has any (FBBD-25). A session recovered after a crash is marked and exports like any other. Built
  * from the approved shell parts; the layout is on the UI review page for approval.
  *
- * A finished session also shows its GoPro video (FBBD-22): Download for HERO11 files still on the
- * camera (UI-31) and Add for HERO8 files (UI-32). Both are off while a session records.
+ * A finished session also shows its GoPro video (FBBD-22): Download for files still on an Open GoPro
+ * camera (UI-31) and Add for a GoPro started by hand (UI-32), per camera. Both are off while a session records.
  *
  * Delete (FBBD-90, UI-48) asks first, saying how much space the session and its video free, then
  * removes both. It is off while the session records, exports or fetches GoPro video.
@@ -126,35 +129,31 @@ private fun SessionCard(
     val sending = transfer.outgoing[s.id]
     var asking by rememberSaveable(s.id) { mutableStateOf(false) }
     val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running
-    ShellCard {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                sessionTitle(s),
-                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                modifier = Modifier.weight(1f),
-            )
-            when (s.state) {
-                SessionState.RECORDING -> DimText("Recording", color = c.loss)
-                SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
-                SessionState.FINISHED -> Unit
-            }
-        }
+    // The whole card opens lap analysis (UI-61 B), except while it records or is being deleted.
+    val opens = s.state != SessionState.RECORDING && delete != DeleteState.Running
+    ShellCard(
+        Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(enabled = opens, onClickLabel = "Lap analysis") { onAnalyse(s) },
+    ) {
+        CardTitle(s, opens)
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
-        AnalysisLink(s, delete, onAnalyse)
-        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro)
+        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = sending?.running == true)
         SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
-        val canDelete = idle && goPro.work[s.id] == null && sending?.running != true
+        // A share copies the session folder, so it must not run while GoPro video is being added, and the
+        // other way round (GoProSection).
+        val free = idle && goPro.work[s.id] == null && sending?.running != true
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
         TransferLine(sending)
+        if (free) SaveInstead(sending) { transfer.onSave(s) }
         CardButtons(
             video = video,
-            idle = idle && sending?.running != true,
-            canDelete = canDelete,
+            idle = free,
+            canDelete = free,
             onDelete = { asking = true },
-            onSend = { transfer.onSend(s) },
-            onSave = { transfer.onSave(s) },
+            onShare = { transfer.onSend(s) },
             onExport = { onExport(s) },
         )
     }
@@ -172,6 +171,25 @@ private fun SessionCard(
     }
 }
 
+/** The session's title, its state and, when the card opens lap analysis, a chevron. */
+@Composable
+private fun CardTitle(s: SessionSummary, opens: Boolean) {
+    val c = TrackTheme.colors
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            sessionTitle(s),
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.weight(1f),
+        )
+        when (s.state) {
+            SessionState.RECORDING -> DimText("Recording", color = c.loss)
+            SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
+            SessionState.FINISHED -> Unit
+        }
+        if (opens) DimText("›")
+    }
+}
+
 /** Delete, Share and Export at the bottom of a session card. */
 @Suppress("LongParameterList")
 @Composable
@@ -180,27 +198,19 @@ private fun CardButtons(
     idle: Boolean,
     canDelete: Boolean,
     onDelete: () -> Unit,
-    onSend: () -> Unit,
-    onSave: () -> Unit,
+    onShare: () -> Unit,
     onExport: () -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onDelete, enabled = canDelete) {
             Text("Delete", color = if (canDelete) TrackTheme.colors.loss else Color.Unspecified)
         }
-        ShareButton(enabled = idle, onSend = onSend, onSave = onSave)
+        ShareButton(enabled = idle, onShare = onShare)
         Spacer(Modifier.weight(1f))
         FilledTonalButton(onClick = onExport, enabled = idle) {
             Text(if (video) "Export VBO + video" else "Export VBO")
         }
     }
-}
-
-/** Opens lap analysis (FBBD-102): laps, theoretical best and lap comparison. */
-@Composable
-private fun AnalysisLink(s: SessionSummary, delete: DeleteState?, onAnalyse: (SessionSummary) -> Unit) {
-    if (s.state == SessionState.RECORDING || delete == DeleteState.Running) return
-    TextButton(onClick = { onAnalyse(s) }, contentPadding = PaddingValues(0.dp)) { Text("Lap analysis ›") }
 }
 
 /** The card's status line and whether it reports a failure; a delete outranks an export. */
@@ -255,17 +265,17 @@ private const val MB = 1_000_000L
 private const val GB = 1_000_000_000L
 
 @Composable
-private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState) {
+private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState, sharing: Boolean) {
     val work = goPro.work[s.id]
     GoProLines(
         goPro = goPro.sessions[s.id] ?: SessionGoPro(),
         work = work,
         problems = goPro.problems[s.id].orEmpty(),
-        enabled = goPro.enabled && work == null && export != ExportState.Running,
-        hero8Listed = goPro.hero8Listed,
-        canDownload = goPro.canDownload,
-        onDownload = { goPro.onDownload(s) },
-        onAddHero8 = { goPro.onAddHero8(s) },
+        enabled = goPro.enabled && work == null && export != ExportState.Running && !sharing,
+        listed = goPro.listed,
+        nameOf = goPro.nameOf,
+        onDownload = { id -> goPro.onDownload(s, id) },
+        onAddFiles = { id -> goPro.onAddFiles(s, id) },
     )
 }
 
@@ -275,7 +285,7 @@ private fun SessionsScreenPreview() {
     fun session(id: String, start: Long, state: SessionState, minutes: Long?) = SessionSummary(
         id,
         File(id),
-        SessionInfo(start, car = "2023 Toyota Corolla", track = "Tor Poznań"),
+        SessionInfo(start, car = "Club car", track = "Tor Poznań"),
         state,
         minutes?.let { it * 60_000_000 },
     )
@@ -296,8 +306,12 @@ private fun SessionsScreenPreview() {
                 withVideo = setOf("a"),
                 goPro = GoProCardState(
                     sessions = mapOf(
-                        "a" to SessionGoPro(hero11 = GoProClips(2, "by GPS ±0.05 s", byGps = true)),
-                        "b" to SessionGoPro(hero11OnCamera = true),
+                        "a" to SessionGoPro(listOf(SessionCamera("g1", clips = GoProClips(2, "by GPS ±0.05 s", true)))),
+                        "b" to SessionGoPro(listOf(SessionCamera("g1", onCamera = true))),
+                    ),
+                    listed = listOf(
+                        ListedGoPro("g1", "Helmet HERO13", download = true),
+                        ListedGoPro("g2", "Rear HERO7", download = false),
                     ),
                 ),
             )

@@ -98,11 +98,29 @@ class GoProDownloaderTest {
         assertTrue(clips.all { it.alignment.method == AlignmentMethod.GPS_MATCH })
         assertTrue(abs(clips[0].sessionOffsetUs - 4_600_000) <= 20_000, "${clips[0].sessionOffsetUs}")
         assertTrue(GoProRecordings(videoDir).all().single().downloaded)
-        assertTrue(File(videoDir, "GX020009.MP4").length() == files["GX020009.MP4"]!!.size.toLong())
+        // Saved under the camera's id, so two cameras' GX010009.MP4 never meet.
+        assertTrue(File(videoDir, "gopro-x-GX020009.MP4").length() == files["GX020009.MP4"]!!.size.toLong())
 
         // A second run has nothing left to do.
         val again = GoProDownloader(camera, backgroundScope, wifi).download(sessionDir, TestSession.data(300))
         assertEquals(emptyList(), again.downloaded)
+    }
+
+    @Test
+    fun `downloads only the chosen camera's recordings`() = runTest {
+        val sessionDir = File(dir, "session3").apply { mkdirs() }
+        val store = GoProRecordings(File(sessionDir, "video"))
+        store.put(GoProRecording("gopro-a", startAckSessionUs = 0, startAckUtcMillis = TestSession.StartUtcMillis))
+        store.put(GoProRecording("gopro-b", startAckSessionUs = 0, startAckUtcMillis = TestSession.StartUtcMillis))
+        val wifi = object : WifiJoiner {
+            override suspend fun join(ssid: String, password: String): GoProHttp = GoProHttp(serve(emptyMap(), 0))
+            override suspend fun leave() = Unit
+        }
+        val result = GoProDownloader(FakeGoPro(), backgroundScope, wifi)
+            .download(sessionDir, TestSession.data(10), sourceId = "gopro-b")
+        assertEquals(1, result.problems.size, "only camera b's recording was looked for")
+        assertEquals("x.MP4", GoProDownloader.localName("gopro_hero11", "x.MP4"), "older sessions keep the names")
+        assertEquals("gopro-b-x.MP4", GoProDownloader.localName("gopro-b", "x.MP4"))
     }
 
     @Test

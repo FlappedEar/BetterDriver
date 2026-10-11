@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -36,8 +37,21 @@ import java.util.concurrent.Executors
 /** Sessions the editor loads for one track, newest first: enough to check lines, bounded in memory. */
 private const val MaxEditorSessions = 8
 
-/** Where the phone is (UI-27) and what is there. */
-data class Here(val position: GeoPoint, val detection: TrackDetection)
+/** A last known position older than this does not name a new session: the phone may have moved since. */
+private const val FreshPositionNanos = 10L * 60 * 1_000_000_000
+
+/**
+ * Where the phone is (UI-27) and what is there. [atNanos] is when the position was taken
+ * ([SystemClock.elapsedRealtimeNanos]), or null when it is only where the newest session started.
+ */
+data class Here(val position: GeoPoint, val detection: TrackDetection, val atNanos: Long? = null) {
+    /**
+     * Whether the position is recent enough to name a session started now: a stale one could name a
+     * road drive after last weekend's circuit. Checked at START, so a home screen left open goes stale.
+     */
+    fun fresh(nowNanos: Long = SystemClock.elapsedRealtimeNanos()) =
+        atNanos != null && nowNanos - atNanos <= FreshPositionNanos
+}
 
 /** A track opened in the editor, with the sessions recorded there. */
 data class EditorData(val track: Track, val sessions: List<EditorSession>)
@@ -84,13 +98,14 @@ class Tracks private constructor(private val context: Context) {
 
     /** Finds where the phone is: its last known position, else where the newest session started. */
     fun locate() = io.execute {
-        val at = lastKnownPosition() ?: newestSessionStart()
-        val found = at?.let { Here(it, detectTrack(it, store.all(), directory.list)) }
+        val known = lastKnownPosition()
+        val at = known?.first ?: newestSessionStart()
+        val found = at?.let { Here(it, detectTrack(it, store.all(), directory.list), known?.second) }
         main.post { here = found }
     }
 
-    /** Stores [track] (new or edited) and hands back the stored copy. */
-    fun save(track: Track, onSaved: (Track) -> Unit) = io.execute {
+    /** Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be written. */
+    fun save(track: Track, onFailed: () -> Unit = {}, onSaved: (Track) -> Unit) = io.execute {
         val stored = try {
             store.save(track)
         } catch (e: IOException) {
@@ -98,7 +113,7 @@ class Tracks private constructor(private val context: Context) {
             null
         }
         publish()
-        main.post { if (stored != null) onSaved(stored) }
+        main.post { if (stored != null) onSaved(stored) else onFailed() }
     }
 
     /** The track and the sessions recorded there, newest first; null if the track is gone. */
@@ -146,7 +161,8 @@ class Tracks private constructor(private val context: Context) {
     }
 
     @SuppressLint("MissingPermission") // Checked first.
-    private fun lastKnownPosition(): GeoPoint? {
+    /** The newest last known position and when it was taken ([SystemClock.elapsedRealtimeNanos]). */
+    private fun lastKnownPosition(): Pair<GeoPoint, Long>? {
         val granted = listOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
             .any { ContextCompat.checkSelfPermission(context, it) == PackageManager.PERMISSION_GRANTED }
         val manager = context.getSystemService(LocationManager::class.java)
@@ -155,7 +171,7 @@ class Tracks private constructor(private val context: Context) {
             manager.getProviders(true)
                 .mapNotNull { manager.getLastKnownLocation(it) }
                 .maxByOrNull { it.elapsedRealtimeNanos }
-                ?.let { GeoPoint(it.latitude, it.longitude) }
+                ?.let { GeoPoint(it.latitude, it.longitude) to it.elapsedRealtimeNanos }
         } catch (_: SecurityException) {
             null
         }

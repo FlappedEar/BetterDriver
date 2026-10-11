@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import org.junit.jupiter.api.Test
 import kotlin.math.abs
@@ -25,6 +26,45 @@ class SessionAnalysisTest {
         val best = assertNotNull(analysis.theoreticalBest?.totalSeconds)
         val fastest = analysis.laps.timedLaps[analysis.laps.fastestLapIndex!!].durationSeconds
         assertTrue(best <= fastest + 1e-9, "theoretical best $best is slower than the fastest lap $fastest")
+
+        // What the fastest lap leaves in each segment adds up to the gap to the theoretical best.
+        val summary = assertNotNull(analysis.summary)
+        val left = summary.sectors.sumOf { assertNotNull(it.lossSeconds) }
+        assertEquals(assertNotNull(summary.differenceSeconds), left, 1e-9)
+        assertTrue(summary.sectors.all { it.lossSeconds!! >= -1e-12 })
+        // Every loss is another lap's, largest first.
+        val losses = assertNotNull(analysis.losses).losses
+        assertTrue(losses.isNotEmpty())
+        val fastestNumber = analysis.laps.timedLaps[analysis.laps.fastestLapIndex!!].number
+        assertTrue(losses.none { it.lapReference == fastestNumber })
+        assertEquals(losses.sortedByDescending { it.lossSeconds }, losses)
+    }
+
+    @Test
+    fun `every corner is measured on every lap, with braking from the brake channel`() {
+        val analysis = analyzeSession(VboFixture.read("corners_measured.vbo"))
+        val corners = assertNotNull(analysis.segments).segments.filter { it.type == TrackSegmentType.Corner }
+        assertTrue(corners.isNotEmpty())
+        assertEquals(corners.map { it.id }.toSet(), analysis.cornerMetrics.keys)
+        assertEquals(corners.map { it.id }.toSet(), analysis.variability.keys)
+        for (laps in analysis.cornerMetrics.values) {
+            assertEquals(analysis.laps.timedLaps.size, laps.size)
+        }
+        val braking = analysis.cornerMetrics.values.flatten().map { it.braking }
+        assertTrue(braking.any { it.method == "measuredBrake" && it.brakingPointMeters != null })
+    }
+
+    @Test
+    fun `a session gets at most three focus areas, each with laps to compare`() {
+        val analysis = analyzeSession(VboFixture.read("corners_measured.vbo"))
+        val areas = sessionFocusAreas(analysis)
+        assertTrue(areas.size <= 3)
+        assertEquals(areas.size, areas.map { it.segmentId }.toSet().size)
+        for (area in areas) {
+            assertNotNull(area.lap)
+            assertNotNull(area.against)
+            assertTrue(area.observation.isNotEmpty() && area.hypothesis.isNotEmpty())
+        }
     }
 
     @Test

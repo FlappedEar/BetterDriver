@@ -16,12 +16,24 @@ internal object RecorderProtocol {
     const val EXTRA_CAR = "car"
     const val EXTRA_TRACK = "track"
 
-    /** The paired RaceBox's address and advertised name; absent when none is paired. */
+    /**
+     * The session receiver's Bluetooth address and advertised name: a RaceBox, or with
+     * [EXTRA_GNSS_NMEA] a Bluetooth NMEA receiver (FBBD-108). Absent when there is none.
+     */
     const val EXTRA_RACEBOX_ADDRESS = "racebox_address"
     const val EXTRA_RACEBOX_NAME = "racebox_name"
 
     /** True when the session uses Demo GNSS instead of a RaceBox (FBBD-83). */
     const val EXTRA_GNSS_DEMO = "gnss_demo"
+
+    /** True when the receiver at [EXTRA_RACEBOX_ADDRESS] is a Bluetooth NMEA receiver, not a RaceBox (FBBD-108). */
+    const val EXTRA_GNSS_NMEA = "gnss_nmea"
+
+    /** The receiver's [GnssType] name; when absent (an older client), [EXTRA_GNSS_DEMO] and [EXTRA_GNSS_NMEA] say. */
+    const val EXTRA_GNSS_TYPE = "gnss_type"
+
+    /** Sensors to record too, each [SensorRef.encode] (FBBD-119). */
+    const val EXTRA_SENSORS = "sensors"
 
     /** Client to service: start sending updates to msg.replyTo. */
     const val MSG_REGISTER = 1
@@ -79,6 +91,9 @@ internal object RecorderProtocol {
 
     /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
     const val KEY_PLACE = "place"
+
+    /** In a [MSG_STATE] bundle: true when [KEY_PLACE] is a saved track, false for a circuit-list match. */
+    const val KEY_PLACE_SAVED = "placeSaved"
 
     private const val SESSION_ID = "sessionId"
     private const val START_UTC = "startUtcMillis"

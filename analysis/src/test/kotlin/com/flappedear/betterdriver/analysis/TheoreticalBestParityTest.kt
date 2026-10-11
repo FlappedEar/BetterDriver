@@ -6,14 +6,27 @@ import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.progress.ProgressSegment
 import com.flappedear.betterdriver.analysis.progress.ProjectedSample
 import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
+import com.flappedear.betterdriver.analysis.segments.ConsistencyAlgorithm
+import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
+import com.flappedear.betterdriver.analysis.segments.ConsistencyTooFewSamples
 import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
 import com.flappedear.betterdriver.analysis.segments.PopulationLap
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestLap
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
+import com.flappedear.betterdriver.analysis.segments.TimeLossObservations
+import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
+import com.flappedear.betterdriver.analysis.segments.TimedLapSectors
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.compareSectorTimes
 import com.flappedear.betterdriver.analysis.segments.computeLapSectorTimes
 import com.flappedear.betterdriver.analysis.segments.computeTheoreticalBest
+import com.flappedear.betterdriver.analysis.segments.computeTimeLossObservations
+import com.flappedear.betterdriver.analysis.segments.publishTheoreticalBest
+import com.flappedear.betterdriver.analysis.segments.rankPopulationTimeLosses
+import com.flappedear.betterdriver.analysis.segments.rankTimeLosses
+import com.flappedear.betterdriver.analysis.segments.summarizeConsistency
 import com.flappedear.betterdriver.analysis.segments.projectedCoverageMeters
 import com.flappedear.betterdriver.analysis.segments.timePopulation
 import kotlinx.serialization.json.JsonArray
@@ -61,7 +74,13 @@ class TheoreticalBestParityTest {
             val approved = approved(variant.obj("segments").getValue(canonical), variant.str("revision"))
             val population = rows.map {
                 val lap = byNumber.getValue(it.int("lapNumber"))
-                PopulationLap(session, lap.startTelemetryTime, lap.endTelemetryTime, "${it.str("runId")}#${lap.number}")
+                PopulationLap(
+                    session,
+                    lap.startTelemetryTime,
+                    lap.endTelemetryTime,
+                    "${it.str("runId")}#${lap.number}",
+                    it.str("runId"),
+                )
             }
             val axisLap = rows.zip(population).filter { it.first.str("runId") == canonical }
                 .minBy { it.second.end - it.second.start }.first.int("lapNumber")
@@ -76,6 +95,36 @@ class TheoreticalBestParityTest {
             expectBest(computed.best, variant.obj("best"), what)
             val actualBest = computed.times.firstOrNull { it.lapReference == entry.str("actualBest") }
             assertEquals(nullableString(variant["actualBest"]), actualBest?.lapReference, what)
+            expectPublished(
+                publishTheoreticalBest(approved, computed.best, computed.times, actualBest),
+                variant.obj("published"),
+                what,
+            )
+            expectRanking(
+                rankPopulationTimeLosses(approved, computed, population, actualBest),
+                variant.obj("timeLossRunBests"),
+                "$what run bests",
+            )
+            expectRanking(
+                rankPopulationTimeLosses(approved, computed, population, actualBest, allLaps = true),
+                variant.obj("timeLossAllLaps"),
+                "$what all laps",
+            )
+            variant["observations"]?.takeUnless { it is JsonNull }?.let { observations ->
+                val start = population.lastOrNull { it.reference == entry.str("actualBest") }?.start ?: 0.0
+                expectObservations(
+                    computeTimeLossObservations(
+                        approved,
+                        computed.axis.lengthMeters,
+                        computed.times[0],
+                        population[0].start,
+                        actualBest!!,
+                        start,
+                    ),
+                    observations.jsonObject,
+                    "$what observations",
+                )
+            }
             val comparisons = variant["comparisons"]?.takeUnless { it is JsonNull }?.jsonArray ?: continue
             for (value in comparisons.map { it.jsonObject }) {
                 val comparison = compareSectorTimes(computed.times[0], computed.times[1], value.str("segmentId"))
@@ -112,13 +161,13 @@ class TheoreticalBestParityTest {
     }
 
     @Test
-    fun theoreticalBestOfHandMadePopulation() {
+    fun theoreticalBestAndTimeLossOfHandMadePopulation() {
         val item = cases.obj("population")
         val best = item.obj("best")
         val approved = approved(item.arr("stored"), best.str("revision"))
         val other = approved(item.arr("otherStored"), "other")
-        val population = item.arr("laps").map { it.jsonObject }.mapIndexed { i, lap ->
-            computeLapSectorTimes(
+        val timed = item.arr("laps").map { it.jsonObject }.mapIndexed { i, lap ->
+            val times = computeLapSectorTimes(
                 if (lap.bool("other")) other else approved,
                 1000.0,
                 trace(lap.arr("trace")),
@@ -126,13 +175,53 @@ class TheoreticalBestParityTest {
                 lap.dbl("end"),
                 "${if (i % 2 == 1) "b" else "a"}#$i",
             )
+            TimedLapSectors(times, lap.dbl("start"))
         }
+        val population = timed.map { it.times }
         expectBest(computeTheoreticalBest(approved, population), best, "population")
         expectBest(
             computeTheoreticalBest(ApprovedSegments(emptyList(), ""), population),
             item.obj("bestNone"),
             "no segments",
         )
+        val observations = item.arr("observations").map { it.jsonObject }
+        timed.forEachIndexed { i, lap ->
+            expectObservations(
+                computeTimeLossObservations(
+                    approved, 1000.0, lap.times, lap.startTime, timed[0].times, timed[0].startTime,
+                ),
+                observations[i],
+                "observations $i",
+            )
+        }
+        val ranking = rankTimeLosses(approved, 1000.0, timed, timed[0], maximumResults = 3)
+        val want = item.obj("ranking")
+        assertEquals(want.bool("valid"), ranking.valid)
+        assertEquals(want.int("observationCount"), ranking.observationCount)
+        assertEquals(want.int("comparedLapCount"), ranking.comparedLapCount)
+        assertEquals(want.int("untimedWindowCount"), ranking.untimedWindowCount)
+        val losses = want.arr("losses").map { it.jsonObject }
+        assertEquals(losses.size, ranking.losses.size)
+        ranking.losses.forEachIndexed { i, loss ->
+            assertEquals(losses[i].str("lap"), loss.lapReference)
+            assertEquals(losses[i].str("segmentId"), loss.window.segmentId)
+            close(loss.lossSeconds, losses[i].dbl("loss"), "loss $i")
+            close(loss.coverageLap, losses[i].dbl("coverageLap"), "coverage $i")
+            close(loss.coverageReference, losses[i].dbl("coverageReference"), "reference coverage $i")
+        }
+    }
+
+    @Test
+    fun consistencyQuartiles() {
+        val summary = summarizeConsistency(listOf(4.0, 1.0, Double.NaN, 3.0, 2.0))
+        assertEquals(4, summary.count)
+        assertEquals(1.75, summary.q1)
+        assertEquals(2.5, summary.median)
+        assertEquals(3.25, summary.q3)
+        assertEquals(1.5, summary.interquartileRange)
+        val few = summarizeConsistency(listOf(1.0, 2.0))
+        assertEquals(false, few.available)
+        assertEquals(ConsistencyTooFewSamples, few.unavailableReason)
     }
 
     /** Stored segments of this configuration, as Telemetry's approvedSegmentation keeps them. */
@@ -200,6 +289,129 @@ class TheoreticalBestParityTest {
             assertEquals(sectors[i].str("source"), sector.sourceLapReference ?: "", what)
             assertEquals(sectors[i].str("reason"), sector.unavailableReason, what)
             closeOrNull(sector.seconds, sectors[i]["seconds"], "$what sector $i")
+        }
+    }
+
+    /** "run-a#3" as Overlays labels it. */
+    private fun label(reference: Any?): String {
+        val (run, lap) = (reference as String).split('#')
+        return "$run · LAP $lap"
+    }
+
+    private fun expectSummary(summary: ConsistencySummary, want: JsonObject, what: String) {
+        assertEquals(want.int("count"), summary.count, what)
+        assertEquals(want.bool("available"), summary.available, what)
+        if (!summary.available) {
+            assertEquals(want.str("unavailableReason"), summary.unavailableReason, what)
+            return
+        }
+        closeOrNull(summary.minimum, want["minimum"], "$what minimum")
+        closeOrNull(summary.q1, want["q1"], "$what q1")
+        closeOrNull(summary.median, want["median"], "$what median")
+        closeOrNull(summary.q3, want["q3"], "$what q3")
+        closeOrNull(summary.maximum, want["maximum"], "$what maximum")
+        closeOrNull(summary.interquartileRange, want["interquartileRange"], "$what IQR")
+    }
+
+    private fun expectRow(row: TheoreticalBestRow, want: JsonObject, what: String) {
+        assertEquals(
+            listOf(want.str("segmentId"), want.str("name"), want.str("type")),
+            listOf(row.segmentId, row.name, row.type.jsonName),
+            what,
+        )
+        closeOrNull(row.seconds, want["seconds"], "$what seconds")
+        if (row.seconds != null) {
+            assertEquals(want.str("sourceLapLabel"), label(row.sourceLapReference), what)
+        } else {
+            assertEquals(want.str("unavailableReason"), row.unavailableReason, what)
+        }
+        closeOrNull(row.actualSeconds, want["actualSeconds"], "$what actual")
+        closeOrNull(row.lossSeconds, want["lossSeconds"], "$what loss")
+        expectSummary(row.consistency, want.obj("consistency"), "$what consistency")
+    }
+
+    private fun expectPublished(summary: TheoreticalBestSummary, want: JsonObject, what: String) {
+        closeOrNull(summary.totalSeconds, want["totalSeconds"], "$what total")
+        closeOrNull(summary.differenceSeconds, want["differenceSeconds"], "$what difference")
+        assertEquals(want.str("revision"), summary.revision, what)
+        assertEquals(want.str("trackConfigurationReference"), summary.trackConfigurationReference, what)
+        assertEquals(ConsistencyAlgorithm, want.str("consistencyAlgorithm"), what)
+        val actual = want["actualBest"]?.takeUnless { it is JsonNull }?.jsonObject
+        assertEquals(actual == null, summary.actualBest == null, what)
+        if (actual != null) {
+            val best = summary.actualBest!!
+            assertEquals(actual.str("label"), label(best.reference), what)
+            close(best.lapSeconds, actual.dbl("lapSeconds"), "$what best lap")
+            assertEquals(actual.bool("coversWholeLap"), best.coversWholeLap, what)
+            closeOrNull(best.sectorSumSeconds, actual["sectorSumSeconds"], "$what best sum")
+        }
+        val sectors = want.arr("sectors").map { it.jsonObject }
+        assertEquals(sectors.size, summary.sectors.size, what)
+        summary.sectors.forEachIndexed { i, row -> expectRow(row, sectors[i], "$what row $i") }
+        assertEquals(
+            want.arr("gains").map { it.jsonObject.str("segmentId") },
+            summary.gains.map { it.segmentId },
+            "$what gains",
+        )
+    }
+
+    private fun expectRanking(ranking: TimeLossRanking, want: JsonObject, what: String) {
+        if (want.str("state") != "ready") {
+            assertEquals(false, ranking.valid, what)
+            return
+        }
+        assertEquals(true, ranking.valid, what)
+        assertEquals(want.str("referenceLabel"), label(ranking.referenceLap), what)
+        assertEquals(want.int("observationCount"), ranking.observationCount, what)
+        assertEquals(want.int("comparedLapCount"), ranking.comparedLapCount, what)
+        assertEquals(want.int("untimedWindowCount"), ranking.untimedWindowCount, what)
+        assertEquals(want.str("revision"), ranking.stamp.revision, what)
+        val losses = want.arr("losses").map { it.jsonObject }
+        assertEquals(losses.size, ranking.losses.size, what)
+        ranking.losses.forEachIndexed { i, loss ->
+            val other = losses[i]
+            val window = loss.window
+            val where = "$what loss $i"
+            assertEquals(
+                listOf("lapLabel", "segmentId", "name", "type", "role").map { other.str(it) },
+                listOf(
+                    label(loss.lapReference),
+                    window.segmentId,
+                    window.name,
+                    window.type.jsonName,
+                    window.role.jsonName,
+                ),
+                where,
+            )
+            assertEquals(nullableString(other["cornerSegmentId"]), window.cornerSegmentId.ifEmpty { null }, where)
+            close(loss.lossSeconds, other.dbl("lossSeconds"), where)
+            close(window.startProgressMeters, other.dbl("startMeters"), where)
+            close(window.endProgressMeters, other.dbl("endMeters"), where)
+            close(loss.coverageLap, other.dbl("coverageLap"), where)
+            close(loss.coverageReference, other.dbl("coverageReference"), where)
+            closeOrNull(window.cumulativeAtStartSeconds, other["cumulativeAtStartSeconds"], "$where at start")
+            closeOrNull(window.cumulativeAtEndSeconds, other["cumulativeAtEndSeconds"], "$where at end")
+        }
+    }
+
+    private fun expectObservations(observations: TimeLossObservations, want: JsonObject, what: String) {
+        assertEquals(want.bool("valid"), observations.valid, what)
+        assertEquals(want.str("reason"), observations.unavailableReason, what)
+        assertEquals(want.bool("allWindowsTimed"), observations.allWindowsTimed, what)
+        close(observations.timedIncrementSumSeconds, want.dbl("timedIncrementSumSeconds"), "$what sum")
+        val windows = want.arr("windows").map { it.jsonObject }
+        assertEquals(windows.size, observations.windows.size, what)
+        observations.windows.forEachIndexed { i, window ->
+            val other = windows[i]
+            val where = "$what window $i"
+            assertEquals(
+                listOf(other.str("segmentId"), other.str("role"), other.str("cornerSegmentId"), other.str("reason")),
+                listOf(window.segmentId, window.role.jsonName, window.cornerSegmentId, window.unavailableReason),
+                where,
+            )
+            closeOrNull(window.incrementSeconds, other["increment"], "$where increment")
+            closeOrNull(window.cumulativeAtStartSeconds, other["atStart"], "$where at start")
+            closeOrNull(window.cumulativeAtEndSeconds, other["atEnd"], "$where at end")
         }
     }
 

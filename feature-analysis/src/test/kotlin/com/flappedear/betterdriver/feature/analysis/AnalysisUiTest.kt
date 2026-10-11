@@ -6,6 +6,14 @@ import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.laps.TimedLap
+import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
+import com.flappedear.betterdriver.analysis.segments.RankedTimeLoss
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
+import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
+import com.flappedear.betterdriver.analysis.segments.TimeLossRole
+import com.flappedear.betterdriver.analysis.segments.TimeLossWindow
+import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -33,6 +41,36 @@ class AnalysisUiTest {
         assertEquals("GPS gap", ui.laps[3].note)
         assertNull(ui.theoreticalMillis)
         assertEquals(true, ui.sectorsNote!!.startsWith("No corners"))
+    }
+
+    @Test
+    fun `where time goes lists meaningful losses, largest first, with the lap to compare`() {
+        fun row(id: String, loss: Double?, source: Int) = TheoreticalBestRow(
+            id, "Corner $id", TrackSegmentType.Corner, 0.0, 1.0, 1.0, source, actualSeconds = 1.0, lossSeconds = loss,
+            consistency = ConsistencySummary(count = 3, interquartileRange = 0.07, available = true),
+        )
+        val rows = listOf(row("1", 0.2, 3), row("2", 0.01, 2), row("3", null, 1))
+        fun loss(lap: Int, id: String, seconds: Double) = RankedTimeLoss(
+            lap, 0.0, TimeLossWindow(id, "Corner $id", TrackSegmentType.Corner, TimeLossRole.Corner, "", 0.0, 1.0),
+            seconds, 1.0, 1.0,
+        )
+        val ui = analysisUi(
+            "t",
+            analysis.copy(
+                summary = TheoreticalBestSummary(rows, rows),
+                losses = TimeLossRanking(losses = listOf(loss(3, "1", 0.4), loss(1, "2", 0.03)), valid = true),
+            ),
+            null,
+        )!!
+        assertEquals(listOf(GainRow("Corner 1", 0.2, 3)), ui.gains)
+        assertEquals(listOf(LossRow(2, 3, "Corner 1", 0.4)), ui.losses)
+        // Next session: the best lap's gap in Corner 1, compared on the lap that set the best time there.
+        val focus = ui.focus.single()
+        assertEquals("Best lap gap", focus.kind)
+        assertEquals("Corner 1", focus.name)
+        assertEquals(true, focus.observation.contains("0.200 s slower through Corner 1 than lap 3"))
+        assertEquals(2, focus.compareIndex)
+        assertEquals(3, focus.compareNumber)
     }
 
     @Test

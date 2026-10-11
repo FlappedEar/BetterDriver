@@ -84,6 +84,7 @@ class SessionBundleTest {
         File(video, "phone_0002.mp4").writeBytes(Random(2).nextBytes(70_001))
         File(video, "clips.json").writeText("""{"version":1,"clips":[]}""")
         File(video, "clips.json.lock").writeText("")
+        File(video, "hero11-0001.mp4.part").writeText("half a download")
         File(dir, SessionFiles.LOCK).writeText("")
         return dir
     }
@@ -121,7 +122,7 @@ class SessionBundleTest {
         assertTrue(inbox.accept(received, replace = false))
 
         val arrived = tablet.dir(dir.name)
-        val expected = files(dir) - SessionFiles.LOCK - "video/clips.json.lock"
+        val expected = files(dir) - SessionFiles.LOCK - "video/clips.json.lock" - "video/hero11-0001.mp4.part"
         assertEquals(expected, files(arrived))
         assertEquals(SessionState.FINISHED, tablet.list().single().state)
         assertEquals(phone.read(dir.name).sampleSets, tablet.read(dir.name).sampleSets)
@@ -205,6 +206,31 @@ class SessionBundleTest {
         assertEquals(1234, File(tablet.dir(dir.name), "video/gopro_hero11_0001.MP4").length())
         assertEquals(1, tablet.list().size)
         assertEquals(emptyList(), File(tmp, "staging").listFiles()!!.toList())
+    }
+
+    @Test
+    fun `a replace cut short by the app dying keeps the session that was here`() {
+        val phone = SessionStore(File(tmp, "phone"))
+        val dir = session(phone, fixes = 50)
+        val tablet = SessionStore(File(tmp, "tablet"))
+        val staging = File(tmp, "staging")
+        val inbox = SessionInbox(tablet, staging)
+        assertTrue(inbox.accept(inbox.receive(bundle(phone, dir).inputStream()), replace = false))
+        val here = files(tablet.dir(dir.name))
+
+        // Killed after the old session was moved aside, before the new one was moved in.
+        inbox.receive(bundle(phone, dir).inputStream())
+        assertTrue(tablet.dir(dir.name).renameTo(File(staging, "old-" + dir.name)))
+        inbox.clearStaging()
+        assertEquals(here, files(tablet.dir(dir.name)))
+        assertEquals(emptyList(), staging.listFiles()!!.toList())
+
+        // Killed after the swap, before the old copy was deleted: the new one stays.
+        tablet.dir(dir.name).copyRecursively(File(staging, "old-" + dir.name))
+        File(tablet.dir(dir.name), "video/new.mp4").writeBytes(ByteArray(10))
+        inbox.clearStaging()
+        assertTrue(File(tablet.dir(dir.name), "video/new.mp4").exists())
+        assertEquals(emptyList(), staging.listFiles()!!.toList())
     }
 
     @Test
