@@ -16,6 +16,10 @@ internal object RecorderProtocol {
     const val EXTRA_CAR = "car"
     const val EXTRA_TRACK = "track"
 
+    /** The paired RaceBox's address and advertised name; absent when none is paired. */
+    const val EXTRA_RACEBOX_ADDRESS = "racebox_address"
+    const val EXTRA_RACEBOX_NAME = "racebox_name"
+
     /** Client to service: start sending updates to msg.replyTo. */
     const val MSG_REGISTER = 1
     const val MSG_UNREGISTER = 2

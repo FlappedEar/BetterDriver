@@ -98,12 +98,15 @@ class RecorderClient private constructor(private val context: Context) {
         bound = false
     }
 
-    fun start(car: String, track: String) {
+    /** [raceBox] is the paired RaceBox; with none, the recording uses the fake GNSS source. */
+    fun start(car: String, track: String, raceBox: RaceBoxRef?) {
         state = state.copy(starting = true, error = null)
         val intent = Intent(context, RecorderService::class.java)
             .setAction(RecorderProtocol.ACTION_START)
             .putExtra(RecorderProtocol.EXTRA_CAR, car)
             .putExtra(RecorderProtocol.EXTRA_TRACK, track)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, raceBox?.address)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, raceBox?.name)
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {

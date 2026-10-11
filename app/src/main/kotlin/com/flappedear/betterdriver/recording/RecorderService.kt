@@ -95,13 +95,20 @@ class RecorderService : Service() {
                 lastError = null
                 val car = intent.getStringExtra(RecorderProtocol.EXTRA_CAR).orEmpty()
                 val track = intent.getStringExtra(RecorderProtocol.EXTRA_TRACK).orEmpty()
-                if (goForeground()) startRecording(car, track)
+                val raceBox = intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS)?.let {
+                    RaceBoxRef(it, intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty())
+                }
+                if (goForeground()) startRecording(car, track, raceBox)
             }
             RecorderProtocol.ACTION_STOP -> stopRecording()
             // Restarted by the system after this process was killed (START_STICKY). If a recording was
             // running, the old session is recovered at the next app start and a new one carries on.
             null -> if (wanted.getBoolean(KeyWanted, false) && goForeground()) {
-                startRecording(wanted.getString(KeyCar, "").orEmpty(), wanted.getString(KeyTrack, "").orEmpty())
+                val raceBox = wanted.getString(KeyRaceBoxAddress, null)?.let {
+                    RaceBoxRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty())
+                }
+                val car = wanted.getString(KeyCar, "").orEmpty()
+                startRecording(car, wanted.getString(KeyTrack, "").orEmpty(), raceBox)
             } else {
                 stopSelf(startId)
             }
@@ -131,10 +138,10 @@ class RecorderService : Service() {
     }
 
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
-    private fun startRecording(car: String, track: String) = control.execute {
+    private fun startRecording(car: String, track: String, raceBox: RaceBoxRef?) = control.execute {
         if (active != null) return@execute
         try {
-            val sources = Sources.create()
+            val sources = Sources.create(this, raceBox)
             val info = SessionInfo(
                 startUtcMillis = System.currentTimeMillis(),
                 car = car,
@@ -163,7 +170,8 @@ class RecorderService : Service() {
             sources.forEach(recording::attach)
             main.post {
                 cpu.acquire()
-                wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track).commit()
+                wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
+                    .putString(KeyRaceBoxAddress, raceBox?.address).putString(KeyRaceBoxName, raceBox?.name).commit()
                 getSystemService(NotificationManager::class.java)
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
@@ -228,5 +236,7 @@ class RecorderService : Service() {
         const val KeyWanted = "wanted"
         const val KeyCar = "car"
         const val KeyTrack = "track"
+        const val KeyRaceBoxAddress = "racebox_address"
+        const val KeyRaceBoxName = "racebox_name"
     }
 }

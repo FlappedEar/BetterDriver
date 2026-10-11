@@ -12,6 +12,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -19,6 +20,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -26,7 +28,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.feature.track.TrackScreen
+import com.flappedear.betterdriver.recording.RaceBoxRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
@@ -34,13 +38,16 @@ import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.vboFileName
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.PairCandidate
 import com.flappedear.betterdriver.shell.PairScreen
+import com.flappedear.betterdriver.shell.PairedRaceBox
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTab
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
+import kotlinx.coroutines.flow.flowOf
 
 private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
 
@@ -99,13 +106,35 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
                 }
             }
             composable(Routes.Pair) {
-                Box(Modifier.padding(padding)) {
-                    PairScreen(candidate = null, onConnect = {}, onShowAll = {}, onBack = { nav.popBackStack() })
-                }
+                Box(Modifier.padding(padding)) { PairRoute(nav, prefs) }
             }
             composable(Routes.Track) { Track(nav, prefs, recorder) }
         }
     }
+}
+
+/**
+ * Scans for RaceBoxes while the pairing screen is shown, if the Bluetooth permissions are granted
+ * (otherwise it stays on searching). Connect saves the strongest RaceBox; the recorder connects to it
+ * when a session starts (FBBD-43).
+ */
+@Composable
+private fun PairRoute(nav: NavHostController, prefs: AppPrefs) {
+    val context = LocalContext.current
+    val found by remember(context) {
+        if (prefs.hasRequiredPermissions()) scanRaceBoxes(context) else flowOf(emptyList())
+    }.collectAsState(initial = emptyList())
+    val best = found.firstOrNull()
+    PairScreen(
+        candidate = best?.let { PairCandidate(it.model, it.serial, it.bars, it.address) },
+        onConnect = { c ->
+            val name = found.firstOrNull { it.address == c.address }?.name ?: "${c.name} ${c.serial}"
+            prefs.updateRaceBox(PairedRaceBox(name, c.address))
+            nav.popBackStack()
+        },
+        onShowAll = {},
+        onBack = { nav.popBackStack() },
+    )
 }
 
 /**
@@ -134,7 +163,9 @@ private fun Drive(nav: NavHostController, prefs: AppPrefs, recorder: RecorderCli
         onStart = {
             if (prefs.hasRequiredPermissions()) {
                 // While recording, START goes back to the running session.
-                if (!recorder.state.recording) recorder.start(prefs.car, track = "")
+                if (!recorder.state.recording) {
+                    recorder.start(prefs.car, track = "", prefs.raceBox?.let { RaceBoxRef(it.address, it.name) })
+                }
                 nav.navigate(Routes.Track)
             } else {
                 nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
