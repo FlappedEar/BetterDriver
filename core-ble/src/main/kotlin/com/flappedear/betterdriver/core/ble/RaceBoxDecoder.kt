@@ -90,7 +90,10 @@ class RaceBoxDecoder(private val sink: SampleSink, private val isMicro: Boolean 
             add(ChannelValue(GnssChannels.LAT.id, d.latDeg))
             add(ChannelValue(GnssChannels.LON.id, d.lonDeg))
             add(ChannelValue(GnssChannels.SPEED_KMH.id, d.speedKmh))
-            if (d.headingValid) add(ChannelValue(GnssChannels.HEADING.id, d.headingDeg))
+            // Heading of motion, always with a fix. The "valid heading" flag (bit 5) is u-blox's
+            // headVehValid, set only in sensor-fusion mode, so it stayed 0 on a real RaceBox and every
+            // VBO had heading 000.00 (session 20261011-142759, 637 rows above 5 km/h).
+            add(ChannelValue(GnssChannels.HEADING.id, d.headingDeg))
             add(ChannelValue(GnssChannels.ALT_M.id, d.mslAltM))
             add(ChannelValue(RaceBoxChannels.H_ACC.id, d.horizontalAccM))
             add(ChannelValue(RaceBoxChannels.SPEED_ACC.id, d.speedAccMps * KmhPerMps))

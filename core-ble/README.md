@@ -75,8 +75,9 @@ p. 10: automotive platform model, ground speed, 3 m minimum horizontal accuracy
 Each data message becomes one sample set stamped with the recorder clock on
 arrival. GNSS time goes in `gnss_utc_ms`. Position, speed, MSL altitude and
 accuracies are only included while there is a fix (fix OK and fix status 3,
-as RaceBox recommends on p. 5, and coordinates valid), so the VBO export never writes rows at 0°, 0°; heading
-only while the heading is valid. Acceleration and rotation rate are always
+as RaceBox recommends on p. 5, and coordinates valid), so the VBO export never writes rows at 0°, 0°. Heading
+(heading of motion) is included with every fix: the "valid heading" flag is u-blox's headVehValid,
+which a RaceBox never sets because it does not run sensor fusion. Acceleration and rotation rate are always
 included. RaceBox-only channels use ids 100 to 199 (`RaceBoxChannels`).
 Fix changes and link drops are session events (`RaceBoxEvents`).
 
