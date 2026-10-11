@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
+import com.flappedear.betterdriver.core.ble.nmea.RcChannels
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderListener
@@ -71,9 +72,15 @@ private fun gnssFrom(intent: Intent): GnssRef? = when {
     }
 }
 
-/** G for the track screen comes from the RaceBox accelerometer; other receivers have none (UI-38). */
-private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? =
-    (RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id).takeIf { gnss.type == GnssType.RACEBOX }
+/**
+ * G for the track screen (UI-38): the RaceBox accelerometer, or a RaceChrono DIY device's $RC2/$RC3
+ * lines over Bluetooth or Wi-Fi (FBBD-115). Other receivers have none.
+ */
+private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
+    GnssType.RACEBOX -> RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
+    GnssType.NMEA, GnssType.TCP -> RcChannels.ACCEL_X.id to RcChannels.ACCEL_Y.id
+    else -> null
+}
 
 private fun sensorsFrom(intent: Intent): List<SensorRef> =
     intent.getStringArrayExtra(RecorderProtocol.EXTRA_SENSORS).orEmpty().mapNotNull(SensorRef::decode)

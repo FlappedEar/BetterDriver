@@ -49,8 +49,10 @@ internal fun kindLabel(e: Equipment): String = when (e.kind) {
 /** What a model does, under its details. */
 private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.RACEBOX -> "Records position, speed and G for each session it is chosen for."
-    EquipmentModel.NMEA_GNSS -> "Records position and speed for each session it is chosen for."
-    EquipmentModel.LNS_GNSS -> "Records position and speed for each session it is chosen for."
+    EquipmentModel.NMEA_GNSS, EquipmentModel.LNS_GNSS, EquipmentModel.DIY_GNSS ->
+        "Records position and speed for each session it is chosen for."
+    EquipmentModel.TCP_GNSS ->
+        "Connects over Wi-Fi to the address below. Records position and speed, and G from a RaceChrono DIY device."
     EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."
     EquipmentModel.DEMO_GNSS ->
         "Made-up positions on a circle, for trying the app without a receiver. Sessions with it are not real data."
@@ -172,7 +174,19 @@ fun AddEquipmentScreen(
     onAddModel: (EquipmentModel, GoProModel?) -> Unit,
     onBack: () -> Unit,
     pairedGps: List<NearbyDevice> = emptyList(),
+    onAddWifiGps: (address: String) -> Unit = {},
 ) {
+    // A Wi-Fi receiver is added by its address, typed in a dialog (FBBD-115).
+    var typingAddress by rememberSaveable { mutableStateOf(false) }
+    if (typingAddress) {
+        WifiGpsDialog(
+            onAdd = { address ->
+                typingAddress = false
+                onAddWifiGps(address)
+            },
+            onDismiss = { typingAddress = false },
+        )
+    }
     // A GoPro started by hand is added by generation, picked in a dialog (FBBD-105).
     var pickingGoPro by rememberSaveable { mutableStateOf(false) }
     if (pickingGoPro) {
@@ -192,24 +206,11 @@ fun AddEquipmentScreen(
             Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            ShellCard {
-                SectionLabel("Found nearby")
-                if (nearby.isEmpty()) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        if (searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                        val text = if (searching) "Searching…" else "Not searching"
-                        Text(text, style = MaterialTheme.typography.bodyLarge)
-                    }
-                }
-                nearby.forEachIndexed { i, d -> NearbyRow(d, i > 0, busyAddress, onAddNearby) }
-            }
+            NearbyCard(nearby, searching, busyAddress, onAddNearby)
             DimText(
                 if (searching) {
-                    "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS and heart-rate monitors. " +
-                        "Put a GoPro in pairing mode first."
+                    "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS, RaceChrono DIY " +
+                        "and heart-rate monitors. Put a GoPro in pairing mode first."
                 } else {
                     "Allow nearby devices (Settings › App › Run setup again) to search for a RaceBox or GoPro."
                 },
@@ -217,9 +218,37 @@ fun AddEquipmentScreen(
             if (error != null) DimText(error, color = MaterialTheme.colorScheme.error)
             PairedGpsSection(pairedGps, onAddNearby)
             WithoutBluetoothSection(withoutBluetooth) { m ->
-                if (m == EquipmentModel.GOPRO_FILES) pickingGoPro = true else onAddModel(m, null)
+                when (m) {
+                    EquipmentModel.GOPRO_FILES -> pickingGoPro = true
+                    EquipmentModel.TCP_GNSS -> typingAddress = true
+                    else -> onAddModel(m, null)
+                }
             }
         }
+    }
+}
+
+/** What the scan found, or that it is still searching (or cannot). */
+@Composable
+private fun NearbyCard(
+    nearby: List<NearbyDevice>,
+    searching: Boolean,
+    busyAddress: String?,
+    onAddNearby: (NearbyDevice) -> Unit,
+) {
+    ShellCard {
+        SectionLabel("Found nearby")
+        if (nearby.isEmpty()) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                if (searching) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                val text = if (searching) "Searching…" else "Not searching"
+                Text(text, style = MaterialTheme.typography.bodyLarge)
+            }
+        }
+        nearby.forEachIndexed { i, d -> NearbyRow(d, i > 0, busyAddress, onAddNearby) }
     }
 }
 
