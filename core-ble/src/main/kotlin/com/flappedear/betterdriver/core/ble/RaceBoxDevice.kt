@@ -7,11 +7,22 @@ object RaceBoxGatt {
     /** Nordic UART Service: UBX packets. */
     val UART_SERVICE: UUID = UUID.fromString("6e400001-b5a3-f393-e0a9-e50e24dcca9e")
 
-    /** Commands to the device (written by the app). Not used yet. */
+    /** Commands to the device. Only the diagnostics screen writes, and only read-only queries. */
     val UART_RX: UUID = UUID.fromString("6e400002-b5a3-f393-e0a9-e50e24dcca9e")
 
     /** Data from the device (notifications). */
     val UART_TX: UUID = UUID.fromString("6e400003-b5a3-f393-e0a9-e50e24dcca9e")
+
+    /** Device Information Service (p. 1): read-only strings. */
+    val DEVICE_INFO_SERVICE: UUID = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb")
+    val MODEL: UUID = UUID.fromString("00002a24-0000-1000-8000-00805f9b34fb")
+    val SERIAL: UUID = UUID.fromString("00002a25-0000-1000-8000-00805f9b34fb")
+    val FIRMWARE: UUID = UUID.fromString("00002a26-0000-1000-8000-00805f9b34fb")
+    val HARDWARE: UUID = UUID.fromString("00002a27-0000-1000-8000-00805f9b34fb")
+    val MANUFACTURER: UUID = UUID.fromString("00002a29-0000-1000-8000-00805f9b34fb")
+
+    /** Read in this order; the firmware comes before the queries that depend on it. */
+    val DEVICE_INFO_CHARACTERISTICS = listOf(MODEL, SERIAL, FIRMWARE, HARDWARE, MANUFACTURER)
 
     /** Client Characteristic Configuration descriptor, written to turn notifications on. */
     val CCCD: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")

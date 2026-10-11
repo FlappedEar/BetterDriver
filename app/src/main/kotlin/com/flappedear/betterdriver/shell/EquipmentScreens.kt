@@ -66,9 +66,18 @@ internal fun EquipmentList(equipment: List<Equipment>, onOpen: (Equipment) -> Un
     DimText("Tap an item to rename or remove it.")
 }
 
-/** One item: its name (renamed in a dialog), model and Bluetooth address, and Remove (UI-33). */
+/**
+ * One item: its name (renamed in a dialog), model and Bluetooth address, and Remove (UI-33).
+ * A paired RaceBox also has Diagnostics (FBBD-89).
+ */
 @Composable
-fun EquipmentScreen(item: Equipment, onRename: (String) -> Unit, onRemove: () -> Unit, onBack: () -> Unit) {
+fun EquipmentScreen(
+    item: Equipment,
+    onRename: (String) -> Unit,
+    onRemove: () -> Unit,
+    onBack: () -> Unit,
+    onDiagnostics: () -> Unit = {},
+) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         ShellTopBar(item.name, onBack = onBack)
@@ -77,6 +86,9 @@ fun EquipmentScreen(item: Equipment, onRename: (String) -> Unit, onRemove: () ->
                 ListRow("Name", item.name, divider = false, onClick = { renaming = true })
                 ListRow("Model", item.model.label)
                 item.address?.let { ListRow("Bluetooth", "Paired · $it") }
+                if (item.model == EquipmentModel.RACEBOX_MICRO && item.address != null) {
+                    ListRow("Diagnostics", "Live", onClick = onDiagnostics)
+                }
             }
             DimText(modelNote(item.model))
             OutlinedButton(onClick = onRemove, modifier = Modifier.fillMaxWidth()) {

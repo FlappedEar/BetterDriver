@@ -66,7 +66,18 @@ little-endian, up to 25 Hz, derived from u-blox NAV-PVT):
 
 Other class `FF` messages (ACK `02`, NACK `03`, history `21`, recording status
 `22`, download `23`, erase `24`, recording config `25`, state change `26`, GNSS
-config `27`, unlock `30`) are ignored; the app sends no commands. Defaults per
+config `27`, unlock `30`) are ignored by the recorder, which sends no commands.
+
+**Diagnostics (FBBD-89).** `RaceBoxDiagnostics` collects what the diagnostics
+screen shows. Its link (a `RaceBoxLink` with a `LinkProbe`; the recorder never
+has one) also reads the Device Information Service (model, serial, firmware,
+hardware, manufacturer; p. 1), the MTU and RSSI, and sends two read-only
+queries with an empty payload: GNSS config `27` (firmware 3.3+, p. 9) and
+recording status `22` (Mini S and Micro, p. 11). An empty payload only reads; no
+command that changes the device is ever sent. Missed messages are counted from
+iTOW steps longer than 1.5 × the median step. The protocol has no per-satellite
+signal levels, constellations, temperature, coin-cell state or firmware-update
+information, so the screen shows none of these. Defaults per
 p. 10: automotive platform model, ground speed, 3 m minimum horizontal accuracy
 (worse than that clears the fix flag).
 
