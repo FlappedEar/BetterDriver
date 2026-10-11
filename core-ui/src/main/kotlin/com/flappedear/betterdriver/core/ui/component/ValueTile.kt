@@ -21,9 +21,6 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.numberStyle
 
-/** Severity of a value: drives colour only, never layout. */
-enum class ValueState { Normal, Cold, Warning, Critical }
-
 /**
  * Fixed-layout value tile (UI-06 option A), e.g. speed, g, lap, and later
  * car temperatures. Width comes from the parent so digits never move it.
