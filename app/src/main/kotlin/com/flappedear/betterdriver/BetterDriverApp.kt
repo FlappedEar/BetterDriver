@@ -54,7 +54,8 @@ fun BetterDriverApp(wide: Boolean) {
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
-    val start = remember { if (prefs.setupDone) Routes.Drive else Routes.Setup }
+    // Setup again if a required permission was revoked or a one-time grant expired.
+    val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { if (route != null && route in Routes.TopLevel) BottomBar(nav, route) },
@@ -71,7 +72,13 @@ fun BetterDriverApp(wide: Boolean) {
                         devices = prefs.devices(),
                         trackName = null,
                         lastSession = null,
-                        onStart = { nav.navigate(Routes.Track) },
+                        onStart = {
+                            if (prefs.hasRequiredPermissions()) {
+                                nav.navigate(Routes.Track)
+                            } else {
+                                nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
+                            }
+                        },
                     )
                 }
             }

@@ -1,9 +1,5 @@
 package com.flappedear.betterdriver.shell
 
-import android.Manifest
-import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -26,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -33,30 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
-
-/** Permissions needed to log a session: location (GNSS) and nearby devices (RaceBox). */
-internal fun requiredPermissions(): List<String> = buildList {
-    add(Manifest.permission.ACCESS_FINE_LOCATION)
-    add(Manifest.permission.ACCESS_COARSE_LOCATION)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        add(Manifest.permission.BLUETOOTH_SCAN)
-        add(Manifest.permission.BLUETOOTH_CONNECT)
-    }
-}
-
-/** Asked for with the required ones, but setup can finish without them (phone video, mic, notifications). */
-internal fun optionalPermissions(): List<String> = buildList {
-    add(Manifest.permission.CAMERA)
-    add(Manifest.permission.RECORD_AUDIO)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        add(Manifest.permission.POST_NOTIFICATIONS)
-    }
-}
-
-private fun Context.allGranted(permissions: List<String>): Boolean =
-    permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
 
 /**
  * First run (UI-13 option B): one checklist page, steps in any order. Only
@@ -77,17 +52,31 @@ fun SetupScreen(
     val all = remember { required + optionalPermissions() }
     var granted by remember { mutableStateOf(context.allGranted(required)) }
     var allGranted by remember { mutableStateOf(context.allGranted(all)) }
+    // Set when Android stops showing the dialog after repeated denials; then only system settings can grant.
+    var blocked by rememberSaveable { mutableStateOf(false) }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         granted = context.allGranted(required)
         allGranted = context.allGranted(all)
+        blocked = !granted && context.findActivity()?.let { it.permanentlyDenied(required) } == true
+    }
+    // Picks up grants made in system settings.
+    LifecycleResumeEffect(Unit) {
+        granted = context.allGranted(required)
+        allGranted = context.allGranted(all)
+        if (granted) blocked = false
+        onPauseOrDispose {}
     }
     val steps = listOf(
         SetupStep(
             "Permissions",
             "Location and nearby devices · camera, mic and notifications optional",
             done = granted,
-            action = if (allGranted) null else "Allow",
-            onAction = { launcher.launch(all.toTypedArray()) },
+            action = when {
+                blocked -> "Settings"
+                allGranted -> null
+                else -> "Allow"
+            },
+            onAction = { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) },
         ),
         SetupStep("RaceBox Micro", "Needed for lap timing", done = false, action = "Pair", onAction = onPair),
         SetupStep(

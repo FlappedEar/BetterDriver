@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.shell
 
+import android.Manifest
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -15,7 +16,7 @@ val Cars = listOf("2023 Toyota Corolla", "2013 Scion FR-S")
  * Small app settings kept on the phone. Values are Compose state, so screens
  * update when they change.
  */
-class AppPrefs(context: Context) {
+class AppPrefs(private val context: Context) {
     private val prefs = context.getSharedPreferences("app", Context.MODE_PRIVATE)
 
     var setupDone by mutableStateOf(prefs.getBoolean(KeySetupDone, false))
@@ -24,6 +25,9 @@ class AppPrefs(context: Context) {
         private set
     var car by mutableStateOf(prefs.getString(KeyCar, null) ?: Cars.first())
         private set
+
+    /** False when a required permission was revoked or expired (one-time grants) since setup. */
+    fun hasRequiredPermissions(): Boolean = context.allGranted(requiredPermissions())
 
     fun updateSetupDone(value: Boolean) {
         setupDone = value
@@ -42,15 +46,17 @@ class AppPrefs(context: Context) {
 
     /**
      * Device states for the ready check. Bluetooth pairing is not built yet,
-     * so the RaceBox and the HERO11 always show as not paired for now.
+     * so the RaceBox and the HERO11 always show as not paired for now. The
+     * phone camera shows as ready only while camera access is granted.
      */
     fun devices(): List<DeviceStatus> = listOf(
         DeviceStatus("RaceBox Micro", "RaceBox", "Not paired", DeviceState.Off),
         DeviceStatus("GoPro HERO11", "GoPro 11", "Not paired", DeviceState.Off),
-        if (phoneCamera) {
-            DeviceStatus("Phone camera", "Phone cam", "4K · 60 fps", DeviceState.Ready)
-        } else {
-            DeviceStatus("Phone camera", "Phone cam", "Off", DeviceState.Off)
+        when {
+            !phoneCamera -> DeviceStatus("Phone camera", "Phone cam", "Off", DeviceState.Off)
+            !context.allGranted(listOf(Manifest.permission.CAMERA)) ->
+                DeviceStatus("Phone camera", "Phone cam", "No camera access", DeviceState.Attention)
+            else -> DeviceStatus("Phone camera", "Phone cam", "4K · 60 fps", DeviceState.Ready)
         },
         DeviceStatus("GoPro HERO8", "GoPro 8", "Start by hand", DeviceState.Off),
     )
