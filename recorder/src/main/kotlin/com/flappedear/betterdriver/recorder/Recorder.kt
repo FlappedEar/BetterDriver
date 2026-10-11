@@ -3,6 +3,8 @@ package com.flappedear.betterdriver.recorder
 import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.video.VideoEventText
+import com.flappedear.betterdriver.recorder.video.VideoSink
 import java.io.File
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
@@ -100,6 +102,8 @@ internal sealed interface Cmd {
 }
 
 /** One running recording. Data sources push into it through [SampleSink]. */
+// The sink, source and stop API of one recording; splitting it would hide the ordering rules.
+@Suppress("TooManyFunctions")
 class Recording internal constructor(
     val id: String,
     val dir: File,
@@ -109,7 +113,11 @@ class Recording internal constructor(
     private val nanoTime: () -> Long,
 ) : SampleSink {
 
-    private val startNanos = nanoTime()
+    /**
+     * [System.nanoTime] at session time 0. On Android that clock is CLOCK_MONOTONIC, shared by all
+     * processes, so another process can stamp its reports with it: session micros = (nanos - this) / 1000.
+     */
+    val startNanos = nanoTime()
     private val queue = LinkedBlockingQueue<Cmd>(config.queueCapacity)
     private val pendingChannels = ConcurrentLinkedQueue<ChannelDef>()
     private val stopping = AtomicBoolean(false)
@@ -165,6 +173,9 @@ class Recording internal constructor(
     override fun submit(set: SampleSet) = enqueue(Record.Samples(set.copy(values = set.values.toList())))
 
     override fun event(kind: String, text: String) = enqueue(Record.Event(RecorderEvent(nowMicros(), kind, text)))
+
+    /** An event that happened at session time [tMicros], such as a camera report stamped in another process. */
+    fun eventAt(tMicros: Long, kind: String, text: String) = enqueue(Record.Event(RecorderEvent(tMicros, kind, text)))
 
     /**
      * Starts [source] pushing into this recording. A source that throws on start is logged, not fatal.
@@ -222,6 +233,47 @@ private fun daemon(name: String, body: () -> Unit) = Thread(body, name).apply {
 fun SampleSink.videoStarted(camera: String, file: String) = event(EventKinds.VIDEO_START, "camera=$camera file=$file")
 
 fun SampleSink.videoStopped(camera: String, file: String) = event(EventKinds.VIDEO_STOP, "camera=$camera file=$file")
+
+/**
+ * Logs what a camera reports, at the times it reports. [onStatus] receives status for the live UI.
+ * A camera in the recorder's own process can use this directly; one in another process forwards
+ * its reports and the recorder calls the same methods.
+ */
+class RecordingVideoSink(
+    private val recording: Recording,
+    private val camera: String,
+    private val onStatus: (camera: String, text: String, ok: Boolean) -> Unit = { _, _, _ -> },
+) : VideoSink {
+    override fun nowMicros() = recording.nowMicros()
+
+    override fun started(file: String, startMicros: Long) = recording.eventAt(
+        startMicros,
+        EventKinds.VIDEO_START,
+        VideoEventText.format(VideoEventText.CAMERA to camera, VideoEventText.FILE to file),
+    )
+
+    override fun synced(file: String, atMicros: Long, mediaMicros: Long) = recording.eventAt(
+        atMicros,
+        EventKinds.VIDEO_SYNC,
+        VideoEventText.format(
+            VideoEventText.CAMERA to camera,
+            VideoEventText.FILE to file,
+            VideoEventText.MEDIA_US to mediaMicros,
+        ),
+    )
+
+    override fun stopped(file: String, atMicros: Long, reason: String) = recording.eventAt(
+        atMicros,
+        EventKinds.VIDEO_STOP,
+        VideoEventText.format(
+            VideoEventText.CAMERA to camera,
+            VideoEventText.FILE to file,
+            VideoEventText.REASON to reason,
+        ),
+    )
+
+    override fun status(text: String, ok: Boolean) = onStatus(camera, text, ok)
+}
 
 /**
  * The attached sources. Each source is stopped exactly once: [DataSource.stop] need not be idempotent.
