@@ -155,4 +155,20 @@ class VideoTest {
         assertEquals(listOf("s_"), p.body["[avi]"])
         assertEquals(listOf("0.000", "0.000", "0.040"), p.rows.map { it.last() })
     }
+
+    @Test
+    fun `rows without video can be written as file 0 at 0 ms`() {
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL))
+        repeat(3) { rec.submit(SampleSet(it * 40_000L, gnss.fix(it.toLong()))) }
+        rec.stop()
+        val video = VboVideo("z_", listOf(VideoClip(CameraIds.PHONE, "a.mp4", 40_000, null)), noVideoAsZero = true)
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out, video)
+        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
+        assertEquals(
+            listOf(listOf("0000", "000000000"), listOf("0001", "000000000"), listOf("0001", "000000040")),
+            p.rows.map { it.takeLast(2) },
+        )
+    }
 }
