@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
+import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -62,6 +63,17 @@ internal val PreviewUi = AnalysisUi(
             lineWithinGps = false,
             lineSpreadMeters = 1.4,
         ),
+    ),
+    progress = SessionProgress(
+        earlierSessions = 3,
+        eligibleLapCount = 6,
+        bestLapSeconds = 81.21,
+        earlierBestSeconds = 81.62,
+        earlierBestLabel = "11 Oct 2026, 10:05",
+        lapSpreadSeconds = 0.42,
+        previousLabel = "11 Oct 2026, 11:40",
+        previousBestSeconds = 81.62,
+        previousSpreadSeconds = 0.71,
     ),
     focus = listOf(
         FocusRow(

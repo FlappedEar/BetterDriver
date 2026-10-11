@@ -24,6 +24,8 @@ import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.analysisUi
@@ -32,12 +34,21 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.shell.ShellTopBar
+import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /** A session read and analysed once; comparing another lap reuses it. */
-private class Loaded(val title: String, val session: TelemetrySession, val analysis: SessionAnalysis)
+private class Loaded(
+    val title: String,
+    val session: TelemetrySession,
+    val analysis: SessionAnalysis,
+    /** When the session started; the earlier sessions at [track] are read against it. */
+    val startUtcMillis: Long,
+    val track: Track,
+    val tracks: List<Track>,
+)
 
 private sealed interface Load {
     data class Done(val loaded: Loaded) : Load
@@ -66,17 +77,28 @@ private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
     val context = LocalContext.current
     var load by remember(id) { mutableStateOf<Load?>(null) }
     var compared by rememberSaveable(id) { mutableStateOf<Int?>(null) }
+    var progress by remember(id) { mutableStateOf<SessionProgress?>(null) }
     var state by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
+    val store = remember { SessionStore(sessionsDir(context)) }
     LaunchedEffect(id) {
-        load = withContext(Dispatchers.Default) {
-            loadSession(SessionStore(sessionsDir(context)), TrackStore(tracksDir(context)), id)
+        load = withContext(Dispatchers.Default) { loadSession(store, TrackStore(tracksDir(context)), id) }
+    }
+    // The earlier sessions at the track are read after the analysis shows, so they never delay it.
+    LaunchedEffect(load) {
+        val l = load as? Load.Done ?: return@LaunchedEffect
+        progress = withContext(Dispatchers.IO) {
+            val loaded = l.loaded
+            summarizeProgress(
+                loaded.analysis.laps,
+                earlierSessions(store, id, loaded.startUtcMillis, loaded.track, loaded.tracks),
+            )
         }
     }
-    LaunchedEffect(load, compared) {
+    LaunchedEffect(load, compared, progress) {
         state = when (val l = load) {
             null -> AnalysisState.Loading
             is Load.Failed -> l.state
-            is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared) }
+            is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared, progress) }
         }
     }
     AnalysisScreen(
@@ -87,7 +109,7 @@ private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
     )
 }
 
-private fun readyState(loaded: Loaded, compared: Int?): AnalysisState {
+private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress?): AnalysisState {
     val analysis = loaded.analysis
     val fastest = analysis.laps.fastestLapIndex
     val other = compared ?: defaultComparedLap(analysis)
@@ -98,7 +120,7 @@ private fun readyState(loaded: Loaded, compared: Int?): AnalysisState {
     }
     val ui = analysisUi(loaded.title, analysis, comparison)
         ?: return AnalysisState.Unavailable("No lap counts: every lap has a GPS gap or is not a full lap.")
-    return AnalysisState.Ready(ui)
+    return AnalysisState.Ready(ui.copy(progress = progress))
 }
 
 // A damaged session or track file says so instead of crashing the app.
@@ -110,7 +132,8 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String):
         android.util.Log.w("SessionAnalysis", "reading session $id failed", e)
         return Load.Failed(AnalysisState.Unavailable("This session could not be read."))
     }
-    val track = trackFor(data, tracks.all()) ?: return Load.Failed(
+    val saved = tracks.all()
+    val track = trackFor(data, saved) ?: return Load.Failed(
         AnalysisState.Unavailable(
             "No laps: this session was not recorded at a track with a start/finish line, such as a road " +
                 "drive. If it was at a track, set the line in the track editor, then open the analysis again.",
@@ -127,5 +150,5 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String):
             ),
         )
     }
-    return Load.Done(Loaded(track.displayName, session, analysis))
+    return Load.Done(Loaded(track.displayName, session, analysis, data.info.startUtcMillis, track, saved))
 }

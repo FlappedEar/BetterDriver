@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
 import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
+import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import kotlin.math.roundToLong
@@ -99,6 +100,8 @@ data class AnalysisUi(
     val corners: List<CornerDetail> = emptyList(),
     /** Up to three areas to look at before the next session. */
     val focus: List<FocusRow> = emptyList(),
+    /** This session against the earlier sessions at its track; null while they are read. */
+    val progress: SessionProgress? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */
