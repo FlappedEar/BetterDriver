@@ -7,10 +7,14 @@ RaceBox Mini / Mini S / Micro over Bluetooth LE (FBBD-8, FBBD-43, FBBD-44).
 - `RaceBoxSource(context, address, name)`: a recorder `DataSource`. Attach it to a
   `Recording`; it connects, reconnects on its own until stopped, and submits one
   sample set per RaceBox Data Message.
-- `RaceBoxLink`: the connection manager behind the source. Connect, MTU 517,
-  subscribe, reconnect after 0.5 s, 1 s, 2 s, then every 3 s; a link that is
-  silent for 3 s, or sends nothing within 10 s of connecting, is restarted.
-  State is a `StateFlow<LinkState>`.
+- `RaceBoxLink`: the connection manager behind the source, a `GattLink` with
+  the RaceBox's `GattProfile`. Connect, MTU 517, subscribe, reconnect after
+  0.5 s, 1 s, 2 s, then every 3 s; a link that is silent for 3 s, or sends
+  nothing within 10 s of connecting, is restarted. State is a
+  `StateFlow<LinkState>`. `GattLink` subscribes to the profile's
+  characteristics one after the other (optional ones only if present and
+  notifying) and can `read` one on request; the RaceChrono DIY source uses it
+  too.
 - `UbxFrameReader`, `RaceBoxData`, `RaceBoxDecoder`: pure Kotlin, unit tested.
 
 ## Protocol
@@ -113,7 +117,8 @@ Garmin GLO / GLO 2, XGPS, ...) that stream NMEA over the Serial Port Profile
 - `SppLink`: secure RFCOMM socket, insecure as fallback, discovery cancelled
   first; reads on its own thread; reconnects after 1 s, 2 s, 4 s, then every
   5 s; a link silent for 5 s is restarted. State is the same `LinkState` as the
-  RaceBox's, with `Streaming.hz` counting sentences per second.
+  RaceBox's, with `Streaming.hz` counting sentences per second. The reading,
+  back-off and watchdog live in `StreamLink`, shared with `TcpLink`.
 - `NmeaLineReader`, `NmeaParser`, `NmeaEpochAssembler`, `NmeaDecoder`: pure
   Kotlin, unit tested.
 
@@ -226,3 +231,98 @@ arrival. Contact changes and link drops are session events (`HeartRateEvents`).
 **Not verified on hardware.** Both decoders are tested against values built
 from the specification only; capture notifications from a real LNS receiver and
 a heart rate strap and add them to the tests.
+
+**Sentence length.** Lines up to 384 characters are kept (was 160), so a
+`$RC3` line with all 25 fields at their widest fits.
+
+## NMEA and RaceChrono DIY over Wi-Fi TCP (FBBD-115)
+
+- `TcpNmeaSource(host, port, name)`: a recorder `DataSource` named `nmea_tcp`
+  for a Wi-Fi GPS receiver or a RaceChrono DIY device on the local network.
+  Same decoder, channels and events as `NmeaSource`; the device event text is
+  `address=<host>:<port> name=<name>`.
+- `TcpLink`: a plain `java.net` socket (connect timeout 5 s, the device is the
+  server, this end only reads) with the same reconnect timing, silence
+  watchdog and `LinkState` as `SppLink` (`StreamLink`). Pure JVM, so it is
+  tested against a loopback server. There is no standard port; the user enters
+  it. A device running its own access point has no internet, so Android may
+  route the socket over mobile data; the app can pass the Wi-Fi network's
+  `SocketFactory` to keep it on Wi-Fi.
+
+RaceChrono connects to the same devices as "RaceChrono DIY" over "TCP/IP
+(Wi-Fi)" or Bluetooth RFCOMM ([Tutorial: DIY devices](https://racechrono.com/article/2572)).
+
+## RaceChrono DIY $RC2 / $RC3 lines (FBBD-115)
+
+**Source.** RaceChrono, [Tutorial: DIY devices](https://racechrono.com/article/2572):
+
+```
+$RC2,[time],[count],[xacc],[yacc],[zacc],[rpm/d1],[d2],[a1],...,[a8]*checksum
+$RC3,[time],[count],[xacc],[yacc],[zacc],[gyrox],[gyroy],[gyroz],[rpm/d1],[d2],[a1],...,[a15]*checksum
+```
+
+NMEA checksum, CR LF. Acceleration in g (1.000 = +1 G), gyro in deg/s,
+digital and analog values from -2000000.000 to 2000000.000. `time` is an
+optional NMEA-format UTC time (empty without GPS); `count` is a line counter
+0 to 65535 that wraps (empty when mixed with NMEA). The lines have **no
+position fields**: a DIY device with GPS mixes ordinary NMEA 0183 sentences
+into the stream, and those make the fixes as usual. Rates of about 1, 5, 10,
+20, 30, 40, 50 or 100 Hz are recommended.
+
+**Decoding.** `NmeaLineReader` checks them like any sentence, `NmeaParser`
+routes `RC2`/`RC3` bodies to `parseRcLine` (outside the fix epochs), and
+`NmeaDecoder` submits one sample set per line, stamped on arrival, with
+acceleration and rotation in `RcChannels` (ids 500 to 505: `rc_accel_x/y/z`
+in g, `rc_gyro_x/y/z` in deg/s, the units and decimals of the RaceBox's).
+They are defined on the first `$RC` line only. Gaps in `count` are counted in
+`NmeaDecoder.rcMissed`. The digital and analog fields are parsed (`RcLine`)
+but not recorded: their meaning is set per device in RaceChrono. This works
+on both `NmeaSource` (SPP) and `TcpNmeaSource`.
+
+## RaceChrono DIY BLE GPS (FBBD-118)
+
+Package `diy`. **Source.** "RaceChrono BLE DIY APIs", the README of
+[aollin/racechrono-ble-diy-device](https://github.com/aollin/racechrono-ble-diy-device).
+
+- `DiyBleSource(context, address, name)`: a recorder `DataSource` named
+  `racechrono_diy`, on a `GattLink` with `DiyGatt.PROFILE`.
+- `DiyGatt`, `parseDiyGpsMain`, `parseDiyGpsTime`, `DiyGpsDecoder`: pure
+  Kotlin, unit tested with values built from the README's equations.
+
+**GATT.** Service `0x1FF8` (`00001ff8-0000-1000-8000-00805f9b34fb`), values
+big-endian and unsigned unless noted. GPS main `0x0003` (READ, NOTIFY) is
+required; GPS time `0x0004` (READ, NOTIFY) is subscribed to if it notifies and
+read whenever the decoder is missing it (RaceChrono polls it).
+
+| Bytes | GPS main field | Invalid |
+| --- | --- | --- |
+| 0–2 | sync (top 3 bits), time since the hour = min × 30000 + s × 500 + ms / 2 (21 bits) | |
+| 3 | fix quality (top 2 bits), satellites (6 bits) | sats `0x3F` |
+| 4–7 | latitude, deg × 10⁷, signed | `0x7FFFFFFF` |
+| 8–11 | longitude, deg × 10⁷, signed | `0x7FFFFFFF` |
+| 12–13 | altitude: ((m + 500) × 10) & 0x7FFF, or ((m + 500) & 0x7FFF) \| 0x8000 | `0xFFFF` |
+| 14–15 | speed: (km/h × 100) & 0x7FFF, or ((km/h × 10) & 0x7FFF) \| 0x8000 | `0xFFFF` |
+| 16–17 | bearing, deg × 100 | `0xFFFF` |
+| 18, 19 | HDOP, VDOP, × 10 | `0xFF` |
+
+GPS time: sync (top 3 bits) and (year − 2000) × 8928 + (month − 1) × 744 +
+(day − 1) × 24 + hour (21 bits). Main and time belong together when their sync
+bits match; the README says to wait for the other one to update when they
+differ. The decoder holds a main value up to 1 s for its time (asking for a
+read at most once a second), keeps the last two time values so values still in
+flight around the hour find theirs, and otherwise records the value without
+`gnss_utc_ms`.
+
+**Channels.** One sample set per GPS main value, stamped on arrival:
+`GnssChannels` (UTC, satellites, and with a fix — quality > 0 and a valid
+position — latitude, longitude, speed, heading, altitude) plus `DiyChannels`
+(ids 510 to 512: fix quality, HDOP, VDOP). Ids 500 to 599 are kept for
+RaceChrono DIY. Events `diy_device`, `diy_connected`, `diy_disconnected` and
+the shared `gnss_fix` / `gnss_fix_lost`. The README does not define the fix
+quality values; 0 is taken as no fix.
+
+**Not used yet.** CAN-Bus main `0x0001` (a little-endian 32-bit packet id and 1
+to 16 payload bytes) and its filter `0x0002` (deny all, allow all, allow one
+PID, each with a notify interval) come with CAN logging in Phase 5. The
+Monitor API (`0x0005`, `0x0006`), with which a device shows values the app
+computes, is not offered.

@@ -2,10 +2,11 @@ package com.flappedear.betterdriver.core.ble.nmea
 
 /**
  * Longest sentence kept, from `$` to the last checksum digit. NMEA 0183 allows 82 characters with
- * CR LF, but receivers exceed it (NMEA 4.1 extra fields, long proprietary sentences), so there is
- * room to spare. Anything longer is a run of garbage without a line end.
+ * CR LF, but receivers exceed it (NMEA 4.1 extra fields, long proprietary sentences), and a
+ * RaceChrono `$RC3` line with all 25 fields at their widest (values down to -2000000.000) is about
+ * 330, so there is room to spare. Anything longer is a run of garbage without a line end.
  */
-const val MaxNmeaSentenceChars = 160
+const val MaxNmeaSentenceChars = 384
 
 private const val Dollar = '$'.code
 private const val Cr = '\r'.code
@@ -100,7 +101,9 @@ class NmeaLineReader(private val maxChars: Int = MaxNmeaSentenceChars) {
 
 /**
  * Bytes in, one [NmeaEpoch] per receiver fix out: [NmeaLineReader], then [parseNmeaSentence],
- * then [NmeaEpochAssembler]. Pure Kotlin, so it is tested on the JVM. Not thread-safe.
+ * then [NmeaEpochAssembler]. RaceChrono DIY `$RC2`/`$RC3` lines in the same stream (FBBD-115) go
+ * to [parseRcLine] instead and come out one by one, outside the epochs. Pure Kotlin, so it is
+ * tested on the JVM. Not thread-safe.
  */
 class NmeaParser {
     private val reader = NmeaLineReader()
@@ -110,14 +113,31 @@ class NmeaParser {
     var sentences = 0L
         private set
 
+    /** `$RC2`/`$RC3` lines that passed the checksum and parsed. */
+    var rcLines = 0L
+        private set
+
     val checksumErrors: Long get() = reader.checksumErrors
 
     /**
      * Feeds bytes that arrived at [nowMicros] (the recorder clock). An epoch is stamped with the
      * time its first sentence arrived, because it is often only complete once the next one starts.
+     * Each RaceChrono line goes to [onRcLine] as soon as it is complete.
      */
-    fun feed(bytes: ByteArray, nowMicros: Long, onEpoch: (NmeaEpoch) -> Unit) {
+    fun feed(
+        bytes: ByteArray,
+        nowMicros: Long,
+        onRcLine: (RcLine) -> Unit = {},
+        onEpoch: (NmeaEpoch) -> Unit,
+    ) {
         reader.feed(bytes) { body ->
+            if (isRcLine(body)) {
+                parseRcLine(body)?.let {
+                    rcLines++
+                    onRcLine(it)
+                }
+                return@feed
+            }
             val sentence = parseNmeaSentence(body) ?: return@feed
             sentences++
             assembler.add(sentence, nowMicros, onEpoch)

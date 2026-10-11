@@ -24,6 +24,25 @@ object NmeaChannels {
     val ALL = listOf(FIX_QUALITY, FIX_TYPE, HDOP, PDOP)
 }
 
+/**
+ * Motion channels of RaceChrono DIY `$RC2`/`$RC3` lines ([RcLine]), recorded like the RaceBox's
+ * acceleration (g, 3 decimals) and rotation (deg/s, 2 decimals) but under their own ids, so a
+ * RaceBox and a DIY device can be recorded together. Ids 500 to 509 (500 to 599 are kept for
+ * RaceChrono DIY), though they arrive through the NMEA sources. Defined on the first such line, so
+ * a plain GNSS receiver's session does not list them. The digital and analog fields are not
+ * recorded yet.
+ */
+object RcChannels {
+    val ACCEL_X = ChannelDef(500, "rc_accel_x", "g", NmeaChannels.SOURCE, 3)
+    val ACCEL_Y = ChannelDef(501, "rc_accel_y", "g", NmeaChannels.SOURCE, 3)
+    val ACCEL_Z = ChannelDef(502, "rc_accel_z", "g", NmeaChannels.SOURCE, 3)
+    val GYRO_X = ChannelDef(503, "rc_gyro_x", "deg/s", NmeaChannels.SOURCE, 2)
+    val GYRO_Y = ChannelDef(504, "rc_gyro_y", "deg/s", NmeaChannels.SOURCE, 2)
+    val GYRO_Z = ChannelDef(505, "rc_gyro_z", "deg/s", NmeaChannels.SOURCE, 2)
+
+    val ALL = listOf(ACCEL_X, ACCEL_Y, ACCEL_Z, GYRO_X, GYRO_Y, GYRO_Z)
+}
+
 /** Event kinds the NMEA source writes into the session. */
 object NmeaEvents {
     /** Text is "address=<address> name=<name>", written once at start. */
@@ -43,6 +62,7 @@ object NmeaEvents {
 private const val KmhPerKnot = 1.852
 private const val MsPerDay = 86_400_000L
 private const val HalfDayMs = MsPerDay / 2
+private const val RcCountModulo = 65_536
 
 /**
  * Turns the bytes of an NMEA receiver into sample sets, one per fix ([NmeaEpoch]), stamped with
@@ -50,11 +70,21 @@ private const val HalfDayMs = MsPerDay / 2
  * are only included while there is a fix (RMC status A, GGA quality 1 to 6), so the VBO export
  * (one row per set with a position) never gets rows at 0°, 0°. Synchronized, so a reconnect can
  * [reset] it from another thread.
+ *
+ * RaceChrono DIY `$RC2`/`$RC3` lines (FBBD-115) become one sample set each, stamped on arrival,
+ * with acceleration and rotation in [RcChannels], as RaceBox data messages are.
  */
 class NmeaDecoder(private val sink: SampleSink) {
     private val parser = NmeaParser()
     private val clock = UtcDateTracker()
     private var hadFix: Boolean? = null
+    private var rcDefined = false
+    private var lastRcCount: Int? = null
+
+    /** `$RC2`/`$RC3` lines missed, from gaps in their line counter. */
+    @Volatile
+    var rcMissed = 0L
+        private set
 
     /** Fixes decoded since the decoder was created. */
     @Volatile
@@ -70,13 +100,35 @@ class NmeaDecoder(private val sink: SampleSink) {
 
     @Synchronized
     fun feed(bytes: ByteArray) {
-        parser.feed(bytes, sink.nowMicros(), ::epoch)
+        val now = sink.nowMicros()
+        parser.feed(bytes, now, onRcLine = { rcLine(it, now) }, onEpoch = ::epoch)
     }
 
     /** Drops a partial sentence and fix left from before a reconnect. */
     @Synchronized
     fun reset() {
         parser.reset()
+        lastRcCount = null
+    }
+
+    private fun rcLine(line: RcLine, nowMicros: Long) {
+        if (!rcDefined) {
+            RcChannels.ALL.forEach(sink::defineChannel)
+            rcDefined = true
+        }
+        val count = line.count
+        val last = lastRcCount
+        if (count != null && last != null) rcMissed += Math.floorMod(count - last - 1, RcCountModulo)
+        lastRcCount = count
+        val values = listOf(
+            RcChannels.ACCEL_X to line.accelXg,
+            RcChannels.ACCEL_Y to line.accelYg,
+            RcChannels.ACCEL_Z to line.accelZg,
+            RcChannels.GYRO_X to line.gyroXdps,
+            RcChannels.GYRO_Y to line.gyroYdps,
+            RcChannels.GYRO_Z to line.gyroZdps,
+        ).mapNotNull { (def, v) -> v?.let { ChannelValue(def.id, it) } }
+        if (values.isNotEmpty()) sink.submit(SampleSet(nowMicros, values))
     }
 
     private fun epoch(e: NmeaEpoch) {
