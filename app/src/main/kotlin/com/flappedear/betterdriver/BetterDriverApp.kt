@@ -237,7 +237,12 @@ private fun Drive(
         trackName = tracks.here?.detection?.placeName,
         lastSession = lastSessionLine(sessions.list),
         onStart = {
-            if (prefs.hasRequiredPermissions()) {
+            if (!prefs.hasRequiredPermissions()) {
+                nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
+            } else if (!recorder.state.recording && prefs.raceBox == null) {
+                // No GNSS receiver: pair one first instead of recording made-up positions (FBBD-83).
+                nav.navigate(Routes.Pair)
+            } else {
                 // While recording, START goes back to the running session.
                 if (!recorder.state.recording) {
                     val place = tracks.here?.detection?.placeName.orEmpty()
@@ -249,8 +254,6 @@ private fun Drive(
                     )
                 }
                 nav.navigate(Routes.Track)
-            } else {
-                nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
             }
         },
     )

@@ -147,6 +147,15 @@ class RecorderService : Service() {
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
     private fun startRecording(car: String, track: String, raceBox: RaceBoxRef?) = control.execute {
         if (active != null) return@execute
+        if (raceBox == null) {
+            // Only reachable from an older app build or a stale restart; the app pairs a RaceBox first.
+            lastError = NoReceiver
+            main.post {
+                wanted.edit().putBoolean(KeyWanted, false).commit()
+                endForeground()
+            }
+            return@execute
+        }
         try {
             val sources = Sources.create(this, raceBox)
             val info = SessionInfo(
@@ -179,7 +188,7 @@ class RecorderService : Service() {
             main.post {
                 cpu.acquire()
                 wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
-                    .putString(KeyRaceBoxAddress, raceBox?.address).putString(KeyRaceBoxName, raceBox?.name).commit()
+                    .putString(KeyRaceBoxAddress, raceBox.address).putString(KeyRaceBoxName, raceBox.name).commit()
                 getSystemService(NotificationManager::class.java)
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
@@ -246,12 +255,15 @@ class RecorderService : Service() {
         super.onDestroy()
     }
 
-    private companion object {
-        const val UserStop = "user"
-        const val KeyWanted = "wanted"
-        const val KeyCar = "car"
-        const val KeyTrack = "track"
-        const val KeyRaceBoxAddress = "racebox_address"
-        const val KeyRaceBoxName = "racebox_name"
+    companion object {
+        private const val UserStop = "user"
+        private const val KeyWanted = "wanted"
+        private const val KeyCar = "car"
+
+        /** Shown on the track screen when a start has no GNSS receiver; nothing is recorded. */
+        const val NoReceiver = "No GNSS receiver. Pair a RaceBox in Settings."
+        private const val KeyTrack = "track"
+        private const val KeyRaceBoxAddress = "racebox_address"
+        private const val KeyRaceBoxName = "racebox_name"
     }
 }

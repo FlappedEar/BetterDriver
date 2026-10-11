@@ -3,7 +3,6 @@ package com.flappedear.betterdriver.recording
 import android.content.Context
 import com.flappedear.betterdriver.core.ble.RaceBoxSource
 import com.flappedear.betterdriver.recorder.DataSource
-import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import java.io.File
 
 /** Where sessions are stored. Both processes use the same app-private directories. */
@@ -20,11 +19,11 @@ data class RaceBoxRef(val address: String, val name: String)
 
 /**
  * Data sources for a new recording: the paired RaceBox (FBBD-43), which reconnects on its own if
- * the link drops. With no RaceBox paired it is the fake GNSS ring, so the whole recording path can
- * still be used without hardware.
+ * the link drops. There is no fallback: without a receiver nothing is recorded, never simulated
+ * positions (FBBD-83). A demo source comes back only as equipment Arek adds on purpose.
  */
 internal object Sources {
-    fun create(context: Context, raceBox: RaceBoxRef?): List<DataSource> = listOf(
-        raceBox?.let { RaceBoxSource(context.applicationContext, it.address, it.name) } ?: FakeGnssSource(),
+    fun create(context: Context, raceBox: RaceBoxRef): List<DataSource> = listOf(
+        RaceBoxSource(context.applicationContext, raceBox.address, raceBox.name),
     )
 }

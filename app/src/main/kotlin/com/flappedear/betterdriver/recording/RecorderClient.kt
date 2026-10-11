@@ -117,19 +117,24 @@ class RecorderClient private constructor(private val context: Context) {
     }
 
     /**
-     * [raceBox] is the paired RaceBox; with none, the recording uses the fake GNSS source.
+     * [raceBox] is the paired RaceBox; with none, nothing is recorded and the track screen says why.
      * With [phoneVideo], the camera process starts too and records once the session is running
      * (FBBD-21). It is started from here, while the app is on screen, because Android only lets a
      * camera service start from the foreground.
      */
     fun start(car: String, track: String, raceBox: RaceBoxRef?, phoneVideo: Boolean = false) {
+        if (raceBox == null) {
+            // Neither the recorder nor the camera starts, so no camera notification waits for a session.
+            state = state.copy(starting = false, error = RecorderService.NoReceiver)
+            return
+        }
         state = state.copy(starting = true, error = null)
         val intent = Intent(context, RecorderService::class.java)
             .setAction(RecorderProtocol.ACTION_START)
             .putExtra(RecorderProtocol.EXTRA_CAR, car)
             .putExtra(RecorderProtocol.EXTRA_TRACK, track)
-            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, raceBox?.address)
-            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, raceBox?.name)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, raceBox.address)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, raceBox.name)
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {
