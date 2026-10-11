@@ -28,6 +28,7 @@ internal class HttpNetwork(private val userAgent: String) : Network {
             Response(c.responseCode, headersOf(c))
         }
 
+    @Suppress("ThrowsCount") // Each refuses a non-HTTPS URL or connection.
     private fun <T> open(url: String, headers: Map<String, String>, use: (HttpsURLConnection) -> T): T {
         if (!url.startsWith("https://")) throw IOException("not HTTPS: $url")
         val c = URL(url).openConnection() as? HttpsURLConnection ?: throw IOException("not HTTPS: $url")

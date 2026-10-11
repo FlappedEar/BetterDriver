@@ -54,6 +54,7 @@ object Releases {
         return list.mapNotNull(::toRelease).maxByOrNull { it.version }
     }
 
+    @Suppress("ReturnCount") // One early return per kind of unusable release.
     private fun toRelease(r: ApiRelease): Release? {
         if (r.draft) return null
         val version = Version.parse(r.tag)?.takeIf { r.tag.startsWith("v") } ?: return null

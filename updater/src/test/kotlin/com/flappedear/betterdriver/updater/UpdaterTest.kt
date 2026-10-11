@@ -14,8 +14,9 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 private const val Package = "com.flappedear.betterdriver"
-private const val ApkUrl = "https://github.com/FlappedEar/BetterDriver/releases/download/v0.2.0/BetterDriver-0.2.0-android.apk"
-private const val SumsUrl = "https://github.com/FlappedEar/BetterDriver/releases/download/v0.2.0/SHA256SUMS.txt"
+private const val Downloads = "https://github.com/FlappedEar/BetterDriver/releases/download/v0.2.0"
+private const val ApkUrl = "$Downloads/BetterDriver-0.2.0-android.apk"
+private const val SumsUrl = "$Downloads/SHA256SUMS.txt"
 
 /** Answers by URL and records every call. */
 private class FakeNetwork : Network {
@@ -29,6 +30,7 @@ private class FakeNetwork : Network {
         return answers[url]?.invoke() ?: Response(404)
     }
 
+    @Suppress("ReturnCount")
     override fun download(url: String, out: OutputStream, maxBytes: Long, keepGoing: (Long) -> Boolean): Response {
         calls += url
         if (offline) throw IOException("offline")
@@ -50,7 +52,8 @@ private class MemoryLog : CheckLog {
     override var rateLimitedUntil = 0L
 }
 
-private fun sha(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+private fun sha(bytes: ByteArray) =
+    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
 private fun releasesJson(vararg releases: String) = releases.joinToString(",", "[", "]")
 
@@ -93,7 +96,10 @@ class UpdaterTest {
         net.answers[Updater.ReleasesUrl] = { Response(200, body = releasesJson(*releases).toByteArray()) }
     }
 
-    private fun serveDownload(apk: ByteArray = apkBytes, sums: String = "${sha(apkBytes)}  BetterDriver-0.2.0-android.apk\n") {
+    private fun serveDownload(
+        apk: ByteArray = apkBytes,
+        sums: String = "${sha(apkBytes)}  BetterDriver-0.2.0-android.apk\n",
+    ) {
         net.answers[ApkUrl] = { Response(200, body = apk) }
         net.answers[SumsUrl] = { Response(200, body = sums.toByteArray()) }
     }

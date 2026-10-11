@@ -48,6 +48,8 @@ interface CheckLog {
  *
  * Calls block; the app makes them one at a time off the main thread.
  */
+// Guard clauses: each failed step ends early with its own message. Every collaborator is injected for tests.
+@Suppress("ReturnCount", "LongParameterList")
 class Updater(
     private val network: Network,
     private val current: Version,
@@ -114,7 +116,8 @@ class Updater(
             }
         } catch (e: IOException) {
             part.delete()
-            return if (busy()) UpdateState.Paused else failed(release, "Download failed: ${e.message ?: "no connection"}.")
+            if (busy()) return UpdateState.Paused
+            return failed(release, "Download failed: ${e.message ?: "no connection"}.")
         }
         return verify(release, part, response, expected)
     }

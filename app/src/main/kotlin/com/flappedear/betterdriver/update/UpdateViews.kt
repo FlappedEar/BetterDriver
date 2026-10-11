@@ -64,7 +64,8 @@ fun UpdateRow(updates: AppUpdates, blocked: Boolean) {
                 FilledTonalButton(onClick = { activity?.let(updates::install) }) { Text("Install") }
             }
             is UpdateState.Failed -> {
-                ListRow("Updates", "Try again", onClick = if (state.release != null) updates::download else updates::checkNow)
+                val retry = if (state.release != null) updates::download else updates::checkNow
+                ListRow("Updates", "Try again", onClick = retry)
                 DimText(state.message, color = TrackTheme.colors.warning)
             }
         }
@@ -81,13 +82,14 @@ fun UpdateCard(updates: AppUpdates, blocked: Boolean, modifier: Modifier = Modif
     val state = updates.state
     if (blocked || !updates.enabled) return
     val install: () -> Unit = { activity?.let(updates::install) }
-    val (text, label, action): Triple<String, String?, (() -> Unit)?> = when (state) {
+    val card: Triple<String, String?, (() -> Unit)?> = when (state) {
         is UpdateState.Available ->
             Triple("BetterDriver ${state.release.version} is available", "Download", updates::download)
         is UpdateState.Downloading -> Triple(downloadText(state), null, null)
         is UpdateState.Ready -> Triple("BetterDriver ${state.release.version} is ready to install", "Install", install)
         else -> return
     }
+    val (text, label, action) = card
     ShellCard(modifier) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             DimText(text, Modifier.weight(1f))

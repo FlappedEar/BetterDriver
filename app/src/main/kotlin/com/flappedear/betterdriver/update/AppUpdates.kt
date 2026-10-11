@@ -108,6 +108,7 @@ class AppUpdates private constructor(private val context: Context) {
      * Without the "install unknown apps" permission it opens that setting first; the user comes
      * back and taps Install again.
      */
+    @Suppress("ReturnCount") // Nothing ready, a session busy, or the file gone.
     fun install(activity: Activity) {
         val ready = state as? UpdateState.Ready ?: return
         if (!updater.mayInstall()) return
@@ -157,7 +158,8 @@ class AppUpdates private constructor(private val context: Context) {
         null
     }
 
-    @Suppress("DEPRECATION") // GET_SIGNATURES is the fallback for archives without signingInfo.
+    // GET_SIGNATURES is the fallback for archives without signingInfo.
+    @Suppress("DEPRECATION", "ReturnCount")
     private fun archiveInfo(file: File): ApkInfo? {
         val pm = context.packageManager
         val info = pm.getPackageArchiveInfo(file.path, signatureFlags()) ?: return null
