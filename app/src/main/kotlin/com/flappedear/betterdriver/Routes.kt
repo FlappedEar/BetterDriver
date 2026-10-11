@@ -8,6 +8,13 @@ object Routes {
     const val Settings = "settings"
     const val Pair = "pair"
     const val Track = "track"
+    const val Tracks = "tracks"
+
+    /** The track editor for one saved track (FBBD-56). */
+    const val TrackEditorPattern = "tracks/{id}"
+    const val TrackIdArg = "id"
+
+    fun trackEditor(id: String) = "tracks/$id"
 
     /** Settings opened on one tab, with a back button (from the first-run checklist). */
     const val SettingsTabPattern = "settings/{tab}"

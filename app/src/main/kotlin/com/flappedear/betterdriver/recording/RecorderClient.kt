@@ -14,8 +14,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
-import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.camera.CameraService
+import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.timing.live.LiveTimingState
 
 /** What the UI knows about the recorder process. */
 data class RecorderState(
@@ -29,6 +30,10 @@ data class RecorderState(
     val error: String? = null,
     /** Phone video's short status ("4K · 60", "Stopped: too hot"), or null when no camera reports. */
     val camera: StatusText? = null,
+    /** The track or circuit the recording is at, once detected (FBBD-55). */
+    val place: String? = null,
+    /** Live timing, when the recording is at a saved track with lines (FBBD-12). */
+    val timing: LiveTimingState? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
@@ -70,6 +75,8 @@ class RecorderClient private constructor(private val context: Context) {
             camera = msg.data.getString(RecorderProtocol.KEY_CAMERA_STATUS)?.let {
                 StatusText(it, msg.data.getBoolean(RecorderProtocol.KEY_CAMERA_OK))
             },
+            place = msg.data.getString(RecorderProtocol.KEY_PLACE),
+            timing = RecorderProtocol.timingFrom(msg.data),
         )
     }
 

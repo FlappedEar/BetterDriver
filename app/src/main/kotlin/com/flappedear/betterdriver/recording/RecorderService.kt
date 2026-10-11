@@ -19,6 +19,12 @@ import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
+import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.live.SessionTiming
+import com.flappedear.betterdriver.timing.live.placeName
+import com.flappedear.betterdriver.timing.track.TrackDetection
+import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
 
 private const val NotificationId = 1
@@ -27,6 +33,15 @@ private const val DestroyStopTimeoutMs = 3_000L
 /** Track and car, the ones that are known (UI-21 option B). */
 private fun notificationDetail(info: SessionInfo) =
     listOf(info.track, info.car).filter { it.isNotBlank() }.joinToString(" · ")
+
+private const val TrackEvent = "track"
+
+/** The session's record of where it was: "saved <id> rev <n> <name>", "circuit <id> <name>" or "unknown". */
+private fun trackEventText(found: TrackDetection) = when (found) {
+    is TrackDetection.Saved -> "saved ${found.track.id} rev ${found.track.revision} ${found.track.displayName}"
+    is TrackDetection.Directory -> "circuit ${found.circuit.id} ${found.circuit.name}"
+    TrackDetection.Unknown -> "unknown"
+}
 
 /** Shown on the track screen when a recording ends without the driver stopping it. */
 private fun endedMessage(reason: String) = when (reason) {
@@ -45,7 +60,7 @@ private fun endedMessage(reason: String) = when (reason) {
  */
 class RecorderService : Service() {
 
-    private class Active(val recording: Recording, val tracker: LiveTracker)
+    private class Active(val recording: Recording, val tracker: LiveTracker, val timing: SessionTiming)
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -59,6 +74,9 @@ class RecorderService : Service() {
         active?.recording?.let { logVideoReport(it, data) { text, ok -> cameraStatus = text to ok } }
     }
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
+
+    /** Read once, on the control thread; names circuits for tracks not saved yet (FBBD-79). */
+    private val circuits: CircuitList by lazy { CircuitDirectory(circuitsDir(this)).load() }
 
     @Volatile
     private var active: Active? = null
@@ -143,6 +161,12 @@ class RecorderService : Service() {
                 recording.droppedCount
             }
             recording.listeners.add(tracker)
+            // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
+            // listener thread, so a timing failure is logged in the session and never stops it.
+            val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits) { found ->
+                recording.event(TrackEvent, trackEventText(found))
+            }
+            recording.listeners.add(timing)
             // Covers stops the recorder makes itself (storage full, write error).
             recording.listeners.add(object : RecorderListener {
                 override fun onStatus(status: RecorderStatus) {
@@ -150,7 +174,7 @@ class RecorderService : Service() {
                 }
             })
             main.post { cameraStatus = null }
-            active = Active(recording, tracker)
+            active = Active(recording, tracker, timing)
             sources.forEach(recording::attach)
             main.post {
                 cpu.acquire()
@@ -206,6 +230,8 @@ class RecorderService : Service() {
                 state.putBoolean(RecorderProtocol.KEY_CAMERA_OK, ok)
             }
         }
+        a?.timing?.detection?.placeName?.let { state.putString(RecorderProtocol.KEY_PLACE, it) }
+        a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }
         return state
     }

@@ -2,6 +2,9 @@ package com.flappedear.betterdriver.recording
 
 import android.os.Bundle
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.timing.live.LiveSector
+import com.flappedear.betterdriver.timing.live.LiveTimingState
+import com.flappedear.betterdriver.timing.live.sectorName
 
 /**
  * Messages between the UI process and [RecorderService], which runs in its own process (FBBD-69).
@@ -58,6 +61,9 @@ internal object RecorderProtocol {
     const val VIDEO_STOPPED = 3
     const val VIDEO_STATUS = 4
 
+    /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
+    const val KEY_PLACE = "place"
+
     private const val SESSION_ID = "sessionId"
     private const val START_UTC = "startUtcMillis"
     private const val ELAPSED = "elapsedMicros"
@@ -69,6 +75,17 @@ internal object RecorderProtocol {
     private const val STORAGE_LOW = "storageLowBytes"
     private const val STOPPED = "stoppedReason"
     private const val DROPPED = "droppedSamples"
+
+    private const val LAP = "timing.lap"
+    private const val LAP_MS = "timing.lapMillis"
+    private const val DELTA = "timing.delta"
+    private const val PREDICTED = "timing.predicted"
+    private const val LAST = "timing.last"
+    private const val BEST = "timing.best"
+    private const val THEORETICAL = "timing.theoretical"
+    private const val VS_LAP = "timing.sectorsVsBestLap"
+    private const val VS_SECTOR = "timing.sectorsVsBestSector"
+    private const val CURRENT = "timing.currentSector"
 
     fun toBundle(s: LiveSnapshot) = Bundle().apply {
         putString(SESSION_ID, s.sessionId)
@@ -99,6 +116,42 @@ internal object RecorderProtocol {
             storageLowBytes = if (b.containsKey(STORAGE_LOW)) b.getLong(STORAGE_LOW) else null,
             stoppedReason = b.getString(STOPPED),
             droppedSamples = b.getLong(DROPPED),
+        )
+    }
+
+    /** Adds live timing (FBBD-12) to a [MSG_STATE] bundle. Unknown values are left out, or NaN in the sector arrays. */
+    fun putTiming(b: Bundle, t: LiveTimingState) = b.apply {
+        putInt(LAP, t.lapNumber)
+        t.lapMillis?.let { putLong(LAP_MS, it) }
+        t.deltaSeconds?.let { putDouble(DELTA, it) }
+        t.predictedMillis?.let { putLong(PREDICTED, it) }
+        t.lastMillis?.let { putLong(LAST, it) }
+        t.bestMillis?.let { putLong(BEST, it) }
+        t.theoreticalBestMillis?.let { putLong(THEORETICAL, it) }
+        putDoubleArray(VS_LAP, t.sectors.map { it.deltaVsBestLapSeconds ?: Double.NaN }.toDoubleArray())
+        putDoubleArray(VS_SECTOR, t.sectors.map { it.deltaVsBestSectorSeconds ?: Double.NaN }.toDoubleArray())
+        putInt(CURRENT, t.sectors.indexOfFirst { it.current })
+    }
+
+    /** Live timing from a [MSG_STATE] bundle, or null when the recording is not being timed. */
+    fun timingFrom(b: Bundle): LiveTimingState? {
+        if (!b.containsKey(LAP)) return null
+        val vsLap = b.getDoubleArray(VS_LAP) ?: DoubleArray(0)
+        val vsSector = b.getDoubleArray(VS_SECTOR) ?: DoubleArray(0)
+        val current = b.getInt(CURRENT, -1)
+        fun Double.known() = takeUnless { it.isNaN() }
+        fun long(key: String) = if (b.containsKey(key)) b.getLong(key) else null
+        return LiveTimingState(
+            lapNumber = b.getInt(LAP),
+            lapMillis = long(LAP_MS),
+            deltaSeconds = if (b.containsKey(DELTA)) b.getDouble(DELTA) else null,
+            predictedMillis = long(PREDICTED),
+            lastMillis = long(LAST),
+            bestMillis = long(BEST),
+            theoreticalBestMillis = long(THEORETICAL),
+            sectors = List(minOf(vsLap.size, vsSector.size)) { i ->
+                LiveSector(sectorName(i), vsLap[i].known(), vsSector[i].known(), current = i == current)
+            },
         )
     }
 }
