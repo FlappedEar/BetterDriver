@@ -14,11 +14,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,26 +29,23 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
-import com.flappedear.betterdriver.gopro.scanGoPros
-import com.flappedear.betterdriver.recording.RaceBoxRef
+import com.flappedear.betterdriver.recording.GnssRef
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.vboFileName
+import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
-import com.flappedear.betterdriver.shell.PairCandidate
-import com.flappedear.betterdriver.shell.PairScreen
-import com.flappedear.betterdriver.shell.PairedGoPro
-import com.flappedear.betterdriver.shell.PairedRaceBox
+import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTab
+import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
@@ -62,9 +57,6 @@ import com.flappedear.betterdriver.update.UpdateCard
 import com.flappedear.betterdriver.update.UpdateRow
 import com.flappedear.betterdriver.update.hasUpdate
 import com.flappedear.betterdriver.update.updatesBlocked
-import java.io.IOException
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
 
 private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
 
@@ -97,6 +89,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     val prefs = rememberAppPrefs()
     val context = LocalContext.current
     val tracks = remember { Tracks.get(context) }
+    val repo = remember { SetupRepo.get(context) }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
@@ -114,14 +107,16 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
         // window so its dark background also fills the system bar areas.
         NavHost(navController = nav, startDestination = start) {
             composable(Routes.Setup) {
-                Box(Modifier.padding(padding)) { Setup(nav, prefs) }
+                Box(Modifier.padding(padding)) { Setup(nav, prefs, repo) }
             }
             composable(Routes.Drive) {
-                Box(Modifier.padding(padding)) { Drive(nav, prefs, recorder, sessions, tracks) }
+                Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
             }
-            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions, prefs) } }
+            composable(Routes.Sessions) { Box(Modifier.padding(padding)) { SessionsRoute(sessions, repo) } }
             composable(Routes.Settings) {
-                Box(Modifier.padding(padding)) { Settings(nav, prefs, tracks, SettingsTab.Devices, onBack = null) }
+                Box(Modifier.padding(padding)) {
+                    Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
+                }
             }
             composable(
                 Routes.SettingsTabPattern,
@@ -129,16 +124,11 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             ) { e ->
                 val tab = SettingsTab.entries.firstOrNull { it.name == e.arguments?.getString(Routes.TabArg) }
                 Box(Modifier.padding(padding)) {
-                    Settings(nav, prefs, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
+                    Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
                 }
             }
-            composable(Routes.Pair) {
-                Box(Modifier.padding(padding)) { PairRoute(nav, prefs) }
-            }
-            composable(Routes.PairGoPro) {
-                Box(Modifier.padding(padding)) { PairGoProRoute(nav, prefs) }
-            }
-            composable(Routes.Track) { Track(nav, prefs, recorder) }
+            setupDestinations(nav, prefs, repo, padding)
+            composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
             composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
             composable(
                 Routes.TrackEditorPattern,
@@ -149,72 +139,6 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             }
         }
     }
-}
-
-/**
- * Scans for RaceBoxes while the pairing screen is shown, if the Bluetooth permissions are granted
- * (otherwise it stays on searching). Connect saves the strongest RaceBox; the recorder connects to it
- * when a session starts (FBBD-43).
- */
-@Composable
-private fun PairRoute(nav: NavHostController, prefs: AppPrefs) {
-    val context = LocalContext.current
-    val found by remember(context) {
-        if (prefs.hasRequiredPermissions()) scanRaceBoxes(context) else flowOf(emptyList())
-    }.collectAsState(initial = emptyList())
-    val best = found.firstOrNull()
-    PairScreen(
-        candidate = best?.let { PairCandidate(it.model, it.serial, it.bars, it.address) },
-        onConnect = { c ->
-            val name = found.firstOrNull { it.address == c.address }?.name ?: "${c.name} ${c.serial}"
-            prefs.updateRaceBox(PairedRaceBox(name, c.address))
-            nav.popBackStack()
-        },
-        onShowAll = {},
-        onBack = { nav.popBackStack() },
-    )
-}
-
-/**
- * Pairs the GoPro HERO11 (FBBD-22) on the same screen as the RaceBox (UI-14 B). Connect pairs with
- * the camera over Bluetooth, which needs the camera in pairing mode, and saves it once it answers;
- * from then on it starts and stops with each session.
- */
-@Composable
-private fun PairGoProRoute(nav: NavHostController, prefs: AppPrefs) {
-    val context = LocalContext.current
-    val found by remember(context) {
-        if (prefs.hasRequiredPermissions()) scanGoPros(context) else flowOf(emptyList())
-    }.collectAsState(initial = emptyList())
-    val scope = rememberCoroutineScope()
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    val best = found.firstOrNull()
-    PairScreen(
-        candidate = best?.let { PairCandidate("GoPro", it.serial, it.bars, it.address) },
-        title = "Pair GoPro HERO11",
-        hint = "Turn on the HERO11 and put it in pairing mode on the camera. It shows up here.",
-        busy = busy,
-        error = error,
-        onConnect = { c ->
-            val name = found.firstOrNull { it.address == c.address }?.name ?: "GoPro ${c.serial}"
-            busy = true
-            error = null
-            scope.launch {
-                try {
-                    GoPros.get(context).pair(c.address)
-                    prefs.updateGoPro(PairedGoPro(name, c.address))
-                    nav.popBackStack()
-                } catch (e: IOException) {
-                    error = "Pairing failed: ${e.message}"
-                } finally {
-                    busy = false
-                }
-            }
-        },
-        onShowAll = {},
-        onBack = { nav.popBackStack() },
-    )
 }
 
 /**
@@ -234,36 +158,58 @@ private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, se
     }
 }
 
+@Suppress("LongParameterList")
 @Composable
 private fun Drive(
     nav: NavHostController,
     prefs: AppPrefs,
+    repo: SetupRepo,
     recorder: RecorderClient,
     sessions: Sessions,
     tracks: Tracks,
 ) {
     LaunchedEffect(Unit) { tracks.locate() }
+    // Starting counts too: the recorder and the cameras are already on their way.
+    val recording = recorder.state.recording || recorder.state.starting
     HomeScreen(
-        devices = prefs.devices(),
+        // While recording, the card shows what the running session uses, not later Settings changes.
+        setup = if (recording) repo.forSession() else repo.setup,
+        recording = recording,
         trackName = tracks.here?.detection?.placeName,
         lastSession = lastSessionLine(sessions.list),
+        actions = SessionCardActions(
+            update = repo::update,
+            onAddCar = { nav.navigate(Routes.car(Routes.NewCar)) },
+            onAddReceiver = { nav.navigate(Routes.AddEquipment) },
+        ),
+        onAddReceiver = { nav.navigate(Routes.AddEquipment) },
+        cameraAllowed = prefs.cameraGranted(),
         onStart = {
+            val active = repo.setup.active()
             if (!prefs.hasRequiredPermissions()) {
                 nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
-            } else if (!recorder.state.recording && prefs.raceBox == null) {
-                // No GNSS receiver: pair one first instead of recording made-up positions (FBBD-83).
-                nav.navigate(Routes.Pair)
-            } else {
+            } else if (recording) {
                 // While recording, START goes back to the running session.
-                if (!recorder.state.recording) {
-                    val place = tracks.here?.detection?.placeName.orEmpty()
-                    recorder.start(
-                        prefs.car,
-                        track = place,
-                        prefs.raceBox?.let { RaceBoxRef(it.address, it.name) },
-                        phoneVideo = prefs.phoneVideoReady(),
-                    )
+                nav.navigate(Routes.Track)
+            } else if (active.gnss != null) {
+                repo.sessionStarted()
+                // Only what this session uses starts (UI-36): its receiver, its car, its cameras (FBBD-83).
+                val gnss = active.gnss?.let {
+                    // The recorder tells a Micro from a Mini by the advertised name, not Arek's name for it.
+                    if (it.model == EquipmentModel.DEMO_GNSS) {
+                        GnssRef.Demo
+                    } else {
+                        GnssRef(it.address.orEmpty(), it.advertisedName ?: it.name)
+                    }
                 }
+                recorder.start(
+                    active.car?.name.orEmpty(),
+                    track = tracks.here?.detection?.placeName.orEmpty(),
+                    gnss,
+                    phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
+                        ?.videoMode
+                        ?.takeIf { prefs.cameraGranted() },
+                )
                 nav.navigate(Routes.Track)
             }
         },
@@ -272,10 +218,10 @@ private fun Drive(
 
 /** A restored back stack can reopen Track after a one-time grant expired, so it checks again here. */
 @Composable
-private fun Track(nav: NavHostController, prefs: AppPrefs, recorder: RecorderClient) {
+private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, recorder: RecorderClient) {
     if (prefs.hasRequiredPermissions()) {
         TrackScreen(
-            state = liveTrackState(recorder.state),
+            state = liveTrackState(recorder.state, repo.forSession().active().tiles),
             onStop = {
                 recorder.stop()
                 nav.popBackStack()
@@ -293,7 +239,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, recorder: RecorderCli
  * with video asks for a folder instead, because the VBO and its video files must sit side by side.
  */
 @Composable
-private fun SessionsRoute(sessions: Sessions, prefs: AppPrefs) {
+private fun SessionsRoute(sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     var addingTo by rememberSaveable { mutableStateOf<String?>(null) }
@@ -331,7 +277,9 @@ private fun SessionsRoute(sessions: Sessions, prefs: AppPrefs) {
             work = goPros.work,
             problems = goPros.problems,
             enabled = !goPros.recording,
-            onDownload = { s -> if (prefs.goPro != null) goPros.download(s.id) },
+            hero8Listed = repo.setup.equipment.any { it.model == EquipmentModel.GOPRO_HERO8 },
+            canDownload = repo.hero11Address() != null,
+            onDownload = { s -> goPros.download(s.id) },
             onAddHero8 = { s ->
                 addingTo = s.id
                 pickHero8.launch(arrayOf(Mp4MimeType))
@@ -341,12 +289,13 @@ private fun SessionsRoute(sessions: Sessions, prefs: AppPrefs) {
 }
 
 @Composable
-private fun Setup(nav: NavHostController, prefs: AppPrefs) {
+private fun Setup(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo) {
     SetupScreen(
-        prefs = prefs,
-        onPair = { nav.navigate(Routes.Pair) },
+        setup = repo.setup,
+        onAddReceiver = { nav.navigate(Routes.AddEquipment) },
         onCameras = { nav.navigate(Routes.settingsTab(SettingsTab.Devices.name)) },
         onCar = { nav.navigate(Routes.settingsTab(SettingsTab.Car.name)) },
+        onAddCar = { nav.navigate(Routes.car(Routes.NewCar)) },
         onDone = {
             prefs.updateSetupDone(true)
             nav.navigate(Routes.Drive) { popUpTo(Routes.Setup) { inclusive = true } }
@@ -354,17 +303,28 @@ private fun Setup(nav: NavHostController, prefs: AppPrefs) {
     )
 }
 
+@Suppress("LongParameterList")
 @Composable
-private fun Settings(nav: NavHostController, prefs: AppPrefs, tracks: Tracks, tab: SettingsTab, onBack: (() -> Unit)?) {
+private fun Settings(
+    nav: NavHostController,
+    prefs: AppPrefs,
+    repo: SetupRepo,
+    tracks: Tracks,
+    tab: SettingsTab,
+    onBack: (() -> Unit)?,
+) {
     val context = LocalContext.current
     val updates = remember(context) { AppUpdates.get(context) }
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), Sessions.get(context))
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
-        prefs = prefs,
+        setup = repo.setup,
         version = Version,
         initialTab = tab,
-        onPair = { nav.navigate(Routes.Pair) },
+        onOpenEquipment = { e -> nav.navigate(Routes.equipment(e.id)) },
+        onAddEquipment = { nav.navigate(Routes.AddEquipment) },
+        onOpenCar = { c -> nav.navigate(Routes.car(c.id)) },
+        onAddCar = { nav.navigate(Routes.car(Routes.NewCar)) },
         onRunSetup = {
             prefs.updateSetupDone(false)
             nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
@@ -372,7 +332,8 @@ private fun Settings(nav: NavHostController, prefs: AppPrefs, tracks: Tracks, ta
         onBack = onBack,
         trackCount = tracks.list.size,
         onTracks = { nav.navigate(Routes.Tracks) },
-        onPairGoPro = { nav.navigate(Routes.PairGoPro) },
+        onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
+        onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
     )
 }
 

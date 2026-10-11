@@ -119,6 +119,8 @@ private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCa
         work = work,
         problems = goPro.problems[s.id].orEmpty(),
         enabled = goPro.enabled && work == null && export != ExportState.Running,
+        hero8Listed = goPro.hero8Listed,
+        canDownload = goPro.canDownload,
         onDownload = { goPro.onDownload(s) },
         onAddHero8 = { goPro.onAddHero8(s) },
     )

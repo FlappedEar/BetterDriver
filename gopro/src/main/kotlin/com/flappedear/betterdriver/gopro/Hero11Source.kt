@@ -22,7 +22,8 @@ import java.time.Clock
  * (supported from firmware v01.10.00, https://gopro.github.io/OpenGoPro/docs).
  *
  * On [start] it connects, sets the camera's clock from the phone (so file times can be matched to
- * the session), waits until the camera is not busy, sends Set Shutter on, and notes when the
+ * the session), waits until the camera is not busy, applies [video] if given (FBBD-88; a refused
+ * setting leaves the camera's own mode and the recording goes ahead), sends Set Shutter on, and notes when the
  * camera acknowledged it on the session clock. While recording it sends a keep-alive every 3 s
  * and reconnects if the link drops; the camera keeps recording on its own meanwhile. On [stop] it
  * sends Set Shutter off. The files stay on the camera and are downloaded after the session
@@ -32,12 +33,15 @@ import java.time.Clock
  * Nothing here can affect data recording: it runs in [scope] in the UI process, never throws from
  * [start] or [stop], and reports problems through [state].
  */
+@Suppress("LongParameterList", "TooManyFunctions") // Clock and timeouts are test hooks; one step per function.
 class Hero11Source(
     override val id: String,
     private val link: GoProLink,
     private val scope: CoroutineScope,
     /** The phone's wall clock and time zone, used to set the camera's clock. */
     private val clock: Clock = Clock.systemDefaultZone(),
+    /** The resolution and frame rate to set before recording, or null to keep the camera's own. */
+    private val video: Hero11Video? = null,
     private val connectTimeoutMillis: Long = 20_000,
     private val readyTimeoutMillis: Long = 10_000,
 ) : LiveVideoSource {
@@ -115,12 +119,14 @@ class Hero11Source(
         connected = true
         utcOffsetMinutes = setClock()
         waitUntilReady()
+        val mode = applyVideo()
         client.send(OpenGoPro.shutter(true))
         val started = GoProRecording(
             sourceId = id,
             startAckSessionUs = session.sessionClock(),
             startAckUtcMillis = clock.millis(),
             cameraUtcOffsetMinutes = utcOffsetMinutes,
+            videoMode = mode,
         )
         recording = started
         _state.value = VideoSourceState.Recording(started.startAckSessionUs)
@@ -139,6 +145,35 @@ class Hero11Source(
         } catch (_: GoProException) {
             null
         }
+    }
+
+    /**
+     * Sets resolution, then frame rate, so the frame rate is checked against the new resolution.
+     * Returns what the camera took: [Hero11Video.label] for both, the size alone when it refused
+     * only the frame rate, or null when it refused the resolution and records with its own mode.
+     */
+    private suspend fun applyVideo(): String? {
+        val v = video ?: return null
+        val applied = when {
+            !accepted(OpenGoPro.Setting.set(OpenGoPro.Setting.VIDEO_RESOLUTION, v.resolution)) -> null
+            accepted(OpenGoPro.Setting.set(OpenGoPro.Setting.FRAMES_PER_SECOND, v.fps)) -> v.label
+            else -> "${v.size} · camera's frame rate"
+        }
+        if (applied != null) {
+            try {
+                waitUntilReady()
+            } catch (_: GoProException) {
+                // The shutter that follows reports a camera that is still busy.
+            }
+        }
+        return applied
+    }
+
+    private suspend fun accepted(request: OpenGoPro.Request): Boolean = try {
+        client.send(request)
+        true
+    } catch (_: GoProException) {
+        false
     }
 
     private suspend fun waitUntilReady() {

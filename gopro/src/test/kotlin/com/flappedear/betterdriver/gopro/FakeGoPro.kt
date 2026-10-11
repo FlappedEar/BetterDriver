@@ -11,6 +11,12 @@ class FakeGoPro : GoProLink {
     var disconnects = 0
     var busyPolls = 0
     var failShutter = false
+
+    /** Settings the camera answers with status 2 (invalid parameter). */
+    var refusedSettings = emptySet<Int>()
+
+    /** Last value written for each setting id. */
+    val settings = mutableMapOf<Int, Int>()
     var recording = false
     var ssid = "GP12345678"
     var password = "secret-pass"
@@ -32,11 +38,19 @@ class FakeGoPro : GoProLink {
         val reply: ByteArray = when {
             characteristic == GoProUuids.QUERY && id == 0x13 ->
                 byteArrayOf(0x13, 0, 8, 1, if (busyPolls-- > 0) 1 else 0)
+            characteristic == GoProUuids.SETTINGS && id != 0x5B -> setting(id, message[2].toInt() and 0xFF)
             id == 0x01 && failShutter -> byteArrayOf(0x01, 1)
             id == 0x01 -> byteArrayOf(0x01, 0).also { recording = message[2].toInt() == 1 }
             else -> byteArrayOf(message[0], 0)
         }
         for (p in OpenGoPro.packetize(reply)) notifications.emit(GoProUuids.responseFor(characteristic) to p)
+    }
+
+    /** Set Setting: refused with status 2, or noted and answered with success. */
+    private fun setting(id: Int, value: Int): ByteArray {
+        if (id in refusedSettings) return byteArrayOf(id.toByte(), 2)
+        settings[id] = value
+        return byteArrayOf(id.toByte(), 0)
     }
 
     override suspend fun read(characteristic: String): ByteArray = when (characteristic) {

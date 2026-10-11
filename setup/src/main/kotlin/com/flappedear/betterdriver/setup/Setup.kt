@@ -17,7 +17,10 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     /** The phone's own camera (FBBD-21). There is only one. */
     PHONE_CAMERA(EquipmentKind.CAMERA, "Phone camera"),
 
-    /** Started and stopped with the session through Open GoPro (FBBD-22). */
+    /**
+     * Started and stopped with the session through Open GoPro (FBBD-22). One at most: the app
+     * drives a single HERO11, so pairing another one replaces it.
+     */
     GOPRO_HERO11(EquipmentKind.CAMERA, "GoPro HERO11"),
 
     /** Started by hand; its files are added to the session afterwards (FBBD-22). */
@@ -31,17 +34,73 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     val paired: Boolean get() = this == RACEBOX_MICRO || this == GOPRO_HERO11
 
     val isGoPro: Boolean get() = this == GOPRO_HERO11 || this == GOPRO_HERO8
+
+    /**
+     * Listed once at most: there is one phone camera, the app drives one HERO11, and HERO8 imports
+     * go to one folder per session, so two HERO8s could overwrite each other's clips.
+     */
+    val single: Boolean get() = this == PHONE_CAMERA || this == GOPRO_HERO11 || this == GOPRO_HERO8
+
+    /**
+     * The video modes Arek can choose from (FBBD-88), best first; empty for models the app does
+     * not set. The phone's list is narrowed at run time to what the phone reports. The HERO11 has
+     * no 720p (Open GoPro openapi.json, Setting_2 option metadata), so it offers 2.7K instead.
+     */
+    val videoModes: List<VideoMode> get() = when (this) {
+        PHONE_CAMERA -> PhoneVideoModes
+        GOPRO_HERO11 -> Hero11VideoModes
+        else -> emptyList()
+    }
+
+    /** The mode used until Arek chooses one: 1080p at 60, lighter on heat, storage and download than 4K. */
+    val defaultVideo: VideoMode? get() = if (videoModes.isEmpty()) null else VideoMode(VideoSize.FHD, HighFps)
 }
 
-/** One item in Arek's equipment list. [address] is the Bluetooth address of a paired model. */
+/** Video frame sizes, largest first. */
+@Serializable
+enum class VideoSize(val label: String) { UHD("4K"), QHD("2.7K"), FHD("1080p"), HD("720p") }
+
+/** A camera's video setting: frame size and frames per second (FBBD-88). */
+@Serializable
+data class VideoMode(val size: VideoSize, val fps: Int) {
+    val label: String get() = "${size.label} · $fps"
+}
+
+private const val HighFps = 60
+private const val LowFps = 30
+
+private val PhoneVideoModes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
+    .flatMap { listOf(VideoMode(it, HighFps), VideoMode(it, LowFps)) }
+
+private val Hero11VideoModes = listOf(
+    VideoMode(VideoSize.UHD, HighFps),
+    VideoMode(VideoSize.UHD, LowFps),
+    VideoMode(VideoSize.QHD, HighFps),
+    VideoMode(VideoSize.FHD, HighFps),
+    VideoMode(VideoSize.FHD, LowFps),
+)
+
+/**
+ * One item in Arek's equipment list. [address] is the Bluetooth address of a paired model.
+ * [video] is the chosen video mode of a camera the app sets; null means the model's default.
+ */
 @Serializable
 data class Equipment(
     val id: String,
     val model: EquipmentModel,
     val name: String,
     val address: String? = null,
+    /**
+     * The name the device advertised when it was paired. It tells a RaceBox Micro from a Mini;
+     * [name] is Arek's and can be anything.
+     */
+    val advertisedName: String? = null,
+    val video: VideoMode? = null,
 ) {
     val kind: EquipmentKind get() = model.kind
+
+    /** The video mode this camera records with, or null when the app does not set it. */
+    val videoMode: VideoMode? get() = video?.takeIf { it in model.videoModes } ?: model.defaultVideo
 }
 
 /** One of Arek's cars. The PID set for car data attaches here in Phase 5 (FBBD-16). */
@@ -129,8 +188,8 @@ data class Setup(
     /**
      * Adds an item. The first GNSS receiver becomes the session's receiver, and a new camera is
      * used in the next session; Arek can turn either off. A model paired over Bluetooth that is
-     * already listed at the same address is updated instead of listed twice, and the phone camera
-     * is listed once at most.
+     * already listed at the same address is updated instead of listed twice. The phone camera, the
+     * HERO11 and the HERO8 are listed once at most; pairing another HERO11 replaces the listed one.
      */
     fun addEquipment(
         model: EquipmentModel,
@@ -140,12 +199,19 @@ data class Setup(
     ): Setup {
         require(!model.paired || !address.isNullOrBlank()) { "${model.label} needs a Bluetooth address" }
         val same = equipment.firstOrNull {
-            it.model == model && (model == EquipmentModel.PHONE_CAMERA || (address != null && it.address == address))
+            it.model == model && (model.single || (address != null && it.address == address))
         }
+        val advertised = name.takeIf { address != null && it.isNotBlank() }
         if (same != null) {
-            return replace(same.copy(name = name.ifBlank { model.label }, address = address ?: same.address))
+            return replace(
+                same.copy(
+                    name = name.ifBlank { model.label },
+                    address = address ?: same.address,
+                    advertisedName = advertised ?: same.advertisedName,
+                ),
+            )
         }
-        val item = Equipment(newId(), model, name.ifBlank { model.label }, address)
+        val item = Equipment(newId(), model, name.ifBlank { model.label }, address, advertised)
         val next = copy(equipment = equipment + item)
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next
@@ -156,6 +222,12 @@ data class Setup(
     fun renameEquipment(id: String, name: String): Setup {
         val item = equipment(id) ?: return this
         return replace(item.copy(name = name.ifBlank { item.model.label }))
+    }
+
+    /** Sets a camera's video mode; ignored for items and modes the model does not offer. */
+    fun chooseVideo(id: String, mode: VideoMode): Setup {
+        val item = equipment(id)?.takeIf { mode in it.model.videoModes } ?: return this
+        return replace(item.copy(video = mode))
     }
 
     /** Removes an item and drops it from the session choice. Another receiver takes over if there is one. */

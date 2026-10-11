@@ -4,6 +4,7 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
+import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderListener
@@ -29,6 +31,26 @@ import java.util.concurrent.Executors
 
 private const val NotificationId = 1
 private const val DestroyStopTimeoutMs = 3_000L
+
+private const val KeyRaceBoxAddress = "racebox_address"
+private const val KeyRaceBoxName = "racebox_name"
+private const val KeyGnssDemo = "gnss_demo"
+
+/** The receiver of the recording that was running when the recorder process was killed. */
+private fun wantedGnss(wanted: SharedPreferences): GnssRef? = when {
+    wanted.getBoolean(KeyGnssDemo, false) -> GnssRef.Demo
+    else -> wanted.getString(KeyRaceBoxAddress, null)?.let {
+        GnssRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty())
+    }
+}
+
+/** The receiver a start intent names: Demo GNSS, a RaceBox, or none. */
+private fun gnssFrom(intent: Intent): GnssRef? = when {
+    intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_DEMO, false) -> GnssRef.Demo
+    else -> intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS)?.let {
+        GnssRef(it, intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty())
+    }
+}
 
 /** Track and car, the ones that are known (UI-21 option B). */
 private fun notificationDetail(info: SessionInfo) =
@@ -102,20 +124,14 @@ class RecorderService : Service() {
                 lastError = null
                 val car = intent.getStringExtra(RecorderProtocol.EXTRA_CAR).orEmpty()
                 val track = intent.getStringExtra(RecorderProtocol.EXTRA_TRACK).orEmpty()
-                val raceBox = intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS)?.let {
-                    RaceBoxRef(it, intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_NAME).orEmpty())
-                }
-                if (goForeground()) startRecording(car, track, raceBox)
+                if (goForeground()) startRecording(car, track, gnssFrom(intent))
             }
             RecorderProtocol.ACTION_STOP -> stopRecording()
             // Restarted by the system after this process was killed (START_STICKY). If a recording was
             // running, the old session is recovered at the next app start and a new one carries on.
             null -> if (wanted.getBoolean(KeyWanted, false) && goForeground()) {
-                val raceBox = wanted.getString(KeyRaceBoxAddress, null)?.let {
-                    RaceBoxRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty())
-                }
                 val car = wanted.getString(KeyCar, "").orEmpty()
-                startRecording(car, wanted.getString(KeyTrack, "").orEmpty(), raceBox)
+                startRecording(car, wanted.getString(KeyTrack, "").orEmpty(), wantedGnss(wanted))
             } else {
                 stopSelf(startId)
             }
@@ -145,10 +161,10 @@ class RecorderService : Service() {
     }
 
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
-    private fun startRecording(car: String, track: String, raceBox: RaceBoxRef?) = control.execute {
+    private fun startRecording(car: String, track: String, gnss: GnssRef?) = control.execute {
         if (active != null) return@execute
-        if (raceBox == null) {
-            // Only reachable from an older app build or a stale restart; the app pairs a RaceBox first.
+        if (gnss == null) {
+            // Only reachable from an older app build or a stale restart; home needs a receiver to start.
             lastError = NoReceiver
             main.post {
                 wanted.edit().putBoolean(KeyWanted, false).commit()
@@ -157,7 +173,7 @@ class RecorderService : Service() {
             return@execute
         }
         try {
-            val sources = Sources.create(this, raceBox)
+            val sources = Sources.create(this, gnss)
             val info = SessionInfo(
                 startUtcMillis = System.currentTimeMillis(),
                 car = car,
@@ -166,9 +182,15 @@ class RecorderService : Service() {
                 channels = GnssChannels.ALL,
             )
             val recording = Recorder(store).start(info)
-            val tracker = LiveTracker(recording.id, info.startUtcMillis, recording::nowMicros) {
-                recording.droppedCount
-            }
+            // G for the track screen comes from the RaceBox accelerometer; Demo GNSS has none (UI-38).
+            val accel = if (gnss.demo) null else RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
+            val tracker = LiveTracker(
+                recording.id,
+                info.startUtcMillis,
+                recording::nowMicros,
+                droppedSamples = { recording.droppedCount },
+                accelIds = accel,
+            )
             recording.listeners.add(tracker)
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
             // listener thread, so a timing failure is logged in the session and never stops it.
@@ -188,7 +210,8 @@ class RecorderService : Service() {
             main.post {
                 cpu.acquire()
                 wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
-                    .putString(KeyRaceBoxAddress, raceBox.address).putString(KeyRaceBoxName, raceBox.name).commit()
+                    .putString(KeyRaceBoxAddress, gnss.address).putString(KeyRaceBoxName, gnss.name)
+                    .putBoolean(KeyGnssDemo, gnss.demo).commit()
                 getSystemService(NotificationManager::class.java)
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
@@ -261,9 +284,7 @@ class RecorderService : Service() {
         private const val KeyCar = "car"
 
         /** Shown on the track screen when a start has no GNSS receiver; nothing is recorded. */
-        const val NoReceiver = "No GNSS receiver. Pair a RaceBox in Settings."
+        const val NoReceiver = "No GNSS receiver. Add one in Settings › Devices."
         private const val KeyTrack = "track"
-        private const val KeyRaceBoxAddress = "racebox_address"
-        private const val KeyRaceBoxName = "racebox_name"
     }
 }

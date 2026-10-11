@@ -43,6 +43,10 @@ data class GoProCardState(
     val problems: Map<String, List<String>> = emptyMap(),
     /** False while a session records: nothing is downloaded or copied then. */
     val enabled: Boolean = true,
+    /** A HERO8 is in the equipment list; only then does each session offer Add (FBBD-83). */
+    val hero8Listed: Boolean = false,
+    /** A HERO11 is in the equipment list to download from. */
+    val canDownload: Boolean = false,
     val onDownload: (SessionSummary) -> Unit = {},
     val onAddHero8: (SessionSummary) -> Unit = {},
 )
@@ -50,13 +54,18 @@ data class GoProCardState(
 /**
  * The GoPro lines of a session card, built to option A of UI-31 (tap Download) and UI-32 (add
  * HERO8 files from the session). [enabled] is false while a session records or other work runs.
+ * A session without GoPro video shows no GoPro line unless a HERO8 is listed ([hero8Listed]);
+ * Download needs a listed HERO11 ([canDownload]).
  */
+@Suppress("LongParameterList")
 @Composable
 internal fun GoProLines(
     goPro: SessionGoPro,
     work: GoProWork?,
     problems: List<String>,
     enabled: Boolean,
+    hero8Listed: Boolean,
+    canDownload: Boolean,
     onDownload: () -> Unit,
     onAddHero8: () -> Unit,
 ) {
@@ -69,7 +78,7 @@ internal fun GoProLines(
             DimText("Keep the camera on and close to the phone.")
         }
         goPro.hero11OnCamera -> StatusLine(c.warning, "GoPro HERO11 · video on the camera") {
-            FilledTonalButton(onClick = onDownload, enabled = enabled) { Text("Download") }
+            if (canDownload) FilledTonalButton(onClick = onDownload, enabled = enabled) { Text("Download") }
         }
         goPro.hero11 != null -> ClipsLine("GoPro HERO11", goPro.hero11)
     }
@@ -79,7 +88,7 @@ internal fun GoProLines(
             Progress(work.bytes, work.total)
         }
         goPro.hero8 != null -> ClipsLine("GoPro HERO8", goPro.hero8)
-        else -> StatusLine(MaterialTheme.colorScheme.outline, "GoPro HERO8 video") {
+        hero8Listed -> StatusLine(MaterialTheme.colorScheme.outline, "GoPro HERO8 video") {
             OutlinedButton(onClick = onAddHero8, enabled = enabled) { Text("Add") }
         }
     }

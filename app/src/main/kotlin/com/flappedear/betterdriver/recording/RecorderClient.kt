@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.CameraService
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.setup.VideoMode
 import com.flappedear.betterdriver.timing.live.LiveTimingState
 
 /** What the UI knows about the recorder process. */
@@ -117,13 +118,13 @@ class RecorderClient private constructor(private val context: Context) {
     }
 
     /**
-     * [raceBox] is the paired RaceBox; with none, nothing is recorded and the track screen says why.
-     * With [phoneVideo], the camera process starts too and records once the session is running
-     * (FBBD-21). It is started from here, while the app is on screen, because Android only lets a
+     * [gnss] is the session's receiver; with none, nothing is recorded and the track screen says why.
+     * With [phoneVideo], the camera process starts too and records in that mode once the session
+     * is running (FBBD-21, FBBD-88). It is started from here, while the app is on screen, because Android only lets a
      * camera service start from the foreground.
      */
-    fun start(car: String, track: String, raceBox: RaceBoxRef?, phoneVideo: Boolean = false) {
-        if (raceBox == null) {
+    fun start(car: String, track: String, gnss: GnssRef?, phoneVideo: VideoMode? = null) {
+        if (gnss == null) {
             // Neither the recorder nor the camera starts, so no camera notification waits for a session.
             state = state.copy(starting = false, error = RecorderService.NoReceiver)
             return
@@ -133,23 +134,27 @@ class RecorderClient private constructor(private val context: Context) {
             .setAction(RecorderProtocol.ACTION_START)
             .putExtra(RecorderProtocol.EXTRA_CAR, car)
             .putExtra(RecorderProtocol.EXTRA_TRACK, track)
-            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, raceBox.address)
-            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, raceBox.name)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS, gnss.address)
+            .putExtra(RecorderProtocol.EXTRA_RACEBOX_NAME, gnss.name)
+            .putExtra(RecorderProtocol.EXTRA_GNSS_DEMO, gnss.demo)
         try {
             ContextCompat.startForegroundService(context, intent)
         } catch (e: IllegalStateException) {
             state = state.copy(starting = false, error = "Could not start recording: ${e.message}")
             return
         }
-        if (phoneVideo) startCamera()
+        if (phoneVideo != null) startCamera(phoneVideo)
     }
 
     /** A failure here only means no phone video; the recording is already running. */
-    private fun startCamera() {
+    private fun startCamera(mode: VideoMode) {
         try {
             ContextCompat.startForegroundService(
                 context,
-                Intent(context, CameraService::class.java).setAction(CameraService.ACTION_START),
+                Intent(context, CameraService::class.java)
+                    .setAction(CameraService.ACTION_START)
+                    .putExtra(CameraService.EXTRA_VIDEO_SIZE, mode.size.name)
+                    .putExtra(CameraService.EXTRA_VIDEO_FPS, mode.fps),
             )
         } catch (e: IllegalStateException) {
             android.util.Log.w("RecorderClient", "phone video not started", e)

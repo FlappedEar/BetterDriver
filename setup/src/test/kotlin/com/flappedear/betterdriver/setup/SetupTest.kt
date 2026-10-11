@@ -53,6 +53,33 @@ class SetupTest {
             .addEquipment(EquipmentModel.PHONE_CAMERA, newId = ids)
             .addEquipment(EquipmentModel.PHONE_CAMERA, newId = ids)
         assertEquals(listOf("New", "Phone camera"), s.equipment.map { it.name })
+        val boxes = Setup()
+            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB 1", "AA", ids)
+            .addEquipment(EquipmentModel.RACEBOX_MICRO, "RB 2", "BB", ids)
+        assertEquals(listOf("RB 1", "RB 2"), boxes.equipment.map { it.name })
+    }
+
+    @Test
+    fun pairingAnotherHero11ReplacesTheListedOne() {
+        val first = Setup().addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 1111", "AA", ids)
+        val id = first.equipment.single().id
+        val s = first.addEquipment(EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", ids)
+        assertEquals(listOf(Equipment(id, EquipmentModel.GOPRO_HERO11, "GoPro 2222", "BB", "GoPro 2222")), s.equipment)
+        assertEquals(listOf(id), s.session.cameraIds, "still on for the session")
+    }
+
+    @Test
+    fun renamingKeepsTheAdvertisedName() {
+        val s = Setup().addEquipment(EquipmentModel.RACEBOX_MICRO, "RaceBox Mini 0042", "AA", ids)
+        val renamed = s.renameEquipment(s.equipment.single().id, "Track box")
+        assertEquals("RaceBox Mini 0042", renamed.equipment.single().advertisedName)
+    }
+
+    @Test
+    fun hero8IsListedOnce() {
+        val s = Setup().addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+            .addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+        assertEquals(1, s.equipment.size)
     }
 
     @Test
@@ -203,5 +230,41 @@ class SetupTest {
         val setup = Setup.fresh { "phone" }
         val text = SetupJson.encode(setup).replace("\"cars\"", "\"later\": 1, \"cars\"")
         assertEquals(setup, SetupJson.decode(text))
+    }
+
+    @Test
+    fun camerasDefaultTo1080p60AndKeepTheChosenMode() {
+        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, address = "AA", newId = ids)
+        val phone = s.equipment.first { it.model == EquipmentModel.PHONE_CAMERA }
+        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO11 }
+        assertEquals(VideoMode(VideoSize.FHD, 60), phone.videoMode)
+        assertEquals(VideoMode(VideoSize.FHD, 60), hero.videoMode)
+
+        s = s.chooseVideo(phone.id, VideoMode(VideoSize.HD, 30))
+        assertEquals("720p · 30", s.equipment(phone.id)?.videoMode?.label)
+        // Pairing the HERO11 again keeps its mode.
+        s = s.chooseVideo(hero.id, VideoMode(VideoSize.UHD, 60))
+        s = s.addEquipment(EquipmentModel.GOPRO_HERO11, address = "BB", newId = ids)
+        assertEquals(VideoMode(VideoSize.UHD, 60), s.equipment(hero.id)?.videoMode)
+    }
+
+    @Test
+    fun modesAModelDoesNotOfferAreRefused() {
+        var s = Setup.fresh(ids).addEquipment(EquipmentModel.GOPRO_HERO11, address = "AA", newId = ids)
+        val hero = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO11 }
+        assertEquals(s, s.chooseVideo(hero.id, VideoMode(VideoSize.HD, 60)), "no 720p on a HERO11")
+        s = s.addEquipment(EquipmentModel.GOPRO_HERO8, newId = ids)
+        val hero8 = s.equipment.first { it.model == EquipmentModel.GOPRO_HERO8 }
+        assertNull(hero8.videoMode, "a HERO8 is set by hand")
+        assertEquals(s, s.chooseVideo(hero8.id, VideoMode(VideoSize.FHD, 60)))
+    }
+
+    @Test
+    fun videoModeSurvivesTheFileAndOldFilesReadWithoutIt() {
+        val s = Setup.fresh(ids).let { it.chooseVideo(it.equipment.single().id, VideoMode(VideoSize.UHD, 30)) }
+        assertEquals(s, SetupJson.decode(SetupJson.encode(s)))
+        val old = SetupJson.encode(Setup.fresh(ids)).replace(Regex(""",?\s*"video": null"""), "")
+        assertFalse(old.contains("\"video\""))
+        assertEquals(VideoMode(VideoSize.FHD, 60), SetupJson.decode(old).equipment.single().videoMode)
     }
 }

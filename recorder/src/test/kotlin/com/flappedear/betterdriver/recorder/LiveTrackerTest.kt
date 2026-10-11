@@ -55,6 +55,19 @@ class LiveTrackerTest {
     }
 
     @Test
+    fun `combines X and Y acceleration into G only when the receiver has an accelerometer`() {
+        val withAccel = LiveTracker("s", 0, { 0L }, accelIds = 110 to 111)
+        assertNull(withAccel.snapshot().gCombined)
+        val sample = listOf(ChannelValue(110, 0.3), ChannelValue(111, -0.4), ChannelValue(112, 1.0))
+        withAccel.onSamples(SampleSet(0, sample))
+        assertEquals(0.5, assertNotNull(withAccel.snapshot().gCombined), 1e-9)
+
+        val without = LiveTracker("s", 0, { 0L })
+        without.onSamples(SampleSet(0, listOf(ChannelValue(110, 0.3), ChannelValue(111, -0.4))))
+        assertNull(without.snapshot().gCombined)
+    }
+
+    @Test
     fun `keeps storage warnings and the stop reason`() {
         val tracker = LiveTracker("s", 0, { 0L })
         tracker.onStatus(RecorderStatus.StorageLow(123))
