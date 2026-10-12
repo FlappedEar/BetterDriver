@@ -34,6 +34,15 @@ sealed interface LapEvent {
 const val DefaultMinLapSeconds = 10.0
 
 /**
+ * Shortest point-to-point run counted (FBBD-155). Start and finish are different lines, so noise at
+ * one line cannot end a run; this only keeps a sprint of a few seconds.
+ */
+const val DefaultMinRunSeconds = 2.0
+
+/** The shortest lap counted on [track]: [DefaultMinRunSeconds] point to point, else [DefaultMinLapSeconds]. */
+fun defaultMinLapSeconds(track: Track): Double = if (track.pointToPoint) DefaultMinRunSeconds else DefaultMinLapSeconds
+
+/**
  * Lap state machine (FBBD-58) on line crossings (FBBD-57). Laps run from start/finish to
  * start/finish; the first lap of a session starts with the first fix and is an out lap.
  *
@@ -53,7 +62,7 @@ const val DefaultMinLapSeconds = 10.0
  *
  * Feed fixes in time order from one thread. Fixes that go back in time are ignored.
  */
-class LapTimer(private val track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
+class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSeconds(track)) {
     private val startFinishLine = requireNotNull(track.startFinish) { "track ${track.id} has no start/finish line" }
 
     /** Runs from a start line to a finish line instead of laps. */

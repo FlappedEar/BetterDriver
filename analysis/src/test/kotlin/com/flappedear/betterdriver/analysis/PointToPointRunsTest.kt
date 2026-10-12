@@ -60,7 +60,7 @@ class PointToPointRunsTest {
 
     private class Drive(val session: SessionData, val starts: List<Double>, val finishes: List<Double>)
 
-    private fun drive(legs: List<Leg>): Drive {
+    private fun drive(legs: List<Leg>, finishAt: Double = finishX): Drive {
         val sets = mutableListOf<SampleSet>()
         val starts = mutableListOf<Double>()
         val finishes = mutableListOf<Double>()
@@ -87,7 +87,7 @@ class PointToPointRunsTest {
                 val next = x + dx
                 if (east) {
                     if (x < startX && next >= startX) starts += t + dt * (startX - x) / dx
-                    if (x < finishX && next >= finishX) finishes += t + dt * (finishX - x) / dx
+                    if (x < finishAt && next >= finishAt) finishes += t + dt * (finishAt - x) / dx
                 }
                 x = next
                 t += dt
@@ -130,6 +130,22 @@ class PointToPointRunsTest {
         val analysis = analyzeSession(session)
         assertEquals(2, analysis.laps.timedLaps.size)
         assertEquals(runs[1].number, analysis.axisLapNumber)
+    }
+
+    @Test
+    fun `a short sprint is a run, though shorter than any circuit lap`() {
+        // 150 m from start to finish: under the 200 m a circuit lap needs.
+        val sprint = hill.copy(finish = lineAt(250.0))
+        val d = drive(
+            listOf(Leg(0.0, 400.0, 30.0), Leg(400.0, 0.0, 12.0), Leg(0.0, 400.0, 32.0), Leg(400.0, 0.0, 12.0)),
+            finishAt = 250.0,
+        )
+        val laps = deriveSourceLapSession(telemetrySessionOf(d.session, sprint))
+        assertEquals(LapSessionStatus.Available, laps.status)
+        assertEquals(2, laps.timedLaps.size)
+        assertTrue(laps.timedLaps.all { it.referenceEligible }, "runs ${laps.timedLaps}")
+        assertEquals(d.finishes[1] - d.starts[1], laps.timedLaps[1].durationSeconds, 0.02)
+        assertEquals(1, laps.fastestLapIndex)
     }
 
     @Test

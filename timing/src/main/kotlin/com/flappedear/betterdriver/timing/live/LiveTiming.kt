@@ -49,7 +49,7 @@ fun sectorName(index: Int) = "S${index + 1}"
  * On a point-to-point track (FBBD-155) each run is a lap: the delta runs against the best run, and
  * between runs there is no lap time or delta while the last run's sectors stay on the strip.
  */
-class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
+class LiveTiming(track: Track, minLapSeconds: Double = defaultMinLapSeconds(track)) {
     private val timer = LapTimer(track, minLapSeconds)
     val book = LapBook(timer.sectorCount)
 
@@ -169,7 +169,11 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
 private const val SectorHoldMicros = 5_000_000L
 
 /** Times a whole recorded session, for review and after editing lines (FBBD-56). */
-fun timeSession(track: Track, fixes: Sequence<Fix>, minLapSeconds: Double = DefaultMinLapSeconds): LapBook {
+fun timeSession(
+    track: Track,
+    fixes: Sequence<Fix>,
+    minLapSeconds: Double = defaultMinLapSeconds(track),
+): LapBook {
     val live = LiveTiming(track, minLapSeconds)
     fixes.forEach { live.update(it) }
     return live.book

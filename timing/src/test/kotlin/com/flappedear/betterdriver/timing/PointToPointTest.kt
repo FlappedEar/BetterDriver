@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.timing.edit.withLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.live.DefaultMinLapSeconds
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.LapEvent
 import com.flappedear.betterdriver.timing.live.LapKind
@@ -20,6 +21,7 @@ import com.flappedear.betterdriver.timing.live.timeSession
 import com.flappedear.betterdriver.timing.replay.LapAlignment
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
@@ -359,6 +361,35 @@ class PointToPointTest {
         assertEquals(hill, TrackJson.decode(text))
         val circuitText = TrackJson.encode(hill.copy(kind = TrackKind.Circuit, finish = null))
         assertTrue("\"kind\": \"circuit\"" in circuitText)
+    }
+
+    @Test
+    fun `point-to-point tracks are written as version 2 so older builds refuse them`() {
+        val text = TrackJson.encode(hill)
+        assertTrue("\"version\": 2" in text, text)
+        // Circuits stay version 1, which builds from before FBBD-155 still read.
+        val circuit = hill.copy(kind = TrackKind.Circuit, finish = null)
+        val circuitText = TrackJson.encode(circuit)
+        assertTrue("\"version\": 1" in circuitText, circuitText)
+        // This build reads both, and a version 2 circuit too.
+        assertEquals(hill, TrackJson.decode(text))
+        assertEquals(circuit, TrackJson.decode(circuitText))
+        assertEquals(circuit, TrackJson.decode(circuitText.replace("\"version\": 1", "\"version\": 2")))
+        assertFailsWith<TrackFormatException> { TrackJson.decode(text.replace("\"version\": 2", "\"version\": 3")) }
+    }
+
+    @Test
+    fun `a sprint shorter than the circuit minimum lap still counts`() {
+        // Start at 100 m, finish at 600 m, driven in about 5 s.
+        val sprint = hill.copy(sectorLines = emptyList(), finish = lineAt(sectorX))
+        val d = drive(listOf(Leg(Xy(700.0, 0.0), 4.0), Leg(Xy(700.0, 8.0), 0.2), Leg(Xy(0.0, 8.0), 1.0)))
+        val truth = d.passes.getValue(sectorX)[0] - d.passes.getValue(startX)[0]
+        assertTrue(truth < DefaultMinLapSeconds * 1e6, "sprint takes ${truth / 1e6} s")
+        val live = assertNotNull(timeSession(sprint, d.fixes.asSequence()).laps.singleOrNull())
+        assertEquals(truth, live.timeMicros.toDouble(), 2_000.0)
+        val replayed = replayLaps("sprint", session(d.fixes), sprint).laps.single()
+        assertEquals(truth, replayed.lap.timeMicros.toDouble(), 2_000.0)
+        assertTrue(timeSession(sprint, d.fixes.asSequence(), DefaultMinLapSeconds).laps.isEmpty())
     }
 
     @Test

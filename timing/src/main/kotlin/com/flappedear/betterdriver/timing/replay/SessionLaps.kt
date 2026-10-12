@@ -6,7 +6,7 @@ import com.flappedear.betterdriver.recorder.export.ExportLap
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
-import com.flappedear.betterdriver.timing.live.DefaultMinLapSeconds
+import com.flappedear.betterdriver.timing.live.defaultMinLapSeconds
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapBook
@@ -104,7 +104,7 @@ fun replayLaps(
     sessionId: String,
     sets: List<SampleSet>,
     track: Track,
-    minLapSeconds: Double = DefaultMinLapSeconds,
+    minLapSeconds: Double = defaultMinLapSeconds(track),
 ): SessionLaps {
     val timer = LapTimer(track, minLapSeconds)
     val frame = trackFrame(track)

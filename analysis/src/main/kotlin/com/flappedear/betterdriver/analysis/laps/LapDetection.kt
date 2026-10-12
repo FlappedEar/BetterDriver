@@ -161,7 +161,9 @@ fun detectLaps(
  * [finishGate]. Both gates count only when crossed forwards, the way the live timer reads a
  * BetterDriver line (left end A, right end B), so the drive back, which crosses them the other
  * way, is never a pass. A start with another start before any finish is an aborted run and is
- * dropped; a finish with no run on is ignored. The passes kept are the start gate's.
+ * dropped; a finish with no run on is ignored. The passes kept are the start gate's. Runs are
+ * held to [LapDetectionOptions.minimumRunSeconds] and [LapDetectionOptions.minimumRunDistanceMeters]
+ * rather than the circuit limits, so a short sprint counts.
  */
 fun detectRuns(
     session: TelemetrySession,
@@ -189,7 +191,11 @@ fun detectRuns(
             measured += lap.copy(referenceIssue = issue, distanceMeters = distance)
         }
     }
-    return rankedSession(session, startGate, starts, measured, options)
+    val runLimits = options.copy(
+        minimumLapSeconds = options.minimumRunSeconds,
+        minimumLapDistanceMeters = options.minimumRunDistanceMeters,
+    )
+    return rankedSession(session, startGate, starts, measured, runLimits)
 }
 
 /** BetterDriver's lines are crossed forwards towards the left of endpoint A to endpoint B: direction +1. */
