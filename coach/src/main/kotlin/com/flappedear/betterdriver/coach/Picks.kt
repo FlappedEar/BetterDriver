@@ -2,6 +2,8 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
+import com.flappedear.betterdriver.timing.geo.MaxLatitude
+import com.flappedear.betterdriver.timing.geo.MaxLongitude
 import com.flappedear.betterdriver.timing.geo.Xy
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -26,6 +28,9 @@ data class CornerPick(
 ) {
     init {
         require(lats.isNotEmpty() && lats.size == lons.size) { "a pick needs a line" }
+        // A damaged file must fail here, where it is read, not later in a frame or a match.
+        require(lats.all { it.isFinite() && it in -MaxLatitude..MaxLatitude }) { "latitude out of range" }
+        require(lons.all { it.isFinite() && it in -MaxLongitude..MaxLongitude }) { "longitude out of range" }
     }
 
     /** The line in [frame]. */
@@ -33,15 +38,23 @@ data class CornerPick(
 
     /**
      * The same corner as [other], picked in another session or on another line: the middle of each
-     * line is within [SamePickMeters] of the other line. Toggling a corner in the analysis uses it, so a
+     * line is within [SamePickMeters] of the other line, running the same way there (the other leg of
+     * a hairpin can be that close, driven the other way). Toggling a corner in the analysis uses it, so a
      * corner picked in one session shows as picked in every session at the track.
      */
     fun sameCorner(other: CornerPick): Boolean {
         val frame = LocalFrame(GeoPoint(lats.first(), lons.first()))
         val a = line(frame)
         val b = other.line(frame)
-        return nearest(b, a[a.size / 2]).distance <= SamePickMeters &&
-            nearest(a, b[b.size / 2]).distance <= SamePickMeters
+        return near(a, b) && near(b, a)
+    }
+
+    /** The middle of [line] is within [SamePickMeters] of [other], running the same way. */
+    private fun near(line: List<Xy>, other: List<Xy>): Boolean {
+        val i = line.size / 2
+        val n = nearest(other, line[i])
+        val heading = line[minOf(i + 1, line.size - 1)] - line[maxOf(i - 1, 0)]
+        return n.distance <= SamePickMeters && sameWay(n.direction, heading)
     }
 }
 
@@ -78,10 +91,13 @@ fun pickedCorners(map: CornerMap, frame: LocalFrame, picks: List<CornerPick>): S
         val heading = pointAt(map.path, c.apexAt + ApexHeadingMeters) - pointAt(map.path, c.apexAt - ApexHeadingMeters)
         lines.any { line ->
             val near = nearest(line, apex)
-            near.distance <= PickMatchMeters && (near.direction == null || near.direction.dot(heading) > 0)
+            near.distance <= PickMatchMeters && sameWay(near.direction, heading)
         }
     }.map { it.number }.toSet()
 }
+
+/** Two directions run the same way; an unknown or zero one (a line of one point) agrees with any. */
+private fun sameWay(a: Xy?, b: Xy): Boolean = a == null || b.length() == 0.0 || a.dot(b) > 0
 
 /** The point of [path] at [meters] along it, interpolated. */
 internal fun pointAt(path: LapTrace, meters: Double): Xy {

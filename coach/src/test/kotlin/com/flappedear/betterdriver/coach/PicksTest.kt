@@ -7,6 +7,7 @@ import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -78,6 +79,35 @@ class PicksTest {
         val picks = listOf(first).toggled(sim.pick(2))
         assertEquals(listOf("Corner 2", "Corner 3"), picks.map { it.name })
         assertEquals(listOf("Corner 3"), picks.toggled(again).map { it.name })
+    }
+
+    @Test
+    fun `the other leg of a hairpin, driven the other way, is not the same corner`() {
+        // The same stretch reversed stands in for a leg 0 m away driven the opposite way.
+        val pick = sim.pick(1)
+        assertFalse(pick.sameCorner(pick.reversed()))
+        assertFalse(pick.reversed().sameCorner(pick))
+        assertEquals(2, listOf(pick).toggled(pick.reversed()).size)
+    }
+
+    @Test
+    fun `a pick with a coordinate out of range or not finite is refused, and its file reads as no picks`() {
+        assertFailsWith<IllegalArgumentException> { CornerPick("C", listOf(95.0), listOf(16.8)) }
+        assertFailsWith<IllegalArgumentException> { CornerPick("C", listOf(52.4), listOf(-181.0)) }
+        assertFailsWith<IllegalArgumentException> { CornerPick("C", listOf(Double.NaN), listOf(16.8)) }
+        assertFailsWith<IllegalArgumentException> { CornerPick("C", listOf(52.4), listOf(Double.POSITIVE_INFINITY)) }
+        val dir = Files.createTempDirectory("picks").toFile()
+        try {
+            val store = CoachPicksStore(dir)
+            store.save("sim", listOf(sim.pick(1)))
+            val f = File(dir, "sim.json")
+            f.writeText(f.readText().replaceFirst(Regex("\"lats\":\\[[-0-9.]+"), "\"lats\":[95.0"))
+            assertTrue(f.readText().contains("95.0"))
+            assertTrue(store.get("sim").isEmpty())
+            assertTrue(store.all().isEmpty())
+        } finally {
+            dir.deleteRecursively()
+        }
     }
 
     @Test
