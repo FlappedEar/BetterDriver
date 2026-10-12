@@ -86,6 +86,20 @@ class TcpLinkTest {
     }
 
     @Test
+    fun `asks for the network again on each connect`() {
+        var asked = 0
+        val network = {
+            asked++
+            TcpNetwork.Default
+        }
+        link = TcpLink(host, port, onData = {}, timing = StreamTiming(firstRetryMs = 100), network = network).also {
+            it.start()
+        }
+        server.accept().close()
+        server.accept().use { waitFor("second connect") { asked == 2 } }
+    }
+
+    @Test
     fun `a silent connection is closed and retried`() {
         start(StreamTiming(firstRetryMs = 100, maxRetryMs = 200, silenceTimeoutMs = 500))
         server.accept().use {

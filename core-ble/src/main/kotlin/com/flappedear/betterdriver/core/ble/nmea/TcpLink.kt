@@ -4,11 +4,23 @@ import com.flappedear.betterdriver.core.ble.LinkState
 import java.io.IOException
 import java.io.InputStream
 import java.net.InetSocketAddress
+import java.net.Socket
 import javax.net.SocketFactory
 
 /** A Wi-Fi connect to a device on the local network answers or is refused well within this. */
 private const val ConnectTimeoutMs = 5_000
 private const val MaxPort = 65_535
+
+/** The network a [TcpLink] connects through. */
+interface TcpNetwork {
+    /** A socket that is not connected yet. */
+    fun createSocket(): Socket
+
+    /** The system's default network. */
+    object Default : TcpNetwork {
+        override fun createSocket(): Socket = SocketFactory.getDefault().createSocket()
+    }
+}
 
 /**
  * Keeps a TCP connection to an NMEA 0183 or RaceChrono DIY ($RC2/$RC3) stream over Wi-Fi
@@ -18,9 +30,11 @@ private const val MaxPort = 65_535
  * (https://racechrono.com/article/2572) and for Wi-Fi GPS receivers; neither has a standard port,
  * so the user enters it.
  *
- * [socketFactory] defaults to the system one. A device that runs its own access point has no
- * internet, and Android may then route sockets over mobile data; the app can pass the Wi-Fi
- * network's factory (android.net.Network.getSocketFactory) to keep the connection on Wi-Fi.
+ * [network] is asked for the network to connect through before every connect, and defaults to the
+ * system's default network. A device that runs its own access point has no internet, and Android may
+ * then route sockets over mobile data; the app can pass the Wi-Fi network (android.net.Network) to
+ * keep the connection on Wi-Fi. Asking again each time matters: after Wi-Fi drops and comes back
+ * Android may give it a new Network, and the old one's sockets no longer work.
  * Needs the INTERNET permission, which the app has.
  */
 class TcpLink(
@@ -29,14 +43,14 @@ class TcpLink(
     onData: (ByteArray) -> Unit,
     onState: (LinkState) -> Unit = {},
     timing: StreamTiming = StreamTiming(),
-    private val socketFactory: SocketFactory = SocketFactory.getDefault(),
+    private val network: () -> TcpNetwork = { TcpNetwork.Default },
 ) : StreamLink("nmea-tcp-link", onData, onState, timing) {
     init {
         require(port in 1..MaxPort) { "port out of range: $port" }
     }
 
     override fun open(): InputStream {
-        val socket = attach(socketFactory.createSocket())
+        val socket = attach(network().createSocket())
         try {
             socket.tcpNoDelay = true
             // Resolves the host here, on the reader thread; an unknown host fails like a refused connect.
