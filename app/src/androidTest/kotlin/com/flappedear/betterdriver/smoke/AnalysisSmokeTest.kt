@@ -126,7 +126,7 @@ class AnalysisSmokeTest {
         val picked = hasContentDescription("Coaching ", substring = true)
         app.waitFor(picked).performScrollTo().assertIsDisplayed()
         app.onAllNodes(picked)[0].performClick()
-        app.waitUntil(LoadTimeoutMs) { app.onAllNodes(picked).fetchSemanticsNodes().isEmpty() }
+        app.waitNamed("the pick to go", LoadTimeoutMs) { app.onAllNodes(picked).fetchSemanticsNodes().isEmpty() }
 
         // The same pick from the focus card's chip, when the session has one.
         if (app.onAllNodesWithText("Coach this next time").fetchSemanticsNodes().isNotEmpty()) {

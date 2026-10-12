@@ -36,6 +36,8 @@ if [ "$crashes" -gt 0 ] || [ "$native" -gt 0 ] || [ "$anrs" -gt 0 ]; then
   status=1
 fi
 if [ "$status" -ne 0 ]; then
+  # Gradle prints only the first line of a failure; the whole stack trace is in the results.
+  find app/build/outputs/androidTest-results -name 'TEST-*.xml' -exec python3 .github/scripts/test-failures.py {} \;
   echo "::error::Emulator smoke tests failed. Logcat and test reports are in the run's artifacts."
 fi
 exit "$status"

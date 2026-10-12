@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.SystemClock
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -104,19 +105,32 @@ fun SmokeRule.waitForText(
     substring: Boolean = false,
     timeoutMs: Long = StepTimeoutMs,
 ): SemanticsNodeInteraction {
-    waitUntil(timeoutMs) { onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty() }
+    waitNamed("\"$text\"", timeoutMs) {
+        onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
+    }
     return onAllNodesWithText(text, substring = substring)[0]
 }
 
 /** Waits until a node matching [matcher] exists and returns the first. */
 fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
-    waitUntil(timeoutMs) { onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    waitNamed(matcher.description, timeoutMs) { onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
     return onAllNodes(matcher)[0]
 }
 
 /** Waits until no node shows [text]. */
 fun SmokeRule.waitUntilGone(text: String, substring: Boolean = false, timeoutMs: Long = StepTimeoutMs) {
-    waitUntil(timeoutMs) { onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isEmpty() }
+    waitNamed("no \"$text\"", timeoutMs) {
+        onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isEmpty()
+    }
+}
+
+/** [waitUntil] that says what it waited for when it times out. */
+fun SmokeRule.waitNamed(what: String, timeoutMs: Long = StepTimeoutMs, condition: () -> Boolean) {
+    try {
+        waitUntil(timeoutMs, condition)
+    } catch (e: ComposeTimeoutException) {
+        throw AssertionError("Timed out after $timeoutMs ms waiting for $what", e)
+    }
 }
 
 /** A tab, of a tab row or the bottom bar, named [title]. */
