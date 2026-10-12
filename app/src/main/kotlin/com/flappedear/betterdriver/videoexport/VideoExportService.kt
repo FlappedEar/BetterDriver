@@ -9,6 +9,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
@@ -23,17 +24,39 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
  * stopped by [VideoExports]; its notification says a video is being made.
  */
 class VideoExportService : Service() {
+    /**
+     * A foreground service alone does not keep the CPU running with the screen off, and the render
+     * would stall: a partial wake lock is held from start to stop. Timed, so a lost stop cannot keep
+     * the phone awake for ever.
+     */
+    private val cpu by lazy {
+        getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "BetterDriver:video-export")
+            .apply { setReferenceCounted(false) }
+    }
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ActionStop) {
+            releaseCpu()
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
             stopSelf()
         } else {
+            cpu.acquire(WakeLockTimeoutMs)
             goForeground()
         }
         // Not restarted by the system: the export it kept alive is gone with the process.
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        releaseCpu()
+        super.onDestroy()
+    }
+
+    private fun releaseCpu() {
+        if (cpu.isHeld) cpu.release()
     }
 
     @Suppress("TooGenericExceptionCaught") // Not allowed to start from the background: the export still runs.
@@ -54,6 +77,7 @@ class VideoExportService : Service() {
             ServiceCompat.startForeground(this, NotificationId, notification(), type)
         } catch (e: RuntimeException) {
             DebugLog.w(Tag, "could not keep the video export in the foreground", e)
+            releaseCpu()
             stopSelf()
         }
     }
@@ -79,6 +103,9 @@ class VideoExportService : Service() {
         private const val Tag = "VideoExportService"
         private const val NotificationId = 3
         private const val ChannelId = "video_export"
+
+        /** Longer than any render; Android's own limit for a media-processing service is 6 h. */
+        private const val WakeLockTimeoutMs = 6 * 60 * 60 * 1_000L
         private const val ActionStop = "com.flappedear.betterdriver.videoexport.STOP"
 
         /** Main thread, while the app is in front (the user just picked where to save). */
