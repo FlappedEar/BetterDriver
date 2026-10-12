@@ -128,12 +128,17 @@ class Backups private constructor(private val context: Context) {
         offer = null
         state = TransferState("Restoring…", running = true)
         io.execute {
-            val result = guarded("Restore failed", onFailed = { afterFailedRestore(o) }) {
+            val result = guarded("Restore failed", onFailed = { restorer.discard(o.backup) }) {
                 refuseWhileRecording()
                 refuseWhileImporting()
                 // Writes made meanwhile wait; values taken before are dropped and [reload] shows the result.
                 val done = AppDataGate.exclusive {
-                    restorer.restore(o.backup, mode, prefs(), ::refuseWhileRecording) { writePrefs(context, it) }
+                    try {
+                        restorer.restore(o.backup, mode, prefs(), ::refuseWhileRecording) { writePrefs(context, it) }
+                    } finally {
+                        // Still inside the hold: no waiting write may land in a half-swapped folder.
+                        if (restorer.pending) finishAfterFailure()
+                    }
                 }
                 main.post(::reload)
                 restoreResultText(done)
@@ -143,17 +148,17 @@ class Backups private constructor(private val context: Context) {
     }
 
     /**
-     * A restore that failed after its commit left the data part restored: finishing it is tried once
-     * more here, and otherwise at the next start ([finishPending]), before anything reads the data.
+     * A restore that failed after its commit left the data part restored. Finishing it is tried once
+     * more; if that fails too, the app shows [unfinished] (the restore-unfinished screen) until
+     * [finishPending] completes it. Called while the restore still holds [AppDataGate].
      */
-    private fun afterFailedRestore(o: RestoreOffer) {
-        restorer.discard(o.backup)
-        if (!restorer.pending) return
+    private fun finishAfterFailure() {
         try {
             restorer.finishPending { writePrefs(context, it) }
             main.post(::reload)
         } catch (e: IOException) {
             DebugLog.e(Tag, "could not finish the restore", e)
+            markUnfinished()
         }
     }
 
@@ -232,6 +237,19 @@ class Backups private constructor(private val context: Context) {
         @Volatile
         private var pendingChecked = false
 
+        /**
+         * True while a committed restore is not finished in this process: the app shows the
+         * restore-unfinished screen instead of anything that reads the data.
+         */
+        var unfinished by mutableStateOf(false)
+            private set
+
+        @Synchronized
+        private fun markUnfinished() {
+            pendingChecked = false
+            Handler(Looper.getMainLooper()).post { unfinished = true }
+        }
+
         fun get(context: Context): Backups = instance ?: synchronized(this) {
             instance ?: Backups(context.applicationContext).also { instance = it }
         }
@@ -241,6 +259,10 @@ class Backups private constructor(private val context: Context) {
          * half-restored data. Call before the setup, tracks or sessions are read; usually it only
          * looks for the marker file. Returns false when it still fails after a few tries: the data
          * is then part old, part restored, nothing may read it, and the marker stays for the next try.
+         */
+        /**
+         * Main thread. Also the Try again of the restore-unfinished screen: once finished, data
+         * already loaded in this process is read again.
          */
         @Synchronized
         fun finishPending(context: Context): Boolean {
@@ -252,12 +274,14 @@ class Backups private constructor(private val context: Context) {
                 try {
                     if (restorer.finishPending { writePrefs(context, it) }) {
                         DebugLog.i(Tag, "finished a restore the app was stopped in")
+                        instance?.main?.post { instance?.reload() }
                     }
                     pendingChecked = true
                 } catch (e: IOException) {
                     DebugLog.e(Tag, "could not finish the restore (try $tries)", e)
                 }
             }
+            unfinished = !pendingChecked
             return pendingChecked
         }
 

@@ -174,15 +174,18 @@ class Tracks private constructor(private val context: Context) {
     fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
         val references = CoachReferenceStore(coachReferencesDir(context))
         val picks = coachPicks(context)
-        references.delete(id)
-        try {
-            picks.save(id, emptyList())
-        } catch (e: IOException) {
-            DebugLog.w(Tag, "deleting coach picks for $id failed", e)
+        // Waits for a restore (FBBD-156), so the delete is not lost in its swap.
+        val gone = AppDataGate.write {
+            references.delete(id)
+            try {
+                picks.save(id, emptyList())
+            } catch (e: IOException) {
+                DebugLog.w(Tag, "deleting coach picks for $id failed", e)
+            }
+            val coachGone = references.get(id) == null && picks.get(id).isEmpty()
+            if (coachGone) store.delete(id)
+            coachGone && store.get(id) == null
         }
-        val coachGone = references.get(id) == null && picks.get(id).isEmpty()
-        if (coachGone) store.delete(id)
-        val gone = coachGone && store.get(id) == null
         if (gone && draft?.track?.id == id) draft = null
         if (!gone) DebugLog.w(Tag, "deleting track $id failed")
         publish()

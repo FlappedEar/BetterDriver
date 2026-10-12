@@ -61,7 +61,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
             BetterDriverTheme(darkTheme = true) {
-                BetterDriverApp(recorder = recorder, sessions = sessions)
+                // A restore that failed half way in this process blocks the app until it is finished.
+                if (Backups.unfinished) {
+                    RestoreUnfinished(onRetry = { Backups.finishPending(this@MainActivity) })
+                } else {
+                    BetterDriverApp(recorder = recorder, sessions = sessions)
+                }
             }
         }
     }
