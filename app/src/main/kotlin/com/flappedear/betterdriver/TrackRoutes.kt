@@ -47,7 +47,7 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
     )
 }
 
-/** The track editor (FBBD-56); asks before dropping unsaved lines. */
+/** The track editor (FBBD-56); asks before dropping unsaved lines, or a track proposed from a session (FBBD-151). */
 @Composable
 internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String) {
     var data by remember(id) { mutableStateOf<EditorData?>(null) }
@@ -62,7 +62,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
-    val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions) }
+    val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions, loaded.stored, loaded.proposed) }
     var leaving by remember { mutableStateOf(false) }
     val back: () -> Unit = {
         when {
@@ -89,7 +89,10 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         AlertDialog(
             onDismissRequest = { leaving = false },
             title = { Text("Discard changes?") },
-            text = { Text("The lines you moved are not saved.") },
+            text = {
+                val what = if (state.proposed) "The track made from your session is" else "The lines you moved are"
+                Text("$what not saved.")
+            },
             confirmButton = {
                 TextButton(onClick = {
                     leaving = false

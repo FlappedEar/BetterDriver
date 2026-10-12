@@ -87,7 +87,11 @@ class CoachService : Service() {
         val reference = track?.takeIf { it.timeable && a.settings.verbosity >= Verbosity.Focus }?.let {
             CoachLibrary(SessionStore(sessionsDir(this)), coachReferencesDir(this)).reference(it, exclude = a.id)
         }
-        a.coach = CoachSession(a.settings, track, reference)
+        // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
+        val picks = track?.takeIf { it.timeable && a.settings.verbosity >= Verbosity.Focus }
+            ?.let { coachPicks(this).get(it.id) }.orEmpty()
+        if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
+        a.coach = CoachSession(a.settings, track, reference, picks)
         updateStatus(a, a.coach?.status ?: CoachStatus.None)
     }
 
