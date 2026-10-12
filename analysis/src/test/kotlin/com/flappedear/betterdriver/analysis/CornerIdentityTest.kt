@@ -111,4 +111,22 @@ class CornerIdentityTest {
         val addedIds = added.map { it.id }
         assertTrue(again.segments!!.segments.any { it.type == TrackSegmentType.Corner && it.id in addedIds })
     }
+
+    @Test
+    fun `a track changed between a circuit and a point-to-point course gets a revision it can use`() {
+        val sim = SimTrack.rectangle()
+        val session = telemetrySessionOf(sim.session(5), sim.track())
+        val r1 = assertNotNull(analyzeSession(session).identity)
+        // The identity as a point-to-point course left it; the session is driven as a circuit.
+        val stale = r1.copy(closed = false)
+        val analysis = analyzeSession(session, identity = stale)
+        val r2 = assertNotNull(analysis.identity)
+        assertTrue(analysis.identified)
+        assertEquals(2, r2.number)
+        assertTrue(r2.closed)
+        assertEquals(r1.corners.map { it.id }, r2.corners.map { it.id })
+        for (c in r1.corners) assertEquals(c.id, r2.previousIds[c.id])
+        // From then on the new revision is kept.
+        assertSame(r2, analyzeSession(session, identity = r2).identity)
+    }
 }

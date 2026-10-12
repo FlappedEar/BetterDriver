@@ -109,6 +109,48 @@ class TrackRevisionTest {
     }
 
     @Test
+    fun `a stretch off the track across the start-finish line counts as one`() {
+        /** [lap] with the points within [half] metres either side of the line [out] metres outwards. */
+        fun offAtLine(half: Double, out: Double = 40.0): List<Xy> {
+            val wide = lap(offset = out)
+            return lap().mapIndexed { i, p -> if (i * 2.0 < half || circuit.length - i * 2.0 <= half) wide[i] else p }
+        }
+        // About 20 m before the line and 18 m after it: neither half is 30 m, together they are.
+        val across = offAtLine(20.0)
+        assertFalse(first.fits(circuit.frame, across))
+        assertEquals(2, first.revised(circuit.frame, across, shapes).number)
+        // 10 m either side, 20 m in all: still the same track.
+        assertTrue(first.fits(circuit.frame, offAtLine(10.0)))
+    }
+
+    @Test
+    fun `a circuit made a point-to-point course gets the next revision, keeping its corner ids`() {
+        // The same lap, now timed from a start to a separate finish: open at the line.
+        val open = listOf(
+            SegmentShape(SegmentKind.Straight, 0.0, bend1.start),
+            SegmentShape(SegmentKind.Corner, bend1.start, bend1.endInclusive),
+            SegmentShape(SegmentKind.Straight, bend1.endInclusive, bend2.start),
+            SegmentShape(SegmentKind.Corner, bend2.start, bend2.endInclusive),
+            SegmentShape(SegmentKind.Straight, bend2.endInclusive, circuit.length - 2.0),
+        )
+        assertTrue(first.fits(circuit.frame, lap()))
+        val course = first.revised(circuit.frame, lap(), open, closed = false)
+        assertEquals(2, course.number)
+        assertFalse(course.closed)
+        assertEquals(listOf("c1", "c2"), course.corners.map { it.id })
+        assertEquals("c1", course.previousIds["c1"])
+        assertEquals("c2", course.previousIds["c2"])
+        assertEquals(listOf("s1"), course.segments.filter { it.id == "s1" }.map { it.id })
+        // Made a circuit again: the next revision, closed, with the same corners.
+        val circuitAgain = course.revised(circuit.frame, lap(), shapes, closed = true)
+        assertEquals(3, circuitAgain.number)
+        assertTrue(circuitAgain.closed)
+        assertEquals(listOf("c1", "c2"), circuitAgain.corners.map { it.id })
+        // An unchanged course keeps its revision.
+        assertSame(course, course.revised(circuit.frame, lap(), open, closed = false))
+    }
+
+    @Test
     fun `segments are placed on another lap by position`() {
         val other = lap(offset = 4.0)
         val along = DoubleArray(other.size).also { a ->

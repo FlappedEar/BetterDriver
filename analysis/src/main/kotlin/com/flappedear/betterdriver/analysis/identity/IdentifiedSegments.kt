@@ -34,7 +34,8 @@ private class AxisPath(axis: ProgressAxis) {
 /**
  * The segments of the fastest lap's [axis] (FBBD-172): [identity]'s, placed on the axis, when the lap
  * drives its shape; otherwise the [proposals] made on the axis, named by the identity's next revision
- * (or its first, without one). Null without either.
+ * (or its first, without one). A track that became a circuit or a point-to-point course since its
+ * identity was made gets the next revision with the axis's topology. Null without either.
  */
 fun identifySegments(
     axis: ProgressAxis,
@@ -62,7 +63,7 @@ private fun fromProposals(
         val kind = if (it.type == TrackSegmentType.Corner) SegmentKind.Corner else SegmentKind.Straight
         SegmentShape(kind, it.start.progressMeters, it.end.progressMeters, maxOf(1, it.chainedCorners))
     }
-    val made = identity?.revised(path.frame, path.points, shapes, path.along)
+    val made = identity?.revised(path.frame, path.points, shapes, path.along, axis.closed)
         ?: TrackRevision.first(path.frame, path.points, axis.closed, shapes, path.along)
     // The lap fits the identity but its corners could not be placed in order: the proposals as they are.
     val named = made.takeIf { it !== identity && it.segments.size == proposals.size }

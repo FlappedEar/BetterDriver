@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.identity.IdentityMigrations
 import com.flappedear.betterdriver.analysis.identity.migrateTrackIdentities
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
@@ -131,5 +132,55 @@ class IdentityMigrationTest {
         assertEquals(after, tracks.all())
         // Read back as a new store, as after a restart.
         assertEquals(after, TrackStore(trackDir).all())
+    }
+
+    @Test
+    fun `a track added later gets its identity at the next refresh, and an unchanged refresh does nothing`() {
+        val trackDir = File(tmp, "tracks")
+        oldTrackFile(trackDir, rectangle.track())
+        val tracks = TrackStore(trackDir)
+        val sessions = SessionStore(File(tmp, "sessions"))
+        rectangle.record(sessions, tracks.all().single(), laps = 3, startUtc = 1_000)
+        val migrations = IdentityMigrations()
+        assertEquals(listOf("rectangle"), migrations.runIfChanged(tracks, sessions))
+
+        // Nothing new: not run, so a session that would now be read is not.
+        var asked = 0
+        assertEquals(emptyList(), migrations.runIfChanged(tracks, sessions) { asked++ > 0 })
+        assertEquals(0, asked)
+
+        // A track imported (or restored) after the first run, with a session recorded there.
+        oldTrackFile(trackDir, hairpin.track())
+        hairpin.record(sessions, tracks.get("hairpin"), laps = 3, startUtc = 2_000)
+        assertEquals(listOf("hairpin"), migrations.runIfChanged(tracks, sessions))
+        assertNotNull(tracks.get("hairpin")?.identity)
+
+        // A run stopped part way is run again at the next refresh.
+        val later = SimTrack.rectangle("later", GeoPoint(48.0, 11.0))
+        oldTrackFile(trackDir, later.track())
+        later.record(sessions, tracks.get("later"), laps = 3, startUtc = 3_000)
+        assertEquals(emptyList(), migrations.runIfChanged(tracks, sessions) { true })
+        assertNull(tracks.get("later")?.identity)
+        assertEquals(listOf("later"), migrations.runIfChanged(tracks, sessions))
+    }
+
+    @Test
+    fun `a track changed to a point-to-point course is given an identity of its new kind`() {
+        val trackDir = File(tmp, "tracks")
+        oldTrackFile(trackDir, rectangle.track())
+        val tracks = TrackStore(trackDir)
+        val sessions = SessionStore(File(tmp, "sessions"))
+        rectangle.record(sessions, tracks.all().single(), laps = 3, startUtc = 1_000)
+        migrateTrackIdentities(tracks, sessions)
+        val track = assertNotNull(tracks.get("rectangle"))
+        val r1 = assertNotNull(track.identity)
+        // As the editor would leave it if the circuit had been a point-to-point course: the identity is
+        // of the other kind, so it is made again from the sessions, keeping the corner ids.
+        assertNotNull(tracks.updateIdentity(track.id, r1, r1.copy(closed = false)))
+        assertEquals(listOf("rectangle"), migrateTrackIdentities(tracks, sessions))
+        val r2 = assertNotNull(tracks.get("rectangle")?.identity)
+        assertTrue(r2.closed)
+        assertEquals(2, r2.number)
+        assertEquals(r1.corners.map { it.id }, r2.corners.map { it.id })
     }
 }

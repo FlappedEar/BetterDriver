@@ -26,7 +26,14 @@ fun identityFrom(track: Track, data: SessionData): TrackRevision? =
     analyzeSession(telemetrySessionOf(data, track), identity = track.identity).identity
 
 /**
- * Gives every stored track that can time laps and has no corner identity yet one (FBBD-172), from the
+ * Whether [this] track needs a corner identity made: it can time laps and has none, or its identity is
+ * of the other topology (the track was changed between a circuit and a point-to-point course since).
+ */
+val Track.needsIdentity: Boolean
+    get() = timeable && identity.let { it == null || it.closed == pointToPoint }
+
+/**
+ * Gives every stored track that [needsIdentity] one (FBBD-172), from the
  * newest of its sessions whose fastest lap splits into corners and straights: the sessions it
  * recorded it was at, then those whose positions reach it ([trackAlong]). Tracks keep their lines,
  * revision and update time; sessions are only read, never written. At most [MaxIdentitySessions]
@@ -39,7 +46,7 @@ fun migrateTrackIdentities(
     stop: () -> Boolean = { false },
 ): List<String> {
     val saved = tracks.all()
-    val missing = saved.filter { it.identity == null && it.timeable }.associateBy { it.id }.toMutableMap()
+    val missing = saved.filter { it.needsIdentity }.associateBy { it.id }.toMutableMap()
     val tried = HashMap<String, Int>()
     val done = mutableListOf<String>()
     val listed = sessions.list()
@@ -49,8 +56,8 @@ fun migrateTrackIdentities(
         val (track, data) = sessionAt(sessions, summary.dir, saved, missing) ?: continue
         val identity = track.takeIf { tried.merge(it.id, 1, Int::plus)!! <= MaxIdentitySessions }
             ?.let { identityFrom(it, data) }
-        val stored = identity?.let { tracks.updateIdentity(track.id, null, it) }
-        if (stored?.identity != null) {
+        val stored = identity?.let { tracks.updateIdentity(track.id, track.identity, it) }
+        if (stored != null && !stored.needsIdentity) {
             missing.remove(track.id)
             if (stored.identity == identity) done += track.id
         }
@@ -89,4 +96,31 @@ private fun readOrNull(sessions: SessionStore, dir: File, samples: Boolean): Ses
     null
 } catch (_: RuntimeException) {
     null
+}
+
+/**
+ * Runs [migrateTrackIdentities] again only when what it looks at has changed (FBBD-172): the tracks
+ * that need an identity (by id and revision) or the finished sessions. A run that was stopped is not
+ * counted, so the next one picks it up. For the app's background refresh, which runs after every
+ * track or session change: a new, imported or restored track gets its identity without a restart,
+ * and a refresh with nothing new costs two listings.
+ */
+class IdentityMigrations {
+    private var lastKey: Any? = null
+
+    @Synchronized
+    fun runIfChanged(tracks: TrackStore, sessions: SessionStore, stop: () -> Boolean = { false }): List<String> {
+        val key = migrationKey(tracks, sessions)
+        if (key == lastKey) return emptyList()
+        val done = migrateTrackIdentities(tracks, sessions, stop)
+        // Keyed by what is there after the run, so the identities it stored do not count as a change.
+        lastKey = if (stop()) null else migrationKey(tracks, sessions)
+        return done
+    }
+
+    private fun migrationKey(tracks: TrackStore, sessions: SessionStore): Any {
+        val needing = tracks.all().filter { it.needsIdentity }.map { it.id to it.revision }.toSet()
+        val finished = sessions.list().filter { it.state != SessionState.RECORDING }.map { it.id }.toSet()
+        return needing to finished
+    }
 }

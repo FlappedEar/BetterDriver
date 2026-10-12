@@ -153,15 +153,18 @@ data class TrackRevision(
      * [first]) with the ids carried over. Each segment of this revision is placed on [path] by its
      * middle, or a quarter in from either end when its middle is no longer on the track; a new
      * segment keeps the id of the one segment of its kind placed in it, and [previousIds] maps every
-     * segment that could be placed to the new segment it is in.
+     * segment that could be placed to the new segment it is in. A track that became a circuit or a
+     * point-to-point course ([closed] differs from this revision's) always makes the next revision,
+     * with its new topology and the ids carried over the same way.
      */
     fun revised(
         frame: LocalFrame,
         path: List<Xy>,
         shapes: List<SegmentShape>,
         along: DoubleArray? = null,
+        closed: Boolean = this.closed,
     ): TrackRevision {
-        if (fits(frame, path)) return this
+        if (closed == this.closed && fits(frame, path)) return this
         val line = Polyline(path, closed, along)
         val oldLine = Centreline(this, frame)
         // Each old segment on the new path: its middle, or a quarter in from either end when the
@@ -383,17 +386,20 @@ private open class Polyline(val points: List<Xy>, val closed: Boolean, along: Do
 
     /** Whether a stretch [RevisionChangeRunMeters] or longer is more than [RevisionChangeMeters] from [other]. */
     fun leaves(other: Polyline): Boolean {
-        var runStart: Double? = null
+        val off = points.map { other.distanceTo(it) > RevisionChangeMeters }
+        var runStart = -1
         for (i in points.indices) {
-            val off = other.distanceTo(points[i]) > RevisionChangeMeters
-            val start = runStart
-            when {
-                !off -> runStart = null
-                start == null -> runStart = along[i]
-                along[i] - start >= RevisionChangeRunMeters -> return true
+            if (!off[i]) {
+                runStart = -1
+            } else {
+                if (runStart < 0) runStart = i
+                if (along[i] - along[runStart] >= RevisionChangeRunMeters) return true
             }
         }
-        return false
+        // On a loop, a stretch across the start/finish line is the run at the end and the one at the start.
+        val headEnd = off.indexOfFirst { !it } - 1
+        val wraps = closed && runStart > 0 && headEnd >= 0
+        return wraps && lengthMeters - along[runStart] + along[headEnd] >= RevisionChangeRunMeters
     }
 }
 
