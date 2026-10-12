@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.analysis.data.TimingGateType
 import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackLine
 
 private const val MicrosPerSecond = 1_000_000.0
@@ -29,10 +30,11 @@ private const val SignCheckHalfSeconds = 0.5
  * analysis channel holding the samples that carry it, in time order, with times in seconds from
  * the session's first sample. A sample at the same time as the one before is dropped. A position
  * of exactly 0°, 0° (no fix) is no data. [startFinish] (the track's start/finish line) becomes
- * the start gate; without one no laps are found.
+ * the start gate; without one no laps are found. [finish], a point-to-point track's finish line
+ * (FBBD-155), becomes a finish gate, and the laps are then the runs from start to finish.
  */
 @Suppress("CyclomaticComplexMethod")
-fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?): TelemetrySession {
+fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: TrackLine? = null): TelemetrySession {
     val sets = data.sampleSets.sortedBy { it.tMicros }
     val origin = sets.firstOrNull()?.tMicros ?: 0L
     val times = HashMap<Int, MutableList<Double>>()
@@ -65,17 +67,23 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?): TelemetrySes
         Aliases.LONGITUDINAL_ACCELERATION to ForwardAcceleration,
     ).filterValues { it in channels }
     val gates = listOfNotNull(
-        startFinish?.let {
-            TimingGate(
-                TimingGateType.Start,
-                "Start/finish",
-                GeoCoordinate(it.left.lat, it.left.lon),
-                GeoCoordinate(it.right.lat, it.right.lon),
-            )
-        },
+        startFinish?.let { gate(TimingGateType.Start, "Start/finish", it) },
+        finish?.let { gate(TimingGateType.Finish, "Finish", it) },
     )
     return TelemetrySession(channels, aliases, gates)
 }
+
+/** [track]'s session as analysis input: its start/finish line and, on a point-to-point track, its finish. */
+fun telemetrySessionOf(data: SessionData, track: Track): TelemetrySession =
+    telemetrySessionOf(data, track.startFinish, track.finish?.takeIf { track.pointToPoint })
+
+/** A BetterDriver line as an analysis gate: endpoint A is its left end, so forwards is direction +1. */
+private fun gate(type: TimingGateType, name: String, line: TrackLine) = TimingGate(
+    type,
+    name,
+    GeoCoordinate(line.left.lat, line.left.lon),
+    GeoCoordinate(line.right.lat, line.right.lon),
+)
 
 /**
  * [AccelerationX] as [ForwardAcceleration], or null without it or a speed. Its sign is taken from

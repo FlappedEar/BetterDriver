@@ -160,15 +160,15 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
     }
     val saved = tracks.all()
     val track = trackFor(data, saved) ?: return noTrack(data, saved, circuits)
-    val session = telemetrySessionOf(data, track.startFinish)
+    val session = telemetrySessionOf(data, track)
     val analysis = analyzeSession(session)
     if (analysis.laps.status != LapSessionStatus.Available || analysis.laps.timedLaps.isEmpty()) {
-        return Load.Failed(
-            AnalysisState.Unavailable(
-                "No complete lap at ${track.displayName}: the car has to cross the start/finish line " +
-                    "at least twice.",
-            ),
-        )
+        val why = if (track.pointToPoint) {
+            "No complete run at ${track.displayName}: a run goes from the start line to the finish line."
+        } else {
+            "No complete lap at ${track.displayName}: the car has to cross the start/finish line at least twice."
+        }
+        return Load.Failed(AnalysisState.Unavailable(why))
     }
     return Load.Done(Loaded(track.displayName, session, analysis, data.info.startUtcMillis, track, saved))
 }

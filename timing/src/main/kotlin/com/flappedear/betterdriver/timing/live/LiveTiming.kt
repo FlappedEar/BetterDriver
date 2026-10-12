@@ -25,12 +25,15 @@ data class LiveTimingState(
     val bestMillis: Long?,
     val theoreticalBestMillis: Long?,
     val sectors: List<LiveSector>,
+    /** The track is point to point (FBBD-155): laps are runs, and [lapMillis] is null between runs. */
+    val pointToPoint: Boolean = false,
 ) {
     companion object {
-        fun empty(sectorCount: Int) = LiveTimingState(
+        fun empty(sectorCount: Int, pointToPoint: Boolean = false) = LiveTimingState(
             lapNumber = 0, lapMillis = null, deltaSeconds = null, predictedMillis = null,
             lastMillis = null, bestMillis = null, theoreticalBestMillis = null,
-            sectors = List(sectorCount) { LiveSector(sectorName(it), null, null, current = it == 0) },
+            sectors = List(sectorCount) { LiveSector(sectorName(it), null, null, current = it == 0 && !pointToPoint) },
+            pointToPoint = pointToPoint,
         )
     }
 }
@@ -42,6 +45,9 @@ fun sectorName(index: Int) = "S${index + 1}"
  * FBBD-60). Pure and single-threaded: the app feeds it fixes from the recorder's listener thread
  * and shows [state]. Replaying a recorded session through it gives the same laps, so it also
  * re-times a session after its lines are edited (FBBD-56).
+ *
+ * On a point-to-point track (FBBD-155) each run is a lap: the delta runs against the best run, and
+ * between runs there is no lap time or delta while the last run's sectors stay on the strip.
  */
 class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
     private val timer = LapTimer(track, minLapSeconds)
@@ -50,7 +56,7 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
     private var reference: DeltaReference? = null
     private var cursor: DeltaReference.Cursor? = null
 
-    // Path of the lap being driven, from its start/finish crossing, for use as the next reference.
+    // Path of the lap being driven after its start crossing ([pathStart]), for use as the next reference.
     private val pathPoints = mutableListOf<Xy>()
     private val pathTimes = mutableListOf<Long>()
 
@@ -58,7 +64,7 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
     private val vsBestLap = arrayOfNulls<Long>(timer.sectorCount)
     private val vsBestSector = arrayOfNulls<Long>(timer.sectorCount)
 
-    var state: LiveTimingState = LiveTimingState.empty(timer.sectorCount)
+    var state: LiveTimingState = LiveTimingState.empty(timer.sectorCount, timer.pointToPoint)
         private set
 
     fun update(fix: Fix): LiveTimingState {
@@ -66,7 +72,8 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
         for (e in events) {
             when (e) {
                 is LapEvent.SectorDone -> onSectorDone(e)
-                is LapEvent.LapDone -> onLapDone(e.lap)
+                is LapEvent.LapDone -> onLapDone(e)
+                is LapEvent.RunStarted -> onRunStarted()
             }
         }
         val p = timer.frame.toXy(fix.lat, fix.lon)
@@ -84,20 +91,17 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
         vsBestSector[e.index] = t?.let { s -> book.bestSectors[e.index]?.let { s - it } }
     }
 
-    private fun onLapDone(lap: Lap) {
+    private fun onLapDone(e: LapEvent.LapDone) {
+        val lap = e.lap
         val newBest = book.add(lap)
-        val start = timer.lapStartPoint
-        if (newBest && start != null) {
-            // The lap's path runs from the previous crossing to this one; both ends are on the line.
-            val previousStart = pathStart
-            if (previousStart != null) {
-                reference = DeltaReference(
-                    listOf(previousStart) + pathPoints + start,
-                    listOf(0L) + pathTimes + lap.timeMicros,
-                )
-            }
+        val start = pathStart
+        val end = e.endPoint
+        if (newBest && start != null && end != null) {
+            // The lap's path runs from its start crossing to its end crossing; both ends are on a line.
+            reference = DeltaReference(listOf(start) + pathPoints + end, listOf(0L) + pathTimes + lap.timeMicros)
         }
-        pathStart = start
+        // On a circuit the next lap starts where this one ended; a point-to-point run at [onRunStarted].
+        pathStart = timer.lapStartPoint
         pathPoints.clear()
         pathTimes.clear()
         heldVsBestLap = vsBestLap.copyOf()
@@ -105,6 +109,17 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
         holdUntilMicros = lap.endMicros + SectorHoldMicros
         vsBestLap.fill(null)
         vsBestSector.fill(null)
+        cursor = reference?.Cursor()
+    }
+
+    /** A point-to-point run started: its path, sectors and delta start afresh, also after an aborted run. */
+    private fun onRunStarted() {
+        pathStart = timer.lapStartPoint
+        pathPoints.clear()
+        pathTimes.clear()
+        vsBestLap.fill(null)
+        vsBestSector.fill(null)
+        holdUntilMicros = Long.MIN_VALUE
         cursor = reference?.Cursor()
     }
 
@@ -123,18 +138,20 @@ class LiveTiming(track: Track, minLapSeconds: Double = DefaultMinLapSeconds) {
         val predicted = best?.let { b -> delta?.let { ((b.timeMicros + it) / MicrosPerMilli).roundToLong() } }
         return LiveTimingState(
             lapNumber = timer.lapNumber,
-            lapMillis = lapMicros / MicrosPerMilli,
+            lapMillis = if (timer.running) lapMicros / MicrosPerMilli else null,
             deltaSeconds = delta?.let { it / MicrosPerSecond },
             predictedMillis = predicted,
             lastMillis = book.laps.lastOrNull()?.timeMillis,
             bestMillis = best?.timeMillis,
             theoreticalBestMillis = book.theoreticalBestMicros?.let { (it + MicrosPerMilli / 2) / MicrosPerMilli },
             sectors = sectors(now),
+            pointToPoint = timer.pointToPoint,
         )
     }
 
     private fun sectors(now: Long): List<LiveSector> {
-        val holding = now < holdUntilMicros && timer.currentSector == 0
+        // Between point-to-point runs the last run's sectors stay until the next run starts.
+        val holding = timer.currentSector == 0 && (now < holdUntilMicros || !timer.running)
         val lapSectors = if (holding) heldVsBestLap else vsBestLap
         val bestSectors = if (holding) heldVsBestSector else vsBestSector
         return List(timer.sectorCount) { i ->

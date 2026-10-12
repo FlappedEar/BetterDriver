@@ -83,7 +83,9 @@ fun trackFrame(track: Track) = LocalFrame(track.center)
 /**
  * Laps of a saved session (FBBD-91): its GNSS fixes replayed through the [LapTimer] for [track],
  * as the track screen timed them live. Works for laps from any session of the track, so the tablet
- * review and the analysis (Phase 3) read laps the same way. [track] needs a start/finish line.
+ * review and the analysis (Phase 3) read laps the same way. [track] needs a start/finish line. On
+ * a point-to-point track (FBBD-155) the laps are the runs from start to finish, each with its own
+ * path; aborted runs and the drives back are left out.
  */
 fun replayLaps(
     sessionId: String,

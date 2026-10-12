@@ -84,7 +84,7 @@ class CoachService : Service() {
     private fun track(data: Bundle) {
         val a = active ?: return
         val track = data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) }
-        val reference = track?.takeIf { it.timeable && a.settings.verbosity >= Verbosity.Focus }?.let {
+        val reference = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }?.let {
             CoachLibrary(SessionStore(sessionsDir(this)), coachReferencesDir(this)).reference(it, exclude = a.id)
         }
         a.coach = CoachSession(a.settings, track, reference)

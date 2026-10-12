@@ -122,7 +122,14 @@ class TelemetryChannel(
 }
 
 /** What a timing line in a recording is for. */
-enum class TimingGateType { Start, Split, Unknown }
+enum class TimingGateType {
+    Start,
+    Split,
+    Unknown,
+
+    /** The finish of a point-to-point track (FBBD-155); the Start gate is then its start. */
+    Finish,
+}
 
 /** A timing line between two endpoints. */
 data class TimingGate(
