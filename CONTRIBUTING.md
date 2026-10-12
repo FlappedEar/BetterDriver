@@ -6,3 +6,6 @@
 - Merge only when CI is green on the latest commit, the Codex review has run,
   and every Codex comment is fixed or answered.
 - Run `./gradlew build detekt` before pushing.
+- CI also runs the emulator smoke tests (app/src/androidTest, FBBD-161) on an
+  Android 14 emulator. To run them locally, start an emulator and run
+  `./gradlew :app:connectedDebugAndroidTest`.
