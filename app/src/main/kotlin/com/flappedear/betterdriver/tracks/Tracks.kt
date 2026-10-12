@@ -28,6 +28,8 @@ import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.circuits.CircuitRefresh
+import com.flappedear.betterdriver.timing.circuits.MaxCircuitListChars
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
@@ -36,9 +38,11 @@ import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.detectTrack
+import com.flappedear.betterdriver.update.HttpNetwork
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Sessions the editor loads for one track, newest first: enough to check lines, bounded in memory. */
 private const val MaxEditorSessions = 8
@@ -125,6 +129,31 @@ class Tracks private constructor(private val context: Context) {
         val at = known?.first ?: newestSessionStart()
         val found = at?.let { Here(it, detectTrack(it, store.all(), directory.list), known?.second) }
         main.post { here = found }
+    }
+
+    /** The circuit list was checked for a newer copy on GitHub in this process. */
+    private val circuitsChecked = AtomicBoolean(false)
+
+    /**
+     * Fetches a newer circuit list from the repo on GitHub, once per process (FBBD-79), on a thread of
+     * its own so a slow network never holds up the tracks; with a newer list the place is found again.
+     * Not while [recording]: nothing goes on the network then. Offline, the bundled or cached list stays.
+     */
+    fun refreshCircuits(recording: Boolean) {
+        if (recording || !circuitsChecked.compareAndSet(false, true)) return
+        // After the bundled and cached lists are loaded, so a fetched list is compared with them.
+        io.execute {
+            Thread({
+                val network = HttpNetwork("BetterDriver/${BuildConfig.VERSION_NAME} (Android)")
+                val result = directory.refresh { url ->
+                    val r = network.get(url, maxBytes = MaxCircuitListChars)
+                    if (!r.ok) throw IOException("HTTP ${r.code}")
+                    r.body.decodeToString()
+                }
+                DebugLog.i(Tag, "circuit list: $result, revision ${directory.list.revision}")
+                if (result == CircuitRefresh.Updated || result == CircuitRefresh.NotSaved) locate()
+            }, "circuits-refresh").start()
+        }
     }
 
     /** The circuit list, once loaded (an empty one before). */

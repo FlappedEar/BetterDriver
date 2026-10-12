@@ -71,7 +71,8 @@ private fun tileLabel(ch: TrackChannel, timing: LiveTimingState?): String =
     if (ch == TrackChannel.LAP && timing?.pointToPoint == true) "Run" else ch.label
 
 private fun tileValue(ch: TrackChannel, live: LiveSnapshot?, timing: LiveTimingState?): String? = when (ch) {
-    TrackChannel.SPEED -> live?.speedKmh?.roundToInt()?.toString()
+    // The receiver's last speed stays known after the fix is lost; it is not the car's speed now.
+    TrackChannel.SPEED -> live?.takeIf { it.gnss == GnssState.Ok }?.speedKmh?.roundToInt()?.toString()
     TrackChannel.G -> live?.gCombined?.let { String.format(Locale.ROOT, "%.2f", it) }
     TrackChannel.LAP -> timing?.lapNumber?.takeIf { it > 0 }?.toString()
 }

@@ -88,6 +88,14 @@ fun followStep(positionMillis: Long, targetMillis: Long, rate: Double, playing: 
     }
 }
 
+/**
+ * Whether a player last sent to [lastMillis] (null: not yet, or the exact frame is wanted again)
+ * must seek to [targetMillis]. Not `abs(target - Long.MIN_VALUE)`: that overflows, and at media
+ * time 0 it is negative, so the first frame of a clip was never sought exactly.
+ */
+fun seekDue(targetMillis: Long, lastMillis: Long?): Boolean =
+    lastMillis == null || abs(targetMillis - lastMillis) > PausedToleranceMillis
+
 /** The review cursor after [elapsedNanos] of real time at [speed]; stops at the end of the lap. */
 fun advance(lapMicros: Long, elapsedNanos: Long, speed: Double, lengthMicros: Long): Long =
     (lapMicros + (elapsedNanos / NanosPerMicro * speed).toLong()).coerceIn(0, lengthMicros)

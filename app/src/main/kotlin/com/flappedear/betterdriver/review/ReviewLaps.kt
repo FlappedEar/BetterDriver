@@ -66,7 +66,9 @@ class ReviewLaps private constructor(context: Context) {
         sessions.forEachIndexed { i, s ->
             val known = cache[s.id]
             if (known == null || known.stale(saved, videoStamp(s.dir))) cache[s.id] = read(s, saved)
-            post(ReviewLoad.Loading(i + 1, sessions.size))
+            // Once laps are shown, a reload keeps them on screen: back on Loading, the review would
+            // leave and forget the laps picked (after a rotation, or on coming back to it).
+            if ((state as? ReviewLoad.Ready)?.tracks.isNullOrEmpty()) post(ReviewLoad.Loading(i + 1, sessions.size))
         }
         post(ReviewLoad.Ready(group(sessions, saved)))
     }
@@ -162,9 +164,7 @@ internal fun sessionVideo(dir: File, timeline: VideoTimeline): SessionVideo? {
 internal fun indexedClips(dir: File): List<VideoClip> = try {
     VideoIndex(dir).clips()
         .filter { it.status == ClipStatus.LOCAL }
-        .map { c ->
-            VideoClip(c.kind.name.lowercase(), c.fileName, c.sessionOffsetUs, c.durationUs?.let(c::sessionTimeUs))
-        }
+        .map(::recorderClip)
 } catch (e: IOException) {
     DebugLog.w("ReviewLaps", "unreadable clip index in $dir", e)
     emptyList()

@@ -24,10 +24,10 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
 import com.flappedear.betterdriver.recorder.vbo.VboVideo
 import com.flappedear.betterdriver.recorder.video.CameraIds
-import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.gopro.GoProRecordings
+import com.flappedear.betterdriver.review.recorderClip
 import com.flappedear.betterdriver.shell.GoProClips
 import com.flappedear.betterdriver.shell.SessionCamera
 import com.flappedear.betterdriver.shell.SessionGoPro
@@ -256,9 +256,7 @@ class Sessions private constructor(private val context: Context) {
     /** The session's clip index (clips.json) on the recorder's terms; clips still on a camera are left out. */
     private fun indexedClips(dir: File) = VideoIndex(dir).clips()
         .filter { it.status == ClipStatus.LOCAL }
-        .map { c ->
-            VideoClip(c.kind.name.lowercase(), c.fileName, c.sessionOffsetUs, c.durationUs?.let(c::sessionTimeUs))
-        }
+        .map(::recorderClip)
 
     private fun exportVideo(id: String, dir: File, timeline: VideoTimeline): VboVideo? {
         val videoDir = File(dir, VideoFiles.DIR)
