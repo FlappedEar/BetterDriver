@@ -30,23 +30,27 @@ import com.flappedear.betterdriver.coach.ReviewedCue
 import com.flappedear.betterdriver.coach.outcome
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
-
-/** Cards this wide or wider sit side by side, so the tablet shows two or three columns. */
-private val CardMinWidth = 360.dp
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 
 /**
  * The cue review of one session (FBBD-28, FBBD-99): every cue the coach said, in order, and for a
  * corner cue what the next pass through that corner did, marked Better or Not yet. One column on
- * the phone, more on the tablet. [review] is null while the session is read.
+ * the phone, two or three on the tablet ([layout], FBBD-40). [review] is null while the session is read.
  */
 @Composable
-fun CueReviewScreen(title: String, review: CueReview?, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun CueReviewScreen(
+    title: String,
+    review: CueReview?,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    layout: LayoutSize = LayoutSize.Phone,
+) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Coach review", onBack = onBack)
         when {
             review == null -> Box(Modifier.padding(horizontal = 16.dp)) { ShellCard { DimText("Reading session…") } }
             else -> LazyVerticalGrid(
-                columns = GridCells.Adaptive(CardMinWidth),
+                columns = GridCells.Fixed(cueColumns(layout)),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),

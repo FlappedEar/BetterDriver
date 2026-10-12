@@ -3,7 +3,6 @@ package com.flappedear.betterdriver.feature.analysis
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -35,12 +34,12 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.format.formatDelta
 import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.core.ui.layout.HeightClass
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
+import com.flappedear.betterdriver.core.ui.layout.WidthClass
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
-
-/** From this width the map and the G-G diagram sit side by side (tablets, phones in landscape). */
-private val SideBySideWidth = 720.dp
 
 /** Speeds on the map are in this unit, as on the Compare tab. */
 private const val SpeedUnit = "km/h"
@@ -48,10 +47,11 @@ private const val SpeedUnit = "km/h"
 /**
  * The Map tab (FBBD-149): the compared lap's GPS line coloured by speed or by time gained and lost
  * against the best lap, corners tagged as on the Corners tab, and touching the line reads speed and
- * delta there; beside it (below on a phone) the G-G diagram of the lap over the best lap's.
+ * delta there; beside it (below on a phone) the G-G diagram of the lap over the best lap's. The two sit
+ * side by side when [layout] has room for it: tablets, and large phones held sideways.
  */
 @Composable
-internal fun MapTab(ui: MapUi, modifier: Modifier) {
+internal fun MapTab(ui: MapUi, layout: LayoutSize, modifier: Modifier) {
     var coloring by rememberSaveable(ui.lapNumber) {
         mutableStateOf(if (ui.referenceNumber != null) MapColoring.Delta else MapColoring.Speed)
     }
@@ -61,8 +61,8 @@ internal fun MapTab(ui: MapUi, modifier: Modifier) {
     }
     val scale = remember(ui.map, coloring) { mapScale(ui.map, coloring) }
     val onCursor: (MapPoint) -> Unit = { cursorMeters = it.distanceMeters }
-    BoxWithConstraints(modifier) {
-        if (maxWidth >= SideBySideWidth) {
+    Box(modifier) {
+        if (layout.sideBySide) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 MapCard(ui, scale, cursor, onCursor, { coloring = it }, Modifier.weight(3f))
                 GgCard(ui, cursor, Modifier.weight(2f))
@@ -213,7 +213,7 @@ private fun Key(color: Color, label: String) {
 private fun MapTabPhonePreview() {
     BetterDriverTheme(darkTheme = true) {
         Box(Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
-            MapTab(PreviewMap, Modifier.fillMaxWidth())
+            MapTab(PreviewMap, LayoutSize.Phone, Modifier.fillMaxWidth())
         }
     }
 }
@@ -223,7 +223,7 @@ private fun MapTabPhonePreview() {
 private fun MapTabTabletPreview() {
     BetterDriverTheme(darkTheme = true) {
         Box(Modifier.background(MaterialTheme.colorScheme.background).padding(16.dp)) {
-            MapTab(PreviewMap, Modifier.fillMaxWidth())
+            MapTab(PreviewMap, LayoutSize(WidthClass.Expanded, HeightClass.Medium), Modifier.fillMaxWidth())
         }
     }
 }
