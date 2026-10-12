@@ -85,14 +85,17 @@ class CoachService : Service() {
     private fun track(data: Bundle) {
         val a = active ?: return
         val track = data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) }
+        val library = coachLibrary(this)
         val reference = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }?.let {
-            coachLibrary(this).reference(it, exclude = a.id)
+            library.reference(it, exclude = a.id)
         }
+        // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
+        val sameDay = reference != null && library.drivenSameDay(reference, System.currentTimeMillis())
         // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
         val picks = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
             ?.let { coachPicks(this).get(it.id) }.orEmpty()
         if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
-        a.coach = CoachSession(a.settings, track, reference, picks)
+        a.coach = CoachSession(a.settings, track, reference, picks, sameDay)
         updateStatus(a, a.coach?.status ?: CoachStatus.None)
     }
 

@@ -17,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -86,6 +87,22 @@ class LibraryTest {
         assertEquals(2, assertNotNull(library.reference(edited)).trackRevision)
         // The session being recorded is left out.
         assertEquals(listOf(first), assertNotNull(library.reference(edited, exclude = second)).sessions)
+    }
+
+    @Test
+    fun `a reference counts as the same day for 12 hours after its last session ended`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        val start = 1_800_000_000_000L
+        val id = record(store, track, List(2) { SimCircuit.Pace() }, start)
+        val ref = assertNotNull(library.reference(track))
+        val ended = start + assertNotNull(store.list().single { it.id == id }.durationMicros) / 1_000
+        val hour = 60 * 60 * 1_000L
+        assertTrue(library.drivenSameDay(ref, ended + 5 * 60 * 1_000L))
+        assertTrue(library.drivenSameDay(ref, ended + 12 * hour))
+        assertFalse(library.drivenSameDay(ref, ended + 12 * hour + 1))
+        // A clock behind the session's end is not trusted.
+        assertFalse(library.drivenSameDay(ref, start))
     }
 
     @Test
