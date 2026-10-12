@@ -63,6 +63,7 @@ private fun videoMode(intent: Intent): VideoMode? {
  * calls as [RecorderProtocol.MSG_VIDEO]). It stops when told to, when the session ends or changes,
  * or when the recorder process goes away.
  */
+@Suppress("TooManyFunctions") // Service callbacks, one per step of the session hand-over.
 class CameraService : LifecycleService() {
 
     private val main = Handler(Looper.getMainLooper())
@@ -71,6 +72,12 @@ class CameraService : LifecycleService() {
     private var camera: PhoneCamera? = null
     private var sessionId: String? = null
     private var ending = false
+
+    /**
+     * A start came while the last session's video was still ending, or while it still records (the
+     * stop never arrived): once that is done, the service waits for the new session instead of ending.
+     */
+    private var startAgain = false
 
     /** The mode Arek chose for the phone camera (FBBD-88), from the start intent. */
     private var mode: VideoMode = requireNotNull(EquipmentModel.PHONE_CAMERA.defaultVideo)
@@ -103,15 +110,23 @@ class CameraService : LifecycleService() {
         when (intent?.action) {
             ACTION_START -> if (goForeground()) {
                 videoMode(intent)?.let { mode = it }
-                if (!bound) {
-                    bound = bindService(Intent(this, RecorderService::class.java), connection, Context.BIND_AUTO_CREATE)
-                }
-                main.postDelayed(giveUp, SessionWaitMs)
+                if (ending || camera != null) startAgain = true else waitForSession()
             }
-            else -> end()
+            else -> {
+                startAgain = false
+                end()
+            }
         }
         // Not restarted by the system: a restarted camera service cannot know which session it belongs to.
         return START_NOT_STICKY
+    }
+
+    /** Binds to the recorder, whose state names the session to record ([onState]); gives up after a while. */
+    private fun waitForSession() {
+        if (!bound) {
+            bound = bindService(Intent(this, RecorderService::class.java), connection, Context.BIND_AUTO_CREATE)
+        }
+        main.postDelayed(giveUp, SessionWaitMs)
     }
 
     private fun audioGranted() =
@@ -189,6 +204,15 @@ class CameraService : LifecycleService() {
         if (bound) unbindService(connection)
         bound = false
         recorder = null
+        if (startAgain) {
+            // Started again for a new session while this one's video ended: record that one too.
+            startAgain = false
+            ending = false
+            camera = null
+            sessionId = null
+            waitForSession()
+            return
+        }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

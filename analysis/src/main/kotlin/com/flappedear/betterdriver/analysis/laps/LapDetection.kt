@@ -195,7 +195,7 @@ fun detectRuns(
         minimumLapSeconds = options.minimumRunSeconds,
         minimumLapDistanceMeters = options.minimumRunDistanceMeters,
     )
-    return rankedSession(session, startGate, starts, measured, runLimits)
+    return rankedSession(session, startGate, starts, measured, runLimits).copy(finishGate = finishGate)
 }
 
 /** BetterDriver's lines are crossed forwards towards the left of endpoint A to endpoint B: direction +1. */
