@@ -52,10 +52,15 @@ class ReviewLaps private constructor(context: Context) {
     var state by mutableStateOf<ReviewLoad>(ReviewLoad.Loading(0, 0))
         private set
 
-    /** Reads new and changed sessions, then publishes every track with laps. */
-    fun load() = io.execute {
+    /**
+     * Reads new and changed sessions, then publishes every track with laps. Sessions [include]d are
+     * read even when older than the newest [MaxSessions]: the laps another screen opens the review
+     * on (FBBD-153), which must be there to show.
+     */
+    fun load(include: Set<String> = emptySet()) = io.execute {
         val saved = tracks.all().filter { it.timeable }
-        val sessions = store.list().filter { it.state != SessionState.RECORDING }.take(MaxSessions)
+        val all = store.list().filter { it.state != SessionState.RECORDING }
+        val sessions = all.take(MaxSessions) + all.drop(MaxSessions).filter { it.id in include }
         cache.keys.retainAll(sessions.map { it.id }.toSet())
         sessions.forEachIndexed { i, s ->
             val known = cache[s.id]

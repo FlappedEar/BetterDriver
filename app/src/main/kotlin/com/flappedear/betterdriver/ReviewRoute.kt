@@ -51,7 +51,8 @@ internal fun NavGraphBuilder.reviewDestination(nav: NavHostController, padding: 
 private fun ReviewRoute(nav: NavHostController, padding: PaddingValues, start: ReviewStart?) {
     val context = LocalContext.current
     val laps = remember(context) { ReviewLaps.get(context) }
-    LaunchedEffect(Unit) { laps.load() }
+    // The laps asked for are read even from an older session than the review reads on its own.
+    LaunchedEffect(Unit) { laps.load(setOfNotNull(start?.a?.sessionId, start?.b?.sessionId)) }
     Box(Modifier.padding(padding)) {
         ReviewScreen(laps.state, ShellIcons.Back, onBack = { nav.popBackStack() }, start = start)
     }

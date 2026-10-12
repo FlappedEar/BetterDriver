@@ -146,7 +146,8 @@ internal fun LapMapView(
                 val o = at(p.eastMeters, p.northMeters)
                 if (i == 0) path.moveTo(o.x, o.y) else path.lineTo(o.x, o.y)
             }
-            path.close()
+            // A point-to-point track's outline ends at the finish (FBBD-155).
+            if (map.closed) path.close()
             drawPath(
                 path, outlineColor,
                 style = Stroke(10.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round),
