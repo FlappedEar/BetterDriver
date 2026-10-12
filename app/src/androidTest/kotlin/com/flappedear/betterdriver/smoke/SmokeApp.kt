@@ -79,7 +79,9 @@ class SmokeSetup {
             val app = instrumentation.targetContext
             val assets = instrumentation.context.assets
             // A clean start, also when the tests run again on a device that kept the app's data.
-            listOf("sessions", "tracks", "coach").forEach { File(app.filesDir, it).deleteRecursively() }
+            // The persisted setup (SetupRepo's files) too, or a rerun would open on the last run's setup.
+            listOf("sessions", "tracks", "coach", "setup.json", "session-setup.json")
+                .forEach { File(app.filesDir, it).deleteRecursively() }
             SmokeFixtures.seed(
                 app.filesDir,
                 vbo = { name -> assets.open(name).bufferedReader().use { it.readText() } },

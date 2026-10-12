@@ -2,9 +2,14 @@
 
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.data.TimingGate
 import com.flappedear.betterdriver.analysis.data.TimingGateType
+import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
+import com.flappedear.betterdriver.analysis.laps.LapTrace
+import com.flappedear.betterdriver.analysis.laps.LapTracePoint
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
+import com.flappedear.betterdriver.analysis.progress.buildProgressAxis
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
@@ -22,6 +27,7 @@ import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.sin
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -154,5 +160,17 @@ class PointToPointRunsTest {
         val laps = deriveSourceLapSession(telemetrySessionOf(d.session, hill.copy(kind = TrackKind.Circuit)))
         val lap = laps.timedLaps.single()
         assertEquals(d.starts[1] - d.starts[0], lap.durationSeconds, 0.02)
+    }
+
+    @Test
+    fun `a sprint as short as the shortest run still has a progress axis`() {
+        val origin = GeoCoordinate(centerLat, centerLon)
+        val gate = TimingGate(TimingGateType.Start, "start", origin, origin)
+        fun straight(meters: Double) =
+            LapTrace(1, 0.0, 5.0, List(31) { LapTracePoint(it / 6.0, it * meters / 30, 0.0) })
+        val sprint = buildProgressAxis(straight(25.0), origin, gate, closed = false)
+        assertTrue(sprint.valid)
+        assertEquals(25.0, sprint.lengthMeters, 1e-6)
+        assertFalse(buildProgressAxis(straight(15.0), origin, gate, closed = false).valid)
     }
 }

@@ -53,7 +53,8 @@ class VideoIndex(private val sessionDir: File) {
      */
     private fun update(change: (List<VideoClip>) -> List<VideoClip>) = synchronized(lock) {
         if (!sessionDir.isDirectory) throw IOException("${sessionDir.path} is gone")
-        videoDir.mkdirs()
+        // Not mkdirs: a session deleted since the check is not created again; opening the lock throws.
+        videoDir.mkdir()
         RandomAccessFile(File(videoDir, IndexFileName + LockSuffix), "rw").channel.use { channel ->
             channel.lock().use {
                 val updated = change(read()).sortedWith(compareBy({ it.kind }, { it.sessionOffsetUs }, { it.fileName }))
