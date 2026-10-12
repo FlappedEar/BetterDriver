@@ -4,8 +4,10 @@ import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
+import com.flappedear.betterdriver.analysis.confidence.bestGapConfidence
+import com.flappedear.betterdriver.analysis.confidence.lossConfidence
 import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
-import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
+import com.flappedear.betterdriver.analysis.focus.sessionFocus
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
@@ -58,18 +60,32 @@ data class SectorRow(
 
 /**
  * A corner or straight where the fastest lap is slower than the best time through it. [cornerId] is
- * the segment id of a corner, null for a straight.
+ * the segment id of a corner, null for a straight. [confidence]: how far the time to gain there can
+ * be trusted (FBBD-177).
  */
-data class GainRow(val name: String, val lossSeconds: Double, val bestLapNumber: Int?, val cornerId: String? = null)
+data class GainRow(
+    val name: String,
+    val lossSeconds: Double,
+    val bestLapNumber: Int?,
+    val cornerId: String? = null,
+    val confidence: ConfidenceUi = ConfidenceUi.High,
+) {
+    /** The time to gain as shown: no number below High confidence. */
+    fun lossText(format: (Double) -> String): String = timeText(lossSeconds, confidence, format)
+}
 
-/** One lap's loss against the fastest lap in one corner or straight; [cornerId] as in [GainRow]. */
+/** One lap's loss against the fastest lap in one corner or straight; [cornerId] and [confidence] as in [GainRow]. */
 data class LossRow(
     val lapIndex: Int,
     val lapNumber: Int,
     val name: String,
     val lossSeconds: Double,
     val cornerId: String? = null,
-)
+    val confidence: ConfidenceUi = ConfidenceUi.High,
+) {
+    /** The loss as shown: no number below High confidence. */
+    fun lossText(format: (Double) -> String): String = timeText(lossSeconds, confidence, format)
+}
 
 /**
  * One area to look at before the next session: the measured [observation], kept apart from the
@@ -85,7 +101,15 @@ data class FocusRow(
     val compareNumber: Int?,
     /** The segment id when the area is a corner, null for a straight. */
     val cornerId: String? = null,
+    /** How far the observation can be trusted (FBBD-177); below High it is worded without numbers. */
+    val confidence: ConfidenceUi = ConfidenceUi.High,
 )
+
+/**
+ * A corner or straight left out of the focus areas (FBBD-177): what it showed rests on too little
+ * ([why]: one lap, or positions too weak to place there).
+ */
+data class WithheldRow(val name: String, val why: String)
 
 /** A corner along the distance axis, shaded behind the charts. */
 data class CornerBand(val name: String, val startMeters: Double, val endMeters: Double)
@@ -132,6 +156,8 @@ data class AnalysisUi(
     val corners: List<CornerDetail> = emptyList(),
     /** Up to three areas to look at before the next session. */
     val focus: List<FocusRow> = emptyList(),
+    /** Corners and straights not among [focus] because their evidence is too weak (FBBD-177). */
+    val withheld: List<WithheldRow> = emptyList(),
     /** This session against the earlier sessions at its track; null while they are read. */
     val progress: SessionProgress? = null,
     /** The compared lap on the map and its G-G diagram; null without GPS on the session's axis. */
@@ -212,6 +238,7 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
     val corners = analysis.segments?.segments.orEmpty()
         .filter { it.type == TrackSegmentType.Corner }
         .map { CornerBand(it.name, it.startProgressMeters, it.endProgressMeters) }
+    val next = nextSession(analysis)
     return AnalysisUi(
         title = title,
         laps = rows,
@@ -224,7 +251,8 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         gains = gains(analysis),
         losses = losses(analysis),
         corners = cornerDetails(analysis, fastestIndex, comparison?.otherIndex),
-        focus = focus(analysis),
+        focus = next.focus,
+        withheld = next.withheld,
         compare = comparison?.let {
             CompareUi(
                 referenceNumber = laps[it.referenceIndex].number,
@@ -252,7 +280,9 @@ private fun gains(analysis: SessionAnalysis): List<GainRow> {
         .take(LossRows)
         .map {
             val corner = it.segmentId.takeIf(corners::contains)
-            GainRow(it.name, it.lossSeconds ?: 0.0, it.sourceLapReference as? Int, corner)
+            val loss = it.lossSeconds ?: 0.0
+            val confidence = analysis.bestGapConfidence(it.segmentId, loss, it.sourceLapReference).ui()
+            GainRow(it.name, loss, it.sourceLapReference as? Int, corner, confidence)
         }
 }
 
@@ -264,11 +294,12 @@ private fun losses(analysis: SessionAnalysis): List<LossRow> {
         .mapNotNull { loss ->
             val number = loss.lapReference as? Int
             val index = number?.let(indexByNumber::get)
-            val corner = loss.window.segmentId.takeIf(corners::contains)
+            val id = loss.window.segmentId
             if (number == null || index == null) {
                 null
             } else {
-                LossRow(index, number, loss.window.name, loss.lossSeconds, corner)
+                val confidence = analysis.lossConfidence(id, index, loss.lossSeconds).ui()
+                LossRow(index, number, loss.window.name, loss.lossSeconds, id.takeIf(corners::contains), confidence)
             }
         }
         .take(LossRows)
@@ -281,16 +312,21 @@ private fun kindLabel(kind: FocusAreaKind) = when (kind) {
     FocusAreaKind.MinimumSpeedSpread -> "Minimum speed spread"
 }
 
+/** The session's focus areas ([focus]) and what was left out of them for weak evidence. */
+class NextSession(val focus: List<FocusRow>, val withheld: List<WithheldRow>)
+
 /**
- * The session's focus areas. The Compare tab sets one lap against the fastest, so an area's pair
- * opens as whichever of its laps is not the fastest (the first, when neither is).
+ * The session's focus areas, each with its confidence (FBBD-177), and the corners left out of them.
+ * The Compare tab sets one lap against the fastest, so an area's pair opens as whichever of its laps
+ * is not the fastest (the first, when neither is).
  */
-fun focus(analysis: SessionAnalysis): List<FocusRow> {
+fun nextSession(analysis: SessionAnalysis): NextSession {
     val laps = analysis.laps.timedLaps
     val fastest = analysis.laps.fastestLapIndex?.let { laps[it].number }
     val indexByNumber = laps.withIndex().associate { it.value.number to it.index }
     val corners = cornerIds(analysis)
-    return sessionFocusAreas(analysis).map { area ->
+    val found = sessionFocus(analysis)
+    val focus = found.areas.map { (area, confidence) ->
         val number = listOf(area.lap, area.against).filterIsInstance<Int>().firstOrNull { it != fastest }
         FocusRow(
             kind = kindLabel(area.kind),
@@ -300,8 +336,10 @@ fun focus(analysis: SessionAnalysis): List<FocusRow> {
             compareIndex = number?.let(indexByNumber::get),
             compareNumber = number,
             cornerId = area.segmentId.takeIf(corners::contains),
+            confidence = confidence.ui(),
         )
     }
+    return NextSession(focus, found.withheld.map { WithheldRow(it.name, it.confidence.why) })
 }
 
 /**
