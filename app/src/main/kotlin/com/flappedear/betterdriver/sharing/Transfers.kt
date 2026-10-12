@@ -9,6 +9,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.core.content.FileProvider
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
@@ -118,13 +119,13 @@ class Transfers private constructor(private val context: Context) {
                     },
                 )
             } catch (e: IOException) {
-                android.util.Log.w(Tag, "send failed", e)
+                DebugLog.w(Tag, "send failed", e)
                 TransferState(e.message ?: "Failed", failed = true)
             } catch (e: IllegalStateException) {
-                android.util.Log.w(Tag, "send failed", e) // unreadable metadata
+                DebugLog.w(Tag, "send failed", e) // unreadable metadata
                 TransferState("Failed: the session could not be read", failed = true)
             } catch (e: SecurityException) {
-                android.util.Log.w(Tag, "send failed", e)
+                DebugLog.w(Tag, "send failed", e)
                 TransferState("Failed: no access to that file", failed = true)
             }
             main.post { outgoing[key] = result }
@@ -136,7 +137,7 @@ class Transfers private constructor(private val context: Context) {
     private fun trackOf(id: String): Track? = try {
         TrackEvent.savedTrackId(store.read(store.dir(id), samples = false).events)?.let(trackStore::get)
     } catch (e: RuntimeException) {
-        android.util.Log.w(Tag, "no track for $id", e)
+        DebugLog.w(Tag, "no track for $id", e)
         null
     }
 
@@ -208,6 +209,6 @@ fun share(context: Context, uri: Uri, title: String) {
     try {
         context.startActivity(Intent.createChooser(send, title))
     } catch (e: ActivityNotFoundException) {
-        android.util.Log.w("Transfers", "no share target", e)
+        DebugLog.w("Transfers", "no share target", e)
     }
 }

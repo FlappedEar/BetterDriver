@@ -59,6 +59,7 @@ fun SettingsScreen(
     onChooseTiles: (List<TrackChannel>) -> Unit = {},
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
     updateRow: @Composable () -> Unit = {},
+    debugRows: @Composable () -> Unit = {},
     coach: CoachSettings = CoachSettings(),
     onOpenCoach: () -> Unit = {},
 ) {
@@ -81,7 +82,7 @@ fun SettingsScreen(
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
                 SettingsTab.Recording -> RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
-                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, coach, onOpenCoach)
+                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, debugRows, coach, onOpenCoach)
             }
         }
     }
@@ -133,6 +134,7 @@ private fun AppTab(
     version: String,
     onRunSetup: () -> Unit,
     updateRow: @Composable () -> Unit,
+    debugRows: @Composable () -> Unit,
     coach: CoachSettings,
     onOpenCoach: () -> Unit,
 ) {
@@ -143,6 +145,7 @@ private fun AppTab(
         ListRow("Version", version)
         updateRow()
         ListRow("Run setup again", onClick = onRunSetup)
+        debugRows()
     }
 }
 

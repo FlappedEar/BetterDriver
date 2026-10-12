@@ -18,6 +18,7 @@ import com.flappedear.betterdriver.camera.CameraService
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.setup.VideoMode
 import com.flappedear.betterdriver.timing.live.LiveTimingState
 
@@ -174,7 +175,7 @@ class RecorderClient private constructor(private val context: Context) {
                     .putExtra(CameraService.EXTRA_VIDEO_FPS, mode.fps),
             )
         } catch (e: IllegalStateException) {
-            android.util.Log.w("RecorderClient", "phone video not started", e)
+            DebugLog.w("RecorderClient", "phone video not started", e)
         }
     }
 

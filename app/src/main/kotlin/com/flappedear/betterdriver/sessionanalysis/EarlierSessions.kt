@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.summary.EarlierSession
 import com.flappedear.betterdriver.analysis.summary.PreviousLaps
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.track.Track
@@ -58,7 +59,7 @@ internal fun earlierSessions(
                 // The others keep only their lap times: up to 4,096 trace points a lap add up.
                 EarlierSession(sessionLabel(summary.info.startUtcMillis), laps.copy(lapTraces = emptyList()))
             } catch (e: Exception) {
-                android.util.Log.w("SessionAnalysis", "reading earlier session ${summary.id} failed", e)
+                DebugLog.w("SessionAnalysis", "reading earlier session ${summary.id} failed", e)
                 null
             }
         }

@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.gopro.GoPros
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -176,13 +177,13 @@ class Imports private constructor(private val context: Context) {
         try {
             block()
         } catch (e: IOException) {
-            android.util.Log.w(Tag, "import failed", e)
+            DebugLog.w(Tag, "import failed", e)
             finish(e.message ?: "could not read the file", failed = true)
         } catch (e: IllegalStateException) {
-            android.util.Log.w(Tag, "import failed", e)
+            DebugLog.w(Tag, "import failed", e)
             finish(e.message ?: "could not store the file", failed = true)
         } catch (e: SecurityException) {
-            android.util.Log.w(Tag, "import failed", e)
+            DebugLog.w(Tag, "import failed", e)
             finish("no access to the file", failed = true)
         }
     }

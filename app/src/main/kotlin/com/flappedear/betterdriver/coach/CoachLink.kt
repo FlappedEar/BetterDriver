@@ -9,9 +9,9 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
-import android.util.Log
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.track.TrackDetection
 
@@ -67,7 +67,7 @@ internal class CoachLink(
         bound = try {
             context.bindService(Intent(context, CoachService::class.java), connection, Context.BIND_AUTO_CREATE)
         } catch (e: RuntimeException) {
-            Log.w(Tag, "coach not started", e)
+            DebugLog.w(Tag, "coach not started", e)
             false
         }
     }

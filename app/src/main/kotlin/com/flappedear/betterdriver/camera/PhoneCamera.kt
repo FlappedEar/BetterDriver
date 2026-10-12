@@ -28,6 +28,7 @@ import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoSink
@@ -43,6 +44,9 @@ private const val CheckIntervalMs = 5_000L
 private const val RetryDelayMs = 3_000L
 private const val MaxRestarts = 3
 private const val ForecastSeconds = 10
+
+/** Thermal readings go to the debug log at least this often, and at every status change (FBBD-146). */
+private const val ThermalLogEvery = 6
 
 /** Video stops below this much free space, well before the recorder warns (200 MB) or stops (50 MB). */
 private const val MinFreeBytes = 1L shl 30
@@ -102,6 +106,8 @@ class PhoneCamera(
         }
     }
 
+    private var thermalLog = ThermalLog(ladder)
+
     /** Set on Android 10+, where thermal status exists. */
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
@@ -120,6 +126,8 @@ class PhoneCamera(
                     return@addListener
                 }
                 policy = ThermalPolicy(steps.size)
+                thermalLog = ThermalLog(steps)
+                DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val listener = PowerManager.OnThermalStatusChangedListener { check() }
                     thermalListener = listener
@@ -129,7 +137,7 @@ class PhoneCamera(
                 if (!stopping) begin(0)
             } catch (e: Exception) {
                 sink.status("Camera error", ok = false)
-                android.util.Log.w(Tag, "camera provider failed", e)
+                DebugLog.w(Tag, "camera provider failed", e)
             }
         }, executor)
     }
@@ -179,6 +187,7 @@ class PhoneCamera(
                         sink.started(name, now)
                         clips.started(name, now)
                         sink.status(step.label, ok = stepIndex == 0)
+                        DebugLog.i(Tag, "recording $name at ${step.label}")
                     }
                     is VideoRecordEvent.Status -> {
                         val now = sink.nowMicros()
@@ -196,7 +205,8 @@ class PhoneCamera(
                 }
             }
         } catch (e: Exception) {
-            android.util.Log.w(Tag, "could not start ${step.label}", e)
+            DebugLog.w(Tag, "could not start ${step.label}", e)
+            policy.failed(stepIndex)
             if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
         }
     }
@@ -206,7 +216,9 @@ class PhoneCamera(
         // A full file is finished and playable: the next file starts at once, and it is no restart.
         val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
         val error = !full && e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
-        sink.stopped(name, sink.nowMicros(), stopReason(e.error, error, full))
+        val reason = stopReason(e.error, error, full)
+        sink.stopped(name, sink.nowMicros(), reason)
+        DebugLog.log(if (error) DebugLog.WARN else DebugLog.INFO, Tag, "$name ended: $reason", e.cause)
         val next = nextStep
         when {
             stopping -> provider?.unbindAll()
@@ -250,6 +262,7 @@ class PhoneCamera(
         val action = if (StatFs(dir.path).availableBytes < MinFreeBytes) null else thermalAction()
         when (action) {
             null -> {
+                DebugLog.w(Tag, "video stops: less than 1 GB free")
                 endReason = "storage"
                 r.stop()
             }
@@ -263,6 +276,11 @@ class PhoneCamera(
                 endReason = "thermal_step"
                 r.stop()
             }
+            is ThermalAction.StepUp -> {
+                nextStep = action.to
+                endReason = "thermal_step_up"
+                r.stop()
+            }
         }
     }
 
@@ -273,11 +291,52 @@ class PhoneCamera(
         } else {
             null
         }
-        return policy.onReading(sink.nowMicros(), status, headroom)
+        val from = policy.current
+        val action = policy.onReading(sink.nowMicros(), status, headroom)
+        thermalLog.log(status, headroom, from, policy.ceiling, action)
+        return action
     }
 
     private companion object {
         const val Tag = "PhoneCamera"
+    }
+}
+
+/**
+ * Thermal readings in the debug log (FBBD-146): every status change and every step decision, else
+ * one line per [ThermalLogEvery] checks, so a drive shows why and when video changed quality.
+ */
+private class ThermalLog(private val steps: List<VideoMode>) {
+    private var checks = 0
+    private var loggedStatus = -1
+
+    fun log(status: Int, headroom: Float?, from: Int, ceiling: Int, action: ThermalAction) {
+        checks++
+        val changed = status != loggedStatus || action != ThermalAction.Keep
+        if (!changed && checks < ThermalLogEvery) return
+        checks = 0
+        loggedStatus = status
+        val decision = when (action) {
+            ThermalAction.Keep -> "keep"
+            ThermalAction.StopVideo -> "stop video"
+            is ThermalAction.StepDown -> "step down to ${label(action.to)}"
+            is ThermalAction.StepUp -> "step up to ${label(action.to)}"
+        }
+        val level = if (action == ThermalAction.Keep) DebugLog.INFO else DebugLog.WARN
+        val text = "status=${statusName(status)} headroom=${headroom ?: "n/a"} at ${label(from)}: $decision " +
+            "(best allowed ${label(ceiling)})"
+        DebugLog.log(level, "Thermal", text, null)
+    }
+
+    private fun label(index: Int) = steps.getOrNull(index)?.label ?: "none"
+
+    private fun statusName(status: Int) = when (status) {
+        Thermal.NONE -> "none"
+        Thermal.LIGHT -> "light"
+        Thermal.MODERATE -> "moderate"
+        Thermal.SEVERE -> "severe"
+        Thermal.CRITICAL -> "critical"
+        else -> "level$status"
     }
 }
 

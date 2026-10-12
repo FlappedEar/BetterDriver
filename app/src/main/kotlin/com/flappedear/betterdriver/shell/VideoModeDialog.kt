@@ -25,6 +25,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.supportedPhoneModes
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.VideoMode
@@ -70,7 +71,7 @@ private fun phoneModes(context: Context, onModes: (List<VideoMode>) -> Unit) {
         val modes = try {
             supportedPhoneModes(future.get(), EquipmentModel.PHONE_CAMERA.videoModes)
         } catch (e: Exception) {
-            android.util.Log.w("VideoModes", "could not read the phone's video modes", e)
+            DebugLog.w("VideoModes", "could not read the phone's video modes", e)
             emptyList()
         }
         onModes(modes)

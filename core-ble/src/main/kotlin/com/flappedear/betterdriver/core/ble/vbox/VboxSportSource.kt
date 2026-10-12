@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.core.ble.vbox
 
 import android.content.Context
 import com.flappedear.betterdriver.core.ble.LinkState
+import com.flappedear.betterdriver.core.ble.logLink
 import com.flappedear.betterdriver.core.ble.nmea.SppLink
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
@@ -42,6 +43,7 @@ class VboxSportSource(
             address,
             onData = decoder::feed,
             onState = { s ->
+                logLink(address, s, wasStreaming)
                 val streaming = s is LinkState.Streaming
                 if (streaming && !wasStreaming) sink.event(VboxSportEvents.CONNECTED, address)
                 if (s is LinkState.Reconnecting) {

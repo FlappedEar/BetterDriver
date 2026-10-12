@@ -23,6 +23,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.R
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoSink
 import com.flappedear.betterdriver.recording.RecorderProtocol
@@ -98,6 +99,7 @@ class CameraService : LifecycleService() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        DebugLog.i(Tag, "command ${intent?.action}")
         when (intent?.action) {
             ACTION_START -> if (goForeground()) {
                 videoMode(intent)?.let { mode = it }
@@ -127,7 +129,7 @@ class CameraService : LifecycleService() {
         ServiceCompat.startForeground(this, NotificationId, notification(), type)
         true
     } catch (e: RuntimeException) {
-        android.util.Log.w(Tag, "could not start phone video", e)
+        DebugLog.w(Tag, "could not start phone video", e)
         stopSelf()
         false
     }

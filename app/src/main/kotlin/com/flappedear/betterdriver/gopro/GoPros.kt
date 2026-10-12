@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
@@ -120,7 +121,7 @@ class GoPros private constructor(private val context: Context) {
         }
         // Logged for the real-camera test (FBBD-82); the track screen does not show the GoPros yet.
         sourceLogs = sources.map { source ->
-            scope.launch { source.state.collect { android.util.Log.i(Tag, "${source.id}: $it") } }
+            scope.launch { source.state.collect { DebugLog.i(Tag, "${source.id}: $it") } }
         }
         sources.forEach { source -> scope.launch { source.start(session) } }
     }
