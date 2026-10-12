@@ -25,7 +25,12 @@ class LapTrace(val points: List<Xy>, val timesMicros: List<Long>, val speedsKmh:
     val lengthMeters: Double get() = along.last()
 
     /** Time since the lap started at [meters] along the trace, interpolated. */
-    fun timeAt(meters: Double): Double {
+    fun timeAt(meters: Double): Double = at(meters) { timesMicros[it].toDouble() }
+
+    /** Speed in km/h at [meters] along the trace, interpolated. */
+    fun speedAt(meters: Double): Double = at(meters) { speedsKmh[it] }
+
+    private inline fun at(meters: Double, value: (Int) -> Double): Double {
         val m = meters.coerceIn(0.0, lengthMeters)
         var lo = 0
         var hi = along.size - 1
@@ -35,7 +40,7 @@ class LapTrace(val points: List<Xy>, val timesMicros: List<Long>, val speedsKmh:
         }
         val span = along[hi] - along[lo]
         val u = if (span <= 0.0) 0.0 else (m - along[lo]) / span
-        return timesMicros[lo] + u * (timesMicros[hi] - timesMicros[lo])
+        return value(lo) + u * (value(hi) - value(lo))
     }
 
     /** The trace at every [stepMeters], interpolated linearly; repeated points are dropped. */

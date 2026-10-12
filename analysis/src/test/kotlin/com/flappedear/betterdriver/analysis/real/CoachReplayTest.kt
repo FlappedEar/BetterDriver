@@ -209,7 +209,7 @@ class CoachReplayTest {
                     inZone += "'${h.text}' in corner ${zone + 1}'s braking on lap ${lap.traced.lap.number}"
                 }
             }
-            // Cues after the last line (the lap time on the way into the paddock) are on no lap.
+            // Cues after the last line are on no lap (none since FBBD-202: the coach is quiet in the pit lane).
             val lap = laps.firstOrNull { it.contains(h.start) } ?: continue
             val along = assertNotNull(lap.alongAt(h.start), "'${h.text}' heard off the track")
             val next = lap.nextCorner(along)
@@ -262,7 +262,30 @@ class CoachReplayTest {
         val c = check(replay, laps)
         // Lap 2's time on lap 3 and lap 6's on lap 7 were heard while braking for Turn 1, 0.1 s and 1.1 s.
         assertEquals(emptyList(), c.inZone.distinct(), "cues heard while braking")
-        assertTrue(c.heard.count { it.kind == CueKind.LapTime } >= 6, "lap times: ${c.heard.map { it.text }}")
+        // Laps 2 to 6; lap 7's gives way to a Turn 1 cue on its straight, lap 8 is the in-lap.
+        assertTrue(c.heard.count { it.kind == CueKind.LapTime } >= 5, "lap times: ${c.heard.map { it.text }}")
+    }
+
+    @Test
+    fun `nothing is said on the in-lap once the driver lifts, nor in the pit lane (FBBD-202)`() {
+        val data = silesia()
+        val laps = tracedLaps(track, data.coachFixes())
+        // Lap 8 is the in-lap: it ends in the pit lane, crossing the line at about 20 km/h.
+        val inLap = laps.last()
+        val trace = inLap.trace
+        assertEquals(8, inLap.lap.number)
+        assertTrue(trace.speedsKmh.last() < 30.0, "line crossed at ${trace.speedsKmh.last()} km/h")
+        // Just past the line the driver lifts off: the first point 5 km/h below the lap's top speed so far.
+        var top = 0.0
+        val lift = inLap.lap.startMicros + trace.timesMicros[
+            trace.speedsKmh.indices.first { i -> trace.speedsKmh[i].also { top = maxOf(top, it) } <= top - 5.0 },
+        ]
+        val inLapTime = Phrases.lapTime(inLap.lap.timeMillis, best = false)
+        for (replay in scenarios(data)) {
+            val late = replay.cues.filter { it.tMicros >= lift }
+            assertEquals(emptyList(), late.map { it.text }, "${replay.name}: cues after the lift at ${lift / 1e6} s")
+            assertTrue(replay.cues.none { it.text.endsWith(inLapTime) }, "${replay.name}: the in-lap's time")
+        }
     }
 
     @Test
