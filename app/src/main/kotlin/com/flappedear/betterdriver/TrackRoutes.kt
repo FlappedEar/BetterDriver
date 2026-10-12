@@ -51,7 +51,10 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
     )
 }
 
-/** The track editor (FBBD-56); asks before dropping unsaved lines or deleting the track (FBBD-157). */
+/**
+ * The track editor (FBBD-56); asks before dropping unsaved lines, or a track proposed from a session
+ * (FBBD-151), and before deleting a saved track (FBBD-157).
+ */
 @Composable
 internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String) {
     var data by remember(id) { mutableStateOf<EditorData?>(null) }
@@ -66,7 +69,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
-    val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions) }
+    val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions, loaded.stored, loaded.proposed) }
     var leaving by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(false) }
@@ -96,19 +99,16 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         },
         onBack = back,
         onShare = { share(state.track) },
-        onDelete = { deleting = true },
+        // A track proposed from a session is not stored yet: there is nothing to delete.
+        onDelete = if (state.proposed) null else ({ deleting = true }),
     )
     if (deleting) {
-        DeleteTrackDialog(
-            name = state.track.displayName,
-            onDelete = {
-                removing = true
-                deleteAndLeave(nav, tracks, id, context) { removing = false }
-            },
-            onDismiss = { deleting = false },
-        )
+        DeleteTrackDialog(state.track.displayName, onDismiss = { deleting = false }) {
+            removing = true
+            deleteAndLeave(nav, tracks, id, context) { removing = false }
+        }
     }
-    if (leaving) DiscardDialog(onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
+    if (leaving) DiscardDialog(state.proposed, onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
 }
 
 /** Deletes the track and leaves the editor, or says the delete failed and calls [onFailed]. */
@@ -131,13 +131,16 @@ private fun deleteAndLeave(
     }
 }
 
-/** Asks before dropping unsaved lines; either button closes it. */
+/** Asks before dropping unsaved lines, or a track [proposed] from a session; either button closes it. */
 @Composable
-private fun DiscardDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
+private fun DiscardDialog(proposed: Boolean, onDiscard: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Discard changes?") },
-        text = { Text("The lines you moved are not saved.") },
+        text = {
+            val what = if (proposed) "The track made from your session is" else "The lines you moved are"
+            Text("$what not saved.")
+        },
         confirmButton = {
             TextButton(onClick = {
                 onDismiss()
@@ -150,7 +153,7 @@ private fun DiscardDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
 
 /** Confirms deleting a track (FBBD-157), like a session delete (UI-48 option A); either button closes it. */
 @Composable
-private fun DeleteTrackDialog(name: String, onDelete: () -> Unit, onDismiss: () -> Unit) {
+private fun DeleteTrackDialog(name: String, onDismiss: () -> Unit, onDelete: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Delete track?") },

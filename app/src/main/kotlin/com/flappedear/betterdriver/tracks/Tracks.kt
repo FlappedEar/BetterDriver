@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
+import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
@@ -56,20 +57,36 @@ data class Here(val position: GeoPoint, val detection: TrackDetection, val atNan
         atNanos != null && nowNanos - atNanos <= FreshPositionNanos
 }
 
-/** A track opened in the editor, with the sessions recorded there. */
-data class EditorData(val track: Track, val sessions: List<EditorSession>)
+/**
+ * A track opened in the editor, with the sessions recorded there. [stored] is the track as saved,
+ * or null for one proposed from a session and not saved yet; [proposed] says the lines are a
+ * proposal to check (FBBD-151).
+ */
+data class EditorData(
+    val track: Track,
+    val sessions: List<EditorSession>,
+    val stored: Track? = track,
+    val proposed: Boolean = false,
+)
+
+/** A track proposed from session [sessionId] (FBBD-151), opened in the editor before it is saved. */
+private class Draft(val track: Track, val sessionId: String, val session: EditorSession)
 
 /**
  * Saved tracks for the UI process (FBBD-54, FBBD-56). One per process; disk work runs on one
  * background thread and results come back as Compose state or callbacks on the main thread. The
  * recorder process reads the same directory when a session starts.
  */
+@Suppress("TooManyFunctions") // One entry point per thing the tracks screens and the editor do.
 class Tracks private constructor(private val context: Context) {
     private val store = TrackStore(tracksDir(context))
     private val directory = CircuitDirectory(circuitsDir(context))
     private val sessions = SessionStore(sessionsDir(context))
     private val io = Executors.newSingleThreadExecutor { Thread(it, "tracks-io") }
     private val main = Handler(Looper.getMainLooper())
+
+    /** The track proposed from a session, until it is saved or another is proposed. io thread only. */
+    private var draft: Draft? = null
 
     /** Each session's first position, by id, so sessions elsewhere are read once. io thread only. */
     private val sessionStarts = HashMap<String, GeoPoint?>()
@@ -107,6 +124,9 @@ class Tracks private constructor(private val context: Context) {
         main.post { here = found }
     }
 
+    /** The circuit list, once loaded (an empty one before). */
+    val circuits: CircuitList get() = directory.list
+
     /** Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be written. */
     fun save(track: Track, onFailed: () -> Unit = {}, onSaved: (Track) -> Unit) = io.execute {
         val stored = try {
@@ -115,6 +135,7 @@ class Tracks private constructor(private val context: Context) {
             DebugLog.w(Tag, "saving track ${track.id} failed", e)
             null
         }
+        if (stored != null && draft?.track?.id == track.id) draft = null
         publish()
         main.post { if (stored != null) onSaved(stored) else onFailed() }
     }
@@ -129,15 +150,34 @@ class Tracks private constructor(private val context: Context) {
         references.delete(id)
         val referenceGone = references.get(id) == null
         if (referenceGone) store.delete(id)
+        if (draft?.track?.id == id) draft = null
         val gone = referenceGone && store.get(id) == null
         if (!gone) DebugLog.w(Tag, "deleting track $id failed")
         publish()
         main.post { onDone(gone) }
     }
 
-    /** The track and the sessions recorded there, newest first; null if the track is gone. */
+    /**
+     * Keeps [track], proposed from session [sessionId] driven as [session] (FBBD-151), for the editor
+     * to open by its id; nothing is stored until the editor saves it. Call before navigating there.
+     */
+    fun propose(track: Track, sessionId: String, session: EditorSession) = io.execute {
+        draft = Draft(track, sessionId, session)
+    }
+
+    /**
+     * The track and the sessions recorded there, newest first; null if the track is gone. A proposed
+     * track opens with its lines unsaved and its own session first, so its lap is the one shown.
+     */
     fun openEditor(id: String, onReady: (EditorData?) -> Unit) = io.execute {
-        val data = store.get(id)?.let { EditorData(it, sessionsAt(it)) }
+        val proposed = draft?.takeIf { it.track.id == id }
+        val data = if (proposed != null) {
+            val others = sessionsAt(proposed.track, skip = proposed.sessionId)
+            val sessions = (listOf(proposed.session) + others).take(MaxEditorSessions)
+            EditorData(proposed.track, sessions, stored = store.get(id), proposed = true)
+        } else {
+            store.get(id)?.let { EditorData(it, sessionsAt(it)) }
+        }
         main.post { onReady(data) }
     }
 
@@ -146,9 +186,9 @@ class Tracks private constructor(private val context: Context) {
         main.post { list = all }
     }
 
-    private fun sessionsAt(track: Track): List<EditorSession> = sessions.list()
+    private fun sessionsAt(track: Track, skip: String? = null): List<EditorSession> = sessions.list()
         .asSequence()
-        .filter { it.state != SessionState.RECORDING }
+        .filter { it.state != SessionState.RECORDING && it.id != skip }
         .mapNotNull { s -> fixesIfAt(s.id, track)?.let { EditorSession(sessionTitle(s), it) } }
         .take(MaxEditorSessions)
         .toList()
