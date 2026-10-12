@@ -48,6 +48,45 @@ class TrackContrastTest {
         }
     }
 
+    /**
+     * Sunlight proxy (FBBD-65): every text the track screen and its connection/alert banner draw,
+     * against what it is drawn on, reaches WCAG AAA (7:1), in both palettes. Glare washes out
+     * contrast, so the screen is held to the enhanced level everywhere, not only for the main
+     * values. All failing pairs are reported together.
+     */
+    @Test
+    fun everyTrackTextIsAtLeast7To1ForSunlight() {
+        val failures = ArrayList<String>()
+        palettes.forEach { (name, c) ->
+            val gainTint = lerp(c.surface, c.gain, TintFraction)
+            val lossTint = lerp(c.surface, c.loss, TintFraction)
+            val pairs = listOf(
+                Triple("values on background", c.text, c.background),
+                Triple("values on surface (lap times, tiles, coach line)", c.text, c.surface),
+                Triple("delta and its label on gain tint", c.text, gainTint),
+                Triple("delta and its label on loss tint", c.text, lossTint),
+                Triple("labels, units and empty values on surface", c.textDim, c.surface),
+                Triple("status labels and empty sectors on background", c.textDim, c.background),
+                Triple("best lap on surface", c.best, c.surface),
+                Triple("cold tile on surface", c.cold, c.surface),
+                Triple("warning tile on surface", c.warning, c.surface),
+                Triple("sector gain", c.onGain, c.gain),
+                Triple("sector loss, critical tile, GNSS lost banner title", c.onLoss, c.loss),
+                Triple("warning banner title", c.onWarning, c.warning),
+                Triple("GNSS lost banner detail (85 %)", c.onLoss.copy(alpha = AlertDetailAlpha), c.loss),
+                Triple("warning banner detail (85 %)", c.onWarning.copy(alpha = AlertDetailAlpha), c.warning),
+            )
+            pairs.forEach { (pair, foreground, background) ->
+                val ratio = contrast(foreground, background)
+                if (ratio < Enhanced) failures += "$name: $pair is %.2f:1".format(ratio)
+            }
+        }
+        assertTrue(
+            "track screen text below 7:1 (FBBD-65, sunlight):\n" + failures.joinToString("\n") { "  - $it" },
+            failures.isEmpty(),
+        )
+    }
+
     @Test
     fun indicatorsAreAtLeast3To1() {
         palettes.forEach { (name, c) ->
