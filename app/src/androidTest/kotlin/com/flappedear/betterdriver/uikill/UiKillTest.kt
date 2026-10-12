@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
+import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -170,10 +171,18 @@ class UiKillTest {
         device.wait(Until.hasObject(By.pkg(app.packageName).depth(0)), LoadTimeoutMs)
     }
 
-    /** The track screen's status strip shows the receiver's rate once fixes arrive ("25 Hz · 14 sats"). */
+    /**
+     * The track screen with its status strip (GNSS) and recording clock (REC), and the recorder
+     * reporting fixes. The strip's values are drawn as number text UiAutomator does not read, so the
+     * GNSS state comes from the recorder. Android's first-time "Viewing full screen" hint is dismissed
+     * so it is not in the way of the hold.
+     */
     private fun waitForTrackScreen() {
-        val shown = device.wait(Until.hasObject(By.textContains(" Hz")), LoadTimeoutMs)
-        check(shown == true) { "the track screen shows no live GNSS. ${screen()}" }
+        val shown = device.wait(Until.hasObject(By.text("REC")), LoadTimeoutMs) == true &&
+            device.hasObject(By.text("GNSS"))
+        check(shown) { "no track screen. ${screen()}" }
+        waitForRecorder("live GNSS") { it.live?.gnss == GnssState.Ok }
+        device.findObject(By.text("Got it"))?.click()
     }
 
     /** What is on screen and what the recorder says, for a failure message. */
