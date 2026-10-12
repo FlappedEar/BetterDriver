@@ -104,14 +104,20 @@ class AnalysisSmokeTest {
             app.onNode(hasText("Compare") and hasClickAction()).performClick()
             app.pumpUntilText("Compare laps", timeoutMs = LoadTimeoutMs)
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-            // Back to Corner laps.
+            // Back goes to the review's lap picker, then back again to Corner laps.
             app.pumpBack()
-            app.pumpUntilText("TIME THROUGH THE CORNER", substring = true)
+            app.pumpUntilText("Compare laps")
+            app.pumpBack()
+            app.pumpUntil(LoadTimeoutMs, "the lap review to close") {
+                app.onAllNodesWithText("Compare laps").fetchSemanticsNodes().isEmpty()
+            }
         }
+        app.waitForText("TIME THROUGH THE CORNER", substring = true)
 
         // Then to the analysis as it was left.
         app.back()
-        app.waitForText("THEORETICAL BEST BY CORNER")
+        // The analysis is read again after the lap review, so this can take a while.
+        app.waitForText("THEORETICAL BEST BY CORNER", timeoutMs = LoadTimeoutMs)
     }
 
     @Test
