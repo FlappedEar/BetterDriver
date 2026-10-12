@@ -15,7 +15,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.performTextInput
 import androidx.navigation.compose.rememberNavController
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
@@ -63,8 +63,8 @@ import java.io.File
  * clipped, overlapping or out of the window, nothing scrolling sideways (see assertLayoutClean). A
  * picture of each is saved to build/outputs/roborazzi/layout/<device>/ for a look.
  *
- * And state that must survive a rotation (the activity recreated) does: the Settings tab, and the
- * name typed into New track here.
+ * And state that must survive a rotation (the activity recreated) does: the Settings tab here,
+ * the name typed into New track here in [NewTrackRotationTest].
  *
  * The plain Application runs: BetterDriverApplication installs the app log and StrictMode, which
  * have nothing to do with layout.
@@ -160,31 +160,6 @@ abstract class MainScreensLayoutTest(private val device: String) {
         compose.onNodeWithText("Run setup again").assertExists()
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("Run setup again").assertExists()
-    }
-
-    /** A name half typed into New track here survives a rotation, dialog and all. */
-    @Test
-    fun newTrackNameSurvivesRotation() {
-        compose.edgeToEdge()
-        val restoration = StateRestorationTester(compose)
-        step("showing the tracks") { restoration.setContent { AppScreen { TracksNearKielce() } } }
-        val newTrack = compose.onNodeWithText("Not on the list", substring = true)
-        step("scrolling to New track here") { newTrack.performScrollTo() }
-        step("opening the dialog") { newTrack.performClick() }
-        // Set without focusing the field: whether the name is kept does not depend on focus.
-        step("typing the name") { compose.onNode(hasSetTextAction()).performTextReplacement("Kartodrom") }
-        step("rotating") { restoration.emulateSavedInstanceStateRestore() }
-        compose.onNodeWithText("New track here").assertExists()
-        compose.onNodeWithText("Kartodrom").assertExists()
-    }
-
-    /** Runs [block]; a failure (the window never getting idle, say) names the step it happened at. */
-    private fun step(what: String, block: () -> Unit) {
-        try {
-            block()
-        } catch (e: RuntimeException) {
-            throw AssertionError("$what on $device: ${e.message}", e)
-        }
     }
 
     private fun settings(tab: SettingsTab) = checkScreen("settings_${tab.name.lowercase()}", Routes.Settings) {
@@ -302,3 +277,34 @@ class MainScreensLayoutTabletPortraitTest : MainScreensLayoutTest("tablet-portra
 
 @Config(qualifiers = Devices.TabletLandscape)
 class MainScreensLayoutTabletLandscapeTest : MainScreensLayoutTest("tablet-landscape")
+
+/**
+ * A name half typed into New track here survives a rotation (the activity recreated), dialog and
+ * all.
+ *
+ * In a tablet window only. Under Robolectric a dialog at the platform's default width never lets
+ * Compose get idle in a window narrower than 600 dp: a bare AlertDialog with nothing typed does
+ * it, a bare Dialog does it at any width, and the same dialog without the default width does not.
+ * Keeping the name is the same code at any width.
+ */
+@RunWith(RobolectricTestRunner::class)
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
+@Config(application = Application::class, qualifiers = Devices.TabletPortrait)
+class NewTrackRotationTest {
+    private val compose = createAndroidComposeRule<ComponentActivity>()
+
+    @get:Rule
+    val rules: RuleChain = RuleChain.outerRule(RegisterComponentActivity()).around(compose)
+
+    @Test
+    fun newTrackNameSurvivesRotation() {
+        compose.edgeToEdge()
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { AppScreen { TracksNearKielce() } }
+        compose.onNodeWithText("Not on the list", substring = true).performScrollTo().performClick()
+        compose.onNode(hasSetTextAction()).performTextInput("Kartodrom")
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithText("New track here").assertExists()
+        compose.onNodeWithText("Kartodrom").assertExists()
+    }
+}
