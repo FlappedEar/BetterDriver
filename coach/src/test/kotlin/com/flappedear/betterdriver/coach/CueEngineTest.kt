@@ -95,6 +95,22 @@ class CueEngineTest {
     }
 
     @Test
+    fun `back out the same day it warms up for one lap, not the learning laps`() {
+        val paces = listOf(early2, early2, early2, steady)
+        val engine = CueEngine(track, CoachSettings(Verbosity.Focus), reference(), sameDay = true)
+        assertEquals(CoachPhase.Learning(0, 1), engine.phase)
+        val cue = run(engine, sim.drive(paces)).cues.first { it.kind == CueKind.Corner }
+        assertEquals(2, cue.corner)
+        // Pace 0 is the warm-up lap (timer lap 2); the cue comes on the next one.
+        assertEquals(3, cue.lap)
+        // Fewer learning laps in the settings still count.
+        val none = CueEngine(track, CoachSettings(learningLaps = 0), reference(), sameDay = true)
+        assertEquals(CoachPhase.Coaching, none.phase)
+        // Without an earlier reference the corners still come from this session: full learning.
+        assertEquals(CoachPhase.Learning(0, 3), CueEngine(track, CoachSettings(), sameDay = true).phase)
+    }
+
+    @Test
     fun `a corner the driver fixed gets no cue`() {
         val paces = listOf(early2, early2, steady, steady, steady, steady)
         val run = run(CueEngine(track, CoachSettings(Verbosity.Full), reference()), sim.drive(paces))

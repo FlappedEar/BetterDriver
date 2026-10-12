@@ -12,7 +12,8 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":recorder"))
+    // api: channels and the analysis carry the recorder's Provenance (FBBD-174).
+    api(project(":recorder"))
     // api: SessionAnalysis carries the track's corner identity (FBBD-172), a :timing type.
     api(project(":timing"))
     // api: QualityReport is @Serializable, so its users see the serializer types.

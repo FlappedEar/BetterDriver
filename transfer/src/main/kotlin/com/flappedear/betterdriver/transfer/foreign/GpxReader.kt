@@ -85,7 +85,10 @@ internal object GpxReader {
         override fun startElement(uri: String?, localName: String?, qName: String?, attributes: Attributes) {
             val name = nameOf(localName, qName)
             when {
-                name == "gpx" -> sawGpx = true
+                name == "gpx" -> {
+                    sawGpx = true
+                    attributes.getValue("creator")?.trim()?.takeIf { it.isNotEmpty() }?.let(sink::receiver)
+                }
                 !sawGpx -> throw SAXException(ImportFormatException("this is not a GPX file"))
                 name == "trkseg" -> segment++
                 name == "trkpt" -> {

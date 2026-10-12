@@ -36,9 +36,10 @@ fun previousSession(data: SessionData): PreviousSession {
 
 /**
  * The validation report of a session (FBBD-183): the P0 pass criteria measured from what it
- * recorded. [track] is its saved track, for laps replayed when live timing logged none; [clips] its
- * video index; [previous] the session a recorder restart carried on from, when it names one. Pure:
- * reading the session and its files is the caller's.
+ * recorded, and where each channel came from with how far it can be trusted (FBBD-174). [track]
+ * is its saved track, for laps replayed when live timing logged none; [clips] its video index;
+ * [previous] the session a recorder restart carried on from, when it names one. Pure: reading the
+ * session and its files is the caller's.
  */
 fun sessionQuality(
     data: SessionData,
@@ -57,6 +58,7 @@ fun sessionQuality(
         videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end),
         coachSection(data.events, samples),
         thermalSection(data.events),
+        channelsSection(data),
     )
     return QualityReport(QualityFormat, data.id, data.state.name, computedAtUtcMillis, sections)
 }

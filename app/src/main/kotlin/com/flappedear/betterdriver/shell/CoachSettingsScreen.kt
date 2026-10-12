@@ -159,7 +159,10 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, on
             enabled = s.learningLaps < CoachSettings.MaxLearningLaps,
         ) { Text("+") }
     }
-    DimText("The coach says only lap times until it has learned this many laps.")
+    DimText(
+        "The coach says only lap times until it has learned this many laps. " +
+            "Back out on the same day, it needs only one.",
+    )
 }
 
 /** Says, on [VoiceMode.PreRendered], from clips once they are rendered; live until then. */

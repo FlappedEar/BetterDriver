@@ -29,6 +29,9 @@ const val FocusCorners = 3
 /** Time from deciding to speak to the start of the sound, before any audio delay setting. */
 const val DefaultLatencyMicros = 300_000L
 
+/** Timed laps before corner cues when the track was driven earlier the same day (FBBD-190): a warm-up lap. */
+const val WarmUpLaps = 1
+
 /** A cue starts at most this long before it must have ended, so it is still fresh at the corner. */
 private const val LeadMicros = 1_500_000L
 
@@ -250,7 +253,9 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *   sessions and this one, so a cue only asks for what the driver has already done there. A corner
  *   that first lap reached from a stop has no known braking zone until a lap has passed it, so
  *   nothing is said on the straight before it until then (FBBD-202).
- * - **Learning.** No corner cue until [CoachSettings.learningLaps] timed laps of this session are done.
+ * - **Learning.** No corner cue until [CoachSettings.learningLaps] timed laps of this session are done;
+ *   when the [earlier] reference has a session driven [sameDay] (back out after a break in the pits,
+ *   FBBD-190), at most [WarmUpLaps], since the corners and targets are known already.
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
  *   there and may give one cue: brake later, brake earlier, or carry more speed. It is timed to end,
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
@@ -273,6 +278,7 @@ class CueEngine(
     earlier: CoachReference? = null,
     latencyMicros: Long = DefaultLatencyMicros,
     private val picks: List<CornerPick> = emptyList(),
+    sameDay: Boolean = false,
 ) {
     private val laps = LapCollector(track)
     private val speech = SpeechTiming(settings, latencyMicros)
@@ -282,6 +288,8 @@ class CueEngine(
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
         identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m)) }
     }
+    private val learningLaps =
+        if (sameDay && book != null) minOf(settings.learningLaps, WarmUpLaps) else settings.learningLaps
 
     private var cursor: PathCursor? = null
     private var meters: List<PassMeter> = emptyList()
@@ -313,9 +321,9 @@ class CueEngine(
     val phase: CoachPhase
         get() = when {
             settings.verbosity < Verbosity.Focus -> CoachPhase.Quiet
-            book == null || timedLaps < settings.learningLaps -> {
+            book == null || timedLaps < learningLaps -> {
                 // With no earlier reference the corners come from this session's first timed lap: at least one.
-                val needed = if (book == null) maxOf(settings.learningLaps, 1) else settings.learningLaps
+                val needed = if (book == null) maxOf(learningLaps, 1) else learningLaps
                 CoachPhase.Learning(minOf(timedLaps, needed), needed)
             }
             else -> CoachPhase.Coaching
@@ -466,7 +474,7 @@ class CueEngine(
     }
 
     private fun mayCue(b: CornerBook, corner: Corner, lap: Int): Boolean {
-        val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= settings.learningLaps
+        val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         // The driver gets a lap to try the last cue.
         val rested = b.cuedOnLap[corner.number - 1] != lap - 1
         return learned && rested && (settings.verbosity == Verbosity.Full || corner.number in b.focus())

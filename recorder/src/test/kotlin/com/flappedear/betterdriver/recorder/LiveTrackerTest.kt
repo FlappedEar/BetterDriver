@@ -123,6 +123,18 @@ class LiveTrackerTest {
     }
 
     @Test
+    fun `the first fix after a long gap keeps the receiver's rate`() {
+        val r = Receiver(10)
+        r.now = r.lastFix + 5 * MicrosPerSecond
+        r.tracker.onSamples(SampleSet(r.now, gnss.fix(1_000)))
+        assertEquals(10, r.tracker.snapshot().receiverRateHz)
+        assertEquals(GnssState.Lost, r.after(6_100_000).gnss)
+        r.now = r.lastFix + 5_100_000
+        r.tracker.onSamples(SampleSet(r.now, gnss.fix(1_001)))
+        assertEquals(10, r.tracker.snapshot().receiverRateHz)
+    }
+
+    @Test
     fun `the lost threshold is three fix periods and at least a second`() {
         assertEquals(3_000_000, gnssLostAfterMicros(0))
         assertEquals(3_000_000, gnssLostAfterMicros(1))

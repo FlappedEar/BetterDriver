@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.analysis.geo.hypot
 import com.flappedear.betterdriver.analysis.geo.isValidCoordinate
 import com.flappedear.betterdriver.analysis.geo.lround
 import com.flappedear.betterdriver.analysis.geo.projectCoordinate
+import com.flappedear.betterdriver.analysis.laps.LapDetectionOptions
 import com.flappedear.betterdriver.analysis.laps.LapTrace
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -105,6 +106,9 @@ private const val MaximumPlausibleSpeedMetersPerSecond = 100.0
 private const val OwnSpeedMargin = 1.5
 private const val OwnSpeedFloorMetersPerSecond = 40.0
 private const val MinimumHeadingMovementMeters = 0.5
+
+/** The shortest point-to-point axis: as short as the shortest run lap detection accepts. */
+private val MinimumRunAxisMeters = LapDetectionOptions().minimumRunDistanceMeters
 private const val StandingSeconds = 0.5
 private const val StandingMetersPerSecond = 1.0
 private const val FlatBranchRatio = 0.95
@@ -403,7 +407,8 @@ private fun angularDifference(to: Double, from: Double) = atan2(sin(to - from), 
  * The progress axis of [referenceTrace] (a reference-eligible, gap-free lap) around [origin], with
  * index 0 where the lap's path crosses [gate] (else the point closest to its midpoint). Invalid for
  * fewer than 12 distinct points or a loop outside 50 m to 30 km. Not [closed], for a point-to-point
- * run (FBBD-162), the axis is the run's own path from its start (at the start line) to its finish.
+ * run (FBBD-162), the axis is the run's own path from its start (at the start line) to its finish,
+ * from [LapDetectionOptions.minimumRunDistanceMeters] to 30 km long.
  */
 fun buildProgressAxis(
     referenceTrace: LapTrace,
@@ -468,7 +473,7 @@ fun buildProgressAxis(
 private fun openProgressAxis(points: List<MetricPoint>, origin: GeoCoordinate): ProgressAxis {
     var length = 0.0
     for (i in 1 until points.size) length += distance(points[i - 1], points[i])
-    if (!(length >= 50 && length <= 30000)) return ProgressAxis()
+    if (!(length >= MinimumRunAxisMeters && length <= 30000)) return ProgressAxis()
     val pointCount = lround(length / 2.0).coerceIn(32, 15000)
     val resampled = resampleByArcLength(points, pointCount - 1)
     if (resampled.size != pointCount - 1) return ProgressAxis()

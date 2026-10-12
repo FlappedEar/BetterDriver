@@ -2,7 +2,8 @@ package com.flappedear.betterdriver.recorder
 
 /**
  * A logged channel. [id] is unique within a session and is what samples refer to.
- * [decimals] is the precision used when the channel is exported (VBO).
+ * [decimals] is the precision used when the channel is exported (VBO). [provenance] is where its
+ * values come from (FBBD-174); by default what its [source] and [name] say ([Provenance.derive]).
  */
 data class ChannelDef(
     val id: Int,
@@ -10,6 +11,7 @@ data class ChannelDef(
     val unit: String,
     val source: String,
     val decimals: Int = 3,
+    val provenance: Provenance = Provenance.derive(source, name),
 ) {
     init {
         require(id in 0..MaxChannelId) { "channel id out of range: $id" }
@@ -61,9 +63,16 @@ data class Gate(
 
 /**
  * Where an imported session came from (FBBD-164): [format] as shown on its card ("VBO", "GPX",
- * "RaceChrono CSV") and the [fileName] it was read from.
+ * "RaceChrono CSV") and the [fileName] it was read from. [receiver] is the device or app the file
+ * names as its maker, empty when it names none; [sampleRateHz] the file's typical position rate,
+ * null when not known (an import made before FBBD-174).
  */
-data class ImportOrigin(val format: String, val fileName: String)
+data class ImportOrigin(
+    val format: String,
+    val fileName: String,
+    val receiver: String = "",
+    val sampleRateHz: Double? = null,
+)
 
 /**
  * What is known about a session when it starts. Written to disk before the first sample (FBBD-70).

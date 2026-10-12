@@ -149,7 +149,7 @@ class Recording internal constructor(
         val input = WriterInput(queue, pendingChannels, dropped, nanoTime, ::nowMicros) { stopIntake() }
         val writer = RecordingWriter(dir, config, storage, input, listeners)
         Thread({
-            val status = writer.run(info.channels)
+            val status = writer.run(info)
             stopIntake()
             lock.release()
             finalStatus = status

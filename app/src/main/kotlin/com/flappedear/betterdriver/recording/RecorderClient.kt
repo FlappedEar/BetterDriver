@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.setup.VideoMode
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.live.LiveTimingState
 
 /** What the UI knows about the recorder process. */
@@ -140,9 +141,15 @@ class RecorderClient private constructor(private val context: Context) {
         phoneVideo: VideoMode? = null,
         sensors: List<SensorRef> = emptyList(),
     ) {
-        if (gnss == null) {
+        val refused = when {
+            gnss == null -> RecorderService.NoReceiver
+            // A restore swaps the tracks and checks for a recording only before it does (FBBD-156).
+            AppDataGate.restoring -> "A backup is being restored. Start after it ends."
+            else -> null
+        }
+        if (refused != null || gnss == null) {
             // Neither the recorder nor the camera starts, so no camera notification waits for a session.
-            state = state.copy(starting = false, error = RecorderService.NoReceiver)
+            state = state.copy(starting = false, error = refused)
             return
         }
         state = state.copy(starting = true, error = null)

@@ -44,8 +44,8 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
     LaunchedEffect(Unit) {
         tracks.refresh()
         tracks.locate()
-        val recorder = RecorderClient.get(context).state
-        tracks.refreshCircuits(recording = recorder.recording || recorder.starting)
+        val recorder = RecorderClient.get(context)
+        tracks.refreshCircuits(recording = { recorder.state.let { it.recording || it.starting } })
     }
     val openNew: (Track) -> Unit = { t -> nav.navigate(Routes.trackEditor(t.id)) }
     TracksScreen(

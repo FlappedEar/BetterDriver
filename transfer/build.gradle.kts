@@ -15,6 +15,8 @@ dependencies {
     implementation(project(":recorder"))
     api(project(":setup"))
     api(project(":timing"))
+    // MockSessionTest (FBBD-191) adds a video clip to the session it builds.
+    testImplementation(project(":video"))
     testImplementation(kotlin("test"))
     testImplementation(platform(libs.junit5.bom))
     testImplementation(libs.junit5.jupiter)
@@ -23,4 +25,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // MockSessionTest (FBBD-191) builds a mock session only when tools/mock-session/make.sh passes its inputs.
+    for (name in listOf("mockVbo", "mockVideo", "mockVideoStartUtcMs", "mockVideoDurationUs", "mockOut", "mockTrackName")) {
+        providers.gradleProperty(name).orNull?.let { systemProperty(name, it) }
+    }
 }

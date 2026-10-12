@@ -48,11 +48,12 @@ class ScionFrsTest {
     }
 
     @Test
-    fun `accelerator is MIN(A, 100)`() {
-        // A = 0x4B = 75 %
-        assertEquals(75.0, accelerator.decode(messages("7E8 03 41 5A 4B 00 00 00 00")))
-        // A = 0x6E = 110, capped at 100 %
-        assertEquals(100.0, accelerator.decode(messages("41 5A 6E", headers = false)))
+    fun `accelerator keeps the standard A·100÷255 scaling`() {
+        // A = 0x80 = 128: 128 × 100 / 255 ≈ 50.2 %
+        val half = assertNotNull(accelerator.decode(messages("7E8 03 41 5A 80 00 00 00 00")))
+        assertEquals(128 * 100.0 / 255, half, 1e-9)
+        // A = 0xFF: full scale, 100 %
+        assertEquals(100.0, assertNotNull(accelerator.decode(messages("41 5A FF", headers = false))), 1e-9)
     }
 
     /**
@@ -127,7 +128,7 @@ class ScionFrsTest {
         val polled = profile.channelsToPoll(supported)
         val ids = polled.map { it.id }
         assertEquals(listOf("coolant_temp", "rpm", "speed", "brake", "accelerator", "oil_temp", "atf_temp"), ids)
-        assertEquals("MIN(A, 100)", polled.single { it.id == "accelerator" }.equation)
+        assertEquals("MIN(100, A*100.0/255)", polled.single { it.id == "accelerator" }.equation)
         assertEquals(0x7E0, polled.single { it.id == "oil_temp" }.header)
         assertTrue("throttle" !in ids) // not in the car's bitmask
         val generic = CarProfile.Generic.channelsToPoll(supported).map { it.id }
