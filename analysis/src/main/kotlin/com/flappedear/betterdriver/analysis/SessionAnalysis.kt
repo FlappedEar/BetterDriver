@@ -5,6 +5,8 @@ import com.flappedear.betterdriver.analysis.corners.CornerVariability
 import com.flappedear.betterdriver.analysis.corners.measureCornerLap
 import com.flappedear.betterdriver.analysis.corners.summarizeCornerVariability
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
+import com.flappedear.betterdriver.analysis.identity.identifySegments
+import com.flappedear.betterdriver.analysis.identity.identityRevisionTag
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.progress.ProgressAxis
@@ -20,7 +22,6 @@ import com.flappedear.betterdriver.analysis.segments.TheoreticalBestLap
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
 import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
 import com.flappedear.betterdriver.analysis.segments.TimedLapSectors
-import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.computeSegmentReview
 import com.flappedear.betterdriver.analysis.segments.computeTheoreticalBest
@@ -29,6 +30,7 @@ import com.flappedear.betterdriver.analysis.segments.publishTheoreticalBest
 import com.flappedear.betterdriver.analysis.segments.rankTimeLosses
 import com.flappedear.betterdriver.analysis.segments.timePopulation
 import com.flappedear.betterdriver.analysis.segments.wrapLengthMeters
+import com.flappedear.betterdriver.timing.track.TrackRevision
 
 /**
  * One session analysed end to end: its laps, the corners and straights proposed on its fastest
@@ -37,8 +39,10 @@ import com.flappedear.betterdriver.analysis.segments.wrapLengthMeters
  * corner on every lap.
  *
  * Telemetry stores approved segments per track configuration and adopts the best lap's proposals
- * only when no run has approved any; BetterDriver has no segment editor yet, so a session always
- * uses its own best lap's proposals (revision `auto-lap-N`).
+ * only when no run has approved any. BetterDriver keeps them with the track as its corner identity
+ * (FBBD-172, [identity]): the corners and straights proposed on the first lap analysed there, placed
+ * on each session's fastest lap by position, so segment ids and corner numbers stay the same
+ * whichever lap is the fastest and however often a session is analysed.
  */
 data class SessionAnalysis(
     val laps: LapSession,
@@ -72,18 +76,31 @@ data class SessionAnalysis(
     val cornerMetrics: Map<String, List<CornerLapMetrics>> = emptyMap(),
     /** How repeatable each corner's braking, speeds, pickup and line are over the eligible laps. */
     val variability: Map<String, CornerVariability> = emptyMap(),
-)
+    /**
+     * The track's corner identity [segments] come from (FBBD-172): the one passed in, or a new one,
+     * the first for the track or the next revision when the fastest lap left the old one's shape.
+     * Kept with the track when it differs from the one passed in. Null without segments.
+     */
+    val identity: TrackRevision? = null,
+) {
+    /** Whether [segments] are [identity]'s corners and straights, under its ids (FBBD-172). */
+    val identified: Boolean
+        get() = identity != null && segments?.revision == identityRevisionTag(identity.number)
+}
 
 /**
  * Analyses [session]: laps from its start gate, the axis of the fastest eligible lap with every lap
- * projected onto it, then segments, sector times and theoretical best. Segments are left out when
- * the best lap cannot be split (a circle has no straight) or its line disagrees with the other laps;
- * laps can still be compared by distance then.
+ * projected onto it, then segments, sector times and theoretical best. Segments are the track's
+ * [identity] (FBBD-172) placed on that axis, or proposed on it when there is none yet or the lap no
+ * longer drives its shape ([SessionAnalysis.identity]). They are left out when the best lap's line
+ * disagrees with the other laps, or when there is no identity to place and the best lap cannot be
+ * split (a circle has no straight); laps can still be compared by distance then.
  */
-@Suppress("ReturnCount")
+@Suppress("ReturnCount", "LongMethod")
 fun analyzeSession(
     session: TelemetrySession,
     laps: LapSession = deriveSourceLapSession(session),
+    identity: TrackRevision? = null,
 ): SessionAnalysis {
     val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps)
     val fastest = laps.timedLaps[fastestIndex]
@@ -91,16 +108,13 @@ fun analyzeSession(
         session, laps, fastest.number, fastest.startTelemetryTime, fastest.endTelemetryTime,
     )
     val consensus = lineConsensus(review.axis, laps.lapTraces.filter { it.lapNumber != fastest.number })
-    val segments = if (review.unavailable == null && !consensus.disagrees) {
-        ApprovedSegments(
-            review.proposals.proposals.mapIndexed { i, p ->
-                TrackSegment("s$i", p.name, p.type, p.start.progressMeters, p.end.progressMeters)
-            },
-            revision = "auto-lap-${fastest.number}",
-        )
-    } else {
+    val identified = if (consensus.disagrees || !review.axis.valid) {
         null
+    } else {
+        val proposals = if (review.unavailable == null) review.proposals.proposals else emptyList()
+        identifySegments(review.axis, proposals, identity)
     }
+    val segments = identified?.segments
     val population = laps.timedLaps.map {
         PopulationLap(session, it.startTelemetryTime, it.endTelemetryTime, it.number)
     }
@@ -136,6 +150,7 @@ fun analyzeSession(
     return SessionAnalysis(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
         publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
+        identified?.identity,
     )
 }
 

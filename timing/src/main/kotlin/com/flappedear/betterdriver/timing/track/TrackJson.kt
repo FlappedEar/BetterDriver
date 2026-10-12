@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.timing.track
 
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
@@ -64,12 +65,21 @@ object TrackJson {
         if (version > TrackFileVersion) throw TrackFormatException("made by a newer app (version $version)")
         val body = root["track"] ?: throw TrackFormatException("no track")
         return try {
-            json.decodeFromJsonElement<Track>(body)
-        } catch (e: SerializationException) {
-            throw TrackFormatException("bad track: ${e.message}", e)
-        } catch (e: IllegalArgumentException) {
-            throw TrackFormatException("bad track: ${e.message}", e)
+            decodeTrack(body)
+        } catch (e: TrackFormatException) {
+            // A damaged corner identity (FBBD-172) never costs the track: it is made again from a lap.
+            val without = (body as? JsonObject)?.takeIf { it["identity"] != null }?.let { JsonObject(it - "identity") }
+                ?: throw e
+            decodeTrack(without)
         }
+    }
+
+    private fun decodeTrack(body: JsonElement): Track = try {
+        json.decodeFromJsonElement<Track>(body)
+    } catch (e: SerializationException) {
+        throw TrackFormatException("bad track: ${e.message}", e)
+    } catch (e: IllegalArgumentException) {
+        throw TrackFormatException("bad track: ${e.message}", e)
     }
 }
 

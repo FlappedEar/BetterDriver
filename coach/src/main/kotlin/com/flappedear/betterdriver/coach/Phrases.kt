@@ -2,11 +2,11 @@ package com.flappedear.betterdriver.coach
 
 /**
  * What the coach says (FBBD-97): short English phrases, numbers allowed (Arek, FBBD-6). Corners are
- * named by the coach's own numbers, which the review screen shows on the map.
+ * named by the track's corner numbers (FBBD-172), the ones the lap analysis shows.
  */
 object Phrases {
     fun corner(corner: Corner, advice: Advice): String {
-        val name = "Turn ${corner.number}"
+        val name = "Turn ${corner.label}"
         return when (advice) {
             is Advice.BrakeLater -> "$name, brake ${advice.meters} metres later"
             Advice.BrakeEarlier -> "$name, brake earlier"
