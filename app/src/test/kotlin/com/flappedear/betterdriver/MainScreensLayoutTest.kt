@@ -167,14 +167,24 @@ abstract class MainScreensLayoutTest(private val device: String) {
     fun newTrackNameSurvivesRotation() {
         compose.edgeToEdge()
         val restoration = StateRestorationTester(compose)
-        restoration.setContent { AppScreen { TracksNearKielce() } }
-        compose.onNodeWithText("Not on the list", substring = true).performScrollTo().performClick()
-        // Set without focusing the field: a focused field on Robolectric's phone window never let
-        // the test get idle, and whether the name is kept does not depend on focus.
-        compose.onNode(hasSetTextAction()).performTextReplacement("Kartodrom")
-        restoration.emulateSavedInstanceStateRestore()
+        step("showing the tracks") { restoration.setContent { AppScreen { TracksNearKielce() } } }
+        val newTrack = compose.onNodeWithText("Not on the list", substring = true)
+        step("scrolling to New track here") { newTrack.performScrollTo() }
+        step("opening the dialog") { newTrack.performClick() }
+        // Set without focusing the field: whether the name is kept does not depend on focus.
+        step("typing the name") { compose.onNode(hasSetTextAction()).performTextReplacement("Kartodrom") }
+        step("rotating") { restoration.emulateSavedInstanceStateRestore() }
         compose.onNodeWithText("New track here").assertExists()
         compose.onNodeWithText("Kartodrom").assertExists()
+    }
+
+    /** Runs [block]; a failure (the window never getting idle, say) names the step it happened at. */
+    private fun step(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (e: RuntimeException) {
+            throw AssertionError("$what on $device: ${e.message}", e)
+        }
     }
 
     private fun settings(tab: SettingsTab) = checkScreen("settings_${tab.name.lowercase()}", Routes.Settings) {
