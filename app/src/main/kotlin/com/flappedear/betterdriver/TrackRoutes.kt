@@ -183,5 +183,5 @@ private fun DeleteTrackDialog(name: String, onDismiss: () -> Unit, onDelete: () 
 
 /** The delete question's text: what goes and what stays. */
 internal fun deleteTrackText(name: String): String =
-    "$name: its lines and coach reference will be removed from this phone. " +
+    "$name: its lines and coach data will be removed from this phone. " +
         "Sessions recorded there stay. This can't be undone."

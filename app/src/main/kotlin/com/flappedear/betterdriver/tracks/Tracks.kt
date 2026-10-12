@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.BuildConfig
 import com.flappedear.betterdriver.coach.CoachReferenceStore
+import com.flappedear.betterdriver.coach.coachPicks
 import com.flappedear.betterdriver.coach.coachReferencesDir
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.feature.track.editor.TileLoader
@@ -141,17 +142,23 @@ class Tracks private constructor(private val context: Context) {
     }
 
     /**
-     * Deletes the track and its coach reference (FBBD-157); sessions recorded there stay, with the
-     * track name they were recorded under. The reference goes first, so a track re-created with the
-     * same id never picks up a stale one. [onDone] gets false when either is still there.
+     * Deletes the track with its coach reference and picked corners (FBBD-157); sessions recorded
+     * there stay, with the track name they were recorded under. The coach files go first, so a track
+     * re-created with the same id never picks up stale ones. [onDone] gets false when any is left.
      */
     fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
         val references = CoachReferenceStore(coachReferencesDir(context))
+        val picks = coachPicks(context)
         references.delete(id)
-        val referenceGone = references.get(id) == null
-        if (referenceGone) store.delete(id)
+        try {
+            picks.save(id, emptyList())
+        } catch (e: IOException) {
+            DebugLog.w(Tag, "deleting coach picks for $id failed", e)
+        }
+        val coachGone = references.get(id) == null && picks.get(id).isEmpty()
+        if (coachGone) store.delete(id)
         if (draft?.track?.id == id) draft = null
-        val gone = referenceGone && store.get(id) == null
+        val gone = coachGone && store.get(id) == null
         if (!gone) DebugLog.w(Tag, "deleting track $id failed")
         publish()
         main.post { onDone(gone) }
