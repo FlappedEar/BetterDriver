@@ -39,7 +39,8 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
     /** Places positions of one lap on the path. Use a new one for each lap. */
     fun cursor(): PathCursor = PathCursor(delta.Cursor())
 
-    fun meters(lap: Int): List<PassMeter> = corners.mapIndexed { i, c -> PassMeter(c, windows[i], lap) }
+    fun meters(lap: Int): List<PassMeter> =
+        corners.mapIndexed { i, c -> PassMeter(c, windows[i], lap, path.lengthMeters) }
 
     /** Every pass of [trace], a lap driven on this map's track. */
     fun passes(trace: LapTrace, lap: Int): List<CornerPass> {
@@ -75,6 +76,8 @@ class PassMeter(
     private val corner: Corner,
     private val window: ClosedFloatingPointRange<Double>,
     private val lap: Int,
+    /** Where the finish line is along the path. */
+    private val lineAt: Double = window.endInclusive,
 ) {
     private class Sample(val along: Double, val tMicros: Long, val kmh: Double)
 
@@ -83,6 +86,15 @@ class PassMeter(
     private var entry: Sample? = null
     private var finished = false
     private var started = false
+    private var line: Sample? = null
+
+    /**
+     * Live, the lap began at the line at [lineMicros], before the first position fed in; a window that
+     * starts at the line is timed from there. Offline the trace's first position is on the line already.
+     */
+    fun start(lineMicros: Long, lineKmh: Double) {
+        line = Sample(0.0, lineMicros, lineKmh)
+    }
 
     fun add(along: Double, tMicros: Long, kmh: Double): CornerPass? {
         if (finished) return null
@@ -103,11 +115,7 @@ class PassMeter(
                 null
             }
             s.along <= window.endInclusive -> {
-                // The lap's first position enters a window that starts at the line.
-                if (inside.isEmpty()) {
-                    val atLine = first && window.start <= 0.0 && s.along <= MaxGapMeters
-                    entry = p?.takeIf { it.along < window.start } ?: s.takeIf { atLine }
-                }
+                if (inside.isEmpty()) entry = entryBefore(p, s, first)
                 inside += s
                 null
             }
@@ -117,6 +125,15 @@ class PassMeter(
                 if (e == null || inside.isEmpty()) null else measure(e, s)
             }
         }
+    }
+
+    /**
+     * Where the window was entered, for [s] the first position inside it: the position before it, or
+     * for the lap's [first] position in a window that starts at the line, the line itself.
+     */
+    private fun entryBefore(p: Sample?, s: Sample, first: Boolean): Sample? {
+        val atLine = first && window.start <= 0.0 && s.along <= MaxGapMeters
+        return p?.takeIf { it.along < window.start } ?: (line ?: s).takeIf { atLine }
     }
 
     /** The car left the path: what was measured so far is not one continuous drive through the window. */
@@ -130,13 +147,14 @@ class PassMeter(
      * The lap ended: a window that ends at the line is measured if the car got there, since no later
      * position of this lap can be beyond it. Live, the line was crossed at [lineMicros], after the
      * last position fed in, at [lineKmh]; offline the trace's last position is on the line already.
+     * A window that ends short of the line is timed by interpolating towards the line, not to it.
      */
     fun finish(lineMicros: Long? = null, lineKmh: Double = 0.0): CornerPass? {
         val e = entry.takeUnless { finished }
         finished = true
         val last = inside.lastOrNull()?.takeIf { window.endInclusive - it.along <= MaxGapMeters }
         val line = lineMicros?.takeIf { last != null && it >= last.tMicros }
-            ?.let { Sample(window.endInclusive, it, lineKmh) }
+            ?.let { Sample(lineAt, it, lineKmh) }
         return if (e == null || last == null) null else measure(e, line ?: last)
     }
 
