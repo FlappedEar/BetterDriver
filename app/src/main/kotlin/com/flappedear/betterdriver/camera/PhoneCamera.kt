@@ -18,6 +18,7 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.DynamicRange
+import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.FileOutputOptions
 import androidx.camera.video.Quality
@@ -85,6 +86,9 @@ class PhoneCamera(
     private val power = context.getSystemService(PowerManager::class.java)
     private lateinit var sink: VideoSink
     private var provider: ProcessCameraProvider? = null
+
+    /** This camera's bound use case. Only it is unbound when this camera ends, never all of them. */
+    private var bound: VideoCapture<Recorder>? = null
     private var steps: List<VideoMode> = ladder
     private var policy = ThermalPolicy(ladder.size)
 
@@ -155,7 +159,7 @@ class PhoneCamera(
         endReason = "user"
         nextStep = null
         val r = recording
-        if (r != null) r.stop() else provider?.unbindAll()
+        if (r != null) r.stop() else unbindOwn(provider, bound)
     }
 
     /** The ladder steps the back camera supports. */
@@ -177,6 +181,7 @@ class PhoneCamera(
                 .build()
             p.unbindAll()
             p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
+            bound = capture
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
             val output = FileOutputOptions.Builder(File(dir, name)).setFileSizeLimit(MaxFileBytes).build()
@@ -226,11 +231,12 @@ class PhoneCamera(
         DebugLog.log(if (error) DebugLog.WARN else DebugLog.INFO, Tag, "$name ended: $reason", e.cause)
         val next = nextStep
         when {
-            stopping -> provider?.unbindAll()
+            // A file that finalizes late, after the service began a new camera, must not unbind that one.
+            stopping -> unbindOwn(provider, bound)
             next != null -> begin(next)
             full && endReason == "user" -> begin(policy.current)
             endReason != "user" -> {
-                provider?.unbindAll()
+                unbindOwn(provider, bound)
                 sink.status(stoppedText(endReason), ok = false)
             }
             error && restarts < MaxRestarts -> {
@@ -250,7 +256,7 @@ class PhoneCamera(
     }
 
     private fun fail(text: String) {
-        provider?.unbindAll()
+        unbindOwn(provider, bound)
         sink.status(text, ok = false)
     }
 
@@ -388,4 +394,9 @@ internal fun phoneQuality(size: VideoSize): Quality = when (size) {
     VideoSize.UHD -> Quality.UHD
     VideoSize.QHD, VideoSize.FHD -> Quality.FHD
     VideoSize.HD -> Quality.HD
+}
+
+/** Unbinds [useCase] alone: a camera that ends late must not take down the one that replaced it. */
+private fun unbindOwn(provider: ProcessCameraProvider?, useCase: UseCase?) {
+    if (useCase != null) provider?.unbind(useCase)
 }

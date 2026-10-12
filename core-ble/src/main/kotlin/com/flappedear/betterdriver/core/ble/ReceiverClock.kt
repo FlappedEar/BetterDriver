@@ -30,11 +30,26 @@ internal class ReceiverClock(private val windowMessages: Int = WindowMessages) {
     private var lastTowMs: Long? = null
     private var lastStamp = Long.MIN_VALUE
 
-    fun stamp(arrivalMicros: Long, iTowMs: Long): Long {
+    fun stamp(arrivalMicros: Long, iTowMs: Long): Long = stamp(arrivalMicros, listOf(iTowMs)).single()
+
+    /**
+     * Stamps the messages of one notification, oldest first. All of them arrived together, so the
+     * newest, least delayed one sets the delay for all: stamping each before seeing the next would
+     * give messages 40 ms apart nearly the same stamp.
+     */
+    fun stamp(arrivalMicros: Long, iTowsMs: List<Long>): List<Long> {
+        if (iTowsMs.isEmpty()) return emptyList()
+        iTowsMs.forEach { observe(arrivalMicros, it) }
+        val lowest = window.first().second
+        return iTowsMs.map { tow ->
+            maxOf(tow * MicrosPerMilli + lowest, lastStamp + 1).also { lastStamp = it }
+        }
+    }
+
+    private fun observe(arrivalMicros: Long, iTowMs: Long) {
         val step = lastTowMs?.let { iTowMs - it }
         lastTowMs = iTowMs
-        val towMicros = iTowMs * MicrosPerMilli
-        val offset = arrivalMicros - towMicros
+        val offset = arrivalMicros - iTowMs * MicrosPerMilli
         val lowest = window.firstOrNull()?.second
         val jumped = lowest != null && offset < lowest - MaxOffsetDropMicros
         val continues = step != null && step in 1..MaxStepMs && !jumped
@@ -43,9 +58,6 @@ internal class ReceiverClock(private val windowMessages: Int = WindowMessages) {
         while (window.isNotEmpty() && window.last().second >= offset) window.removeLast()
         window.addLast(count to offset)
         while (window.first().first <= count - windowMessages) window.removeFirst()
-        val stamped = maxOf(towMicros + window.first().second, lastStamp + 1)
-        lastStamp = stamped
-        return stamped
     }
 
     fun reset() {

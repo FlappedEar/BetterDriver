@@ -38,6 +38,24 @@ class StreamStatsTest {
     }
 
     @Test
+    fun aTenHertzStreamMissesNothingButItsOwnGaps() {
+        val stats = StreamStats()
+        var line: String? = null
+        var t = 0L
+        var sent = 0
+        while (line == null) {
+            t += 100
+            // A RaceBox set to 10 Hz for standalone recording, missing one message in each 10 s.
+            if (t % 10_000 == 5_300L) continue
+            sent++
+            stats.add(t)
+            line = stats.line()
+        }
+        // 1500 messages over about 151.5 s, each 10 s missing one: 15 missing, none on a whole second.
+        assertEquals("1500 messages in 0 notifications, 15 missing (0 on a whole second), 0 other frames", line)
+    }
+
+    @Test
     fun countsNotificationsAndOtherFramesThenStartsOver() {
         val stats = StreamStats()
         repeat(3) { stats.notification() }

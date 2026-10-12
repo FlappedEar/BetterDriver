@@ -21,6 +21,14 @@ class ReceiverClockTest {
     }
 
     @Test
+    fun `messages delivered in one notification keep their spacing`() {
+        val clock = ReceiverClock()
+        // The first notification of a link carries two messages 40 ms apart.
+        val stamps = clock.stamp(5_000_080_000L, listOf(5_000_000L, 5_000_040L))
+        assertEquals(listOf(5_000_040_000L, 5_000_080_000L), stamps)
+    }
+
+    @Test
     fun `a stamp is never after the arrival and never before the previous one`() {
         val clock = ReceiverClock(windowMessages = 5)
         var last = Long.MIN_VALUE
