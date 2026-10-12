@@ -99,7 +99,7 @@ class ReviewSyncTest {
             var cursor = LapReviewProbe.cursorMicros
             repeat(PlayStops) { stop ->
                 app.pumpUntilText("Play").performClick()
-                app.pumpFor(PlayMs)
+                playFor(PlayMs)
                 app.pumpUntilText("Pause").performClick()
                 app.pumpUntilText("Play")
                 app.pumpFor(FrameMs * SettleFrames)
@@ -124,6 +124,16 @@ class ReviewSyncTest {
             app.pumpBack()
             app.pumpUntilText("Compare laps")
         }
+    }
+
+    /**
+     * Plays [ms] of the review's own clock, which moves the cursor, a display frame at a time. Not
+     * [pumpFor]'s [ms] of wall time: on the emulator a frame of the playing review takes several
+     * times its 16 ms, so 1.2 s of wall time moved the cursor 160 ms.
+     */
+    private fun playFor(ms: Long) = repeat((ms / FrameMs).toInt()) {
+        app.mainClock.advanceTimeByFrame()
+        Thread.sleep(FrameMs)
     }
 
     /**
