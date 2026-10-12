@@ -51,7 +51,8 @@ internal fun earlierSessions(
                 val laps = deriveSourceLapSession(session)
                 // Only the session before keeps its samples, for its corner and straight times.
                 if (previous == null && laps.fastestLapIndex != null) previous = PreviousLaps(session, laps)
-                EarlierSession(sessionLabel(summary.info.startUtcMillis), laps)
+                // The others keep only their lap times: up to 4,096 trace points a lap add up.
+                EarlierSession(sessionLabel(summary.info.startUtcMillis), laps.copy(lapTraces = emptyList()))
             } catch (e: Exception) {
                 android.util.Log.w("SessionAnalysis", "reading earlier session ${summary.id} failed", e)
                 null
