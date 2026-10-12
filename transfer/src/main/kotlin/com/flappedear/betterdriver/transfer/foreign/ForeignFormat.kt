@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.transfer.foreign
 
+import com.flappedear.betterdriver.recorder.Provenance
 import java.io.IOException
 import java.io.InputStream
 import java.io.Reader
@@ -99,8 +100,11 @@ class ImportPoint(
     }
 }
 
-/** An extra column a file carries (a VBO or CSV channel that is not a position value). */
-data class ExtraColumn(val name: String, val unit: String)
+/**
+ * An extra column a file carries (a VBO or CSV channel that is not a position value). [provenance]
+ * is where the file says its values come from, null when it does not say (FBBD-174).
+ */
+data class ExtraColumn(val name: String, val unit: String, val provenance: Provenance? = null)
 
 /** Where a reader puts what it finds. [extras] comes before the first [point] if at all. */
 interface ImportSink {
@@ -109,6 +113,12 @@ interface ImportSink {
 
     /** A row or point that could not be read and was left out. */
     fun skipped()
+
+    /** The device or app the file names as its maker, such as a GPX file's creator (FBBD-174). */
+    fun receiver(name: String) = Unit
+
+    /** Where the file says its acceleration columns come from, when it says (FBBD-174). */
+    fun accelerationSource(provenance: Provenance) = Unit
 }
 
 /**

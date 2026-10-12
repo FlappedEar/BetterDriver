@@ -75,7 +75,7 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: Track
     for ((id, ts) in times) {
         val def = data.channels[id] ?: data.info.channels.firstOrNull { it.id == id } ?: continue
         val channelValues = values.getValue(id).toDoubleArray()
-        channels[def.name] = TelemetryChannel(def.name, ts.toDoubleArray(), channelValues, def.unit)
+        channels[def.name] = TelemetryChannel(def.name, ts.toDoubleArray(), channelValues, def.unit, def.provenance)
     }
     // The first accelerometer the recording has, X and Y from the same receiver.
     val axes = AccelerometerAxes.firstOrNull { (x, _) -> x in channels } ?: AccelerometerAxes.first()
@@ -125,5 +125,6 @@ private fun forwardAcceleration(channels: Map<String, TelemetryChannel>, name: S
         if (before != null && after != null && x.values[i].isFinite()) agreement += x.values[i] * (after - before)
     }
     val values = if (agreement < 0.0) DoubleArray(x.values.size) { -x.values[it] } else x.values.copyOf()
-    return TelemetryChannel(ForwardAcceleration, x.timestamps, values, x.unit)
+    // Only the sign may change: the values are still the accelerometer's.
+    return TelemetryChannel(ForwardAcceleration, x.timestamps, values, x.unit, x.provenance)
 }

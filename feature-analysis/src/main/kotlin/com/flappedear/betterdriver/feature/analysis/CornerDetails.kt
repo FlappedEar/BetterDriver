@@ -18,8 +18,10 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 /**
  * Corner details (FBBD-104, UI-68): per corner, where the best lap and the compared lap brake, how
  * hard, their minimum and exit speeds and where the throttle comes back, with the spread over the
- * counted laps (interquartile range). Inferred values (no pedal channel) are marked ≈. Where the
- * screen can show every lap through a corner ([LocalCornerLaps], FBBD-153), tapping a corner opens it.
+ * counted laps (interquartile range). Every value that is not measured (inferred with no pedal
+ * channel, or read from a calculated channel) is marked ≈, and the card says what ≈ means
+ * (FBBD-174). Where the screen can show every lap through a corner ([LocalCornerLaps], FBBD-153),
+ * tapping a corner opens it.
  */
 @Composable
 internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
@@ -46,21 +48,16 @@ internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
                 Dim("Spread", Modifier.width(ValueWidth))
             }
             for (row in corner.rows) {
+                fun value(v: Double?) = marked(formatMeasure(v, row.measure, corner.speedUnit), row.provenance)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(row.label, Modifier.weight(1f), color = c.text)
-                    val mark = if (row.inferred && row.best != null) "≈" else ""
-                    Text(
-                        mark + formatMeasure(row.best, row.measure, corner.speedUnit),
-                        Modifier.width(ValueWidth),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    if (other != null) {
-                        Text(formatMeasure(row.lap, row.measure, corner.speedUnit), Modifier.width(ValueWidth))
-                    }
-                    Dim(formatMeasure(row.spread, row.measure, corner.speedUnit), Modifier.width(ValueWidth))
+                    Text(value(row.best), Modifier.width(ValueWidth), fontWeight = FontWeight.SemiBold)
+                    if (other != null) Text(value(row.lap), Modifier.width(ValueWidth))
+                    Dim(value(row.spread), Modifier.width(ValueWidth))
                 }
             }
             Dim("Brakes: metres before the corner. Throttle: metres after its start.")
+            if (corner.rows.any { it.marked }) ProvenanceLegend()
             corner.lineSpreadMeters?.let {
                 val line = formatMeasure(it, CornerMeasure.Meters, "")
                 Dim(if (corner.lineWithinGps) "Line spread $line, within GPS accuracy" else "Line spread $line")

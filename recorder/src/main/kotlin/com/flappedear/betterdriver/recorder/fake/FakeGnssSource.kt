@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.Gate
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
 import kotlin.math.PI
@@ -75,7 +76,7 @@ class FakeGnssSource(
     private var thread: Thread? = null
 
     override fun start(sink: SampleSink) {
-        GnssChannels.ALL.forEach(sink::defineChannel)
+        Channels.forEach(sink::defineChannel)
         running = true
         thread = Thread({
             val periodNanos = 1_000_000_000L / gnss.rateHz
@@ -99,5 +100,10 @@ class FakeGnssSource(
     override fun stop() {
         running = false
         thread?.join(1_000)
+    }
+
+    companion object {
+        /** The GNSS channels, marked as made up (FBBD-174): Demo GNSS never measures anything. */
+        val Channels = GnssChannels.ALL.map { it.copy(provenance = Provenance.SIMULATED) }
     }
 }

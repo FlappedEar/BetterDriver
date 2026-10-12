@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
@@ -8,6 +9,7 @@ import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
+import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.roundToLong
 
 /** What the analysis screen shows while it loads, when it cannot, and when it can. */
@@ -88,7 +90,10 @@ data class FocusRow(
 /** A corner along the distance axis, shaded behind the charts. */
 data class CornerBand(val name: String, val startMeters: Double, val endMeters: Double)
 
-/** The two laps the charts compare. */
+/**
+ * The two laps the charts compare. The time delta is worked out by distance ([DeltaProvenance]);
+ * the speeds are the speed channel's, of [speedProvenance] (FBBD-174).
+ */
 data class CompareUi(
     val referenceNumber: Int,
     val otherNumber: Int,
@@ -97,7 +102,14 @@ data class CompareUi(
     val referenceSpeed: List<List<ChartPoint>>,
     val otherSpeed: List<List<ChartPoint>>,
     val corners: List<CornerBand>,
+    val speedProvenance: Provenance? = null,
 )
+
+/** The theoretical best and the time to gain to it: put together from the best of each corner. */
+val TheoreticalProvenance = Provenance.CALCULATED
+
+/** The time delta between two laps: their times compared by distance along the lap. */
+val DeltaProvenance = Provenance.CALCULATED
 
 /** Everything the analysis screen draws for one session. */
 data class AnalysisUi(
@@ -132,6 +144,8 @@ data class AnalysisUi(
     val acceleration: AccelerationUi? = null,
     /** The session's data quality (FBBD-183); null while it is worked out, or when it cannot be. */
     val quality: QualityUi? = null,
+    /** Where the channels the analysis read come from (FBBD-174). */
+    val sources: AnalysisProvenance = AnalysisProvenance(),
 )
 
 /** Losses below this are GPS timing noise and not listed. */
@@ -220,8 +234,10 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
                 referenceSpeed = it.referenceSpeed,
                 otherSpeed = it.otherSpeed,
                 corners = corners,
+                speedProvenance = analysis.provenance.speed,
             )
         },
+        sources = analysis.provenance,
     )
 }
 

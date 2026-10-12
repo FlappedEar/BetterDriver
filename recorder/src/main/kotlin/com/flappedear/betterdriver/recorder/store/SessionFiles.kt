@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recorder.store
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.Gate
 import com.flappedear.betterdriver.recorder.ImportOrigin
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.SessionInfo
 import java.io.File
 import java.io.FileOutputStream
@@ -129,6 +130,8 @@ object SessionFiles {
         info.imported?.let { o ->
             setProperty("imported.format", o.format)
             setProperty("imported.file", o.fileName)
+            if (o.receiver.isNotEmpty()) setProperty("imported.receiver", o.receiver)
+            o.sampleRateHz?.let { setProperty("imported.sampleRateHz", it.toString()) }
         }
         setProperty("channels", info.channels.size.toString())
         info.channels.forEachIndexed { i, c ->
@@ -137,6 +140,8 @@ object SessionFiles {
             setProperty("channel.$i.unit", c.unit)
             setProperty("channel.$i.source", c.source)
             setProperty("channel.$i.decimals", c.decimals.toString())
+            // Added by FBBD-174; older builds ignore it.
+            setProperty("channel.$i.provenance", c.provenance.name)
         }
     }
 
@@ -150,24 +155,41 @@ object SessionFiles {
                 p.getProperty("startFinish.lon2").toDouble(),
             )
         }
+        val devices = p.getProperty("devices", "").split("\n").filter { it.isNotEmpty() }
+        val imported = p.getProperty("imported.format")?.let {
+            ImportOrigin(
+                it,
+                p.getProperty("imported.file", ""),
+                p.getProperty("imported.receiver", ""),
+                p.getProperty("imported.sampleRateHz")?.toDoubleOrNull(),
+            )
+        }
         val n = p.getProperty("channels", "0").toInt()
         val channels = (0 until n).map { i ->
-            ChannelDef(
+            val def = ChannelDef(
                 p.getProperty("channel.$i.id").toInt(),
                 p.getProperty("channel.$i.name"),
                 p.getProperty("channel.$i.unit"),
                 p.getProperty("channel.$i.source"),
                 p.getProperty("channel.$i.decimals").toInt(),
             )
+            // A session stored before FBBD-174 has none: derived from what its metadata says. A kind
+            // this version does not know (from a newer app) is unknown, never guessed as measured.
+            val provenance = when (val stored = p.getProperty("channel.$i.provenance")) {
+                null -> Provenance.forSession(def, devices, imported)
+                else -> Provenance.parse(stored) ?: Provenance.UNKNOWN
+            }
+            def.copy(provenance = provenance)
         }
         return SessionInfo(
             startUtcMillis = p.getProperty("startUtcMillis").toLong(),
             car = p.getProperty("car", ""),
             track = p.getProperty("track", ""),
-            devices = p.getProperty("devices", "").split("\n").filter { it.isNotEmpty() },
+            devices = devices,
             startFinish = gate,
             channels = channels,
-            imported = p.getProperty("imported.format")?.let { ImportOrigin(it, p.getProperty("imported.file", "")) },
+            imported = imported,
         )
     }
+
 }

@@ -1,9 +1,11 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerVariability
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
+import com.flappedear.betterdriver.recorder.Provenance
 import java.util.Locale
 
 /** What a corner detail measures, which decides how it is written. */
@@ -17,9 +19,15 @@ data class CornerMetricRow(
     val lap: Double?,
     /** Interquartile range over the counted laps; null with too few. */
     val spread: Double?,
-    /** The value is inferred (from deceleration or acceleration), not read from a pedal. */
-    val inferred: Boolean = false,
-)
+    /**
+     * Where the values come from (FBBD-174): inferred for a braking point or pickup found from
+     * acceleration, not a pedal; else the provenance of the channel read. Null when not known.
+     */
+    val provenance: Provenance? = null,
+) {
+    /** The row's values carry [NotMeasuredMark]. */
+    val marked: Boolean get() = provenance.notMeasured
+}
 
 /** The braking, speeds, pickup and line of one corner (UI-68). */
 data class CornerDetail(
@@ -47,7 +55,13 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
         val variability = analysis.variability[segment.id]
         CornerDetail(
             name = segment.name,
-            rows = rows(segment.startProgressMeters, analysis.axis?.lengthMeters ?: 0.0, best, other, variability),
+            rows = rows(
+                Lap(segment.startProgressMeters, analysis.axis?.lengthMeters ?: 0.0),
+                best,
+                other,
+                variability,
+                analysis.provenance,
+            ),
             speedUnit = best.speeds.unit,
             // Only with a recorded accuracy: without one the spread is neither within nor beyond it.
             lineWithinGps = variability != null && variability.lineOffset.available &&
@@ -58,18 +72,21 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
     }
 }
 
+/** Where a corner starts on the lap ([entry]) and the lap's [length], metres. */
+private class Lap(val entry: Double, val length: Double)
+
 private fun rows(
-    entry: Double,
-    length: Double,
+    lap: Lap,
     best: CornerLapMetrics,
     other: CornerLapMetrics?,
     variability: CornerVariability?,
+    sources: AnalysisProvenance,
 ): List<CornerMetricRow> {
     val inferredBraking = best.braking.provenance == "inferred"
     val inferredPickup = best.exit.pickup.provenance == "inferred"
     // The pickup as metres after the corner entry, along the lap.
     fun pickup(m: CornerLapMetrics) = m.exit.pickup.progressMeters?.let {
-        if (it >= entry || length <= 0.0) it - entry else it + length - entry
+        if (it >= lap.entry || lap.length <= 0.0) it - lap.entry else it + lap.length - lap.entry
     }
     return listOf(
         CornerMetricRow(
@@ -78,7 +95,7 @@ private fun rows(
             best.braking.distanceBeforeEntryMeters,
             other?.braking?.distanceBeforeEntryMeters,
             spread(if (inferredBraking) variability?.brakingPointInferred else variability?.brakingPointMeasured),
-            inferredBraking,
+            sources.braking(best.braking.provenance),
         ),
         CornerMetricRow(
             "Peak braking",
@@ -86,6 +103,7 @@ private fun rows(
             best.braking.peakDeceleration,
             other?.braking?.peakDeceleration,
             null,
+            sources.acceleration,
         ),
         CornerMetricRow(
             "Min speed",
@@ -93,6 +111,7 @@ private fun rows(
             best.speeds.minimum.value,
             other?.speeds?.minimum?.value,
             spread(variability?.minimumSpeed),
+            sources.speed,
         ),
         CornerMetricRow(
             "Exit speed",
@@ -100,6 +119,7 @@ private fun rows(
             best.speeds.exit.value,
             other?.speeds?.exit?.value,
             spread(variability?.exitSpeed),
+            sources.speed,
         ),
         CornerMetricRow(
             "Throttle",
@@ -107,7 +127,7 @@ private fun rows(
             pickup(best),
             other?.let(::pickup),
             spread(if (inferredPickup) variability?.pickupInferred else variability?.pickupMeasured),
-            inferredPickup,
+            sources.pickup(best.exit.pickup.provenance),
         ),
     )
 }
@@ -116,7 +136,7 @@ private fun spread(summary: ConsistencySummary?) = summary?.takeIf { it.availabl
 
 /** [value] in its measure, with [speedUnit] for speeds; a dash when missing. */
 internal fun formatMeasure(value: Double?, measure: CornerMeasure, speedUnit: String): String = when {
-    value == null -> "–"
+    value == null -> Missing
     measure == CornerMeasure.Meters -> String.format(Locale.ROOT, "%.0f m", value)
     measure == CornerMeasure.G -> String.format(Locale.ROOT, "%.2f g", value)
     speedUnit.isEmpty() -> String.format(Locale.ROOT, "%.1f", value)
