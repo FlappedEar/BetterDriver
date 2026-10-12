@@ -8,6 +8,8 @@ import java.io.StringWriter
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * The app's log (FBBD-146, FBBD-183): one continuous file that every process (UI, recorder, camera,
@@ -97,6 +99,8 @@ class LogFile(
     private val queue = LinkedBlockingQueue<String>(MaxQueued)
     private val dropped = AtomicLong()
     private val lock = Any()
+    private val signal = ReentrantLock()
+    private val queued = signal.newCondition()
 
     @Volatile
     private var closed = false
@@ -117,16 +121,19 @@ class LogFile(
         val text = if (error == null) line + "\n" else line + "\n" + stackTrace(error).trimEnd() + "\n"
         if (writer == null) {
             append(listOf(text))
-        } else if (!queue.offer(text)) {
+        } else if (queue.offer(text)) {
+            signal.withLock { queued.signalAll() }
+        } else {
             dropped.incrementAndGet()
         }
     }
 
-    /** Appends every queued line now. */
+    /**
+     * Appends every queued line now. Lines leave the queue only under [lock], so a batch the writer
+     * thread has taken is on file by the time this returns too.
+     */
     fun flush() {
-        val batch = mutableListOf<String>()
-        queue.drainTo(batch)
-        if (batch.isNotEmpty()) append(batch)
+        synchronized(lock) { appendQueued() }
     }
 
     /** Writes what is queued and stops the writer. */
@@ -138,15 +145,21 @@ class LogFile(
 
     private fun drainLoop() {
         while (!closed) {
-            val first = try {
-                queue.poll(PollSeconds, TimeUnit.SECONDS)
+            try {
+                signal.withLock {
+                    if (queue.isEmpty() && !closed) queued.await(PollMillis, TimeUnit.MILLISECONDS)
+                }
             } catch (_: InterruptedException) {
                 return
-            } ?: continue
-            val batch = mutableListOf(first)
-            queue.drainTo(batch)
-            append(batch)
+            }
+            synchronized(lock) { appendQueued() }
         }
+    }
+
+    private fun appendQueued() {
+        val batch = mutableListOf<String>()
+        queue.drainTo(batch)
+        if (batch.isNotEmpty()) append(batch)
     }
 
     private fun append(lines: List<String>) {
@@ -172,7 +185,7 @@ class LogFile(
     companion object {
         private const val Tag = "Log"
         private const val NanosPerMicro = 1_000L
-        private const val PollSeconds = 1L
+        private const val PollMillis = 1_000L
 
         /** Lines waiting at the most; more are counted as dropped and the count is written. */
         private const val MaxQueued = 20_000
