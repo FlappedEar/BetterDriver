@@ -27,6 +27,7 @@ include(
     ":setup",
     ":updater",
     ":transfer",
+    ":obd",
     ":core-ui",
     ":core-ble",
     ":feature-track",

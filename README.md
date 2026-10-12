@@ -13,6 +13,7 @@ work is tracked in Jira project FBBD.
 | `recorder` | Recording service and crash-safe session store; runs in its own process (FBBD-69 to FBBD-72) |
 | `timing` | Tracks, circuit directory, track detection, lap and sector timing, predictive delta; pure Kotlin |
 | `coach` | Live coach: corners, per-track reference from earlier sessions, cue engine; pure Kotlin |
+| `obd` | OBD-II channels, RaceChrono-compatible equations, car profiles, ELM327 response parsing and polling; pure Kotlin |
 | `core-ui` | Theme and shared Compose components |
 | `core-ble` | RaceBox Mini, Mini S and Micro over BLE; Bluetooth NMEA 0183 receivers over SPP |
 | `feature-track` | Always-on track screen |
