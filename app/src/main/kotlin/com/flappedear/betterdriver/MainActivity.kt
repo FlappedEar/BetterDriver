@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.debug.DebugGuards
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.UiChecks
 import com.flappedear.betterdriver.sharing.Backups
 import com.flappedear.betterdriver.sharing.Imports
 import com.flappedear.betterdriver.shell.RestoreUnfinished
@@ -76,6 +77,8 @@ class MainActivity : ComponentActivity() {
                 }
                 // Debug builds log slow frames once a minute while recording (FBBD-41).
                 DebugGuards.trackJank(this@MainActivity, recording)
+                // Every build puts the frames in the drive's log every 30 s while recording (FBBD-62).
+                UiChecks.trackFrames(this@MainActivity, recording)
             }
             BetterDriverTheme(darkTheme = true) {
                 // A restore that failed half way in this process blocks the app until it is finished.

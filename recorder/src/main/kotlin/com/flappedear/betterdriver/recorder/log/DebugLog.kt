@@ -5,17 +5,17 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The app's debug log (FBBD-146): one line per event, written to a rotating file per process so
- * Arek can send the files from Settings › App › Debug logs. Every process installs its own
- * [LogFile]; until then, and while the log is off, calls only reach [echo] (logcat on Android).
+ * The app's log (FBBD-146, FBBD-183): one continuous file that every process (UI, recorder, camera,
+ * coach) appends to, across sessions and app restarts, so Arek sends one file and every hardware
+ * check can be worked out from it. Every process installs its own [LogFile] on the same file; until
+ * then calls only reach [echo] (logcat on Android).
  *
- * Thread-safe. Never throws: a log that cannot be written is skipped.
+ * Thread-safe. Never throws: a line that cannot be written is skipped.
  */
 object DebugLog {
     const val DEBUG = 3
@@ -26,18 +26,23 @@ object DebugLog {
     @Volatile
     private var file: LogFile? = null
 
-    /** Also called for every line, on or off: Android installs logcat here. */
+    /** The recording this process works for, written on each line; null outside one. */
+    @Volatile
+    var session: String? = null
+
+    /** Also called for every line: Android installs logcat here. */
     @Volatile
     var echo: ((level: Int, tag: String, message: String, error: Throwable?) -> Unit)? = null
 
     /**
-     * Runs each file write when set; debug builds exempt the log's own writes from StrictMode here
-     * (FBBD-41). Null, as in release builds, writes directly.
+     * Runs each write made on the caller's thread ([flush]) when set; debug builds exempt the log's
+     * own writes from StrictMode here (FBBD-41). Lines are otherwise written on the log's own thread.
      */
     @Volatile
     var fileWrites: ((write: () -> Unit) -> Unit)? = null
 
     fun install(file: LogFile?) {
+        this.file?.close()
         this.file = file
     }
 
@@ -49,96 +54,128 @@ object DebugLog {
 
     fun e(tag: String, message: String, error: Throwable? = null) = log(ERROR, tag, message, error)
 
+    /** A line for recording [session], whichever recording this process is following. */
+    fun forSession(session: String, tag: String, message: String) = log(INFO, tag, message, null, session)
+
     @Suppress("TooGenericExceptionCaught") // Logging must never take the caller down.
-    fun log(level: Int, tag: String, message: String, error: Throwable?) {
+    fun log(level: Int, tag: String, message: String, error: Throwable?, session: String? = this.session) {
         try {
             echo?.invoke(level, tag, message, error)
         } catch (_: RuntimeException) {
             // logcat unavailable (JVM tests): the file still gets the line.
         }
+        file?.write(level, tag, message, error, session)
+    }
+
+    /** Writes every queued line now, on the caller's thread: before the process dies of a crash. */
+    fun flush() {
         val f = file ?: return
         val around = fileWrites
-        if (around == null) f.write(level, tag, message, error) else around { f.write(level, tag, message, error) }
+        if (around == null) f.flush() else around { f.flush() }
     }
 }
 
 /**
- * A log file that rotates as [rotation] says: `<name>.log` is the newest, then `<name>.1.log` up to
- * `<name>.<keep>.log`. Each line is flushed at once, so a crash or a killed process keeps every
- * line before it. [enabled] is asked before each line; the app keeps it cheap.
+ * The continuous log [file], as one process writes it. Lines are queued and appended by a thread of
+ * the log's own ([background]), never on the caller's; each batch is one append to a file opened in
+ * append mode, so lines of different processes never mix within a line. The file is opened for each
+ * batch, so a cleared log is simply started again. Nothing here rotates or deletes it: only the
+ * user's "Clear log" does (FBBD-183).
+ *
+ * [uptimeMicros] is the phone's boot clock (Android's elapsedRealtime), [session] the recording a
+ * line belongs to by default.
  */
+@Suppress("LongParameterList") // Clocks and names are test hooks.
 class LogFile(
-    private val dir: File,
-    private val name: String,
-    private val rotation: Rotation = Rotation(),
-    private val enabled: () -> Boolean = { true },
-    private val clock: () -> Long = System::currentTimeMillis,
+    val file: File,
+    private val process: String,
     private val pid: Int = 0,
+    private val clock: () -> Long = System::currentTimeMillis,
+    private val uptimeMicros: () -> Long = { System.nanoTime() / NanosPerMicro },
+    background: Boolean = true,
 ) {
-    private val format = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).apply {
-        timeZone = TimeZone.getTimeZone("UTC")
-    }
-    private var out: FileOutputStream? = null
-    private var size = 0L
+    private val queue = LinkedBlockingQueue<String>(MaxQueued)
+    private val dropped = AtomicLong()
+    private val lock = Any()
 
-    val current: File get() = File(dir, "$name.log")
-
-    fun write(level: Int, tag: String, message: String, error: Throwable?) {
-        if (!enabled()) return
-        val line = buildString {
-            synchronized(format) { append(format.format(Date(clock()))) }
-            append(' ').append(pid).append(' ').append(Thread.currentThread().name)
-            append(' ').append(levelChar(level)).append(' ').append(tag).append(": ").append(message)
-            if (error != null) append('\n').append(stackTrace(error).trimEnd())
-            append('\n')
+    @Volatile
+    private var closed = false
+    private val writer: Thread? = if (background) {
+        Thread(::drainLoop, "log-writer").apply {
+            isDaemon = true
+            start()
         }
-        append(line.toByteArray(Charsets.UTF_8))
+    } else {
+        null
     }
 
-    @Synchronized
-    private fun append(bytes: ByteArray) {
-        try {
-            val o = out ?: open()
-            o.write(bytes)
-            o.flush()
-            size += bytes.size
-            if (size >= rotation.maxBytes) rotate()
-        } catch (_: IOException) {
-            close()
+    fun write(level: Int, tag: String, message: String, error: Throwable?, session: String?) {
+        if (closed) return
+        val line = LogLine(
+            clock(), uptimeMicros(), process, pid, Thread.currentThread().name, levelChar(level), tag, session, message,
+        ).format()
+        val text = if (error == null) line + "\n" else line + "\n" + stackTrace(error).trimEnd() + "\n"
+        if (writer == null) {
+            append(listOf(text))
+        } else if (!queue.offer(text)) {
+            dropped.incrementAndGet()
         }
     }
 
-    private fun open(): FileOutputStream {
-        dir.mkdirs()
-        val f = current
-        size = f.length()
-        return FileOutputStream(f, true).also { out = it }
+    /** Appends every queued line now. */
+    fun flush() {
+        val batch = mutableListOf<String>()
+        queue.drainTo(batch)
+        if (batch.isNotEmpty()) append(batch)
     }
 
-    private fun rotate() {
-        close()
-        File(dir, "$name.${rotation.keep}.log").delete()
-        for (i in rotation.keep - 1 downTo 1) File(dir, "$name.$i.log").renameTo(File(dir, "$name.${i + 1}.log"))
-        current.renameTo(File(dir, "$name.1.log"))
-        size = 0
-    }
-
-    @Synchronized
+    /** Writes what is queued and stops the writer. */
     fun close() {
-        try {
-            out?.close()
-        } catch (_: IOException) {
-            // Nothing left to save.
-        }
-        out = null
+        closed = true
+        writer?.interrupt()
+        flush()
     }
 
-    /** A file rotates at [maxBytes]; [keep] older files are kept beside the current one. */
-    data class Rotation(val maxBytes: Long = DefaultMaxBytes, val keep: Int = DefaultKeep)
+    private fun drainLoop() {
+        while (!closed) {
+            val first = try {
+                queue.poll(PollSeconds, TimeUnit.SECONDS)
+            } catch (_: InterruptedException) {
+                return
+            } ?: continue
+            val batch = mutableListOf(first)
+            queue.drainTo(batch)
+            append(batch)
+        }
+    }
+
+    private fun append(lines: List<String>) {
+        val lost = dropped.getAndSet(0)
+        val bytes = buildString {
+            if (lost > 0) {
+                val text = "$lost lines dropped: the log was too far behind"
+                append(LogLine(clock(), uptimeMicros(), process, pid, "log-writer", 'W', Tag, null, text).format())
+                append('\n')
+            }
+            lines.forEach(::append)
+        }.toByteArray(Charsets.UTF_8)
+        synchronized(lock) {
+            try {
+                file.parentFile?.mkdirs()
+                FileOutputStream(file, true).use { it.write(bytes) }
+            } catch (_: IOException) {
+                // Full or unreadable storage: these lines are lost, the app carries on.
+            }
+        }
+    }
 
     companion object {
-        const val DefaultMaxBytes = 1_000_000L
-        const val DefaultKeep = 4
+        private const val Tag = "Log"
+        private const val NanosPerMicro = 1_000L
+        private const val PollSeconds = 1L
+
+        /** Lines waiting at the most; more are counted as dropped and the count is written. */
+        private const val MaxQueued = 20_000
 
         private fun levelChar(level: Int) = when (level) {
             DebugLog.DEBUG -> 'D'

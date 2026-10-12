@@ -1,0 +1,104 @@
+2026-10-12T05:58:13.491Z 27771 main I App: start com.flappedear.betterdriver:recorder: BetterDriver 0.2.3 (build 70) on Google Pixel 6, Android 17 (SDK 37)
+2026-10-12T05:58:16.155Z 27771 main I RecorderService: command com.flappedear.betterdriver.recording.START
+2026-10-12T05:58:16.193Z 27771 recorder-control I Recording: 20261012-055816-0075d00b started: RaceBox Micro 3242703553
+2026-10-12T05:58:16.248Z 27771 recorder-listeners-20261012-055816-0075d00b I Recording: 20261012-055816-0075d00b t=55ms imu_calibration none
+2026-10-12T05:58:16.249Z 27771 racebox-link I Link: E7:D2:76:DC:ED:23 Connecting
+2026-10-12T05:58:16.818Z 27771 recorder-listeners-20261012-055816-0075d00b I Recording: 20261012-055816-0075d00b t=623ms video_start camera=phone file=phone_0001.mp4
+2026-10-12T05:58:22.805Z 27771 main I RecorderService: command com.flappedear.betterdriver.recording.STOP
+2026-10-12T05:58:22.816Z 27771 racebox-link I Link: E7:D2:76:DC:ED:23 Idle
+2026-10-12T05:58:22.859Z 27771 recorder-listeners-20261012-055816-0075d00b I Recording: 20261012-055816-0075d00b stopped: user
+2026-10-12T05:58:22.863Z 27771 main I RecorderService: recording 20261012-055816-0075d00b ended: user
+2026-10-12T06:09:19.276Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T06:44:10.428Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T06:44:12.032Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T06:44:14.449Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T06:44:31.693Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T06:44:32.554Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T06:44:33.819Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T07:02:17.806Z 27771 main I RecorderService: service destroyed, recording running: false
+2026-10-12T07:23:43.436Z 30297 main I App: start com.flappedear.betterdriver:recorder: BetterDriver 0.3.0 (build 81) on Google Pixel 6, Android 17 (SDK 37)
+2026-10-12T07:24:12.369Z 30297 main I RecorderService: command com.flappedear.betterdriver.recording.START
+2026-10-12T07:24:12.416Z 30297 recorder-control I Recording: 20261012-072412-c7671bac started: RaceBox Micro 3242703553
+2026-10-12T07:24:12.539Z 30297 recorder-listeners-20261012-072412-c7671bac I Recording: 20261012-072412-c7671bac t=122ms imu_calibration none
+2026-10-12T07:24:12.543Z 30297 racebox-link I Link: E7:D2:76:DC:ED:23 Connecting
+2026-10-12T07:24:12.794Z 30297 recorder-listeners-20261012-072412-c7671bac I Recording: 20261012-072412-c7671bac t=377ms video_start camera=phone file=phone_0001.mp4
+2026-10-12T07:24:22.572Z 30297 racebox-link W Link: E7:D2:76:DC:ED:23 Reconnecting(attempt=1, delayMs=500, reason=no data after connecting)
+2026-10-12T07:24:23.073Z 30297 racebox-link I Link: E7:D2:76:DC:ED:23 Connecting
+2026-10-12T07:24:24.026Z 30297 main I RecorderService: command com.flappedear.betterdriver.recording.STOP
+2026-10-12T07:24:24.037Z 30297 racebox-link I Link: E7:D2:76:DC:ED:23 Idle
+2026-10-12T07:24:24.051Z 30297 recorder-listeners-20261012-072412-c7671bac I Recording: 20261012-072412-c7671bac stopped: user
+2026-10-12T07:24:24.060Z 30297 main I RecorderService: recording 20261012-072412-c7671bac ended: user
+2026-10-12T07:24:40.559Z 30297 main I RecorderService: service destroyed, recording running: false
+2026-10-12T07:24:49.111Z 30297 main I RecorderService: service destroyed, recording running: false
+2026-10-12T07:24:54.183Z 30297 main I RecorderService: service destroyed, recording running: false
+2026-10-12T07:26:33.615Z 30297 main I RecorderService: service destroyed, recording running: false
+2026-10-12T08:20:05.174Z 2646 main I App: start com.flappedear.betterdriver:recorder: BetterDriver 0.3.1 (build 86) on Google Pixel 6, Android 17 (SDK 37)
+2026-10-12T08:29:22.941Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T08:58:41.415Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T08:59:12.197Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T10:36:00.242Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T10:36:02.583Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T10:36:03.903Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T10:36:07.921Z 2646 main I RecorderService: command com.flappedear.betterdriver.recording.START
+2026-10-12T10:36:07.979Z 2646 recorder-control I Recording: 20261012-103607-3713ff1a started: RaceBox Micro 3242703553
+2026-10-12T10:36:08.025Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=45ms imu_calibration none
+2026-10-12T10:36:08.028Z 2646 racebox-link I Link: E7:D2:76:DC:ED:23 Connecting
+2026-10-12T10:36:08.593Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=613ms video_start camera=phone file=phone_0001.mp4
+2026-10-12T10:36:11.055Z 2646 racebox-link I Link: E7:D2:76:DC:ED:23 Streaming(hz=15)
+2026-10-12T10:36:11.060Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=3081ms racebox_connected E7:D2:76:DC:ED:23
+2026-10-12T10:36:39.432Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=31453ms gnss_fix sats=5
+2026-10-12T10:36:39.467Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=31488ms track saved daf635b3-accd-471a-94e1-38d9d77bc213 rev 1 w
+2026-10-12T10:37:10.943Z 2646 binder:2646_3 I RaceBox: 1500 messages, 13 missing (12 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:38:12.022Z 2646 binder:2646_4 I RaceBox: 1500 messages, 26 missing (26 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:39:14.351Z 2646 binder:2646_4 I RaceBox: 1500 messages, 58 missing (58 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:40:16.991Z 2646 binder:2646_4 I RaceBox: 1500 messages, 66 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:41:19.558Z 2646 binder:2646_3 I RaceBox: 1500 messages, 64 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:42:21.990Z 2646 binder:2646_3 I RaceBox: 1500 messages, 62 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:43:05.488Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=417505ms video_stop camera=phone file=phone_0001.mp4 reason=file_full
+2026-10-12T10:43:05.621Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=417641ms video_start camera=phone file=phone_0002.mp4
+2026-10-12T10:43:24.557Z 2646 binder:2646_4 I RaceBox: 1500 messages, 64 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:44:27.002Z 2646 binder:2646_4 I RaceBox: 1500 messages, 61 missing (61 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:45:29.601Z 2646 binder:2646_4 I RaceBox: 1500 messages, 64 missing (61 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:46:32.240Z 2646 binder:2646_5 I RaceBox: 1500 messages, 67 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:47:34.760Z 2646 binder:2646_3 I RaceBox: 1500 messages, 63 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:48:37.473Z 2646 binder:2646_3 I RaceBox: 1500 messages, 67 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:49:40.162Z 2646 binder:2646_3 I RaceBox: 1500 messages, 67 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:50:02.857Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=834875ms video_stop camera=phone file=phone_0002.mp4 reason=file_full
+2026-10-12T10:50:02.999Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=835016ms video_start camera=phone file=phone_0003.mp4
+2026-10-12T10:50:42.924Z 2646 binder:2646_5 I RaceBox: 1500 messages, 69 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:51:45.536Z 2646 binder:2646_5 I RaceBox: 1500 messages, 66 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:52:48.209Z 2646 binder:2646_5 I RaceBox: 1500 messages, 67 missing (61 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:53:50.728Z 2646 binder:2646_3 I RaceBox: 1500 messages, 63 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:54:53.248Z 2646 binder:2646_4 I RaceBox: 1500 messages, 62 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:55:55.767Z 2646 binder:2646_5 I RaceBox: 1500 messages, 63 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:56:55.218Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=1247237ms video_stop camera=phone file=phone_0003.mp4 reason=thermal_step
+2026-10-12T10:56:55.341Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=1247361ms video_start camera=phone file=phone_0004.mp4
+2026-10-12T10:56:58.286Z 2646 binder:2646_4 I RaceBox: 1500 messages, 64 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:58:01.048Z 2646 binder:2646_4 I RaceBox: 1500 messages, 68 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T10:59:03.781Z 2646 binder:2646_5 I RaceBox: 1500 messages, 69 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:00:06.572Z 2646 binder:2646_3 I RaceBox: 1500 messages, 69 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:01:09.169Z 2646 binder:2646_5 I RaceBox: 1500 messages, 66 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:02:11.971Z 2646 binder:2646_5 I RaceBox: 1500 messages, 70 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:03:15.141Z 2646 binder:2646_5 I RaceBox: 1500 messages, 79 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:04:17.974Z 2646 binder:2646_4 I RaceBox: 1500 messages, 70 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:05:20.452Z 2646 binder:2646_5 I RaceBox: 1500 messages, 63 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:06:23.015Z 2646 binder:2646_3 I RaceBox: 1500 messages, 64 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:07:25.586Z 2646 binder:2646_4 I RaceBox: 1500 messages, 64 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:08:28.061Z 2646 binder:2646_5 I RaceBox: 1500 messages, 62 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:09:30.671Z 2646 binder:2646_5 I RaceBox: 1500 messages, 65 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:10:33.223Z 2646 binder:2646_5 I RaceBox: 1500 messages, 64 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:10:58.629Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=2090648ms video_stop camera=phone file=phone_0004.mp4 reason=file_full
+2026-10-12T11:10:58.744Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=2090764ms video_start camera=phone file=phone_0005.mp4
+2026-10-12T11:11:35.746Z 2646 binder:2646_5 I RaceBox: 1500 messages, 63 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:12:38.382Z 2646 binder:2646_3 I RaceBox: 1500 messages, 65 missing (62 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:13:40.860Z 2646 binder:2646_3 I RaceBox: 1500 messages, 63 missing (63 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:14:43.393Z 2646 binder:2646_5 I RaceBox: 1500 messages, 63 missing (61 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:14:43.803Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a t=2315824ms gnss_fix_lost sats=0
+2026-10-12T11:15:43.426Z 2646 binder:2646_4 I RaceBox: 1500 messages, 1 missing (1 on a whole second), 0 checksum errors, 0 bytes skipped
+2026-10-12T11:16:11.606Z 2646 main I RecorderService: command com.flappedear.betterdriver.recording.STOP
+2026-10-12T11:16:11.622Z 2646 racebox-link I Link: E7:D2:76:DC:ED:23 Idle
+2026-10-12T11:16:11.625Z 2646 recorder-listeners-20261012-103607-3713ff1a I Recording: 20261012-103607-3713ff1a stopped: user
+2026-10-12T11:16:11.628Z 2646 main I RecorderService: recording 20261012-103607-3713ff1a ended: user
+2026-10-12T11:16:23.013Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T11:16:24.946Z 2646 main I RecorderService: service destroyed, recording running: false
+2026-10-12T11:16:44.770Z 2646 main I RecorderService: service destroyed, recording running: false

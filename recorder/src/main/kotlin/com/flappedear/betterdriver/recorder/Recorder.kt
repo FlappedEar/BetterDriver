@@ -252,14 +252,14 @@ class RecordingVideoSink(
         VideoEventText.format(VideoEventText.CAMERA to camera, VideoEventText.FILE to file),
     )
 
-    override fun synced(file: String, atMicros: Long, mediaMicros: Long) = recording.eventAt(
+    override fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long?) = recording.eventAt(
         atMicros,
         EventKinds.VIDEO_SYNC,
         VideoEventText.format(
             VideoEventText.CAMERA to camera,
             VideoEventText.FILE to file,
             VideoEventText.MEDIA_US to mediaMicros,
-        ),
+        ) + frameMicros?.let { " ${VideoEventText.FRAME_US}=$it" }.orEmpty(),
     )
 
     override fun stopped(file: String, atMicros: Long, reason: String) = recording.eventAt(
