@@ -37,9 +37,6 @@ class TrackContrastTest {
             check(name, "text on gain", c.onGain, c.gain, Minimum)
             check(name, "text on loss", c.onLoss, c.loss, Minimum)
             check(name, "text on warning", c.onWarning, c.warning, Minimum)
-            // AlertBanner draws its detail line at 85 % alpha.
-            check(name, "alert detail on loss", c.onLoss.copy(alpha = AlertDetailAlpha), c.loss, Minimum)
-            check(name, "alert detail on warning", c.onWarning.copy(alpha = AlertDetailAlpha), c.warning, Minimum)
             listOf("gain" to c.gain, "loss" to c.loss, "warning" to c.warning, "cold" to c.cold, "best" to c.best)
                 .forEach { (token, color) ->
                     check(name, "$token on surface", color, c.surface, Minimum)
@@ -71,10 +68,9 @@ class TrackContrastTest {
                 Triple("cold tile on surface", c.cold, c.surface),
                 Triple("warning tile on surface", c.warning, c.surface),
                 Triple("sector gain", c.onGain, c.gain),
-                Triple("sector loss, critical tile, GNSS lost banner title", c.onLoss, c.loss),
-                Triple("warning banner title", c.onWarning, c.warning),
-                Triple("GNSS lost banner detail (85 %)", c.onLoss.copy(alpha = AlertDetailAlpha), c.loss),
-                Triple("warning banner detail (85 %)", c.onWarning.copy(alpha = AlertDetailAlpha), c.warning),
+                // The alert banner draws its title and detail in the same full colour.
+                Triple("sector loss, critical tile, GNSS lost banner", c.onLoss, c.loss),
+                Triple("warning banner", c.onWarning, c.warning),
             )
             pairs.forEach { (pair, foreground, background) ->
                 val ratio = contrast(foreground, background)
@@ -133,6 +129,5 @@ class TrackContrastTest {
         const val Minimum = 4.5
         const val NonText = 3.0
         const val LuminanceOffset = 0.05f
-        const val AlertDetailAlpha = 0.85f
     }
 }

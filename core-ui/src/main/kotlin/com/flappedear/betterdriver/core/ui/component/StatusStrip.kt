@@ -90,10 +90,11 @@ fun AlertBanner(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, style = textStyle(15.dp), color = fg, maxLines = 1)
+        // Full colour, as the title: faded, it falls short of 7:1 for sunlight (FBBD-65).
         Text(
             detail,
             style = textStyle(14.dp, FontWeight.Medium),
-            color = fg.copy(alpha = 0.85f),
+            color = fg,
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
