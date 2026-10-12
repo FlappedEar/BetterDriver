@@ -18,6 +18,12 @@ private const val HorizontalAccuracy = "gnss_hacc"
 /** The RaceBox's acceleration along its X axis, which the mount points forward (RaceBoxChannels.ACCEL_X). */
 private const val AccelerationX = "accel_x"
 
+/**
+ * The RaceBox's acceleration along its Y axis, across the car (RaceBoxChannels.ACCEL_Y). Its sign is
+ * left as recorded: the G-G diagram, its only reader, checks it against the GPS turn.
+ */
+private const val AccelerationY = "accel_y"
+
 /** [AccelerationX] signed so that speeding up is positive, as the Corner Analyzer reads it. */
 const val ForwardAcceleration = "accel_forward"
 
@@ -63,6 +69,7 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?): TelemetrySes
         Aliases.SPEED to GnssChannels.SPEED_KMH.name,
         Aliases.ACCURACY to HorizontalAccuracy,
         Aliases.LONGITUDINAL_ACCELERATION to ForwardAcceleration,
+        Aliases.LATERAL_ACCELERATION to AccelerationY,
     ).filterValues { it in channels }
     val gates = listOfNotNull(
         startFinish?.let {

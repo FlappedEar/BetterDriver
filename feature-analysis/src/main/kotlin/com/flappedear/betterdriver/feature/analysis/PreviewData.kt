@@ -3,10 +3,18 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
+import com.flappedear.betterdriver.analysis.geo.MetricPoint
+import com.flappedear.betterdriver.analysis.map.GgPoint
+import com.flappedear.betterdriver.analysis.map.GgSource
+import com.flappedear.betterdriver.analysis.map.GgTrace
+import com.flappedear.betterdriver.analysis.map.LapMap
+import com.flappedear.betterdriver.analysis.map.MapCorner
+import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.summary.SegmentChange
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import kotlin.math.PI
+import kotlin.math.cos
 import kotlin.math.sin
 
 private const val PreviewLength = 1767.0
@@ -115,3 +123,47 @@ internal val PreviewUi = AnalysisUi(
         ),
     ),
 )
+
+/** A made-up lap on an oval for the Map tab's previews: 400 by 250 m, anticlockwise. */
+private fun previewOval(steps: Int = 360): List<MapPoint> = (0..steps).map {
+    val a = 2 * PI * it / steps
+    val d = PreviewLength * it / steps
+    MapPoint(
+        eastMeters = 200 * cos(a),
+        northMeters = 125 * sin(a),
+        distanceMeters = d,
+        speed = 120 + 45 * cos(2 * a),
+        deltaSeconds = d / PreviewLength * 0.63,
+        deltaRate = 0.04 + 0.12 * sin(3 * a),
+    )
+}
+
+private fun previewGg(scale: Double) = GgTrace(
+    GgSource.Gps,
+    (0..600).map {
+        val a = 2 * PI * it / 600
+        GgPoint(scale * sin(a) * 1.0, scale * cos(3 * a) * 0.8, PreviewLength * it / 600)
+    },
+)
+
+/** The Map tab of the made-up session. */
+internal val PreviewMap = previewOval().let { line ->
+    MapUi(
+        lapNumber = 3,
+        referenceNumber = 2,
+        map = LapMap(
+            lapIndex = 2,
+            referenceIndex = 1,
+            lengthMeters = PreviewLength,
+            runs = listOf(line),
+            outline = line.map { MetricPoint(it.eastMeters, it.northMeters) },
+            corners = listOf(
+                MapCorner("Corner 1", 440.0, MetricPoint(0.0, 125.0), MetricPoint(0.0, 1.0)),
+                MapCorner("Corners 2–3", 880.0, MetricPoint(-200.0, 0.0), MetricPoint(-1.0, 0.0)),
+                MapCorner("Corner 4", 1320.0, MetricPoint(0.0, -125.0), MetricPoint(0.0, -1.0)),
+            ),
+        ),
+        gg = previewGg(0.95),
+        referenceGg = previewGg(1.05),
+    )
+}
