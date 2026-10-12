@@ -70,17 +70,8 @@ class CoachReplayTest {
     private fun reference(data: SessionData): CoachReference =
         assertNotNull(buildReference(track, listOf(SessionLaps(data.id, tracedLaps(track, data.coachFixes())))))
 
-    /**
-     * One coached replay: what the coach logged, with the latency budget its cues were heard with.
-     * [lapTimesOutOfBraking] is false where lap-time cues are known to be heard while braking (see
-     * the first outing below), so only its corner cues are held to that.
-     */
-    private class Replay(
-        val name: String,
-        val budgetMicros: Long,
-        val events: List<CoachEvent>,
-        val lapTimesOutOfBraking: Boolean = true,
-    ) {
+    /** One coached replay: what the coach logged, with the latency budget its cues were heard with. */
+    private class Replay(val name: String, val budgetMicros: Long, val events: List<CoachEvent>) {
         val cues = cuesIn(events)
     }
 
@@ -91,12 +82,11 @@ class CoachReplayTest {
         settings: CoachSettings,
         reference: CoachReference?,
         budget: Long,
-        lapTimesOutOfBraking: Boolean = true,
     ): Replay {
         val coach = CoachSession(settings, track, reference)
         val events = data.sampleSets.mapNotNull { it.toCoachFix() }
             .flatMap { f -> coach.onFix(f, f.tMicros) { true }.events }
-        return Replay(name, budget, events, lapTimesOutOfBraking)
+        return Replay(name, budget, events)
     }
 
     /** How the scenarios are set up: the app plans cues with 300 ms plus the audio delay setting. */
@@ -113,14 +103,11 @@ class CoachReplayTest {
             ),
             // The app's defaults at a track with a reference from earlier sessions.
             replay("live, focus", data, CoachSettings(Verbosity.Focus, headsetDelay), ref, LiveBudgetMicros),
-            // The first outing at a new track: the corners come from this session's first timed lap.
-            // Here that is lap 2, which stopped just past the line (0 km/h, 216 s): the coach's corner
-            // 1 is the stop, and the lap times on laps 3 and 7 are spoken while braking for the real
-            // Turn 1. Reported as a finding; only this replay's corner cues are checked against braking.
-            replay(
-                "live, first outing", data, CoachSettings(Verbosity.Focus, headsetDelay), null, LiveBudgetMicros,
-                lapTimesOutOfBraking = false,
-            ),
+            // The first outing at a new track: the corners come from this session's first timed lap,
+            // lap 2, which stopped just past the line (0 km/h, 216 s). The stop is not a corner, and
+            // Turn 1, driven from it, has no known braking zone until lap 3 has braked for it at
+            // speed (FBBD-202; before, the lap times on laps 3 and 7 were heard while braking for it).
+            replay("live, first outing", data, CoachSettings(Verbosity.Focus, headsetDelay), null, LiveBudgetMicros),
         )
     }
 
@@ -218,12 +205,11 @@ class CoachReplayTest {
                 val lap = laps.firstOrNull { it.contains(t) } ?: continue
                 val along = lap.alongAt(t) ?: continue
                 val zone = lap.zones.indexOfFirst { it != null && along in it }
-                val checked = h.kind == CueKind.Corner || replay.lapTimesOutOfBraking
-                if (zone >= 0 && checked) {
+                if (zone >= 0) {
                     inZone += "'${h.text}' in corner ${zone + 1}'s braking on lap ${lap.traced.lap.number}"
                 }
             }
-            // Cues after the last line (the lap time on the way into the paddock) are on no lap.
+            // Cues after the last line are on no lap (none since FBBD-202: the coach is quiet in the pit lane).
             val lap = laps.firstOrNull { it.contains(h.start) } ?: continue
             val along = assertNotNull(lap.alongAt(h.start), "'${h.text}' heard off the track")
             val next = lap.nextCorner(along)
@@ -257,6 +243,48 @@ class CoachReplayTest {
                 assertTrue(b.start >= a.end, "$name: '${b.text}' starts before '${a.text}' ends")
             }
             assertEquals(emptyList(), c.crowded, "$name: straights with more than one cue")
+        }
+    }
+
+    @Test
+    fun `a first outing takes its corners from braking and gives no cue while braking (FBBD-202)`() {
+        val data = silesia()
+        val map = reference(data).map()
+        val laps = tracedLaps(track, data.coachFixes()).map { LapOnMap(it, map) }
+        // No reference lap: the corners come from lap 2, which stopped just past the line.
+        val engine = CueEngine(track, CoachSettings(Verbosity.Focus))
+        data.coachFixes().forEach { engine.update(it) }
+        assertEquals(map.corners.size, engine.corners.size, "corners: ${engine.corners}")
+        assertTrue(engine.corners.all { it.minKmh >= 20.0 }, "a stop taken for a corner: ${engine.corners}")
+
+        val headsetDelay = (LiveBudgetMicros - DefaultLatencyMicros).toInt() / 1_000
+        val replay = replay("first outing", data, CoachSettings(Verbosity.Focus, headsetDelay), null, LiveBudgetMicros)
+        val c = check(replay, laps)
+        // Lap 2's time on lap 3 and lap 6's on lap 7 were heard while braking for Turn 1, 0.1 s and 1.1 s.
+        assertEquals(emptyList(), c.inZone.distinct(), "cues heard while braking")
+        // Laps 2 to 6; lap 7's gives way to a Turn 1 cue on its straight, lap 8 is the in-lap.
+        assertTrue(c.heard.count { it.kind == CueKind.LapTime } >= 5, "lap times: ${c.heard.map { it.text }}")
+    }
+
+    @Test
+    fun `nothing is said on the in-lap once the driver lifts, nor in the pit lane (FBBD-202)`() {
+        val data = silesia()
+        val laps = tracedLaps(track, data.coachFixes())
+        // Lap 8 is the in-lap: it ends in the pit lane, crossing the line at about 20 km/h.
+        val inLap = laps.last()
+        val trace = inLap.trace
+        assertEquals(8, inLap.lap.number)
+        assertTrue(trace.speedsKmh.last() < 30.0, "line crossed at ${trace.speedsKmh.last()} km/h")
+        // Just past the line the driver lifts off: the first point 5 km/h below the lap's top speed so far.
+        var top = 0.0
+        val lift = inLap.lap.startMicros + trace.timesMicros[
+            trace.speedsKmh.indices.first { i -> trace.speedsKmh[i].also { top = maxOf(top, it) } <= top - 5.0 },
+        ]
+        val inLapTime = Phrases.lapTime(inLap.lap.timeMillis, best = false)
+        for (replay in scenarios(data)) {
+            val late = replay.cues.filter { it.tMicros >= lift }
+            assertEquals(emptyList(), late.map { it.text }, "${replay.name}: cues after the lift at ${lift / 1e6} s")
+            assertTrue(replay.cues.none { it.text.endsWith(inLapTime) }, "${replay.name}: the in-lap's time")
         }
     }
 
