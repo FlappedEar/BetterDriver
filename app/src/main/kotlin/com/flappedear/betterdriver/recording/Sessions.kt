@@ -259,18 +259,6 @@ class Sessions private constructor(private val context: Context) {
         }
     }
 
-    /**
-     * Runs a VBO export of session [id] and puts what it wrote and how long it took in the drive's
-     * log (FBBD-14), as an event of that session at its end.
-     */
-    private fun logExport(id: String, data: SessionData, export: () -> VboExporter.Written) {
-        val started = System.nanoTime()
-        val written = export()
-        val ms = (System.nanoTime() - started) / NanosPerMilli
-        val end = data.sampleSets.maxOfOrNull { it.tMicros } ?: 0L
-        CheckLog.event(id, end, EventKinds.VBO_EXPORT, "rows=${written.rows} samples=${written.fixes} ms=$ms")
-    }
-
     /** The session's clip index (clips.json) on the recorder's terms; clips still on a camera are left out. */
     private fun indexedClips(dir: File) = VideoIndex(dir).clips()
         .filter { it.status == ClipStatus.LOCAL }
@@ -317,7 +305,6 @@ class Sessions private constructor(private val context: Context) {
         private const val VboMimeType = "application/octet-stream"
         private const val Mp4MimeType = "video/mp4"
         private const val CopyBuffer = 1 shl 20
-        private const val NanosPerMilli = 1_000_000L
 
         /** The newest sessions whose validation report is made in the background; older ones on opening. */
         private const val ReportedAhead = 3
@@ -372,6 +359,19 @@ internal fun alignmentText(a: Alignment): String {
 }
 
 private const val MicrosPerSecond = 1_000_000.0
+private const val NanosPerMilli = 1_000_000L
+
+/**
+ * Runs a VBO export of session [id] and puts what it wrote and how long it took in the drive's log
+ * (FBBD-14), as an event of that session at its end.
+ */
+private fun logExport(id: String, data: SessionData, export: () -> VboExporter.Written) {
+    val started = System.nanoTime()
+    val written = export()
+    val ms = (System.nanoTime() - started) / NanosPerMilli
+    val end = data.sampleSets.maxOfOrNull { it.tMicros } ?: 0L
+    CheckLog.event(id, end, EventKinds.VBO_EXPORT, "rows=${written.rows} samples=${written.fixes} ms=$ms")
+}
 
 private fun isVideoFile(f: File) =
     f.isFile && f.length() > 0 && f.extension.equals("mp4", ignoreCase = true) && Mp4Reader.isComplete(f)

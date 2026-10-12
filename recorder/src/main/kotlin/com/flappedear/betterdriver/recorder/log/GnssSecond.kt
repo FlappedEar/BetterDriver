@@ -48,27 +48,23 @@ data class GnssSecond(
     val kmhMax: Double?,
     val firstFixMicros: Long? = null,
 ) {
-    fun format(): String = buildString {
-        append("sec=").append(second).append(" t_us=").append(tMicros)
-        append(" n=").append(samples).append(" fix=").append(fixes).append(" miss=").append(missing)
-        stepMillis?.let { append(" step_ms=").append(it) }
-        append(" long=").append(longGaps)
-        maxRxGapMillis?.let { append(" max_rx_ms=").append(it) }
-        maxGapMicros?.let { append(" max_us=").append(it) }
-        if (afterDrop) append(" drop=1")
-        utcFirst?.let { append(" utc0=").append(it) }
-        utcLast?.let { append(" utc1=").append(it) }
-        lagMicros?.let { append(" lag_us=").append(it) }
-        lat?.let { append(" lat=").append(String.format(Locale.ROOT, "%.7f", it)) }
-        lon?.let { append(" lon=").append(String.format(Locale.ROOT, "%.7f", it)) }
-        varianceM2?.let { append(" var_m2=").append(String.format(Locale.ROOT, "%.4f", it)) }
-        kmh?.let { append(" kmh=").append(String.format(Locale.ROOT, "%.2f", it)) }
-        kmhMin?.let { append(" kmh_min=").append(String.format(Locale.ROOT, "%.2f", it)) }
-        kmhMax?.let { append(" kmh_max=").append(String.format(Locale.ROOT, "%.2f", it)) }
-        firstFixMicros?.let { append(" fix_us=").append(it) }
-    }
+    /** The line's message: `key=value` pairs; a value not known is left out. */
+    fun format(): String = listOf(
+        "sec" to second, "t_us" to tMicros, "n" to samples, "fix" to fixes, "miss" to missing,
+        "step_ms" to stepMillis, "long" to longGaps, "max_rx_ms" to maxRxGapMillis, "max_us" to maxGapMicros,
+        "drop" to (1.takeIf { afterDrop }), "utc0" to utcFirst, "utc1" to utcLast, "lag_us" to lagMicros,
+        "lat" to decimal(lat, Degrees), "lon" to decimal(lon, Degrees), "var_m2" to decimal(varianceM2, Variance),
+        "kmh" to decimal(kmh, Speed), "kmh_min" to decimal(kmhMin, Speed), "kmh_max" to decimal(kmhMax, Speed),
+        "fix_us" to firstFixMicros,
+    ).filter { it.second != null }.joinToString(" ") { (k, v) -> "$k=$v" }
+
+    private fun decimal(value: Double?, format: String) = value?.let { String.format(Locale.ROOT, format, it) }
 
     companion object {
+        private const val Degrees = "%.7f"
+        private const val Variance = "%.4f"
+        private const val Speed = "%.2f"
+
         /** A [CheckLog.GNSS] line's message read back; null when it is not one. */
         fun parse(message: String): GnssSecond? {
             val f = CheckLog.fields(message)

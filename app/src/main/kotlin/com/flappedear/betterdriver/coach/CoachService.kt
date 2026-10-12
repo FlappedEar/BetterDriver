@@ -143,7 +143,9 @@ class CoachService : Service() {
 
         /** The event text of its sound starting, how it was said and where it went; null if never logged. */
         fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int) = seq?.let {
-            CoachEvents.voiceText(it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis)
+            CoachEvents.voiceText(
+                it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
+            )
         }
     }
 

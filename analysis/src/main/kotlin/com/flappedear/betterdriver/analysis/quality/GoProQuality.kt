@@ -10,7 +10,8 @@ private const val MaxCommandMicros = 3_000_000L
 
 private const val StartCriterion = "GoPro starts within 3 s of the session (FBBD-82, FBBD-22)"
 private const val StopCriterion = "GoPro stops within 3 s of the session (FBBD-82, FBBD-22)"
-private const val ImportCriterion = "imported clips line up by GPS; files from outside the session are rejected (FBBD-22)"
+private const val ImportCriterion =
+    "imported clips line up by GPS; files from outside the session are rejected (FBBD-22)"
 
 /** Alignment methods that use the camera's GPS. */
 private val ByGps = setOf("GPS_MATCH", "GPS_UTC")
@@ -30,7 +31,8 @@ internal fun goProSection(events: List<RecorderEvent>, clips: List<QualityClip>,
     for (camera in acks.mapNotNull { it.second["camera"] }.distinct()) {
         val own = acks.filter { it.second["camera"] == camera }
         metrics += command(camera, "start", own.firstOrNull { it.second["action"] == "start" }, StartCriterion) { it }
-        metrics += command(camera, "stop", own.lastOrNull { it.second["action"] == "stop" }, StopCriterion) { it - endMicros }
+        val stop = own.lastOrNull { it.second["action"] == "stop" }
+        metrics += command(camera, "stop", stop, StopCriterion) { it - endMicros }
     }
     metrics += importMetric(imported, imports)
     val notes = acks.map { (e, f) -> QualityNote(e.tMicros, "${f["camera"]} ${f["action"]} ${f["result"]}") } +
@@ -52,7 +54,11 @@ private fun command(
     val delay = latency(ack.first.tMicros)
     return judged(
         id, label, seconds(delay), "s", ok && delay <= MaxCommandMicros, Basis.MEASURED, criterion,
-        if (ok) "camera's acknowledgement of the shutter command against the session's $action" else "the camera failed",
+        if (ok) {
+            "camera's acknowledgement of the shutter command against the session's $action"
+        } else {
+            "the camera failed"
+        },
     )
 }
 
@@ -60,7 +66,9 @@ private fun importMetric(imported: List<QualityClip>, imports: List<Map<String, 
     val label = "Imported clips lined up by GPS"
     val methods = imported.map { it.method } + imports.filter { it["result"] == "aligned" && imported.isEmpty() }
         .mapNotNull { it["method"] }
-    if (methods.isEmpty()) return notMeasured("video.import", label, ImportCriterion, "no GoPro file added to the session")
+    if (methods.isEmpty()) {
+        return notMeasured("video.import", label, ImportCriterion, "no GoPro file added to the session")
+    }
     val percent = methods.count { it in ByGps } * Percent / methods.size
     val rejected = imports.count { it["result"] == "rejected" }
     return judged(

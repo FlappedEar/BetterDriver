@@ -9,14 +9,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class QualityUiTest {
-    private fun metric(
-        label: String,
-        value: Double?,
-        unit: String,
-        verdict: Verdict,
-        basis: Basis = Basis.MEASURED,
-        criterion: String? = null,
-    ) = QualityMetric(label.lowercase(), label, value, unit, verdict, basis, criterion, "")
+    private fun metric(label: String, value: Double?, unit: String, verdict: Verdict, basis: Basis = Basis.MEASURED) =
+        QualityMetric(label.lowercase(), label, value, unit, verdict, basis, null, "")
 
     @Test
     fun `the card counts the checks and lists the failures with their keys`() {
@@ -29,7 +23,7 @@ class QualityUiTest {
                     "GNSS",
                     listOf(
                         metric("Sample rate", 24.93, "Hz", Verdict.PASS),
-                        metric("Longest gap", 412.0, "ms", Verdict.FAIL, criterion = "<= 200 ms (FBBD-8, FBBD-46)"),
+                        metric("Longest gap", 412.0, "ms", Verdict.FAIL).copy(keys = listOf("FBBD-8", "FBBD-46")),
                         metric("Link drops", 0.0, "", Verdict.INFO),
                         metric("Longest reconnect", null, "", Verdict.NOT_MEASURED, Basis.NONE),
                     ),

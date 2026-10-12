@@ -101,7 +101,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             at
         } catch (e: IllegalStateException) {
             DebugLog.w(Tag, "clip not played", e)
-            finished(id, t, Error)
+            finished(id, t, Failed)
             null
         }
     }
@@ -115,14 +115,6 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             }
         }
         cutOff(old)
-    }
-
-    private fun cutOff(old: Pair<AudioTrack?, ((String) -> Unit)?>) {
-        val (t, onEnd) = old
-        if (t != null) {
-            release(t)
-            onEnd?.invoke(Stopped)
-        }
     }
 
     /** The type of output the sound goes to (FBBD-47): the headset's, else "speaker". */
@@ -194,15 +186,6 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         }
     }
 
-    private fun release(t: AudioTrack) {
-        try {
-            t.stop()
-        } catch (_: IllegalStateException) {
-            // Never started or already stopped.
-        }
-        t.release()
-    }
-
     companion object {
         /** Navigation guidance speech: ducks music, and the system routes it like a sat-nav's voice. */
         val Attributes: AudioAttributes = AudioAttributes.Builder()
@@ -212,8 +195,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
 
         private const val Tag = "AudioOut"
         private const val Done = "done"
-        private const val Stopped = "stopped"
-        private const val Error = "error"
+        private const val Failed = "error"
 
         /** How much of a clip plays before its start is logged; a few milliseconds. */
         private const val StartCheckMillis = 5
@@ -227,5 +209,24 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_USB_HEADSET,
         )
+    }
+}
+
+/** Stops and frees [t]. */
+private fun release(t: AudioTrack) {
+    try {
+        t.stop()
+    } catch (_: IllegalStateException) {
+        // Never started or already stopped.
+    }
+    t.release()
+}
+
+/** Frees the clip track another sound replaced, telling whoever played it that it was cut off. */
+private fun cutOff(old: Pair<AudioTrack?, ((String) -> Unit)?>) {
+    val (t, onEnd) = old
+    if (t != null) {
+        release(t)
+        onEnd?.invoke("stopped")
     }
 }

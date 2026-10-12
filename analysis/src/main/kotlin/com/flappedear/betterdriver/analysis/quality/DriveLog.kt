@@ -44,7 +44,8 @@ object DriveLog {
     private val StatusNames = listOf("none", "light", "moderate", "severe", "critical", "emergency", "shutdown")
 
     /** The lines of one file; [process] names its process when it is an older build's per-process file. */
-    fun parse(text: Sequence<String>, process: String = "main"): List<LogLine> = text.mapNotNull { LogLine.parse(it, process) }.toList()
+    fun parse(text: Sequence<String>, process: String = "main"): List<LogLine> =
+        text.mapNotNull { LogLine.parse(it, process) }.toList()
 
     /** The recordings in [lines], in the order they started. */
     fun sessions(lines: List<LogLine>): List<LoggedSession> {
@@ -82,28 +83,36 @@ object DriveLog {
     /** A line of an older build, which named no session: its recorder's lines open and close one. */
     private fun legacy(byId: MutableMap<String, LoggedSession>, open: LoggedSession?, line: LogLine): LoggedSession? {
         val m = line.message
-        if (line.tag == "Recording") {
-            LegacyStart.matchEntire(m)?.let { start ->
-                val s = byId.getOrPut(start.groupValues[1]) { LoggedSession(start.groupValues[1]) }
-                s.legacy = true
-                s.startUtcMillis = line.utcMillis
-                s.source = start.groupValues[2]
-                return s
+        val recording = line.tag == "Recording"
+        val start = LegacyStart.matchEntire(m)?.takeIf { recording }
+        val stop = LegacyStop.matchEntire(m)?.takeIf { recording }
+        val event = LegacyEvent.matchEntire(m)?.takeIf { recording }
+        return when {
+            start != null -> byId.getOrPut(start.groupValues[1]) { LoggedSession(start.groupValues[1]) }.apply {
+                legacy = true
+                startUtcMillis = line.utcMillis
+                source = start.groupValues[2]
             }
-            LegacyStop.matchEntire(m)?.let { stop ->
+            stop != null -> {
                 byId[stop.groupValues[1]]?.let { s ->
                     s.endMicros = s.sessionMicros(line.utcMillis)
                     s.stopReason = stop.groupValues[2]
                 }
-                return null
+                null
             }
-            LegacyEvent.matchEntire(m)?.let { e ->
-                val (sid, ms, kind, text) = e.destructured
+            event != null -> {
+                val (sid, ms, kind) = event.destructured
+                val text = event.groupValues.last()
                 byId[sid]?.events?.add(RecorderEvent(ms.toLong() * MicrosPerMilli, kind, text))
-                return open
+                open
             }
+            else -> open?.also { legacyLine(it, line) }
         }
-        if (open == null) return null
+    }
+
+    /** A line of the session an older build is recording: RaceBox statistics and thermal status are read. */
+    private fun legacyLine(open: LoggedSession, line: LogLine) {
+        val m = line.message
         RaceBoxStats.find(m)?.takeIf { line.tag == "RaceBox" }?.let {
             open.raceBox += Triple(line.utcMillis, it.groupValues[1].toLong(), it.groupValues[2].toLong())
         }
@@ -113,6 +122,5 @@ object DriveLog {
             if (status >= 0 && at != null) open.events += RecorderEvent(at, EventKinds.THERMAL_STATUS, "status=$status")
         }
         open.lines += line
-        return open
     }
 }

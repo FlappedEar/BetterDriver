@@ -53,19 +53,21 @@ private fun total(played: List<Pair<LoggedCue, Voiced>>, path: String, limit: Lo
     val label = "Total delay p95, $name"
     val criterion = "<= ${limit / MicrosPerMilli} ms to the ear (FBBD-49, FBBD-48, FBBD-47)"
     val own = played.filter { it.second.path == path }
-    if (own.isEmpty()) return notMeasured(id, label, criterion, "no cue said this way")
-    if (own.any { it.second.route == "headset" && it.second.outDelayMillis == null }) {
-        val why = "the headset's own delay is not known: run the tap test once (Settings › Coach › Headset delay)"
-        return notMeasured(id, label, criterion, why)
-    }
     val delays = own.map { (c, v) -> (v.heardMicros - c.tMicros).toDouble() }
-    val p95 = requireNotNull(nearestRank(delays, P95))
+    val p95 = nearestRank(delays, P95)
     val headsetMs = own.firstNotNullOfOrNull { it.second.outDelayMillis }
-    return judged(
-        id, label, p95 / MicrosPerMilli, "ms", p95 <= limit, Basis.DERIVED, criterion,
-        "trigger to sound leaving the phone, plus the headset's delay from the tap test" +
-            (headsetMs?.let { " ($it ms)" }.orEmpty()) + "; ${delays.size} cue(s)",
-    )
+    return when {
+        p95 == null -> notMeasured(id, label, criterion, "no cue said this way")
+        own.any { it.second.route == "headset" && it.second.outDelayMillis == null } -> notMeasured(
+            id, label, criterion,
+            "the headset's own delay is not known: run the tap test once (Settings › Coach › Headset delay)",
+        )
+        else -> judged(
+            id, label, p95 / MicrosPerMilli, "ms", p95 <= limit, Basis.DERIVED, criterion,
+            "trigger to sound leaving the phone, plus the headset's delay from the tap test" +
+                (headsetMs?.let { " ($it ms)" }.orEmpty()) + "; ${delays.size} cue(s)",
+        )
+    }
 }
 
 private const val OverlapCriterion = "0 overlapping cues (FBBD-27, FBBD-47, FBBD-48)"
@@ -74,7 +76,8 @@ private const val OverlapCriterion = "0 overlapping cues (FBBD-27, FBBD-47, FBBD
 private fun overlap(voiced: List<Voiced>, ends: List<RecorderEvent>): QualityMetric {
     val label = "Overlapping cues"
     if (ends.isEmpty()) {
-        return notMeasured("coach.overlap", label, OverlapCriterion, "the end of each cue's sound is logged from this version on")
+        val why = "the end of each cue's sound is logged from this version on"
+        return notMeasured("coach.overlap", label, OverlapCriterion, why)
     }
     val endOf = ends.associate { e -> fields(e.text)["seq"]?.toIntOrNull() to (e.tMicros to fields(e.text)["end"]) }
     val sorted = voiced.sortedBy { it.tMicros }
@@ -97,7 +100,9 @@ private const val StraightCriterion = "at most 1 cue per straight (FBBD-27)"
 private fun perStraight(voiced: List<Voiced>, s: GnssSamples): QualityMetric {
     val label = "Extra cues on a straight"
     val sorted = voiced.sortedBy { it.tMicros }
-    if (sorted.size < 2 || s.size < 2) return notMeasured("coach.per_straight", label, StraightCriterion, "fewer than two cues")
+    if (sorted.size < 2 || s.size < 2) {
+        return notMeasured("coach.per_straight", label, StraightCriterion, "fewer than two cues")
+    }
     val extra = sorted.zipWithNext().count { (a, b) -> !brakedBetween(s, a.tMicros, b.tMicros) }
     return judged(
         "coach.per_straight", label, extra.toDouble(), "", extra == 0, Basis.DERIVED, StraightCriterion,
@@ -124,11 +129,14 @@ private const val FocusCriterion = "other audio ducks under every cue: focus gra
 private fun focus(voiced: List<Voiced>): QualityMetric {
     val label = "Audio focus granted"
     val known = voiced.mapNotNull { it.focus }
-    if (known.isEmpty()) return notMeasured("coach.focus", label, FocusCriterion, "audio focus is logged per cue from this version on")
+    if (known.isEmpty()) {
+        return notMeasured("coach.focus", label, FocusCriterion, "audio focus is logged per cue from this version on")
+    }
     val percent = known.count { it == "granted" } * Percent / known.size
     return judged(
         "coach.focus", label, percent, "%", percent >= Percent, Basis.MEASURED, FocusCriterion,
-        "cues for which Android granted ducking focus; music then ducks and comes back on its own; ${known.size} cue(s)",
+        "cues for which Android granted ducking focus; music then ducks and comes back on its own; " +
+            "${known.size} cue(s)",
     )
 }
 
@@ -137,9 +145,12 @@ private const val ClipCriterion = "pre-rendered clips cover 100 % of the phrases
 private fun clipShare(voiced: List<Voiced>): QualityMetric {
     val label = "Phrases from clips"
     val clips = voiced.count { it.path == "clip" }
-    if (clips == 0) return notMeasured("coach.clips", label, ClipCriterion, "no pre-rendered clip played (voice set to live)")
+    if (clips == 0) {
+        return notMeasured("coach.clips", label, ClipCriterion, "no pre-rendered clip played (voice set to live)")
+    }
     val percent = clips * Percent / voiced.size
-    val devices = voiced.groupingBy { it.device ?: it.route }.eachCount().entries.joinToString { "${it.key} ${it.value}" }
+    val devices = voiced.groupingBy { it.device ?: it.route }.eachCount().entries
+        .joinToString { "${it.key} ${it.value}" }
     return judged(
         "coach.clips", label, percent, "%", percent >= Percent, Basis.MEASURED, ClipCriterion,
         "${voiced.size - clips} of ${voiced.size} phrase(s) fell back to live text-to-speech; outputs: $devices",

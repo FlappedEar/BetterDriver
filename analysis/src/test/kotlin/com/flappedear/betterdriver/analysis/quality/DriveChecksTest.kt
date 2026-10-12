@@ -70,7 +70,8 @@ class DriveChecksTest {
         gnss.onStatus(RecorderStatus.Stopped("user"))
         // GNSS lines are timed by their own t_us.
         lines.replaceAll { l ->
-            if (l.tag == CheckLog.GNSS) l.copy(utcMillis = start + (CheckLog.fields(l.message)["t_us"]!!.toLong() / 1_000)) else l
+            val t = CheckLog.fields(l.message)["t_us"]?.toLong()
+            if (l.tag == CheckLog.GNSS && t != null) l.copy(utcMillis = start + t / 1_000) else l
         }
         event(600_100_000, "racebox_disconnected", "E7:D2:76:DC:ED:23")
         event(602_050_000, "racebox_connected", "E7:D2:76:DC:ED:23")
@@ -81,8 +82,11 @@ class DriveChecksTest {
         event(900_400_000, EventKinds.GNSS_BANNER, "state=cleared fix_age_us=0", "main")
         for (k in 1..62) {
             val at = k * 30_000_000L
-            event(at, EventKinds.DEVICE, "battery_c=${30 + k * 0.2} battery_pct=90 plugged=usb thermal=${if (k > 40) 1 else 0} headroom=0.7")
-            event(at, EventKinds.UI_FRAMES, "frames=1800 janky=18 frozen=0 worst_ms=40 hist=900,500,330,40,15,10,5,0,0,0,0", "main")
+            val thermal = if (k > 40) 1 else 0
+            val device = "battery_c=${30 + k * 0.2} battery_pct=90 plugged=usb thermal=$thermal headroom=0.7"
+            event(at, EventKinds.DEVICE, device)
+            val frames = "frames=1800 janky=18 frozen=0 worst_ms=40 hist=900,500,330,40,15,10,5,0,0,0,0"
+            event(at, EventKinds.UI_FRAMES, frames, "main")
         }
         phoneVideo()
         goPro()
@@ -104,10 +108,12 @@ class DriveChecksTest {
             while (s < fileEnd) {
                 // The media clock runs 30 ppm slow: 12.6 ms behind after 7 min.
                 val media = ((s - fileStart) * (1 - 30e-6)).toLong()
-                event(s + 10_000, EventKinds.VIDEO_SYNC, "camera=phone file=$file media_us=$media frame_us=${s - 5_000}")
+                val sync = "camera=phone file=$file media_us=$media frame_us=${s - 5_000}"
+                event(s + 10_000, EventKinds.VIDEO_SYNC, sync)
                 s += 1_000_000
             }
-            event(fileEnd, EventKinds.VIDEO_STOP, "camera=phone file=$file reason=${if (fileEnd == end) "user" else "file_full"}")
+            val reason = if (fileEnd == end) "user" else "file_full"
+            event(fileEnd, EventKinds.VIDEO_STOP, "camera=phone file=$file reason=$reason")
             fileStart = fileEnd + 120_000
             n++
         }
@@ -120,14 +126,19 @@ class DriveChecksTest {
         for (c in 0 until 4) {
             val file = "GX0${c + 1}0001.MP4"
             val offset = 2_400_000L + c * 8 * minute
-            event(0, EventKinds.VIDEO_IMPORT, "camera=$cam file=$file result=aligned method=GPS_MATCH offset_us=$offset duration_us=${8 * minute}", "main")
+            val placed = "camera=$cam file=$file result=aligned method=GPS_MATCH " +
+                "offset_us=$offset duration_us=${8 * minute}"
+            event(0, EventKinds.VIDEO_IMPORT, placed, "main")
             for (p in 0 until 4) {
                 val at = offset + p * 2 * minute + minute
                 // The GoPro's clock runs 20 ppm fast against the GNSS.
-                event(at, EventKinds.VIDEO_PROBE, "camera=$cam file=$file offset_us=${offset + ((at - offset) * 20e-6).toLong()} clip_offset_us=$offset", "main")
+                val drifted = offset + ((at - offset) * 20e-6).toLong()
+                val probe = "camera=$cam file=$file offset_us=$drifted clip_offset_us=$offset"
+                event(at, EventKinds.VIDEO_PROBE, probe, "main")
             }
         }
-        event(0, EventKinds.VIDEO_IMPORT, "camera=gopro-2 file=GH010099.MP4 result=rejected method=CAMERA_CLOCK offset_us=-90000000000", "main")
+        val outside = "camera=gopro-2 file=GH010099.MP4 result=rejected method=CAMERA_CLOCK offset_us=-90000000000"
+        event(0, EventKinds.VIDEO_IMPORT, outside, "main")
     }
 
     /** A cue each minute at 30 s, said live 300 ms later, 1.2 s long, to a headset 80 ms slower. */
@@ -137,7 +148,8 @@ class DriveChecksTest {
             event(at, "coach_cue", "seq=$k lap=$k kind=Corner corner=1 zone_m=200.0 turn=1 text=Turn 1", "coach")
             event(
                 at + 300_000, EventKinds.COACH_VOICE,
-                "seq=$k path=live asked_us=${at + 5_000} route=headset ready_us=${at + 105_000} device=bt_a2dp focus=granted out_delay_ms=80",
+                "seq=$k path=live asked_us=${at + 5_000} route=headset ready_us=${at + 105_000} " +
+                    "device=bt_a2dp focus=granted out_delay_ms=80",
                 "coach",
             )
             event(at + 1_500_000, EventKinds.COACH_VOICE_END, "seq=$k end=done", "coach")

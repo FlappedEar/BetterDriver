@@ -84,11 +84,11 @@ private fun sampleSet(g: GnssSecond) = SampleSet(
 /** Imported files as [EventKinds.VIDEO_IMPORT] lines name them, placed on the session's timeline. */
 private fun importedClips(events: List<com.flappedear.betterdriver.recorder.RecorderEvent>): List<QualityClip> =
     events.ofKind(EventKinds.VIDEO_IMPORT).mapNotNull { e ->
-        val f = fields(e.text)
+        val f = fields(e.text).takeIf { it["result"] == "aligned" }.orEmpty()
         val offset = f["offset_us"]?.toLongOrNull()
         val camera = f["camera"]
         val file = f["file"]
-        if (f["result"] != "aligned" || offset == null || camera == null || file == null) {
+        if (offset == null || camera == null || file == null) {
             null
         } else {
             val duration = f["duration_us"]?.toLongOrNull()

@@ -37,7 +37,7 @@ internal class DeviceChecks(private val context: Context, private val recording:
         }
     }
 
-    /** Main thread. */
+    /** Any thread. */
     fun start() {
         val filter = IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -66,33 +66,41 @@ internal class DeviceChecks(private val context: Context, private val recording:
         }
     }
 
-    private fun reading(): String {
-        // The sticky battery broadcast: no receiver is registered, it only reads the last one.
+    private fun reading(): String = "${battery()} ${thermal()}"
+
+    /** "battery_c=… battery_pct=… plugged=…", from the sticky battery broadcast (no receiver is registered). */
+    private fun battery(): String {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val tenths = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
-        val celsius = if (tenths == Int.MIN_VALUE) "n/a" else String.format(Locale.ROOT, "%.1f", tenths / Tenths)
+        val celsius = if (tenths == Int.MIN_VALUE) NA else String.format(Locale.ROOT, "%.1f", tenths / Tenths)
         val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
         val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
-        val percent = if (level >= 0 && scale > 0) (level * Percent / scale).toString() else "n/a"
+        val percent = if (level >= 0 && scale > 0) (level * Percent / scale).toString() else NA
         val plugged = when (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0)) {
             BatteryManager.BATTERY_PLUGGED_AC -> "ac"
             BatteryManager.BATTERY_PLUGGED_USB -> "usb"
             BatteryManager.BATTERY_PLUGGED_WIRELESS -> "wireless"
             else -> "none"
         }
+        return "battery_c=$celsius battery_pct=$percent plugged=$plugged"
+    }
+
+    /** "thermal=… headroom=…": Android's thermal status (Android 10+) and its 30 s forecast (Android 11+). */
+    private fun thermal(): String {
         val power = context.getSystemService(PowerManager::class.java)
-        val thermal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) power.currentThermalStatus.toString() else "n/a"
+        val status = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) power.currentThermalStatus.toString() else NA
         val headroom = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             power.getThermalHeadroom(HeadroomForecastSeconds).takeIf { !it.isNaN() }
-                ?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "n/a"
+                ?.let { String.format(Locale.ROOT, "%.3f", it) } ?: NA
         } else {
-            "n/a"
+            NA
         }
-        return "battery_c=$celsius battery_pct=$percent plugged=$plugged thermal=$thermal headroom=$headroom"
+        return "thermal=$status headroom=$headroom"
     }
 
     private companion object {
         const val Tag = "DeviceChecks"
+        const val NA = "n/a"
         const val PeriodSeconds = 30L
         const val HeadroomForecastSeconds = 30
         const val Tenths = 10.0

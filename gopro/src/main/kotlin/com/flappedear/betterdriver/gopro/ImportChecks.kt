@@ -43,5 +43,6 @@ internal fun logImport(session: String, source: String, clip: VideoClip, probes:
 
 /** A file that could not be placed in [session], in the drive's log. */
 internal fun logRejected(session: String, source: String, file: String, why: String) {
-    CheckLog.event(session, 0L, EventKinds.VIDEO_IMPORT, "camera=$source file=$file result=rejected why=${why.replace(' ', '_')}")
+    val text = "camera=$source file=$file result=rejected why=${why.replace(' ', '_')}"
+    CheckLog.event(session, 0L, EventKinds.VIDEO_IMPORT, text)
 }

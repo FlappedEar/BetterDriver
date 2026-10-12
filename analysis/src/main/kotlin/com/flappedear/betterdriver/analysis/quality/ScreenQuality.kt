@@ -72,7 +72,9 @@ private fun frameMetrics(stretches: List<FrameStretch>): List<QualityMetric> {
         )
     }
     val buckets = LongArray(FrameBuckets.size + 1)
-    stretches.filter { it.histogram.size == buckets.size }.forEach { s -> s.histogram.forEachIndexed { i, n -> buckets[i] += n } }
+    stretches.filter { it.histogram.size == buckets.size }.forEach { s ->
+        s.histogram.forEachIndexed { i, n -> buckets[i] += n }
+    }
     val p95 = percentileBucket(buckets, P95)?.let { FrameBuckets.getOrElse(it) { FrozenMillis } }
     val janky = stretches.sumOf { it.janky }
     val frozen = stretches.sumOf { it.frozen }
@@ -83,11 +85,14 @@ private fun frameMetrics(stretches: List<FrameStretch>): List<QualityMetric> {
             notMeasured("ui.frame_p95", "Frame time p95", FrameCriterion, "no frame-time histogram was logged")
         } else {
             judged(
-                "ui.frame_p95", "Frame time p95", p95.toDouble(), "ms", p95 <= MaxP95Millis, Basis.MEASURED, FrameCriterion,
+                "ui.frame_p95", "Frame time p95", p95.toDouble(), "ms", p95 <= MaxP95Millis, Basis.MEASURED,
+                FrameCriterion,
                 "$how; the upper edge of the frame-time bucket that holds the 95th percentile",
             )
         },
-        judged("ui.jank", "UI jank", jankPercent, "%", jankPercent < MaxJankPercent, Basis.MEASURED, JankCriterion, how),
+        judged(
+            "ui.jank", "UI jank", jankPercent, "%", jankPercent < MaxJankPercent, Basis.MEASURED, JankCriterion, how,
+        ),
         judged("ui.frozen", "Frozen frames", frozen.toDouble(), "", frozen == 0L, Basis.MEASURED, FrozenCriterion, how),
     )
 }
@@ -141,9 +146,10 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
     }
     val shown = banners.filter { it.second == "shown" }.map { it.first }
     val cleared = banners.filter { it.second == "cleared" }.map { it.first }
-    val wrong = shown.count { b -> outages.none { o -> o.lastFix < b && (o.nextFix ?: endMicros) + BannerSlackMicros >= b } }
+    fun during(o: Outage, t: Long) = o.lastFix < t && (o.nextFix ?: endMicros) + BannerSlackMicros >= t
+    val wrong = shown.count { b -> outages.none { o -> during(o, b) } }
     val showDelays = outages.mapNotNull { o ->
-        shown.firstOrNull { it > o.lastFix && it <= (o.nextFix ?: endMicros) + BannerSlackMicros }?.let { it - o.lastFix }
+        shown.firstOrNull { during(o, it) }?.let { it - o.lastFix }
     }
     val clearDelays = outages.mapNotNull { o ->
         val back = o.nextFix ?: return@mapNotNull null
@@ -158,14 +164,18 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
             ),
         )
         add(delayMetric("ui.banner_show", "GNSS banner delay", showDelays, ShowCriterion, "$how; from the last fix"))
-        add(delayMetric("ui.banner_clear", "GNSS banner clear delay", clearDelays, ClearCriterion, "$how; from the first fix back"))
+        val clearHow = "$how; from the first fix back"
+        add(delayMetric("ui.banner_clear", "GNSS banner clear delay", clearDelays, ClearCriterion, clearHow))
     }
 }
+
+/** The share of [delays] within the limit, in whole percent. */
+private fun inTime(delays: List<Long>) = (delays.count { it <= MaxBannerMicros } * Percent / delays.size).roundToLong()
 
 private fun delayMetric(id: String, label: String, delays: List<Long>, criterion: String, how: String): QualityMetric {
     val worst = delays.maxOrNull() ?: return notMeasured(id, label, criterion, "no GNSS outage the screen showed")
     return judged(
         id, label, seconds(worst), "s", worst <= MaxBannerMicros, Basis.MEASURED, criterion,
-        "$how; worst of ${delays.size}, ${(delays.count { it <= MaxBannerMicros } * Percent / delays.size).roundToLong()} % in time",
+        "$how; worst of ${delays.size}, ${inTime(delays)} % in time",
     )
 }

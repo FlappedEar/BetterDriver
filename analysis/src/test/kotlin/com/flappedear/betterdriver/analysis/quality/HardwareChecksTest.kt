@@ -47,7 +47,9 @@ class HardwareChecksTest {
         val sets = stream(0, 60_000_000)
         fun cue(seq: Int, at: Long) = listOf(
             RecorderEvent(at, "coach_cue", "seq=$seq lap=1 kind=Corner corner=1 zone_m=300.0 text=Turn 1"),
-            RecorderEvent(at + 200_000, EventKinds.COACH_VOICE, "seq=$seq path=clip asked_us=$at route=headset focus=refused"),
+            RecorderEvent(
+                at + 200_000, EventKinds.COACH_VOICE, "seq=$seq path=clip asked_us=$at route=headset focus=refused",
+            ),
         )
         val events = cue(1, 10_000_000) + cue(2, 11_000_000) + listOf(
             // Cue 1 was still playing when cue 2 began, and was cut off.
@@ -74,7 +76,11 @@ class HardwareChecksTest {
             RecorderEvent(80_300_000, EventKinds.GNSS_BANNER, "state=cleared"),
             RecorderEvent(90_000_000, EventKinds.SCREEN, "state=off"),
             RecorderEvent(95_000_000, EventKinds.SCREEN, "state=on"),
-            RecorderEvent(30_000_000, EventKinds.UI_FRAMES, "frames=100 janky=10 frozen=1 worst_ms=900 hist=50,20,10,5,5,5,1,1,1,1,1"),
+            RecorderEvent(
+                30_000_000,
+                EventKinds.UI_FRAMES,
+                "frames=100 janky=10 frozen=1 worst_ms=900 hist=50,20,10,5,5,5,1,1,1,1,1",
+            ),
         )
         val r = report(sets, events)
         assertEquals(1.0, r.metric("ui.false_banners").value)
@@ -106,13 +112,16 @@ class HardwareChecksTest {
     fun `battery reports too far apart fail, and a short drive is no soak`() {
         val sets = stream(0, 120_000_000)
         val events = listOf(0L, 30_000_000L, 100_000_000L).map {
-            RecorderEvent(it, EventKinds.DEVICE, "battery_c=${35 + it / 10_000_000} battery_pct=80 plugged=none thermal=0 headroom=n/a")
+            val celsius = 35 + it / 10_000_000
+            val text = "battery_c=$celsius battery_pct=80 plugged=none thermal=0 headroom=n/a"
+            RecorderEvent(it, EventKinds.DEVICE, text)
         }
         val r = report(sets, events)
         assertEquals(70.0, r.metric("thermal.battery").value)
         assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
         assertEquals(45.0, r.metric("thermal.battery_peak").value)
-        assertTrue(r.metrics.filter { it.id.startsWith("soak.") && it.id != "soak.minutes" }.all { it.verdict == Verdict.NOT_MEASURED })
+        val soak = r.metrics.filter { it.id.startsWith("soak.") && it.id != "soak.minutes" }
+        assertTrue(soak.all { it.verdict == Verdict.NOT_MEASURED })
     }
 
     @Test
@@ -120,7 +129,8 @@ class HardwareChecksTest {
         val r = report(stream(0, 60_000_000), emptyList())
         val lines = r.logLines()
         assertEquals(
-            "summary pass=${r.count(Verdict.PASS)} fail=${r.count(Verdict.FAIL)} not_measured=${r.count(Verdict.NOT_MEASURED)}",
+            "summary pass=${r.count(Verdict.PASS)} fail=${r.count(Verdict.FAIL)} " +
+                "not_measured=${r.count(Verdict.NOT_MEASURED)}",
             lines.first(),
         )
         assertEquals(r.metrics.size + 1, lines.size)

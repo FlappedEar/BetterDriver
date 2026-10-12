@@ -38,6 +38,7 @@ import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 private const val NotificationId = 1
@@ -262,8 +263,7 @@ class RecorderService : Service() {
                     if (status is RecorderStatus.Stopped) main.post { onEnded(recording, status.reason) }
                 }
             })
-            val device = DeviceChecks(this, recording)
-            active = Active(recording, tracker, timing, coach, device)
+            active = Active(recording, tracker, timing, coach, DeviceChecks(this, recording).also { it.start() })
             carryOn(wanted, recording, restartOf.also { restartOf = null })
             sources.forEach(recording::attach)
             main.post {
@@ -272,7 +272,6 @@ class RecorderService : Service() {
                 cameraStatus = null
                 coachStatus = CoachStatus.None
                 coach?.bind()
-                device.start()
                 cpu.acquire()
                 rememberWanted(wanted, car, track, gnss, sensors)
                 getSystemService(NotificationManager::class.java)
@@ -307,20 +306,11 @@ class RecorderService : Service() {
         active = null
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
         DebugLog.session = null
-        logQuality(recording.id)
+        logQuality(this, control, recording.id)
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
         endForeground()
-    }
-
-    /**
-     * The session's report in the drive's log (FBBD-183), made on the control thread once the
-     * recording is closed. Made here, it is also ready for the session screen.
-     */
-    private fun logQuality(id: String) = control.execute {
-        val report = qualityReports(this).load(id) ?: return@execute
-        report.logLines().forEach { DebugLog.forSession(id, CheckLog.QUALITY, it) }
     }
 
     private fun endForeground() {
@@ -398,6 +388,15 @@ class RecorderService : Service() {
             val start = recording.info.startUtcMillis
             recording.listeners.add(LoggingListener(recording.id, receiver, start, recording::nowMicros))
             recording.listeners.add(GnssSecondLog(recording.id, start))
+        }
+
+        /**
+         * The session's report in the drive's log (FBBD-183), made on [control] once the recording
+         * is closed. Made here, it is also ready for the session screen.
+         */
+        private fun logQuality(context: Context, control: Executor, id: String) = control.execute {
+            val report = qualityReports(context).load(id) ?: return@execute
+            report.logLines().forEach { DebugLog.forSession(id, CheckLog.QUALITY, it) }
         }
 
         /** What a restart after this process is killed records again (START_STICKY). Main thread. */

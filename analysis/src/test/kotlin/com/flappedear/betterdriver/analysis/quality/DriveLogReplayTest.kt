@@ -30,7 +30,8 @@ class DriveLogReplayTest {
     fun `the 0_3_1 logs give the drive's rate, dropped samples, thermal steps and video coverage`() {
         val reports = driveChecks(logs)
         // Two short test starts that morning, then the 40-minute drive.
-        assertEquals(listOf("20261012-055816-0075d00b", "20261012-072412-c7671bac", sessionId), reports.map { it.sessionId })
+        val ids = listOf("20261012-055816-0075d00b", "20261012-072412-c7671bac", sessionId)
+        assertEquals(ids, reports.map { it.sessionId })
         val r = reports.last()
         // The RaceBox counted 2,324 of 59,324 messages missing over the drive (FBBD-170).
         val dropped = r.metric("gnss.dropped")
@@ -64,11 +65,18 @@ class DriveLogReplayTest {
         }
         log(CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
         val gnss = GnssSecondLog(sessionId, start) { log(CheckLog.GNSS, it) }
-        val text = GZIPInputStream(javaClass.getResourceAsStream("/drive-log/vbo-20261012-103607.txt.gz")!!).bufferedReader()
+        val vbo = javaClass.getResourceAsStream("/drive-log/vbo-20261012-103607.txt.gz")!!
+        val text = GZIPInputStream(vbo).bufferedReader()
         var last = 0L
         text.useLines { rows ->
             rows.drop(1).forEach { row ->
-                val (_, time, lat, lon, kmh, file, sync) = row.split(' ')
+                val c = row.split(' ')
+                val time = c[1]
+                val lat = c[2]
+                val lon = c[3]
+                val kmh = c[4]
+                val file = c[5]
+                val sync = c[6]
                 val hh = time.substring(0, 2).toLong()
                 val mm = time.substring(2, 4).toLong()
                 val ss = time.substring(4).toDouble()
@@ -94,10 +102,6 @@ class DriveLogReplayTest {
 
     /** VBO positions are minutes, signed: +03003.90355 is 50.065 059°. */
     private fun vboDegrees(text: String) = text.toDouble() / 60.0
-
-    private operator fun <T> List<T>.component6() = this[5]
-
-    private operator fun <T> List<T>.component7() = this[6]
 
     @Test
     fun `the same drive's GNSS through the new log finds what the RaceBox counted`() {

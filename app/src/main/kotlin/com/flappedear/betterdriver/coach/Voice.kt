@@ -166,7 +166,8 @@ internal class Voice(context: Context) {
             asked[utteranceId]?.let {
                 it.started = true
                 logStart("live", it.at, SystemClock.elapsedRealtimeNanos())
-                it.onStart.started(VoiceStart(System.nanoTime(), "live", route(), it.readyNanos, out.output(), it.focus))
+                val start = VoiceStart(System.nanoTime(), "live", route(), it.readyNanos, out.output(), it.focus)
+                it.onStart.started(start)
             }
         }
 

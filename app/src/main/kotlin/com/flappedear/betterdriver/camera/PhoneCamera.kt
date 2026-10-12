@@ -47,6 +47,17 @@ import com.flappedear.betterdriver.video.VideoIndex
 import java.io.File
 
 private const val NanosPerMicro = 1_000L
+
+/**
+ * When the frame with sensor timestamp [frameNanos] was captured, on the session clock, given the
+ * session time [nowMicros]; null before the first frame. The timestamp is on elapsedRealtime when
+ * [realtime], else on System.nanoTime (Camera2's SENSOR_INFO_TIMESTAMP_SOURCE).
+ */
+private fun frameMicros(nowMicros: Long, frameNanos: Long, realtime: Boolean): Long? {
+    if (frameNanos <= 0) return null
+    val clock = if (realtime) SystemClock.elapsedRealtimeNanos() else System.nanoTime()
+    return nowMicros - (clock - frameNanos) / NanosPerMicro
+}
 private const val CheckIntervalMs = 5_000L
 private const val RetryDelayMs = 3_000L
 private const val MaxRestarts = 3
@@ -129,16 +140,13 @@ class PhoneCamera(
     private var realtimeFrames = false
 
     private val frames = object : CameraCaptureSession.CaptureCallback() {
-        override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult,
+        ) {
             result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { lastFrameNanos = it }
         }
-    }
-
-    /** The newest frame's capture time on the session clock, given the session time [nowMicros]; null before one. */
-    private fun frameMicros(nowMicros: Long): Long? {
-        val frame = lastFrameNanos.takeIf { it > 0 } ?: return null
-        val clock = if (realtimeFrames) SystemClock.elapsedRealtimeNanos() else System.nanoTime()
-        return nowMicros - (clock - frame) / NanosPerMicro
     }
 
     /** The thermal status last written to the session; only changes are written (FBBD-183). */
@@ -240,7 +248,7 @@ class PhoneCamera(
                         if (syncDue(now, lastSync)) {
                             lastSync = now
                             val media = e.recordingStats.recordedDurationNanos / NanosPerMicro
-                            sink.synced(name, now, media, frameMicros(now))
+                            sink.synced(name, now, media, frameMicros(now, lastFrameNanos, realtimeFrames))
                             clips.synced(name, now, media)
                         }
                     }

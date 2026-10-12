@@ -14,7 +14,11 @@ private val SoakParts = listOf(
     Triple("soak.gnss_rate", "gnss.rate", "GNSS rate >= 24.5 Hz"),
     Triple("soak.gnss_dropped", "gnss.dropped", "GNSS dropped samples <= 0.5 %"),
     Triple("soak.gnss_gap", "gnss.max_gap", "GNSS longest gap <= 200 ms, reconnects left out"),
-    Triple("soak.video", "video.phone.coverage", "camera records the whole run, or steps down per the thermal policy, logged"),
+    Triple(
+        "soak.video",
+        "video.phone.coverage",
+        "camera records the whole run, or steps down per the thermal policy, logged",
+    ),
     Triple("soak.thermal", "thermal.status", "never thermal SEVERE before the app's mitigation; no thermal shutdown"),
     Triple("soak.jank", "ui.jank", "UI jank < 5 % of frames"),
     Triple("soak.battery", "thermal.battery", "battery temperature logged at least every 30 s, peak reported"),
@@ -32,10 +36,16 @@ internal fun soakSection(others: List<QualitySection>, durationMicros: Long): Qu
                 notMeasured(id, what, criterion, "the drive lasted $minutes min; a soak needs 30 min or more")
             source == null || source.verdict == Verdict.NOT_MEASURED || source.verdict == Verdict.INFO ->
                 notMeasured(id, what, criterion, "not measured in this drive: ${source?.how ?: "no value"}")
-            else -> source.copy(id = id, label = "Soak: ${source.label}", criterion = criterion, keys = issueKeys(criterion))
+            else -> source.copy(
+                id = id,
+                label = "Soak: ${source.label}",
+                criterion = criterion,
+                keys = issueKeys(criterion),
+            )
         }
     }
-    return QualitySection("Soak (30 min)", listOf(info("soak.minutes", "Drive length", minutes.toDouble(), "min", Basis.MEASURED, "session length")) + metrics)
+    val length = info("soak.minutes", "Drive length", minutes.toDouble(), "min", Basis.MEASURED, "session length")
+    return QualitySection("Soak (30 min)", listOf(length) + metrics)
 }
 
 private const val SecondsPerMinute = 60L
@@ -65,7 +75,8 @@ internal fun exportSection(events: List<RecorderEvent>, durationMicros: Long): Q
         ms?.let {
             judged(
                 "export.time", "VBO export time", it / MillisPerSecond, "s", it <= limit, Basis.MEASURED,
-                ExportTimeCriterion, "time to write the VBO on the phone; limit ${(limit / MillisPerSecond).toLong()} s " +
+                ExportTimeCriterion,
+                "time to write the VBO on the phone; limit ${(limit / MillisPerSecond).toLong()} s " +
                     "for this session's length (10 s per 30 min)",
             )
         },

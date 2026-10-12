@@ -34,15 +34,28 @@ internal fun logGnssSection(seconds: List<GnssSecond>, events: List<RecorderEven
     val lastIndex = seconds.last().second
     // Whole seconds between the first and the last, without a link drop: a second with no line had no sample.
     // A link drop runs from the last second before it to the first second after it.
-    val drops = seconds.zipWithNext().filter { (_, b) -> b.afterDrop }.flatMap { (a, b) -> (a.second..b.second).toList() }.toSet()
+    val drops = seconds.zipWithNext()
+        .filter { (_, b) -> b.afterDrop }
+        .flatMap { (a, b) -> (a.second..b.second).toList() }
+        .toSet()
     val whole = ((firstIndex + 1) until lastIndex).filter { k -> k !in drops }
     val counts = whole.map { (byIndex[it]?.samples ?: 0).toDouble() }
     val metrics = buildList {
         add(rate(counts))
-        add(info("gnss.rate_p1", "Sample rate, 1st percentile", nearestRank(counts, P1), "Hz", Basis.MEASURED, "samples in each whole second, 1st percentile, seconds with a link drop left out"))
+        add(
+            info(
+                "gnss.rate_p1", "Sample rate, 1st percentile", nearestRank(counts, P1), "Hz", Basis.MEASURED,
+                "samples in each whole second, 1st percentile, seconds with a link drop left out",
+            ),
+        )
         add(dropped(seconds))
         add(maxGap(seconds))
-        add(info("gnss.long_gaps", "Gaps over 200 ms", seconds.sumOf { it.longGaps }.toDouble(), "", Basis.MEASURED, "receiver steps over 200 ms, link drops left out"))
+        add(
+            info(
+                "gnss.long_gaps", "Gaps over 200 ms", seconds.sumOf { it.longGaps }.toDouble(), "", Basis.MEASURED,
+                "receiver steps over 200 ms, link drops left out",
+            ),
+        )
         addAll(reconnects(seconds, events, endMicros))
         add(stationary(seconds))
     }
@@ -52,7 +65,9 @@ internal fun logGnssSection(seconds: List<GnssSecond>, events: List<RecorderEven
 }
 
 private fun rate(counts: List<Double>): QualityMetric {
-    if (counts.isEmpty()) return notMeasured("gnss.rate", "Average sample rate", RateCriterion, "no whole second of GNSS")
+    if (counts.isEmpty()) {
+        return notMeasured("gnss.rate", "Average sample rate", RateCriterion, "no whole second of GNSS")
+    }
     val hz = counts.sum() / counts.size
     return judged(
         "gnss.rate", "Average sample rate", hz, "Hz", hz >= MinRateHz, Basis.MEASURED, RateCriterion,
@@ -85,8 +100,11 @@ private fun maxGap(seconds: List<GnssSecond>): QualityMetric {
 /** Each logged link drop, timed by the wait between fixes that ended in the first second after it. */
 private fun reconnects(secs: List<GnssSecond>, events: List<RecorderEvent>, endMicros: Long): List<QualityMetric> {
     val drops = events.filter { it.kind in GnssDisconnectKinds }
-    val count = info("gnss.link_drops", "Link drops", drops.size.toDouble(), "", Basis.MEASURED, "link-drop events the GNSS source logged")
-    if (drops.isEmpty()) return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, "no link drop in this session"))
+    val count = linkDrops(drops.size)
+    if (drops.isEmpty()) {
+        val why = "no link drop in this session"
+        return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, why))
+    }
     val waits = drops.map { d ->
         val back = secs.firstOrNull { it.afterDrop && it.tMicros >= d.tMicros }
         back?.maxGapMicros ?: (endMicros - (secs.lastOrNull { it.tMicros <= d.tMicros }?.tMicros ?: d.tMicros))
@@ -96,7 +114,8 @@ private fun reconnects(secs: List<GnssSecond>, events: List<RecorderEvent>, endM
     return listOf(
         count,
         judged(
-            "gnss.reconnect", "Longest reconnect", seconds(longest), "s", back && longest <= MaxReconnectMicros, Basis.MEASURED,
+            "gnss.reconnect", "Longest reconnect", seconds(longest), "s", back && longest <= MaxReconnectMicros,
+            Basis.MEASURED,
             ReconnectCriterion, "time without a fix around each drop, from the log's second-by-second GNSS",
         ),
     )
@@ -165,7 +184,8 @@ internal fun legacyGnssSection(s: LoggedSession, endMicros: Long): QualitySectio
             },
             judged(
                 "gnss.dropped", "Dropped samples", percent, "%", percent <= MaxDroppedPercent, Basis.MEASURED,
-                DroppedCriterion, "$missing of ${received + missing} RaceBox messages missing, as the RaceBox driver counted them",
+                DroppedCriterion,
+                "$missing of ${received + missing} RaceBox messages missing, as the RaceBox driver counted them",
             ),
             notMeasured("gnss.max_gap", "Longest gap", GapCriterion, why),
             notMeasured("gnss.stationary", "Position noise parked", StationaryCriterion, why),
@@ -173,10 +193,17 @@ internal fun legacyGnssSection(s: LoggedSession, endMicros: Long): QualitySectio
     )
 }
 
+private fun linkDrops(n: Int) =
+    info("gnss.link_drops", "Link drops", n.toDouble(), "", Basis.MEASURED, "link-drop events the GNSS source logged")
+
 private fun reconnectsLegacy(events: List<RecorderEvent>, endMicros: Long): List<QualityMetric> {
     val drops = events.filter { it.kind in GnssDisconnectKinds }
-    val count = info("gnss.link_drops", "Link drops", drops.size.toDouble(), "", Basis.MEASURED, "link-drop events the GNSS source logged")
-    val why = if (drops.isEmpty()) "no link drop in this session" else "an older build logged no fix times (session ended at ${seconds(endMicros)} s)"
+    val count = linkDrops(drops.size)
+    val why = if (drops.isEmpty()) {
+        "no link drop in this session"
+    } else {
+        "an older build logged no fix times (session ended at ${seconds(endMicros)} s)"
+    }
     return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, why))
 }
 

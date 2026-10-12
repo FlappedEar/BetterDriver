@@ -8,6 +8,7 @@ import java.util.Locale
  * (FBBD-28, FBBD-99) reads exactly what was said and what happened next. Text is `key=value` pairs
  * separated by spaces; the spoken text comes last, after `text=`, and may hold spaces.
  */
+@Suppress("TooManyFunctions") // One writer and one reader per kind of event.
 object CoachEvents {
     /** A cue was spoken; its event time is when the coach asked for it. */
     const val CUE = "coach_cue"

@@ -56,22 +56,26 @@ private fun track(camera: String, events: List<RecorderEvent>): OffsetTrack? {
         }
     }
     val frames = reports.mapNotNull { (s, frame, media) -> frame?.let { OffsetSample(s.file, s.tMicros, it - media) } }
-    if (frames.isNotEmpty()) {
-        return OffsetTrack(frames, lowest = true, independent = true, "the camera's frame times (sensor timestamps) less its media time")
+    return when {
+        frames.isNotEmpty() -> OffsetTrack(frames, lowest = true, independent = true, FramesHow)
+        reports.isNotEmpty() -> OffsetTrack(reports.map { it.first }, lowest = true, independent = false, ReportsHow)
+        else -> probes(camera, events).takeIf { it.isNotEmpty() }?.let {
+            OffsetTrack(it, lowest = false, independent = true, ProbesHow)
+        }
     }
-    if (reports.isNotEmpty()) {
-        return OffsetTrack(reports.map { it.first }, lowest = true, independent = false, "the camera's sync reports (report time less media time)")
-    }
-    val probes = events.ofKind(EventKinds.VIDEO_PROBE).mapNotNull { e ->
+}
+
+private const val FramesHow = "the camera's frame times (sensor timestamps) less its media time"
+private const val ReportsHow = "the camera's sync reports (report time less media time)"
+private const val ProbesHow = "stretches of the file aligned on their own against the session's GNSS speed"
+
+private fun probes(camera: String, events: List<RecorderEvent>): List<OffsetSample> =
+    events.ofKind(EventKinds.VIDEO_PROBE).mapNotNull { e ->
         val f = fields(e.text)
         val offset = f["offset_us"]?.toLongOrNull()
         val file = f["file"]
         if (f["camera"] == camera && offset != null && file != null) OffsetSample(file, e.tMicros, offset) else null
     }
-    return probes.takeIf { it.isNotEmpty() }?.let {
-        OffsetTrack(it, lowest = false, independent = true, "stretches of the file aligned on their own against the session's GNSS speed")
-    }
-}
 
 private fun OffsetTrack.at(samples: List<OffsetSample>): Long? {
     if (samples.isEmpty()) return null
@@ -89,22 +93,28 @@ private const val StartCriterion = "start sync error <= 1 frame (33 ms at 30 fps
 internal fun startSyncError(camera: String, own: List<VideoClip>, events: List<RecorderEvent>): QualityMetric {
     val id = "video.$camera.sync_error"
     val label = "Start sync error ($camera)"
-    val track = track(camera, events)?.takeIf { it.independent } ?: return notMeasured(
-        id, label, StartCriterion,
-        "needs the phone camera's frame times (logged from this version on) or an imported file aligned in stretches",
-    )
-    val errors = own.mapNotNull { clip ->
-        val samples = track.samples.filter { it.file == clip.file }
-        val first = samples.minOfOrNull { it.tMicros } ?: return@mapNotNull null
-        track.at(samples.filter { it.tMicros <= first + WindowMicros })?.let { clip.startMicros - it }
-    }
+    val track = track(camera, events)?.takeIf { it.independent }
+    val errors = track?.let { t ->
+        own.mapNotNull { clip ->
+            val samples = t.samples.filter { it.file == clip.file }
+            val first = samples.minOfOrNull { it.tMicros } ?: return@mapNotNull null
+            t.at(samples.filter { it.tMicros <= first + WindowMicros })?.let { clip.startMicros - it }
+        }
+    }.orEmpty()
     val worst = errors.maxByOrNull { abs(it) }
-        ?: return notMeasured(id, label, StartCriterion, "no file with frame times or aligned stretches")
-    return judged(
-        id, label, millis(worst), "ms", abs(worst) <= MaxStartErrorMicros, Basis.DERIVED, StartCriterion,
-        "offset the video is placed with, less the one ${track.how} give over its first minute; " +
-            "worst of ${errors.size} file(s)",
-    )
+    return when {
+        track == null -> notMeasured(
+            id, label, StartCriterion,
+            "needs the phone camera's frame times (logged from this version on) " +
+                "or an imported file aligned in stretches",
+        )
+        worst == null -> notMeasured(id, label, StartCriterion, "no file with frame times or aligned stretches")
+        else -> judged(
+            id, label, millis(worst), "ms", abs(worst) <= MaxStartErrorMicros, Basis.DERIVED, StartCriterion,
+            "offset the video is placed with, less the one ${track.how} give over its first minute; " +
+                "worst of ${errors.size} file(s)",
+        )
+    }
 }
 
 /**
@@ -161,7 +171,8 @@ internal fun clockDrift(lags: List<Pair<Long, Long>>, endMicros: Long): List<Qua
         } else {
             info(
                 "gnss.clock_$minutes", "Phone clock vs GNSS at $minutes min", millis(near - base), "ms", Basis.MEASURED,
-                "smallest (arrival on the phone − receiver fix time) around $minutes min, less over the first minute: " +
+                "smallest (arrival on the phone − receiver fix time) around $minutes min, " +
+                    "less over the first minute: " +
                     "the phone clock's drift plus any change of the Bluetooth delay",
             )
         }

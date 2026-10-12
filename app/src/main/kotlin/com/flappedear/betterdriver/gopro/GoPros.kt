@@ -124,7 +124,8 @@ class GoPros private constructor(private val context: Context) {
                 // Into the drive's log under this session, also for the stop that comes after it ends (FBBD-82).
                 acks = { ack ->
                     val result = if (ack.ok) "ok" else "failed"
-                    CheckLog.event(sessionId, ack.sessionUs, EventKinds.GOPRO, "camera=$id action=${ack.action} result=$result")
+                    val text = "camera=$id action=${ack.action} result=$result"
+                    CheckLog.event(sessionId, ack.sessionUs, EventKinds.GOPRO, text)
                 },
             )
         }
