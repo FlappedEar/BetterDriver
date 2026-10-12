@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.timing.live.Fix
 import kotlinx.serialization.Serializable
 
@@ -53,6 +54,15 @@ data class CornerPass(
     val entryKmh: Double,
     val minKmh: Double,
     val timeMicros: Long,
+    /**
+     * The longest time without a new position across the window, entering and leaving it included
+     * (FBBD-177); 0 when not known (a pass stored before it was measured).
+     */
+    val gapMicros: Long = 0,
+    /** The usual (median) time between positions in the window; 0 when not known. */
+    val intervalMicros: Long = 0,
+    /** Every speed in the window came from the receiver, none worked out from positions. */
+    val speedMeasured: Boolean = true,
 )
 
 /** How much the coach says (FBBD-27). */
@@ -101,17 +111,30 @@ data class CoachSettings(
     }
 }
 
-/** What the coach asks for at one corner. */
+/**
+ * What the coach asks for at one corner. Below High confidence (FBBD-177) it is said without its
+ * number ([precise] false): "brake a little later", not "brake 10 metres later".
+ */
 sealed interface Advice {
     /** Braked earlier than the reference: brake [meters] later (a multiple of 5). */
-    data class BrakeLater(val meters: Int) : Advice
+    data class BrakeLater(val meters: Int, val precise: Boolean = true) : Advice
 
     /** Braked later than the reference and lost speed at the apex: brake earlier. */
     data object BrakeEarlier : Advice
 
     /** Slower at the apex than the reference: carry [kmh] more. */
-    data class CarrySpeed(val kmh: Int) : Advice
+    data class CarrySpeed(val kmh: Int, val precise: Boolean = true) : Advice
+
+    /** The same advice, said with its number only when [precise]. */
+    fun withPrecision(precise: Boolean): Advice = when (this) {
+        is BrakeLater -> copy(precise = precise)
+        is CarrySpeed -> copy(precise = precise)
+        BrakeEarlier -> this
+    }
 }
+
+/** Why a corner cue is not High confidence (FBBD-177): a short [code] for the log and its [text]. */
+data class CueDoubt(val code: String, val cap: Confidence, val text: String)
 
 /** Why a cue was spoken. */
 enum class CueKind { Corner, LapTime }
@@ -139,6 +162,12 @@ data class Cue(
     val turn: Int? = null,
     /** For a corner cue, the track's CornerId of the corner (FBBD-172), when the track has one. */
     val cornerId: String? = null,
+    /**
+     * For a corner cue, how far the evidence behind it can be trusted (FBBD-177): High says it with
+     * numbers, Medium without; a Low one is never said. [doubts] say why it is not High.
+     */
+    val confidence: Confidence = Confidence.HIGH,
+    val doubts: List<CueDoubt> = emptyList(),
 ) {
     /** The corner number the driver heard, for a corner cue. */
     val heardTurn: Int? get() = turn ?: corner

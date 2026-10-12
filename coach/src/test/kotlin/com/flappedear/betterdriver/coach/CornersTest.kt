@@ -60,11 +60,14 @@ class CornersTest {
         val sessions = listOf(SessionLaps("a", firstSession), SessionLaps("b", secondSession))
         val ref = assertNotNull(buildReference(track, sessions))
         assertEquals(4, ref.corners.size)
-        assertEquals(4, ref.targets.size)
+        // The two fastest passes of each corner, fastest first (FBBD-177).
+        assertEquals(8, ref.targets.size)
+        assertEquals(listOf(1, 1, 2, 2, 3, 3, 4, 4), ref.targets.map { it.corner })
+        assertTrue(ref.targets.zipWithNext().all { (a, b) -> a.corner != b.corner || a.timeMicros <= b.timeMicros })
         assertEquals(listOf("a", "b"), ref.sessions)
         // Corner 1 was fastest on session a's lap 3, corner 4 on session b's lap 3.
         assertTrue(ref.targets[0].minKmh > sim.minKmh[0] + 2)
-        assertTrue(ref.targets[3].minKmh > sim.minKmh[3] + 2)
+        assertTrue(ref.targets[6].minKmh > sim.minKmh[3] + 2)
         val again = ref.map()
         assertEquals(ref.corners, again.corners)
     }

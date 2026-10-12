@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.DeltaReference
+import kotlin.math.abs
 import kotlin.math.roundToLong
 
 /** A pass is measured from this far before the reference braking point. */
@@ -20,6 +21,9 @@ private const val MaxGapMeters = 30.0
 private const val SmoothSamples = 2
 
 private const val PeakToleranceKmh = 0.5
+
+/** A position this close along the path to the one before is the receiver holding it, not a new one. */
+private const val HeldMeters = 0.01
 
 /**
  * The reference lap's path with its corners (FBBD-96): what every pass is measured against. Positions
@@ -79,7 +83,14 @@ class PassMeter(
     /** Where the finish line is along the path. */
     private val lineAt: Double = window.endInclusive,
 ) {
-    private class Sample(val along: Double, val tMicros: Long, val kmh: Double)
+    /** [fresh]: a new position, not the receiver holding its last one through a dropout (FBBD-177). */
+    private class Sample(
+        val along: Double,
+        val tMicros: Long,
+        val kmh: Double,
+        val measured: Boolean = true,
+        val fresh: Boolean = true,
+    )
 
     private var previous: Sample? = null
     private val inside = mutableListOf<Sample>()
@@ -96,10 +107,11 @@ class PassMeter(
         line = Sample(0.0, lineMicros, lineKmh)
     }
 
-    fun add(along: Double, tMicros: Long, kmh: Double): CornerPass? {
+    /** The car is [along] the path at [tMicros] at [kmh], which the receiver [measured] or was worked out. */
+    fun add(along: Double, tMicros: Long, kmh: Double, measured: Boolean = true): CornerPass? {
         if (finished) return null
-        val s = Sample(along, tMicros, kmh)
         val p = previous
+        val s = Sample(along, tMicros, kmh, measured, fresh = p == null || abs(along - p.along) >= HeldMeters)
         val first = !started
         previous = s
         started = true
@@ -178,6 +190,9 @@ class PassMeter(
         for (i in 0..min) if (v[i] > v[peak]) peak = i
         var brake = peak
         for (i in peak..min) if (v[i] >= v[peak] - PeakToleranceKmh) brake = i
+        // How well the positions cover the window (FBBD-177), entering and leaving it included.
+        val times = listOf(before.tMicros) + inside.filter { it.fresh }.map { it.tMicros } + after.tMicros
+        val steps = times.zipWithNext { a, b -> b - a }.sorted()
         return CornerPass(
             corner = corner.number,
             lap = lap,
@@ -186,6 +201,9 @@ class PassMeter(
             entryKmh = inside[brake].kmh,
             minKmh = inside[apex].kmh,
             timeMicros = (t1 - t0).roundToLong(),
+            gapMicros = steps.last(),
+            intervalMicros = steps[steps.size / 2],
+            speedMeasured = inside.all { it.measured },
         )
     }
 
