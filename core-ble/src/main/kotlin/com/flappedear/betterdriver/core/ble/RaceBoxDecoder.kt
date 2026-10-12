@@ -46,9 +46,10 @@ private const val KmhPerMps = 3.6
 
 /**
  * Turns raw notification bytes into sample sets. Each RaceBox Data Message becomes one set,
- * stamped with the recorder's clock when it arrived. Position, speed, heading and altitude are only
- * included while there is a fix, so the VBO export (one row per set with a position) never gets
- * rows at 0°, 0°. Synchronized: notifications may arrive on more than one binder thread.
+ * stamped on the recorder's clock from the receiver's time of week ([ReceiverClock]). Position,
+ * speed, heading and altitude are only included while there is a fix, so the VBO export (one row
+ * per set with a position) never gets rows at 0°, 0°. Synchronized: notifications may arrive on
+ * more than one binder thread.
  *
  * With a [calibration] (FBBD-89), acceleration and rotation are written levelled and with the gyro
  * offset removed.
@@ -61,6 +62,7 @@ class RaceBoxDecoder(
     private val reader = UbxFrameReader()
     private var hadFix: Boolean? = null
     private val stats = StreamStats()
+    private val clock = ReceiverClock()
 
     /** Data messages decoded since the link was created. */
     @Volatile
@@ -76,14 +78,16 @@ class RaceBoxDecoder(
 
     @Synchronized
     fun feed(bytes: ByteArray) {
+        stats.notification()
         reader.feed(bytes) { frame ->
-            if (frame.messageClass != RaceBoxClass || frame.messageId != RaceBoxDataId) return@feed
-            val data = RaceBoxData.parse(frame.payload) ?: return@feed
-            messages++
-            stats.add(data.iTowMs)?.let {
-                val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
-                DebugLog.i("RaceBox", "$it, $reads")
+            val isData = frame.messageClass == RaceBoxClass && frame.messageId == RaceBoxDataId
+            val data = if (isData) RaceBoxData.parse(frame.payload) else null
+            if (data == null) {
+                stats.other(frame)
+                return@feed
             }
+            messages++
+            stats.add(data.iTowMs)
             if (data.hasFix != hadFix) {
                 if (hadFix != null || data.hasFix) {
                     val kind = if (data.hasFix) RaceBoxEvents.FIX_ACQUIRED else RaceBoxEvents.FIX_LOST
@@ -91,7 +95,12 @@ class RaceBoxDecoder(
                 }
                 hadFix = data.hasFix
             }
-            sink.submit(SampleSet(sink.nowMicros(), values(data)))
+            sink.submit(SampleSet(clock.stamp(sink.nowMicros(), data.iTowMs), values(data)))
+        }
+        // After the whole notification, so its messages and the notification count stay in one line.
+        stats.line()?.let {
+            val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
+            DebugLog.i("RaceBox", "$it, $reads")
         }
     }
 
@@ -99,6 +108,7 @@ class RaceBoxDecoder(
     @Synchronized
     fun reset() {
         reader.reset()
+        clock.reset()
     }
 
     private fun values(d: RaceBoxData): List<ChannelValue> = buildList {
@@ -137,25 +147,58 @@ private const val StatsEveryMessages = 1_500
 private const val GapMs = 60L
 
 /**
- * Message counts for the debug log (FBBD-147): every [StatsEveryMessages] messages (a minute at
- * 25 Hz) it returns a line with the messages missing from the receiver's time of week, and how many
- * of those fell on a whole second. Arek's 2026-10-12 drive lost the whole-second message in most
- * seconds; these lines show whether the receiver skipped it or the link lost it.
+ * Message counts for the debug log (FBBD-147): after every [StatsEveryMessages] messages (a minute
+ * at 25 Hz) it gives a line with the messages missing from the receiver's time of week, how many
+ * of those fell on a whole second, the BLE notifications they came in, and every other frame read
+ * in that time (class, id and payload length). Arek's 2026-10-12 drives lost the whole-second
+ * message in almost every second, but only while the receiver had a fix, with no checksum errors
+ * or skipped bytes (FBBD-170). The notification count and the other frames show whether those
+ * seconds brought nothing at all or a frame the decoder did not take as data.
  */
 internal class StreamStats {
     private var last: Long? = null
     private var count = 0
     private var missed = 0L
     private var missedOnSecond = 0L
+    private var notifications = 0L
+    private val others = sortedMapOf<String, Int>()
 
-    fun add(iTowMs: Long): String? {
+    /** One BLE notification arrived. */
+    fun notification() {
+        notifications++
+    }
+
+    /** A whole frame that is not a RaceBox Data Message, or one too short to read. */
+    fun other(frame: UbxFrame) {
+        val key = "%02x %02x %d B".format(frame.messageClass, frame.messageId, frame.payload.size)
+        others[key] = (others[key] ?: 0) + 1
+    }
+
+    fun add(iTowMs: Long) {
         last?.let { countGap(it, iTowMs) }
         last = iTowMs
-        if (++count < StatsEveryMessages) return null
-        val line = "$count messages, $missed missing ($missedOnSecond on a whole second)"
+        count++
+    }
+
+    /**
+     * The line for the messages since the last one, once there are at least [StatsEveryMessages];
+     * called after each notification, so one that carries several messages is never split.
+     */
+    fun line(): String? {
+        if (count < StatsEveryMessages) return null
+        val otherCount = others.values.sum()
+        val otherText = if (otherCount == 0) {
+            "0 other frames"
+        } else {
+            "$otherCount other frames (" + others.entries.joinToString { "${it.key} ×${it.value}" } + ")"
+        }
+        val line = "$count messages in $notifications notifications, $missed missing " +
+            "($missedOnSecond on a whole second), $otherText"
         count = 0
         missed = 0
         missedOnSecond = 0
+        notifications = 0
+        others.clear()
         return line
     }
 

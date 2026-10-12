@@ -55,7 +55,7 @@ class RaceBoxDecoderTest {
     }
 
     @Test
-    fun `one sample set per message, stamped with the recorder clock`() {
+    fun `one sample set per message, on the recorder clock`() {
         val sink = Sink()
         val decoder = RaceBoxDecoder(sink)
         sink.now = 1_000
