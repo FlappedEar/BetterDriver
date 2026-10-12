@@ -67,8 +67,8 @@ class Imports private constructor(private val context: Context) {
         private set
 
     init {
-        // Whatever an import killed half way left behind.
-        io.execute { inbox.clearStaging() }
+        // Whatever an import killed half way left behind. The list may have been read without it.
+        io.execute { if (inbox.clearStaging()) Sessions.get(context).refresh() }
     }
 
     /** Imports a session bundle or a track file. [fromOutside]: opened with the app from another app. */

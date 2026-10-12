@@ -65,17 +65,21 @@ class SessionInbox(private val store: SessionStore, private val staging: File) {
     /**
      * Cleans up after an app killed mid-import. Not while importing. A session moved aside by a
      * replace goes back if its replacement never arrived; everything else in [staging] is dropped.
+     * Returns whether a session went back, so the list must be read again.
      */
-    fun clearStaging() {
+    fun clearStaging(): Boolean {
+        var restored = false
         staging.listFiles()?.forEach { f ->
             val id = f.name.removePrefix(OldPrefix)
             val target = store.dir(id)
             if (f.name.startsWith(OldPrefix) && validId(id) && !target.exists()) {
                 move(f, target)
+                restored = true
             } else {
                 f.deleteRecursively()
             }
         }
+        return restored
     }
 
     private fun move(from: File, to: File) {
