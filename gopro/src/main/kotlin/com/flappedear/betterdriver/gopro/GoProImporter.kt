@@ -25,7 +25,9 @@ import java.time.ZoneId
  * speed. The starting guess, best first:
  * - the chapter before it, plus that chapter's duration (chapters of one recording are back to back);
  * - for the first chapter of an Open GoPro recording, the session time at which the camera acknowledged Set Shutter on;
- * - the file's creation time on the camera's clock, read as local time in [zone].
+ * - the file's creation time on the camera's clock, read as local time in [zone]. Another action
+ *   camera ([VideoSourceKind.CAMERA_FILES]) may write UTC there, as the MP4 format says to, so its
+ *   time is read as UTC when only that puts the file inside the session.
  * GPS UTC on both sides, when present, beats all of these inside the aligner.
  *
  * A file that cannot be placed inside the session is not indexed and is reported.
@@ -96,15 +98,7 @@ class GoProImporter(
             )
         } ?: recording?.takeIf { chapter == 1 }?.let {
             AlignmentResult(it.startAckSessionUs, Alignment(AlignmentMethod.COMMAND_ACK, CommandAckUncertaintyUs))
-        } ?: info.creationTimeMillis?.let { created ->
-            val asLocal = Instant.ofEpochMilli(created)
-            val offsetMillis = recording?.cameraUtcOffsetMinutes?.let { it * MillisPerMinute }
-                ?: zone.rules.getOffset(asLocal).totalSeconds * MillisPerSecond
-            val utc = created - offsetMillis
-            val uncertainty = if (recording != null) SetClockUncertaintyUs else UnsetClockUncertaintyUs
-            val offsetUs = (utc - session.info.startUtcMillis) * MicrosPerMilli
-            AlignmentResult(offsetUs, Alignment(AlignmentMethod.CAMERA_CLOCK, uncertainty))
-        }
+        } ?: info.creationTimeMillis?.let { cameraClock(it, info.durationUs, source, recording, session) }
         val result = aligner.align(GpmfGps.read(file), speeds, prior) ?: return null
         return VideoClip(
             fileName = file.name,
@@ -115,6 +109,26 @@ class GoProImporter(
             durationUs = info.durationUs.takeIf { it > 0 },
             chapter = chapter,
         )
+    }
+
+    /** The session time of a file created at [created] on the camera's clock; see the class comment. */
+    private fun cameraClock(
+        created: Long,
+        durationUs: Long,
+        source: Source,
+        recording: GoProRecording?,
+        session: SessionData,
+    ): AlignmentResult {
+        val offsetMillis = recording?.cameraUtcOffsetMinutes?.let { it * MillisPerMinute }
+            ?: zone.rules.getOffset(Instant.ofEpochMilli(created)).totalSeconds * MillisPerSecond
+        fun sessionUs(utc: Long) = (utc - session.info.startUtcMillis) * MicrosPerMilli
+        val sessionEndUs = session.sampleSets.lastOrNull()?.tMicros ?: 0L
+        fun inside(offsetUs: Long) = offsetUs + durationUs >= 0 && offsetUs <= sessionEndUs
+        val local = sessionUs(created - offsetMillis)
+        val asUtc = sessionUs(created)
+        val utcWritten = source.kind == VideoSourceKind.CAMERA_FILES && !inside(local) && inside(asUtc)
+        val uncertainty = if (recording != null) SetClockUncertaintyUs else UnsetClockUncertaintyUs
+        return AlignmentResult(if (utcWritten) asUtc else local, Alignment(AlignmentMethod.CAMERA_CLOCK, uncertainty))
     }
 
     private companion object {
