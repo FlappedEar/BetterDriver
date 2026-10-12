@@ -165,6 +165,19 @@ class SessionLoopTest {
     }
 
     @Test
+    fun `positions off the globe or at 0, 0 are left out`() {
+        val drive = oval.drive(laps = 4.3)
+        val damaged = drive.toMutableList()
+        damaged.add(0, Fix(-1, 0.0, 0.0))
+        damaged.add(10, damaged[10].copy(lat = 123.0))
+        damaged.add(2000, damaged[2000].copy(lon = -400.0))
+        damaged.add(3000, damaged[3000].copy(lat = Double.NaN))
+        val loop = assertNotNull(findSessionLoop(damaged))
+        assertEquals(findSessionLoop(drive), loop)
+        assertNull(findSessionLoop(listOf(Fix(0, 95.0, 17.0), Fix(1, 95.0, 17.1))))
+    }
+
+    @Test
     fun `a car that never leaves the paddock is not a track`() {
         val random = Random(11)
         val standing = (0 until 6_000).map { k ->

@@ -178,16 +178,26 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
  * the screen offers to make a track from it, as Garmin Catalyst's "Add a Track": the line goes
  * across the middle of the longest straight and Arek checks it in the editor before it is saved.
  */
-private fun noTrack(data: SessionData, saved: List<Track>, circuits: CircuitList): Load.Failed {
+// Making the offer must never fail the screen: any failure just leaves the offer out.
+@Suppress("TooGenericExceptionCaught")
+private fun noTrack(data: SessionData, saved: List<Track>, circuits: CircuitList): Load.Failed = try {
+    proposal(data, saved, circuits)
+} catch (e: Exception) {
+    DebugLog.w("SessionAnalysis", "making a track from session ${data.id} failed", e)
+    null
+} ?: Load.Failed(
+    AnalysisState.Unavailable(
+        "No laps: this session, a road drive for example, was not recorded at a track with a " +
+            "start/finish line. If it was at a track, set the line in the track editor, then open the " +
+            "analysis again.",
+        action = "Tracks",
+    ),
+)
+
+/** The offer to make a track from the session, or null when it drove no loop. */
+private fun proposal(data: SessionData, saved: List<Track>, circuits: CircuitList): Load.Failed? {
     val fixes = sessionFixes(data)
-    val loop = findSessionLoop(fixes) ?: return Load.Failed(
-        AnalysisState.Unavailable(
-            "No laps: this session, a road drive for example, was not recorded at a track with a " +
-                "start/finish line. If it was at a track, set the line in the track editor, then open the " +
-                "analysis again.",
-            action = "Tracks",
-        ),
-    )
+    val loop = findSessionLoop(fixes) ?: return null
     val label = sessionLabel(data.info.startUtcMillis)
     val fallback = data.info.track.ifBlank { "Track of $label" }.take(Track.MaxNameChars)
     val track = proposeTrack(loop, saved, circuits, fallback)

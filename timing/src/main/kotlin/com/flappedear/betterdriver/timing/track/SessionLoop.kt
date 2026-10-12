@@ -3,6 +3,8 @@ package com.flappedear.betterdriver.timing.track
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
+import com.flappedear.betterdriver.timing.geo.MaxLatitude
+import com.flappedear.betterdriver.timing.geo.MaxLongitude
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
@@ -53,8 +55,9 @@ data class SessionLoop(
  */
 @Suppress("ReturnCount") // Guard clauses: each says why there is no loop.
 fun findSessionLoop(session: List<Fix>): SessionLoop? {
-    if (session.size < 2) return null
-    val fixes = session.sortedBy { it.tMicros }
+    // A damaged session can hold positions off the globe, or 0, 0 from a receiver without a fix.
+    val fixes = session.filter(::isPosition).sortedBy { it.tMicros }
+    if (fixes.size < 2) return null
     val frame = LocalFrame(GeoPoint(fixes.first().lat, fixes.first().lon))
     val runs = runsOf(smoothed(fixes, frame)).map(::resample).filter { it.size > 2 * ChordPoints + 1 }
     val returns = runs.flatMapIndexed { r, run -> returnsIn(run).map { (i, j) -> Return(r, i, j) } }
@@ -80,6 +83,11 @@ fun findSessionLoop(session: List<Fix>): SessionLoop? {
         passes = passes,
     )
 }
+
+/** A real position: finite, on the globe, and not the 0, 0 a receiver reports without a fix. */
+private fun isPosition(f: Fix): Boolean =
+    f.lat.isFinite() && f.lon.isFinite() && f.lat in -MaxLatitude..MaxLatitude &&
+        f.lon in -MaxLongitude..MaxLongitude && !(f.lat == 0.0 && f.lon == 0.0)
 
 /**
  * The track to propose for [loop]: a saved track here that has no start/finish line yet gets it;
