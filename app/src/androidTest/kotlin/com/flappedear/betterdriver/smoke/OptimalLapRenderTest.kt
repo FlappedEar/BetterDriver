@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation.ActivityResult
 import android.content.Intent
 import android.media.MediaExtractor
+import android.media.MediaMetadataRetriever
 import android.media.MediaFormat
 import android.net.Uri
 import androidx.compose.ui.test.hasClickAction
@@ -21,6 +22,7 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.review.indexedClips
 import com.flappedear.betterdriver.review.sessionVideo
+import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.videoexport.OptimalLap
 import com.flappedear.betterdriver.videoexport.VideoExportEnd
@@ -127,29 +129,40 @@ class OptimalLapRenderTest {
             var t = SampleStepMicros / 2
             while (t < length - FrameMicros) {
                 val cut = plan.cuts.last { it.cut.outputStartMicros <= t }.cut
-                val source = checkNotNull(FrameCode.inFile(retriever, t)) {
-                    "unreadable frame at $t µs of the optimal lap video"
-                }
-                val shown = source * MicrosPerSecond / ReviewFixtures.Fps
+                val shown = sourceMicros(retriever, t)
                 val wanted = cut.sessionMicrosAt(t)
                 check(abs(shown - wanted) <= 2 * FrameMicros) {
                     "at $t µs the optimal lap video shows session time $shown µs, its cut wants $wanted µs"
                 }
-                val lap = laps.firstOrNull { shown >= it.lap.startMicros && shown < it.lap.endMicros }
-                if (lap != null) {
-                    // Across the line (a part that runs into the next lap) the position starts again at 0.
-                    var along = lap.at(shown - lap.lap.startMicros).distanceMeters / lap.lengthMeters
-                    if (along < lastAlong - WrapFraction) along += 1.0
-                    check(along >= lastAlong - OrderTolerance) {
-                        "at $t µs the optimal lap video goes back along the track: $lastAlong → $along of a lap"
-                    }
-                    lastAlong = along
-                }
+                lastAlong = along(laps, shown, lastAlong, t)
                 t += SampleStepMicros
             }
         } finally {
             retriever.release()
         }
+    }
+
+    /** The session time of the source frame the rendered video shows at [t]. */
+    private fun sourceMicros(retriever: MediaMetadataRetriever, t: Long): Long {
+        val source = checkNotNull(FrameCode.inFile(retriever, t)) {
+            "unreadable frame at $t µs of the optimal lap video"
+        }
+        return source * MicrosPerSecond / ReviewFixtures.Fps
+    }
+
+    /**
+     * Where along the lap (fraction) session time [shown] is, checked not to go back from [lastAlong];
+     * [lastAlong] when it is in no timed lap.
+     */
+    private fun along(laps: List<LapTrace>, shown: Long, lastAlong: Double, t: Long): Double {
+        val lap = laps.firstOrNull { shown >= it.lap.startMicros && shown < it.lap.endMicros } ?: return lastAlong
+        // Across the line (a part that runs into the next lap) the position starts again at 0.
+        var along = lap.at(shown - lap.lap.startMicros).distanceMeters / lap.lengthMeters
+        if (along < lastAlong - WrapFraction) along += 1.0
+        check(along >= lastAlong - OrderTolerance) {
+            "at $t µs the optimal lap video goes back along the track: $lastAlong → $along of a lap"
+        }
+        return along
     }
 
     private fun videoTrackMicros(file: File): Long {

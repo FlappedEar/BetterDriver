@@ -95,14 +95,17 @@ class SurfaceFrames(private val activity: Activity) {
         val bitmap = Bitmap.createBitmap(CopyWidth, CopyHeight, Bitmap.Config.ARGB_8888)
         val done = CountDownLatch(1)
         var result = PixelCopy.ERROR_UNKNOWN
-        try {
+        val requested = try {
             PixelCopy.request(view, bitmap, { r -> result = r; done.countDown() }, handler)
+            true
         } catch (_: IllegalArgumentException) {
             // The surface is not valid (yet, or any more).
-            return null
+            false
         }
-        if (!done.await(CopyTimeoutMs, TimeUnit.MILLISECONDS) || result != PixelCopy.SUCCESS) return null
-        return FrameCode.read(bitmap).also { bitmap.recycle() }
+        val copied = requested && done.await(CopyTimeoutMs, TimeUnit.MILLISECONDS) && result == PixelCopy.SUCCESS
+        val frame = if (copied) FrameCode.read(bitmap) else null
+        bitmap.recycle()
+        return frame
     }
 
     fun close() {

@@ -158,7 +158,7 @@ class ReviewSyncTest {
                 val (va, vb) = views ?: surfaces()
                 val fa = frames.frameOf(va)
                 val fb = frames.frameOf(vb)
-                if (fa != null && fb != null && framesOff(fa, wantA) <= 1.0 && framesOff(fb, wantB) <= 1.0) {
+                if (shows(fa, wantA) && shows(fb, wantB)) {
                     return SystemClock.uptimeMillis() - start
                 }
                 if (SystemClock.uptimeMillis() - start > timeoutMs) {
@@ -209,6 +209,9 @@ class ReviewSyncTest {
 
         /** "Lap 7 · 1:41.89", as the review names a lap. */
         fun lapName(l: LapTrace) = "Lap ${l.lap.number} · ${formatLapTime(l.lap.timeMillis)}"
+
+        /** Whether the frame [shown] (null: unreadable) is within 1 frame of [want]. */
+        fun shows(shown: Int?, want: Double) = shown != null && framesOff(shown, want) <= 1.0
 
         /**
          * How many frames [want] (a frame position, fractional) lies outside the frame [shown], which
