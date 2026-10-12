@@ -69,9 +69,10 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
 
 /**
  * Per-corner state of one session (FBBD-97): each corner's target (the fastest pass so far), its last
- * pass, recent losses against the target, and the lap it was last cued on.
+ * pass, recent losses against the target, and the lap it was last cued on. [picked] are the corners
+ * the driver picked in the lap analysis (FBBD-148).
  */
-private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>) {
+private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, val picked: Set<Int>) {
     private val n = map.corners.size
     val targets = arrayOfNulls<CornerPass>(n)
     val lastPass = arrayOfNulls<CornerPass>(n)
@@ -100,14 +101,20 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>) {
         }
     }
 
-    /** Corners losing the most time against their targets over the last few passes. */
-    fun focus(): Set<Int> = losses.indices
-        .map { i -> (i + 1) to losses[i].takeIf { it.isNotEmpty() }?.average() }
-        .filter { (_, loss) -> loss != null && loss >= MinLossMicros }
-        .sortedByDescending { it.second }
-        .take(FocusCorners)
-        .map { it.first }
-        .toSet()
+    /**
+     * The corners with cues at [Verbosity.Focus], at most [FocusCorners]: the picked corners first (the
+     * ones losing the most, when more are picked), then the corners losing the most time against their
+     * targets over the last few passes.
+     */
+    fun focus(): Set<Int> {
+        val loss = losses.map { it.takeIf { l -> l.isNotEmpty() }?.average() }
+        val chosen = picked.sortedByDescending { loss[it - 1] ?: Double.NEGATIVE_INFINITY }.take(FocusCorners)
+        val losing = loss.indices
+            .filter { i -> (loss[i] ?: 0.0) >= MinLossMicros && i + 1 !in chosen }
+            .sortedByDescending { loss[it] }
+            .map { it + 1 }
+        return (chosen + losing).take(FocusCorners).toSet()
+    }
 
     /** The first corner whose braking zone is still ahead. */
     fun next(along: Double): Corner? = map.corners.firstOrNull { zoneStart(it) > along }
@@ -123,14 +130,18 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>) {
         val i = c.number - 1
         return maxOf(c.apexAt, targets[i]?.apexAt ?: c.apexAt, lastPass[i]?.apexAt ?: c.apexAt)
     }
+
+    /** The reference lap's time on the straight from clear of [previous] to [c]'s braking zone. */
+    fun straightMicros(previous: Corner, c: Corner): Double =
+        map.path.timeAt(zoneStart(c)) - map.path.timeAt(zoneEnd(previous) + ClearOfCornerMeters)
 }
 
 /** The first timed lap of a session without an earlier reference sets the corners. */
-private fun cornersFrom(traced: TracedLap): CornerBook? {
+private fun cornersFrom(traced: TracedLap, picked: (CornerMap) -> Set<Int>): CornerBook? {
     val found = findCorners(traced.trace)
     if (found.isEmpty()) return null
     val m = CornerMap(traced.trace, found)
-    return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)))
+    return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)), picked(m))
 }
 
 /**
@@ -202,18 +213,26 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
+ * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by position
+ *   ([pickedCorners]). At [Verbosity.Focus] they take the focus places first; at any verbosity a picked
+ *   corner wins when two cues compete for one straight (see [planCue]).
  *
  * Pure and single-threaded.
  */
+@Suppress("TooManyFunctions") // One engine, split into its steps.
 class CueEngine(
     track: Track,
     private val settings: CoachSettings,
     earlier: CoachReference? = null,
     latencyMicros: Long = DefaultLatencyMicros,
+    private val picks: List<CornerPick> = emptyList(),
 ) {
     private val laps = LapCollector(track)
     private val speech = SpeechTiming(settings, latencyMicros)
-    private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { CornerBook(it.map(), it.targets) }
+    private val picked: (CornerMap) -> Set<Int> = { pickedCorners(it, laps.frame, picks) }
+    private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
+        r.map().let { m -> CornerBook(m, r.targets, picked(m)) }
+    }
 
     private var cursor: PathCursor? = null
     private var meters: List<PassMeter> = emptyList()
@@ -238,6 +257,9 @@ class CueEngine(
 
     /** The fastest pass so far of each corner. */
     val targetPasses: List<CornerPass> get() = book?.targets?.filterNotNull().orEmpty()
+
+    /** The corners the driver picked, by number, once the corners are known. */
+    val pickedCorners: Set<Int> get() = book?.picked.orEmpty()
 
     val phase: CoachPhase
         get() = when {
@@ -276,7 +298,7 @@ class CueEngine(
         val traced = laps.finished.lastOrNull { it.lap.number == lap.number }
         val b = book
         if (b == null && timed && traced != null) {
-            book = cornersFrom(traced)
+            book = cornersFrom(traced, picked)
         } else if (b != null && timed) {
             b.onTimedLap(lapPasses)
         }
@@ -332,24 +354,43 @@ class CueEngine(
         val previous = b.map.corners.getOrNull(next.number - 2)
         if (previous != null && along < b.zoneEnd(previous) + ClearOfCornerMeters) return null
         val p = plan?.takeIf { it.corner == next.number && it.lap == lap }
-            ?: Plan(next.number, lap, cornerCue(b, next, now)).also { plan = it }
+            ?: Plan(next.number, lap, planCue(b, next, now)).also { plan = it }
         val time = speech.timeTo(b.map.path, along, b.zoneStart(next))
         val cue = p.cue
-        return if (cue != null) speakCorner(cue, now, time) else speakLapTime(now, time)
+        return if (cue != null) speakCorner(p, cue, now, time) else speakLapTime(now, time)
     }
 
-    /** Says [planned] when it fits on this straight; drops it once it no longer can. */
-    private fun speakCorner(planned: Cue, now: Long, timeToZone: Long?): Cue? {
+    /**
+     * What to say on the straight before [next] (FBBD-148): its own cue, unless the corner after it is
+     * picked and its own straight, by the reference lap, is too short to say that corner's cue in full.
+     * Then the two compete for this straight, and the picked corner wins over a corner not picked: its
+     * cue is said here, early, still ending before [next]'s braking zone. Without picks this is always
+     * [next]'s own cue.
+     */
+    private fun planCue(b: CornerBook, next: Corner, now: Long): Cue? {
+        val own = cornerCue(b, next, now)
+        val ownPicked = own != null && next.number in b.picked
+        // Numbers start at 1, so this is the corner after [next].
+        val after = b.map.corners.getOrNull(next.number)?.takeIf { it.number in b.picked && !ownPicked }
+        val ahead = after?.let { cornerCue(b, it, now) }
+        val tooShort = after != null && ahead != null &&
+            b.straightMicros(next, after) < speech.needMicros(ahead.text) + MarginMicros
+        return if (tooShort) ahead else own
+    }
+
+    /** Says [planned] when it fits on the straight of [p]; drops it once it no longer can. */
+    private fun speakCorner(p: Plan, planned: Cue, now: Long, timeToZone: Long?): Cue? {
         val need = speech.needMicros(planned.text) + MarginMicros
         val late = timeToZone != null && timeToZone < need
-        if (late) plan = Plan(planned.corner!!, planned.lap, null)
+        if (late) plan = Plan(p.corner, p.lap, null)
         val ready = timeToZone != null && !late && timeToZone <= need + LeadMicros
         if (!ready || !speech.free(now)) return null
-        plan = Plan(planned.corner!!, planned.lap, null)
+        plan = Plan(p.corner, p.lap, null)
         pendingLap = null // One cue per straight.
         val cue = speech.said(planned.copy(seq = ++seq, tMicros = now))
-        openCues[planned.corner] = cue
-        book?.cuedOnLap?.set(planned.corner - 1, planned.lap)
+        val corner = planned.corner!! // Corner cues always name their corner.
+        openCues[corner] = cue
+        book?.cuedOnLap?.set(corner - 1, planned.lap)
         return cue
     }
 
@@ -382,8 +423,10 @@ class CueEngine(
 
     private fun mayCue(b: CornerBook, corner: Corner, lap: Int): Boolean {
         val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= settings.learningLaps
-        // The driver gets a lap to try the last cue.
-        val rested = b.cuedOnLap[corner.number - 1] != lap - 1
+        // The driver gets a lap to try the last cue. A picked corner cued early, on the straight before
+        // the previous corner, is not cued again on its own straight.
+        val cued = b.cuedOnLap[corner.number - 1]
+        val rested = cued != lap - 1 && (cued != lap || corner.number !in b.picked)
         return learned && rested && (settings.verbosity == Verbosity.Full || corner.number in b.focus())
     }
 }
