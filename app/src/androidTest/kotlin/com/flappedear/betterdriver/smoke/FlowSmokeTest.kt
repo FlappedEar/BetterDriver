@@ -54,30 +54,34 @@ class FlowSmokeTest {
     fun lapReviewComparesTwoLaps() {
         app.openSessions()
         // The lap review opens on the newest session's best lap against the track's best other lap.
-        app.waitForText("Compare laps").performClick()
-        app.waitForText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        // Both laps play side by side with their video. Playing, the review runs a frame loop, so the
-        // clock is advanced by hand until it is paused again.
+        // It runs a frame loop, so the clock is advanced by hand while it shows.
         app.withManualClock {
+            app.waitForText("Compare laps").performClick()
+            app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+            // Both laps play side by side with their video.
             app.pumpUntilText("Play").performClick()
             app.pumpUntilText("Pause")
             app.pumpFor(PlayMs)
             app.pumpUntilText("Pause").performClick()
             app.pumpUntilText("Play")
+            // To the picker.
+            app.pumpUntilText("Change laps").performClick()
+            app.pumpUntilText("Compare laps")
         }
-        // To the picker.
-        app.waitForText("Change laps").performClick()
-        app.waitForText("Compare laps")
 
         // The picker: the circuit's sessions, newest first, with their laps. Pick two and compare them.
         app.waitForText(SmokeFixtures.CircuitName, timeoutMs = LoadTimeoutMs).performClick()
         app.waitFor(hasText("Lap 2") and hasClickAction(), LoadTimeoutMs).performClick()
         app.waitFor(hasText("Lap 3") and hasClickAction()).performClick()
-        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled().performClick()
-        app.waitForText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        app.waitForText("Lap 2", substring = true)
-        // Back goes to the picker, the two laps still picked.
-        app.back()
+        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled()
+        app.withManualClock {
+            app.onNode(hasText("Compare") and hasClickAction()).performClick()
+            app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+            app.pumpUntilText("Lap 2", substring = true)
+            // Back goes to the picker, the two laps still picked.
+            app.pumpBack()
+            app.pumpUntilNode(hasText("Compare") and hasClickAction())
+        }
         app.waitFor(hasText("Compare") and hasClickAction()).assertIsEnabled()
     }
 
