@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
 import android.view.View
+import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -19,6 +20,34 @@ internal fun KeepScreenOn(view: View) {
     DisposableEffect(view) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
+    }
+}
+
+/** Screen brightness while the track screen is shown (FBBD-63). */
+enum class TrackBrightness(val label: String) {
+    /** Full brightness, so the screen reads in sunlight. */
+    Max("Max"),
+
+    /** The phone's own brightness, automatic or not. */
+    System("System"),
+}
+
+/**
+ * Holds the window at full brightness with [TrackBrightness.Max], and gives back the window's
+ * own value when the track screen goes. [TrackBrightness.System] leaves the window alone.
+ */
+@Composable
+internal fun LockBrightness(activity: Activity?, brightness: TrackBrightness = TrackBrightness.Max) {
+    DisposableEffect(activity, brightness) {
+        val window = activity?.window
+        if (window == null || brightness != TrackBrightness.Max) return@DisposableEffect onDispose {}
+        val saved = window.attributes.screenBrightness
+        window.attributes = window.attributes.apply {
+            screenBrightness = WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_FULL
+        }
+        onDispose {
+            window.attributes = window.attributes.apply { screenBrightness = saved }
+        }
     }
 }
 

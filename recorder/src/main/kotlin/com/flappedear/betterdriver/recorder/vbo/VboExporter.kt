@@ -84,6 +84,7 @@ object VboExporter {
         if (session.info.car.isNotBlank()) add("Car ${session.info.car}")
         if (session.info.track.isNotBlank()) add("Track ${session.info.track}")
         session.info.devices.forEach { add("Device $it") }
+        session.info.imported?.let { add("Imported from ${it.format} ${it.fileName}".trim()) }
         if (session.state == SessionState.RECOVERED || session.state == SessionState.INTERRUPTED) {
             add("Recovered after an interrupted recording")
         }

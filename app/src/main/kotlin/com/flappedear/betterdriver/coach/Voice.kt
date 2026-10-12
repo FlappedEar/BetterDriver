@@ -1,84 +1,140 @@
 package com.flappedear.betterdriver.coach
 
 import android.content.Context
-import android.media.AudioAttributes
-import android.media.AudioFocusRequest
-import android.media.AudioManager
+import android.os.Handler
+import android.os.HandlerThread
+import android.os.SystemClock
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
+private const val NanosPerMilli = 1_000_000L
+
+/** Picks a British, American or any English voice on [tts]; false if it has none. */
+internal fun chooseEnglish(tts: TextToSpeech): Boolean = listOf(Locale.UK, Locale.US, Locale.ENGLISH).any { locale ->
+    tts.setLanguage(locale) >= TextToSpeech.LANG_AVAILABLE
+}
+
 /**
- * Android text-to-speech for cues (FBBD-98), to whatever audio output is connected: a helmet headset
- * or the car over Bluetooth, or the phone speaker. Played as navigation guidance. Text-to-speech does
- * not take audio focus itself, so each phrase asks for transient focus that lets music duck under it,
- * and gives it back once the last phrase has been said. A new phrase replaces one still being said.
- * [ready] is false until the engine has started, and stays false if there is no English voice.
+ * The coach's voice (FBBD-98), on [AudioOut]: to whatever audio output is connected, a helmet headset or
+ * the car over Bluetooth, or the phone speaker, as navigation guidance with transient focus so music
+ * ducks under it (FBBD-47). A new phrase replaces one still being said. [ready] is false until the
+ * engine has started, and stays false if there is no English voice. The engine is started when the
+ * voice is made and warmed with a moment of silence, so the first cue does not wait for it.
+ *
+ * Two ways to say a phrase (FBBD-48), set by [use]: live text-to-speech, or clips rendered at coach
+ * start and joined, which start sooner. A phrase without clips (they are still rendering, rendering
+ * failed, or a number has none) is said live. The time from asking to the first audio is logged for
+ * both, to compare them.
  */
 internal class Voice(context: Context) {
     @Volatile
     var ready = false
         private set
 
+    private val thread = HandlerThread("voice").apply { start() }
+    private val handler = Handler(thread.looper)
+    private val out = AudioOut(context, handler)
+    private val clips = CueClipBank(context, handler)
     private val ids = AtomicInteger()
 
-    private val attributes = AudioAttributes.Builder()
-        .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
-        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-        .build()
+    @Volatile
+    private var mode = VoiceMode.Live
 
-    private val audio: AudioManager? = context.applicationContext.getSystemService(AudioManager::class.java)
+    /** Live phrases not yet started: utterance id to when it was asked for, in elapsed-realtime nanos. */
+    private val asked = ConcurrentHashMap<String, Long>()
 
-    private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-        .setAudioAttributes(attributes)
-        .build()
-
-    private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status ->
-        ready = status == TextToSpeech.SUCCESS && chooseLanguage()
-    }
+    private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status -> onInit(status) }
 
     init {
-        tts.setAudioAttributes(attributes)
-        tts.setOnUtteranceProgressListener(
-            object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String) = Unit
-
-                override fun onDone(utteranceId: String) = ended(utteranceId)
-
-                @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String) = ended(utteranceId)
-
-                override fun onError(utteranceId: String, errorCode: Int) = ended(utteranceId)
-
-                override fun onStop(utteranceId: String, interrupted: Boolean) = ended(utteranceId)
-            },
-        )
+        tts.setAudioAttributes(AudioOut.Attributes)
+        tts.setOnUtteranceProgressListener(Progress())
     }
 
-    private fun chooseLanguage(): Boolean = listOf(Locale.UK, Locale.US, Locale.ENGLISH).any { locale ->
-        tts.setLanguage(locale) >= TextToSpeech.LANG_AVAILABLE
+    private fun onInit(status: Int) {
+        ready = status == TextToSpeech.SUCCESS && chooseEnglish(tts)
+        warm()
     }
 
-    /** False when the phrase could not be queued (no voice yet, or the engine refused it). */
+    /** Opens the audio path with a moment of silence, so the next phrase does not wait for it. */
+    private fun warm() {
+        if (ready) tts.playSilentUtterance(WarmMillis, TextToSpeech.QUEUE_ADD, WarmId)
+    }
+
+    /**
+     * How phrases are said from now on, set at each coached session's start; pre-rendered starts
+     * rendering the clips if they are not yet. Warms the audio path again.
+     */
+    fun use(voice: VoiceMode) {
+        if (voice != mode) DebugLog.i(Tag, "voice: $voice")
+        mode = voice
+        if (voice == VoiceMode.PreRendered) clips.prepare()
+        warm()
+    }
+
+    /** False when the phrase could not be played or queued (no voice yet, or the engine refused it). */
     fun say(text: String): Boolean {
-        if (!ready) return false
-        audio?.requestAudioFocus(focus)
-        val queued = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, utteranceId(ids.incrementAndGet())) ==
-            TextToSpeech.SUCCESS
-        if (!queued) audio?.abandonAudioFocusRequest(focus)
-        return queued
-    }
-
-    /** A phrase ended; music comes back up only when it was the latest one (a newer one replaced it otherwise). */
-    private fun ended(utteranceId: String) {
-        if (utteranceId == utteranceId(ids.get())) audio?.abandonAudioFocusRequest(focus)
+        val id = "cue-${ids.incrementAndGet()}"
+        val at = SystemClock.elapsedRealtimeNanos()
+        val clip = if (mode == VoiceMode.PreRendered) clips.phrase(text) else null
+        return (clip != null && playClip(clip, id, at)) || (ready && speak(text, id, at))
     }
 
     fun shutdown() {
         tts.shutdown()
-        audio?.abandonAudioFocusRequest(focus)
+        clips.shutdown()
+        out.shutdown()
+        thread.quitSafely()
     }
 
-    private fun utteranceId(n: Int) = "cue-$n"
+    private fun playClip(clip: Pcm, id: String, at: Long): Boolean {
+        tts.stop()
+        return out.play(clip, id) { started -> logStart("pre-rendered", at, started) } != null
+    }
+
+    private fun speak(text: String, id: String, at: Long): Boolean {
+        out.stopClip()
+        out.begin(id)
+        asked[id] = at
+        val queued = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+        if (!queued) {
+            asked.remove(id)
+            out.end(id)
+        }
+        return queued
+    }
+
+    private fun logStart(path: String, askedAt: Long, startedAt: Long) =
+        DebugLog.i(Tag, "$path voice start ${(startedAt - askedAt) / NanosPerMilli} ms")
+
+    /** Logs a live phrase's start, and gives the focus back when it ends, stops or fails. */
+    private inner class Progress : UtteranceProgressListener() {
+        override fun onStart(utteranceId: String?) {
+            asked.remove(utteranceId)?.let { logStart("live", it, SystemClock.elapsedRealtimeNanos()) }
+        }
+
+        override fun onDone(utteranceId: String?) = ended(utteranceId)
+
+        @Deprecated("Deprecated in Java")
+        override fun onError(utteranceId: String?) = ended(utteranceId)
+
+        override fun onError(utteranceId: String?, errorCode: Int) = ended(utteranceId)
+
+        override fun onStop(utteranceId: String?, interrupted: Boolean) = ended(utteranceId)
+
+        private fun ended(id: String?) {
+            if (id == null || id == WarmId) return
+            asked.remove(id)
+            out.end(id)
+        }
+    }
+
+    private companion object {
+        const val Tag = "Voice"
+        const val WarmId = "warm"
+        const val WarmMillis = 50L
+    }
 }
