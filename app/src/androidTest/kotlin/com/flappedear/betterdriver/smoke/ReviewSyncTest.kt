@@ -4,9 +4,14 @@ import android.os.SystemClock
 import android.view.SurfaceView
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.click
+import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -75,11 +80,15 @@ class ReviewSyncTest {
         app.waitNamed("the lap review to read the sync sessions", LoadTimeoutMs) {
             (laps.state as? ReviewLoad.Ready)?.tracks?.firstOrNull()?.id == ReviewFixtures.SyncRingId
         }
+        // It opens on the lap picker with nothing picked: A is the newest session's best lap, B the
+        // other session's.
+        app.waitForText("Compare laps").performClick()
+        pickLap(a)
+        pickLap(b)
         // The review runs a frame loop while it moves, so the clock is advanced by hand while it shows.
         app.withManualClock {
-            app.waitForText("Compare laps").performClick()
+            app.onNode(hasText("Compare") and hasClickAction()).performClick()
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs)
-            // It opens on the newest session's best lap (A) against the track's fastest other lap (B's).
             app.pumpUntilText("A  ${lapName(a)}")
             app.pumpUntilText("B  ${lapName(b)}")
             val players = Players(frames, a, b)
@@ -124,6 +133,14 @@ class ReviewSyncTest {
             app.pumpBack()
             app.pumpUntilText("Compare laps")
         }
+    }
+
+    /** Taps [lap]'s row in the lap picker, into the slot that is next. */
+    private fun pickLap(lap: LapTrace) {
+        val row = hasText("Lap ${lap.lap.number}") and hasText(formatLapTime(lap.lap.timeMillis)) and hasClickAction()
+        app.waitFor(hasScrollToNodeAction() and hasAnyDescendant(hasText("Compare")), LoadTimeoutMs)
+            .performScrollToNode(row)
+        app.onNode(row).performClick()
     }
 
     /**
