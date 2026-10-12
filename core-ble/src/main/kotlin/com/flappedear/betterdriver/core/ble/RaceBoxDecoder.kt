@@ -87,10 +87,7 @@ class RaceBoxDecoder(
                 return@feed
             }
             messages++
-            stats.add(data.iTowMs)?.let {
-                val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
-                DebugLog.i("RaceBox", "$it, $reads")
-            }
+            stats.add(data.iTowMs)
             if (data.hasFix != hadFix) {
                 if (hadFix != null || data.hasFix) {
                     val kind = if (data.hasFix) RaceBoxEvents.FIX_ACQUIRED else RaceBoxEvents.FIX_LOST
@@ -99,6 +96,11 @@ class RaceBoxDecoder(
                 hadFix = data.hasFix
             }
             sink.submit(SampleSet(clock.stamp(sink.nowMicros(), data.iTowMs), values(data)))
+        }
+        // After the whole notification, so its messages and the notification count stay in one line.
+        stats.line()?.let {
+            val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
+            DebugLog.i("RaceBox", "$it, $reads")
         }
     }
 
@@ -145,8 +147,8 @@ private const val StatsEveryMessages = 1_500
 private const val GapMs = 60L
 
 /**
- * Message counts for the debug log (FBBD-147): every [StatsEveryMessages] messages (a minute at
- * 25 Hz) it returns a line with the messages missing from the receiver's time of week, how many
+ * Message counts for the debug log (FBBD-147): after every [StatsEveryMessages] messages (a minute
+ * at 25 Hz) it gives a line with the messages missing from the receiver's time of week, how many
  * of those fell on a whole second, the BLE notifications they came in, and every other frame read
  * in that time (class, id and payload length). Arek's 2026-10-12 drives lost the whole-second
  * message in almost every second, but only while the receiver had a fix, with no checksum errors
@@ -172,10 +174,18 @@ internal class StreamStats {
         others[key] = (others[key] ?: 0) + 1
     }
 
-    fun add(iTowMs: Long): String? {
+    fun add(iTowMs: Long) {
         last?.let { countGap(it, iTowMs) }
         last = iTowMs
-        if (++count < StatsEveryMessages) return null
+        count++
+    }
+
+    /**
+     * The line for the messages since the last one, once there are at least [StatsEveryMessages];
+     * called after each notification, so one that carries several messages is never split.
+     */
+    fun line(): String? {
+        if (count < StatsEveryMessages) return null
         val otherCount = others.values.sum()
         val otherText = if (otherCount == 0) {
             "0 other frames"

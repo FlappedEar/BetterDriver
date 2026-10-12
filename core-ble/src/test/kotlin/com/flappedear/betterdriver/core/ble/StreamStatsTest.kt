@@ -16,7 +16,8 @@ class StreamStatsTest {
             // Skip every whole-second message, and one more in the middle of each second.
             if (t % 1_000 == 0L || t % 1_000 == 520L) continue
             sent++
-            line = stats.add(t)
+            stats.add(t)
+            line = stats.line()
         }
         assertEquals(1_500, sent)
         // 65 seconds, each missing two messages.
@@ -27,9 +28,13 @@ class StreamStatsTest {
     fun aSteadyStreamMissesNothing() {
         val stats = StreamStats()
         var line: String? = null
-        for (i in 1..1_500) line = stats.add(i * 40L)
+        for (i in 1..1_500) {
+            stats.add(i * 40L)
+            line = stats.line()
+        }
         assertEquals("1500 messages in 0 notifications, 0 missing (0 on a whole second), 0 other frames", line)
-        assertNull(stats.add(60_040L))
+        stats.add(60_040L)
+        assertNull(stats.line())
     }
 
     @Test
@@ -40,13 +45,38 @@ class StreamStatsTest {
         stats.other(UbxFrame(0xFF, 0x01, ByteArray(76)))
         stats.other(UbxFrame(0xFF, 0x01, ByteArray(76)))
         var line: String? = null
-        for (i in 1..1_500) line = stats.add(i * 40L)
+        for (i in 1..1_500) {
+            stats.add(i * 40L)
+            line = stats.line()
+        }
         assertEquals(
             "1500 messages in 3 notifications, 0 missing (0 on a whole second), " +
                 "3 other frames (ff 01 76 B ×2, ff 26 4 B ×1)",
             line,
         )
-        for (i in 1..1_500) line = stats.add(60_000L + i * 40L)
+        for (i in 1..1_500) {
+            stats.add(60_000L + i * 40L)
+            line = stats.line()
+        }
         assertEquals("1500 messages in 0 notifications, 0 missing (0 on a whole second), 0 other frames", line)
+    }
+
+    @Test
+    fun aNotificationIsNeverSplitBetweenLines() {
+        val stats = StreamStats()
+        for (i in 1..1_499) {
+            stats.notification()
+            stats.add(i * 40L)
+            assertNull(stats.line())
+        }
+        // One notification carries messages 1500 and 1501: both go in this line, with it.
+        stats.notification()
+        stats.add(60_000L)
+        stats.add(60_040L)
+        assertEquals(
+            "1501 messages in 1500 notifications, 0 missing (0 on a whole second), 0 other frames",
+            stats.line(),
+        )
+        assertNull(stats.line())
     }
 }
