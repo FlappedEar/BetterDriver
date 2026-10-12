@@ -75,6 +75,7 @@ class CoachService : Service() {
     private fun begin(data: Bundle, replyTo: Messenger?) {
         val id = data.getString(CoachProtocol.SESSION) ?: return
         val settings = coachSettings(this).read()
+        DebugLog.session = id
         DebugLog.i(Tag, "coaching session $id: $settings")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice)

@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
@@ -230,7 +231,7 @@ class RecorderService : Service() {
                 // Demo GNSS positions are stored as made up, never as measured (FBBD-174).
                 channels = if (gnss.demo) FakeGnssSource.Channels else GnssChannels.ALL,
             )
-            val recording = Recorder(store).start(info).also { it.listeners.add(LoggingListener(it.id, gnss.name)) }
+            val recording = Recorder(store).start(info).also { logTo(it, gnss.name) }
             val tracker = LiveTracker(
                 recording.id,
                 info.startUtcMillis,
@@ -300,6 +301,7 @@ class RecorderService : Service() {
         ended.coach?.unbind()
         active = null
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
+        DebugLog.session = null
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
@@ -369,6 +371,17 @@ class RecorderService : Service() {
         private fun carryOn(wanted: SharedPreferences, recording: Recording, previous: String?) {
             previous?.let { recording.event(EventKinds.RECORDER_RESTART, "previous=$it") }
             wanted.edit().putString(KeySession, recording.id).commit()
+        }
+
+        /**
+         * Every line of this process now names [recording]; the log holds its events and its GNSS
+         * second by second, so the hardware checks need nothing else (FBBD-183).
+         */
+        private fun logTo(recording: Recording, receiver: String) {
+            DebugLog.session = recording.id
+            val start = recording.info.startUtcMillis
+            recording.listeners.add(LoggingListener(recording.id, receiver, start, recording::nowMicros))
+            recording.listeners.add(GnssSecondLog(recording.id, start))
         }
 
         /** What a restart after this process is killed records again (START_STICKY). Main thread. */

@@ -29,38 +29,38 @@ private const val LogcatTimeoutSeconds = 10L
 private const val QualityReportsZipped = 5
 
 /**
- * Packs the debug logs into one zip and opens Android's share sheet (FBBD-146), so Arek can drop it
- * into the project or a Jira issue. The zip holds every process's log files, the app's recent
- * logcat (CameraX and Bluetooth messages included), a device line and the validation reports of the
- * newest sessions (FBBD-183). Prepared in the transfer provider's own logs folder, so a session
- * send cleaning its folder cannot delete it mid-share.
+ * Shares the app's log (FBBD-146, FBBD-183) as one zip through Android's share sheet, so after a
+ * drive Arek sends one file and every hardware check is worked out from it. The zip holds the
+ * continuous log (and the per-process files of older builds while they are still there), the app's
+ * recent logcat (CameraX and Bluetooth messages included), a device line and the validation reports
+ * of the newest sessions. Prepared in the transfer provider's own folder, so a session send cleaning
+ * its folder cannot delete it mid-share. Sharing never deletes the log.
  */
 object DebugLogShare {
     private fun outDir(context: Context) = File(context.cacheDir, "logs-out")
 
-    /** The size of the log files now, for the settings row. */
-    fun logBytes(context: Context): Long =
-        AppLog.dir(context).listFiles().orEmpty().filter { it.name.endsWith(".log") }.sumOf { it.length() }
+    /** The size of the log now, for the settings rows. Off the main thread. */
+    fun logBytes(context: Context): Long = AppLog.bytes(context)
 
     /** Writes the zip; blocking, so off the main thread. */
     fun prepare(context: Context): File {
-        DebugLog.i(Tag, "preparing debug logs to share")
+        DebugLog.i(Tag, "preparing the log to share")
+        DebugLog.flush()
         val out = outDir(context)
         out.deleteRecursively()
         out.mkdirs()
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).apply { timeZone = TimeZone.getTimeZone("UTC") }
             .format(Date())
-        val zip = File(out, "BetterDriver-logs-$stamp.zip")
+        val zip = File(out, "BetterDriver-log-$stamp.zip")
         ZipOutputStream(zip.outputStream().buffered()).use { z ->
             z.putNextEntry(ZipEntry("device.txt"))
             z.write(deviceText().toByteArray())
             z.closeEntry()
-            AppLog.dir(context).listFiles().orEmpty().filter { it.name.endsWith(".log") }.sortedBy { it.name }
-                .forEach { f ->
-                    z.putNextEntry(ZipEntry(f.name))
-                    f.inputStream().use { it.copyTo(z) }
-                    z.closeEntry()
-                }
+            AppLog.files(context).forEach { f ->
+                z.putNextEntry(ZipEntry(f.name))
+                f.inputStream().use { it.copyTo(z) }
+                z.closeEntry()
+            }
             z.putNextEntry(ZipEntry("logcat.txt"))
             z.write(logcat().toByteArray())
             z.closeEntry()
@@ -82,7 +82,7 @@ object DebugLogShare {
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         send.clipData = ClipData.newRawUri(null, uri)
         try {
-            context.startActivity(Intent.createChooser(send, "Share debug logs"))
+            context.startActivity(Intent.createChooser(send, "Share log"))
         } catch (e: ActivityNotFoundException) {
             DebugLog.w(Tag, "no share target", e)
         }

@@ -91,6 +91,7 @@ class RecorderClient private constructor(private val context: Context) {
             },
         )
         val running = live?.takeIf { it.stoppedReason == null }
+        DebugLog.session = running?.sessionId
         val startNanos = if (msg.data.containsKey(RecorderProtocol.KEY_START_NANOS)) {
             msg.data.getLong(RecorderProtocol.KEY_START_NANOS)
         } else {
