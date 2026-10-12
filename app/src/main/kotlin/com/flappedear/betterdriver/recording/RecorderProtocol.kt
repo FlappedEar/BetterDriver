@@ -100,6 +100,7 @@ internal object RecorderProtocol {
     private const val ELAPSED = "elapsedMicros"
     private const val FIXES = "fixes"
     private const val FIX_RATE = "fixRateHz"
+    private const val RECEIVER_RATE = "receiverRateHz"
     private const val FIX_AGE = "lastFixAgeMicros"
     private const val SATS = "sats"
     private const val SPEED = "speedKmh"
@@ -126,6 +127,7 @@ internal object RecorderProtocol {
         putLong(ELAPSED, s.elapsedMicros)
         putLong(FIXES, s.fixes)
         putInt(FIX_RATE, s.fixRateHz)
+        putInt(RECEIVER_RATE, s.receiverRateHz)
         s.lastFixAgeMicros?.let { putLong(FIX_AGE, it) }
         s.sats?.let { putInt(SATS, it) }
         s.speedKmh?.let { putDouble(SPEED, it) }
@@ -151,6 +153,7 @@ internal object RecorderProtocol {
             stoppedReason = b.getString(STOPPED),
             droppedSamples = b.getLong(DROPPED),
             gCombined = if (b.containsKey(G_COMBINED)) b.getDouble(G_COMBINED) else null,
+            receiverRateHz = b.getInt(RECEIVER_RATE),
         )
     }
 
