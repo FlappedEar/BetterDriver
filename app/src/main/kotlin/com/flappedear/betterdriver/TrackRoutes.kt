@@ -74,11 +74,6 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
     var deleting by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    if (removing) {
-        // Nothing to tap while the delete runs, so a Save cannot bring the track back.
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        return
-    }
     val back: () -> Unit = {
         when {
             state.selected != null -> state.cancel()
@@ -86,7 +81,32 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
             else -> nav.popBackStack()
         }
     }
-    BackHandler(onBack = back)
+    if (removing) {
+        // Nothing to tap while the delete runs, so a Save cannot bring the track back.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    } else {
+        BackHandler(onBack = back)
+        EditorScreen(state, loaded, tracks, id, back) { deleting = true }
+    }
+    if (deleting) {
+        DeleteTrackDialog(state.track.displayName, onDismiss = { deleting = false }) {
+            removing = true
+            deleteAndLeave(nav, tracks, id, context) { removing = false }
+        }
+    }
+    if (leaving) DiscardDialog(state.proposed, onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
+}
+
+/** The editor with Save and Share; [onDelete] is offered only for a saved track (FBBD-157). */
+@Composable
+private fun EditorScreen(
+    state: TrackEditorState,
+    loaded: EditorData,
+    tracks: Tracks,
+    id: String,
+    back: () -> Unit,
+    onDelete: () -> Unit,
+) {
     val share = rememberTrackShare(id)
     TrackEditorScreen(
         state = state,
@@ -100,15 +120,8 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         onBack = back,
         onShare = { share(state.track) },
         // A track proposed from a session is not stored yet: there is nothing to delete.
-        onDelete = if (state.proposed) null else ({ deleting = true }),
+        onDelete = if (state.proposed) null else onDelete,
     )
-    if (deleting) {
-        DeleteTrackDialog(state.track.displayName, onDismiss = { deleting = false }) {
-            removing = true
-            deleteAndLeave(nav, tracks, id, context) { removing = false }
-        }
-    }
-    if (leaving) DiscardDialog(state.proposed, onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
 }
 
 /** Deletes the track and leaves the editor, or says the delete failed and calls [onFailed]. */
