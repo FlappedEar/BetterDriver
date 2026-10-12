@@ -78,6 +78,25 @@ const val ResampleStepMeters = 2.0
 /** A speed minimum is a corner only if the lap slowed at least this much for it. */
 const val MinCornerDropKmh = 8.0
 
+/**
+ * A speed minimum below this is a stop (waiting past the line, a pit stop), never a corner: there
+ * is nothing to say about braking for it, and the next corner's braking is looked for after it.
+ */
+const val StopKmh = 5.0
+
+/**
+ * The car brakes for a corner when it slows harder than this somewhere between its last speed peak
+ * and the apex (0.25 g, as the coach's speech timing takes braking). Rolling to a stop or coasting
+ * slows it far less.
+ */
+const val CornerBrakingMps2 = 2.5
+
+/** Deceleration is measured over this long. */
+private const val DecelWindowMicros = 400_000.0
+
+private const val KmhPerMps = 3.6
+private const val MicrosPerSecond = 1_000_000.0
+
 /** A corner's minimum speed is the lowest within this distance either side. */
 private const val MinimumWindowMeters = 40.0
 
@@ -97,10 +116,12 @@ private const val HalfTurnDegrees = 180.0
 private const val FullTurnDegrees = 360.0
 
 /**
- * The braking corners of one lap (FBBD-96): every speed minimum that is the lowest speed within
- * 40 m either side and comes after a drop of at least [MinCornerDropKmh] from the fastest point
- * since the previous corner. That fastest point is the braking point. Corners taken flat out are
- * not listed: there is nothing to say about braking for them.
+ * The braking corners of one lap (FBBD-96, FBBD-202): every speed minimum that is the lowest speed
+ * within 40 m either side, comes after a drop of at least [MinCornerDropKmh] from the fastest point
+ * since the previous corner, and that the car braked into: it slowed harder than
+ * [CornerBrakingMps2] on the way down. That fastest point is the braking point. Corners taken flat
+ * out are not listed: there is nothing to say about braking for them. Nor are stops (below
+ * [StopKmh]), such as a first lap that waits just past the line or calls at the pits.
  */
 fun findCorners(trace: LapTrace): List<Corner> {
     val r = trace.resample()
@@ -115,9 +136,12 @@ fun findCorners(trace: LapTrace): List<Corner> {
         // The latest point still at the peak speed: where braking actually starts after a flat top.
         var brake = peak
         for (k in peak..i) if (v[k] >= v[peak] - PeakToleranceKmh) brake = k
-        if (v[brake] - v[i] < MinCornerDropKmh) continue
         // Smoothing rounds off the bottom of the speed trace; the apex is the slowest raw point near it.
         val apex = slowestNear(r.speedsKmh, i, smoothHalf)
+        // A stop: the next corner's braking point comes after it, once the car is going again.
+        val stop = r.speedsKmh[apex] < StopKmh
+        if (stop) segmentStart = i
+        if (stop || v[brake] - v[i] < MinCornerDropKmh || !braked(r, brake, apex)) continue
         corners += Corner(
             number = corners.size + 1,
             brakeAt = r.along(brake),
@@ -129,6 +153,22 @@ fun findCorners(trace: LapTrace): List<Corner> {
         segmentStart = i
     }
     return corners
+}
+
+/** Whether the car slowed harder than [CornerBrakingMps2] at some point from [from] to [to]. */
+private fun braked(r: Resampled, from: Int, to: Int): Boolean {
+    var j = 0
+    for (k in from..to) {
+        // The latest point at least a window before k.
+        while (j + 1 <= k && r.timesMicros[k] - r.timesMicros[j + 1] >= DecelWindowMicros) j++
+        val dt = (r.timesMicros[k] - r.timesMicros[j]) / MicrosPerSecond
+        if (dt * MicrosPerSecond >= DecelWindowMicros &&
+            (r.speedsKmh[j] - r.speedsKmh[k]) / KmhPerMps / dt >= CornerBrakingMps2
+        ) {
+            return true
+        }
+    }
+    return false
 }
 
 private fun slowestNear(v: DoubleArray, i: Int, half: Int): Int {
