@@ -33,6 +33,7 @@ import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CornerPick
+import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
@@ -254,7 +255,9 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration))
     }
     val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, acceleration)
-    return Load.Done(loaded, coachCandidates(analysis, id), lapVideo(sessions, data, track))
+    // No corners to pick where the coach does not run (point-to-point tracks, FBBD-155).
+    val candidates = if (coaches(track)) coachCandidates(analysis, id) else emptyMap()
+    return Load.Done(loaded, candidates, lapVideo(sessions, data, track))
 }
 
 /**

@@ -190,6 +190,7 @@ class OptimalClipPlanTest {
         val corner = plan.cuts[1]
         val inCorner = plan.overlayAt(corner, corner.partStartMicros)
         assertEquals("LAP 1 · CORNER 1", inCorner.captions[1])
+        assertEquals("RUN 1", plan.overlayAt(corner, corner.partStartMicros, runs = true).captions.last())
         assertEquals(19_000_000L, inCorner.theoreticalMicros)
         assertEquals(-1.0, assertNotNull(inCorner.deltaSeconds), 1e-9)
         // Never past the part's end, even on a frame stamped a little late.

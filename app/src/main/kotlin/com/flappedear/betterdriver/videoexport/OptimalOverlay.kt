@@ -55,7 +55,7 @@ internal class OptimalOverlay(
         canvas.drawColor(0, PorterDuff.Mode.CLEAR)
         val l = layout ?: return
         val t = cut.cut.sessionMicrosAt(presentationTimeUs)
-        painter.draw(canvas, l, data.at(t), plan.overlayAt(cut, t))
+        painter.draw(canvas, l, data.at(t), plan.overlayAt(cut, t, runs = data.pointToPoint))
     }
 }
 

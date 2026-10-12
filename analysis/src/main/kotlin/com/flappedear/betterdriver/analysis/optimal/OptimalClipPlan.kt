@@ -65,10 +65,13 @@ class OptimalClipPlan(val lap: OptimalLap, val cuts: List<OptimalCut>, val parts
         }
     }
 
-    /** What the overlay shows at session time [sessionMicros] of [cut]. */
-    fun overlayAt(cut: OptimalCut, sessionMicros: Long): OptimalOverlayText {
+    /**
+     * What the overlay shows at session time [sessionMicros] of [cut]; the laps are called runs on a
+     * point-to-point track ([runs]).
+     */
+    fun overlayAt(cut: OptimalCut, sessionMicros: Long, runs: Boolean = false): OptimalOverlayText {
         val part = lap.parts[cut.partIndex]
-        val from = "LAP ${part.lapNumber}"
+        val from = "${if (runs) "RUN" else "LAP"} ${part.lapNumber}"
         val name = part.name.uppercase()
         return OptimalOverlayText(
             captions = listOf("OPTIMAL · $from · $name", "$from · $name", from),

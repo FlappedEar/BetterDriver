@@ -254,7 +254,7 @@ private fun segmentReview(
     val trace = laps.lapTraces.firstOrNull { it.lapNumber == lapNumber }
     if (gate == null || trace == null) return SegmentReview(unavailable = SegmentReviewUnavailable.NoTrace)
     val origin = geoMidpoint(gate.endpointA, gate.endpointB)
-    val axis = buildProgressAxis(trace, origin, gate)
+    val axis = buildProgressAxis(trace, origin, gate, closed = laps.finishGate == null)
     val features = if (axis.valid) computeTrackFeatures(axis, SegmentReviewSmoothingMeters) else TrackFeatures()
     if (!features.valid) return SegmentReview(axis = axis, unavailable = SegmentReviewUnavailable.NoAxis)
     val lapTrace = projectLapTrace(axis, session, startTime, endTime)

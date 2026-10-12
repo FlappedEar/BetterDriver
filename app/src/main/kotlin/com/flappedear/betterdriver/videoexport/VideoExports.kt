@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.videoexport
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Handler
 import android.os.HandlerThread
@@ -83,15 +84,17 @@ class VideoExports private constructor(private val context: Context) {
     /** Main thread. */
     private var job: Job? = null
 
-    /** What the picker offers for session [id], read off the main thread; null when it has no video. */
+    /**
+     * What the picker offers for session [id], read off the main thread; null when it has no video
+     * or cannot be read. Whatever stops the reading, the picker gets an answer: an exception left on
+     * the io thread would end the app.
+     */
+    @Suppress("TooGenericExceptionCaught")
     fun options(id: String, onReady: (VideoExportOptions?) -> Unit) = io.execute {
         val options = try {
             prepare(id)?.options()
-        } catch (e: IOException) {
+        } catch (e: Exception) {
             DebugLog.w(Tag, "reading $id for video export failed", e)
-            null
-        } catch (e: IllegalStateException) {
-            DebugLog.w(Tag, "reading $id for video export failed", e) // unreadable metadata
             null
         }
         main.post { onReady(options) }
@@ -109,6 +112,7 @@ class VideoExports private constructor(private val context: Context) {
             return
         }
         DebugLog.i(Tag, "video export of $id, part $part")
+        keepAccess(uri)
         running = id
         states[id] = renderingState(null)
         val j = Job(id, part, uri)
@@ -125,6 +129,11 @@ class VideoExports private constructor(private val context: Context) {
     /** A recording is starting: the export stops at once (FBBD-69: nothing competes with a recording). */
     fun stopForRecording() {
         job?.stop(VideoExportEnd.Recording)
+    }
+
+    /** Android is ending [VideoExportService] (its daily time for media processing is used up): the export stops. */
+    fun stopForTimeout() {
+        job?.stop(VideoExportEnd.Failed)
     }
 
     /** The session's data, laps and video, as the export needs them; null when it has no video. */
@@ -186,7 +195,8 @@ class VideoExports private constructor(private val context: Context) {
                 val n = t.lap.number
                 LapOption(n, t.lap.kind, t.lap.timeMillis, best = n == best, onVideo = cuts(n).isNotEmpty())
             }
-            return VideoExportOptions(cuts(WholeVideo).totalMicros(), lapOptions, optimal.option)
+            val pointToPoint = laps?.track?.pointToPoint == true
+            return VideoExportOptions(cuts(WholeVideo).totalMicros(), lapOptions, pointToPoint, optimal.option)
         }
     }
 
@@ -222,7 +232,7 @@ class VideoExports private constructor(private val context: Context) {
 
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
             val data = OverlayData(prepared.sets, prepared.laps, accelOf(prepared.data))
-            val painter = OverlayPainter(OverlayFonts.load(context), data.outline)
+            val painter = OverlayPainter(OverlayFonts.load(context), data.outline, data.pointToPoint)
             // The optimal lap's cuts are its plan's, in the same order (Prepared.cuts).
             val optimal = if (part == OptimalLap) prepared.optimal.plan else null
             val items = cuts.mapIndexed { i, cut ->
@@ -290,7 +300,10 @@ class VideoExports private constructor(private val context: Context) {
             }
         }
 
-        /** io thread: copies the rendered file into the picked document. */
+        /**
+         * io thread: copies the rendered file into the picked document. Access to it can be gone by
+         * now (a provider that does not let it be kept, see [keepAccess]): then the export failed.
+         */
         private fun save() {
             val end = try {
                 val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
@@ -298,6 +311,9 @@ class VideoExports private constructor(private val context: Context) {
                 VideoExportEnd.Saved
             } catch (e: IOException) {
                 DebugLog.w(Tag, "saving the video of $id failed", e)
+                VideoExportEnd.Failed
+            } catch (e: SecurityException) {
+                DebugLog.w(Tag, "no access to the picked file for the video of $id", e)
                 VideoExportEnd.Failed
             }
             finish(end)
@@ -332,10 +348,10 @@ class VideoExports private constructor(private val context: Context) {
             DebugLog.i(Tag, "video export of $id: $end")
             handler.removeCallbacksAndMessages(null)
             thread.quitSafely()
-            io.execute {
-                temp.delete()
-                if (end != VideoExportEnd.Saved) discard(uri)
-            }
+            // In this order on the one io thread, after a copy that may still be running.
+            io.execute { temp.delete() }
+            if (end != VideoExportEnd.Saved) discard(uri)
+            io.execute { releaseAccess(uri) }
             main.post {
                 states[id] = endState(end)
                 if (job === this) {
@@ -344,6 +360,29 @@ class VideoExports private constructor(private val context: Context) {
                     VideoExportService.stop(context)
                 }
             }
+        }
+    }
+
+    /**
+     * Keeps write access to the picked document for the whole export. The picker grants it only for
+     * as long as the activity lives, and a render takes minutes: once the user leaves with Back or
+     * swipes the app away, the copy into the document (and the clean-up of a failed one) would be
+     * refused. Best effort: a provider that does not offer lasting access leaves the plain grant.
+     */
+    private fun keepAccess(uri: Uri) {
+        try {
+            context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            DebugLog.w(Tag, "the picked file cannot be kept open for the export", e)
+        }
+    }
+
+    /** Gives back the lasting access [keepAccess] took, so the app's few lasting grants are not used up. */
+    private fun releaseAccess(uri: Uri) {
+        try {
+            context.contentResolver.releasePersistableUriPermission(uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        } catch (e: SecurityException) {
+            DebugLog.w(Tag, "no lasting access to give back", e)
         }
     }
 

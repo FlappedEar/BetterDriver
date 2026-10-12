@@ -39,7 +39,6 @@ import com.flappedear.betterdriver.video.VideoIndex
 import java.io.File
 
 private const val NanosPerMicro = 1_000L
-private const val SyncIntervalMicros = 1_000_000L
 private const val CheckIntervalMs = 5_000L
 private const val RetryDelayMs = 3_000L
 private const val MaxRestarts = 3
@@ -120,6 +119,8 @@ class PhoneCamera(
             try {
                 val p = future.get()
                 provider = p
+                // Stopped before the camera was ready: no thermal listener or check is left behind.
+                if (stopping) return@addListener
                 steps = supportedSteps(p)
                 if (steps.isEmpty()) {
                     sink.status("Not supported", ok = false)
@@ -134,7 +135,7 @@ class PhoneCamera(
                     power.addThermalStatusListener(executor, listener)
                 }
                 main.postDelayed(checker, CheckIntervalMs)
-                if (!stopping) begin(0)
+                begin(0)
             } catch (e: Exception) {
                 sink.status("Camera error", ok = false)
                 DebugLog.w(Tag, "camera provider failed", e)
@@ -179,7 +180,7 @@ class PhoneCamera(
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
             nextStep = null
-            var lastSync = Long.MIN_VALUE
+            var lastSync: Long? = null
             recording = pending.start(executor) { e ->
                 when (e) {
                     is VideoRecordEvent.Start -> {
@@ -191,7 +192,7 @@ class PhoneCamera(
                     }
                     is VideoRecordEvent.Status -> {
                         val now = sink.nowMicros()
-                        if (now - lastSync >= SyncIntervalMicros) {
+                        if (syncDue(now, lastSync)) {
                             lastSync = now
                             val media = e.recordingStats.recordedDurationNanos / NanosPerMicro
                             sink.synced(name, now, media)

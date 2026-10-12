@@ -259,8 +259,11 @@ class CueEngine(
     val phase: CoachPhase
         get() = when {
             settings.verbosity < Verbosity.Focus -> CoachPhase.Quiet
-            book == null || timedLaps < settings.learningLaps ->
-                CoachPhase.Learning(minOf(timedLaps, settings.learningLaps), settings.learningLaps)
+            book == null || timedLaps < settings.learningLaps -> {
+                // With no earlier reference the corners come from this session's first timed lap: at least one.
+                val needed = if (book == null) maxOf(settings.learningLaps, 1) else settings.learningLaps
+                CoachPhase.Learning(minOf(timedLaps, needed), needed)
+            }
             else -> CoachPhase.Coaching
         }
 

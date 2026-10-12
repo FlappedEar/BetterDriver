@@ -132,7 +132,7 @@ private fun PartList(options: VideoExportOptions, picked: VideoPart?, onPick: (V
             }
         }
         items(options.laps, key = { it.number }) { lap ->
-            val (name, note) = lapOptionText(lap)
+            val (name, note) = lapOptionText(lap, options.pointToPoint)
             PartRow(name, note, picked == lap.number, lap.onVideo, best = lap.best) { onPick(lap.number) }
         }
         if (options.laps.isEmpty()) {

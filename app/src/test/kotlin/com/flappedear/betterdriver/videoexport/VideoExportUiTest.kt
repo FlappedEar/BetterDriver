@@ -28,6 +28,14 @@ class VideoExportUiTest {
     }
 
     @Test
+    fun pointToPointRunsAreCalledRuns() {
+        assertEquals("Run 2 · 1:42.37" to "Best run", lapOptionText(lap(2, best = true), pointToPoint = true))
+        assertEquals("Run 1 · 1:42.37" to "No video", lapOptionText(lap(1, onVideo = false), pointToPoint = true))
+        assertEquals("BetterDriver-abc-run2.mp4", videoExportFileName("abc", 2, pointToPoint = true))
+        assertEquals("BetterDriver-abc-video.mp4", videoExportFileName("abc", WholeVideo, pointToPoint = true))
+    }
+
+    @Test
     fun wholeVideoLengthInMinutesOrSeconds() {
         assertEquals("18 min of video", wholeVideoText(1_090_000_000))
         assertEquals("45 s of video", wholeVideoText(45_200_000))

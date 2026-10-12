@@ -50,6 +50,18 @@ class VideoExportService : Service() {
         return START_NOT_STICKY
     }
 
+    /**
+     * Android 15+ lets media processing run 6 h a day. When that is used up it calls this, and ends
+     * the app unless the service stops within seconds: the export stops with it.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        DebugLog.w(Tag, "out of time for media processing today: the video export stops")
+        VideoExports.get(this).stopForTimeout()
+        releaseCpu()
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
     override fun onDestroy() {
         releaseCpu()
         super.onDestroy()
