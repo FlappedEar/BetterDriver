@@ -8,6 +8,9 @@ import android.os.Build
 import androidx.core.content.FileProvider
 import com.flappedear.betterdriver.BuildConfig
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recording.qualityReports
+import com.flappedear.betterdriver.recording.sessionsDir
 import java.io.File
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -22,11 +25,15 @@ import java.util.zip.ZipOutputStream
 private const val LogcatLines = 20_000
 private const val LogcatTimeoutSeconds = 10L
 
+/** Sessions whose validation report goes in the zip, newest first. */
+private const val QualityReportsZipped = 5
+
 /**
  * Packs the debug logs into one zip and opens Android's share sheet (FBBD-146), so Arek can drop it
  * into the project or a Jira issue. The zip holds every process's log files, the app's recent
- * logcat (CameraX and Bluetooth messages included) and a device line. Prepared in the transfer
- * provider's own logs folder, so a session send cleaning its folder cannot delete it mid-share.
+ * logcat (CameraX and Bluetooth messages included), a device line and the validation reports of the
+ * newest sessions (FBBD-183). Prepared in the transfer provider's own logs folder, so a session
+ * send cleaning its folder cannot delete it mid-share.
  */
 object DebugLogShare {
     private fun outDir(context: Context) = File(context.cacheDir, "logs-out")
@@ -57,6 +64,11 @@ object DebugLogShare {
             z.putNextEntry(ZipEntry("logcat.txt"))
             z.write(logcat().toByteArray())
             z.closeEntry()
+            sessionReports(context).forEach { (id, json) ->
+                z.putNextEntry(ZipEntry("quality/$id.json"))
+                z.write(json.toByteArray())
+                z.closeEntry()
+            }
         }
         return zip
     }
@@ -74,6 +86,16 @@ object DebugLogShare {
         } catch (e: ActivityNotFoundException) {
             DebugLog.w(Tag, "no share target", e)
         }
+    }
+
+    /**
+     * The validation reports (FBBD-183) of the newest sessions, made for any that has none yet, by
+     * session id. A session still recording has none.
+     */
+    private fun sessionReports(context: Context): List<Pair<String, String>> {
+        val reports = qualityReports(context)
+        val newest = SessionStore(sessionsDir(context)).list().take(QualityReportsZipped)
+        return newest.mapNotNull { s -> reports.load(s.id)?.let { s.id to it.toJson() } }
     }
 
     private fun deviceText() = buildString {

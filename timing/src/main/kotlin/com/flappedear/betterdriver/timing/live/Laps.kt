@@ -34,6 +34,9 @@ class LapBook(val sectorCount: Int) {
 
     val laps: List<Lap> get() = all.toList()
 
+    /** How many laps there are, without copying them. */
+    val count: Int get() = all.size
+
     var best: Lap? = null
         private set
 

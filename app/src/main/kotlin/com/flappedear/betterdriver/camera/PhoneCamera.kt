@@ -107,6 +107,9 @@ class PhoneCamera(
 
     private var thermalLog = ThermalLog(ladder)
 
+    /** The thermal status last written to the session; only changes are written (FBBD-183). */
+    private var sessionThermal: Int? = null
+
     /** Set on Android 10+, where thermal status exists. */
     private var thermalListener: PowerManager.OnThermalStatusChangedListener? = null
 
@@ -128,6 +131,7 @@ class PhoneCamera(
                 }
                 policy = ThermalPolicy(steps.size)
                 thermalLog = ThermalLog(steps)
+                sessionThermal = null
                 DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val listener = PowerManager.OnThermalStatusChangedListener { check() }
@@ -295,6 +299,10 @@ class PhoneCamera(
         val from = policy.current
         val action = policy.onReading(sink.nowMicros(), status, headroom)
         thermalLog.log(status, headroom, from, policy.ceiling, action)
+        if (status != sessionThermal) {
+            sessionThermal = status
+            sink.thermal(sink.nowMicros(), status, headroom)
+        }
         return action
     }
 

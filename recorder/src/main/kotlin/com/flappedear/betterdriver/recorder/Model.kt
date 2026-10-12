@@ -134,4 +134,28 @@ object EventKinds {
     const val STORAGE_LOW = "storage_low"
     const val STORAGE_FULL = "storage_full"
     const val DROPPED_SAMPLES = "dropped_samples"
+
+    /**
+     * The recorder process was killed and Android restarted it, so this session carries on from an
+     * earlier one (FBBD-72, FBBD-183). Text "previous=<session id>", the session it carries on.
+     */
+    const val RECORDER_RESTART = "recorder_restart"
+
+    /**
+     * Android's thermal status changed while the phone camera ran (FBBD-21, FBBD-183). Text
+     * "status=<PowerManager.THERMAL_STATUS_*> headroom=<forecast or n/a>".
+     */
+    const val THERMAL_STATUS = "thermal_status"
+
+    /**
+     * A coach cue's sound started (FBBD-27, FBBD-183). Text "seq=<cue seq> path=<live|clip>
+     * asked_us=<session time the voice was asked> route=<headset|speaker>"; the event time is the start.
+     */
+    const val COACH_VOICE = "coach_voice"
+
+    /**
+     * Live timing finished a lap (FBBD-12, FBBD-183). Text "lap=<n> kind=<Out|Timed|In> time_ms=<lap
+     * time> predicted_ms=<predicted lap time shown just before the line, or none>".
+     */
+    const val LAP_LINE = "lap_line"
 }

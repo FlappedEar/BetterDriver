@@ -73,6 +73,7 @@ class Sessions private constructor(private val context: Context) {
     private val io = Executors.newSingleThreadExecutor { Thread(it, "sessions-io") }
     private val main = Handler(Looper.getMainLooper())
     private val coached by lazy { CoachedSessions(store, File(coachDir(context), "cues.properties")) }
+    private val quality by lazy { QualityReports(store, TrackStore(tracksDir(context))) }
 
     /** Newest first. */
     var list by mutableStateOf<List<SessionSummary>>(emptyList())
@@ -291,6 +292,8 @@ class Sessions private constructor(private val context: Context) {
         main.post { cues = cueCounts }
         // Sessions added, recovered or deleted: the coach references follow (FBBD-168).
         CoachReferences.refresh(context)
+        // New and recovered sessions get their validation report (FBBD-183) now, not when first opened.
+        sessions.take(ReportedAhead).forEach { quality.load(it.id) }
     }
 
     companion object {
@@ -298,6 +301,9 @@ class Sessions private constructor(private val context: Context) {
         private const val VboMimeType = "application/octet-stream"
         private const val Mp4MimeType = "video/mp4"
         private const val CopyBuffer = 1 shl 20
+
+        /** The newest sessions whose validation report is made in the background; older ones on opening. */
+        private const val ReportedAhead = 3
 
         @Volatile
         private var instance: Sessions? = null

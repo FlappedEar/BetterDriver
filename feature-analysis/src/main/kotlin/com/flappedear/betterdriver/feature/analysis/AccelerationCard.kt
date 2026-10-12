@@ -124,10 +124,14 @@ private fun clock(seconds: Double): String {
 
 /**
  * The analysis's message when it has no laps to show (a road drive, say), then the Acceleration
- * card when the session has runs: they need no laps.
+ * card when the session has runs: they need no laps. Then its data quality (FBBD-183), once worked out.
  */
 @Composable
-internal fun WithAcceleration(acceleration: AccelerationUi?, content: @Composable ColumnScope.() -> Unit) {
+internal fun WithAcceleration(
+    acceleration: AccelerationUi?,
+    quality: QualityUi? = null,
+    content: @Composable ColumnScope.() -> Unit,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -137,7 +141,9 @@ internal fun WithAcceleration(acceleration: AccelerationUi?, content: @Composabl
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         content()
-        acceleration?.let { AccelerationCard(it, Modifier.widthIn(max = 720.dp).fillMaxWidth()) }
+        val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
+        acceleration?.let { AccelerationCard(it, width) }
+        quality?.let { QualityCard(it, width) }
     }
 }
 

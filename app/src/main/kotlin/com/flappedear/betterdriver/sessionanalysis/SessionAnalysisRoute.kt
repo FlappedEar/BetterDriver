@@ -38,14 +38,18 @@ import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
+import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.mapUi
+import com.flappedear.betterdriver.feature.analysis.qualityUi
+import com.flappedear.betterdriver.feature.analysis.withQuality
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.shell.ShellTopBar
@@ -119,6 +123,7 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     var progress by remember(id) { mutableStateOf<SessionProgress?>(null) }
     var analysed by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
     var state by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
+    var quality by remember(id) { mutableStateOf<QualityUi?>(null) }
     // Made off the main thread when first used: making it reads the disk (FBBD-41).
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
@@ -130,6 +135,10 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
         load = withContext(Dispatchers.Default) {
             loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
         }
+    }
+    // The session's validation report (FBBD-183): read, or made the first time the session is opened.
+    LaunchedEffect(id) {
+        quality = withContext(Dispatchers.IO) { qualityReports(context).load(id)?.let(::qualityUi) }
     }
     // The earlier sessions at the track are read after the analysis shows, so they never delay it.
     LaunchedEffect(load) {
@@ -151,10 +160,11 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
         }
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
-    // The coach picks are applied to the analysed screen, so a toggle never analyses again.
-    LaunchedEffect(analysed, picks) {
+    // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
+    LaunchedEffect(analysed, picks, quality) {
         val l = load as? Load.Done
-        state = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
+        val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
+        state = picked.withQuality(quality)
     }
     CornerLapsRoute(nav, id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo) {
         AnalysisScreen(
