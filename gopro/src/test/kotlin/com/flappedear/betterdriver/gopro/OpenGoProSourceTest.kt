@@ -23,6 +23,7 @@ class OpenGoProSourceTest {
     lateinit var dir: File
 
     private var sessionUs = 0L
+    private val acks = mutableListOf<GoProAck>()
     private fun TestScope.context() = VideoSessionContext("s1", 1_760_000_000_000L, File(dir, "video")) { sessionUs }
 
     private fun TestScope.source(camera: FakeGoPro, video: GoProVideo? = null) = OpenGoProSource(
@@ -31,6 +32,7 @@ class OpenGoProSourceTest {
         backgroundScope,
         clock = Clock.fixed(Instant.ofEpochMilli(1_760_000_000_000L), ZoneId.of("Europe/Warsaw")),
         video = video,
+        acks = { acks += it },
     )
 
     private val fhd60 = GoProVideo(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60", "1080p")
@@ -75,6 +77,8 @@ class OpenGoProSourceTest {
         assertEquals(1_500_000, r.startAckSessionUs)
         assertEquals(600_000_000, r.stopAckSessionUs)
         assertEquals(120, r.cameraUtcOffsetMinutes) // Warsaw in October: UTC+2.
+        // The drive's log gets both acknowledgements (FBBD-82).
+        assertEquals(listOf(GoProAck("start", true, 1_500_000), GoProAck("stop", true, 600_000_000)), acks)
     }
 
     @Test
@@ -86,6 +90,7 @@ class OpenGoProSourceTest {
         assertIs<VideoSourceState.Failed>(source.state.value)
         assertEquals(emptyList(), source.stop())
         assertIs<VideoSourceState.Failed>(source.state.value)
+        assertEquals(listOf(GoProAck("start", false, 0)), acks)
     }
 
     @Test
@@ -121,8 +126,10 @@ class OpenGoProSourceTest {
         source.start(context())
         runCurrent()
         camera.reachable = false
+        sessionUs = 30_000_000
         source.stop()
         assertIs<VideoSourceState.Failed>(source.state.value)
+        assertEquals(GoProAck("stop", false, 30_000_000), acks.last())
     }
 
     @Test

@@ -13,7 +13,7 @@ class QualityUiTest {
         QualityMetric(label.lowercase(), label, value, unit, verdict, basis, null, "")
 
     @Test
-    fun `checked values are listed failures first, information is left out and unchecked criteria named`() {
+    fun `the card counts the checks and lists the failures with their keys`() {
         val report = QualityReport(
             sessionId = "s",
             sessionState = "FINISHED",
@@ -23,7 +23,7 @@ class QualityUiTest {
                     "GNSS",
                     listOf(
                         metric("Sample rate", 24.93, "Hz", Verdict.PASS),
-                        metric("Longest gap", 412.0, "ms", Verdict.FAIL),
+                        metric("Longest gap", 412.0, "ms", Verdict.FAIL).copy(keys = listOf("FBBD-8", "FBBD-46")),
                         metric("Link drops", 0.0, "", Verdict.INFO),
                         metric("Longest reconnect", null, "", Verdict.NOT_MEASURED, Basis.NONE),
                     ),
@@ -31,25 +31,23 @@ class QualityUiTest {
                 QualitySection(
                     "Timing",
                     listOf(
-                        metric("Suspect laps", 0.0, "", Verdict.PASS, Basis.DERIVED),
+                        metric("Suspect laps", 2.0, "", Verdict.FAIL, Basis.DERIVED),
                         metric("Position noise parked", 0.214, "m", Verdict.PASS),
                     ),
                 ),
             ),
         )
         val ui = qualityUi(report)
-        assertEquals(3, ui.passed)
-        assertEquals(1, ui.failed)
+        assertEquals(2, ui.passed)
+        assertEquals(2, ui.failed)
+        assertEquals(1, ui.notMeasured)
         assertEquals(
             listOf(
-                QualityRow("GNSS", "Longest gap", "412 ms", pass = false, derived = false),
-                QualityRow("GNSS", "Sample rate", "24.9 Hz", pass = true, derived = false),
-                QualityRow("Timing", "Suspect laps", "0", pass = true, derived = true),
-                QualityRow("Timing", "Position noise parked", "0.21 m", pass = true, derived = false),
+                QualityRow("GNSS", "Longest gap", "412 ms", "FBBD-8, FBBD-46", derived = false),
+                QualityRow("Timing", "Suspect laps", "2", "", derived = true),
             ),
-            ui.rows,
+            ui.failures,
         )
-        assertEquals(listOf("Longest reconnect"), ui.notMeasured)
     }
 
     @Test

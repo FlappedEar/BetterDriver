@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
 import com.flappedear.betterdriver.video.gpmf.GpmfGps
+import com.flappedear.betterdriver.video.gpmf.GpsSample
 import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import com.flappedear.betterdriver.video.sync.AlignmentResult
 import com.flappedear.betterdriver.video.sync.GpsAligner
@@ -36,6 +37,9 @@ import java.time.ZoneId
  * short session is shorter than that error (FBBD-201). Such a file is moved by no more than that
  * uncertainty to overlap the session as much as it can, and keeps its weak alignment method. A
  * file that cannot be placed inside the session even so is not indexed and is reported.
+ *
+ * Each import goes in the drive's log with the session's id, and for a file matched by GPS so do
+ * two-minute stretches of it aligned on their own, which show the camera clock's drift (FBBD-82).
  */
 class GoProImporter(
     private val aligner: GpsAligner = GpsAligner(),
@@ -71,23 +75,27 @@ class GoProImporter(
             }
             if (placed == null) {
                 if (problems.none { it.startsWith(file.name) }) problems += "${file.name}: could not be placed in time"
+                logRejected(session.id, source.id, file.name, "not placed")
                 continue
             }
-            val fitted = fitIntoSession(placed, durationUs)
-            val moved = fitted?.takeIf { it != placed }?.let { " -> ${it.sessionOffsetUs} us" }.orEmpty()
+            val fitted = fitIntoSession(placed.clip, durationUs)
+            val clip = placed.clip
+            val moved = fitted?.takeIf { it != clip }?.let { " -> ${it.sessionOffsetUs} us" }.orEmpty()
             DebugLog.i(
                 Tag,
-                "${file.name}: ${placed.alignment.method} at ${placed.sessionOffsetUs} us " +
-                    "± ${placed.alignment.uncertaintyUs} us, ${placed.durationUs ?: 0} us long, " +
+                "${file.name}: ${clip.alignment.method} at ${clip.sessionOffsetUs} us " +
+                    "± ${clip.alignment.uncertaintyUs} us, ${clip.durationUs ?: 0} us long, " +
                     "session $durationUs us$moved",
             )
             if (fitted == null) {
                 DebugLog.w(Tag, "${file.name}: recorded outside this session")
                 problems += "${file.name}: recorded outside this session"
+                logRejected(session.id, source.id, file.name, "outside session")
             } else {
                 clips += fitted
+                logImport(session.id, source.id, fitted, probes(aligner, placed.gps, speeds, fitted))
             }
-            previous = fitted ?: placed
+            previous = fitted ?: clip
         }
         if (clips.isNotEmpty()) VideoIndex(sessionDir).putAll(clips)
         return Result(clips, problems)
@@ -102,7 +110,7 @@ class GoProImporter(
         recording: GoProRecording?,
         session: SessionData,
         speeds: List<SpeedPoint>,
-    ): VideoClip? {
+    ): Placed? {
         val info = Mp4Reader.read(file)
         val prior = previous?.let {
             AlignmentResult(
@@ -112,8 +120,9 @@ class GoProImporter(
         } ?: recording?.takeIf { chapter == 1 }?.let {
             AlignmentResult(it.startAckSessionUs, Alignment(AlignmentMethod.COMMAND_ACK, CommandAckUncertaintyUs))
         } ?: info.creationTimeMillis?.let { cameraClock(it, info.durationUs, source, recording, session) }
-        val result = aligner.align(GpmfGps.read(file), speeds, prior) ?: return null
-        return VideoClip(
+        val gps = GpmfGps.read(file)
+        val result = aligner.align(gps, speeds, prior) ?: return null
+        val clip = VideoClip(
             fileName = file.name,
             kind = source.kind,
             sourceId = source.id,
@@ -122,7 +131,11 @@ class GoProImporter(
             durationUs = info.durationUs.takeIf { it > 0 },
             chapter = chapter,
         )
+        return Placed(clip, gps)
     }
+
+    /** A file placed in time, with its GPS for the drift probes. */
+    private class Placed(val clip: VideoClip, val gps: List<GpsSample>)
 
     /** The session time of a file created at [created] on the camera's clock; see the class comment. */
     private fun cameraClock(

@@ -15,10 +15,26 @@ private const val NanosPerMilli = 1_000_000L
 
 /**
  * A phrase's sound started: at [System.nanoTime] [nanoTime] (the session clock's base), said [path]
- * ("live" or "clip"), to [route] ("headset" or "speaker").
+ * ("live" or "clip"), to [route] ("headset" or "speaker"). For the drive's checks (FBBD-47): when
+ * its first audio was ready ([readyNanos], System.nanoTime), the output [device] type, and whether
+ * audio focus was granted ([focus]).
  */
+internal data class VoiceStart(
+    val nanoTime: Long,
+    val path: String,
+    val route: String,
+    val readyNanos: Long?,
+    val device: String,
+    val focus: Boolean,
+)
+
 internal fun interface Started {
-    fun started(nanoTime: Long, path: String, route: String)
+    fun started(start: VoiceStart)
+}
+
+/** A phrase's sound ended at [System.nanoTime] [nanoTime]: "done", "stopped" (cut off) or "error". */
+internal fun interface Ended {
+    fun ended(nanoTime: Long, end: String)
 }
 
 /** Picks a British, American or any English voice on [tts]; false if it has none. */
@@ -52,10 +68,17 @@ internal class Voice(context: Context) {
     @Volatile
     private var mode = VoiceMode.Live
 
-    /** Live phrases not yet started, by utterance id: when each was asked for (elapsed-realtime nanos). */
+    /** Live phrases not yet ended, by utterance id: when each was asked for (elapsed-realtime nanos). */
     private val asked = ConcurrentHashMap<String, Asked>()
 
-    private class Asked(val at: Long, val onStart: Started)
+    private class Asked(val at: Long, val onStart: Started, val onEnd: Ended, val focus: Boolean) {
+        /** When the engine's first audio of it was ready, System.nanoTime. */
+        @Volatile
+        var readyNanos: Long? = null
+
+        @Volatile
+        var started = false
+    }
 
     private val tts: TextToSpeech = TextToSpeech(context.applicationContext) { status -> onInit(status) }
 
@@ -87,13 +110,15 @@ internal class Voice(context: Context) {
 
     /**
      * False when the phrase could not be played or queued (no voice yet, or the engine refused it).
-     * [onStart] runs on the voice thread when its sound starts, for the validation report (FBBD-183).
+     * [onStart] runs on the voice thread when its sound starts, and [onEnd] when a phrase that
+     * started ends, for the validation report (FBBD-183).
      */
-    fun say(text: String, onStart: Started = Started { _, _, _ -> }): Boolean {
+    fun say(text: String, onEnd: Ended = Ended { _, _ -> }, onStart: Started = Started { }): Boolean {
         val id = "cue-${ids.incrementAndGet()}"
         val at = SystemClock.elapsedRealtimeNanos()
         val clip = if (mode == VoiceMode.PreRendered) clips.phrase(text) else null
-        return (clip != null && playClip(clip, id, at, onStart)) || (ready && speak(text, id, at, onStart))
+        return (clip != null && playClip(clip, id, at, onStart, onEnd)) ||
+            (ready && speak(text, id, at, onStart, onEnd))
     }
 
     fun shutdown() {
@@ -103,18 +128,20 @@ internal class Voice(context: Context) {
         thread.quitSafely()
     }
 
-    private fun playClip(clip: Pcm, id: String, at: Long, onStart: Started): Boolean {
+    private fun playClip(clip: Pcm, id: String, at: Long, onStart: Started, onEnd: Ended): Boolean {
         tts.stop()
-        return out.play(clip, id) { started ->
+        // A clip's audio is ready as soon as it is asked for.
+        val ready = System.nanoTime()
+        return out.play(clip, id, onEnd = { how -> onEnd.ended(System.nanoTime(), how) }) { started ->
             logStart("pre-rendered", at, started)
-            onStart.started(System.nanoTime(), "clip", route())
+            onStart.started(VoiceStart(System.nanoTime(), "clip", route(), ready, out.output(), out.focusGranted))
         } != null
     }
 
-    private fun speak(text: String, id: String, at: Long, onStart: Started): Boolean {
+    private fun speak(text: String, id: String, at: Long, onStart: Started, onEnd: Ended): Boolean {
         out.stopClip()
         out.begin(id)
-        asked[id] = Asked(at, onStart)
+        asked[id] = Asked(at, onStart, onEnd, out.focusGranted)
         val queued = tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
         if (!queued) {
             asked.remove(id)
@@ -129,27 +156,33 @@ internal class Voice(context: Context) {
     /** Where the sound goes: a connected headset (Bluetooth, wired or USB), else the phone speaker. */
     private fun route() = if (out.headset() != null) "headset" else "speaker"
 
-    /** Logs a live phrase's start, and gives the focus back when it ends, stops or fails. */
+    /** Logs a live phrase's start and end, and gives the focus back when it ends, stops or fails. */
     private inner class Progress : UtteranceProgressListener() {
+        override fun onAudioAvailable(utteranceId: String?, audio: ByteArray?) {
+            asked[utteranceId]?.let { if (it.readyNanos == null) it.readyNanos = System.nanoTime() }
+        }
+
         override fun onStart(utteranceId: String?) {
-            asked.remove(utteranceId)?.let {
+            asked[utteranceId]?.let {
+                it.started = true
                 logStart("live", it.at, SystemClock.elapsedRealtimeNanos())
-                it.onStart.started(System.nanoTime(), "live", route())
+                val start = VoiceStart(System.nanoTime(), "live", route(), it.readyNanos, out.output(), it.focus)
+                it.onStart.started(start)
             }
         }
 
-        override fun onDone(utteranceId: String?) = ended(utteranceId)
+        override fun onDone(utteranceId: String?) = ended(utteranceId, "done")
 
         @Deprecated("Deprecated in Java")
-        override fun onError(utteranceId: String?) = ended(utteranceId)
+        override fun onError(utteranceId: String?) = ended(utteranceId, "error")
 
-        override fun onError(utteranceId: String?, errorCode: Int) = ended(utteranceId)
+        override fun onError(utteranceId: String?, errorCode: Int) = ended(utteranceId, "error")
 
-        override fun onStop(utteranceId: String?, interrupted: Boolean) = ended(utteranceId)
+        override fun onStop(utteranceId: String?, interrupted: Boolean) = ended(utteranceId, "stopped")
 
-        private fun ended(id: String?) {
+        private fun ended(id: String?, how: String) {
             if (id == null || id == WarmId) return
-            asked.remove(id)
+            asked.remove(id)?.takeIf { it.started }?.onEnd?.ended(System.nanoTime(), how)
             out.end(id)
         }
     }

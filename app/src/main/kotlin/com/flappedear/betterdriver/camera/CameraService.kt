@@ -179,6 +179,7 @@ class CameraService : LifecycleService() {
 
     private fun begin(id: String, startNanos: Long) {
         sessionId = id
+        DebugLog.session = id
         main.removeCallbacks(giveUp)
         val index = VideoIndex(File(sessionsDir(this), id))
         camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode))
@@ -200,6 +201,7 @@ class CameraService : LifecycleService() {
     }
 
     private fun finish() {
+        DebugLog.session = null
         recorder?.let { send(it, Message.obtain(null, RecorderProtocol.MSG_UNREGISTER)) }
         if (bound) unbindService(connection)
         bound = false
@@ -240,9 +242,10 @@ class CameraService : LifecycleService() {
         override fun started(file: String, startMicros: Long) =
             report(RecorderProtocol.VIDEO_STARTED, file, startMicros)
 
-        override fun synced(file: String, atMicros: Long, mediaMicros: Long) =
+        override fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long?) =
             report(RecorderProtocol.VIDEO_SYNCED, file, atMicros) {
                 putLong(RecorderProtocol.VIDEO_MEDIA_US, mediaMicros)
+                frameMicros?.let { putLong(RecorderProtocol.VIDEO_FRAME_US, it) }
             }
 
         override fun stopped(file: String, atMicros: Long, reason: String) =

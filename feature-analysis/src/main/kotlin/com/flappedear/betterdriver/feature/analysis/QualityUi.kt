@@ -7,43 +7,43 @@ import java.util.Locale
 import kotlin.math.abs
 
 /**
- * One checked value on the Data quality card: [value] with its unit, [pass] against its criterion.
- * [derived] marks a value worked out by a heuristic or an estimate, not read straight from the data.
+ * A failed check on the Data quality card: [value] with its unit, and the FBBD [keys] of its
+ * criterion. [derived] marks a value worked out by a heuristic or an estimate, not read straight
+ * from the data.
  */
 data class QualityRow(
     val section: String,
     val label: String,
     val value: String,
-    val pass: Boolean,
+    val keys: String,
     val derived: Boolean,
 )
 
 /**
- * The Data quality card (FBBD-183): the session validation report's checked values, failures first,
- * and the criteria this session could not be checked against. The full report, with how each value
- * was obtained, is in the debug logs.
+ * The Data quality card (FBBD-183): how many of the session's checks passed, failed or could not be
+ * measured, with the failures listed. Every check, with how its value was found, is in the session's
+ * quality.json and in the drive's log.
  */
-data class QualityUi(val passed: Int, val failed: Int, val rows: List<QualityRow>, val notMeasured: List<String>)
+data class QualityUi(val passed: Int, val failed: Int, val notMeasured: Int, val failures: List<QualityRow>)
 
-/** The card's model of [report]; values for information only are left to the full report. */
+/** The card's model of [report]. */
 fun qualityUi(report: QualityReport): QualityUi {
-    val rows = report.sections.flatMap { section ->
-        section.metrics.filter { it.verdict == Verdict.PASS || it.verdict == Verdict.FAIL }.map {
+    val failures = report.sections.flatMap { section ->
+        section.metrics.filter { it.verdict == Verdict.FAIL }.map {
             QualityRow(
                 section.title,
                 it.label,
                 valueText(it.value ?: 0.0, it.unit),
-                it.verdict == Verdict.PASS,
+                it.keys.joinToString(", "),
                 it.basis == Basis.DERIVED,
             )
         }
     }
-    val notMeasured = report.metrics.filter { it.verdict == Verdict.NOT_MEASURED }.map { it.label }.distinct()
     return QualityUi(
         report.count(Verdict.PASS),
         report.count(Verdict.FAIL),
-        rows.sortedBy { it.pass },
-        notMeasured,
+        report.count(Verdict.NOT_MEASURED),
+        failures,
     )
 }
 

@@ -1,0 +1,229 @@
+package com.flappedear.betterdriver.analysis.quality
+
+import com.flappedear.betterdriver.recorder.ChannelValue
+import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.RecorderStatus
+import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.log.CheckLog
+import com.flappedear.betterdriver.recorder.log.GnssSecondLog
+import com.flappedear.betterdriver.recorder.log.LogLine
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import java.io.File
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/**
+ * The drive checks from the continuous log alone (FBBD-183), on a synthetic 31-minute drive as the
+ * app logs it: the GNSS second by second, every event, a link drop, a false GNSS banner, phone video
+ * with frame times, a GoPro with GPS-aligned stretches, coach cues and a VBO export.
+ */
+class DriveChecksTest {
+    private val start = 1_760_000_000_000L
+    private val id = "20261012-103607-3713ff1a"
+    private val lines = mutableListOf<LogLine>()
+    private val minute = 60_000_000L
+    private val end = 31 * minute
+
+    private fun line(tMicros: Long, tag: String, message: String, process: String = "recorder", session: String? = id) {
+        lines += LogLine(start + tMicros / 1_000, tMicros, process, 1, "t", 'I', tag, session, message)
+    }
+
+    private fun event(t: Long, kind: String, text: String, process: String = "recorder") =
+        line(t, CheckLog.EVENT, CheckLog.eventText(t, kind, text), process)
+
+    /** Parked for the first 70 s, then 100 km/h with a braking zone down to 60 km/h every minute. */
+    private fun kmh(t: Long): Double {
+        if (t < 70_000_000) return 0.0
+        val inMinute = t % minute
+        return if (inMinute in 40_000_000..45_000_000) 60.0 else 100.0
+    }
+
+    private fun drive(): List<QualityReport> {
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
+        var i = 0L
+        var t = 0L
+        while (t <= end) {
+            val inOutage = t in 600_000_000L until 602_000_000L
+            if (t == 600_040_000L) gnss.onEvent(RecorderEvent(600_100_000, "racebox_disconnected", ""))
+            // One sample in 400 never arrives: 0.25 % dropped.
+            if (!inOutage && i % 400 != 399L) {
+                val wobble = if (t < 70_000_000) ((i % 3) - 1) * 0.000001 else t / 1e6 * 0.00001
+                gnss.onSamples(
+                    SampleSet(
+                        t + 30_000,
+                        listOf(
+                            ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble()),
+                            ChannelValue(GnssChannels.LAT.id, 50.0 + wobble),
+                            ChannelValue(GnssChannels.LON.id, 19.0),
+                            ChannelValue(GnssChannels.SPEED_KMH.id, kmh(t)),
+                        ),
+                    ),
+                )
+            }
+            t += 40_000
+            i++
+        }
+        gnss.onStatus(RecorderStatus.Stopped("user"))
+        // GNSS lines are timed by their own t_us.
+        lines.replaceAll { l ->
+            val t = CheckLog.fields(l.message)["t_us"]?.toLong()
+            if (l.tag == CheckLog.GNSS && t != null) l.copy(utcMillis = start + t / 1_000) else l
+        }
+        event(600_100_000, "racebox_disconnected", "E7:D2:76:DC:ED:23")
+        event(602_050_000, "racebox_connected", "E7:D2:76:DC:ED:23")
+        // The banner after the outage, and one with fixes arriving all along.
+        event(601_200_000, EventKinds.GNSS_BANNER, "state=shown fix_age_us=1170000", "main")
+        event(602_500_000, EventKinds.GNSS_BANNER, "state=cleared fix_age_us=0", "main")
+        event(900_000_000, EventKinds.GNSS_BANNER, "state=shown fix_age_us=1100000", "main")
+        event(900_400_000, EventKinds.GNSS_BANNER, "state=cleared fix_age_us=0", "main")
+        for (k in 1..62) {
+            val at = k * 30_000_000L
+            val thermal = if (k > 40) 1 else 0
+            val device = "battery_c=${30 + k * 0.2} battery_pct=90 plugged=usb thermal=$thermal headroom=0.7"
+            event(at, EventKinds.DEVICE, device)
+            val frames = "frames=1800 janky=18 frozen=0 worst_ms=40 hist=900,500,330,40,15,10,5,0,0,0,0"
+            event(at, EventKinds.UI_FRAMES, frames, "main")
+        }
+        phoneVideo()
+        goPro()
+        coach()
+        event(0, EventKinds.VBO_EXPORT, "rows=46337 samples=46337 ms=4200", "main")
+        line(end, CheckLog.SESSION, "stop t_us=$end reason=user")
+        return driveChecks(lines.shuffled(java.util.Random(1)))
+    }
+
+    /** Files of 7 min; each sync report arrives 15 ms after the frame it reports was captured. */
+    private fun phoneVideo() {
+        var fileStart = 600_000L
+        var n = 1
+        while (fileStart < end) {
+            val file = "phone_%04d.mp4".format(n)
+            val fileEnd = minOf(end, fileStart + 7 * minute)
+            event(fileStart, EventKinds.VIDEO_START, "camera=phone file=$file")
+            var s = fileStart + 1_000_000
+            while (s < fileEnd) {
+                // The media clock runs 30 ppm slow: 12.6 ms behind after 7 min.
+                val media = ((s - fileStart) * (1 - 30e-6)).toLong()
+                val sync = "camera=phone file=$file media_us=$media frame_us=${s - 5_000}"
+                event(s + 10_000, EventKinds.VIDEO_SYNC, sync)
+                s += 1_000_000
+            }
+            val reason = if (fileEnd == end) "user" else "file_full"
+            event(fileEnd, EventKinds.VIDEO_STOP, "camera=phone file=$file reason=$reason")
+            fileStart = fileEnd + 120_000
+            n++
+        }
+    }
+
+    private fun goPro() {
+        val cam = "gopro-1"
+        event(2_100_000, EventKinds.GOPRO, "camera=$cam action=start result=ok", "main")
+        event(end + 1_500_000, EventKinds.GOPRO, "camera=$cam action=stop result=ok", "main")
+        for (c in 0 until 4) {
+            val file = "GX0${c + 1}0001.MP4"
+            val offset = 2_400_000L + c * 8 * minute
+            val placed = "camera=$cam file=$file result=aligned method=GPS_MATCH " +
+                "offset_us=$offset duration_us=${8 * minute}"
+            event(0, EventKinds.VIDEO_IMPORT, placed, "main")
+            for (p in 0 until 4) {
+                val at = offset + p * 2 * minute + minute
+                // The GoPro's clock runs 20 ppm fast against the GNSS.
+                val drifted = offset + ((at - offset) * 20e-6).toLong()
+                val probe = "camera=$cam file=$file offset_us=$drifted clip_offset_us=$offset"
+                event(at, EventKinds.VIDEO_PROBE, probe, "main")
+            }
+        }
+        val outside = "camera=gopro-2 file=GH010099.MP4 result=rejected method=CAMERA_CLOCK offset_us=-90000000000"
+        event(0, EventKinds.VIDEO_IMPORT, outside, "main")
+    }
+
+    /** A cue each minute at 30 s, said live 300 ms later, 1.2 s long, to a headset 80 ms slower. */
+    private fun coach() {
+        for (k in 2..30) {
+            val at = k * minute + 30_000_000
+            event(at, "coach_cue", "seq=$k lap=$k kind=Corner corner=1 zone_m=200.0 turn=1 text=Turn 1", "coach")
+            event(
+                at + 300_000, EventKinds.COACH_VOICE,
+                "seq=$k path=live asked_us=${at + 5_000} route=headset ready_us=${at + 105_000} " +
+                    "device=bt_a2dp focus=granted out_delay_ms=80",
+                "coach",
+            )
+            event(at + 1_500_000, EventKinds.COACH_VOICE_END, "seq=$k end=done", "coach")
+        }
+    }
+
+    private fun QualityReport.metric(id: String) = metrics.single { it.id == id }
+
+    @Test
+    fun `a 31-minute drive is checked against every hardware criterion from its log alone`() {
+        val r = drive().single()
+        assertEquals(id, r.sessionId)
+        fun check(metric: String, verdict: Verdict, value: Double? = null, tolerance: Double = 0.0) {
+            val m = r.metric(metric)
+            assertEquals(verdict, m.verdict, "$metric: ${m.value} ${m.how}")
+            value?.let { assertEquals(it, m.value!!, tolerance, metric) }
+        }
+        // GNSS (FBBD-8, FBBD-46): 0.25 % dropped, one 2 s link drop left out of rate and gaps.
+        check("gnss.rate", Verdict.PASS, 24.94, 0.02)
+        check("gnss.dropped", Verdict.PASS, 0.25, 0.01)
+        check("gnss.max_gap", Verdict.PASS, 80.0)
+        check("gnss.reconnect", Verdict.PASS, 2.0, 0.05)
+        check("gnss.stationary", Verdict.PASS)
+        assertEquals(listOf("FBBD-8", "FBBD-46"), r.metric("gnss.rate").keys)
+        // Video (FBBD-21): the frame times say each file starts 15 ms before it is placed; its clock runs slow.
+        check("video.phone.sync_error", Verdict.PASS, 15.0, 0.1)
+        check("video.phone.drift_10", Verdict.PASS, 3.5, 0.2)
+        check("video.phone.drift_20", Verdict.PASS)
+        check("video.phone.drift_30", Verdict.PASS)
+        check("video.phone.coverage", Verdict.PASS)
+        // GoPro (FBBD-82, FBBD-22): 20 ppm drift, start 2.1 s and stop 1.5 s after the session.
+        check("gopro.gopro-1.start", Verdict.PASS, 2.1, 1e-9)
+        check("gopro.gopro-1.stop", Verdict.PASS, 1.5, 1e-9)
+        check("video.import", Verdict.PASS, 100.0)
+        check("video.gopro-1.drift_10", Verdict.PASS)
+        check("video.gopro-1.sync_error", Verdict.PASS)
+        // Coach (FBBD-27, FBBD-47, FBBD-48, FBBD-49).
+        check("coach.delay_live", Verdict.PASS, 300.0)
+        check("coach.tts", Verdict.PASS, 100.0)
+        check("coach.total_live", Verdict.PASS, 380.0)
+        check("coach.overlap", Verdict.PASS, 0.0)
+        check("coach.per_straight", Verdict.PASS, 0.0)
+        check("coach.focus", Verdict.PASS, 100.0)
+        check("coach.headset", Verdict.PASS, 100.0)
+        check("coach.margin", Verdict.PASS, 100.0)
+        check("coach.in_zone", Verdict.PASS, 0.0)
+        check("coach.clips", Verdict.NOT_MEASURED)
+        // Screen (FBBD-41, FBBD-62, FBBD-63, FBBD-64): one banner shown with fixes arriving all along.
+        check("ui.frame_p95", Verdict.PASS, 16.0)
+        check("ui.jank", Verdict.PASS, 1.0, 1e-9)
+        check("ui.frozen", Verdict.PASS, 0.0)
+        check("ui.screen_off", Verdict.PASS, 0.0)
+        check("ui.false_banners", Verdict.FAIL, 1.0)
+        check("ui.banner_show", Verdict.PASS, 1.2, 0.05)
+        check("ui.banner_clear", Verdict.PASS, 0.5, 0.05)
+        // Thermal and soak (FBBD-46), export (FBBD-14).
+        check("thermal.battery", Verdict.PASS, 30.0)
+        check("thermal.status", Verdict.PASS)
+        check("soak.gnss_rate", Verdict.PASS)
+        check("soak.jank", Verdict.PASS)
+        check("soak.battery", Verdict.PASS)
+        check("soak.video", Verdict.PASS)
+        check("export.lost", Verdict.PASS, 0.0)
+        check("export.time", Verdict.PASS, 4.2, 1e-9)
+        assertTrue(r.metric("gnss.clock_10").verdict == Verdict.INFO)
+    }
+
+    @Test
+    fun `a short drive is no soak`(@TempDir dir: File) {
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        line(5 * minute, CheckLog.SESSION, "stop t_us=${5 * minute} reason=user")
+        val log = File(dir, "betterdriver.log").apply { writeText(lines.joinToString("\n") { it.format() }) }
+        val r = driveChecks(log).single()
+        assertEquals(Verdict.NOT_MEASURED, r.metric("soak.gnss_rate").verdict)
+        assertTrue("5 min" in r.metric("soak.gnss_rate").how)
+    }
+}

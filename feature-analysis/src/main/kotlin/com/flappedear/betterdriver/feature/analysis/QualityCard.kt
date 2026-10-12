@@ -4,7 +4,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,8 +18,9 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 
 /**
- * Data quality (FBBD-183): how the session's recording did against the pass criteria, failures
- * first. "≈" marks a value worked out by a heuristic or an estimate rather than read from the data.
+ * Data quality (FBBD-183): how many of the session's checks passed, failed or could not be measured,
+ * with each failure, its value and its FBBD keys. "≈" marks a value worked out by a heuristic or an
+ * estimate rather than read from the data.
  */
 @Composable
 internal fun QualityCard(ui: QualityUi, modifier: Modifier = Modifier) {
@@ -28,45 +28,35 @@ internal fun QualityCard(ui: QualityUi, modifier: Modifier = Modifier) {
     Card(modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TrackLabel("Data quality", Modifier.weight(1f))
-            Dim("${ui.passed} pass · ${ui.failed} fail", color = if (ui.failed > 0) c.loss else c.textDim)
+            Dim(
+                "${ui.passed} pass · ${ui.failed} fail · ${ui.notMeasured} not measured",
+                color = if (ui.failed > 0) c.loss else c.textDim,
+            )
         }
-        for (row in ui.rows) {
+        for (row in ui.failures) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(row.label, color = c.text, modifier = Modifier.weight(1f))
                 Text(
                     (if (row.derived) "≈" else "") + row.value,
-                    color = if (row.pass) c.text else c.loss,
-                    textAlign = TextAlign.End,
-                    modifier = Modifier.padding(end = 12.dp),
-                )
-                Text(
-                    if (row.pass) "Pass" else "Fail",
-                    color = if (row.pass) c.gain else c.loss,
+                    color = c.loss,
                     fontWeight = FontWeight.SemiBold,
                     textAlign = TextAlign.End,
-                    modifier = Modifier.width(VerdictWidth),
                 )
             }
+            if (row.keys.isNotEmpty()) Dim(row.keys)
         }
-        if (ui.notMeasured.isNotEmpty()) Dim("Not measured: ${ui.notMeasured.joinToString(", ")}")
-        Dim("≈ worked out, not measured directly. Debug logs hold the full report and how each value was found.")
+        Dim("Every check, with how its value was found, is in the shared log (Settings › Diagnostics).")
     }
 }
 
-private val VerdictWidth = 44.dp
-
 internal val PreviewQuality = QualityUi(
-    passed = 5,
-    failed = 1,
-    rows = listOf(
-        QualityRow("GNSS", "Longest gap", "412 ms", pass = false, derived = false),
-        QualityRow("GNSS", "Sample rate", "24.9 Hz", pass = true, derived = false),
-        QualityRow("GNSS", "Position noise parked", "0.21 m", pass = true, derived = false),
-        QualityRow("Timing", "Suspect laps", "0", pass = true, derived = true),
-        QualityRow("Video", "Video drift (phone)", "12.4 ms", pass = true, derived = true),
-        QualityRow("Video", "Video coverage (phone)", "100 %", pass = true, derived = false),
+    passed = 23,
+    failed = 2,
+    notMeasured = 6,
+    failures = listOf(
+        QualityRow("GNSS", "Dropped samples", "4.1 %", "FBBD-8, FBBD-46", derived = false),
+        QualityRow("Video", "Drift at 30 min (phone)", "112 ms", "FBBD-21, FBBD-82", derived = true),
     ),
-    notMeasured = listOf("Longest reconnect", "Start sync error (phone)", "Battery temperature"),
 )
 
 @Preview(widthDp = 400, heightDp = 400)

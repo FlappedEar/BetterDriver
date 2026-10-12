@@ -8,6 +8,7 @@ import java.util.Locale
  * (FBBD-28, FBBD-99) reads exactly what was said and what happened next. Text is `key=value` pairs
  * separated by spaces; the spoken text comes last, after `text=`, and may hold spaces.
  */
+@Suppress("TooManyFunctions") // One writer and one reader per kind of event.
 object CoachEvents {
     /** A cue was spoken; its event time is when the coach asked for it. */
     const val CUE = "coach_cue"
@@ -23,6 +24,9 @@ object CoachEvents {
      * so the session validation report (`:analysis`) reads it too.
      */
     const val VOICE = EventKinds.COACH_VOICE
+
+    /** A cue's sound ended (FBBD-47); text from [voiceEndText]. */
+    const val VOICE_END = EventKinds.COACH_VOICE_END
 
     fun cueText(cue: Cue): String = buildString {
         append("seq=").append(cue.seq)
@@ -41,10 +45,30 @@ object CoachEvents {
     /**
      * The text of a [VOICE] event: cue [seq], how it was said ([path], "live" or "clip"), when the
      * voice was asked for it ([askedMicros], session time) and where the sound went ([route],
-     * "headset" or "speaker").
+     * "headset" or "speaker"). Then, when known (FBBD-47): when its first audio was ready
+     * ([readyMicros], session time), the output [device] type, whether audio focus was granted
+     * ([focus]), and the headset's own delay from the tap test ([outDelayMillis], "none" when not run).
      */
-    fun voiceText(seq: Int, path: String, askedMicros: Long, route: String) =
-        "seq=$seq path=$path asked_us=$askedMicros route=$route"
+    @Suppress("LongParameterList")
+    fun voiceText(
+        seq: Int,
+        path: String,
+        askedMicros: Long,
+        route: String,
+        readyMicros: Long? = null,
+        device: String? = null,
+        focus: Boolean? = null,
+        outDelayMillis: Int? = null,
+    ) = buildString {
+        append("seq=$seq path=$path asked_us=$askedMicros route=$route")
+        readyMicros?.let { append(" ready_us=").append(it) }
+        device?.let { append(" device=").append(it) }
+        focus?.let { append(" focus=").append(if (it) "granted" else "refused") }
+        append(" out_delay_ms=").append(outDelayMillis?.takeIf { it > 0 }?.toString() ?: "none")
+    }
+
+    /** The text of a [VOICE_END] event: cue [seq]'s sound [end]ed: "done", "stopped" (cut off) or "error". */
+    fun voiceEndText(seq: Int, end: String) = "seq=$seq end=$end"
 
     fun resultText(r: CueResult): String = buildString {
         append("seq=").append(r.cue.seq)
