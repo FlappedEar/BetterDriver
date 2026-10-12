@@ -77,7 +77,11 @@ affect the recording.
 ## In the app
 
 `RecorderService` (app, `recording/`) runs the recorder as a foreground service
-in its own process (`:recorder`) with a partial wake lock. The UI process starts
+in its own process (`:recorder`) with a partial wake lock. Its foreground service
+types are location and connected device (FBBD-34), each claimed only while Android
+accepts it (`recorderForegroundTypes`): on Android 14 location needs location
+access and connected device needs nearby devices, so startForeground never throws
+for a denied permission. The UI process starts
 and stops it with intents and receives `LiveSnapshot`s over a Messenger. Killing
 or crashing the UI leaves the recording running; reopening the app reconnects and
 returns to the track screen. While a recording runs, the app keeps the screen on.

@@ -32,6 +32,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.setup.Setup
 
 /**
@@ -51,37 +52,9 @@ fun SetupScreen(
     modifier: Modifier = Modifier,
 ) {
     val active = setup.active()
-    val context = LocalContext.current
-    val required = remember { requiredPermissions() }
-    val all = remember { required + optionalPermissions() }
-    var granted by remember { mutableStateOf(context.allGranted(required)) }
-    var allGranted by remember { mutableStateOf(context.allGranted(all)) }
-    // Set when Android stops showing the dialog after repeated denials; then only system settings can grant.
-    var blocked by rememberSaveable { mutableStateOf(false) }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
-        granted = context.allGranted(required)
-        allGranted = context.allGranted(all)
-        blocked = !granted && context.findActivity()?.let { it.permanentlyDenied(required) } == true
-    }
-    // Picks up grants made in system settings.
-    LifecycleResumeEffect(Unit) {
-        granted = context.allGranted(required)
-        allGranted = context.allGranted(all)
-        if (granted) blocked = false
-        onPauseOrDispose {}
-    }
+    val permissions = permissionsStep()
     val steps = listOf(
-        SetupStep(
-            "Permissions",
-            "Location and nearby devices · camera, mic and notifications optional",
-            done = granted,
-            action = when {
-                blocked -> "Settings"
-                allGranted -> null
-                else -> "Allow"
-            },
-            onAction = { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) },
-        ),
+        permissions,
         SetupStep(
             "GNSS receiver",
             active.gnss?.name ?: "Needed for lap timing",
@@ -104,7 +77,52 @@ fun SetupScreen(
             onAction = if (setup.cars.isEmpty()) onAddCar else onCar,
         ),
     )
-    SetupChecklist(steps, canFinish = granted, onDone = onDone, modifier = modifier)
+    SetupChecklist(steps, canFinish = permissions.done, onDone = onDone, modifier = modifier)
+}
+
+/**
+ * The permissions step: done once the required ones are granted. After the dialog has answered,
+ * each denied permission says what will not work (FBBD-35).
+ */
+@Composable
+private fun permissionsStep(): SetupStep {
+    val context = LocalContext.current
+    val required = remember { requiredPermissions() }
+    val all = remember { required + optionalPermissions() }
+    var granted by remember { mutableStateOf(context.allGranted(required)) }
+    var allGranted by remember { mutableStateOf(context.allGranted(all)) }
+    // Set when Android stops showing the dialog after repeated denials; then only system settings can grant.
+    var blocked by rememberSaveable { mutableStateOf(false) }
+    var asked by rememberSaveable { mutableStateOf(false) }
+    var denied by remember { mutableStateOf(emptyList<PermissionGroup>()) }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        granted = context.allGranted(required)
+        allGranted = context.allGranted(all)
+        asked = true
+        denied = context.deniedPermissionGroups(all)
+        // Optional ones count too: otherwise "Allow" would open no dialog for a camera denied for good.
+        blocked = !allGranted && context.findActivity()?.let { it.permanentlyDenied(all) } == true
+    }
+    // Picks up grants made in system settings.
+    LifecycleResumeEffect(Unit) {
+        granted = context.allGranted(required)
+        allGranted = context.allGranted(all)
+        if (asked) denied = context.deniedPermissionGroups(all)
+        if (allGranted) blocked = false
+        onPauseOrDispose {}
+    }
+    return SetupStep(
+        "Permissions",
+        "Location and nearby devices · camera, mic and notifications optional",
+        done = granted,
+        action = when {
+            blocked -> "Settings"
+            allGranted -> null
+            else -> "Allow"
+        },
+        notes = denied.map { it.deniedLine() },
+        onAction = { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) },
+    )
 }
 
 @Composable
@@ -148,6 +166,7 @@ private fun SetupRow(step: SetupStep) {
         Column(Modifier.weight(1f)) {
             Text(step.title, style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
             DimText(step.detail)
+            step.notes.forEach { DimText(it, Modifier.padding(top = 4.dp), color = TrackTheme.colors.warning) }
         }
         if (step.action != null) {
             FilledTonalButton(onClick = step.onAction) { Text(step.action) }
@@ -162,7 +181,13 @@ private fun SetupChecklistPreview() {
         Box(Modifier.background(MaterialTheme.colorScheme.background)) {
             SetupChecklist(
                 steps = listOf(
-                    SetupStep("Permissions", "Location, nearby devices, camera", true, null) {},
+                    SetupStep(
+                        "Permissions",
+                        "Location and nearby devices · camera, mic and notifications optional",
+                        true,
+                        "Settings",
+                        notes = listOf(PermissionGroup.Camera.deniedLine(), PermissionGroup.Microphone.deniedLine()),
+                    ) {},
                     SetupStep("GNSS receiver", "Needed for lap timing", false, "Add") {},
                     SetupStep("Cameras", "Phone camera", true, "Set up") {},
                     SetupStep("Car", "Optional", false, "Add") {},
