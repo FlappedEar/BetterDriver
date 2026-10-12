@@ -29,6 +29,17 @@ import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
 import java.io.File
 
+/** What the first-run checklist asks for, so the app opens on Drive with no permission dialog. */
+fun appPermissions(): Array<String> = buildList {
+    add(Manifest.permission.ACCESS_FINE_LOCATION)
+    add(Manifest.permission.ACCESS_COARSE_LOCATION)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+        add(Manifest.permission.BLUETOOTH_SCAN)
+        add(Manifest.permission.BLUETOOTH_CONNECT)
+    }
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
+}.toTypedArray()
+
 /** The app under test, started on the seeded data, in the order the rules must run. */
 typealias SmokeRule = AndroidComposeTestRule<ActivityScenarioRule<MainActivity>, MainActivity>
 
@@ -42,20 +53,10 @@ class SmokeSetup {
     val compose: SmokeRule = createAndroidComposeRule<MainActivity>()
 
     val rules: TestRule = RuleChain
-        .outerRule(GrantPermissionRule.grant(*permissions()))
+        .outerRule(GrantPermissionRule.grant(*appPermissions()))
         .around(Seeded)
         .around(NoAppErrors)
         .around(compose)
-
-    private fun permissions(): Array<String> = buildList {
-        add(Manifest.permission.ACCESS_FINE_LOCATION)
-        add(Manifest.permission.ACCESS_COARSE_LOCATION)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            add(Manifest.permission.BLUETOOTH_SCAN)
-            add(Manifest.permission.BLUETOOTH_CONNECT)
-        }
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) add(Manifest.permission.POST_NOTIFICATIONS)
-    }.toTypedArray()
 
     /** Writes the fixtures before the app first reads its data in this process. */
     private object Seeded : ExternalResource() {

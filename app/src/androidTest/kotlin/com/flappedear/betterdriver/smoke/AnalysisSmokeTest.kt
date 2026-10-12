@@ -128,8 +128,16 @@ class AnalysisSmokeTest {
         // A corner's flag in Where time goes: pick it for the coach, then unpick it.
         val pick = hasContentDescription("Coach ", substring = true) and
             hasContentDescription("next time", substring = true)
-        app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().performClick()
         val picked = hasContentDescription("Coaching ", substring = true)
+        fun isPicked() = app.onAllNodes(picked).fetchSemanticsNodes().isNotEmpty()
+        // The analysis can still lay out again (the progress card arrives after it), and a tap during
+        // that can miss the flag: it is tapped again only while nothing is picked after a while, so a
+        // tap that landed is never undone.
+        for (attempt in 1..PickTries) {
+            app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().performClick()
+            val landed = runCatching { app.waitNamed("a corner picked", PickWaitMs) { isPicked() } }.isSuccess
+            if (landed || attempt == PickTries) break
+        }
         app.waitFor(picked).performScrollTo().assertIsDisplayed()
         app.onAllNodes(picked)[0].performClick()
         app.waitNamed("the pick to go", LoadTimeoutMs) { app.onAllNodes(picked).fetchSemanticsNodes().isEmpty() }
@@ -163,5 +171,9 @@ class AnalysisSmokeTest {
 
     private companion object {
         const val PlayMs = 2_000L
+        const val PickTries = 3
+
+        /** A pick shows within milliseconds; this long without one means the tap missed. */
+        const val PickWaitMs = 10_000L
     }
 }
