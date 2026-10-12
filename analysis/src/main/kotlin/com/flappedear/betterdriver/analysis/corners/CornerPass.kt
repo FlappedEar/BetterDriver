@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.analysis.corners
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
+import com.flappedear.betterdriver.analysis.segments.SectorTime
+import kotlin.math.abs
 
 /**
  * One counted lap's pass through one corner (FBBD-153): when it entered and left the corner (from
@@ -15,7 +17,8 @@ data class CornerPass(
     val entryTime: Double?,
     /**
      * When the drive crossed the corner's exit. For a corner over the start/finish line this is on
-     * the next lap: the drive goes on through the line, so the pass is one stretch of time (and video).
+     * the next lap, so the pass is one stretch of time (and video); when no lap follows without a
+     * break, the pass ends where its lap ends, untimed.
      */
     val exitTime: Double?,
     /** Time through the corner; null unless the lap's GPS covers all of it. */
@@ -42,19 +45,16 @@ fun cornerPasses(analysis: SessionAnalysis, segmentId: String): List<CornerPass>
         val lap = laps[i]
         val m = metrics.getOrNull(i) ?: return@mapNotNull null
         val sector = analysis.lapTimes.getOrNull(i)?.sector(segmentId)
-        val entry = sector?.startTime
-        val seconds = sector?.seconds
-        // Over the line the exit is timed at the start of the same lap, so it is reached `seconds`
-        // after the entry instead.
-        val exit = when {
-            entry != null && seconds != null -> entry + seconds
-            entry != null && sector.endTime != null && sector.endTime > entry -> sector.endTime
-            else -> null
+        val (exit, seconds) = when {
+            sector?.startTime == null -> null to null
+            sector.endProgressMeters < sector.startProgressMeters -> overTheLine(analysis, i, segmentId, sector)
+            sector.endTime != null && sector.endTime > sector.startTime -> sector.endTime to sector.seconds
+            else -> null to null
         }
         CornerPass(
             lapIndex = i,
             lapNumber = lap.number,
-            entryTime = entry,
+            entryTime = sector?.startTime,
             exitTime = exit,
             seconds = seconds,
             brakingTime = m.braking.brakingPointTime,
@@ -64,4 +64,32 @@ fun cornerPasses(analysis: SessionAnalysis, segmentId: String): List<CornerPass>
             speedUnit = m.speeds.unit,
         )
     }.sortedWith(compareBy<CornerPass, Double?>(nullsLast()) { it.seconds }.thenBy { it.lapNumber })
+}
+
+/** The next lap starts this close to a lap's end when the drive went on through the line. */
+private const val ContiguousLapSeconds = 0.5
+
+/**
+ * The exit and time of a pass through a corner over the start/finish line, entered on lap [i]
+ * ([sector] its timing there): the lap's own sector joins its tail with its earlier head, so the
+ * exit is read on the next lap, when it follows on without a break. Without one the pass ends
+ * where lap [i] ends, untimed.
+ */
+private fun overTheLine(
+    analysis: SessionAnalysis,
+    i: Int,
+    segmentId: String,
+    sector: SectorTime,
+): Pair<Double?, Double?> {
+    val entry = sector.startTime ?: return null to null
+    val lap = analysis.laps.timedLaps[i]
+    val next = analysis.laps.timedLaps.getOrNull(i + 1)
+    val follows = next != null && abs(next.startTelemetryTime - lap.endTelemetryTime) <= ContiguousLapSeconds
+    val exit = if (follows) analysis.lapTimes.getOrNull(i + 1)?.sector(segmentId)?.endTime else null
+    return when {
+        // Timed only when this lap covers the corner's part before the line (seconds is set).
+        exit != null && exit > entry -> exit to sector.seconds?.let { exit - entry }
+        lap.endTelemetryTime > entry -> lap.endTelemetryTime to null
+        else -> null to null
+    }
 }

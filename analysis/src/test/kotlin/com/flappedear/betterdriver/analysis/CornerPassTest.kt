@@ -91,17 +91,38 @@ class CornerPassTest {
         assertTrue(cornerPasses(analysis, "unknown").isEmpty())
     }
 
+    private fun overLine(start: Double?, end: Double?, seconds: Double?) = SectorTime(
+        "c1", "Corner 1", TrackSegmentType.Corner, 980.0, 30.0,
+        startTime = start, endTime = end, seconds = seconds,
+    )
+
     @Test
-    fun `a corner over the line is one stretch of time, into the next lap`() {
-        // The entry is near the lap's end and the exit is timed at its start: the drive leaves the
-        // corner seconds after the entry, on the next lap.
+    fun `a corner over the line runs from the entry into the next lap`() {
+        // Laps 1 and 2 follow on; lap 3 starts after a break (the car stopped in the pits).
+        // Each lap's own sector joins its tail with its earlier head: lap 1's 70 s entry and 12 s
+        // exit are not one pass, so the exit is read on the lap that follows.
         val over = analysis.copy(
-            lapTimes = listOf(LapSectorTimes(1, sectors = listOf(sector(70.0, 12.0, 4.0)))),
-            laps = analysis.laps.copy(timedLaps = analysis.laps.timedLaps.take(1)),
+            laps = LapSession(
+                LapSessionStatus.Available,
+                timedLaps = listOf(lap(1, 10.0, 62.0), lap(2, 72.0, 60.0), lap(3, 200.0, 61.0)),
+            ),
+            lapTimes = listOf(
+                LapSectorTimes(1, sectors = listOf(overLine(70.0, 12.0, 4.0))),
+                LapSectorTimes(2, sectors = listOf(overLine(130.0, 74.5, 4.5))),
+                LapSectorTimes(3, sectors = listOf(overLine(259.0, 202.0, 4.0))),
+            ),
         )
-        val pass = cornerPasses(over, "c1").single()
-        assertEquals(70.0, pass.entryTime)
-        assertEquals(74.0, pass.exitTime)
+        val passes = cornerPasses(over, "c1").associateBy { it.lapNumber }
+        val first = passes.getValue(1)
+        assertEquals(70.0, first.entryTime)
+        assertEquals(74.5, first.exitTime)
+        assertEquals(4.5, first.seconds!!, 1e-9)
+        // No lap follows lap 2 without a break, and lap 3 is the last: each ends at its lap's end, untimed.
+        assertEquals(132.0, passes.getValue(2).exitTime)
+        assertNull(passes.getValue(2).seconds)
+        assertEquals(261.0, passes.getValue(3).exitTime)
+        assertNull(passes.getValue(3).seconds)
+        assertEquals(listOf(1, 2, 3), cornerPasses(over, "c1").map { it.lapNumber })
     }
 
     private fun pass(entry: Double?, exit: Double?, braking: Double? = null) =
