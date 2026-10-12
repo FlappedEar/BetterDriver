@@ -58,15 +58,21 @@ class FlowSmokeTest {
         app.waitForText(SmokeFixtures.CircuitName, timeoutMs = LoadTimeoutMs).performClick()
         app.waitFor(hasText("Lap 2") and hasClickAction(), LoadTimeoutMs).performClick()
         app.waitFor(hasText("Lap 3") and hasClickAction()).performClick()
-        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled().performClick()
-        app.waitForText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        // Both laps play side by side with their video.
-        app.waitForText("Play").performClick()
-        app.waitForText("Pause")
-        Thread.sleep(PlayMs)
-        app.waitForText("Pause").performClick()
-        // Back to the picker, the two laps still picked.
-        app.waitForText("Change laps").performClick()
+        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled()
+        // The lap review runs a frame loop, so the clock is advanced by hand while it shows.
+        app.withManualClock {
+            app.onNode(hasText("Compare") and hasClickAction()).performClick()
+            app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+            // Both laps play side by side with their video.
+            app.pumpUntilText("Play").performClick()
+            app.pumpUntilText("Pause")
+            app.pumpFor(PlayMs)
+            app.pumpUntilText("Pause").performClick()
+            app.pumpUntilText("Play")
+            // Back to the picker, the two laps still picked.
+            app.pumpUntilText("Change laps").performClick()
+            app.pumpUntilNode(hasText("Compare") and hasClickAction())
+        }
         app.waitFor(hasText("Compare") and hasClickAction()).assertIsEnabled()
     }
 

@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
+import android.os.SystemClock
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -147,3 +148,66 @@ fun SmokeRule.back() {
     Espresso.pressBack()
     waitForIdle()
 }
+
+/**
+ * Runs [block] with the test's frame clock under manual control, for the lap review: its player
+ * asks for every frame (CompareView's frame loop), so Compose never goes idle there and the
+ * automatic clock would wait for it forever. Inside, wait with the pump helpers, which advance the
+ * clock a frame at a time, and leave the lap review before [block] ends.
+ */
+fun <T> SmokeRule.withManualClock(block: () -> T): T {
+    mainClock.autoAdvance = false
+    try {
+        return block()
+    } finally {
+        // Lets the screen that was left go before the clock runs by itself again.
+        pumpFor(FrameMs * SettleFrames)
+        mainClock.autoAdvance = true
+    }
+}
+
+/** With the manual clock: advances frames until [condition] holds. */
+fun SmokeRule.pumpUntil(timeoutMs: Long = StepTimeoutMs, what: String = "a condition", condition: () -> Boolean) {
+    val end = SystemClock.uptimeMillis() + timeoutMs
+    while (!condition()) {
+        if (SystemClock.uptimeMillis() > end) throw AssertionError("Timed out after $timeoutMs ms waiting for $what")
+        mainClock.advanceTimeByFrame()
+        Thread.sleep(FrameMs)
+    }
+}
+
+/** With the manual clock: advances frames for about [ms] of real time, as the screen would run. */
+fun SmokeRule.pumpFor(ms: Long) {
+    val end = SystemClock.uptimeMillis() + ms
+    while (SystemClock.uptimeMillis() < end) {
+        mainClock.advanceTimeByFrame()
+        Thread.sleep(FrameMs)
+    }
+}
+
+/** With the manual clock: [waitForText]. */
+fun SmokeRule.pumpUntilText(
+    text: String,
+    substring: Boolean = false,
+    timeoutMs: Long = StepTimeoutMs,
+): SemanticsNodeInteraction {
+    pumpUntil(timeoutMs, "\"$text\"") {
+        onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
+    }
+    return onAllNodesWithText(text, substring = substring)[0]
+}
+
+/** With the manual clock: [waitFor]. */
+fun SmokeRule.pumpUntilNode(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
+    pumpUntil(timeoutMs, matcher.description) { onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    return onAllNodes(matcher)[0]
+}
+
+/** With the manual clock: Android's back. */
+fun SmokeRule.pumpBack() {
+    Espresso.pressBack()
+    pumpFor(FrameMs * SettleFrames)
+}
+
+private const val FrameMs = 16L
+private const val SettleFrames = 30

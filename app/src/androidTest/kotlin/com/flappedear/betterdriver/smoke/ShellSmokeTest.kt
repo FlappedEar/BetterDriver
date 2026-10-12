@@ -26,9 +26,11 @@ class ShellSmokeTest {
     private val app get() = setup.compose
 
     @Test
-    fun driveShowsTheLastSession() {
+    fun driveAsksForAReceiver() {
+        // The seeded setup has no GNSS receiver: Start is off and Drive says how to add one.
         app.waitForText("BetterDriver").assertIsDisplayed()
-        app.waitForText("LAST SESSION").assertIsDisplayed()
+        app.waitForText("START").assertIsDisplayed()
+        app.waitForText("Add a GNSS receiver to start").assertIsDisplayed()
         app.waitFor(tab("Drive")).assertIsDisplayed()
     }
 
@@ -77,7 +79,8 @@ class ShellSmokeTest {
         app.waitForText("Point to point · 1 sector").assertIsDisplayed()
 
         // The circuit: its kind can be changed to point to point; leaving asks before dropping it.
-        app.waitForText(SmokeFixtures.CircuitName).performClick()
+        // Its row in My tracks; Where you are may name it too.
+        app.waitFor(hasText(SmokeFixtures.CircuitName) and hasClickAction()).performClick()
         app.waitForText("Kind", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.waitForText("re-timed", substring = true)
         app.onNode(hasText("Point to point") and hasClickAction()).performClick()
@@ -88,7 +91,7 @@ class ShellSmokeTest {
         app.waitForText("MY TRACKS")
 
         // The hill: point to point, with its start and finish lines.
-        app.waitForText(SmokeFixtures.HillName).performClick()
+        app.waitFor(hasText(SmokeFixtures.HillName) and hasClickAction()).performClick()
         app.waitForText("Kind", timeoutMs = LoadTimeoutMs)
         app.waitForText("Runs go from the start line to the finish line; the drive back is not timed.")
         app.waitForText("re-timed", substring = true)

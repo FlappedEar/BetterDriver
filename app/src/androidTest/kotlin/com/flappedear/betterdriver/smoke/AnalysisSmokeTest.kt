@@ -98,13 +98,18 @@ class AnalysisSmokeTest {
         boxes[0].performScrollTo().performClick()
         boxes[1].performScrollTo().performClick()
         app.waitForText("against lap", substring = true)
-        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled().performClick()
-        app.waitForText("Compare laps", timeoutMs = LoadTimeoutMs)
-        app.waitForText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled()
+        // The lap review runs a frame loop, so the clock is advanced by hand while it shows.
+        app.withManualClock {
+            app.onNode(hasText("Compare") and hasClickAction()).performClick()
+            app.pumpUntilText("Compare laps", timeoutMs = LoadTimeoutMs)
+            app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+            // Back to Corner laps.
+            app.pumpBack()
+            app.pumpUntilText("TIME THROUGH THE CORNER", substring = true)
+        }
 
-        // Back to Corner laps, then to the analysis as it was left.
-        app.back()
-        app.waitForText("TIME THROUGH THE CORNER", substring = true)
+        // Then to the analysis as it was left.
         app.back()
         app.waitForText("THEORETICAL BEST BY CORNER")
     }
