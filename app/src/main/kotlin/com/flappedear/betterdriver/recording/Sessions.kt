@@ -12,8 +12,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
+import com.flappedear.betterdriver.recorder.export.CsvExporter
+import com.flappedear.betterdriver.recorder.export.ExportLap
+import com.flappedear.betterdriver.recorder.export.GpxExporter
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.DeleteResult
+import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -27,6 +31,9 @@ import com.flappedear.betterdriver.gopro.GoProRecordings
 import com.flappedear.betterdriver.shell.GoProClips
 import com.flappedear.betterdriver.shell.SessionCamera
 import com.flappedear.betterdriver.shell.SessionGoPro
+import com.flappedear.betterdriver.sessionanalysis.trackFor
+import com.flappedear.betterdriver.timing.replay.replayLaps
+import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.ClipStatus
@@ -37,6 +44,16 @@ import java.io.IOException
 import java.util.Locale
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * What a session card exports to (FBBD-150). VBO with video has its own folder export. VBO has no
+ * registered type; a generic one keeps the .vbo file name.
+ */
+enum class ExportFormat(val extension: String, val mimeType: String) {
+    Vbo("vbo", "application/octet-stream"),
+    Csv("csv", "text/csv"),
+    Gpx("gpx", "application/gpx+xml"),
+}
 
 /** Export progress of one session, shown on its card. */
 enum class ExportState { Running, Done, Failed }
@@ -150,14 +167,25 @@ class Sessions private constructor(private val context: Context) {
         }
     }
 
-    /** Writes the session as VBO to [uri], a document the user picked. */
-    fun export(id: String, uri: Uri) {
+    /**
+     * Writes the session as [format] to [uri], a document the user picked. CSV and GPX get lap
+     * columns and one track segment per lap when the session was at a saved track with a
+     * start/finish line (FBBD-150).
+     */
+    fun export(id: String, uri: Uri, format: ExportFormat = ExportFormat.Vbo) {
         exports[id] = ExportState.Running
-        DebugLog.i(Tag, "export $id as VBO")
+        DebugLog.i(Tag, "export $id as $format")
         io.execute {
             val result = try {
+                val data = store.read(id)
                 val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
-                out.use { VboExporter.export(store.read(id), it) }
+                out.use {
+                    when (format) {
+                        ExportFormat.Vbo -> VboExporter.export(data, it)
+                        ExportFormat.Csv -> CsvExporter.export(data, it, exportLaps(data, tracksDir(context)))
+                        ExportFormat.Gpx -> GpxExporter.export(data, it, exportLaps(data, tracksDir(context)))
+                    }
+                }
                 DebugLog.i(Tag, "export $id done")
                 ExportState.Done
             } catch (e: IOException) {
@@ -323,6 +351,24 @@ private const val MicrosPerSecond = 1_000_000.0
 private fun isVideoFile(f: File) =
     f.isFile && f.length() > 0 && f.extension.equals("mp4", ignoreCase = true) && Mp4Reader.isComplete(f)
 
+/**
+ * The session's laps, replayed against its track's start/finish line as the lap analysis does,
+ * plus the lap still being driven when it stopped (FBBD-150). Empty when it was not at such a
+ * track; a damaged track file only costs the lap columns, not the export.
+ */
+@Suppress("TooGenericExceptionCaught")
+private fun exportLaps(data: SessionData, tracksDir: File): List<ExportLap> = try {
+    val track = trackFor(data, TrackStore(tracksDir).all())
+    val sets = data.sampleSets.sortedBy { it.tMicros }
+    val laps = track?.let { replayLaps(data.id, sets, it).laps }.orEmpty()
+    val done = laps.map { ExportLap(it.lap.number, it.lap.startMicros, it.lap.endMicros) }
+    val last = done.lastOrNull()
+    if (last == null) done else done + ExportLap(last.number + 1, last.endMicros, Long.MAX_VALUE)
+} catch (e: Exception) {
+    DebugLog.w("Sessions", "laps for export failed", e)
+    emptyList()
+}
+
 /** Removes a failed export's folder. Best effort: the export has already failed. */
 @Suppress("TooGenericExceptionCaught")
 private fun discard(resolver: ContentResolver, folder: Uri) {
@@ -334,4 +380,4 @@ private fun discard(resolver: ContentResolver, folder: Uri) {
 }
 
 /** The file name offered when exporting. */
-fun vboFileName(session: SessionSummary) = "BetterDriver-${session.id}.vbo"
+fun exportFileName(session: SessionSummary, format: ExportFormat) = "BetterDriver-${session.id}.${format.extension}"
