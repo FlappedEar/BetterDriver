@@ -13,6 +13,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.review.LapKey
 import com.flappedear.betterdriver.feature.review.ReviewScreen
 import com.flappedear.betterdriver.feature.review.ReviewStart
@@ -23,7 +24,7 @@ import com.flappedear.betterdriver.shell.ShellIcons
  * The lap review: from Sessions with no laps given, or on two laps from the Corner laps screen
  * (FBBD-153), starting at the corner.
  */
-internal fun NavGraphBuilder.reviewDestination(nav: NavHostController, padding: PaddingValues) {
+internal fun NavGraphBuilder.reviewDestination(nav: NavHostController, padding: PaddingValues, layout: LayoutSize) {
     composable(
         Routes.ReviewPattern,
         arguments = listOf(Routes.ReviewAArg, Routes.ReviewBArg, Routes.ReviewAtArg).map {
@@ -42,18 +43,18 @@ internal fun NavGraphBuilder.reviewDestination(nav: NavHostController, padding: 
         } else {
             null
         }
-        ReviewRoute(nav, padding, start)
+        ReviewRoute(nav, padding, layout, start)
     }
 }
 
 /** Lap review with each lap's video (FBBD-24), opened from Sessions. Sessions are read off the main thread. */
 @Composable
-private fun ReviewRoute(nav: NavHostController, padding: PaddingValues, start: ReviewStart?) {
+private fun ReviewRoute(nav: NavHostController, padding: PaddingValues, layout: LayoutSize, start: ReviewStart?) {
     val context = LocalContext.current
     val laps = remember(context) { ReviewLaps.get(context) }
     // The laps asked for are read even from an older session than the review reads on its own.
     LaunchedEffect(Unit) { laps.load(setOfNotNull(start?.a?.sessionId, start?.b?.sessionId)) }
     Box(Modifier.padding(padding)) {
-        ReviewScreen(laps.state, ShellIcons.Back, onBack = { nav.popBackStack() }, start = start)
+        ReviewScreen(laps.state, ShellIcons.Back, onBack = { nav.popBackStack() }, start = start, layout = layout)
     }
 }
