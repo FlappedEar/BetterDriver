@@ -39,7 +39,6 @@ import kotlin.math.sqrt
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -272,9 +271,19 @@ class SessionFlowTest {
         assertEquals(LapSessionStatus.Available, analysis.laps.status)
         assertEquals(4, analysis.laps.timedLaps.size, "runs ${analysis.laps.timedLaps.map { it.durationSeconds }}")
         assertReviewHasEveryLap(data, stage, analysis)
-        // Not yet split into corners: the axis is a loop, closed by a straight from the finish back
-        // to the start that no other run drives, so the line check fails there (a known limit).
-        assertNull(analysis.segments)
+        // Split into corners on an open axis, from the start to the finish (FBBD-162): the bottom
+        // right corner, and the theoretical best of the runs.
+        val axis = assertNotNull(analysis.axis)
+        assertFalse(axis.closed)
+        val corners = assertNotNull(analysis.segments).segments.filter { it.type == TrackSegmentType.Corner }
+        assertEquals(1, corners.size, "corners ${corners.map { it.name }}")
+        for (corner in corners) {
+            assertTrue(segmentLine(axis, corner).isNotEmpty(), "${corner.name} has no line")
+            assertEquals(4, cornerPasses(analysis, corner.id).count { it.seconds != null }, corner.name)
+        }
+        val fastest = analysis.laps.timedLaps[assertNotNull(analysis.laps.fastestLapIndex)]
+        val best = assertNotNull(assertNotNull(analysis.theoreticalBest).totalSeconds)
+        assertTrue(best <= fastest.durationSeconds + 1e-6, "theoretical best $best")
         // The map's outline is the run's road, not a loop: it ends at the finish, across the map from the start.
         val map = assertNotNull(lapMap(analysis, session, assertNotNull(analysis.laps.fastestLapIndex)))
         assertFalse(map.closed)

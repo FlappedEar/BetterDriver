@@ -45,17 +45,24 @@ const val GateCoverageToleranceMeters = 15.0
 /**
  * A dense (~2 m spacing), gate-anchored loop built from one representative lap. Progress 0 sits
  * where the lap's path crosses the timing gate. Points are local east/north metres around [origin].
+ * A point-to-point run's axis (FBBD-162) is open instead: see [closed].
  */
 class ProgressAxis(
     val points: List<MetricPoint> = emptyList(),
     /** Arc length from points[0] to points[i]. */
     val cumulative: DoubleArray = DoubleArray(0),
-    /** Length of the closed raw path (not of the resampled points). */
+    /** Length of the closed raw path (not of the resampled points); on an open axis, the last [cumulative]. */
     val lengthMeters: Double = 0.0,
-    /** [lengthMeters] / point count. */
+    /** [lengthMeters] / point count; on an open axis, / its segments (point count - 1). */
     val spacingMeters: Double = 0.0,
     val origin: GeoCoordinate = GeoCoordinate(0.0, 0.0),
     val valid: Boolean = false,
+    /**
+     * Whether the axis is a loop. An open axis, a point-to-point run's, goes from the start line at
+     * points[0] to the finish at the last point: nothing wraps, and no stretch joins the finish back
+     * to the start.
+     */
+    val closed: Boolean = true,
 )
 
 /** Heading and curvature of the axis at one of its points. */
@@ -168,6 +175,9 @@ private fun projectOntoSegment(point: MetricPoint, a: MetricPoint, b: MetricPoin
     return t to distance(point, MetricPoint(a.eastMeters + abx * t, a.northMeters + aby * t))
 }
 
+/** Segments of [axis]: point i to point i + 1, and on a loop the last point back to the first. */
+private fun segmentCount(axis: ProgressAxis) = if (axis.closed) axis.points.size else axis.points.size - 1
+
 private fun progressAtSegment(axis: ProgressAxis, segmentIndex: Int, fraction: Double): Double {
     val n = axis.points.size
     val next = (segmentIndex + 1) % n
@@ -200,10 +210,12 @@ private fun bestCandidateInRange(
     val n = axis.points.size
     val bounded = min(count, n)
     for (step in 0 until bounded) {
-        val index = wrapIndex(startIndex + step, n)
+        // An open axis has no segment before its first or after its last.
+        val index = if (axis.closed) wrapIndex(startIndex + step, n) else startIndex + step
+        if (index < 0 || index >= segmentCount(axis)) continue
         if (excludeIndex != null) {
             var separation = abs(index - excludeIndex)
-            separation = min(separation, n - separation)
+            if (axis.closed) separation = min(separation, n - separation)
             if (separation < minimumSeparation) continue
         }
         val (fraction, d) = projectOntoSegment(point, axis.points[index], axis.points[(index + 1) % n])
@@ -229,6 +241,11 @@ private fun runnerUpOnAnotherPart(
     val distances = DoubleArray(n)
     val fractions = DoubleArray(n)
     for (index in 0 until n) {
+        // An open axis's last point starts no segment: nothing is near there.
+        if (index >= segmentCount(axis)) {
+            distances[index] = Double.POSITIVE_INFINITY
+            continue
+        }
         val (fraction, d) = projectOntoSegment(point, axis.points[index], axis.points[(index + 1) % n])
         distances[index] = d
         fractions[index] = fraction
@@ -244,7 +261,8 @@ private fun runnerUpOnAnotherPart(
     while (behind + ahead + 1 < n && sameBranch(indexAt(-behind - 1))) behind++
     while (behind + ahead + 1 < n && sameBranch(indexAt(ahead + 1))) ahead++
     val runnerUp = Candidate()
-    for (offset in -(n / 2) until n - n / 2) {
+    val offsets = if (axis.closed) -(n / 2) until n - n / 2 else -best.index until segmentCount(axis) - best.index
+    for (offset in offsets) {
         val index = indexAt(offset)
         val onBranch = offset >= -behind && offset <= ahead
         if (onBranch && !(best.distance > distances[index] * FlatBranchRatio)) continue
@@ -261,7 +279,7 @@ private fun runnerUpOnAnotherPart(
 
 private fun insideBend(axis: ProgressAxis, point: MetricPoint, best: Candidate, ambiguityRatio: Double): Boolean {
     val n = axis.points.size
-    fun wrap(index: Int) = wrapIndex(index, n)
+    fun wrap(index: Int) = if (axis.closed) wrapIndex(index, n) else index.coerceIn(0, n - 1)
     val (tx, ty) = axisTangent(axis, best.index)
     val a = axis.points[best.index]
     val b = axis.points[wrap(best.index + 1)]
@@ -284,7 +302,10 @@ private fun insideBend(axis: ProgressAxis, point: MetricPoint, best: Candidate, 
     if (tooTight(best.index)) return true
     for (direction in intArrayOf(-1, 1)) {
         var step = 1
-        while (step < n / 2 && near(best.index + direction * step)) {
+        while (step < n / 2 &&
+            (axis.closed || best.index + direction * step in 0 until segmentCount(axis)) &&
+            near(best.index + direction * step)
+        ) {
             if (tooTight(best.index + direction * step)) return true
             step++
         }
@@ -306,7 +327,8 @@ private fun nearestOtherLeg(
     val (mx, my) = movement
     val fit = mx * tx + my * ty
     for (offset in -separation + 1 until separation) {
-        val other = wrapIndex(index + offset, n)
+        val other = if (axis.closed) wrapIndex(index + offset, n) else index + offset
+        if (other < 0 || other >= segmentCount(axis)) continue
         val (ox, oy) = axisTangent(axis, other)
         if (ox * tx + oy * ty >= 0.0) continue
         if (mx * ox + my * oy < fit) continue
@@ -316,31 +338,44 @@ private fun nearestOtherLeg(
     return nearest
 }
 
-/** The axis point nearest [progressMeters] along the axis (modulo its length), by its cumulative distances. */
+/**
+ * The axis point nearest [progressMeters] along the axis (modulo its length; on an open axis,
+ * clamped to it), by its cumulative distances.
+ */
 fun nearestAxisIndex(axis: ProgressAxis, progressMeters: Double): Int {
     val n = axis.points.size
     if (n == 0) return 0
     val cumulative = axis.cumulative
     val length = axis.lengthMeters
     if (cumulative.size != n || !(length > 0.0) || !progressMeters.isFinite()) {
-        return wrapIndex(lround(progressMeters / axis.spacingMeters), n)
+        val index = lround(progressMeters / axis.spacingMeters)
+        return if (axis.closed) wrapIndex(index, n) else index.coerceIn(0, n - 1)
     }
-    val progress = progressMeters - floor(progressMeters / length) * length
+    val progress = if (axis.closed) {
+        progressMeters - floor(progressMeters / length) * length
+    } else {
+        progressMeters.coerceIn(0.0, length)
+    }
     var low = 0
     var high = n - 1
     while (low < high) {
         val middle = (low + high + 1) shr 1
         if (cumulative[middle] <= progress) low = middle else high = middle - 1
     }
+    if (!axis.closed && low == n - 1) return low
     val next = if (low + 1 < n) cumulative[low + 1] else length
     return if (progress - cumulative[low] >= next - progress) (low + 1) % n else low
 }
 
-/** Unit tangent of the axis at [index], toward index + 1. Zero for a degenerate segment. */
+/**
+ * Unit tangent of the axis at [index], toward index + 1 (at an open axis's last point, from the one
+ * before). Zero for a degenerate segment.
+ */
 private fun axisTangent(axis: ProgressAxis, index: Int): Pair<Double, Double> {
     val n = axis.points.size
-    val a = axis.points[index]
-    val b = axis.points[(index + 1) % n]
+    val from = if (axis.closed) index else min(index, n - 2)
+    val a = axis.points[from]
+    val b = axis.points[(from + 1) % n]
     val ex = b.eastMeters - a.eastMeters
     val ey = b.northMeters - a.northMeters
     val length = hypot(ex, ey)
@@ -367,9 +402,15 @@ private fun angularDifference(to: Double, from: Double) = atan2(sin(to - from), 
 /**
  * The progress axis of [referenceTrace] (a reference-eligible, gap-free lap) around [origin], with
  * index 0 where the lap's path crosses [gate] (else the point closest to its midpoint). Invalid for
- * fewer than 12 distinct points or a loop outside 50 m to 30 km.
+ * fewer than 12 distinct points or a loop outside 50 m to 30 km. Not [closed], for a point-to-point
+ * run (FBBD-162), the axis is the run's own path from its start (at the start line) to its finish.
  */
-fun buildProgressAxis(referenceTrace: LapTrace, origin: GeoCoordinate, gate: TimingGate): ProgressAxis {
+fun buildProgressAxis(
+    referenceTrace: LapTrace,
+    origin: GeoCoordinate,
+    gate: TimingGate,
+    closed: Boolean = true,
+): ProgressAxis {
     val invalid = ProgressAxis()
     if (referenceTrace.points.size < 12) return invalid
     val points = mutableListOf<MetricPoint>()
@@ -379,6 +420,7 @@ fun buildProgressAxis(referenceTrace: LapTrace, origin: GeoCoordinate, gate: Tim
         if (points.isEmpty() || distance(points.last(), point) >= 0.5) points += point
     }
     if (points.size < 12) return invalid
+    if (!closed) return openProgressAxis(points, origin)
     points += points.first()
     var length = 0.0
     for (i in 1 until points.size) length += distance(points[i - 1], points[i])
@@ -422,10 +464,26 @@ fun buildProgressAxis(referenceTrace: LapTrace, origin: GeoCoordinate, gate: Tim
     return ProgressAxis(rotated, cumulative, length, length / rotated.size, origin, true)
 }
 
+/** The open axis along [points] (distinct, in driving order) from the first to the last. */
+private fun openProgressAxis(points: List<MetricPoint>, origin: GeoCoordinate): ProgressAxis {
+    var length = 0.0
+    for (i in 1 until points.size) length += distance(points[i - 1], points[i])
+    if (!(length >= 50 && length <= 30000)) return ProgressAxis()
+    val pointCount = lround(length / 2.0).coerceIn(32, 15000)
+    val resampled = resampleByArcLength(points, pointCount - 1)
+    if (resampled.size != pointCount - 1) return ProgressAxis()
+    val open = resampled + points.last()
+    val cumulative = DoubleArray(open.size)
+    for (i in 1 until open.size) cumulative[i] = cumulative[i - 1] + distance(open[i - 1], open[i])
+    val total = cumulative.last()
+    return ProgressAxis(open, cumulative, total, total / (open.size - 1), origin, valid = true, closed = false)
+}
+
 /**
  * Heading at each axis point as the circular mean of the direction of travel within
  * [smoothingMeters] each side, wrapping around the loop; curvature as the signed change to the
- * next point's heading over the point spacing.
+ * next point's heading over the point spacing. An open axis keeps its end directions past its ends,
+ * and its last point has no curvature.
  */
 fun computeTrackFeatures(axis: ProgressAxis, smoothingMeters: Double): TrackFeatures {
     if (!axis.valid || axis.points.size < 4 || !(axis.spacingMeters > 0.0) ||
@@ -441,7 +499,7 @@ fun computeTrackFeatures(axis: ProgressAxis, smoothingMeters: Double): TrackFeat
         var sumEast = 0.0
         var sumNorth = 0.0
         for (offset in -radius..radius) {
-            val (tx, ty) = tangents[wrapIndex(i + offset, n)]
+            val (tx, ty) = tangents[if (axis.closed) wrapIndex(i + offset, n) else (i + offset).coerceIn(0, n - 1)]
             sumEast += tx
             sumNorth += ty
         }
@@ -451,7 +509,8 @@ fun computeTrackFeatures(axis: ProgressAxis, smoothingMeters: Double): TrackFeat
         TrackFeatureSample(
             axis.cumulative[it],
             heading[it],
-            angularDifference(heading[(it + 1) % n], heading[it]) / axis.spacingMeters,
+            angularDifference(heading[if (axis.closed) (it + 1) % n else min(it + 1, n - 1)], heading[it]) /
+                axis.spacingMeters,
         )
     }
     return TrackFeatures(samples, smoothingMeters, true)
@@ -517,7 +576,15 @@ fun projectSample(
 
     val best = bestCandidateInRange(axis, localPoint, startIndex, count)
     if (best.index < 0 || best.distance > lockProximityMeters) return invalid
-    if (count < n && best.index == wrapIndex(startIndex + count - 1, n) && best.fraction >= 1.0) return invalid
+    // At the end of the window's last segment the fix may be past the window; an open axis's last
+    // segment ends at the finish.
+    val windowEnd = startIndex + count - 1
+    val atWindowEnd = if (axis.closed) {
+        count < n && best.index == wrapIndex(windowEnd, n)
+    } else {
+        windowEnd < segmentCount(axis) - 1 && best.index == windowEnd
+    }
+    if (atWindowEnd && best.fraction >= 1.0) return invalid
     val minimumSeparation = max(3, lround(windowedSeparationMeters / axis.spacingMeters))
     val windowed = bestCandidateInRange(axis, localPoint, startIndex, count, best.index, minimumSeparation)
     if (windowed.index >= 0 && best.distance > windowed.distance * ambiguityRatio) {
@@ -528,9 +595,9 @@ fun projectSample(
     if (!headingAgrees(axis, best.index, movement, minimumHeadingCosine)) return invalid
 
     var delta = best.progressMeters - context.lastProgressMeters
-    if (delta < -axis.lengthMeters / 2) {
+    if (axis.closed && delta < -axis.lengthMeters / 2) {
         delta += axis.lengthMeters
-    } else if (delta > axis.lengthMeters / 2) {
+    } else if (axis.closed && delta > axis.lengthMeters / 2) {
         delta -= axis.lengthMeters
     }
     if (delta < -BackwardToleranceMeters) return invalid
@@ -542,7 +609,8 @@ fun projectSample(
  * [axis], in time order. A GPS gap or a stretch [projectSample] cannot lock onto ends the current
  * segment instead of bridging it. Progress is unwrapped within the lap: a fix just after the lap's
  * timed start that projects just before progress 0 is a small negative value, and fixes past the
- * finish continue beyond the axis length. Progress never falls within a segment.
+ * finish continue beyond the axis length. Progress never falls within a segment. On an open axis
+ * nothing is unwrapped: progress is where the fix is along the run.
  */
 fun projectLapTrace(
     axis: ProgressAxis,
@@ -555,6 +623,9 @@ fun projectLapTrace(
     val latitudeSegments = session.sampledSegments(Aliases.LATITUDE, startTime, endTime, 4000)
     val length = axis.lengthMeters
     val allowance = min(SegmentStartBackwardMeters, length / 4)
+
+    // The whole laps to add to a progress [behind] metres short of where it belongs; none on an open axis.
+    fun laps(behind: Double) = if (axis.closed) ceil(behind / length) * length else 0.0
 
     var current = ProgressSegment()
     var context = ProjectionContext()
@@ -599,7 +670,7 @@ fun projectLapTrace(
                 anchor = s.progressMeters
                 anchorTime = s.telemetryTime
             }
-            val from = progress + ceil((anchor - allowance - progress) / length) * length
+            val from = progress + laps(anchor - allowance - progress)
             val fits = if (behind) {
                 from < first - allowance && from - anchor <= reach(time - anchorTime)
             } else {
@@ -646,9 +717,9 @@ fun projectLapTrace(
             var progress = projected.progressMeters
             val last = lastProgress
             if (last == null) {
-                if (progress > length / 2 && time - startTime <= MaximumGapSeconds) progress -= length
+                if (axis.closed && progress > length / 2 && time - startTime <= MaximumGapSeconds) progress -= length
             } else if (current.samples.isEmpty()) {
-                progress += ceil((last - allowance - progress) / length) * length
+                progress += laps(last - allowance - progress)
                 val ahead = progress - last
                 val sinceLast = time - lastProgressTime!!
                 var run = if (ahead > ownReach(sinceLast)) conflictingRun(progress, time, behind = true) else null
@@ -662,7 +733,7 @@ fun projectLapTrace(
                     continue
                 }
             } else {
-                progress += ceil((last - BackwardToleranceMeters - progress) / length) * length
+                progress += laps(last - BackwardToleranceMeters - progress)
                 progress = max(progress, last)
             }
             lastProgress = progress

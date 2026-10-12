@@ -122,7 +122,9 @@ fun timePopulation(
 ): PopulationSectors? {
     val gate = axisLaps.startGate ?: return null
     val trace = axisLaps.lapTraces.firstOrNull { it.lapNumber == axisLapNumber } ?: return null
-    val axis = buildProgressAxis(trace, geoMidpoint(gate.endpointA, gate.endpointB), gate)
+    val axis = buildProgressAxis(
+        trace, geoMidpoint(gate.endpointA, gate.endpointB), gate, closed = axisLaps.finishGate == null,
+    )
     if (!axis.valid) return null
     val traces = population.map { projectLapTrace(axis, it.session, it.start, it.end) }
     val times = population.mapIndexed { i, lap ->

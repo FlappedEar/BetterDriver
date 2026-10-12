@@ -109,6 +109,8 @@ data class LapSession(
     val lapTraces: List<LapTrace> = emptyList(),
     /** Index into [timedLaps] of the fastest eligible lap. */
     val fastestLapIndex: Int? = null,
+    /** A point-to-point track's finish (FBBD-155): the laps are runs, and their axis is open (FBBD-162). */
+    val finishGate: TimingGate? = null,
 )
 
 /** Finds the fastest eligible lap (the first on a tie) and sets every eligible lap's delta to it. */
