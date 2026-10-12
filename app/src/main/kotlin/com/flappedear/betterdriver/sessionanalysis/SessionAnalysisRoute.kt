@@ -92,6 +92,7 @@ private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
             val earlier = earlierSessions(store, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
             summarizeProgress(loaded.analysis.laps, earlier.sessions).copy(
                 changes = earlier.previous?.let { segmentChanges(loaded.analysis, it) }.orEmpty(),
+                earlierLimited = earlier.limited,
             )
         }
     }
