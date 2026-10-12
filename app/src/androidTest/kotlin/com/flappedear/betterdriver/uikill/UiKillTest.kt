@@ -1,14 +1,12 @@
 package com.flappedear.betterdriver.uikill
 
 import android.content.Context
-import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
-import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -39,11 +37,13 @@ import java.util.concurrent.atomic.AtomicLong
  * Kills the UI process during a recording (FBBD-72): the recording carries on in the recorder's
  * process, the UI reconnects to it, and the session is exactly what an uninterrupted run gives.
  *
- * Two phases, run by .github/scripts/ui-kill.sh on the emulator with `am instrument --no-restart`:
- * [startRecording] presses START with Demo GNSS and leaves the session recording; the script opens
- * the app on the track screen, SIGKILLs the UI process (as Android does to free memory), checks the
- * recorder process lives on, and waits; [reconnectAndStop] opens the app again, checks it shows the
- * running session, stops it with the 3 s hold and checks every fix of the whole session is there.
+ * Three phases, run by .github/scripts/ui-kill.sh on the emulator. [seed] writes the setup (Demo
+ * GNSS as the receiver). The script opens the app, and [startRecording] attaches to it (`am
+ * instrument --no-restart`, so the app and its recorder are never force-stopped), presses START and
+ * leaves the session recording. The script opens the app on the track screen, SIGKILLs the UI
+ * process (as Android does to free memory), checks the recorder process lives on, waits, and opens
+ * the app again; [reconnectAndStop] attaches to it, checks it shows the running session, stops it
+ * with the 3 s hold and checks every fix of the whole session is there.
  * Demo GNSS sends the same fix for each index ([FakeGnss]), so any lost or repeated fix shows.
  */
 @RunWith(AndroidJUnit4::class)
@@ -60,7 +60,7 @@ class UiKillTest {
     private val gnss = FakeGnss()
 
     @Test
-    fun startRecording() {
+    fun seed() {
         // A clean start: no sessions, Demo GNSS as the receiver, setup done so the app opens on Drive.
         sessions.deleteRecursively()
         marker.delete()
@@ -72,8 +72,11 @@ class UiKillTest {
         app.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).edit()
             .putBoolean("setup_done", true)
             .commit()
+    }
 
-        openApp()
+    @Test
+    fun startRecording() {
+        // The script opened the app on Drive.
         val start = device.wait(Until.findObject(By.text("START")), LoadTimeoutMs)
         checkNotNull(start) { "Drive shows no START" }.click()
         waitForTrackScreen()
@@ -100,8 +103,8 @@ class UiKillTest {
         assertEquals(id, before.id)
         assertEquals("still recording after the UI was killed", SessionState.RECORDING, before.state)
 
-        // Opening the app reconnects to the running session and shows it on the track screen.
-        openApp()
+        // The script opened the app again: it reconnects to the running session and shows it on the
+        // track screen.
         waitForTrackScreen()
         val live = waitForRecorder("the UI to reconnect") { it.recording }.live!!
         assertEquals("reconnected to another session", id, live.sessionId)
@@ -153,11 +156,6 @@ class UiKillTest {
         ByteArrayOutputStream().also { VboExporter.export(data, it) }.toString(Charsets.UTF_8.name())
 
     private fun String.withoutSessionId(id: String) = replace(id, "<session>")
-
-    private fun openApp() {
-        val flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-        app.startActivity(Intent(app, MainActivity::class.java).addFlags(flags))
-    }
 
     /** The track screen's status strip shows the receiver's rate once fixes arrive ("25 Hz · 14 sats"). */
     private fun waitForTrackScreen() {

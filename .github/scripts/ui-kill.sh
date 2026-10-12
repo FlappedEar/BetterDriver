@@ -1,14 +1,16 @@
 #!/usr/bin/env bash
 # The UI-process kill test (FBBD-72), on the emulator emulator-smoke.sh runs, after the smoke tests
-# and with the APKs they built. UiKillTest runs in two phases with the UI process SIGKILLed between
+# and with the APKs they built. UiKillTest runs in phases with the UI process SIGKILLed between
 # them, as Android does to free memory:
-#   1. startRecording: START with Demo GNSS; the session records in the recorder's process.
-#   2. The app is opened on the track screen, then its UI process is killed. The recorder process
+#   1. seed: Demo GNSS as the receiver, setup done.
+#   2. startRecording: the app is opened, then START with Demo GNSS; the session records in the
+#      recorder's process.
+#   3. The app is opened on the track screen, then its UI process is killed. The recorder process
 #      must live on, and the session keeps recording with no UI for a while.
-#   3. reconnectAndStop: the app opens on the running session, stops it, and checks that every fix
-#      is there and the VBO is the one of an uninterrupted recording.
-# --no-restart keeps `am instrument` from force-stopping the app (and so the recorder) when a phase
-# starts or ends.
+#   4. reconnectAndStop: the app is opened again; it must show the running session. It is stopped,
+#      and every fix must be there and the VBO the one of an uninterrupted recording.
+# The phases after seed attach to the running app with --no-restart: a plain `am instrument`
+# force-stops the app, and so the recorder, when it starts and ends.
 set -uo pipefail
 app=com.flappedear.betterdriver
 runner=$app.test/androidx.test.runner.AndroidJUnitRunner
@@ -16,19 +18,25 @@ test=$app.uikill.UiKillTest
 noUiSeconds=10
 
 fail() {
-  echo "::error::UI-process kill test: $*"
+  echo "::error title=UI-process kill test::$*"
   exit 1
 }
 
+# phase NAME [--no-restart]
 phase() {
   echo "== UiKillTest#$1"
-  out=$(adb shell am instrument -w --no-restart -e class "$test#$1" "$runner" 2>&1)
+  out=$(adb shell am instrument -w ${2:-} -e class "$test#$1" "$runner" 2>&1)
   echo "$out"
-  echo "$out" | grep -q "^OK (1 test)" || fail "phase $1 failed"
+  echo "$out" | grep -q "^OK (1 test)" || fail "phase $1 failed: $(echo "$out" | grep -m3 -E 'Error|Exception|expected' | tr '\n' ' ')"
 }
 
 pids() {
   adb shell pidof "$1" 2>/dev/null | tr -d '\r'
+}
+
+open_app() {
+  adb shell am start -W -n "$app/.MainActivity" >/dev/null || fail "the app did not open"
+  sleep 3
 }
 
 # Kills a process as root: the emulator's google_apis image has su; adb root is the fallback.
@@ -40,11 +48,12 @@ kill9() {
 adb install -r -g app/build/outputs/apk/debug/app-debug.apk || fail "app not installed"
 adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || fail "test APK not installed"
 
-phase startRecording
+phase seed
+open_app
+phase startRecording --no-restart
 
 # The UI on the track screen, as a driver would have it, then killed.
-adb shell am start -W -n "$app/.MainActivity" >/dev/null
-sleep 3
+open_app
 ui=$(pids "$app")
 recorder=$(pids "$app:recorder")
 [ -n "$ui" ] || fail "no UI process"
@@ -52,7 +61,7 @@ recorder=$(pids "$app:recorder")
 echo "Killing the UI process $ui; the recorder is $recorder."
 kill9 "$ui" || fail "could not kill the UI process"
 # Home, so Android does not bring the UI straight back; anything it restarted is killed too, so the
-# next phase starts the UI afresh.
+# app is opened afresh below.
 adb shell input keyevent KEYCODE_HOME
 sleep 2
 for _ in 1 2 3; do
@@ -67,5 +76,6 @@ echo "Recording with no UI for $noUiSeconds s."
 sleep "$noUiSeconds"
 [ "$(pids "$app:recorder")" = "$recorder" ] || fail "the recorder process did not survive the UI kill"
 
-phase reconnectAndStop
+open_app
+phase reconnectAndStop --no-restart
 echo "UI-process kill test passed."
