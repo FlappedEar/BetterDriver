@@ -178,10 +178,11 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composab
                 "To gain",
                 gainText(ui, ::formatDelta),
                 "s",
-                if (ui.gainSeconds != null) c.gain else c.textDim,
+                if (ui.gainSeconds != null && !ui.gainConfidence.doubtful) c.gain else c.textDim,
                 Modifier.weight(0.8f),
             )
         }
+        if (ui.gainSeconds != null) ConfidenceNote(ui.gainConfidence, about = "To gain")
         if (ui.theoreticalMillis != null) ProvenanceLegend()
         optimalVideo?.invoke()
     }

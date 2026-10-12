@@ -57,7 +57,10 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
                 meters.forEach(PassMeter::lost)
                 continue
             }
-            for (m in meters) m.add(along, trace.timesMicros[i], trace.speedsKmh[i])?.let { passes += it }
+            // A pass keeps whether its speeds were measured (FBBD-177), so a reference built from
+            // worked-out speeds never gives a precise speed cue.
+            val measured = trace.speedsMeasured?.get(i) ?: true
+            for (m in meters) m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured)?.let { passes += it }
         }
         meters.mapNotNullTo(passes) { it.finish() }
         return passes

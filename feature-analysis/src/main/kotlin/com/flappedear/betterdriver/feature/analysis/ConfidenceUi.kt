@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.confidence.Graded
+import com.flappedear.betterdriver.analysis.confidence.bestGapConfidence
 import com.flappedear.betterdriver.recorder.Confidence
 
 // No precise advice from weak evidence (FBBD-177): every conclusion the analysis screen draws
@@ -45,6 +47,20 @@ fun timeText(seconds: Double, confidence: ConfidenceUi, format: (Double) -> Stri
         Confidence.MEDIUM -> SomeTimeText
         Confidence.LOW -> UnclearText
     }
+
+/**
+ * Of the time to gain to the theoretical best (FBBD-177): the weakest confidence of the corners and
+ * straights that add to it (each leaving more than [MeaningfulLossSeconds]), and for each of those
+ * below High, its name and why.
+ */
+fun totalGainConfidence(analysis: SessionAnalysis): ConfidenceUi {
+    val graded = analysis.summary?.gains.orEmpty()
+        .filter { (it.lossSeconds ?: 0.0) > MeaningfulLossSeconds }
+        .map { it.name to analysis.bestGapConfidence(it.segmentId, it.lossSeconds ?: 0.0, it.sourceLapReference) }
+    val weak = graded.filter { it.second.level != Confidence.HIGH }.sortedBy { it.second.level }
+    val level = Confidence.lowest(graded.map { it.second.level })
+    return ConfidenceUi(level, weak.joinToString("; ") { (name, g) -> "$name: ${g.why}" })
+}
 
 /** A corner detail value ([text]) at [confidence]: [Missing] at Low, since nothing precise rests on it. */
 fun valueText(text: String, confidence: ConfidenceUi?): String =

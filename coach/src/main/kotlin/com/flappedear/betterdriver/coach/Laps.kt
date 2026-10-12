@@ -32,6 +32,7 @@ class LapCollector(track: Track) {
     private val points = mutableListOf<Xy>()
     private val times = mutableListOf<Long>()
     private val speeds = mutableListOf<Double>()
+    private val measuredSpeeds = mutableListOf<Boolean>()
 
     /** Position of the last fix in [frame], and its speed in km/h. */
     var position: Xy? = null
@@ -63,6 +64,7 @@ class LapCollector(track: Track) {
             points += p
             times += fix.tMicros - timer.lapStartMicros
             speeds += kmh
+            measuredSpeeds += speedMeasured
         }
         return events
     }
@@ -78,6 +80,7 @@ class LapCollector(track: Track) {
                 listOf(start) + points + end,
                 listOf(0L) + times + lap.timeMicros,
                 listOf(speeds.firstOrNull() ?: kmh) + speeds + kmh,
+                listOf(measuredSpeeds.firstOrNull() ?: speedMeasured) + measuredSpeeds + speedMeasured,
             )
             finished += TracedLap(lap, trace)
         }
@@ -85,6 +88,7 @@ class LapCollector(track: Track) {
         points.clear()
         times.clear()
         speeds.clear()
+        measuredSpeeds.clear()
     }
 
     private fun derivedKmh(p: Xy, t: Long): Double {

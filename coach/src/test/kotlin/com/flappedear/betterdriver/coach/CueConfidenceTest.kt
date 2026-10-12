@@ -123,6 +123,49 @@ class CueConfidenceTest {
     }
 
     @Test
+    fun `a reference built from speeds worked out from positions never gives a precise cue`() {
+        val derived = sim.drive(List(3) { steady }).fixes.map { it.copy(speedKmh = null) }
+        val laps = tracedLaps(track, derived.asSequence())
+        assertTrue(laps.all { l -> l.trace.speedsMeasured.orEmpty().none { it } })
+        val reference = assertNotNull(buildReference(track, listOf(SessionLaps("earlier", laps))))
+        assertTrue(reference.targets.isNotEmpty())
+        assertTrue(reference.targets.none { it.speedMeasured })
+        // Today's speeds are measured; the target's are not, so the cue says no number.
+        val engine = CueEngine(track, CoachSettings(Verbosity.Focus), reference)
+        val cue = cornerCues(engine, sim.drive(List(5) { early2 }).fixes).first()
+        assertEquals(Confidence.MEDIUM, cue.confidence)
+        assertTrue(cue.doubts.any { it.code == CueDoubts.SPEED_NOT_MEASURED }, cue.confidenceText())
+        assertFalse(cue.text.any(Char::isDigit) && "metres" in cue.text, cue.text)
+        // Measured speeds keep their flag through the lap's trace.
+        val measured = tracedLaps(track, sim.drive(List(2) { steady }).fixes.asSequence())
+        assertTrue(measured.all { l -> l.trace.speedsMeasured.orEmpty().all { it } })
+    }
+
+    @Test
+    fun `the pass after a cue is not judged when its positions stopped`() {
+        val drive = sim.drive(List(6) { early2 })
+        fun run(fixes: List<CoachFix>): Pair<List<Cue>, List<CueResult>> {
+            val engine = CueEngine(track, CoachSettings(Verbosity.Full), reference(steady, steady, steady))
+            val updates = fixes.map { engine.update(it) }
+            return updates.flatMap { it.cues }.filter { it.kind == CueKind.Corner } to updates.flatMap { it.results }
+        }
+        val (cues, results) = run(drive.fixes)
+        val cue = cues.first { it.corner == 2 }
+        assertTrue(results.any { it.cue.seq == cue.seq })
+        // The lap the cue was given on loses its positions before the braking point.
+        val brake = sim.brakePoint(1, early2)
+        val gapped = drive.fixes.filterIndexed { i, f ->
+            val inLap = ((drive.distance[i] % sim.length) + sim.length) % sim.length
+            val afterCue = f.tMicros > cue.tMicros && f.tMicros < cue.tMicros + 20_000_000L
+            !(afterCue && inLap in (brake - 28.0)..(brake - 2.0))
+        }
+        val (sameCues, weakResults) = run(gapped)
+        val same = sameCues.first { it.corner == 2 }
+        assertEquals(cue.text, same.text)
+        assertTrue(weakResults.none { it.cue.seq == same.seq }, "results: ${weakResults.map { it.improved }}")
+    }
+
+    @Test
     fun `a cue's confidence and doubts are logged and read back`() {
         val cue = Cue(
             7, 0, 4, CueKind.Corner, "Turn 2, brake a little later", 2, Advice.BrakeLater(10, precise = false),

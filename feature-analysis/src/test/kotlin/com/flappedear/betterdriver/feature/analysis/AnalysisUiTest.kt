@@ -91,6 +91,7 @@ class AnalysisUiTest {
         assertEquals(2, focus.compareIndex)
         assertEquals(3, focus.compareNumber)
         assertEquals(Confidence.HIGH, focus.confidence.level)
+        assertEquals(ConfidenceUi.High, ui.gainConfidence)
         assertEquals("+0.20", ui.gains.single().lossText { String.format(Locale.ROOT, "+%.2f", it) })
     }
 
@@ -116,6 +117,12 @@ class AnalysisUiTest {
         assertEquals(Confidence.MEDIUM, gain.confidence.level)
         assertEquals(SomeTimeText, gain.lossText { "+%.2f".format(it) })
         assertEquals(true, gain.confidence.note.startsWith("Medium confidence · "))
+        // The time to gain it adds to is no more certain than it: said in a word, with why.
+        assertEquals(Confidence.MEDIUM, ui.gainConfidence.level)
+        assertEquals(true, ui.gainConfidence.why.startsWith("Corner 1: "))
+        assertEquals(SomeTimeText, gainText(ui.copy(gainSeconds = 0.2)) { "%.2f".format(it) })
+        val sure = ui.copy(gainSeconds = 0.2, gainConfidence = ConfidenceUi.High)
+        assertEquals("≈-0.20", gainText(sure) { String.format(Locale.ROOT, "%.2f", it) })
     }
 
     @Test

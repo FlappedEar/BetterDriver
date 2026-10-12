@@ -144,6 +144,11 @@ data class AnalysisUi(
     val theoreticalMillis: Long?,
     /** Fastest lap minus theoretical best, seconds. */
     val gainSeconds: Double?,
+    /**
+     * How far [gainSeconds] can be trusted (FBBD-177): the weakest of the corners and straights it
+     * adds up; below High it is shown without its number.
+     */
+    val gainConfidence: ConfidenceUi = ConfidenceUi.High,
     val sectors: List<SectorRow>,
     /** Why there are no sectors, or null. */
     val sectorsNote: String?,
@@ -246,6 +251,7 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         bestLapMillis = millis(fastest.durationSeconds),
         theoreticalMillis = total?.let(::millis),
         gainSeconds = total?.let { fastest.durationSeconds - it },
+        gainConfidence = totalGainConfidence(analysis),
         sectors = sectors,
         sectorsNote = sectorsNote,
         gains = gains(analysis),

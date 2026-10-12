@@ -414,7 +414,9 @@ class CueEngine(
         lapPasses += pass
         val cue = openCues.remove(pass.corner)
         val before = cue?.before
-        return if (cue == null || before == null) {
+        // A pass too weak to coach from (FBBD-177) says nothing about whether the cue worked: no
+        // result, so the review shows no gain and no Better or Not yet for it.
+        return if (cue == null || before == null || pass.unusable()) {
             null
         } else {
             CueResult(now, cue, pass, improved(cue.advice, before, pass), before.timeMicros - pass.timeMicros)
