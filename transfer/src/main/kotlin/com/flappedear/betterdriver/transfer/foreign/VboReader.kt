@@ -1,0 +1,214 @@
+@file:Suppress("MagicNumber") // Field layouts and unit conversions of the VBO format.
+
+package com.flappedear.betterdriver.transfer.foreign
+
+import com.flappedear.betterdriver.recorder.vbo.VboWriter
+import java.io.Reader
+import java.time.LocalDate
+import java.time.ZoneOffset
+
+/**
+ * Reads Racelogic VBO text (FBBD-164), as Racelogic loggers, Circuit Tools, RaceChrono and this
+ * app's own VboWriter write it
+ * (https://developers.racelogic.co.uk/Portal/Tutorials/tutorialVBOfilestructure.html):
+ *
+ * - the date comes from the "File created on dd/mm/yyyy" line, the time of day from the time
+ *   column (UTC hhmmss.ss); a time that jumps back by more than 12 hours crossed midnight;
+ * - latitude and longitude are minutes, longitude positive west;
+ * - columns are found by their [column names] name, else their [header] name; satellites carry
+ *   Racelogic's flag bits (64 DGPS, 128 brake trigger), which are masked off;
+ * - lateral and longitudinal acceleration columns become the app's accelerometer channels, any
+ *   other numeric column an extra channel with its [channel units] unit; video columns are dropped.
+ *
+ * Without a date line the file's times are put on [fallbackDate].
+ */
+internal class VboReader(private val fallbackDate: LocalDate) {
+
+    fun read(input: Reader, sink: ImportSink) {
+        val lines = LineReader(input)
+        val parse = Parse(sink)
+        while (true) {
+            val line = lines.next() ?: break
+            parse.line(line.trim())
+        }
+        if (!parse.sawData) throw ImportFormatException("the VBO file has no [data] section")
+    }
+
+    /** One file being read, line by line. */
+    private inner class Parse(private val sink: ImportSink) {
+        private var date: LocalDate? = null
+        private var section = ""
+        private val headers = ArrayList<String>()
+        private val units = ArrayList<String>()
+        private var names: List<String>? = null
+        private var layout: Layout? = null
+        private var day = 0L
+        private var lastMsOfDay = -1L
+
+        val sawData get() = layout != null
+
+        fun line(line: String) {
+            val isSection = line.startsWith("[") && line.endsWith("]")
+            when {
+                line.isEmpty() -> Unit
+                isSection -> section = line.lowercase()
+                section == "" -> if (date == null) date = dateIn(line)
+                section == "[header]" -> headers += line.lowercase()
+                section == "[channel units]" -> units += line
+                section == "[column names]" -> if (names == null) names = line.split(Whitespace)
+                section == "[data]" -> data(line)
+                else -> Unit // [comments], [laptiming], [avi] and sections a newer logger adds
+            }
+        }
+
+        private fun data(line: String) {
+            val l = layout ?: Layout.of(names ?: headers, headers, units).also {
+                layout = it
+                sink.extras(it.extras.map { e -> ExtraColumn(e.name, e.unit) })
+            }
+            val row = line.split(Whitespace)
+            val msOfDay = if (row.size == l.width) timeOfDayMillis(row[l.time]) else null
+            if (msOfDay == null) {
+                sink.skipped()
+            } else {
+                if (lastMsOfDay >= 0 && msOfDay < lastMsOfDay - HalfDayMs) day++
+                lastMsOfDay = msOfDay
+                val midnight = (date ?: fallbackDate).plusDays(day).atStartOfDay(ZoneOffset.UTC)
+                sink.point(l.point(row, (midnight.toInstant().toEpochMilli() + msOfDay) * MicrosPerMilli))
+            }
+        }
+    }
+
+    /** Where each value is in a data row. */
+    @Suppress("LongParameterList") // One index per known column.
+    private class Layout(
+        val width: Int,
+        val time: Int,
+        val lat: Int,
+        val lon: Int,
+        val speed: Int,
+        val speedFactor: Double,
+        val heading: Int,
+        val height: Int,
+        val sats: Int,
+        val forward: Int,
+        val lateral: Int,
+        val accelFactor: Double,
+        val extras: List<Extra>,
+    ) {
+        fun point(row: List<String>, utcMicros: Long): ImportPoint {
+            fun v(i: Int) = if (i < 0) Double.NaN else row[i].toDoubleOrNull() ?: Double.NaN
+            return ImportPoint(
+                utcMicros = utcMicros,
+                lat = v(lat) / 60.0,
+                lon = -v(lon) / 60.0,
+                speedKmh = v(speed) * speedFactor,
+                headingDeg = v(heading),
+                altM = v(height),
+                sats = v(sats).let { if (it.isNaN()) it else (it.toLong() and SatsMask).toDouble() },
+                accelForwardG = v(forward) * accelFactor,
+                accelLateralG = v(lateral) * accelFactor,
+                extras = if (extras.isEmpty()) {
+                    ImportPoint.EmptyValues
+                } else {
+                    DoubleArray(extras.size) { v(extras[it].index) }
+                },
+            )
+        }
+
+        companion object {
+            @Suppress("CyclomaticComplexMethod", "LongMethod") // One lookup per known column.
+            fun of(names: List<String>, headers: List<String>, units: List<String>): Layout {
+                val width = names.size
+                // The header names, when they line up with the columns, say what a short column name means.
+                val header = if (headers.size == width) headers else List(width) { "" }
+                fun find(vararg keys: String): Int = names.indices.firstOrNull { i ->
+                    val n = names[i].lowercase()
+                    keys.any { it == n || it == header[i] }
+                } ?: -1
+                val time = find("time")
+                val lat = find("lat", "latitude")
+                val lon = find("long", "lon", "longitude")
+                if (time < 0 || lat < 0 || lon < 0) {
+                    throw ImportFormatException("the VBO file has no time, latitude or longitude column")
+                }
+                val kmh = find("velocity", "velocity kmh", "speed")
+                val knots = if (kmh < 0) find("velocity knots") else -1
+                val forward = names.indices.firstOrNull { isAccel(names[it], header[it], Longitudinal) } ?: -1
+                val lateral = names.indices.firstOrNull { isAccel(names[it], header[it], Lateral) } ?: -1
+                val known = setOf(
+                    time, lat, lon, kmh, knots, find("heading"), find("height", "altitude"),
+                    find("sats", "satellites"), forward, lateral,
+                )
+                // [channel units] lists one line per non-standard column, in column order.
+                val nonStandard = names.indices.filter { header[it] !in VboWriter.STANDARD_CHANNELS }
+                val unitOf = if (units.size == nonStandard.size) nonStandard.zip(units).toMap() else emptyMap()
+                val accelUnit = (unitOf[forward] ?: unitOf[lateral]).orEmpty().lowercase()
+                val extras = names.indices
+                    .filter { it !in known && names[it].lowercase() !in Dropped && header[it] !in Dropped }
+                    .take(ImportLimits.MaxExtraChannels)
+                    .map { Extra(it, names[it], unitOf[it].orEmpty()) }
+                return Layout(
+                    width, time, lat, lon,
+                    speed = if (kmh >= 0) kmh else knots,
+                    speedFactor = if (kmh >= 0) 1.0 else KmhPerKnot,
+                    heading = find("heading"),
+                    height = find("height", "altitude"),
+                    sats = find("sats", "satellites"),
+                    forward = forward,
+                    lateral = lateral,
+                    accelFactor = if (accelUnit.startsWith("m/s")) 1.0 / StandardGravity else 1.0,
+                    extras = extras,
+                )
+            }
+
+            private fun isAccel(name: String, header: String, kinds: Set<String>) =
+                letters(name) in kinds || letters(header) in kinds
+        }
+    }
+
+    private class Extra(val index: Int, val name: String, val unit: String)
+
+    private companion object {
+        val Whitespace = Regex("\\s+")
+        val DateIn = Regex("(\\d{1,2})/(\\d{1,2})/(\\d{4})")
+        const val HalfDayMs = 12 * 3_600_000L
+        const val MicrosPerMilli = 1_000L
+        const val KmhPerKnot = 1.852
+        const val StandardGravity = 9.80665
+        const val SatsMask = 0x3FL
+
+        /** Column names of video sync and other bookkeeping, not data. */
+        val Dropped = setOf("avifileindex", "avisynctime", "avitime", "event", "event1", "event2")
+
+        val Longitudinal = setOf(
+            "longacc", "longaccel", "longaccelg", "longitudinalacc", "longitudinalaccel",
+            "longitudinalacceleration", "longitudinalaccelerationg", "longaccg", "accellong",
+            // This app's own export (the RaceBox's axes, X forward).
+            "accelx",
+        )
+        val Lateral = setOf(
+            "latacc", "lataccel", "lataccelg", "lateralacc", "lateralaccel", "lateralacceleration",
+            "lateralaccelerationg", "lataccg", "accellat", "accely",
+        )
+
+        fun letters(s: String) = s.lowercase().filter { it in 'a'..'z' }
+
+        /** The date of a "File created on dd/mm/yyyy …" line, or null. */
+        fun dateIn(line: String): LocalDate? = DateIn.find(line)
+            ?.takeIf { line.lowercase().startsWith("file created on") }
+            ?.destructured
+            ?.let { (d, mo, y) -> runCatching { LocalDate.of(y.toInt(), mo.toInt(), d.toInt()) }.getOrNull() }
+
+        /** "095637.20" (hhmmss.ss, UTC) as milliseconds of the day, or null. */
+        fun timeOfDayMillis(s: String): Long? {
+            val v = s.toDoubleOrNull()?.takeIf { it >= 0 && it < 240_000 } ?: return null
+            val whole = v.toLong()
+            val h = whole / 10_000
+            val m = whole / 100 % 100
+            val sec = whole % 100
+            val ms = h * 3_600_000 + m * 60_000 + sec * 1_000 + Math.round((v - whole) * 1000)
+            return ms.takeIf { m < 60 && sec < 61 }
+        }
+    }
+}

@@ -73,6 +73,7 @@ fun SettingsScreen(
     onOpenCoach: () -> Unit = {},
     trackScreen: TrackScreenPrefs = TrackScreenPrefs(),
     onTrackScreen: (TrackScreenPrefs) -> Unit = {},
+    onOpenAbout: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -96,7 +97,8 @@ fun SettingsScreen(
                     RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
                     TrackScreenCard(trackScreen, onTrackScreen)
                 }
-                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, debugRows, backupRows, coach, onOpenCoach)
+                SettingsTab.App ->
+                    AppTab(version, onRunSetup, updateRow, debugRows, backupRows, coach, onOpenCoach, onOpenAbout)
             }
         }
     }
@@ -161,6 +163,7 @@ private fun TrackScreenCard(prefs: TrackScreenPrefs, onChange: (TrackScreenPrefs
     }
 }
 
+/** Permissions lists what each one that is off stops (FBBD-35); About and credits is a page of its own (FBBD-79). */
 @Composable
 private fun AppTab(
     version: String,
@@ -170,17 +173,18 @@ private fun AppTab(
     backupRows: @Composable () -> Unit,
     coach: CoachSettings,
     onOpenCoach: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
         ListRow("Track screen colours", "Green / red")
         ListRow("Spoken coach", coachLabel(coach), onClick = onOpenCoach)
+        PermissionRows()
         ListRow("Version", version)
-        // The built-in circuit directory's source (FBBD-79).
-        ListRow("Circuit list", "Wikidata · CC0 1.0")
         updateRow()
         backupRows()
         ListRow("Run setup again", onClick = onRunSetup)
+        ListRow("About and credits", onClick = onOpenAbout)
         debugRows()
     }
 }

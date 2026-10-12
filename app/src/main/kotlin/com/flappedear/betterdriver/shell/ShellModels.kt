@@ -6,12 +6,13 @@ import com.flappedear.betterdriver.setup.Setup
 /** How ready a device is: green when ready, amber when it needs attention, grey when off or missing. */
 enum class DeviceState { Ready, Attention, Off }
 
-/** One line of the first-run checklist. */
+/** One line of the first-run checklist. [notes] are extra lines under it, such as what a denied permission stops. */
 data class SetupStep(
     val title: String,
     val detail: String,
     val done: Boolean,
     val action: String?,
+    val notes: List<String> = emptyList(),
     val onAction: () -> Unit,
 )
 

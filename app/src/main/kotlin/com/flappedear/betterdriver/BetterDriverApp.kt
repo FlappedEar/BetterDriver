@@ -3,6 +3,7 @@ package com.flappedear.betterdriver
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Badge
@@ -22,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -44,6 +46,7 @@ import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.shell.AboutScreen
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
@@ -143,7 +146,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
                     Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
                 }
             }
-            coachSettings(nav, padding)
+            settingsPages(nav, padding)
             setupDestinations(nav, prefs, repo, padding)
             composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
             composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
@@ -155,6 +158,14 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
                 Box(Modifier.padding(padding)) { TrackEditorRoute(nav, tracks, id) }
             }
         }
+    }
+}
+
+/** Pages opened from Settings › App: the spoken coach (FBBD-98) and About and credits (FBBD-79). */
+private fun NavGraphBuilder.settingsPages(nav: NavHostController, padding: PaddingValues) {
+    coachSettings(nav, padding)
+    composable(Routes.About) {
+        Box(Modifier.padding(padding)) { AboutScreen(Version, onBack = { nav.popBackStack() }) }
     }
 }
 
@@ -374,6 +385,7 @@ private fun Settings(
             prefs.updateTrackBrightness(p.brightness)
             prefs.updateGnssSound(p.gnssSound)
         },
+        onOpenAbout = { nav.navigate(Routes.About) },
     )
 }
 
