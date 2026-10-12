@@ -15,6 +15,9 @@ import kotlin.math.ceil
 private const val Median = 0.5
 private const val CmPerMetre = 100.0
 
+/** Accuracies are counted to this many centimetres (100 m); any worse counts as this. */
+private const val MaxAccuracyCm = 10_000
+
 /** Receivers' horizontal accuracy channels in metres, by preference (as analysis.recorded reads them). */
 private val AccuracyChannels = listOf("gnss_hacc", "dragy_hacc")
 
@@ -101,15 +104,16 @@ internal class ChannelTimes {
 }
 
 /**
- * Values in metres counted per whole centimetre, for a median without keeping every value. The report
- * writes accuracy to the centimetre, so it reads as the exact median would.
+ * Values in metres counted per whole centimetre from 0 to 100 m, for a median without keeping every
+ * value. The report writes accuracy to the centimetre, so it reads as the exact median would; a value
+ * outside counts as the nearest end, so whatever a file holds, the counts stay this size.
  */
 internal class Centimetres {
-    private val counts = HashMap<Long, Int>()
+    private val counts = IntArray(MaxAccuracyCm + 1)
     private var total = 0
 
     fun add(metres: Double) {
-        counts.merge(Math.round(metres * CmPerMetre), 1, Int::plus)
+        counts[Math.round(metres * CmPerMetre).coerceIn(0L, MaxAccuracyCm.toLong()).toInt()]++
         total++
     }
 
@@ -117,7 +121,7 @@ internal class Centimetres {
     fun median(): Double? {
         val rank = ceil(Median * total).toInt().coerceIn(1, maxOf(total, 1))
         var seen = 0
-        for ((cm, n) in counts.toSortedMap()) {
+        for ((cm, n) in counts.withIndex()) {
             seen += n
             if (seen >= rank) return cm / CmPerMetre
         }
