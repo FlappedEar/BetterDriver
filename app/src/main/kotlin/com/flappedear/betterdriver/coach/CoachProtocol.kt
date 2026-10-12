@@ -45,3 +45,6 @@ internal fun coachDir(context: Context) = File(context.filesDir, "coach")
 internal fun coachSettings(context: Context) = CoachSettingsStore(File(coachDir(context), "settings.properties"))
 
 internal fun coachReferencesDir(context: Context) = File(coachDir(context), "references")
+
+/** The corners picked in the lap analysis for the coach, one file per track (FBBD-148). */
+internal fun coachPicks(context: Context) = CoachPicksStore(File(coachDir(context), "picks"))

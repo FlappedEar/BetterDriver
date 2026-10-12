@@ -115,29 +115,31 @@ class CoachReferenceStore(private val dir: File) {
     }
 
     fun save(reference: CoachReference) {
-        dir.mkdirs()
-        val target = fileFor(reference.trackId)
-        val tmp = File(dir, target.name + ".tmp")
-        FileOutputStream(tmp).use { out ->
-            out.write(json.encodeToString(CoachReference.serializer(), reference).toByteArray(Charsets.UTF_8))
-            out.fd.sync()
-        }
-        try {
-            Files.move(
-                tmp.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        writeAtomically(fileFor(reference.trackId), json.encodeToString(CoachReference.serializer(), reference))
     }
 
     fun delete(trackId: String) = fileFor(trackId).delete()
 
-    private fun fileFor(trackId: String): File {
-        require(trackId.isNotBlank() && trackId.all { it.isLetterOrDigit() || it in "-_" }) { "bad track id: $trackId" }
-        return File(dir, "$trackId.coach.json")
+    private fun fileFor(trackId: String): File = File(dir, "${checkedTrackId(trackId)}.coach.json")
+}
+
+/** [trackId], once it is known to be safe as a file name. */
+internal fun checkedTrackId(trackId: String): String {
+    require(trackId.isNotBlank() && trackId.all { it.isLetterOrDigit() || it in "-_" }) { "bad track id: $trackId" }
+    return trackId
+}
+
+/** Writes [text] to a temporary file, syncs it and renames it over [target], so a reader never sees half of it. */
+internal fun writeAtomically(target: File, text: String) {
+    target.parentFile?.mkdirs()
+    val tmp = File(target.parentFile, target.name + ".tmp")
+    FileOutputStream(tmp).use { out ->
+        out.write(text.toByteArray(Charsets.UTF_8))
+        out.fd.sync()
+    }
+    try {
+        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    } catch (_: AtomicMoveNotSupportedException) {
+        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
     }
 }

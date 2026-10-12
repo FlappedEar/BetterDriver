@@ -45,10 +45,10 @@ internal val PreviewUi = AnalysisUi(
         ),
     ),
     sectorsNote = null,
-    gains = listOf(GainRow("Corners 2–3", 0.21, 1), GainRow("Corner 4", 0.12, 3)),
+    gains = listOf(GainRow("Corners 2–3", 0.21, 1, "s2"), GainRow("Corner 4", 0.12, 3, "s5")),
     losses = listOf(
-        LossRow(0, 1, "Corner 4", 0.44),
-        LossRow(2, 3, "Corners 2–3", 0.28),
+        LossRow(0, 1, "Corner 4", 0.44, "s5"),
+        LossRow(2, 3, "Corners 2–3", 0.28, "s2"),
         LossRow(0, 1, "Straight 3", 0.19),
     ),
     corners = listOf(
@@ -90,6 +90,7 @@ internal val PreviewUi = AnalysisUi(
                 "the lowest speed, and when the throttle comes back.",
             0,
             1,
+            "s2",
         ),
         FocusRow(
             "Repeated loss",
@@ -99,8 +100,11 @@ internal val PreviewUi = AnalysisUi(
                 "rather than a one-off.",
             2,
             3,
+            "s5",
         ),
     ),
+    coachPickable = setOf("s2", "s5"),
+    coachPicked = setOf("s5"),
     compare = CompareUi(
         referenceNumber = 2,
         otherNumber = 3,

@@ -18,10 +18,11 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 /**
  * Next session (FBBD-20, UI-69): up to three areas to look at, each the measured observation and,
  * apart from it, what may be worth comparing. Never advice on how to drive. Tapping an area
- * compares its lap with the fastest.
+ * compares its lap with the fastest; an area at a corner can be picked for the spoken coach's next
+ * session there (FBBD-148).
  */
 @Composable
-internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
+internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit, modifier: Modifier) {
     val c = TrackTheme.colors
     Card(modifier) {
         TrackLabel("Next session · look at")
@@ -38,6 +39,7 @@ internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier)
                 Text(area.observation, color = c.text, style = MaterialTheme.typography.bodyMedium)
                 Dim(area.hypothesis)
                 area.compareNumber?.let { Dim("Tap to compare lap $it", color = c.cold) }
+                CoachPick(ui, area.cornerId, onCoachPick)
             }
         }
         Dim("Observations from this session's laps, not driving advice.")
