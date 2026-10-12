@@ -20,14 +20,17 @@ class SessionTrackTest {
     private val noLine = Track("noline", "No line", GeoPoint(50.0, 19.0))
     private val far = Track("far", "Far", GeoPoint(52.0, 21.0), startFinish = line)
 
-    private fun session(events: List<RecorderEvent>, lat: Double = 50.001) = SessionData(
+    private fun session(events: List<RecorderEvent>, lat: Double = 50.001, laterLat: Double? = null) = SessionData(
         "s",
         SessionInfo(startUtcMillis = 0, channels = GnssChannels.ALL),
         SessionState.FINISHED,
         emptyMap(),
-        listOf(
+        listOfNotNull(
             SampleSet(2, listOf(ChannelValue(GnssChannels.LAT.id, lat), ChannelValue(GnssChannels.LON.id, 19.0))),
             SampleSet(1, listOf(ChannelValue(GnssChannels.LAT.id, 0.0), ChannelValue(GnssChannels.LON.id, 0.0))),
+            laterLat?.let {
+                SampleSet(3, listOf(ChannelValue(GnssChannels.LAT.id, it), ChannelValue(GnssChannels.LON.id, 19.0)))
+            },
         ),
         events,
         null,
@@ -52,5 +55,11 @@ class SessionTrackTest {
     @Test
     fun `no track with a line nearby, no track`() {
         assertNull(trackFor(session(emptyList(), lat = 40.0), listOf(near, far, noLine)))
+    }
+
+    @Test
+    fun `a session that started away from the track takes the track it drove into`() {
+        // Started 110 km away, then drove to the track (or the track was made from it afterwards).
+        assertEquals(near, trackFor(session(emptyList(), lat = 49.0, laterLat = 50.001), listOf(far, noLine, near)))
     }
 }
