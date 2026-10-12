@@ -19,6 +19,13 @@ android {
         targetSdk = 36
         versionCode = appVersionCode
         versionName = appVersionName
+        // Emulator smoke tests (FBBD-161): ./gradlew :app:connectedDebugAndroidTest
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    sourceSets {
+        // The smoke tests' sessions are made from the analysis parity corpus (SmokeFixtures).
+        getByName("androidTest").assets.srcDir("../analysis/src/test/resources/parity/corpus")
     }
 
     buildTypes {
@@ -77,4 +84,11 @@ dependencies {
     implementation(libs.compose.material3.window.size)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.espresso.core)
+    androidTestImplementation(libs.androidx.test.espresso.intents)
 }
