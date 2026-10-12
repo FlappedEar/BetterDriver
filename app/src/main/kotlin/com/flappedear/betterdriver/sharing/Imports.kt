@@ -88,13 +88,16 @@ class Imports private constructor(private val context: Context) {
         question?.answer?.invoke(null)
     }
 
+    @Suppress("ThrowsCount") // One reason per file or moment that cannot be imported.
     private fun importNow(uri: Uri) {
         refuseWhileRecording(store)
+        if (AppDataGate.restoring) throw IOException("a backup is being restored. Import after it ends.")
         when (IncomingFiles.kindOf(read(uri, IncomingFiles::head))) {
             IncomingKind.SESSION -> receiveSession(uri)
             IncomingKind.TRACK -> addTrack(read(uri, TrackTransfer::read), { finish(it) }) { name ->
                 finish("could not store track $name", failed = true)
             }
+            IncomingKind.BACKUP -> throw BundleFormatException("this is a backup. Restore it in Settings › App.")
             IncomingKind.UNKNOWN -> throw BundleFormatException("this is not a BetterDriver session or track")
         }
     }
@@ -128,7 +131,7 @@ class Imports private constructor(private val context: Context) {
             inbox.discard(received)
             throw IOException("the session of $title is busy (GoPro video, export, send or delete). Try again after.")
         }
-        val added = inbox.accept(received, replace)
+        val added = AppDataGate.write { inbox.accept(received, replace) }
         Sessions.get(context).refresh()
         val what = if (added) "Imported the session of $title." else "Kept the session of $title already here."
         val track = received.track
@@ -148,8 +151,18 @@ class Imports private constructor(private val context: Context) {
     private fun addTrack(track: Track, done: (String) -> Unit, failed: (String) -> Unit) {
         val tracks = Tracks.get(context)
         val name = track.displayName
-        val save = { message: String -> tracks.save(track, onFailed = { failed(name) }) { done(message) } }
-        when (TrackTransfer.match(track, trackStore.get(track.id))) {
+        val here = trackStore.get(track.id)
+        // Stored only if the track here is still the one decided on; a restore (FBBD-156) or an edit
+        // in between means deciding again.
+        val save = { message: String ->
+            tracks.save(
+                track,
+                onFailed = { failed(name) },
+                still = { it == here },
+                onChanged = { io.execute { guarded { addTrack(track, done, failed) } } },
+            ) { done(message) }
+        }
+        when (TrackTransfer.match(track, here)) {
             TrackMatch.NEW -> save("Added track $name.")
             TrackMatch.SAME -> done("Track $name is already here.")
             TrackMatch.DIFFERENT -> ask(
@@ -225,7 +238,7 @@ private fun sessionBusy(context: Context, id: String): Boolean {
 }
 
 /** The file's size for progress; 0 when the provider does not say. */
-private fun sizeOf(context: Context, uri: Uri): Long = try {
+internal fun sizeOf(context: Context, uri: Uri): Long = try {
     context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
         if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
     } ?: 0L

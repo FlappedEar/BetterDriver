@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.shell
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -12,6 +14,7 @@ import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
 import com.flappedear.betterdriver.setup.migrate
+import com.flappedear.betterdriver.sharing.AppDataGate
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -61,6 +64,12 @@ class SetupRepo private constructor(context: Context) {
         }
     }
 
+    /** Reads the setup file again after a restore replaced it (FBBD-156). */
+    fun reload() = saver.execute {
+        val loaded = store.load() ?: return@execute
+        Handler(Looper.getMainLooper()).post { setup = loaded }
+    }
+
     /** Applies [change] and saves the result. Main thread only. */
     fun update(change: (Setup) -> Setup) {
         val next = change(setup)
@@ -80,11 +89,19 @@ class SetupRepo private constructor(context: Context) {
             ?: cameras.firstOrNull { sourceId == CameraIds.GOPRO_HERO11 && it.goPro == GoProModel.HERO11_BLACK }
     }
 
-    private fun save(to: SetupStore, s: Setup) = saver.execute {
-        try {
-            to.save(s)
-        } catch (e: IOException) {
-            DebugLog.e(Tag, "setup not saved", e)
+    /**
+     * A setup taken before or during a restore is stale once the restore swapped the file in; it is
+     * dropped, and [reload] shows the restored one (FBBD-156).
+     */
+    private fun save(to: SetupStore, s: Setup) {
+        val epoch = AppDataGate.epoch
+        saver.execute {
+            try {
+                val saved = AppDataGate.writeIfCurrent(epoch) { to.save(s) }
+                if (!saved) DebugLog.w(Tag, "setup change dropped by a restore")
+            } catch (e: IOException) {
+                DebugLog.e(Tag, "setup not saved", e)
+            }
         }
     }
 

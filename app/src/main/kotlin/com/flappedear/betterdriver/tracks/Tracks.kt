@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.recording.circuitsDir
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
@@ -128,13 +129,37 @@ class Tracks private constructor(private val context: Context) {
     /** The circuit list, once loaded (an empty one before). */
     val circuits: CircuitList get() = directory.list
 
-    /** Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be written. */
-    fun save(track: Track, onFailed: () -> Unit = {}, onSaved: (Track) -> Unit) = io.execute {
+    /**
+     * Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be
+     * written. With [still], the track stored now is checked first, under the same hold as the write
+     * (FBBD-156): if [still] says it is no longer the one the caller decided on (a restore or another
+     * write replaced it), nothing is stored and [onChanged] runs on the main thread instead.
+     */
+    fun save(
+        track: Track,
+        onFailed: () -> Unit = {},
+        still: (Track?) -> Boolean = { true },
+        onChanged: () -> Unit = {},
+        onSaved: (Track) -> Unit,
+    ) = io.execute {
+        var changed = false
         val stored = try {
-            store.save(track)
+            // Waits for a restore (FBBD-156).
+            AppDataGate.write {
+                if (still(store.get(track.id))) {
+                    store.save(track)
+                } else {
+                    changed = true
+                    null
+                }
+            }
         } catch (e: IOException) {
             DebugLog.w(Tag, "saving track ${track.id} failed", e)
             null
+        }
+        if (changed) {
+            main.post { onChanged() }
+            return@execute
         }
         if (stored != null && draft?.track?.id == track.id) draft = null
         publish()
@@ -149,15 +174,18 @@ class Tracks private constructor(private val context: Context) {
     fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
         val references = CoachReferenceStore(coachReferencesDir(context))
         val picks = coachPicks(context)
-        references.delete(id)
-        try {
-            picks.save(id, emptyList())
-        } catch (e: IOException) {
-            DebugLog.w(Tag, "deleting coach picks for $id failed", e)
+        // Waits for a restore (FBBD-156), so the delete is not lost in its swap.
+        val gone = AppDataGate.write {
+            references.delete(id)
+            try {
+                picks.save(id, emptyList())
+            } catch (e: IOException) {
+                DebugLog.w(Tag, "deleting coach picks for $id failed", e)
+            }
+            val coachGone = references.get(id) == null && picks.get(id).isEmpty()
+            if (coachGone) store.delete(id)
+            coachGone && store.get(id) == null
         }
-        val coachGone = references.get(id) == null && picks.get(id).isEmpty()
-        if (coachGone) store.delete(id)
-        val gone = coachGone && store.get(id) == null
         if (gone && draft?.track?.id == id) draft = null
         if (!gone) DebugLog.w(Tag, "deleting track $id failed")
         publish()

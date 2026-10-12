@@ -56,7 +56,7 @@ object TrackTransfer {
 }
 
 /** What a file brought in turns out to be, from its first bytes. */
-enum class IncomingKind { SESSION, TRACK, UNKNOWN }
+enum class IncomingKind { SESSION, TRACK, BACKUP, UNKNOWN }
 
 object IncomingFiles {
     /** Bytes [kindOf] needs from the start of the file. */
@@ -66,11 +66,14 @@ object IncomingFiles {
     fun head(input: InputStream): ByteArray = readUpTo(input, PeekBytes)
 
     fun kindOf(head: ByteArray): IncomingKind = when {
-        head.size >= BundleFile.Magic.size && head.copyOf(BundleFile.Magic.size).contentEquals(BundleFile.Magic) ->
-            IncomingKind.SESSION
+        startsWith(head, BundleFile.Magic) -> IncomingKind.SESSION
+        startsWith(head, Backup.Magic) -> IncomingKind.BACKUP
         head.firstOrNull { !it.toInt().toChar().isWhitespace() }?.toInt()?.toChar() == '{' -> IncomingKind.TRACK
         else -> IncomingKind.UNKNOWN
     }
+
+    private fun startsWith(head: ByteArray, magic: ByteArray) =
+        head.size >= magic.size && head.copyOf(magic.size).contentEquals(magic)
 }
 
 /** Reads up to [limit] bytes. InputStream.readNBytes needs Android API 33; the app runs from API 26. */
