@@ -15,7 +15,11 @@ import com.flappedear.betterdriver.transfer.foreign.SessionImport
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.io.InputStream
+import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -43,8 +47,16 @@ class VboRoundTripTest {
         val second: SessionData,
     )
 
-    private fun trip(name: String, tracks: List<Track>): Trip {
-        val made = RealCorpus.import(store, staging, name, tracks)
+    /** Imports [name] as the app does, exports it as VBO and imports the export. [text] is the file's text. */
+    private fun trip(
+        name: String,
+        tracks: List<Track>,
+        text: String = RealCorpus.text(name),
+        open: () -> InputStream = { RealCorpus.open(name) },
+    ): Trip {
+        val made = open().use {
+            SessionImport(store, staging).import(it, name, tracks, CircuitList.Empty, today = RealCorpus.Today)
+        }
         assertEquals(0, made.skipped, "$name: rows the import could not read")
         val first = store.read(made.id)
         val out = ByteArrayOutputStream()
@@ -54,7 +66,8 @@ class VboRoundTripTest {
                 .import(it, "BetterDriver.vbo", tracks, CircuitList.Empty, today = RealCorpus.Today)
         }
         assertEquals(0, again.skipped, "$name: rows of the export the import could not read")
-        return Trip(name, RealCorpus.dataRows(name), first, out.toString(Charsets.UTF_8), store.read(again.id))
+        val rows = text.lineSequence().dropWhile { it.trim() != "[data]" }.drop(1).count { it.isNotBlank() }
+        return Trip(name, rows, first, out.toString(Charsets.UTF_8), store.read(again.id))
     }
 
     private fun values(data: SessionData, channel: ChannelDef) =
@@ -131,7 +144,7 @@ class VboRoundTripTest {
             val tracks = listOfNotNull(RealCorpus.roadTrack(name))
             val trip = trip(name, tracks)
             assertNothingLost(trip)
-            assertSameRows(name, trip.exported)
+            assertSameRows(name, RealCorpus.text(name), trip.exported)
             val track = tracks.singleOrNull() ?: continue
             val before = replayLaps(trip.first.id, trip.first.sampleSets, track).laps.map { it.lap }
             val after = replayLaps(trip.second.id, trip.second.sampleSets, track).laps.map { it.lap }
@@ -141,12 +154,26 @@ class VboRoundTripTest {
         }
     }
 
+    @Test
+    fun `a BetterDriver export parked and crawling, with a 188 s gap in its fixes - nothing lost (FBBD-14, FBBD-68)`() {
+        // Too slow for a road track: the session has no runs, only its samples to carry.
+        val name = "parked-synthetic.vbo"
+        val text = parkedVbo()
+        val trip = trip(name, emptyList(), text) { text.byteInputStream() }
+        assertNothingLost(trip)
+        assertSameRows(name, text, trip.exported)
+        // The gap survives the round trip: nothing made up across it.
+        val gaps = trip.second.sampleSets.zipWithNext { a, b -> b.tMicros - a.tMicros }
+        assertEquals(1, gaps.count { it > 1_000_000L }, "$name: gaps over 1 s")
+        assertEquals(188_040_000.0, gaps.max().toDouble(), 1_000.0, "$name: the gap")
+    }
+
     /**
      * The re-export of one of BetterDriver's own VBOs has the original's rows: the same time,
      * position, speed, heading and height, as written.
      */
-    private fun assertSameRows(name: String, exported: String) {
-        val original = VboRows.of(RealCorpus.text(name))
+    private fun assertSameRows(name: String, originalText: String, exported: String) {
+        val original = VboRows.of(originalText)
         val again = VboRows.of(exported)
         assertEquals(original.size, again.size, name)
         for (column in listOf("time", "lat", "long", "velocity", "heading", "height", "sats")) {
@@ -176,6 +203,53 @@ class VboRoundTripTest {
                 val rows = lines.drop(lines.indexOf("[data]") + 1).filter { it.isNotEmpty() }.map { it.split(' ') }
                 return VboRows(names, rows)
             }
+        }
+    }
+
+    private companion object {
+        /**
+         * A BetterDriver VBO export shaped like the parked session Arek shared, which this corpus no
+         * longer holds (FBBD-194): the same sections and columns at 25 Hz, parked and crawling at up
+         * to 8 km/h, with a 188 s gap in the fixes after its first 730 rows. The place is made up:
+         * 45° N, 2° W, at sea.
+         */
+        fun parkedVbo(): String {
+            val header = listOf(
+                "satellites", "time", "latitude", "longitude", "velocity kmh", "heading", "height",
+                "gnss_fix_type", "gnss_hacc", "gnss_speed_acc", "accel_x", "accel_y", "accel_z",
+                "gyro_x", "gyro_y", "gyro_z", "racebox_input",
+            )
+            val units = listOf("", "m", "km/h", "g", "g", "g", "deg/s", "deg/s", "deg/s", "V")
+            val columns = "sats time lat long velocity heading height gnss_fix_type gnss_hacc gnss_speed_acc " +
+                "accel_x accel_y accel_z gyro_x gyro_y gyro_z racebox_input"
+            val head = listOf("File created on 11/10/2026 @ 14:27:59", "", "[header]") + header +
+                listOf("", "[channel units]") + units +
+                listOf("", "[comments]", "Generated by BetterDriver", "Session 20261011-142759-00000000") +
+                listOf("Device racebox", "", "[column names]", columns, "", "[data]")
+            val startMs = (14 * 3600 + 27 * 60 + 58) * 1000L + 199
+            var north = 0.0
+            var east = 0.0
+            val rows = (0 until 1460).map { i ->
+                val ms = startMs + i * 40L + if (i >= 730) 188_000L else 0L
+                val kmh = 4.0 + 4.0 * sin(i / 50.0)
+                val heading = (i * 0.2) % 360.0
+                val step = kmh / 3.6 * 0.04
+                north += step * cos(Math.toRadians(heading))
+                east += step * sin(Math.toRadians(heading))
+                val lat = 45.0 + north / 111_195.0
+                // VBO longitude is positive west.
+                val west = 2.0 - east / (111_195.0 * cos(Math.toRadians(45.0)))
+                String.format(
+                    Locale.ROOT,
+                    "%03d %02d%02d%02d.%03d %+012.5f %+012.5f %07.3f %06.2f %+09.2f 3 0.74 0.39 " +
+                        "%.3f %.3f %.3f %.2f %.2f %.2f 3.9",
+                    11 + i % 4, ms / 3_600_000, ms / 60_000 % 60, ms / 1000 % 60, ms % 1000,
+                    lat * 60.0, west * 60.0, kmh, heading, 243.0 + i * 0.001,
+                    0.1 * sin(i / 7.0), 0.05 * cos(i / 9.0), -1.0 + 0.01 * sin(i / 3.0),
+                    2.0 * sin(i / 11.0), 1.5 * cos(i / 13.0), 0.2 * i % 5,
+                )
+            }
+            return (head + rows).joinToString("\r\n", postfix = "\r\n")
         }
     }
 }

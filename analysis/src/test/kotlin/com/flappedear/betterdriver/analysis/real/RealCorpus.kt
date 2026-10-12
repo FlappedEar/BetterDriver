@@ -26,16 +26,16 @@ object RealCorpus {
     /** RaceChrono Pro 10.2.4 at Silesia Ring on 27 Sep 2026: 10 Hz GNSS with OBD, 23 min, with RaceChrono's lines. */
     const val SILESIA = "silesia-ring-2026-09-27-racechrono.vbo.gz"
 
-    /** BetterDriver 0.3.1 VBO export, 12 Oct 2026 10:36 UTC: a 38 min road drive at 25 Hz with phone video. */
+    /**
+     * BetterDriver 0.3.1 VBO export, 12 Oct 2026 10:36 UTC: a road drive at 25 Hz with phone video,
+     * 27 min of it once 1.5 km at each end were trimmed off.
+     */
     const val COMMUTE_1036 = "commute-2026-10-12-1036.vbo.gz"
 
-    /** BetterDriver VBO export, 12 Oct 2026 04:22 UTC: the same road the other way, 23 min at 25 Hz. */
+    /** BetterDriver VBO export, 12 Oct 2026 04:22 UTC: the same road the other way at 25 Hz, 12 min trimmed. */
     const val COMMUTE_0422 = "commute-2026-10-12-0422.vbo.gz"
 
-    /** BetterDriver VBO export, 11 Oct 2026: 6 min parked and crawling, with a 188 s GNSS gap. */
-    const val PARKED = "parked-2026-10-11-1427.vbo.gz"
-
-    val BETTERDRIVER = listOf(COMMUTE_1036, COMMUTE_0422, PARKED)
+    val BETTERDRIVER = listOf(COMMUTE_1036, COMMUTE_0422)
 
     /** The day for a file without a date line; every corpus file has one. */
     val Today: LocalDate = LocalDate.of(2026, 10, 12)
@@ -130,7 +130,7 @@ object RealCorpus {
      * A point-to-point track on one of the road drives, made from the drive itself as Arek would
      * place its lines on a map: the start line square to the road where the car first does 20 km/h
      * after a fifth of the drive, the finish where it does so after four fifths. Null for a drive
-     * that never gets going (the parked one).
+     * that never gets going.
      */
     fun roadTrack(name: String): Track? {
         val fixes = fixes(name)

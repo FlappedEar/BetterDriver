@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 /**
  * The drive checks replayed over Arek's real drive of 12 Oct 2026, 10:36 to 11:16 UTC (FBBD-183):
  * the debug logs of 0.3.1 as he shared them, and the GNSS of the same session from its VBO export
- * (the copy in resources/real, its positions moved 10° west).
+ * (the copy in resources/real: the drive without its first and last 1.5 km, moved, see its README).
  */
 class DriveLogReplayTest {
     private val sessionId = "20261012-103607-3713ff1a"
@@ -104,7 +104,7 @@ class DriveLogReplayTest {
         return lines
     }
 
-    /** VBO positions are minutes, signed: +03003.90355 is 50.065 059°. */
+    /** VBO positions are minutes, signed: +02730.30000 is 45.505°. */
     private fun vboDegrees(text: String) = text.toDouble() / 60.0
 
     @Test
