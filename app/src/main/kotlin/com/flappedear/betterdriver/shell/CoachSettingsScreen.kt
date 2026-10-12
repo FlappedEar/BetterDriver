@@ -18,6 +18,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
@@ -31,6 +32,7 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.Voice
+import com.flappedear.betterdriver.coach.VoiceMode
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -63,8 +65,10 @@ data class PickedCorners(val trackId: String, val trackName: String, val corners
  * Spoken coach settings (FBBD-98, UI-64 option B), a page of its own opened from Settings › App: how
  * much it says, the corners picked for it in the lap analysis at each track with a Clear for each
  * (FBBD-148; null while they are read), the audio delay of the headset (up to 2 s, so a cue still ends
- * before the braking zone), and how many laps it learns before the first corner cue. Each change is
- * saved at once. "Test voice" says a sample cue on the current audio output.
+ * before the braking zone), with "Measure" opening the headset delay test (FBBD-49), and how many laps
+ * it learns before the first corner cue. Each change is saved at once. "Test voice" says a sample cue on
+ * the current audio output. Advanced: whether cues are said by live text-to-speech or from clips
+ * rendered at coach start (FBBD-48).
  */
 @Composable
 fun CoachSettingsScreen(
@@ -73,6 +77,7 @@ fun CoachSettingsScreen(
     onBack: () -> Unit,
     picked: List<PickedCorners>? = null,
     onClearPicked: (trackId: String) -> Unit = {},
+    onMeasureDelay: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Spoken coach", onBack = onBack)
@@ -82,8 +87,10 @@ fun CoachSettingsScreen(
         ) {
             ShellCard { VerbosityPicker(current, onChange) }
             picked?.let { ShellCard { Picked(it, onClearPicked) } }
-            ShellCard { DelayAndLaps(current, onChange) }
-            ShellCard { TestVoice() }
+            ShellCard { DelayAndLaps(current, onChange, onMeasureDelay) }
+            ShellCard { TestVoice(current.voice) }
+            SectionLabel("Advanced", Modifier.padding(start = 4.dp, top = 8.dp))
+            ShellCard { VoicePicker(current, onChange) }
         }
     }
 }
@@ -123,7 +130,7 @@ private fun VerbosityPicker(s: CoachSettings, onChange: (CoachSettings) -> Unit)
 
 /** The delay is saved when the slider is let go, not on every step of a drag. */
 @Composable
-private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit) {
+private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, onMeasure: () -> Unit) {
     var delayMs by remember(s.audioDelayMillis) { mutableIntStateOf(s.audioDelayMillis) }
     Text("Audio delay ${seconds(delayMs)}", style = MaterialTheme.typography.bodyLarge)
     Slider(
@@ -136,7 +143,10 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit) {
         valueRange = 0f..CoachSettings.MaxAudioDelayMillis / MillisPerSecond,
         steps = CoachSettings.MaxAudioDelayMillis / DelayStepMillis - 1,
     )
-    DimText("Bluetooth headsets lag. Cues are said this much earlier.")
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        DimText("Bluetooth headsets lag. Cues are said this much earlier.", Modifier.weight(1f))
+        TextButton(onClick = onMeasure) { Text("Measure") }
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Learning laps", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         TextButton(
@@ -152,15 +162,33 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit) {
     DimText("The coach says only lap times until it has learned this many laps.")
 }
 
+/** Says, on [VoiceMode.PreRendered], from clips once they are rendered; live until then. */
 @Composable
-private fun TestVoice() {
+private fun TestVoice(mode: VoiceMode) {
     val context = LocalContext.current
     val voice = remember { Voice(context) }
     DisposableEffect(voice) { onDispose { voice.shutdown() } }
+    LaunchedEffect(voice, mode) { voice.use(mode) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         DimText("Plays “$SampleCue” on the current audio output.", Modifier.weight(1f))
         TextButton(onClick = { voice.say(SampleCue) }) { Text("Test voice") }
     }
+}
+
+@Composable
+private fun VoicePicker(s: CoachSettings, onChange: (CoachSettings) -> Unit) {
+    Text("Voice", style = MaterialTheme.typography.bodyLarge)
+    VoiceMode.entries.forEach { v ->
+        val pick = Modifier.selectable(selected = s.voice == v, onClick = { onChange(s.copy(voice = v)) })
+        Row(Modifier.fillMaxWidth().then(pick), verticalAlignment = Alignment.CenterVertically) {
+            RadioButton(selected = s.voice == v, onClick = null)
+            Text(if (v == VoiceMode.Live) "Live" else "Pre-rendered", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+    DimText(
+        "Pre-rendered says each word and number from clips made at the start of a coached session, so a " +
+            "cue starts sooner but sounds more clipped. Until the clips are ready it uses the live voice.",
+    )
 }
 
 @Preview(widthDp = 411, heightDp = 800)
