@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.timing.track
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlin.math.cos
 import kotlin.math.sin
@@ -38,6 +39,18 @@ data class TrackLine(val left: GeoPoint, val right: GeoPoint) {
 /** Width of a line placed by heading: wide enough for any track, narrow enough to miss a parallel pit lane. */
 const val DefaultLineWidthMeters = 30.0
 
+/** How a track is timed (FBBD-155). */
+@Serializable
+enum class TrackKind {
+    /** Laps from the start/finish line round to it again. */
+    @SerialName("circuit")
+    Circuit,
+
+    /** Runs from a start line to a separate finish line, as a hill climb or a sprint; the drive back is not timed. */
+    @SerialName("pointToPoint")
+    PointToPoint,
+}
+
 /** How far from its centre a saved track is recognised, by default, in metres (as FlappedEar Telemetry). */
 const val DefaultTrackRadiusMeters = 2_000.0
 
@@ -46,6 +59,10 @@ const val DefaultTrackRadiusMeters = 2_000.0
  * lap in order, so a lap has `sectorLines.size + 1` sectors. [pitEntry] and [pitExit] are optional;
  * they only decide which laps are in and out laps. [circuitId] links the track to the built-in
  * directory entry it was started from (FBBD-79), if any. [revision] goes up on every edit.
+ *
+ * A [TrackKind.PointToPoint] track (FBBD-155) times runs from [startFinish], its start line, to
+ * [finish]; everywhere else (live timing, review, analysis) a run is a lap. Pit lines do not apply
+ * to it. Tracks saved before there were kinds have neither field and read as circuits.
  */
 @Serializable
 data class Track(
@@ -62,6 +79,9 @@ data class Track(
     val circuitId: String? = null,
     val revision: Int = 1,
     val updatedUtcMillis: Long = 0,
+    val kind: TrackKind = TrackKind.Circuit,
+    /** The finish line of a point-to-point track; unused on a circuit. */
+    val finish: TrackLine? = null,
 ) {
     init {
         require(id.isNotBlank() && id.length <= MaxIdChars && id.all { it.isLetterOrDigit() || it in "-_" }) {
@@ -76,8 +96,11 @@ data class Track(
         require(revision >= 1) { "revision starts at 1" }
     }
 
-    /** Lines are set, so laps can be timed. */
-    val timeable: Boolean get() = startFinish != null
+    /** Runs from a start line to a separate finish line rather than laps (FBBD-155). */
+    val pointToPoint: Boolean get() = kind == TrackKind.PointToPoint
+
+    /** Lines are set, so laps can be timed: the start/finish line, and on a point-to-point track the finish. */
+    val timeable: Boolean get() = startFinish != null && (!pointToPoint || finish != null)
 
     /** Sectors per lap: 1 with no sector lines. */
     val sectorCount: Int get() = sectorLines.size + 1

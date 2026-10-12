@@ -22,6 +22,7 @@ import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.timing.edit.LineRef
 import com.flappedear.betterdriver.timing.live.LapBook
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.track.Track
 import java.util.Locale
 
 private const val MillisPerSecond = 1_000.0
@@ -46,18 +47,24 @@ internal fun LineSwatch(ref: LineRef) {
 }
 
 @Composable
-internal fun RetimeNote(sessions: Int, laps: Int) {
+internal fun RetimeNote(sessions: Int, laps: Int, pointToPoint: Boolean = false) {
+    val lap = if (pointToPoint) "run" else "lap"
     val text = when (sessions) {
-        0 -> "No sessions here yet. Laps are timed with these lines from the next session."
-        1 -> "Saved sessions here are re-timed when you save: 1 session, ${plural(laps, "lap")}."
-        else -> "Saved sessions here are re-timed when you save: $sessions sessions, ${plural(laps, "lap")}."
+        0 -> "No sessions here yet. ${lap.replaceFirstChar(Char::uppercaseChar)}s are timed with these lines " +
+            "from the next session."
+        1 -> "Saved sessions here are re-timed when you save: 1 session, ${plural(laps, lap)}."
+        else -> "Saved sessions here are re-timed when you save: $sessions sessions, ${plural(laps, lap)}."
     }
     DimLine(text, Modifier.padding(top = 6.dp))
 }
 
-/** The newest session's laps with the lines as they are now (UI-25 option A). */
+/**
+ * The newest session's laps with [track]'s lines as they are now (UI-25 option A); runs on a
+ * point-to-point track (FBBD-155).
+ */
 @Composable
-internal fun SessionLaps(title: String?, book: LapBook?, sectorCount: Int) {
+internal fun SessionLaps(title: String?, book: LapBook?, track: Track) {
+    val sectorCount = track.sectorCount
     if (title == null) {
         DimLine("No sessions here yet.", Modifier.padding(top = 12.dp))
         return
@@ -70,12 +77,19 @@ internal fun SessionLaps(title: String?, book: LapBook?, sectorCount: Int) {
     )
     val laps = book?.laps.orEmpty()
     if (laps.isEmpty()) {
-        DimLine("No laps with these lines. Place the start / finish line on the lap.")
+        DimLine(
+            if (track.pointToPoint) {
+                "No runs with these lines. Place the start and finish lines on your drive."
+            } else {
+                "No laps with these lines. Place the start / finish line on the lap."
+            },
+        )
         return
     }
     val best = book?.best
     Column(Modifier.horizontalScroll(rememberScrollState())) {
-        LapRow(listOf("Lap", "Time") + List(sectorCount) { "S${it + 1}" }, header = true)
+        val first = if (track.pointToPoint) "Run" else "Lap"
+        LapRow(listOf(first, "Time") + List(sectorCount) { "S${it + 1}" }, header = true)
         for (lap in laps) {
             val time = when (lap.kind) {
                 LapKind.Timed -> formatLapTime(lap.timeMillis)

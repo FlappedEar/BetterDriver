@@ -12,6 +12,7 @@ import kotlin.math.sqrt
 
 /** One line of a track, as the editor lists them (UI-23). */
 sealed interface LineRef {
+    /** The start/finish line; the start line of a point-to-point track. */
     data object StartFinish : LineRef
 
     /** Sector line [index], in lap order. */
@@ -20,6 +21,9 @@ sealed interface LineRef {
     data object PitEntry : LineRef
 
     data object PitExit : LineRef
+
+    /** The finish line of a point-to-point track (FBBD-155). */
+    data object Finish : LineRef
 }
 
 /** The line [ref] names, or null if it is not set. */
@@ -28,6 +32,7 @@ fun Track.line(ref: LineRef): TrackLine? = when (ref) {
     is LineRef.Sector -> sectorLines.getOrNull(ref.index)
     LineRef.PitEntry -> pitEntry
     LineRef.PitExit -> pitExit
+    LineRef.Finish -> finish
 }
 
 /**
@@ -38,6 +43,7 @@ fun Track.withLine(ref: LineRef, line: TrackLine?): Track = when (ref) {
     LineRef.StartFinish -> copy(startFinish = line)
     LineRef.PitEntry -> copy(pitEntry = line)
     LineRef.PitExit -> copy(pitExit = line)
+    LineRef.Finish -> copy(finish = line)
     is LineRef.Sector -> {
         val lines = sectorLines.toMutableList()
         when {
@@ -50,12 +56,14 @@ fun Track.withLine(ref: LineRef, line: TrackLine?): Track = when (ref) {
     }
 }
 
-/** Every line the track has set, in the editor's order. */
+/**
+ * Every line of the track's kind, in the editor's order: a circuit's pit lines, or a point-to-point
+ * track's finish line (FBBD-155), come after the sector lines.
+ */
 fun Track.lineRefs(): List<LineRef> =
     listOf(LineRef.StartFinish) +
         sectorLines.indices.map { LineRef.Sector(it) } +
-        listOf(LineRef.PitEntry, LineRef.PitExit)
-
+        if (pointToPoint) listOf(LineRef.Finish) else listOf(LineRef.PitEntry, LineRef.PitExit)
 /** A place on a recorded path: the nearest point to a tap, and which way the car was going there. */
 data class PathHit(
     val point: GeoPoint,

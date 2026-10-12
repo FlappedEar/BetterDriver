@@ -9,7 +9,8 @@ data class DeltaPoint(val distanceMeters: Double, val referenceLapMicros: Long, 
  * Two laps of the same track, from any sessions, matched by track position (FBBD-91), the way the
  * live delta matches the current lap to the reference ([DeltaReference]). Each fix of [other] is
  * matched to the nearest point of [reference]'s path, which gives pairs of lap times at the same
- * place. Both laps start at the start/finish line and end at it, so the pairs run from (0, 0) to
+ * place. Both laps start at the start/finish line and end at it (point-to-point runs: at the start
+ * line and the finish line, FBBD-155), so the pairs run from (0, 0) to
  * (reference lap time, other lap time), and the delta at the finish is the true lap time difference.
  *
  * Fixes that do not match (far off the reference path) or that would run backwards are skipped,

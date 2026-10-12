@@ -353,17 +353,15 @@ private fun isVideoFile(f: File) =
 
 /**
  * The session's laps, replayed against its track's start/finish line as the lap analysis does,
- * plus the lap still being driven when it stopped (FBBD-150). Empty when it was not at such a
- * track; a damaged track file only costs the lap columns, not the export.
+ * plus the lap still being driven when it stopped (FBBD-150; not on a point-to-point track, where
+ * that is the drive back, FBBD-155). Empty when it was not at such a track; a damaged track file
+ * only costs the lap columns, not the export.
  */
 @Suppress("TooGenericExceptionCaught")
 private fun exportLaps(data: SessionData, tracksDir: File): List<ExportLap> = try {
     val track = trackFor(data, TrackStore(tracksDir).all())
     val sets = data.sampleSets.sortedBy { it.tMicros }
-    val laps = track?.let { replayLaps(data.id, sets, it).laps }.orEmpty()
-    val done = laps.map { ExportLap(it.lap.number, it.lap.startMicros, it.lap.endMicros) }
-    val last = done.lastOrNull()
-    if (last == null) done else done + ExportLap(last.number + 1, last.endMicros, Long.MAX_VALUE)
+    track?.let { replayLaps(data.id, sets, it).exportLaps() }.orEmpty()
 } catch (e: Exception) {
     DebugLog.w("Sessions", "laps for export failed", e)
     emptyList()

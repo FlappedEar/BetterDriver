@@ -2,10 +2,12 @@
 
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.track.TrackKind
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -43,6 +45,20 @@ class CoachSessionTest {
         assertEquals(2, result.after.corner)
         // The last cue said was a lap time, shown without a corner.
         assertEquals(null, session.status.corner)
+    }
+
+    @Test
+    fun `the coach stays quiet at a point-to-point track`() {
+        val p2p = track.copy(kind = TrackKind.PointToPoint, finish = track.startFinish)
+        assertFalse(coaches(p2p))
+        assertTrue(coaches(track))
+        val session = CoachSession(CoachSettings(Verbosity.Full), p2p, null)
+        assertEquals(CoachStatus.None, session.status)
+        val said = mutableListOf<String>()
+        for (f in sim.drive(List(3) { SimCircuit.Pace() }).fixes) {
+            assertTrue(session.onFix(f, f.tMicros) { said.add(it) }.events.isEmpty())
+        }
+        assertTrue(said.isEmpty())
     }
 
     @Test

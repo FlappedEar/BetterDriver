@@ -4,6 +4,7 @@ package com.flappedear.betterdriver.timing
 
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackFileVersion
 import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackLine
@@ -45,7 +46,7 @@ class TrackTest {
         assertFailsWith<TrackFormatException> { TrackJson.decode("not json") }
         assertFailsWith<TrackFormatException> { TrackJson.decode("[]") }
         assertFailsWith<TrackFormatException> { TrackJson.decode("""{"format":"flappedear-circuits","version":1}""") }
-        val newer = TrackJson.encode(poznan).replace("\"version\": 1", "\"version\": 2")
+        val newer = TrackJson.encode(poznan).replace("\"version\": 1", "\"version\": ${TrackFileVersion + 1}")
         assertFailsWith<TrackFormatException> { TrackJson.decode(newer) }
         val badLat = TrackJson.encode(poznan).replace("52.4178", "152.4178")
         assertFailsWith<TrackFormatException> { TrackJson.decode(badLat) }

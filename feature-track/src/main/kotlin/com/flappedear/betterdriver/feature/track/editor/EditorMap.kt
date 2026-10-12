@@ -60,7 +60,7 @@ internal fun EditorMap(
         val track = state.track
         for (ref in track.lineRefs()) {
             val line = track.line(ref) ?: continue
-            drawTimingLine(ref, line, project, selected = ref == state.selected, text)
+            drawTimingLine(ref, line, project, ref == state.selected, text, ref.mapLabel(track.pointToPoint))
         }
         state.firstTap?.let { drawCircle(EditorColors.Accent, 5.dp.toPx(), project(it)) }
     }
@@ -88,12 +88,14 @@ private fun DrawScope.drawLap(points: List<GeoPoint>, project: (GeoPoint) -> Off
     )
 }
 
+@Suppress("LongParameterList") // The line, where it is drawn, and its label.
 private fun DrawScope.drawTimingLine(
     ref: LineRef,
     line: TrackLine,
     project: (GeoPoint) -> Offset,
     selected: Boolean,
     text: TextMeasurer,
+    label: String,
 ) {
     val a = project(line.left)
     val b = project(line.right)
@@ -134,7 +136,7 @@ private fun DrawScope.drawTimingLine(
     }
     drawText(
         text,
-        ref.mapLabel(),
+        label,
         topLeft = a + Offset(8.dp.toPx(), -18.dp.toPx()),
         style = TextStyle(
             color = color,
