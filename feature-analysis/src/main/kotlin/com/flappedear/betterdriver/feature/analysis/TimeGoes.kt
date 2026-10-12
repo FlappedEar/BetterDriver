@@ -20,26 +20,29 @@ import com.flappedear.betterdriver.core.ui.format.formatDelta
 /**
  * Where time goes (FBBD-103, UI-67): the corners and straights where the fastest lap is slowest
  * against the best time through them, with the lap that set it, then the other laps' largest
- * single losses against the fastest. Tapping a loss compares that lap.
+ * single losses against the fastest. Tapping a loss compares that lap. Each corner listed can be
+ * picked for the spoken coach's next session, on the first row it appears in (FBBD-148).
  */
 @Composable
-internal fun TimeGoes(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
+internal fun TimeGoes(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit, modifier: Modifier) {
     val c = TrackTheme.colors
+    val firstRows = firstCornerRows(ui)
     Card(modifier) {
         TrackLabel("Where time goes")
         if (ui.gains.isNotEmpty()) {
             Dim("Best lap ${ui.bestLapNumber} against the best of each corner")
-            for (gain in ui.gains) {
+            ui.gains.forEachIndexed { i, gain ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(gain.name, Modifier.weight(1f))
                     Dim(gain.bestLapNumber?.let { "best lap $it" } ?: "", Modifier.width(80.dp))
                     Loss(gain.lossSeconds)
+                    CoachFlag(ui, gain.cornerId.takeIf { i in firstRows.gains }, gain.name, onCoachPick, firstRows.any)
                 }
             }
         }
         if (ui.losses.isNotEmpty()) {
             Dim("Largest losses on other laps · tap to compare")
-            for (loss in ui.losses) {
+            ui.losses.forEachIndexed { i, loss ->
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -51,9 +54,11 @@ internal fun TimeGoes(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifi
                     Dim("Lap ${loss.lapNumber}", Modifier.width(56.dp))
                     Text(loss.name, Modifier.weight(1f), color = c.text)
                     Loss(loss.lossSeconds)
+                    CoachFlag(ui, loss.cornerId.takeIf { i in firstRows.losses }, loss.name, onCoachPick, firstRows.any)
                 }
             }
         }
+        if (firstRows.any) Dim(CoachFlagNote)
     }
 }
 

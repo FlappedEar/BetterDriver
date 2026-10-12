@@ -14,8 +14,15 @@ import kotlin.math.roundToLong
 sealed interface AnalysisState {
     data object Loading : AnalysisState
 
-    /** Nothing to analyse: [message] says why, [action] (if any) labels the fix the screen offers. */
-    data class Unavailable(val message: String, val action: String? = null) : AnalysisState
+    /**
+     * Nothing to analyse: [message] says why, [action] (if any) labels the fix the screen offers.
+     * [acceleration] still shows the session's acceleration runs, which need no laps.
+     */
+    data class Unavailable(
+        val message: String,
+        val action: String? = null,
+        val acceleration: AccelerationUi? = null,
+    ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
 }
@@ -45,11 +52,20 @@ data class SectorRow(
     val spreadSeconds: Double? = null,
 )
 
-/** A corner or straight where the fastest lap is slower than the best time through it. */
-data class GainRow(val name: String, val lossSeconds: Double, val bestLapNumber: Int?)
+/**
+ * A corner or straight where the fastest lap is slower than the best time through it. [cornerId] is
+ * the segment id of a corner, null for a straight.
+ */
+data class GainRow(val name: String, val lossSeconds: Double, val bestLapNumber: Int?, val cornerId: String? = null)
 
-/** One lap's loss against the fastest lap in one corner or straight. */
-data class LossRow(val lapIndex: Int, val lapNumber: Int, val name: String, val lossSeconds: Double)
+/** One lap's loss against the fastest lap in one corner or straight; [cornerId] as in [GainRow]. */
+data class LossRow(
+    val lapIndex: Int,
+    val lapNumber: Int,
+    val name: String,
+    val lossSeconds: Double,
+    val cornerId: String? = null,
+)
 
 /**
  * One area to look at before the next session: the measured [observation], kept apart from the
@@ -63,6 +79,8 @@ data class FocusRow(
     val hypothesis: String,
     val compareIndex: Int?,
     val compareNumber: Int?,
+    /** The segment id when the area is a corner, null for a straight. */
+    val cornerId: String? = null,
 )
 
 /** A corner along the distance axis, shaded behind the charts. */
@@ -102,6 +120,14 @@ data class AnalysisUi(
     val focus: List<FocusRow> = emptyList(),
     /** This session against the earlier sessions at its track; null while they are read. */
     val progress: SessionProgress? = null,
+    /** The compared lap on the map and its G-G diagram; null without GPS on the session's axis. */
+    val map: MapUi? = null,
+    /** Corners (segment ids) that can be picked for the coach's next session (FBBD-148); none while read. */
+    val coachPickable: Set<String> = emptySet(),
+    /** Of [coachPickable], the corners picked at this track, in this session or another. */
+    val coachPicked: Set<String> = emptySet(),
+    /** The session's acceleration runs; null when it has none. */
+    val acceleration: AccelerationUi? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */
@@ -195,19 +221,35 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
     )
 }
 
-private fun gains(analysis: SessionAnalysis) = analysis.summary?.gains.orEmpty()
-    .filter { (it.lossSeconds ?: 0.0) > MeaningfulLossSeconds }
-    .take(LossRows)
-    .map { GainRow(it.name, it.lossSeconds ?: 0.0, it.sourceLapReference as? Int) }
+/** Segment ids of the session's corners. */
+private fun cornerIds(analysis: SessionAnalysis): Set<String> =
+    analysis.segments?.segments.orEmpty().filter { it.type == TrackSegmentType.Corner }.map { it.id }.toSet()
+
+private fun gains(analysis: SessionAnalysis): List<GainRow> {
+    val corners = cornerIds(analysis)
+    return analysis.summary?.gains.orEmpty()
+        .filter { (it.lossSeconds ?: 0.0) > MeaningfulLossSeconds }
+        .take(LossRows)
+        .map {
+            val corner = it.segmentId.takeIf(corners::contains)
+            GainRow(it.name, it.lossSeconds ?: 0.0, it.sourceLapReference as? Int, corner)
+        }
+}
 
 private fun losses(analysis: SessionAnalysis): List<LossRow> {
     val indexByNumber = analysis.laps.timedLaps.withIndex().associate { it.value.number to it.index }
+    val corners = cornerIds(analysis)
     return analysis.losses?.losses.orEmpty()
         .filter { it.lossSeconds > MeaningfulLossSeconds }
         .mapNotNull { loss ->
             val number = loss.lapReference as? Int
             val index = number?.let(indexByNumber::get)
-            if (number == null || index == null) null else LossRow(index, number, loss.window.name, loss.lossSeconds)
+            val corner = loss.window.segmentId.takeIf(corners::contains)
+            if (number == null || index == null) {
+                null
+            } else {
+                LossRow(index, number, loss.window.name, loss.lossSeconds, corner)
+            }
         }
         .take(LossRows)
 }
@@ -227,6 +269,7 @@ fun focus(analysis: SessionAnalysis): List<FocusRow> {
     val laps = analysis.laps.timedLaps
     val fastest = analysis.laps.fastestLapIndex?.let { laps[it].number }
     val indexByNumber = laps.withIndex().associate { it.value.number to it.index }
+    val corners = cornerIds(analysis)
     return sessionFocusAreas(analysis).map { area ->
         val number = listOf(area.lap, area.against).filterIsInstance<Int>().firstOrNull { it != fastest }
         FocusRow(
@@ -236,8 +279,25 @@ fun focus(analysis: SessionAnalysis): List<FocusRow> {
             hypothesis = area.hypothesis,
             compareIndex = number?.let(indexByNumber::get),
             compareNumber = number,
+            cornerId = area.segmentId.takeIf(corners::contains),
         )
     }
+}
+
+/**
+ * The rows of Where time goes (by index in [AnalysisUi.gains] and [AnalysisUi.losses]) that carry a
+ * corner's coach toggle (FBBD-148): the first row each pickable corner appears in, so each has one.
+ */
+internal class CornerRows(val gains: Set<Int>, val losses: Set<Int>) {
+    val any: Boolean get() = gains.isNotEmpty() || losses.isNotEmpty()
+}
+
+internal fun firstCornerRows(ui: AnalysisUi): CornerRows {
+    val seen = mutableSetOf<String>()
+    fun first(id: String?) = id != null && id in ui.coachPickable && seen.add(id)
+    val gains = ui.gains.indices.filter { first(ui.gains[it].cornerId) }.toSet()
+    val losses = ui.losses.indices.filter { first(ui.losses[it].cornerId) }.toSet()
+    return CornerRows(gains, losses)
 }
 
 /** The lap compared with the fastest when the screen opens: the second fastest counted lap, or null. */

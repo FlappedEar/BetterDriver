@@ -30,11 +30,17 @@ const val MaxCueAgeMicros = 400_000L
  * Each fix comes with [onFix]'s `nowMicros`, the session clock when it is handled: a fix that waited
  * in a queue (the reference was still loading) can no longer time a cue, so its cues are dropped.
  * [onFix]'s `say` plays a phrase and returns false if the voice refused it. A dropped or refused cue
- * is logged as a problem, never as a cue, and no result is measured against it.
+ * is logged as a problem, never as a cue, and no result is measured against it. [picks] are the
+ * corners the driver picked for this track in the lap analysis (FBBD-148).
  */
-class CoachSession(settings: CoachSettings, track: Track?, reference: CoachReference?) {
+class CoachSession(
+    settings: CoachSettings,
+    track: Track?,
+    reference: CoachReference?,
+    picks: List<CornerPick> = emptyList(),
+) {
     private val engine = track?.takeIf { coaches(it) && settings.verbosity != Verbosity.Off }
-        ?.let { CueEngine(it, settings, reference) }
+        ?.let { CueEngine(it, settings, reference, picks = picks) }
 
     private var lastCue: Cue? = null
 
