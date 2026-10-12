@@ -110,4 +110,18 @@ class CueReviewTest {
         // From the cache: a damaged session would now read as 0, but it is not read again.
         assertEquals(mapOf(coached.id to cues), counts.counts())
     }
+
+    @Test
+    fun `the review is read from the session's events, and a missing or damaged session has no cues`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val events = coachedEvents()
+        val coached = Recorder(store).start(SessionInfo(startUtcMillis = 1_000L, channels = GnssChannels.ALL))
+        events.forEach { coached.eventAt(it.tMicros, it.kind, it.text) }
+        coached.stop()
+        assertEquals(CueReview.of(events), CueReview.read(store, coached.id))
+        assertEquals(CueReview(emptyList(), 0), CueReview.read(store, "gone"))
+        // Its metadata gone: unreadable.
+        assertTrue(File(store.dir(coached.id), "meta.properties").delete())
+        assertTrue(CueReview.read(store, coached.id).cues.isEmpty())
+    }
 }
