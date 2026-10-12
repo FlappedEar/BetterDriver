@@ -88,8 +88,10 @@ class Imports private constructor(private val context: Context) {
         question?.answer?.invoke(null)
     }
 
+    @Suppress("ThrowsCount") // One reason per file or moment that cannot be imported.
     private fun importNow(uri: Uri) {
         refuseWhileRecording(store)
+        if (AppDataGate.restoring) throw IOException("a backup is being restored. Import after it ends.")
         when (IncomingFiles.kindOf(read(uri, IncomingFiles::head))) {
             IncomingKind.SESSION -> receiveSession(uri)
             IncomingKind.TRACK -> addTrack(read(uri, TrackTransfer::read), { finish(it) }) { name ->
@@ -129,7 +131,7 @@ class Imports private constructor(private val context: Context) {
             inbox.discard(received)
             throw IOException("the session of $title is busy (GoPro video, export, send or delete). Try again after.")
         }
-        val added = inbox.accept(received, replace)
+        val added = AppDataGate.write { inbox.accept(received, replace) }
         Sessions.get(context).refresh()
         val what = if (added) "Imported the session of $title." else "Kept the session of $title already here."
         val track = received.track

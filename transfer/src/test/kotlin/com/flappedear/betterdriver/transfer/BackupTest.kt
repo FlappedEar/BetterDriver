@@ -225,6 +225,29 @@ class BackupTest {
     }
 
     @Test
+    fun `an oversized track or setup is refused before it is read`() {
+        fun withEntry(path: String, size: Long): ByteArray {
+            val out = ByteArrayOutputStream()
+            BundleWriter(out, Backup.Magic).apply {
+                val m = "format=${Backup.Format}\nversion=1\ncreated=1\n".toByteArray()
+                file(Backup.ManifestEntry, m.size.toLong(), m.inputStream())
+                file(path, size, java.io.ByteArrayInputStream(ByteArray(size.toInt()) { ' '.code.toByte() }))
+                finish()
+            }
+            return out.toByteArray()
+        }
+        val tablet = File(tmp, "t")
+        val limits = listOf("tracks/x.track.json" to Backup.MaxTrackBytes, "setup.json" to Backup.MaxSetupBytes)
+        for ((path, max) in limits) {
+            val e = assertFailsWith<BundleFormatException> {
+                restorer(tablet).unpack(withEntry(path, max + 1).inputStream())
+            }
+            assertTrue(e.message!!.contains("too large"), e.message)
+        }
+        assertEquals(emptyList(), File(tablet, "backup-staging").listFiles()!!.toList())
+    }
+
+    @Test
     fun `a backup from a newer app is refused`() {
         val out = ByteArrayOutputStream()
         BundleWriter(out, Backup.Magic).apply {

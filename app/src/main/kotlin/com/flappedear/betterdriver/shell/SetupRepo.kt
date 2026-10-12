@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
 import com.flappedear.betterdriver.setup.migrate
+import com.flappedear.betterdriver.sharing.AppDataGate
 import java.io.File
 import java.io.IOException
 import java.util.UUID
@@ -88,11 +89,19 @@ class SetupRepo private constructor(context: Context) {
             ?: cameras.firstOrNull { sourceId == CameraIds.GOPRO_HERO11 && it.goPro == GoProModel.HERO11_BLACK }
     }
 
-    private fun save(to: SetupStore, s: Setup) = saver.execute {
-        try {
-            to.save(s)
-        } catch (e: IOException) {
-            DebugLog.e(Tag, "setup not saved", e)
+    /**
+     * A setup taken before or during a restore is stale once the restore swapped the file in; it is
+     * dropped, and [reload] shows the restored one (FBBD-156).
+     */
+    private fun save(to: SetupStore, s: Setup) {
+        val epoch = AppDataGate.epoch
+        saver.execute {
+            try {
+                val saved = AppDataGate.writeIfCurrent(epoch) { to.save(s) }
+                if (!saved) DebugLog.w(Tag, "setup change dropped by a restore")
+            } catch (e: IOException) {
+                DebugLog.e(Tag, "setup not saved", e)
+            }
         }
     }
 

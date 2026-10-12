@@ -22,6 +22,7 @@ import com.flappedear.betterdriver.recording.circuitsDir
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
@@ -128,7 +129,7 @@ class Tracks private constructor(private val context: Context) {
     /** Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be written. */
     fun save(track: Track, onFailed: () -> Unit = {}, onSaved: (Track) -> Unit) = io.execute {
         val stored = try {
-            store.save(track)
+            AppDataGate.write { store.save(track) } // waits for a restore (FBBD-156)
         } catch (e: IOException) {
             DebugLog.w(Tag, "saving track ${track.id} failed", e)
             null

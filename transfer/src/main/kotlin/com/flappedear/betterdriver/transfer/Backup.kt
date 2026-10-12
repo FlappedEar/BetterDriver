@@ -85,6 +85,8 @@ object Backup {
     internal val SwappedAreas = listOf(Tracks, SetupFile, Coach, Calibrations)
     private val DirAreas = listOf(Tracks, Coach, Calibrations, Sessions)
     private const val MaxSmallEntry = 4L shl 20
+    internal const val MaxTrackBytes = 1L shl 20
+    internal const val MaxSetupBytes = 4L shl 20
 
     /** The files a backup of [root] (the app's files folder) holds, by entry path. */
     fun contents(root: File, includeSessions: Boolean): List<Pair<String, File>> = buildList {
@@ -164,8 +166,10 @@ object Backup {
                         if (size > MaxSmallEntry) throw BundleFormatException("preferences too large")
                         prefs = BackupPrefs.decode(contents)
                     }
-                    path == SetupFile || DirAreas.any { path.startsWith("$it/") } ->
+                    path == SetupFile || DirAreas.any { path.startsWith("$it/") } -> {
+                        checkSize(path, size)
                         SessionBundle.copyTo(File(dir, path), contents, onBytes)
+                    }
                     else -> Unit // Entries a newer app adds are skipped.
                 }
             }
@@ -178,6 +182,16 @@ object Backup {
             dir.deleteRecursively()
             throw BundleFormatException("damaged backup: ${e.message}", e)
         }
+    }
+
+    /** Tracks and the setup are read whole when checked and merged, so their size is bounded. */
+    private fun checkSize(path: String, size: Long) {
+        val max = when {
+            path == SetupFile -> MaxSetupBytes
+            path.startsWith("$Tracks/") -> MaxTrackBytes
+            else -> return
+        }
+        if (size > max) throw BundleFormatException("$path is too large ($size bytes)")
     }
 
     @Suppress("ThrowsCount") // One reason per way a manifest can be bad.

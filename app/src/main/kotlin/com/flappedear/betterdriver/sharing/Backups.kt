@@ -23,6 +23,7 @@ import com.flappedear.betterdriver.tracks.Tracks
 import com.flappedear.betterdriver.transfer.Backup
 import com.flappedear.betterdriver.transfer.BackupRestore
 import com.flappedear.betterdriver.transfer.BackupSummary
+import com.flappedear.betterdriver.transfer.DataGate
 import com.flappedear.betterdriver.transfer.RestoreMode
 import com.flappedear.betterdriver.transfer.UnpackedBackup
 import java.io.File
@@ -30,6 +31,12 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.util.concurrent.Executors
+
+/**
+ * Holds the app's own writes (tracks, setup, coach settings and picks, imports) while a restore
+ * swaps the data, so none is lost between the copy and the swap (FBBD-156).
+ */
+internal val AppDataGate = DataGate()
 
 /** A checked backup waiting for Merge or Replace on the restore sheet. */
 class RestoreOffer internal constructor(val summary: BackupSummary, internal val backup: UnpackedBackup)
@@ -123,7 +130,11 @@ class Backups private constructor(private val context: Context) {
         io.execute {
             val result = guarded("Restore failed", onFailed = { restorer.discard(o.backup) }) {
                 refuseWhileRecording()
-                val done = restorer.restore(o.backup, mode, prefs(), ::refuseWhileRecording) { writePrefs(context, it) }
+                refuseWhileImporting()
+                // Writes made meanwhile wait; values taken before are dropped and [reload] shows the result.
+                val done = AppDataGate.exclusive {
+                    restorer.restore(o.backup, mode, prefs(), ::refuseWhileRecording) { writePrefs(context, it) }
+                }
                 main.post(::reload)
                 restoreResultText(done)
             }
@@ -155,6 +166,12 @@ class Backups private constructor(private val context: Context) {
     private fun refuseWhileRecording() {
         if (store.list().any { it.state == SessionState.RECORDING }) {
             throw IOException("a session is recording. Try again after it stops.")
+        }
+    }
+
+    private fun refuseWhileImporting() {
+        if (Imports.get(context).state?.running == true) {
+            throw IOException("an import is running. Try again after it ends.")
         }
     }
 
