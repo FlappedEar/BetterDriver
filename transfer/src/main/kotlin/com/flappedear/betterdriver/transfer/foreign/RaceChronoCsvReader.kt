@@ -44,6 +44,8 @@ internal object RaceChronoCsvReader {
                 c == null -> if (isHeader(cells)) {
                     columns = Columns(cells.map { it.trim() })
                     unitsPending = true
+                } else {
+                    maker(cells.joinToString(","))?.let(sink::receiver)
                 }
                 cells.getOrNull(c.timestamp)?.trim()?.toDoubleOrNull() == null -> {
                     // Units right after the names; sources and other description rows after that.
@@ -72,6 +74,19 @@ internal object RaceChronoCsvReader {
             c.point(cells)?.let(sink::point)
         }
     }
+
+    /**
+     * The app that wrote the file, from the header row "This file is created using RaceChrono v9.0.6
+     * ( http://www.racechrono.com/ )." as "RaceChrono v9.0.6" (FBBD-174); null for any other row.
+     */
+    internal fun maker(line: String): String? {
+        val text = line.trim()
+        if (!text.startsWith(MakerPrefix, ignoreCase = true)) return null
+        return text.substring(MakerPrefix.length).substringBefore('(').trim().trimEnd('.').trim()
+            .takeIf { it.isNotEmpty() }
+    }
+
+    private const val MakerPrefix = "This file is created using "
 
     private fun isHeader(cells: List<String>): Boolean {
         val names = cells.map { it.trim().lowercase() }

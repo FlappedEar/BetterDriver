@@ -253,6 +253,10 @@ class SessionImportTest {
         assertEquals(Provenance.MEASURED_OBD, kind(csv, "Engine_RPM"))
         assertEquals(Provenance.MEASURED_GPS, kind(csv, "Accuracy"))
         assertEquals(10.0, csv.info.imported?.sampleRateHz)
+        // Its first header row names the app that wrote it.
+        assertEquals("RaceChrono v9.0.6", csv.info.imported?.receiver)
+        assertEquals("RaceChrono v9.0.6", RaceChronoCsvReader.maker("This file is created using RaceChrono v9.0.6."))
+        assertNull(RaceChronoCsvReader.maker("Format,3"))
 
         // Stored for every channel, in the metadata the session list and a transfer read.
         for (data in listOf(vbo, gpx, csv)) {
