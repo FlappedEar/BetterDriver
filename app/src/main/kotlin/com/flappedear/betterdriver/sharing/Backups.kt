@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.shell.AppPrefs
@@ -133,16 +134,21 @@ class Backups private constructor(private val context: Context) {
                 refuseWhileRecording()
                 refuseWhileImporting()
                 // Writes made meanwhile wait; values taken before are dropped and [reload] shows the result.
-                val done = AppDataGate.exclusive {
-                    try {
-                        restorer.restore(o.backup, mode, prefs(), ::refuseWhileRecording) { writePrefs(context, it) }
-                    } finally {
-                        // Still inside the hold: no waiting write may land in a half-swapped folder.
-                        if (restorer.pending) finishAfterFailure()
+                var finished = false
+                val done = runCatching {
+                    AppDataGate.exclusive {
+                        try {
+                            restorer.restore(o.backup, mode, prefs(), ::refuseWhileRecording) {
+                                writePrefs(context, it)
+                            }
+                        } finally {
+                            // Still inside the hold: no waiting write may land in a half-swapped folder.
+                            if (restorer.pending) finished = finishAfterFailure()
+                        }
                     }
-                }
+                }.getOrElse { e -> if (finished) null else throw e } // Failed after its commit, then finished.
                 main.post(::reload)
-                restoreResultText(done)
+                done?.let(::restoreResultText) ?: "Restored."
             }
             main.post { state = result }
         }
@@ -151,16 +157,17 @@ class Backups private constructor(private val context: Context) {
     /**
      * A restore that failed after its commit left the data part restored. Finishing it is tried once
      * more; if that fails too, the app shows [unfinished] (the restore-unfinished screen) until
-     * [finishPending] completes it. Called while the restore still holds [AppDataGate].
+     * [finishPending] completes it. Called while the restore still holds [AppDataGate]. Returns
+     * whether it is finished.
      */
-    private fun finishAfterFailure() {
-        try {
-            restorer.finishPending { writePrefs(context, it) }
-            main.post(::reload)
-        } catch (e: IOException) {
-            DebugLog.e(Tag, "could not finish the restore", e)
-            markUnfinished()
-        }
+    private fun finishAfterFailure(): Boolean = try {
+        restorer.finishPending { writePrefs(context, it) }
+        main.post(::reload)
+        true
+    } catch (e: IOException) {
+        DebugLog.e(Tag, "could not finish the restore", e)
+        markUnfinished()
+        false
     }
 
     /** The restore sheet was closed: nothing changes. */
@@ -183,9 +190,14 @@ class Backups private constructor(private val context: Context) {
     private fun prefs(): Map<String, Any?> =
         context.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).all
 
-    /** A recording can start while a long backup or restore runs, so this is checked again before the swap. */
+    /**
+     * A recording can start while a long backup or restore runs, so this is checked again before the
+     * swap. One asked for may have no session folder yet; [RecorderClient] starts none while a
+     * restore holds [AppDataGate].
+     */
     private fun refuseWhileRecording() {
-        if (store.list().any { it.state == SessionState.RECORDING }) {
+        val starting = RecorderClient.get(context).state.starting
+        if (starting || store.list().any { it.state == SessionState.RECORDING }) {
             throw IOException("a session is recording. Try again after it stops.")
         }
     }
@@ -288,7 +300,10 @@ class Backups private constructor(private val context: Context) {
 
         /** Replaces the app's preferences with [prefs]; throws if they could not be written. */
         private fun writePrefs(context: Context, prefs: Map<String, Any>) {
-            val edit = context.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).edit().clear()
+            val file = context.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE)
+            val edit = file.edit()
+            // Removed one by one rather than cleared, so AppPrefs is told of each change on every Android version.
+            for (key in file.all.keys - prefs.keys) edit.remove(key)
             for ((key, value) in prefs) {
                 when (value) {
                     is Boolean -> edit.putBoolean(key, value)
