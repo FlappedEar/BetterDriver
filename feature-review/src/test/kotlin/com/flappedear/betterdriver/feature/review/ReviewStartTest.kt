@@ -17,7 +17,8 @@ class ReviewStartTest {
             TracePoint(0, 0, 0.0, 0.0, Xy(0.0, 0.0), 0.0, 100.0),
             TracePoint(micros, micros, 0.0, 0.0, Xy(1_000.0, 0.0), 1_000.0, 100.0),
         )
-        return ReviewLap(LapTrace(session, Lap(number, LapKind.Timed, 0, micros, listOf(micros)), points), session, null)
+        val trace = LapTrace(session, Lap(number, LapKind.Timed, 0, micros, listOf(micros)), points)
+        return ReviewLap(trace, session, null)
     }
 
     private fun session(id: String, vararg laps: Pair<Int, Long>) =
