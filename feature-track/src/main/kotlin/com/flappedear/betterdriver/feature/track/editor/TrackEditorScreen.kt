@@ -226,6 +226,7 @@ private fun ColumnScope.PlacingControls(state: TrackEditorState) {
 
 @Composable
 private fun LineList(state: TrackEditorState) {
+    TrackHeader(state)
     val refs = state.track.lineRefs()
     refs.forEachIndexed { i, ref ->
         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outline)

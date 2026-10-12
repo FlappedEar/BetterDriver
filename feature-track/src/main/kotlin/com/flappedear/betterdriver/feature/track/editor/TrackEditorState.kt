@@ -24,9 +24,18 @@ data class EditorSession(val title: String, val fixes: List<Fix>)
  * The track editor's working copy (FBBD-56). Pick a line ([select]), place it by tapping the map
  * ([onTap]), drag its ends ([moveEnd]), then [done]. Nothing is stored until the caller saves
  * [track]; [changed] says whether there is anything to save.
+ *
+ * [stored] is the track as saved, if it is; a track proposed [fromSession] (FBBD-151) opens with
+ * lines that are not saved yet, so it starts changed and leaving asks first.
  */
 @Stable
-class TrackEditorState(initial: Track, sessions: List<EditorSession>) {
+@Suppress("TooManyFunctions") // One function per editor action.
+class TrackEditorState(
+    initial: Track,
+    sessions: List<EditorSession>,
+    stored: Track? = initial,
+    fromSession: Boolean = false,
+) {
     /** The newest session's drive, the "lap" lines are placed on. */
     val path: LapPath? = sessions.firstOrNull()?.fixes
         ?.map { GeoPoint(it.lat, it.lon) }
@@ -36,9 +45,13 @@ class TrackEditorState(initial: Track, sessions: List<EditorSession>) {
     var track by mutableStateOf(initial)
         private set
 
-    private var saved by mutableStateOf(initial)
+    private var saved by mutableStateOf(stored)
 
     val changed: Boolean get() = track != saved
+
+    /** The lines are still the ones proposed from a session, not saved yet (FBBD-151). */
+    var proposed by mutableStateOf(fromSession)
+        private set
 
     /** The line being placed, or null when the list is showing. */
     var selected by mutableStateOf<LineRef?>(null)
@@ -98,6 +111,12 @@ class TrackEditorState(initial: Track, sessions: List<EditorSession>) {
         track = track.withLine(ref, l.flipped())
     }
 
+    /** Renames the track; a blank or too long name is ignored. */
+    fun rename(name: String) {
+        val n = name.trim()
+        if (n.isNotEmpty() && n.length <= Track.MaxNameChars) track = track.copy(name = n)
+    }
+
     /** Removes the selected line and goes back to the list. */
     fun remove() {
         val ref = selected ?: return
@@ -125,6 +144,7 @@ class TrackEditorState(initial: Track, sessions: List<EditorSession>) {
     fun saved(sent: Track, stored: Track) {
         if (track == sent) track = stored
         saved = stored
+        proposed = false
     }
 
     private fun close() {

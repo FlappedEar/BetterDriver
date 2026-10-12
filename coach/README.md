@@ -56,6 +56,31 @@ line and returns what to say and when.
 - **Results.** The pass right after a cue says whether the driver moved at least
   half of what was asked, and the time gained across the corner (FBBD-28).
 
+## Picked corners (FBBD-148)
+
+In a session's lap analysis (Summary tab) the driver can pick corners for the coach: "Coach this next
+time" on a next-session focus area at a corner, or the flag on a corner in "Where time goes". Picks are
+kept per track in `filesDir/coach/picks/<track id>.json` (`CoachPicksStore`, written to a temporary file,
+synced and renamed into place) and read by the coach at each session start. The coach settings page lists
+each track's picks with a Clear.
+
+- **Matching.** The analysis and the coach number corners differently: the analysis splits its fastest
+  lap by curvature ("Corner 3", flat-out bends too, and a quick left-right may be one "Corners 3–4"),
+  while the coach lists only the corners its reference lap brakes for, in lap order. Distances along the
+  lap do not line up either, since each measures along its own reference lap from the line. So a pick is
+  stored as where the corner is: the analysis lap's line through it, a position every 5 m from its start
+  to its end (`segmentLine` in `analysis`). A coach corner is picked when its apex is within 25 m of a
+  picked line and the reference lap runs the same way there (`pickedCorners`). A pick covering two
+  braking corners picks both; a pick of a bend taken flat out matches nothing. The same corner picked
+  again from another session (the middles of both lines within 15 m of the other line) toggles it off.
+- **Focus.** The picked corners take the 3 focus places first (those losing most, when more are
+  picked); the corners losing most fill the rest.
+- **Cue timing** does not change: one cue per straight, for the corner that follows it. At full
+  verbosity every corner is cued anyway, and corner cues never compete (each ends before its own
+  braking zone), so picks change nothing there.
+
+Without picks the coach behaves exactly as before.
+
 Phrase lengths are estimated (0.2 s plus 0.4 s a word); the audio delay setting
 covers Bluetooth lag. The simulated-session tests check that every cue is heard
 outside every braking zone, with and without a 2 s delay.

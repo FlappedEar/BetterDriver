@@ -35,6 +35,24 @@ fun detectTrack(at: GeoPoint, saved: List<Track>, directory: CircuitList): Track
         ?: TrackDetection.Unknown
 }
 
+/**
+ * The saved track with a start/finish line that a session's [positions] (in time order) reach
+ * first: the nearest one whose radius reaches the first position, else the first one a later
+ * position comes within. A session started at home and driven to the track, or one at a place whose
+ * track was made from it afterwards (FBBD-151), still gets its laps.
+ */
+fun trackAlong(positions: Sequence<GeoPoint>, saved: List<Track>): Track? {
+    val withLine = saved.filter { it.timeable }
+    if (withLine.isEmpty()) return null
+    return positions.firstNotNullOfOrNull { at ->
+        withLine
+            .map { it to distanceMeters(at, it.center) }
+            .filter { (t, d) -> d <= t.radiusMeters }
+            .minByOrNull { it.second }
+            ?.first
+    }
+}
+
 /** A new track named and placed from a directory circuit, with no lines yet (FBBD-79, FBBD-56). */
 fun newTrackFrom(circuit: Circuit, id: String = newTrackId()): Track = Track(
     id = id,
