@@ -5,6 +5,11 @@ package com.flappedear.betterdriver.timing
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.export.CsvExporter
+import com.flappedear.betterdriver.recorder.export.GpxExporter
+import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.timing.edit.LineRef
 import com.flappedear.betterdriver.timing.edit.lineRefs
 import com.flappedear.betterdriver.timing.edit.withLine
@@ -26,6 +31,7 @@ import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
+import java.io.StringWriter
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.roundToLong
@@ -321,6 +327,34 @@ class PointToPointTest {
         val open = OverlayData(sets, circuit)
         assertFalse(open.pointToPoint)
         assertNotNull(open.at(threeRuns.fixes.last().tMicros).lap)
+    }
+
+    @Test
+    fun `CSV and GPX export number the runs and leave the drives back out of them`() {
+        val sets = session(threeRuns.fixes)
+        val data = SessionData(
+            "hill-1", SessionInfo(1_760_000_000_000), SessionState.FINISHED,
+            GnssChannels.ALL.associateBy { it.id }, sets, emptyList(), null, 0, 0,
+        )
+        val runs = replayLaps("hill-1", sets, hill).exportLaps()
+        val csv = StringWriter().also { CsvExporter.write(data, it, runs) }.toString().trimEnd().split("\r\n")
+        val header = csv.first().split(',')
+        val lapColumn = header.indexOf("lap")
+        val rows = csv.drop(1).map { it.split(',') }
+        assertEquals(sets.size, rows.size)
+        for ((set, row) in sets.zip(rows)) {
+            val t = set.tMicros.toDouble()
+            // The true run holding this row, by the simulated start and finish passes.
+            val run = (1..3).firstOrNull { n -> t >= starts[n - 1] + 2_000 && t < finishes[n - 1] - 2_000 }
+            val between = (1..3).none { n -> t >= starts[n - 1] - 2_000 && t < finishes[n - 1] + 2_000 }
+            if (run != null) assertEquals(run.toString(), row[lapColumn], "row at $t")
+            if (between) assertEquals("", row[lapColumn], "row at $t")
+        }
+        val gpx = StringWriter().also { GpxExporter.write(data, it, runs) }.toString()
+        val gpxLaps = Regex("<!-- Lap (\\d+) -->").findAll(gpx).map { it.groupValues[1].toInt() }.toList()
+        assertEquals(listOf(1, 2, 3), gpxLaps)
+        // Each run's segment, then the drive back in a segment of its own.
+        assertEquals(7, Regex("<trkseg>").findAll(gpx).count())
     }
 
     @Test
