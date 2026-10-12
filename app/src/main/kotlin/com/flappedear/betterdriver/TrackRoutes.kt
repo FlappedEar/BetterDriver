@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver
 
+import android.content.Context
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,7 +17,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavHostController
+import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorScreen
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorState
 import com.flappedear.betterdriver.shell.ShellIcons
@@ -47,7 +51,7 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
     )
 }
 
-/** The track editor (FBBD-56); asks before dropping unsaved lines. */
+/** The track editor (FBBD-56); asks before dropping unsaved lines or deleting the track (FBBD-157). */
 @Composable
 internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String) {
     var data by remember(id) { mutableStateOf<EditorData?>(null) }
@@ -64,6 +68,8 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
     }
     val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions) }
     var leaving by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
+    val context = LocalContext.current
     val back: () -> Unit = {
         when {
             state.selected != null -> state.cancel()
@@ -84,19 +90,66 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         },
         onBack = back,
         onShare = { share(state.track) },
+        onDelete = { deleting = true },
     )
-    if (leaving) {
-        AlertDialog(
-            onDismissRequest = { leaving = false },
-            title = { Text("Discard changes?") },
-            text = { Text("The lines you moved are not saved.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    leaving = false
-                    nav.popBackStack()
-                }) { Text("Discard") }
-            },
-            dismissButton = { TextButton(onClick = { leaving = false }) { Text("Keep editing") } },
+    if (deleting) {
+        DeleteTrackDialog(
+            name = state.track.displayName,
+            onDelete = { deleteAndLeave(nav, tracks, id, context) },
+            onDismiss = { deleting = false },
         )
     }
+    if (leaving) DiscardDialog(onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
 }
+
+/** Deletes the track and leaves the editor, or says the delete failed. */
+private fun deleteAndLeave(nav: NavHostController, tracks: Tracks, id: String, context: Context) {
+    val editor = nav.currentBackStackEntry
+    tracks.delete(id) { gone ->
+        if (!gone) {
+            Toast.makeText(context, "Delete failed", Toast.LENGTH_LONG).show()
+        } else if (nav.currentBackStackEntry == editor) {
+            // Only while the editor still shows, so a Back pressed meanwhile is not doubled.
+            nav.popBackStack()
+        }
+    }
+}
+
+/** Asks before dropping unsaved lines; either button closes it. */
+@Composable
+private fun DiscardDialog(onDiscard: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Discard changes?") },
+        text = { Text("The lines you moved are not saved.") },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onDiscard()
+            }) { Text("Discard") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Keep editing") } },
+    )
+}
+
+/** Confirms deleting a track (FBBD-157), like a session delete (UI-48 option A); either button closes it. */
+@Composable
+private fun DeleteTrackDialog(name: String, onDelete: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Delete track?") },
+        text = { Text(deleteTrackText(name)) },
+        confirmButton = {
+            TextButton(onClick = {
+                onDismiss()
+                onDelete()
+            }) { Text("Delete", color = TrackTheme.colors.loss) }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+/** The delete question's text: what goes and what stays. */
+internal fun deleteTrackText(name: String): String =
+    "$name: its lines and coach reference will be removed from this phone. " +
+        "Sessions recorded there stay. This can't be undone."

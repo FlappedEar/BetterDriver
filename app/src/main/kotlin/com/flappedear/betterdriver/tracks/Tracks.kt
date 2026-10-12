@@ -13,6 +13,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.BuildConfig
+import com.flappedear.betterdriver.coach.CoachReferenceStore
+import com.flappedear.betterdriver.coach.coachReferencesDir
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.feature.track.editor.TileLoader
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -115,6 +117,19 @@ class Tracks private constructor(private val context: Context) {
         }
         publish()
         main.post { if (stored != null) onSaved(stored) else onFailed() }
+    }
+
+    /**
+     * Deletes the track and its coach reference (FBBD-157); sessions recorded there stay, with the
+     * track name they were recorded under. [onDone] gets false when the track file is still there.
+     */
+    fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
+        store.delete(id)
+        val gone = store.get(id) == null
+        if (gone) CoachReferenceStore(coachReferencesDir(context)).delete(id)
+        if (!gone) DebugLog.w(Tag, "deleting track $id failed")
+        publish()
+        main.post { onDone(gone) }
     }
 
     /** The track and the sessions recorded there, newest first; null if the track is gone. */
