@@ -27,8 +27,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # Also compares the screenshot tests of core-ui and feature-track
+          # with their goldens (screenshots.yml records them).
           - name: Unit tests
-            tasks: test
+            tasks: test -Proborazzi.test.verify=true
+            robolectric: true
           - name: Android lint
             tasks: lint
           - name: detekt
@@ -53,6 +56,12 @@ jobs:
       # Also validates the Gradle wrapper jar. Caches are written on main
       # and read by pull requests.
       - uses: gradle/actions/setup-gradle@v4
+      # Robolectric downloads its Android framework jar on the first run.
+      - uses: actions/cache@v4
+        if: matrix.robolectric
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
       - name: Build number
         id: build
         if: matrix.apk
@@ -63,8 +72,11 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: reports-${{ matrix.tasks }}
-          path: '**/build/reports/'
+          name: reports-${{ matrix.name }}
+          # Roborazzi writes the actual and diff images of failed screenshots to build/outputs/roborazzi.
+          path: |
+            **/build/reports/
+            **/build/outputs/roborazzi/
           retention-days: 7
       # Pull requests do not keep the APK; run CI manually on a branch to get one.
       - name: Upload the debug APK

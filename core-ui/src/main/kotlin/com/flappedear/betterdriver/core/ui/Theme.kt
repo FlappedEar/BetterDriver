@@ -11,7 +11,7 @@ import androidx.compose.ui.graphics.Color
 private val Accent = Color(0xFF0B6E8A)
 private val AccentDark = Color(0xFF4FB8D6)
 
-private val LightScheme = lightColorScheme(
+internal val LightScheme = lightColorScheme(
     primary = Accent,
     background = Color(0xFFF3F5F6),
     surface = Color(0xFFFFFFFF),
@@ -20,7 +20,7 @@ private val LightScheme = lightColorScheme(
 )
 
 /** App screens outside the car (UI-17 option A: always dark), colours from the round 2 mockups. */
-private val DarkScheme = darkColorScheme(
+internal val DarkScheme = darkColorScheme(
     primary = AccentDark,
     onPrimary = Color(0xFF06141A),
     background = Color(0xFF0B0F12),
@@ -34,13 +34,16 @@ private val DarkScheme = darkColorScheme(
     outlineVariant = Color(0xFF26313A),
 )
 
-private fun trackScheme(c: TrackColors) = darkColorScheme(
+internal fun trackScheme(c: TrackColors) = darkColorScheme(
     primary = c.text,
+    onPrimary = c.background,
     background = c.background,
     surface = c.surface,
     onBackground = c.text,
     onSurface = c.text,
     error = c.loss,
+    // The Material default (0xFF601410) is 4:1 on the loss red.
+    onError = c.onLoss,
 )
 
 /**
