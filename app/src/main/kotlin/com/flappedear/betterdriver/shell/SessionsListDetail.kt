@@ -48,6 +48,7 @@ internal fun SessionsListDetail(
         SessionsPanes.Detail -> shown?.let { id -> states.SaveableStateProvider(id) { detail(id, layout, onClose) } }
         SessionsPanes.ListAndDetail -> BoxWithConstraints(Modifier.fillMaxSize()) {
             val listWidth = sessionListWidthDp(maxWidth.value)
+            val pane = layout.pane(maxWidth.value - listWidth)
             Row(Modifier.fillMaxSize()) {
                 states.SaveableStateProvider(ListKey) { list(Modifier.width(listWidth.dp)) }
                 VerticalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
@@ -55,7 +56,6 @@ internal fun SessionsListDetail(
                     if (shown == null) {
                         PickSession()
                     } else {
-                        val pane = layout.pane(maxWidth.value - listWidth)
                         states.SaveableStateProvider(shown) { detail(shown, pane, null) }
                     }
                 }

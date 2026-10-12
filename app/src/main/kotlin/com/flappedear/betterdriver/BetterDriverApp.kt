@@ -312,7 +312,13 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
                 sessions = sessions.list,
                 exports = sessions.exports,
                 withVideo = sessions.withVideo,
-                onAnalyse = { s -> if (layout.tablet) picked = s.id else nav.navigate(Routes.sessionAnalysis(s.id)) },
+                onAnalyse = { s ->
+                    if (layout.tablet) {
+                        picked = s.id
+                    } else {
+                        nav.navigate(Routes.sessionAnalysis(s.id))
+                    }
+                },
                 selectedId = shown.takeIf { layout.tablet },
                 onExport = export,
                 goPro = GoProCardState(
