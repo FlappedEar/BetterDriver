@@ -20,8 +20,11 @@ data class LapOption(
     val onVideo: Boolean,
 )
 
-/** What the picker offers for one session: the whole video ([wholeMicros] long) and each lap. */
-data class VideoExportOptions(val wholeMicros: Long, val laps: List<LapOption>) {
+/**
+ * What the picker offers for one session: the whole video ([wholeMicros] long) and each lap, and
+ * the optimal lap ([optimal], FBBD-163).
+ */
+data class VideoExportOptions(val wholeMicros: Long, val laps: List<LapOption>, val optimal: OptimalOption? = null) {
     /** Chosen when the picker opens: the best lap when it is on video, else the whole video; null with no video. */
     val preselected: VideoPart?
         get() = laps.firstOrNull { it.best && it.onVideo }?.number ?: WholeVideo.takeIf { wholeMicros > 0 }
@@ -48,9 +51,13 @@ internal fun wholeVideoText(micros: Long): String {
     return if (seconds >= SecondsPerMinute) "$minutes min of video" else "$seconds s of video"
 }
 
-/** The file name offered when saving: BetterDriver-<id>-lap7.mp4, or -video.mp4 for all of it. */
-fun videoExportFileName(sessionId: String, part: VideoPart): String =
-    "BetterDriver-$sessionId-${if (part == WholeVideo) "video" else "lap$part"}.mp4"
+/** The file name offered when saving: BetterDriver-<id>-lap7.mp4, -video.mp4 for all of it, -optimal.mp4. */
+fun videoExportFileName(sessionId: String, part: VideoPart): String = "BetterDriver-$sessionId-" +
+    when (part) {
+        WholeVideo -> "video"
+        OptimalLap -> "optimal"
+        else -> "lap$part"
+    } + ".mp4"
 
 /** The card's line while rendering: "Rendering video · 42%", with the bar. */
 internal fun renderingState(fraction: Float?): TransferState {

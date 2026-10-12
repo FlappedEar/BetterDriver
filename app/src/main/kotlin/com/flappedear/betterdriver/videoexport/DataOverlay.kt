@@ -17,6 +17,7 @@ import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.CanvasOverlay
 import androidx.media3.effect.StaticOverlaySettings
+import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.core.ui.TrackColors
 import com.flappedear.betterdriver.core.ui.TrackColorsGreenRed
 import com.flappedear.betterdriver.core.ui.format.formatDelta
@@ -107,15 +108,24 @@ internal class OverlayPainter(fonts: OverlayFonts, outline: List<Xy>, colors: Tr
 
     private class Shaped(val layout: OverlayLayout, val map: MapFit, val track: Path, val scrim: Shader)
 
-    fun draw(canvas: Canvas, l: OverlayLayout, f: OverlayFrame) {
+    /**
+     * Draws frame [f]. With [optimal] (the optimal lap's video, FBBD-163) the lap slot shows the lap
+     * the part comes from over the theoretical lap's running time, and the delta what it has gained
+     * on the fastest lap so far.
+     */
+    fun draw(canvas: Canvas, l: OverlayLayout, f: OverlayFrame, optimal: OptimalOverlayText? = null) {
         val s = shaped(l)
         scrim.shader = s.scrim
         canvas.drawRect(0f, 0f, l.width.toFloat(), l.height.toFloat(), scrim)
         number.textSize = l.numberSize
         label.textSize = l.labelSize
         speed(canvas, l.speed, f)
-        lap(canvas, l.lap, f)
-        delta(canvas, l.delta, f)
+        if (optimal == null) {
+            lap(canvas, l.lap, f)
+            delta(canvas, l.delta, f)
+        } else {
+            optimalSlots(canvas, l, optimal)
+        }
         gMeter(canvas, l, f)
         map(canvas, l, s, f)
     }
@@ -212,6 +222,26 @@ internal class OverlayPainter(fonts: OverlayFonts, outline: List<Xy>, colors: Tr
         canvas.drawCircle(car.x, car.y, r * CarRimShare, fill)
         fill.color = best
         canvas.drawCircle(car.x, car.y, r, fill)
+    }
+
+    /**
+     * The optimal lap's slots: the part's lap and name (as much of it as fits) over the theoretical
+     * lap's running time, then the gain on the fastest lap so far.
+     */
+    private fun optimalSlots(canvas: Canvas, l: OverlayLayout, o: OptimalOverlayText) {
+        ink(best, text)
+        val box = l.lap
+        val caption = o.captions.firstOrNull { label.measureText(it) <= box.width } ?: o.captions.lastOrNull().orEmpty()
+        slot(canvas, box, caption, formatRunningTime(o.theoreticalMicros / MicrosPerMilli))
+        val seconds = o.deltaSeconds
+        val color = when {
+            seconds == null -> dim
+            isDeltaGain(seconds) -> gain
+            abs(seconds) < HalfHundredth -> text
+            else -> loss
+        }
+        ink(dim, color)
+        slot(canvas, l.delta, "VS BEST LAP", seconds?.let(::formatDelta) ?: Dash)
     }
 
     private companion object {

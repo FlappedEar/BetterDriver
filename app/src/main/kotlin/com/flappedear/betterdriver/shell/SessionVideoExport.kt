@@ -32,10 +32,12 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.TransferState
+import com.flappedear.betterdriver.videoexport.OptimalLap
 import com.flappedear.betterdriver.videoexport.VideoExportOptions
 import com.flappedear.betterdriver.videoexport.VideoPart
 import com.flappedear.betterdriver.videoexport.WholeVideo
 import com.flappedear.betterdriver.videoexport.lapOptionText
+import com.flappedear.betterdriver.videoexport.optimalOptionText
 import com.flappedear.betterdriver.videoexport.wholeVideoText
 
 /** Video with data on the Sessions screen (FBBD-152): progress and results by session id, and the actions. */
@@ -64,10 +66,10 @@ internal fun VideoExportLine(state: TransferState?, rendering: Boolean, onCancel
 }
 
 /**
- * What Video with data exports (FBBD-152): the whole session or one lap, each lap with its time and
- * the best lap chosen to start with; laps the cameras missed cannot be chosen. A bottom sheet, so a
- * long session's laps scroll. [loading] while the session is read; [options] is then null if its video
- * could not be read.
+ * What Video with data exports (FBBD-152): the whole session, the optimal lap (FBBD-163) or one lap,
+ * each lap with its time and the best lap chosen to start with; laps the cameras missed cannot be
+ * chosen. A bottom sheet, so a long session's laps scroll. [loading] while the session is read;
+ * [options] is then null if its video could not be read.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -121,6 +123,13 @@ private fun PartList(options: VideoExportOptions, picked: VideoPart?, onPick: (V
                 selected = picked == WholeVideo,
                 enabled = options.wholeMicros > 0,
             ) { onPick(WholeVideo) }
+        }
+        // The theoretical best, filmed (FBBD-163): its note lists the parts without video, or why it cannot be made.
+        options.optimal?.let { optimal ->
+            item(key = "optimal") {
+                val (name, note) = optimalOptionText(optimal)
+                PartRow(name, note, picked == OptimalLap, optimal.enabled) { onPick(OptimalLap) }
+            }
         }
         items(options.laps, key = { it.number }) { lap ->
             val (name, note) = lapOptionText(lap)

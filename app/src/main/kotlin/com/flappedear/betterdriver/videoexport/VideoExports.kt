@@ -22,6 +22,8 @@ import androidx.media3.transformer.ExportException
 import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
+import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.feature.review.SessionVideo
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -143,6 +145,19 @@ class VideoExports private constructor(private val context: Context) {
     ) {
         private val durations = HashMap<String, Long?>()
 
+        /** The optimal lap and its video (FBBD-163), analysed when first asked for. */
+        val optimal: OptimalVideo by lazy { analyseOptimal() }
+
+        // A session the analysis cannot handle only leaves the optimal lap out.
+        @Suppress("TooGenericExceptionCaught")
+        private fun analyseOptimal(): OptimalVideo = try {
+            val analysis = laps?.track?.let { analyzeSession(telemetrySessionOf(data, it)) }
+            optimalVideo(analysis, video, sets.firstOrNull()?.tMicros ?: 0L, ::durationOf)
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "analysing ${data.id} for its optimal lap failed", e)
+            OptimalVideo(null, null)
+        }
+
         /** The file's own length, read from its index; exact, unlike the logged end. */
         private fun durationOf(clip: VideoClip): Long? = durations.getOrPut(clip.file) {
             try {
@@ -153,7 +168,10 @@ class VideoExports private constructor(private val context: Context) {
             }
         }
 
-        fun cuts(part: VideoPart): List<VideoCut> {
+        fun cuts(part: VideoPart): List<VideoCut> =
+            if (part == OptimalLap) optimal.plan?.cuts?.map { it.cut }.orEmpty() else recordedCuts(part)
+
+        private fun recordedCuts(part: VideoPart): List<VideoCut> {
             val range = if (part == WholeVideo) {
                 Long.MIN_VALUE to Long.MAX_VALUE
             } else {
@@ -168,7 +186,7 @@ class VideoExports private constructor(private val context: Context) {
                 val n = t.lap.number
                 LapOption(n, t.lap.kind, t.lap.timeMillis, best = n == best, onVideo = cuts(n).isNotEmpty())
             }
-            return VideoExportOptions(cuts(WholeVideo).totalMicros(), lapOptions)
+            return VideoExportOptions(cuts(WholeVideo).totalMicros(), lapOptions, optimal.option)
         }
     }
 
@@ -205,7 +223,9 @@ class VideoExports private constructor(private val context: Context) {
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
             val data = OverlayData(prepared.sets, prepared.laps, accelOf(prepared.data))
             val painter = OverlayPainter(OverlayFonts.load(context), data.outline)
-            val items = cuts.map { cut ->
+            // The optimal lap's cuts are its plan's, in the same order (Prepared.cuts).
+            val optimal = if (part == OptimalLap) prepared.optimal.plan else null
+            val items = cuts.mapIndexed { i, cut ->
                 val clipping = MediaItem.ClippingConfiguration.Builder()
                     .setStartPositionUs(cut.fromMicros)
                     .setEndPositionUs(cut.toMicros)
@@ -214,7 +234,9 @@ class VideoExports private constructor(private val context: Context) {
                     .setUri(Uri.fromFile(prepared.video.file(cut.clip)))
                     .setClippingConfiguration(clipping)
                     .build()
-                val overlay = OverlayEffect(listOf(DataOverlay(data, cut, painter)))
+                val drawn = optimal?.let { OptimalOverlay(data, it, it.cuts[i], painter) }
+                    ?: DataOverlay(data, cut, painter)
+                val overlay = OverlayEffect(listOf(drawn))
                 EditedMediaItem.Builder(media).setEffects(Effects(emptyList(), listOf(overlay))).build()
             }
             // Silence where a clip has no sound, so clips with and without it can follow each other.
