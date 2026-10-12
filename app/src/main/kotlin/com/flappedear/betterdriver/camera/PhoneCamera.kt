@@ -2,7 +2,12 @@ package com.flappedear.betterdriver.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.hardware.camera2.params.StreamConfigurationMap
 import android.media.MediaCodec
 import android.os.Build
@@ -10,10 +15,12 @@ import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
 import android.os.StatFs
+import android.os.SystemClock
 import android.util.Range
 import android.util.Size
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 import androidx.camera.core.CameraSelector
@@ -111,6 +118,29 @@ class PhoneCamera(
 
     private var thermalLog = ThermalLog(ladder)
 
+    /**
+     * The sensor timestamp of the newest frame the camera captured, and whether that timestamp is on
+     * elapsedRealtime (else on System.nanoTime). With each sync report it says when that frame was
+     * taken on the session clock, so the video's sync and drift are measured by the camera's own
+     * frames, not by when the report arrived (FBBD-21).
+     */
+    @Volatile
+    private var lastFrameNanos = 0L
+    private var realtimeFrames = false
+
+    private val frames = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(session: CameraCaptureSession, request: CaptureRequest, result: TotalCaptureResult) {
+            result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { lastFrameNanos = it }
+        }
+    }
+
+    /** The newest frame's capture time on the session clock, given the session time [nowMicros]; null before one. */
+    private fun frameMicros(nowMicros: Long): Long? {
+        val frame = lastFrameNanos.takeIf { it > 0 } ?: return null
+        val clock = if (realtimeFrames) SystemClock.elapsedRealtimeNanos() else System.nanoTime()
+        return nowMicros - (clock - frame) / NanosPerMicro
+    }
+
     /** The thermal status last written to the session; only changes are written (FBBD-183). */
     private var sessionThermal: Int? = null
 
@@ -168,6 +198,7 @@ class PhoneCamera(
     /** Binds the camera at [stepIndex] of [steps] and starts the next file. Falls down the ladder if binding fails. */
     @SuppressLint("MissingPermission") // Audio is only enabled when RECORD_AUDIO is granted (CameraService).
     @Suppress("TooGenericExceptionCaught") // CameraX reports unsupported settings and busy cameras as exceptions.
+    @OptIn(ExperimentalCamera2Interop::class)
     private fun begin(stepIndex: Int) {
         val p = provider ?: return
         val step = steps[stepIndex]
@@ -176,11 +207,16 @@ class PhoneCamera(
             val recorder = Recorder.Builder()
                 .setQualitySelector(QualitySelector.from(phoneQuality(step.size)))
                 .build()
-            val capture = VideoCapture.Builder(recorder)
+            val builder = VideoCapture.Builder(recorder)
                 .setTargetFrameRate(Range(step.fps, step.fps))
-                .build()
+            Camera2Interop.Extender(builder).setSessionCaptureCallback(frames)
+            val capture = builder.build()
             p.unbindAll()
-            p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
+            lastFrameNanos = 0L
+            val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
+            realtimeFrames = Camera2CameraInfo.from(back.cameraInfo)
+                .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+                CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
             bound = capture
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
@@ -204,7 +240,7 @@ class PhoneCamera(
                         if (syncDue(now, lastSync)) {
                             lastSync = now
                             val media = e.recordingStats.recordedDurationNanos / NanosPerMicro
-                            sink.synced(name, now, media)
+                            sink.synced(name, now, media, frameMicros(now))
                             clips.synced(name, now, media)
                         }
                     }
