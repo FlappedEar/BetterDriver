@@ -120,7 +120,16 @@ class CoachReferenceStore(private val dir: File) {
 
     fun delete(trackId: String) = fileFor(trackId).delete()
 
-    private fun fileFor(trackId: String): File = File(dir, "${checkedTrackId(trackId)}.coach.json")
+    /** Ids of the tracks with a reference file, readable or not. */
+    fun trackIds(): List<String> = dir.listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
+        .map { it.name.removeSuffix(Suffix) }
+        .filter { id -> runCatching { checkedTrackId(id) }.isSuccess }
+
+    private fun fileFor(trackId: String): File = File(dir, "${checkedTrackId(trackId)}$Suffix")
+
+    private companion object {
+        const val Suffix = ".coach.json"
+    }
 }
 
 /** [trackId], once it is known to be safe as a file name. */
