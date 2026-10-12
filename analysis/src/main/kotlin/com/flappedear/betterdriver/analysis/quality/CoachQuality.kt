@@ -25,10 +25,28 @@ private const val KmhPerMps = 3.6
 private const val MinMarginKmh = 5.0
 
 /** A cue as the coach logged it: when it was triggered, its number, and metres to the braking zone. */
-private class LoggedCue(val tMicros: Long, val seq: Int, val corner: String?, val zoneMeters: Double?)
+internal class LoggedCue(val tMicros: Long, val seq: Int, val corner: String?, val zoneMeters: Double?)
 
-/** When a cue's sound started, how it was said and where it went. */
-private class Voiced(val tMicros: Long, val seq: Int, val path: String, val route: String)
+/**
+ * When a cue's sound started, how it was said and where it went. From FBBD-47 on also when the voice
+ * was asked ([askedMicros]) and had its audio ready ([readyMicros]), the output [device], whether
+ * audio focus was granted, and the headset's own delay from the tap test ([outDelayMillis], FBBD-49).
+ */
+@Suppress("LongParameterList") // Each is a field of the event.
+internal class Voiced(
+    val tMicros: Long,
+    val seq: Int,
+    val path: String,
+    val route: String,
+    val askedMicros: Long? = null,
+    val readyMicros: Long? = null,
+    val device: String? = null,
+    val focus: String? = null,
+    val outDelayMillis: Long? = null,
+) {
+    /** When the sound reached the driver's ear: its start plus the headset's own delay when known. */
+    val heardMicros: Long get() = tMicros + (outDelayMillis?.takeIf { route == "headset" } ?: 0L) * MicrosPerMilli
+}
 
 internal fun coachSection(events: List<RecorderEvent>, samples: GnssSamples): QualitySection {
     val cues = events.ofKind(CueKind).mapNotNull(::loggedCue)
@@ -39,6 +57,7 @@ internal fun coachSection(events: List<RecorderEvent>, samples: GnssSamples): Qu
     val voiced = events.ofKind(EventKinds.COACH_VOICE).mapNotNull(::voiced).associateBy { it.seq }
     val played = cues.mapNotNull { c -> voiced[c.seq]?.let { c to it } }
     val margins = played.mapNotNull { (c, v) -> margin(c, v, samples)?.let { Triple(c, v, it) } }
+    val ends = events.ofKind(EventKinds.COACH_VOICE_END)
     val metrics = buildList {
         add(
             info(
@@ -49,12 +68,7 @@ internal fun coachSection(events: List<RecorderEvent>, samples: GnssSamples): Qu
         addAll(delays(played))
         addAll(marginMetrics(margins.map { it.third }))
         add(headset(played.map { it.second }))
-        add(
-            notMeasured(
-                "coach.overlap", "Overlapping cues", "0 overlapping cues (FBBD-27)",
-                "the end of each cue's sound is not logged",
-            ),
-        )
+        addAll(audioMetrics(played, ends, samples))
     }
     val notes = played.map { (c, v) ->
         val m = margins.firstOrNull { it.first === c }?.third
@@ -76,7 +90,10 @@ private fun loggedCue(e: RecorderEvent): LoggedCue? {
 private fun voiced(e: RecorderEvent): Voiced? {
     val f = fields(e.text)
     val seq = f["seq"]?.toIntOrNull() ?: return null
-    return Voiced(e.tMicros, seq, f["path"].orEmpty(), f["route"].orEmpty())
+    return Voiced(
+        e.tMicros, seq, f["path"].orEmpty(), f["route"].orEmpty(), f["asked_us"]?.toLongOrNull(),
+        f["ready_us"]?.toLongOrNull(), f["device"], f["focus"], f["out_delay_ms"]?.toLongOrNull(),
+    )
 }
 
 /** The 95th percentile of trigger to sound, for each way of saying cues. */
@@ -114,12 +131,12 @@ private fun margin(c: LoggedCue, v: Voiced, s: GnssSamples): Margin? {
     val zone = c.zoneMeters
     val kmh = s.speed.getOrNull(s.lastAtOrBefore(v.tMicros))?.takeIf { it.isFinite() && it >= MinMarginKmh }
     if (zone == null || kmh == null) return null
-    val meters = zone - driven(s, c.tMicros, v.tMicros)
+    val meters = zone - driven(s, c.tMicros, v.heardMicros)
     return Margin(meters, (meters / (kmh / KmhPerMps) * MicrosPerSecond).roundToLong())
 }
 
 /** Metres driven from [from] to [to] by the GNSS speed, each sample's speed held until the next. */
-private fun driven(s: GnssSamples, from: Long, to: Long): Double {
+internal fun driven(s: GnssSamples, from: Long, to: Long): Double {
     var meters = 0.0
     var i = maxOf(0, s.lastAtOrBefore(from))
     while (i < s.size && s.t[i] < to) {
@@ -140,7 +157,8 @@ private fun marginMetrics(margins: List<Margin>): List<QualityMetric> {
     val onTime = margins.count { it.micros >= MarginMicros } * Percent / margins.size
     val inZone = margins.count { it.meters <= 0 }
     val how = "distance to the braking zone the coach worked out when it triggered the cue, less the distance " +
-        "the GNSS speed says the car drove until the sound started; ${margins.size} corner cue(s)"
+        "the GNSS speed says the car drove until the sound started, plus the headset's delay from the tap test " +
+        "when there is one; ${margins.size} corner cue(s)"
     return listOf(
         judged(
             "coach.margin", "Cues heard in time", onTime, "%", onTime >= MinOnTimePercent, Basis.DERIVED,

@@ -62,6 +62,9 @@ class GnssSecondLogTest {
         log.onStatus(RecorderStatus.Stopped("user"))
         assertEquals(1, seconds().sumOf { it.longGaps })
         assertEquals(440L, seconds().mapNotNull { it.maxRxGapMillis }.max())
+        // The wait between fixes on the phone, and when the fix that ended it came.
+        assertEquals(440_000L, seconds().first().maxGapMicros)
+        assertEquals(30_000L, seconds().first().firstFixMicros)
     }
 
     @Test
@@ -80,6 +83,7 @@ class GnssSecondLogTest {
     fun readsBackWhatItWrites() {
         val s = GnssSecond(
             3, 3_000_100, 24, 24, 1, 40, 0, 80, 95_000, true, 10, 990, 31_000, 50.1234567, -1.5, 0.25, 87.5, 80.0, 95.0,
+            3_000_100,
         )
         assertEquals(s, GnssSecond.parse(s.format()))
     }

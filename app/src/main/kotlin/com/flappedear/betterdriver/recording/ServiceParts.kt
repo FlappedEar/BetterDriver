@@ -157,7 +157,12 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
     val sink = RecordingVideoSink(recording, camera) { _, status, ok -> onStatus(status, ok) }
     when (data.getInt(RecorderProtocol.VIDEO_KIND)) {
         RecorderProtocol.VIDEO_STARTED -> sink.started(file, at)
-        RecorderProtocol.VIDEO_SYNCED -> sink.synced(file, at, data.getLong(RecorderProtocol.VIDEO_MEDIA_US))
+        RecorderProtocol.VIDEO_SYNCED -> sink.synced(
+            file,
+            at,
+            data.getLong(RecorderProtocol.VIDEO_MEDIA_US),
+            if (data.containsKey(RecorderProtocol.VIDEO_FRAME_US)) data.getLong(RecorderProtocol.VIDEO_FRAME_US) else null,
+        )
         RecorderProtocol.VIDEO_STOPPED -> sink.stopped(file, at, text)
         RecorderProtocol.VIDEO_STATUS -> sink.status(text, data.getBoolean(RecorderProtocol.VIDEO_OK))
         RecorderProtocol.VIDEO_THERMAL -> sink.thermal(

@@ -25,6 +25,7 @@ private val PlainStops = setOf("user", "file_full")
  * sample: the part of the session video should cover.
  */
 internal fun videoSection(events: List<RecorderEvent>, clips: List<QualityClip>, from: Long, to: Long): QualitySection {
+    val endMicros = to
     val indexed = clips.map { VideoClip(it.camera, it.file, it.startMicros, it.endMicros) }
     val timeline = VideoTimeline.from(events, indexed)
     if (timeline.clips.isEmpty()) {
@@ -36,13 +37,9 @@ internal fun videoSection(events: List<RecorderEvent>, clips: List<QualityClip>,
         val own = timeline.clips(camera)
         listOf(
             offset(camera, own.first(), byFile[camera to own.first().file]),
-            notMeasured(
-                "video.$camera.sync_error", "Start sync error ($camera)", "<= 1 frame, never over 50 ms (FBBD-21)",
-                "needs a sharp event in the video (line crossing, hard stop) compared with its GNSS time",
-            ),
+            startSyncError(camera, own, events),
             drift(camera, own, events),
-            coverage(camera, own, from, to),
-        )
+        ) + driftAt(camera, own, events, endMicros) + coverage(camera, own, from, to)
     }
     val notes = events.ofKind(EventKinds.VIDEO_STOP).mapNotNull { e ->
         val f = VideoEventText.parse(e.text)

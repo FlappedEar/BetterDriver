@@ -38,8 +38,11 @@ interface VideoSink {
     /** [file] began; [startMicros] is the session time of its media time 0. */
     fun started(file: String, startMicros: Long)
 
-    /** At session time [atMicros], [file] had recorded [mediaMicros] of media. About once a second. */
-    fun synced(file: String, atMicros: Long, mediaMicros: Long)
+    /**
+     * At session time [atMicros], [file] had recorded [mediaMicros] of media. About once a second.
+     * [frameMicros] is the session time the camera's newest frame was captured, when it knows it.
+     */
+    fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long? = null)
 
     /** [file] ended at session time [atMicros]. [reason] is free text, such as "user" or "thermal". */
     fun stopped(file: String, atMicros: Long, reason: String)
@@ -71,6 +74,7 @@ object VideoEventText {
     const val CAMERA = "camera"
     const val FILE = "file"
     const val MEDIA_US = "media_us"
+    const val FRAME_US = "frame_us"
     const val REASON = "reason"
 
     fun format(vararg pairs: Pair<String, Any>): String =

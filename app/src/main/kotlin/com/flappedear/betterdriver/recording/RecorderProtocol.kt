@@ -67,6 +67,9 @@ internal object RecorderProtocol {
     const val VIDEO_FILE = "file"
     const val VIDEO_AT_US = "atMicros"
     const val VIDEO_MEDIA_US = "mediaMicros"
+
+    /** In a [VIDEO_SYNCED] report: the session time the newest frame was captured, when known (FBBD-21). */
+    const val VIDEO_FRAME_US = "frameMicros"
     const val VIDEO_TEXT = "text"
     const val VIDEO_OK = "ok"
 

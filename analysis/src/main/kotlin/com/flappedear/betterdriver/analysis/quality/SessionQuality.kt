@@ -51,14 +51,25 @@ fun sessionQuality(
     val samples = GnssSamples(data.sampleSets)
     val lastEvent = data.events.maxOfOrNull { it.tMicros } ?: 0L
     val end = data.end?.tMicros ?: maxOf(samples.t.lastOrNull() ?: 0L, lastEvent)
-    val sections = listOf(
-        gnssSection(samples, data.events, end),
+    val gnss = gnssSection(samples, data.events, end)
+    val lags = (0 until samples.size).filter { samples.utc[it] != GnssSamples.NoUtc }.map {
+        samples.t[it] to samples.t[it] - (samples.utc[it] - data.info.startUtcMillis) * MicrosPerMilli
+    }
+    val sections = listOfNotNull(
+        gnss.copy(metrics = gnss.metrics + clockDrift(lags, end)),
         timingSection(data, track),
         recordingSection(data, samples, previous),
         videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end),
+        goProSection(data.events, clips, end),
         coachSection(data.events, samples),
         thermalSection(data.events),
+        screenSection(data.events, outages(samples, end), end),
+        exportSection(data.events, end),
         channelsSection(data),
     )
-    return QualityReport(QualityFormat, data.id, data.state.name, computedAtUtcMillis, sections)
+    return QualityReport(QualityFormat, data.id, data.state.name, computedAtUtcMillis, withSoak(sections, end))
 }
+
+/** [sections] with the soak (FBBD-46) after them, judged from their values. */
+internal fun withSoak(sections: List<QualitySection>, durationMicros: Long): List<QualitySection> =
+    sections + soakSection(sections, durationMicros)

@@ -18,8 +18,10 @@ import kotlin.math.roundToLong
  * GNSS sets arrived, [fixes] of them with a position. [missing] samples are missing from the
  * receiver's fix times, each step longer than the usual one ([stepMillis]) hiding round(step / usual)
  * - 1; [longGaps] steps were over 200 ms; [maxRxGapMillis] is the longest step on the receiver's clock
- * and [maxGapMicros] the longest wait between arrivals on the phone, both for steps ending in this
- * second. Steps across a link drop ([afterDrop]) count in none of these. [lagMicros] is the smallest
+ * ending in this second. Steps across a link drop ([afterDrop]) count in none of these.
+ * [maxGapMicros] is the longest wait on the phone between fixes ending in this second, link drops
+ * included: what the track screen's GNSS banner goes by; [firstFixMicros] is when its first fix
+ * came, which ends any wait over a second. [lagMicros] is the smallest
  * of (session time − receiver time since the session's start): how far the phone's clock is from the
  * receiver's, plus the shortest delivery delay. [lat], [lon] are the mean fix, [varianceM2] the mean
  * squared distance of the fixes from it; [kmh] the mean speed, [kmhMin] and [kmhMax] its range.
@@ -44,6 +46,7 @@ data class GnssSecond(
     val kmh: Double?,
     val kmhMin: Double?,
     val kmhMax: Double?,
+    val firstFixMicros: Long? = null,
 ) {
     fun format(): String = buildString {
         append("sec=").append(second).append(" t_us=").append(tMicros)
@@ -62,6 +65,7 @@ data class GnssSecond(
         kmh?.let { append(" kmh=").append(String.format(Locale.ROOT, "%.2f", it)) }
         kmhMin?.let { append(" kmh_min=").append(String.format(Locale.ROOT, "%.2f", it)) }
         kmhMax?.let { append(" kmh_max=").append(String.format(Locale.ROOT, "%.2f", it)) }
+        firstFixMicros?.let { append(" fix_us=").append(it) }
     }
 
     companion object {
@@ -92,6 +96,7 @@ data class GnssSecond(
                 kmh = f["kmh"]?.toDoubleOrNull(),
                 kmhMin = f["kmh_min"]?.toDoubleOrNull(),
                 kmhMax = f["kmh_max"]?.toDoubleOrNull(),
+                firstFixMicros = f["fix_us"]?.toLongOrNull(),
             )
         }
     }
@@ -108,7 +113,7 @@ class GnssSecondLog(
     private val write: (String) -> Unit = { DebugLog.forSession(sessionId, CheckLog.GNSS, it) },
 ) : RecorderListener {
     private var current: Builder? = null
-    private var lastT: Long? = null
+    private var lastFixT: Long? = null
     private var lastUtc: Long? = null
     private var dropSinceLast = false
 
@@ -145,12 +150,15 @@ class GnssSecondLog(
         val drop = dropSinceLast
         dropSinceLast = false
         if (drop) b.afterDrop = true
-        lastT?.let { previous -> if (!drop) b.maxGap = maxOf(b.maxGap ?: 0L, set.tMicros - previous) }
-        lastT = set.tMicros
         value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop) }
         val lat = value(GnssChannels.LAT.id)
         val lon = value(GnssChannels.LON.id)
-        if (lat != null && lon != null && isFix(lat, lon)) b.fixes += Triple(lat, lon, value(GnssChannels.SPEED_KMH.id))
+        if (lat != null && lon != null && isFix(lat, lon)) {
+            b.fixes += Triple(lat, lon, value(GnssChannels.SPEED_KMH.id))
+            lastFixT?.let { previous -> b.maxGap = maxOf(b.maxGap ?: 0L, set.tMicros - previous) }
+            lastFixT = set.tMicros
+            if (b.firstFix == null) b.firstFix = set.tMicros
+        }
     }
 
     /** Receivers without a fix can report 0, 0: that is no position. */
@@ -183,6 +191,7 @@ class GnssSecondLog(
         var longGaps = 0
         var maxRxGap: Long? = null
         var maxGap: Long? = null
+        var firstFix: Long? = null
         var afterDrop = false
         var utcFirst: Long? = null
         var utcLast: Long? = null
@@ -206,7 +215,7 @@ class GnssSecondLog(
             return GnssSecond(
                 second, tMicros, samples, fixes.size, missing, usual, longGaps, maxRxGap, maxGap, afterDrop,
                 utcFirst, utcLast, lag, lat, lon, variance,
-                speeds.average().takeIf { speeds.isNotEmpty() }, speeds.minOrNull(), speeds.maxOrNull(),
+                speeds.average().takeIf { speeds.isNotEmpty() }, speeds.minOrNull(), speeds.maxOrNull(), firstFix,
             )
         }
     }
