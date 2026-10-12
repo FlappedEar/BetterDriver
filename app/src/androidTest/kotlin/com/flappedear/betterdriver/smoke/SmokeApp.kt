@@ -23,7 +23,17 @@ import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import com.flappedear.betterdriver.MainActivity
+import com.flappedear.betterdriver.recorder.store.SessionState
+import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.recording.RecorderClient
+import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
+import com.flappedear.betterdriver.shell.SetupRepo
+import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackStore
+import com.flappedear.betterdriver.tracks.Tracks
 import org.junit.rules.ExternalResource
 import org.junit.rules.RuleChain
 import org.junit.rules.TestRule
@@ -226,3 +236,82 @@ fun SmokeRule.pumpBack() {
 
 private const val FrameMs = 16L
 private const val SettleFrames = 30
+
+/**
+ * The seeded data, the same for every test in the process: [reset], after a test that adds to it,
+ * takes away what it added (sessions, tracks, Demo GNSS), also when the test failed half way.
+ */
+object SmokeData {
+    private val app get() = InstrumentationRegistry.getInstrumentation().targetContext
+    private val sessionsDir get() = File(app.filesDir, "sessions")
+    private val tracksDir get() = File(app.filesDir, "tracks")
+
+    /** The sessions on disk now. */
+    fun sessions(): List<SessionSummary> = SessionStore(sessionsDir).list()
+
+    /** The saved tracks on disk now. */
+    fun tracks(): List<Track> = TrackStore(tracksDir).all()
+
+    /** Saves [track] as the track editor would, and has the app read the tracks again. */
+    fun saveTrack(track: Track) {
+        TrackStore(tracksDir).save(track)
+        Tracks.get(app).refresh()
+    }
+
+    /** [SmokeFixtures.seedOld], then the app reads the sessions and tracks again. */
+    fun seedOld() {
+        SmokeFixtures.seedOld(app.filesDir, ::corpus)
+        Sessions.get(app).refresh()
+        Tracks.get(app).refresh()
+    }
+
+    /** A file of the analysis parity corpus, as text. */
+    fun corpus(name: String): String =
+        InstrumentationRegistry.getInstrumentation().context.assets.open(name).bufferedReader().use { it.readText() }
+
+    /** Writes [text] to a file in the app's cache, for a stubbed file picker to hand over. */
+    fun cacheFile(name: String, text: String): File = File(app.cacheDir, name).apply { writeText(text) }
+
+    fun reset() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        instrumentation.runOnMainSync {
+            val recorder = RecorderClient.get(app)
+            if (recorder.state.recording || recorder.state.starting) recorder.stop()
+        }
+        val end = SystemClock.uptimeMillis() + LoadTimeoutMs
+        while (sessions().any { it.state == SessionState.RECORDING } && SystemClock.uptimeMillis() < end) {
+            Thread.sleep(PollMs)
+        }
+        sessions().filter { it.info.car !in SmokeFixtures.Cars }.forEach { it.dir.deleteRecursively() }
+        val tracks = TrackStore(tracksDir)
+        tracks.all().filter { it.id !in SmokeFixtures.TrackIds }.forEach { tracks.delete(it.id) }
+        instrumentation.runOnMainSync {
+            SetupRepo.get(app).update { s ->
+                val demo = s.equipment.filter { it.model == EquipmentModel.DEMO_GNSS }
+                demo.fold(s) { acc, e -> acc.removeEquipment(e.id) }
+            }
+        }
+        Sessions.get(app).refresh()
+        Tracks.get(app).refresh()
+    }
+
+    private const val PollMs = 200L
+}
+
+/** The app's processes running now, by what follows the package name: "" for the UI, ":recorder" and so on. */
+fun appProcesses(): Set<String> {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val manager = context.getSystemService(ActivityManager::class.java)
+    return manager.runningAppProcesses.orEmpty()
+        .map { it.processName }
+        .filter { it.startsWith(context.packageName) }
+        .map { it.removePrefix(context.packageName) }
+        .toSet()
+}
+
+/** The app's processes that crashed or stopped responding, with Android's reason. */
+fun appProcessErrors(): List<String> {
+    val context = InstrumentationRegistry.getInstrumentation().targetContext
+    val manager = context.getSystemService(ActivityManager::class.java)
+    return manager.processesInErrorState.orEmpty().map { "${it.processName}: ${it.shortMsg}" }
+}

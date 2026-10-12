@@ -6,6 +6,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
+import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
@@ -21,7 +22,8 @@ import org.junit.runner.RunWith
 /**
  * Sessions and lap analysis on the emulator (FBBD-161): every analysis tab of a circuit session
  * with video, the map, Corners → Every lap → Corner laps (with its video and Compare), the coach
- * picks, and a point-to-point session with its acceleration runs.
+ * picks, the optimal lap video's planner (FBBD-163), and a point-to-point session with its
+ * acceleration runs.
  */
 @RunWith(AndroidJUnit4::class)
 class AnalysisSmokeTest {
@@ -118,6 +120,23 @@ class AnalysisSmokeTest {
         app.back()
         // The analysis is read again after the lap review, so this can take a while.
         app.waitForText("THEORETICAL BEST BY CORNER", timeoutMs = LoadTimeoutMs)
+    }
+
+    @Test
+    fun optimalLapVideoPlanner() {
+        app.openSessions()
+        app.openSession(SmokeFixtures.VideoCar)
+        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        // The session's phone video covers every part of the theoretical best, so it can be made.
+        app.waitForText("Every part on video", substring = true, timeoutMs = LoadTimeoutMs).performScrollTo()
+        app.waitFor(hasText("Optimal lap video") and hasClickAction() and isEnabled()).performScrollTo().performClick()
+
+        // The planner: each part with its lap; Cancel closes it without making the video.
+        app.waitForText("The theoretical best", substring = true, timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitFor(hasText("Export") and hasClickAction()).assertIsEnabled()
+        app.waitForText("Cancel").performClick()
+        app.waitUntilGone("The theoretical best", substring = true)
+        check(app.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) { "an optimal lap video started" }
     }
 
     @Test

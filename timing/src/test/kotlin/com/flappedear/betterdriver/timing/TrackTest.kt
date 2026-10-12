@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackFileVersion
 import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.io.File
@@ -50,6 +51,43 @@ class TrackTest {
         assertFailsWith<TrackFormatException> { TrackJson.decode(newer) }
         val badLat = TrackJson.encode(poznan).replace("52.4178", "152.4178")
         assertFailsWith<TrackFormatException> { TrackJson.decode(badLat) }
+    }
+
+    @Test
+    fun `reads a track file as builds before point-to-point tracks wrote it`() {
+        // As 0.2.x wrote it (before FBBD-155): version 1, no kind and no finish line.
+        val old = """
+            {
+                "format": "betterdriver-track",
+                "version": 1,
+                "track": {
+                    "id": "tor-poznan",
+                    "name": "Tor Poznań",
+                    "center": { "lat": 52.4178, "lon": 16.8058 },
+                    "country": "PL",
+                    "layout": "Full",
+                    "radiusMeters": 2000.0,
+                    "startFinish": {
+                        "left": { "lat": 52.417, "lon": 16.8048 },
+                        "right": { "lat": 52.417, "lon": 16.8052 }
+                    },
+                    "sectorLines": [],
+                    "pitEntry": null,
+                    "pitExit": null,
+                    "circuitId": "wd:Q9360123",
+                    "revision": 4,
+                    "updatedUtcMillis": 1786000000000
+                }
+            }
+        """.trimIndent()
+        val track = TrackJson.decode(old)
+        assertEquals(TrackKind.Circuit, track.kind)
+        assertNull(track.finish)
+        assertTrue(track.timeable)
+        assertEquals(4, track.revision)
+        assertEquals(TrackLine(GeoPoint(52.417, 16.8048), GeoPoint(52.417, 16.8052)), track.startFinish)
+        // Written back as version 1, so it still moves to those builds.
+        assertTrue(TrackJson.encode(track).contains("\"version\": 1"))
     }
 
     @Test
