@@ -1,0 +1,60 @@
+# Release acceptance criteria
+
+A release is not ready because the JVM tests are green, and a feature is not
+done because its code exists. Every release passes two gates.
+
+## 1. Automatic gate (CI)
+
+`release.yml` signs and publishes only a commit whose whole CI run on main
+succeeded (`ci-green` job). That run includes:
+
+- unit tests (with the analysis parity tests against FlappedEar Telemetry and
+  the screenshot tests), Android lint, detekt and the APK build;
+- the **emulator smoke tests** (FBBD-161): the debug app on an Android 14
+  emulator with seeded sessions and tracks, opening every major screen and
+  flow. The job fails when a test fails, when a screen crashes, when
+  navigation breaks, when seeded data cannot be opened, or when any app
+  process (UI, `:recorder`, `:camera`, `:coach`) crashes or stops responding
+  (ANR), as logcat and `ActivityManager` report it.
+
+## 2. Acceptance record (every release)
+
+Each release has `docs/release-notes/v<version>.md`, merged with the version
+bump. The release workflow refuses to publish when the file is missing, when
+one of the areas below is missing, or when any area says `FAIL`.
+
+Each area is one line, `- <Area>: <PASS | NOT RUN | N/A> - <evidence>`, where
+the evidence names the test, issue or log that shows it. `NOT RUN` is allowed
+but must be honest: it says which real-device check has not been done yet,
+and the Jira issue that carries it (usually in Pending Arek with numeric pass
+criteria).
+
+| Area | Questions |
+| --- | --- |
+| Recording | Can a full session be recorded without corruption? Can the UI fail without destroying the recording? Does GNSS reconnect? Can sensors disappear independently? |
+| Timing | Is timing validated against RaceChrono or a known reference? Are circuit and point-to-point both covered? |
+| Video | Is sync acceptable for a full session (start error, drift at 10/20/30 min)? Does video survive realistic phone conditions? |
+| Analysis | Are the major analysis flows deterministic and covered by tests? Do the Telemetry parity tests still hold where intended? |
+| Coach | Is cue timing safe (effective delay at the helmet)? Is audio routed correctly? Does advice come from valid reference data, and is it suppressed when confidence is weak? |
+| Storage | Are stored-data migrations safe? Do backup and restore work? Can sessions be transferred? |
+| Hardware | RaceBox, the intended GoPro path, the phone, tablet review, and OBD once it exists. |
+
+The numeric pass criteria for the real-device checks live in their Jira issues
+(FBBD-8, 12, 21, 22, 24, 27, 34, 43, 46, 49, 61, 68, 72, 82, 93 and others
+labelled P0). The plan of record is the Confluence page "BetterDriver plan of
+record: closed-loop coach".
+
+## Template
+
+```markdown
+Short summary of what changed for the driver.
+
+## Acceptance
+- Recording: PASS - ...
+- Timing: NOT RUN - FBBD-61 (lap times vs RaceChrono) pending a track day
+- Video: ...
+- Analysis: ...
+- Coach: ...
+- Storage: ...
+- Hardware: ...
+```

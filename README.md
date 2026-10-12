@@ -43,6 +43,9 @@ JDK 17 and the Android SDK (compile SDK 36).
   `SHA256SUMS.txt` on GitHub Releases, once CI is green on that commit. The
   version must match `betterdriver.version` in `gradle.properties`; the build
   number is the commit count. Versions below 1.0.0 are pre-releases.
+  It also needs the release's acceptance record,
+  `docs/release-notes/vX.Y.Z.md`; see
+  [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md).
 - `.github/workflows/signing-key.yml`: daily check of the signing key secret.
   See [docs/signing-key.md](docs/signing-key.md).
 
