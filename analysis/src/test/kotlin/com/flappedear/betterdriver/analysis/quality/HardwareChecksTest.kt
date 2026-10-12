@@ -1,0 +1,123 @@
+package com.flappedear.betterdriver.analysis.quality
+
+import com.flappedear.betterdriver.recorder.ChannelValue
+import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.store.Record
+import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionState
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+
+/** Each hardware check of the session report (FBBD-183) on its own, with synthetic sessions. */
+class HardwareChecksTest {
+    private val start = 1_760_000_000_000L
+
+    /** 25 Hz fixes from [from] to [to] µs at [kmh], except where [gap] says none came. */
+    private fun stream(from: Long, to: Long, kmh: (Long) -> Double = { 100.0 }, gap: LongRange? = null) =
+        (from..to step 40_000L).filter { gap == null || it !in gap }.map { t ->
+            SampleSet(
+                t,
+                listOf(
+                    ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble()),
+                    ChannelValue(GnssChannels.LAT.id, 50.0 + t * 1e-12),
+                    ChannelValue(GnssChannels.LON.id, 19.0),
+                    ChannelValue(GnssChannels.SPEED_KMH.id, kmh(t)),
+                ),
+            )
+        }
+
+    private fun report(sets: List<SampleSet>, events: List<RecorderEvent>, clips: List<QualityClip> = emptyList()) =
+        sessionQuality(
+            SessionData(
+                "s", SessionInfo(start), SessionState.FINISHED, emptyMap(), sets, events.sortedBy { it.tMicros },
+                Record.End(sets.last().tMicros, "user"), truncatedBytes = 0, skippedBytes = 0,
+            ),
+            clips = clips,
+        )
+
+    private fun QualityReport.metric(id: String) = metrics.single { it.id == id }
+
+    @Test
+    fun `cues that overlap, share a straight or lack the tap test are caught`() {
+        val sets = stream(0, 60_000_000)
+        fun cue(seq: Int, at: Long) = listOf(
+            RecorderEvent(at, "coach_cue", "seq=$seq lap=1 kind=Corner corner=1 zone_m=300.0 text=Turn 1"),
+            RecorderEvent(at + 200_000, EventKinds.COACH_VOICE, "seq=$seq path=clip asked_us=$at route=headset focus=refused"),
+        )
+        val events = cue(1, 10_000_000) + cue(2, 11_000_000) + listOf(
+            // Cue 1 was still playing when cue 2 began, and was cut off.
+            RecorderEvent(11_200_000, EventKinds.COACH_VOICE_END, "seq=1 end=stopped"),
+            RecorderEvent(12_500_000, EventKinds.COACH_VOICE_END, "seq=2 end=done"),
+        )
+        val r = report(sets, events)
+        assertEquals(Verdict.FAIL, r.metric("coach.overlap").verdict)
+        assertEquals(1.0, r.metric("coach.per_straight").value)
+        assertEquals(Verdict.FAIL, r.metric("coach.per_straight").verdict)
+        assertEquals(Verdict.NOT_MEASURED, r.metric("coach.total_clip").verdict)
+        assertTrue("tap test" in r.metric("coach.total_clip").how)
+        assertEquals(0.0, r.metric("coach.focus").value)
+        assertEquals(100.0, r.metric("coach.clips").value)
+    }
+
+    @Test
+    fun `a banner with fixes arriving is false, one after an outage is timed, the screen going off fails`() {
+        val sets = stream(0, 120_000_000, gap = 50_000_000L..53_000_000L)
+        val events = listOf(
+            RecorderEvent(51_100_000, EventKinds.GNSS_BANNER, "state=shown"),
+            RecorderEvent(53_500_000, EventKinds.GNSS_BANNER, "state=cleared"),
+            RecorderEvent(80_000_000, EventKinds.GNSS_BANNER, "state=shown"),
+            RecorderEvent(80_300_000, EventKinds.GNSS_BANNER, "state=cleared"),
+            RecorderEvent(90_000_000, EventKinds.SCREEN, "state=off"),
+            RecorderEvent(95_000_000, EventKinds.SCREEN, "state=on"),
+            RecorderEvent(30_000_000, EventKinds.UI_FRAMES, "frames=100 janky=10 frozen=1 worst_ms=900 hist=50,20,10,5,5,5,1,1,1,1,1"),
+        )
+        val r = report(sets, events)
+        assertEquals(1.0, r.metric("ui.false_banners").value)
+        assertEquals(1.14, r.metric("ui.banner_show").value!!, 1e-9)
+        assertEquals(Verdict.PASS, r.metric("ui.banner_show").verdict)
+        assertEquals(0.46, r.metric("ui.banner_clear").value!!, 1e-9)
+        assertEquals(Verdict.FAIL, r.metric("ui.screen_off").verdict)
+        assertEquals(Verdict.FAIL, r.metric("ui.jank").verdict)
+        assertEquals(Verdict.FAIL, r.metric("ui.frozen").verdict)
+        assertEquals(33.0, r.metric("ui.frame_p95").value)
+    }
+
+    @Test
+    fun `a GoPro that started late, and a clip placed by its clock, fail`() {
+        val sets = stream(0, 60_000_000)
+        val events = listOf(
+            RecorderEvent(4_500_000, EventKinds.GOPRO, "camera=gopro-1 action=start result=ok"),
+            RecorderEvent(61_000_000, EventKinds.GOPRO, "camera=gopro-1 action=stop result=ok"),
+        )
+        val clips = listOf(QualityClip("gopro-1", "GX010001.MP4", 4_000_000, 60_000_000, "CAMERA_CLOCK", 5_000_000))
+        val r = report(sets, events, clips)
+        assertEquals(Verdict.FAIL, r.metric("gopro.gopro-1.start").verdict)
+        assertEquals(Verdict.PASS, r.metric("gopro.gopro-1.stop").verdict)
+        assertEquals(1.0, r.metric("gopro.gopro-1.stop").value!!, 1e-9)
+        assertEquals(Verdict.FAIL, r.metric("video.import").verdict)
+    }
+
+    @Test
+    fun `battery reports too far apart fail, and a short drive is no soak`() {
+        val sets = stream(0, 120_000_000)
+        val events = listOf(0L, 30_000_000L, 100_000_000L).map {
+            RecorderEvent(it, EventKinds.DEVICE, "battery_c=${35 + it / 10_000_000} battery_pct=80 plugged=none thermal=0 headroom=n/a")
+        }
+        val r = report(sets, events)
+        assertEquals(70.0, r.metric("thermal.battery").value)
+        assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
+        assertEquals(45.0, r.metric("thermal.battery_peak").value)
+        assertTrue(r.metrics.filter { it.id.startsWith("soak.") && it.id != "soak.minutes" }.all { it.verdict == Verdict.NOT_MEASURED })
+    }
+
+    @Test
+    fun `issue keys come from the criterion`() {
+        assertEquals(listOf("FBBD-21", "FBBD-82"), issueKeys("<= 50 ms at 10 min (FBBD-21, FBBD-82, FBBD-21)"))
+        assertEquals(emptyList(), issueKeys(null))
+    }
+}

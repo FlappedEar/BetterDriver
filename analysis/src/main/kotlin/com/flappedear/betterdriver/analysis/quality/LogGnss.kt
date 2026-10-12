@@ -33,8 +33,9 @@ internal fun logGnssSection(seconds: List<GnssSecond>, events: List<RecorderEven
     val firstIndex = seconds.first().second
     val lastIndex = seconds.last().second
     // Whole seconds between the first and the last, without a link drop: a second with no line had no sample.
-    val drops = seconds.filter { it.afterDrop }.map { it.second }.toSet()
-    val whole = ((firstIndex + 1) until lastIndex).filter { k -> k !in drops && (k + 1) !in drops }
+    // A link drop runs from the last second before it to the first second after it.
+    val drops = seconds.zipWithNext().filter { (_, b) -> b.afterDrop }.flatMap { (a, b) -> (a.second..b.second).toList() }.toSet()
+    val whole = ((firstIndex + 1) until lastIndex).filter { k -> k !in drops }
     val counts = whole.map { (byIndex[it]?.samples ?: 0).toDouble() }
     val metrics = buildList {
         add(rate(counts))

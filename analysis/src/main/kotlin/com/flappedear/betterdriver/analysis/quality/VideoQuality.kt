@@ -108,8 +108,10 @@ private const val CoverageCriterion = "100 % of the session, or stops per the th
 private fun coverage(camera: String, own: List<VideoClip>, from: Long, to: Long): QualityMetric {
     val label = "Video coverage ($camera)"
     if (to <= from) return notMeasured("video.$camera.coverage", label, CoverageCriterion, "no GNSS samples to cover")
+    // A file with no stop logged runs to the next one, or the last one to the session's end: the
+    // camera stops with the recording, and an older build logged no stop for that last file.
     val spans = own
-        .mapIndexed { i, c -> c.startMicros to (c.endMicros ?: own.getOrNull(i + 1)?.startMicros ?: c.startMicros) }
+        .mapIndexed { i, c -> c.startMicros to (c.endMicros ?: own.getOrNull(i + 1)?.startMicros ?: to) }
         .map { (a, b) -> a.coerceIn(from, to) to b.coerceIn(from, to) }
         .filter { (a, b) -> b > a }
         .sortedBy { it.first }
