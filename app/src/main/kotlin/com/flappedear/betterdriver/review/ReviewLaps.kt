@@ -28,6 +28,7 @@ import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.video.ClipStatus
 import com.flappedear.betterdriver.video.VideoIndex
+import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -140,11 +141,12 @@ private const val StampPrime = 31L
 
 /**
  * The session's video for review: the phone camera when it recorded, else the first camera with
- * files, as the VBO export picks it. Clips whose file is missing are left out.
+ * files, as the VBO export picks it. Clips whose file is missing, or cut off by a crash (no index, so
+ * it would not play), are left out.
  */
 private fun sessionVideo(dir: File, timeline: VideoTimeline): SessionVideo? {
     val videoDir = File(dir, VideoFiles.DIR)
-    val present = timeline.clips.filter { File(videoDir, it.file).isFile }
+    val present = timeline.clips.filter { File(videoDir, it.file).let { f -> f.isFile && Mp4Reader.isComplete(f) } }
     val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
     return camera?.let { SessionVideo(it, present, videoDir) }
 }
