@@ -14,6 +14,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -63,7 +64,7 @@ internal fun NavGraphBuilder.setupDestinations(
         arguments = listOf(navArgument(Routes.EquipmentIdArg) { type = NavType.StringType }),
     ) { e ->
         val id = e.arguments?.getString(Routes.EquipmentIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { EquipmentRoute(nav, repo, id) }
+        Box(Modifier.padding(padding)) { EquipmentRoute(nav, e, repo, id) }
     }
     composable(
         Routes.DiagnosticsPattern,
@@ -73,7 +74,7 @@ internal fun NavGraphBuilder.setupDestinations(
         val recorder = RecorderClient.get(LocalContext.current)
         Box(Modifier.padding(padding)) {
             if (item == null) {
-                LeaveWhenGone(nav, Routes.DiagnosticsPattern)
+                PopIfShown(nav, e)
             } else {
                 RaceBoxDiagnosticsRoute(item, recorder, onBack = { nav.popBackStack() })
             }
@@ -84,7 +85,7 @@ internal fun NavGraphBuilder.setupDestinations(
         arguments = listOf(navArgument(Routes.CarIdArg) { type = NavType.StringType }),
     ) { e ->
         val id = e.arguments?.getString(Routes.CarIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { CarRoute(nav, repo, id) }
+        Box(Modifier.padding(padding)) { CarRoute(nav, e, repo, id) }
     }
 }
 
@@ -165,22 +166,13 @@ private fun goProName(goPro: GoProModel): String = when (goPro) {
     else -> "GoPro ${goPro.label}"
 }
 
-/**
- * Leaves the screen at [route] whose item is gone, unless it is already being left: Remove pops it,
- * and while it animates out it would otherwise pop Settings under it too, back to Drive.
- */
-@Composable
-private fun LeaveWhenGone(nav: NavHostController, route: String) {
-    LaunchedEffect(Unit) { if (nav.currentDestination?.route == route) nav.popBackStack() }
-}
-
 /** One equipment item (UI-33 B). Removing it drops it from the session choice too. */
 @Composable
-internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String) {
+internal fun EquipmentRoute(nav: NavHostController, entry: NavBackStackEntry, repo: SetupRepo, id: String) {
     val item = repo.setup.equipment(id)
     if (item == null) {
         // Removed, or a stale back stack: nothing to show.
-        LeaveWhenGone(nav, Routes.EquipmentPattern)
+        PopIfShown(nav, entry)
         return
     }
     EquipmentScreen(
@@ -199,10 +191,10 @@ internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String)
 
 /** Adding ([Routes.NewCar]) or editing a car (UI-35 B). */
 @Composable
-internal fun CarRoute(nav: NavHostController, repo: SetupRepo, id: String) {
+internal fun CarRoute(nav: NavHostController, entry: NavBackStackEntry, repo: SetupRepo, id: String) {
     val car = repo.setup.car(id)
     if (car == null && id != Routes.NewCar) {
-        LeaveWhenGone(nav, Routes.CarPattern)
+        PopIfShown(nav, entry)
         return
     }
     CarScreen(
@@ -278,3 +270,13 @@ private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
 /** A standard-service device; one that advertises no name is shown by its model and address. */
 private fun nearby(model: EquipmentModel, d: FoundBleDevice) =
     NearbyDevice(model, d.name.ifBlank { "${model.label} ${d.address}" }, d.address, d.bars)
+
+/**
+ * Leaves [entry], a screen with nothing left to show, while it is the one shown. Removing an item
+ * pops its screen first; the screen is still composed while it animates out and then finds the item
+ * gone, and popping again there would also close the screen under it.
+ */
+@Composable
+internal fun PopIfShown(nav: NavHostController, entry: NavBackStackEntry) {
+    LaunchedEffect(Unit) { if (nav.currentBackStackEntry?.id == entry.id) nav.popBackStack() }
+}

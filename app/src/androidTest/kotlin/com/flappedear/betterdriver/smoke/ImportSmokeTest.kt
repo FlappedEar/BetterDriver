@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -83,11 +84,18 @@ class ImportSmokeTest {
             SmokeData.tracks().any { it.name == SmokeFixtures.LoopName }
         }
 
-        // The session is timed on the new track now: from the editor, back to its analysis and Sessions.
+        // The session is timed on the new track now. Back one screen at a time until the Sessions list
+        // (or Drive) shows, so the last Back never leaves the app.
         Espresso.closeSoftKeyboard()
-        app.back()
-        app.waitForText("Lap analysis")
-        app.back()
+        repeat(BackSteps) {
+            val home = runCatching {
+                app.waitNamed("the Sessions list or Drive", SettleMs) {
+                    app.onAllNodesWithText("Compare laps").fetchSemanticsNodes().isNotEmpty() ||
+                        app.onAllNodesWithText("START").fetchSemanticsNodes().isNotEmpty()
+                }
+            }.isSuccess
+            if (!home) app.back()
+        }
         app.openSessions()
         app.openSession(SmokeFixtures.ImportedGpx)
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
@@ -106,5 +114,13 @@ class ImportSmokeTest {
             .respondWith(ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file))))
         app.openSessions()
         app.waitForText("Import session").performClick()
+    }
+
+    private companion object {
+        /** The editor and the analysis. */
+        const val BackSteps = 2
+
+        /** How long a screen gets to settle after Back. */
+        const val SettleMs = 3_000L
     }
 }
