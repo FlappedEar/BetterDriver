@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recording
 
+import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -72,10 +73,34 @@ object UiChecks {
         return stats
     }
 
-    /** Logs an event of the running recording at [atNanos] (System.nanoTime); nothing outside one. */
+    /**
+     * Sends an event to the recorder, to record in its session (RecorderClient sets it while bound).
+     * Any thread.
+     */
+    @Volatile
+    var recorder: ((Bundle) -> Unit)? = null
+
+    /** Logs an event of the running recording at [atNanos] (System.nanoTime); nothing outside a recording. */
     private fun event(kind: String, text: String, atNanos: Long = System.nanoTime()) {
         val l = live ?: return
-        CheckLog.event(l.session, (atNanos - l.startNanos) / NanosPerMicro, kind, text)
+        report(l.session, (atNanos - l.startNanos) / NanosPerMicro, kind, text)
+    }
+
+    /**
+     * Logs an event of recording [session] at its session time [tMicros] in the drive's log, and sends
+     * it to the recorder for the session's own report; the recorder keeps it only while that session
+     * runs. Any thread.
+     */
+    fun report(session: String, tMicros: Long, kind: String, text: String) {
+        CheckLog.event(session, tMicros, kind, text)
+        recorder?.invoke(
+            Bundle().apply {
+                putString(RecorderProtocol.UI_SESSION, session)
+                putLong(RecorderProtocol.UI_T_US, tMicros)
+                putString(RecorderProtocol.UI_KIND, kind)
+                putString(RecorderProtocol.UI_TEXT, text)
+            },
+        )
     }
 
     private const val NanosPerMicro = 1_000L

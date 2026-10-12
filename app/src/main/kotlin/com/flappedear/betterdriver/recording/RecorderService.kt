@@ -140,6 +140,7 @@ class RecorderService : Service() {
         onCoach = { what, data ->
             active?.recording?.let { logCoachReport(it, what, data) { status -> coachStatus = status } }
         },
+        onUi = { data -> active?.recording?.let { logUiReport(it, data) } },
     )
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
 

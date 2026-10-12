@@ -11,12 +11,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.recorder.EventKinds
-import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.UiChecks
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
@@ -125,7 +125,7 @@ class GoPros private constructor(private val context: Context) {
                 acks = { ack ->
                     val result = if (ack.ok) "ok" else "failed"
                     val text = "camera=$id action=${ack.action} result=$result"
-                    CheckLog.event(sessionId, ack.sessionUs, EventKinds.GOPRO, text)
+                    UiChecks.report(sessionId, ack.sessionUs, EventKinds.GOPRO, text)
                 },
             )
         }

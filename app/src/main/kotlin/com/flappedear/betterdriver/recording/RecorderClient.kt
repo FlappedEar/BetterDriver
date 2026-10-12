@@ -104,12 +104,21 @@ class RecorderClient private constructor(private val context: Context) {
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName, binder: IBinder) {
-            service = Messenger(binder).also { send(it, RecorderProtocol.MSG_REGISTER) }
+            val to = Messenger(binder).also { send(it, RecorderProtocol.MSG_REGISTER) }
+            service = to
+            UiChecks.recorder = { data ->
+                try {
+                    to.send(Message.obtain(null, RecorderProtocol.MSG_UI_EVENT).apply { this.data = data })
+                } catch (_: RemoteException) {
+                    // The recorder process is gone; the line is in the log all the same.
+                }
+            }
         }
 
         /** The recorder process died. Its session is safe on disk and is recovered now. */
         override fun onServiceDisconnected(name: ComponentName) {
             service = null
+            UiChecks.recorder = null
             val error = if (state.recording) "The recorder stopped unexpectedly. The session is saved." else state.error
             state = RecorderState(connected = false, error = error)
             GoPros.get(context).onRecorderState(null, 0L, null)
@@ -128,6 +137,7 @@ class RecorderClient private constructor(private val context: Context) {
         service?.let { send(it, RecorderProtocol.MSG_UNREGISTER) }
         context.unbindService(connection)
         service = null
+        UiChecks.recorder = null
         bound = false
     }
 

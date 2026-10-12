@@ -93,6 +93,18 @@ internal object RecorderProtocol {
     /** Coach to service: the coach line for the track screen. */
     const val MSG_COACH_STATUS = 6
 
+    /**
+     * UI to service (FBBD-183): an event of the drive's checks the UI process saw (the track screen's
+     * frames, the GNSS banner, a GoPro's acknowledgement), to record in the running session so its
+     * report has it too. In msg.data: [UI_SESSION], [UI_T_US], [UI_KIND], [UI_TEXT]. Only the kinds in
+     * CheckLog.UiEventKinds; ignored unless its session is running.
+     */
+    const val MSG_UI_EVENT = 7
+    const val UI_SESSION = "session"
+    const val UI_T_US = "tMicros"
+    const val UI_KIND = "kind"
+    const val UI_TEXT = "text"
+
     /** In a [MSG_STATE] bundle: the coach line's corner label and text, each absent when empty (FBBD-98). */
     const val KEY_COACH_CORNER = "coachCorner"
     const val KEY_COACH_TEXT = "coachText"
