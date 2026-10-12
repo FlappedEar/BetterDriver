@@ -1,5 +1,10 @@
 package com.flappedear.betterdriver.gopro
 
+import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.log.CheckLog
+import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.log.LogFile
+import com.flappedear.betterdriver.recorder.log.LogLine
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.VideoClip
@@ -51,6 +56,36 @@ class GoProImporterTest {
         assertTrue(abs(clips[1].sessionOffsetUs - 125_300_000) <= 60_000, "${clips[1].sessionOffsetUs}")
         assertEquals(2, clips[1].chapter)
         assertEquals(120_000_000, clips[0].durationUs)
+    }
+
+    @Test
+    fun `each import and its stretches go in the drive's log`() {
+        val session = TestSession.data(400)
+        val c1 = chapter("GH010007.MP4", 5_300_000, 120)
+        val c2 = chapter("GH020007.MP4", 125_300_000, 120)
+        val other = chapter("GH010001.MP4", -86_400_000_000L, 60)
+        val log = File(dir, "betterdriver.log")
+        DebugLog.install(LogFile(log, "main", background = false))
+        try {
+            GoProImporter(zone = ZoneOffset.UTC).import(dir, session, listOf(c1, c2), hero8)
+            GoProImporter(zone = ZoneOffset.UTC).import(dir, session, listOf(other), hero8)
+        } finally {
+            DebugLog.install(null)
+        }
+        val events = log.readLines().mapNotNull { LogLine.parse(it) }
+            .filter { it.tag == CheckLog.EVENT && it.session == session.id }
+            .mapNotNull { CheckLog.parseEvent(it.message) }
+        val imports = events.filter { it.kind == EventKinds.VIDEO_IMPORT }.map { CheckLog.fields(it.text) }
+        assertEquals(listOf("aligned", "aligned", "rejected"), imports.map { it["result"] })
+        assertEquals(listOf("GPS_MATCH", "GPS_MATCH"), imports.take(2).map { it["method"] })
+        assertEquals("120000000", imports[0]["duration_us"])
+        // One two-minute stretch per chapter, each placed on its own where the whole file is.
+        val probes = events.filter { it.kind == EventKinds.VIDEO_PROBE }
+        assertEquals(2, probes.size)
+        probes.zip(listOf(5_300_000L, 125_300_000L)).forEach { (p, at) ->
+            assertTrue(abs(CheckLog.fields(p.text)["offset_us"]!!.toLong() - at) <= 60_000, p.text)
+            assertTrue(abs(p.tMicros - (at + 60_000_000)) <= 60_000, "${p.tMicros}")
+        }
     }
 
     @Test

@@ -20,6 +20,14 @@ import java.time.Clock
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
 
+/** A camera answered Set Shutter [action] ([START] or [STOP]) at [sessionUs] on the session clock, or gave up then. */
+data class GoProAck(val action: String, val ok: Boolean, val sessionUs: Long) {
+    companion object {
+        const val START = "start"
+        const val STOP = "stop"
+    }
+}
+
 /**
  * An Open GoPro camera (HERO9 Black and later, MAX2) that starts and stops recording with the
  * session over Open GoPro BLE (https://gopro.github.io/OpenGoPro/docs). The commands used here
@@ -51,6 +59,8 @@ class OpenGoProSource(
     private val readyTimeoutMillis: Long = 10_000,
     /** Where the recording note is written; the app passes Dispatchers.IO, as [scope] is the main thread (FBBD-41). */
     private val io: CoroutineContext = EmptyCoroutineContext,
+    /** Told when the camera acknowledged Set Shutter on or off, or failed to, for the drive's log (FBBD-82). */
+    private val acks: (GoProAck) -> Unit = {},
 ) : LiveVideoSource {
     override val kind = VideoSourceKind.GOPRO
 
@@ -78,6 +88,7 @@ class OpenGoProSource(
                 throw e
             } catch (e: Exception) {
                 // Any failure (no camera, refused, missing permission) only ends this source.
+                if (recording == null) acks(GoProAck(GoProAck.START, ok = false, session.sessionClock()))
                 _state.value = VideoSourceState.Failed(e.message ?: "GoPro did not start")
             }
         }
@@ -111,8 +122,10 @@ class OpenGoProSource(
             }
         } == true
         val ctx = session
-        if (stopped && ctx != null) {
-            save(ctx, started.copy(stopAckSessionUs = ctx.sessionClock(), stopAckUtcMillis = clock.millis()))
+        val at = ctx?.sessionClock()
+        if (at != null) acks(GoProAck(GoProAck.STOP, stopped, at))
+        if (stopped && ctx != null && at != null) {
+            save(ctx, started.copy(stopAckSessionUs = at, stopAckUtcMillis = clock.millis()))
             _state.value = VideoSourceState.Idle
         } else {
             _state.value = VideoSourceState.Failed("GoPro did not stop; stop it by hand")
@@ -136,6 +149,7 @@ class OpenGoProSource(
             videoMode = mode,
         )
         recording = started
+        acks(GoProAck(GoProAck.START, ok = true, started.startAckSessionUs))
         _state.value = VideoSourceState.Recording(started.startAckSessionUs)
         save(session, started)
     }
