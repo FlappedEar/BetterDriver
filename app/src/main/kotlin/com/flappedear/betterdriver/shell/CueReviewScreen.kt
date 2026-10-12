@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.coach.Cue
 import com.flappedear.betterdriver.coach.CueKind
 import com.flappedear.betterdriver.coach.CueReview
 import com.flappedear.betterdriver.coach.ReviewedCue
+import com.flappedear.betterdriver.coach.confidenceText
 import com.flappedear.betterdriver.coach.outcome
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -96,6 +97,7 @@ private fun CueCard(item: ReviewedCue) {
             DimText(verdict, color = color)
         }
         Text("“${cue.text}”", style = MaterialTheme.typography.bodyLarge)
+        cue.confidenceText()?.let { DimText(it) }
         item.outcome()?.let { DimText(it) }
     }
 }

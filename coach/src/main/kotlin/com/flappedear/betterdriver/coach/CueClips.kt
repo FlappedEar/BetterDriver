@@ -56,6 +56,9 @@ object CueClips {
             Phrases.corner(corner, Advice.BrakeLater(SampleNumber)),
             Phrases.corner(corner, Advice.BrakeEarlier),
             Phrases.corner(corner, Advice.CarrySpeed(SampleNumber)),
+            // Said without the number below High confidence (FBBD-177).
+            Phrases.corner(corner, Advice.BrakeLater(SampleNumber, precise = false)),
+            Phrases.corner(corner, Advice.CarrySpeed(SampleNumber, precise = false)),
             Phrases.lapTime(SampleLapMillis, best = true),
             Phrases.lapTime(SampleLapMillis, best = false),
         )
