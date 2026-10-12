@@ -3,23 +3,23 @@ package com.flappedear.betterdriver
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavHostController
@@ -30,6 +30,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.debug.DebugLogRows
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
@@ -41,8 +42,10 @@ import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.rememberSessionExport
+import com.flappedear.betterdriver.sessionanalysis.SessionAnalysisRoute
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
@@ -51,12 +54,14 @@ import com.flappedear.betterdriver.shell.listedGoPros
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionCoach
 import com.flappedear.betterdriver.shell.SessionDeleting
+import com.flappedear.betterdriver.shell.SessionsListDetail
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTab
+import com.flappedear.betterdriver.shell.appNavigation
+import com.flappedear.betterdriver.shell.shownSession
 import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.SetupScreen
-import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
 import com.flappedear.betterdriver.sharing.BackupRows
 import com.flappedear.betterdriver.sharing.FollowTransfers
@@ -72,14 +77,6 @@ import com.flappedear.betterdriver.update.updatesBlocked
 import com.flappedear.betterdriver.videoexport.VideoExportFlow
 import com.flappedear.betterdriver.videoexport.VideoExports
 
-private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
-
-private val TopLevelItems = listOf(
-    TopLevelItem(Routes.Drive, "Drive", ShellIcons.Drive),
-    TopLevelItem(Routes.Sessions, "Sessions", ShellIcons.Sessions),
-    TopLevelItem(Routes.Settings, "Settings", ShellIcons.Settings),
-)
-
 private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
 
 /**
@@ -90,14 +87,16 @@ private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_
  *
  * Recording runs in the recorder process ([recorder]); this UI only starts, stops and follows it.
  * If the UI restarts during a recording it reconnects and returns to the track screen (FBBD-69).
+ *
+ * On a tablet (FBBD-40) a navigation rail replaces the bottom bar and Sessions shows the list beside
+ * the picked session's analysis. The window's size class is worked out here and passed down, so the
+ * screens choose their layout from it.
  */
 @Composable
 fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     val nav = rememberNavController()
     val prefs = rememberAppPrefs()
     val context = LocalContext.current
-    val tracks = remember { Tracks.get(context) }
-    val repo = remember { SetupRepo.get(context) }
     val entry by nav.currentBackStackEntryAsState()
     val route = entry?.destination?.route
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
@@ -108,50 +107,76 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     val updates = remember { AppUpdates.get(context) }
     FollowUpdates(updates, recorder, sessions)
     val updateDot = hasUpdate(updates.state) && !updatesBlocked(recorder, sessions)
+    val layout = windowLayout()
+    val navigation = appNavigation(layout, topLevel = route != null && route in Routes.TopLevel)
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = { if (route != null && route in Routes.TopLevel) BottomBar(nav, route, updateDot) },
-    ) { padding ->
-        // Insets are applied per destination: the track screen owns the full
-        // window so its dark background also fills the system bar areas.
-        NavHost(navController = nav, startDestination = start) {
-            composable(Routes.Setup) {
-                Box(Modifier.padding(padding)) { Setup(nav, prefs, repo) }
+        bottomBar = { if (navigation == AppNavigation.Bar && route != null) BottomBar(nav, route, updateDot) },
+    ) { scaffoldPadding ->
+        // The rail takes the start inset itself, so the screens beside it do not pad for it again.
+        val padding = if (navigation == AppNavigation.Rail) withoutStart(scaffoldPadding) else scaffoldPadding
+        Row(Modifier.fillMaxSize()) {
+            if (navigation == AppNavigation.Rail && route != null) SideRail(nav, route, updateDot)
+            AppNavHost(nav, start, prefs, padding, layout, recorder, sessions, Modifier.weight(1f))
+        }
+    }
+}
+
+/** Every destination. [layout] is the window's size class, passed to the screens that change with it. */
+@Suppress("LongParameterList", "LongMethod")
+@Composable
+private fun AppNavHost(
+    nav: NavHostController,
+    start: String,
+    prefs: AppPrefs,
+    padding: PaddingValues,
+    layout: LayoutSize,
+    recorder: RecorderClient,
+    sessions: Sessions,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val tracks = remember { Tracks.get(context) }
+    val repo = remember { SetupRepo.get(context) }
+    // Insets are applied per destination: the track screen owns the full
+    // window so its dark background also fills the system bar areas.
+    NavHost(navController = nav, startDestination = start, modifier = modifier) {
+        composable(Routes.Setup) {
+            Box(Modifier.padding(padding)) { Setup(nav, prefs, repo) }
+        }
+        composable(Routes.Drive) {
+            Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
+        }
+        composable(Routes.Sessions) {
+            Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo, layout) }
+        }
+        reviewDestination(nav, padding, layout)
+        analysisDestination(nav, padding, layout)
+        cueReview(nav, padding, layout)
+        composable(Routes.Settings) {
+            Box(Modifier.padding(padding)) {
+                Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
             }
-            composable(Routes.Drive) {
-                Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
+        }
+        composable(
+            Routes.SettingsTabPattern,
+            arguments = listOf(navArgument(Routes.TabArg) { type = NavType.StringType }),
+        ) { e ->
+            val tab = SettingsTab.entries.firstOrNull { it.name == e.arguments?.getString(Routes.TabArg) }
+            Box(Modifier.padding(padding)) {
+                Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
             }
-            composable(Routes.Sessions) {
-                Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) }
-            }
-            reviewDestination(nav, padding)
-            analysisDestination(nav, padding)
-            cueReview(nav, padding)
-            composable(Routes.Settings) {
-                Box(Modifier.padding(padding)) {
-                    Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
-                }
-            }
-            composable(
-                Routes.SettingsTabPattern,
-                arguments = listOf(navArgument(Routes.TabArg) { type = NavType.StringType }),
-            ) { e ->
-                val tab = SettingsTab.entries.firstOrNull { it.name == e.arguments?.getString(Routes.TabArg) }
-                Box(Modifier.padding(padding)) {
-                    Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
-                }
-            }
-            coachSettings(nav, padding)
-            setupDestinations(nav, prefs, repo, padding)
-            composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
-            composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
-            composable(
-                Routes.TrackEditorPattern,
-                arguments = listOf(navArgument(Routes.TrackIdArg) { type = NavType.StringType }),
-            ) { e ->
-                val id = e.arguments?.getString(Routes.TrackIdArg).orEmpty()
-                Box(Modifier.padding(padding)) { TrackEditorRoute(nav, tracks, id) }
-            }
+        }
+        coachSettings(nav, padding)
+        setupDestinations(nav, prefs, repo, padding)
+        composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
+        composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
+        composable(
+            Routes.TrackEditorPattern,
+            arguments = listOf(navArgument(Routes.TrackIdArg) { type = NavType.StringType }),
+        ) { e ->
+            val id = e.arguments?.getString(Routes.TrackIdArg).orEmpty()
+            Box(Modifier.padding(padding)) { TrackEditorRoute(nav, tracks, id) }
         }
     }
 }
@@ -252,9 +277,13 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
     }
 }
 
-/** Sessions list. Export asks where to save, then writes in the background (rememberSessionExport). */
+/**
+ * Sessions list. Export asks where to save, then writes in the background (rememberSessionExport).
+ * On a tablet ([layout]) a card opens its lap analysis beside the list (FBBD-40); the picked session
+ * is kept when the tablet turns and when Android ends the app in the background.
+ */
 @Composable
-private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
+private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo, layout: LayoutSize) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     val addFiles = rememberGoProFilePicker(goPros)
@@ -264,35 +293,46 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
     val recorder = RecorderClient.get(context)
     val updatesBlocked = updatesBlocked(recorder, sessions)
     val recording = recorder.state.recording || recorder.state.starting
+    var picked by rememberSaveable { mutableStateOf<String?>(null) }
+    val shown = shownSession(picked, sessions.list.map { it.id })
     VideoExportFlow(sessions.list, recording) { videoExport ->
-        SessionsScreen(
-            header = {
-                SessionsHeader(sessions.list.any(), updates, updatesBlocked) { nav.navigate(Routes.Review) }
-            },
-            transfer = rememberSessionTransfer(recording = recording),
-            videoExport = videoExport,
-            sessions = sessions.list,
-            exports = sessions.exports,
-            withVideo = sessions.withVideo,
-            onAnalyse = { s -> nav.navigate(Routes.sessionAnalysis(s.id)) },
-            onExport = export,
-            goPro = GoProCardState(
-                sessions = sessions.goPro,
-                work = goPros.work,
-                problems = goPros.problems,
-                enabled = !goPros.recording,
-                listed = listedGoPros(repo.setup),
-                nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
-                onDownload = { s, camera -> goPros.download(s.id, camera) },
-                onAddFiles = { s, camera -> addFiles(s.id, camera) },
-            ),
-            deleting = SessionDeleting(
-                sizes = sessions.sizes,
-                states = sessions.deletes,
-                onDelete = { s -> sessions.delete(s.id) },
-            ),
-            coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
-        )
+        SessionsListDetail(
+            layout = layout,
+            shown = shown,
+            onClose = { picked = null },
+            detail = { id, pane, onBack -> SessionAnalysisRoute(nav, id, pane, onBack) },
+        ) { listModifier ->
+            SessionsScreen(
+                modifier = listModifier,
+                header = {
+                    SessionsHeader(sessions.list.any(), updates, updatesBlocked) { nav.navigate(Routes.Review) }
+                },
+                transfer = rememberSessionTransfer(recording = recording),
+                videoExport = videoExport,
+                sessions = sessions.list,
+                exports = sessions.exports,
+                withVideo = sessions.withVideo,
+                onAnalyse = { s -> if (layout.tablet) picked = s.id else nav.navigate(Routes.sessionAnalysis(s.id)) },
+                selectedId = shown.takeIf { layout.tablet },
+                onExport = export,
+                goPro = GoProCardState(
+                    sessions = sessions.goPro,
+                    work = goPros.work,
+                    problems = goPros.problems,
+                    enabled = !goPros.recording,
+                    listed = listedGoPros(repo.setup),
+                    nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
+                    onDownload = { s, camera -> goPros.download(s.id, camera) },
+                    onAddFiles = { s, camera -> addFiles(s.id, camera) },
+                ),
+                deleting = SessionDeleting(
+                    sizes = sessions.sizes,
+                    states = sessions.deletes,
+                    onDelete = { s -> sessions.delete(s.id) },
+                ),
+                coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
+            )
+        }
     }
 }
 
@@ -366,32 +406,4 @@ private fun Settings(
         coach = coach.settings,
         onOpenCoach = { nav.navigate(Routes.CoachSettings) },
     )
-}
-
-/** [updateDot]: a quiet dot on Settings when a newer version waits (FBBD-74). */
-@Composable
-private fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        TopLevelItems.forEach { item ->
-            NavigationBarItem(
-                selected = route == item.route,
-                onClick = {
-                    nav.navigate(item.route) {
-                        // Drive is the root once setup is done, the only time the bar shows.
-                        popUpTo(Routes.Drive) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
-                icon = {
-                    if (updateDot && item.route == Routes.Settings) {
-                        BadgedBox(badge = { Badge() }) { Icon(item.icon, contentDescription = "Update available") }
-                    } else {
-                        Icon(item.icon, contentDescription = null)
-                    }
-                },
-                label = { Text(item.label) },
-            )
-        }
-    }
 }

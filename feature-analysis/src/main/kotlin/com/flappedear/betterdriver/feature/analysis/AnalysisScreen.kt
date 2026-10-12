@@ -50,6 +50,7 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.format.formatDelta
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -61,7 +62,8 @@ import kotlin.math.roundToInt
  * corner by corner with the compared lap's loss and the spread of the counted laps, one section
  * per tab (UI-62 B), and the compared lap on the map with its G-G diagram (FBBD-149). Tapping a lap
  * or a loss compares it. [onCoachPick] picks or unpicks a corner (segment id) for the spoken coach's
- * next session at the track (FBBD-148). [topBar] is the app's bar with its back button.
+ * next session at the track (FBBD-148). [topBar] is the app's bar with its back button. [layout] is the
+ * size class of the space the screen has (FBBD-40): it sets the map and the G-G diagram side by side or not.
  */
 @Composable
 fun AnalysisScreen(
@@ -70,6 +72,7 @@ fun AnalysisScreen(
     modifier: Modifier = Modifier,
     onAction: () -> Unit = {},
     onCoachPick: (cornerId: String) -> Unit = {},
+    layout: LayoutSize = LayoutSize.Phone,
     topBar: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -84,7 +87,7 @@ fun AnalysisScreen(
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
                 }
             }
-            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick)
+            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, layout)
         }
     }
 }
@@ -101,7 +104,7 @@ internal enum class AnalysisTab(val title: String) {
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit) {
+private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit, layout: LayoutSize) {
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
     // Picking a lap or a loss compares it, so the Compare tab opens.
     val compare: (Int) -> Unit = {
@@ -136,7 +139,7 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
-                AnalysisTab.Map -> ui.map?.let { MapTab(it, wide) }
+                AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide) }
                     ?: Card(width) { Dim("No map: the laps of this session have no usable GPS line.") }
                 AnalysisTab.Laps -> Laps(ui, compare, width)
                 AnalysisTab.Corners -> {

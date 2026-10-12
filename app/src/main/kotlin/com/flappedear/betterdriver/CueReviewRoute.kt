@@ -14,6 +14,7 @@ import androidx.navigation.NavType
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CueReview
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionTitle
@@ -24,19 +25,19 @@ import kotlinx.coroutines.withContext
 import java.io.IOException
 
 /** The cue review destination, [Routes.CueReviewPattern]. */
-internal fun NavGraphBuilder.cueReview(nav: NavHostController, padding: PaddingValues) {
+internal fun NavGraphBuilder.cueReview(nav: NavHostController, padding: PaddingValues, layout: LayoutSize) {
     composable(
         Routes.CueReviewPattern,
         arguments = listOf(navArgument(Routes.SessionIdArg) { type = NavType.StringType }),
     ) { e ->
         val id = e.arguments?.getString(Routes.SessionIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { CueReviewRoute(nav, id) }
+        Box(Modifier.padding(padding)) { CueReviewRoute(nav, id, layout) }
     }
 }
 
 /** The cue review of session [id] (FBBD-99), opened from its card. The session is read off the main thread. */
 @Composable
-internal fun CueReviewRoute(nav: NavHostController, id: String) {
+internal fun CueReviewRoute(nav: NavHostController, id: String, layout: LayoutSize) {
     val context = LocalContext.current
     val review by produceState<CueReview?>(null, id) {
         value = withContext(Dispatchers.IO) {
@@ -50,5 +51,5 @@ internal fun CueReviewRoute(nav: NavHostController, id: String) {
         }
     }
     val title = Sessions.get(context).list.firstOrNull { it.id == id }?.let(::sessionTitle).orEmpty()
-    CueReviewScreen(title, review, onBack = { nav.popBackStack() })
+    CueReviewScreen(title, review, onBack = { nav.popBackStack() }, layout = layout)
 }

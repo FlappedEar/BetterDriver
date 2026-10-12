@@ -34,6 +34,7 @@ import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
@@ -91,13 +92,13 @@ private sealed interface Load {
 private class Proposal(val track: Track, val session: EditorSession)
 
 /** The lap analysis screen of one session, opened from its card on Sessions. */
-internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding: PaddingValues) {
+internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding: PaddingValues, layout: LayoutSize) {
     composable(
         Routes.SessionAnalysisPattern,
         arguments = listOf(navArgument(Routes.SessionIdArg) { type = NavType.StringType }),
     ) { e ->
         val id = e.arguments?.getString(Routes.SessionIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { SessionAnalysisRoute(nav, id) }
+        Box(Modifier.padding(padding)) { SessionAnalysisRoute(nav, id, layout, onBack = { nav.popBackStack() }) }
     }
 }
 
@@ -105,9 +106,13 @@ internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding
  * Lap analysis of one saved session (FBBD-102). The session is read and analysed off the main
  * thread against its track's start/finish line; a session without a track that has a line, or
  * without two crossings of it, says so. Its acceleration runs (FBBD-154) show either way.
+ *
+ * It fills its own screen, or the detail pane of Sessions on a tablet (FBBD-40); [layout] is the size
+ * class of the space it has. [onBack] is its back button, none beside the session list.
  */
+@Suppress("LongMethod") // Loads, analyses and follows the coach picks: one flow, one place.
 @Composable
-private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
+internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: LayoutSize, onBack: (() -> Unit)?) {
     val context = LocalContext.current
     var load by remember(id) { mutableStateOf<Load?>(null) }
     var compared by rememberSaveable(id) { mutableStateOf<Int?>(null) }
@@ -165,7 +170,8 @@ private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
                 }
             },
             onCoachPick = { toggleCoachPick(load, coachPicks, it) },
-            topBar = { ShellTopBar("Lap analysis", onBack = { nav.popBackStack() }) },
+            layout = layout,
+            topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
         )
     }
 }

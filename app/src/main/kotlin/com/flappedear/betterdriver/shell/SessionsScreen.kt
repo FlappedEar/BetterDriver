@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.shell
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -65,6 +66,8 @@ import java.util.Locale
  *
  * A session with video also exports Video with data (FBBD-152): a lap or all of it with the data drawn
  * in. Its progress shows on the card with Cancel; meanwhile the card's other actions wait.
+ *
+ * On a tablet the list sits beside the lap analysis of the session [selectedId], whose card is outlined (FBBD-40).
  */
 @Composable
 fun SessionsScreen(
@@ -79,6 +82,7 @@ fun SessionsScreen(
     coach: SessionCoach = SessionCoach(),
     videoExport: SessionVideoExport = SessionVideoExport(),
     onAnalyse: (SessionSummary) -> Unit = {},
+    selectedId: String? = null,
     header: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -100,9 +104,11 @@ fun SessionsScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(sessions, key = { it.id }) { s ->
+                    // The card whose analysis shows beside the list on a tablet is outlined (FBBD-40).
+                    val outline = if (s.id == selectedId) MaterialTheme.colorScheme.primary else Color.Transparent
                     SessionCard(
                         s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach,
-                        videoExport,
+                        videoExport, outline,
                     )
                 }
             }
@@ -131,6 +137,7 @@ private fun SessionCard(
     onAnalyse: (SessionSummary) -> Unit,
     coach: SessionCoach,
     videoExport: SessionVideoExport,
+    outline: Color,
 ) {
     val c = TrackTheme.colors
     val delete = deleting.states[s.id]
@@ -144,7 +151,8 @@ private fun SessionCard(
     val opens = s.state != SessionState.RECORDING && delete != DeleteState.Running
     ShellCard(
         Modifier
-            .clip(RoundedCornerShape(16.dp))
+            .border(2.dp, outline, CardShape)
+            .clip(CardShape)
             .clickable(enabled = opens, onClickLabel = "Lap analysis") { onAnalyse(s) },
     ) {
         CardTitle(s, opens)
@@ -184,6 +192,8 @@ private fun SessionCard(
         )
     }
 }
+
+private val CardShape = RoundedCornerShape(16.dp)
 
 /** The session's title, its state and, when the card opens lap analysis, a chevron. */
 @Composable
