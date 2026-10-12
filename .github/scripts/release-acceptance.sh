@@ -11,8 +11,12 @@ notes="docs/release-notes/v$version.md"
 }
 status=0
 for area in Recording Timing Video Analysis Coach Storage Hardware; do
+  count=$(grep -Ec "^- $area: " "$notes" || true)
   line=$(grep -E "^- $area: " "$notes" | head -1 || true)
-  if [ -z "$line" ]; then
+  if [ "$count" -gt 1 ]; then
+    echo "::error::$notes has $count lines for $area; give each area one line."
+    status=1
+  elif [ -z "$line" ]; then
     echo "::error::$notes has no line '- $area: PASS | NOT RUN | N/A - evidence'."
     status=1
   elif ! grep -Eq "^- $area: (PASS|NOT RUN|N/A) - .+" <<<"$line"; then
