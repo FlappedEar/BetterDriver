@@ -1,19 +1,22 @@
 package com.flappedear.betterdriver.smoke
 
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import org.junit.After
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
 import org.junit.runner.RunWith
 
 /**
- * The app's other screens on the emulator (FBBD-161): Drive, every Settings tab, the spoken coach
+ * The app's other screens on the emulator (FBBD-161): Drive, the bottom bar between every pair of
+ * top-level destinations, every Settings tab, adding equipment without Bluetooth, the spoken coach
  * settings, a new car, the track list and the track editor of both kinds, and the backup dialog.
  */
 @RunWith(AndroidJUnit4::class)
@@ -25,6 +28,9 @@ class ShellSmokeTest {
 
     private val app get() = setup.compose
 
+    @After
+    fun reset() = SmokeData.reset()
+
     @Test
     fun driveAsksForAReceiver() {
         // The seeded setup has no GNSS receiver: Start is off and Drive says how to add one.
@@ -32,6 +38,54 @@ class ShellSmokeTest {
         app.waitForText("START").assertIsDisplayed()
         app.waitForText("Add a GNSS receiver to start").assertIsDisplayed()
         app.waitFor(tab("Drive")).assertIsDisplayed()
+    }
+
+    @Test
+    fun bottomBarBothWays() {
+        // Every top-level destination from each of the others, both ways round.
+        val shows = mapOf(
+            "Drive" to hasText("START"),
+            "Sessions" to hasText("Import session"),
+            "Settings" to tab("Devices"),
+        )
+        for (to in listOf("Sessions", "Settings", "Drive", "Settings", "Sessions", "Drive")) {
+            app.openTab(to)
+            app.waitFor(tab(to)).assertIsSelected()
+            app.waitFor(shows.getValue(to)).assertIsDisplayed()
+        }
+        // Back from a top-level destination goes to Drive.
+        app.openTab("Sessions")
+        app.back()
+        app.waitFor(tab("Drive")).assertIsSelected()
+        app.waitForText("START").assertIsDisplayed()
+    }
+
+    @Test
+    fun devicesAddEquipmentWithoutBluetooth() {
+        app.openTab("Settings")
+        app.openTab("Devices")
+        app.waitForText("Add equipment").performClick()
+        // The Bluetooth search finds nothing on the emulator; the rest is added without it.
+        app.waitForText("Found nearby").assertIsDisplayed()
+        app.waitForText("Add without Bluetooth").performScrollTo()
+
+        // A Wi-Fi receiver asks for its address, a GoPro started by hand for its model.
+        app.waitForText("NMEA or RaceChrono DIY over Wi-Fi").performScrollTo().performClick()
+        app.waitForText("Join the receiver's Wi-Fi first", substring = true)
+        app.waitForText("Cancel").performClick()
+        app.waitUntilGone("Join the receiver's Wi-Fi first", substring = true)
+        app.waitForText("HERO8 or older, MAX").performScrollTo().performClick()
+        app.waitForText("Which GoPro")
+        app.waitForText("Cancel").performClick()
+        app.waitUntilGone("Which GoPro")
+
+        // Demo GNSS: added, opened from the list, removed.
+        app.waitForText("For trying the app").performScrollTo().performClick()
+        app.waitFor(hasText("Demo GNSS") and hasClickAction()).performClick()
+        app.waitForText("Made-up positions on a circle", substring = true)
+        app.waitForText("Remove").performClick()
+        app.waitUntilGone("Demo GNSS")
+        app.waitForText("Add equipment")
     }
 
     @Test

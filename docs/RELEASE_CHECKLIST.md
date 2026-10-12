@@ -13,9 +13,12 @@ succeeded (`ci-green` job). That run includes:
 - the **emulator smoke tests** (FBBD-161): the debug app on an Android 14
   emulator with seeded sessions and tracks, opening every major screen and
   flow. The job fails when a test fails, when a screen crashes, when
-  navigation breaks, when seeded data cannot be opened, or when any app
-  process (UI, `:recorder`, `:camera`, `:coach`) crashes or stops responding
-  (ANR), as logcat and `ActivityManager` report it.
+  navigation breaks, when seeded data cannot be opened, when data stored by
+  an older build (track file version 1, 0.3.1 session metadata) cannot be
+  opened, when a Demo GNSS recording does not bring up and keep the
+  `:recorder`, `:camera` and `:coach` processes or is not saved with its laps,
+  or when any app process crashes or stops responding (ANR), as logcat and
+  `ActivityManager` report it.
 
 ## 2. Acceptance record (every release)
 

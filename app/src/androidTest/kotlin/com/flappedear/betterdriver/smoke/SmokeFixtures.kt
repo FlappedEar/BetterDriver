@@ -9,6 +9,8 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.fake.FakeGnss
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoEventText
@@ -20,6 +22,8 @@ import com.flappedear.betterdriver.timing.track.TrackLine
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.io.File
 import java.io.InputStream
+import java.time.Instant
+import java.util.Locale
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.PI
 import kotlin.math.atan2
@@ -51,6 +55,10 @@ object SmokeFixtures {
     const val VideoCar = "Video car"
     const val PlainCar = "Plain car"
     const val HillCar = "Hill car"
+
+    /** What [seed] writes; anything else a test adds goes again after it (SmokeData.reset). */
+    val Cars = setOf(VideoCar, PlainCar, HillCar)
+    val TrackIds = setOf(CircuitId, HillId)
 
     /** The phone video file of the [VideoCar] session. */
     const val VideoFile = "phone_0001.mp4"
@@ -132,7 +140,7 @@ object SmokeFixtures {
         track: Track,
         samples: List<Sample>,
         video: (() -> InputStream)?,
-    ) {
+    ): File {
         val clock = AtomicLong(0L)
         val recording = Recorder(store, nanoTime = clock::get).start(info)
         recording.eventAt(0, "track", "saved ${track.id} rev ${track.revision} ${track.displayName}")
@@ -153,6 +161,7 @@ object SmokeFixtures {
         clock.set(end * 1_000)
         check(recording.stop()) { "the fixture session did not finish" }
         check(recording.droppedCount == 0L) { "the fixture session dropped samples" }
+        return recording.dir
     }
 
     /**
@@ -301,6 +310,191 @@ object SmokeFixtures {
         return b.getValue("velocity") / KmhPerMps * rate / StandardGravity
     }
 
+    /** The imported sessions' cards (ImportSmokeTest), and the track made from the GPX one. */
+    const val ImportedVbo = "From a VBO file"
+    const val ImportedGpx = "From a GPX file"
+    const val LoopName = "Smoke Loop"
+
+    /**
+     * [VideoVbo] as a Racelogic logger writes it: the date line, minutes with longitude positive
+     * west, the time of day as hhmmss.ss. Driven on 1 Sep 2026 from 09:00 UTC, at the circuit.
+     */
+    fun racelogicVbo(vbo: String): String = buildString {
+        append("File created on 01/09/2026 at 09:00:00\r\n\r\n[header]\r\n")
+        for (h in listOf("satellites", "time", "latitude", "longitude", "velocity kmh", "heading")) append("$h\r\n")
+        append("\r\n[column names]\r\nsats time lat long velocity heading\r\n\r\n[data]\r\n")
+        val rows = VboText.rows(vbo)
+        for (i in rows.indices) {
+            val r = rows[i]
+            val prev = rows[maxOf(i - 1, 0)]
+            val next = rows[min(i + 1, rows.lastIndex)]
+            val t = ImportStartSeconds + r.getValue("time")
+            val heading = headingDeg(prev.lat, prev.lon, next.lat, next.lon)
+            append(
+                String.format(
+                    Locale.ROOT,
+                    "018 %02d%02d%06.3f %+012.5f %+012.5f %07.3f %06.2f\r\n",
+                    (t / 3_600).toInt(),
+                    (t % 3_600 / 60).toInt(),
+                    t % 60,
+                    r.lat * 60,
+                    -r.lon * 60,
+                    r.getValue("velocity"),
+                    heading,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Four laps of a 1.3 km loop (two 400 m straights joined by 80 m bends) as a GPX 1.1 track at
+     * 5 Hz, on 2 Sep 2026 at 55.5° N 18° E, where no track is saved: a session to make a track from.
+     */
+    fun loopGpx(): String = buildString {
+        append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+        append("<gpx version=\"1.1\" creator=\"BetterDriver smoke tests\" ")
+        append("xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+        append("<trk><trkseg>\n")
+        val lap = 2 * LoopStraight + 2 * PI * LoopBend
+        val metersPerDegreeLon = MetersPerDegree * cos(Math.toRadians(LoopLat))
+        var t = 0.0
+        while (t * LoopSpeed < LoopLaps * lap) {
+            val (x, y) = loopAt(t * LoopSpeed % lap)
+            val time = Instant.ofEpochMilli(LoopStartUtc + Math.round(t * 1_000))
+            append(
+                String.format(
+                    Locale.ROOT,
+                    "<trkpt lat=\"%.7f\" lon=\"%.7f\"><time>%s</time></trkpt>\n",
+                    LoopLat + y / MetersPerDegree,
+                    LoopLon + x / metersPerDegreeLon,
+                    time,
+                ),
+            )
+            t += GpxDt
+        }
+        append("</trkseg></trk></gpx>\n")
+    }
+
+    /** East and north of the loop's start, [s] metres along it: east down the first straight, then anticlockwise. */
+    private fun loopAt(s: Double): Pair<Double, Double> {
+        val bend = PI * LoopBend
+        return when {
+            s < LoopStraight -> s to 0.0
+            s < LoopStraight + bend -> ((s - LoopStraight) / LoopBend).let { a ->
+                LoopStraight + LoopBend * sin(a) to LoopBend - LoopBend * cos(a)
+            }
+            s < 2 * LoopStraight + bend -> LoopStraight - (s - LoopStraight - bend) to 2 * LoopBend
+            else -> ((s - 2 * LoopStraight - bend) / LoopBend).let { a ->
+                -LoopBend * sin(a) to LoopBend + LoopBend * cos(a)
+            }
+        }
+    }
+
+    /** A saved track across Demo GNSS's circle (RecordingSmokeTest): its start/finish line, crossed each lap. */
+    const val DemoRingId = "smoke-demo-ring"
+
+    val demoRing: Track
+        get() {
+            val gnss = FakeGnss()
+            val line = gnss.startFinish
+            return Track(
+                id = DemoRingId,
+                name = "Demo Ring",
+                center = GeoPoint(gnss.centerLat, gnss.centerLon),
+                radiusMeters = 1_000.0,
+                startFinish = TrackLine(GeoPoint(line.lat1, line.lon1), GeoPoint(line.lat2, line.lon2)),
+            )
+        }
+
+    /** The track and session [seedOld] writes as older builds did (StoredDataSmokeTest). */
+    const val OldTrackName = "Old Ring"
+    const val OldCar = "Old car"
+    private const val OldTrackId = "smoke-old-ring"
+
+    /** 29 Aug 2026 10:40 UTC, before the other sessions, so it is last in the list. */
+    private const val OldStartUtc = 1_788_000_000_000L
+    private const val OldLatOffset = 0.5
+
+    /**
+     * A track and a session as builds before this one left them, half a degree north of the circuit:
+     * - the track file as 0.2.x wrote it, before point-to-point tracks (FBBD-155): version 1, no
+     *   "kind" or "finish";
+     * - the session's meta.properties as 0.3.1 wrote it, before imported sessions (FBBD-164):
+     *   format 1, no "imported." keys.
+     * Its chunks are written by the recorder: the chunk, end-marker and event formats have not
+     * changed in this repository's history (#51 on), nor has the video index (clips.json version 1),
+     * so there the current format is the old one. The setup file's version 1 is read in SetupTest.
+     */
+    fun seedOld(filesDir: File, vbo: (String) -> String) {
+        val line = checkNotNull(circuit.startFinish)
+        val track = Track(
+            id = OldTrackId,
+            name = OldTrackName,
+            center = shifted(circuit.center),
+            startFinish = TrackLine(shifted(line.left), shifted(line.right)),
+            revision = 3,
+        )
+        File(filesDir, "tracks").apply { mkdirs() }.resolve("$OldTrackId.json").writeText(oldTrackFile(track))
+        val samples = circuitSamples(vbo(PlainVbo)).map { s ->
+            val values = s.values.map { v ->
+                if (v.channelId == GnssChannels.LAT.id) ChannelValue(v.channelId, v.value + OldLatOffset) else v
+            }
+            Sample(s.tMicros, values)
+        }
+        val info = info(OldStartUtc, OldCar, track)
+        val dir = record(SessionStore(File(filesDir, "sessions")), info, track, samples, null)
+        File(dir, SessionFiles.META).writeText(oldMeta(dir.name, info))
+    }
+
+    private fun shifted(p: GeoPoint) = GeoPoint(p.lat + OldLatOffset, p.lon)
+
+    private fun oldTrackFile(t: Track): String {
+        fun point(p: GeoPoint) = "{ \"lat\": ${p.lat}, \"lon\": ${p.lon} }"
+        val line = checkNotNull(t.startFinish)
+        return """
+            |{
+            |    "format": "betterdriver-track",
+            |    "version": 1,
+            |    "track": {
+            |        "id": "${t.id}",
+            |        "name": "${t.name}",
+            |        "center": ${point(t.center)},
+            |        "country": "",
+            |        "layout": "",
+            |        "radiusMeters": 2000.0,
+            |        "startFinish": {
+            |            "left": ${point(line.left)},
+            |            "right": ${point(line.right)}
+            |        },
+            |        "sectorLines": [],
+            |        "pitEntry": null,
+            |        "pitExit": null,
+            |        "circuitId": null,
+            |        "revision": ${t.revision},
+            |        "updatedUtcMillis": 1786000000000
+            |    }
+            |}
+        """.trimMargin()
+    }
+
+    private fun oldMeta(id: String, info: SessionInfo): String = buildString {
+        append("#Sat Aug 29 10:40:00 UTC 2026\n")
+        append("format=1\n")
+        append("id=$id\n")
+        append("startUtcMillis=${info.startUtcMillis}\n")
+        append("car=${info.car}\n")
+        append("track=${info.track}\n")
+        append("devices=${info.devices.joinToString("\\n")}\n")
+        append("channels=${info.channels.size}\n")
+        info.channels.forEachIndexed { i, c ->
+            append("channel.$i.id=${c.id}\n")
+            append("channel.$i.name=${c.name}\n")
+            append("channel.$i.unit=${c.unit}\n")
+            append("channel.$i.source=${c.source}\n")
+            append("channel.$i.decimals=${c.decimals}\n")
+        }
+    }
+
     private val Map<String, Double>.lat get() = getValue("latitude")
     private val Map<String, Double>.lon get() = getValue("longitude")
 
@@ -308,6 +502,16 @@ object SmokeFixtures {
     private const val Span = 5
     private const val KmhPerMps = 3.6
     private const val StandardGravity = 9.80665
+    private const val ImportStartSeconds = 9 * 3_600.0
+    private const val LoopStartUtc = 1_788_339_600_000L
+    private const val LoopLat = 55.5
+    private const val LoopLon = 18.0
+    private const val LoopStraight = 400.0
+    private const val LoopBend = 80.0
+    private const val LoopSpeed = 25.0
+    private const val LoopLaps = 4
+    private const val GpxDt = 0.2
+    private const val MetersPerDegree = 111_195.0
 
 }
 
