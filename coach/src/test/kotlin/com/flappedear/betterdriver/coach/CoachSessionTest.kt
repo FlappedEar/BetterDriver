@@ -120,10 +120,10 @@ class CoachSessionTest {
     fun `settings survive a round trip and a damaged file gives defaults`() {
         val store = CoachSettingsStore(File(tmp, "coach/settings.properties"))
         assertEquals(CoachSettings(), store.read())
-        val s = CoachSettings(Verbosity.Full, audioDelayMillis = 700, learningLaps = 2)
+        val s = CoachSettings(Verbosity.Full, audioDelayMillis = 700, learningLaps = 2, voice = VoiceMode.PreRendered)
         store.write(s)
         assertEquals(s, store.read())
-        File(tmp, "coach/settings.properties").writeText("verbosity=Loud\naudioDelayMillis=99999\n")
+        File(tmp, "coach/settings.properties").writeText("verbosity=Loud\naudioDelayMillis=99999\nvoice=Robot\n")
         assertEquals(CoachSettings(audioDelayMillis = CoachSettings.MaxAudioDelayMillis), store.read())
     }
 }
