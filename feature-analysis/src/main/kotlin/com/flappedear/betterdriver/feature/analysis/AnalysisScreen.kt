@@ -64,6 +64,7 @@ import kotlin.math.roundToInt
  * or a loss compares it. [onCoachPick] picks or unpicks a corner (segment id) for the spoken coach's
  * next session at the track (FBBD-148). [topBar] is the app's bar with its back button. [layout] is the
  * size class of the space the screen has (FBBD-40): it sets the map and the G-G diagram side by side or not.
+ * [optimalVideo], when given, goes under the theoretical best: the optimal lap's video (FBBD-163).
  */
 @Composable
 fun AnalysisScreen(
@@ -74,6 +75,7 @@ fun AnalysisScreen(
     onCoachPick: (cornerId: String) -> Unit = {},
     layout: LayoutSize = LayoutSize.Phone,
     topBar: @Composable () -> Unit = {},
+    optimalVideo: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier.fillMaxSize()) {
         topBar()
@@ -87,7 +89,7 @@ fun AnalysisScreen(
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
                 }
             }
-            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, layout)
+            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, optimalVideo, layout)
         }
     }
 }
@@ -104,7 +106,13 @@ internal enum class AnalysisTab(val title: String) {
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit, layout: LayoutSize) {
+private fun Ready(
+    ui: AnalysisUi,
+    onCompare: (Int) -> Unit,
+    onCoachPick: (String) -> Unit,
+    optimalVideo: (@Composable () -> Unit)?,
+    layout: LayoutSize,
+) {
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
     // Picking a lap or a loss compares it, so the Compare tab opens.
     val compare: (Int) -> Unit = {
@@ -131,7 +139,7 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String
             val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
             when (AnalysisTab.entries[tab]) {
                 AnalysisTab.Summary -> {
-                    Summary(ui, width)
+                    Summary(ui, width, optimalVideo)
                     ui.progress?.let { Progress(it, width) }
                     if (ui.focus.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
@@ -152,7 +160,7 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String
 }
 
 @Composable
-private fun Summary(ui: AnalysisUi, modifier: Modifier) {
+private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composable () -> Unit)? = null) {
     val c = TrackTheme.colors
     Card(modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -172,6 +180,7 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier) {
                 Modifier.weight(0.8f),
             )
         }
+        optimalVideo?.invoke()
     }
 }
 

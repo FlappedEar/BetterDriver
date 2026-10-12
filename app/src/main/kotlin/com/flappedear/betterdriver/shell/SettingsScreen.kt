@@ -12,6 +12,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,6 +28,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.feature.track.TrackBrightness
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.Setup
@@ -35,6 +37,12 @@ import com.flappedear.betterdriver.setup.VideoMode
 import java.util.Locale
 
 private const val BytesPerGb = 1_000_000_000.0
+
+/** Track screen choices kept in [AppPrefs]: brightness (FBBD-63) and the GNSS sound (FBBD-64). */
+data class TrackScreenPrefs(
+    val brightness: TrackBrightness = TrackBrightness.Max,
+    val gnssSound: Boolean = false,
+)
 
 /**
  * Settings (UI-15 option B): tabs for Devices, Car, Recording (with the track-screen tiles) and App.
@@ -63,6 +71,9 @@ fun SettingsScreen(
     backupRows: @Composable () -> Unit = {},
     coach: CoachSettings = CoachSettings(),
     onOpenCoach: () -> Unit = {},
+    trackScreen: TrackScreenPrefs = TrackScreenPrefs(),
+    onTrackScreen: (TrackScreenPrefs) -> Unit = {},
+    onOpenAbout: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -82,8 +93,12 @@ fun SettingsScreen(
             when (SettingsTab.entries[tab]) {
                 SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
-                SettingsTab.Recording -> RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
-                SettingsTab.App -> AppTab(version, onRunSetup, updateRow, debugRows, backupRows, coach, onOpenCoach)
+                SettingsTab.Recording -> {
+                    RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
+                    TrackScreenCard(trackScreen, onTrackScreen)
+                }
+                SettingsTab.App ->
+                    AppTab(version, onRunSetup, updateRow, debugRows, backupRows, coach, onOpenCoach, onOpenAbout)
             }
         }
     }
@@ -130,6 +145,25 @@ private fun RecordingTab(
     }
 }
 
+/**
+ * How the track screen behaves: full brightness (on by default; off leaves the phone's own
+ * brightness) and a short sound when GNSS is lost and when it comes back (off by default).
+ */
+@Composable
+private fun TrackScreenCard(prefs: TrackScreenPrefs, onChange: (TrackScreenPrefs) -> Unit) {
+    ShellCard {
+        ListRow("Track screen brightness", prefs.brightness.label, divider = false) {
+            Switch(checked = prefs.brightness == TrackBrightness.Max, onCheckedChange = { on ->
+                onChange(prefs.copy(brightness = if (on) TrackBrightness.Max else TrackBrightness.System))
+            })
+        }
+        ListRow("Sound when GNSS is lost", if (prefs.gnssSound) "On" else "Off") {
+            Switch(checked = prefs.gnssSound, onCheckedChange = { on -> onChange(prefs.copy(gnssSound = on)) })
+        }
+    }
+}
+
+/** Permissions lists what each one that is off stops (FBBD-35); About and credits is a page of its own (FBBD-79). */
 @Composable
 private fun AppTab(
     version: String,
@@ -139,17 +173,18 @@ private fun AppTab(
     backupRows: @Composable () -> Unit,
     coach: CoachSettings,
     onOpenCoach: () -> Unit,
+    onOpenAbout: () -> Unit,
 ) {
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
         ListRow("Track screen colours", "Green / red")
         ListRow("Spoken coach", coachLabel(coach), onClick = onOpenCoach)
+        PermissionRows()
         ListRow("Version", version)
-        // The built-in circuit directory's source (FBBD-79).
-        ListRow("Circuit list", "Wikidata · CC0 1.0")
         updateRow()
         backupRows()
         ListRow("Run setup again", onClick = onRunSetup)
+        ListRow("About and credits", onClick = onOpenAbout)
         debugRows()
     }
 }

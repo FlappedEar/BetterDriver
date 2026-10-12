@@ -22,6 +22,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -35,6 +36,7 @@ import com.flappedear.betterdriver.debug.DebugLogRows
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
+import com.flappedear.betterdriver.recording.GnssSound
 import com.flappedear.betterdriver.recording.SensorRef
 import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
@@ -45,10 +47,12 @@ import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.SessionAnalysisRoute
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.shell.AboutScreen
 import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.TrackScreenPrefs
 import com.flappedear.betterdriver.shell.legacyGoProName
 import com.flappedear.betterdriver.shell.listedGoPros
 import com.flappedear.betterdriver.shell.SessionCardActions
@@ -167,7 +171,7 @@ private fun AppNavHost(
                 Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
             }
         }
-        coachSettings(nav, padding)
+        settingsPages(nav, padding)
         setupDestinations(nav, prefs, repo, padding)
         composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
         composable(Routes.Tracks) { Box(Modifier.padding(padding)) { TracksRoute(nav, tracks) } }
@@ -178,6 +182,14 @@ private fun AppNavHost(
             val id = e.arguments?.getString(Routes.TrackIdArg).orEmpty()
             Box(Modifier.padding(padding)) { TrackEditorRoute(nav, tracks, id) }
         }
+    }
+}
+
+/** Pages opened from Settings › App: the spoken coach (FBBD-98) and About and credits (FBBD-79). */
+private fun NavGraphBuilder.settingsPages(nav: NavHostController, padding: PaddingValues) {
+    coachSettings(nav, padding)
+    composable(Routes.About) {
+        Box(Modifier.padding(padding)) { AboutScreen(Version, onBack = { nav.popBackStack() }) }
     }
 }
 
@@ -263,7 +275,9 @@ private fun Drive(
 @Composable
 private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, recorder: RecorderClient) {
     if (prefs.hasRequiredPermissions()) {
+        GnssSound(recorder.state.live?.gnss, enabled = prefs.gnssSound)
         TrackScreen(
+            brightness = prefs.trackBrightness,
             state = liveTrackState(recorder.state, repo.forSession().active().tiles),
             onStop = {
                 recorder.stop()
@@ -411,5 +425,11 @@ private fun Settings(
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
         coach = coach.settings,
         onOpenCoach = { nav.navigate(Routes.CoachSettings) },
+        trackScreen = TrackScreenPrefs(prefs.trackBrightness, prefs.gnssSound),
+        onTrackScreen = { p ->
+            prefs.updateTrackBrightness(p.brightness)
+            prefs.updateGnssSound(p.gnssSound)
+        },
+        onOpenAbout = { nav.navigate(Routes.About) },
     )
 }

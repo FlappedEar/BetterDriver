@@ -34,6 +34,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -59,7 +60,9 @@ import java.util.Locale
  * removes both. It is off while the session records, exports or fetches GoPro video.
  *
  * Share sends the session with its video and track to the other device (FBBD-23, UI-55): Send
- * through the share sheet (Quick Share), or Save file. Import at the top brings one in.
+ * through the share sheet (Quick Share), or Save file. Import session at the top brings one in: a
+ * BetterDriver session file, or a VBO, GPX or RaceChrono CSV file from another app (FBBD-164). A
+ * session made from another app's file is labelled Imported, with its format and file name.
  *
  * A session the coach spoke in opens its cue review (FBBD-99): each cue and whether the next pass
  * through that corner got better.
@@ -87,7 +90,7 @@ fun SessionsScreen(
 ) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Sessions") {
-            TextButton(onClick = transfer.onImport, enabled = transfer.importEnabled) { Text("Import") }
+            TextButton(onClick = transfer.onImport, enabled = transfer.importEnabled) { Text("Import session") }
         }
         Column(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 12.dp),
@@ -158,6 +161,7 @@ private fun SessionCard(
         CardTitle(s, opens)
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
+        ImportedLine(s.info)
         val busy = sending?.running == true || rendering
         if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = busy)
         SessionCoachRow(s, coach)
@@ -208,7 +212,7 @@ private fun CardTitle(s: SessionSummary, opens: Boolean) {
         when (s.state) {
             SessionState.RECORDING -> DimText("Recording", color = c.loss)
             SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
-            SessionState.FINISHED -> Unit
+            SessionState.FINISHED -> if (s.info.imported != null) DimText("Imported")
         }
         if (opens) DimText("›")
     }
@@ -319,6 +323,17 @@ private fun SessionsScreenPreview() {
                     session("c", 1_760_190_000_000, SessionState.RECORDING, null),
                     session("b", 1_760_180_000_000, SessionState.RECOVERED, 12),
                     session("a", 1_760_170_000_000, SessionState.FINISHED, 18),
+                    SessionSummary(
+                        "i",
+                        File("i"),
+                        SessionInfo(
+                            1_760_160_000_000,
+                            track = "Tor Poznań",
+                            imported = ImportOrigin("RaceChrono CSV", "session_20251011_1042.csv"),
+                        ),
+                        SessionState.FINISHED,
+                        21 * 60_000_000L,
+                    ),
                 ),
                 exports = mapOf("a" to ExportState.Done),
                 onExport = { _, _ -> },

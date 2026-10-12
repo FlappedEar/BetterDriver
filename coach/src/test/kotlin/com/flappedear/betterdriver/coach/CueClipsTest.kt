@@ -1,0 +1,120 @@
+@file:Suppress("MagicNumber")
+
+package com.flappedear.betterdriver.coach
+
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+class CueClipsTest {
+    private val gap = CueClips.WordGapMillis
+    private val comma = CueClips.CommaPauseMillis
+
+    @Test
+    fun `a corner cue splits into its words and numbers`() {
+        assertEquals(
+            listOf(ClipPart("Turn", gap), ClipPart("3", comma), ClipPart("brake", gap), ClipPart("15", gap),
+                ClipPart("metres later", 0)),
+            CueClips.parts("Turn 3, brake 15 metres later"),
+        )
+        assertEquals(
+            listOf(ClipPart("Turn", gap), ClipPart("12", comma), ClipPart("brake earlier", 0)),
+            CueClips.parts("Turn 12, brake earlier"),
+        )
+    }
+
+    @Test
+    fun `a lap time splits into its numbers`() {
+        assertEquals(
+            listOf(ClipPart("Best lap", comma), ClipPart("1", gap), ClipPart("05", gap), ClipPart("point", gap),
+                ClipPart("4", 0)),
+            CueClips.parts(Phrases.lapTime(65_400, best = true)),
+        )
+    }
+
+    @Test
+    fun `every phrase the coach can say is covered by the vocabulary`() {
+        for (n in 1..40) {
+            val corner = Corner(n, 0.0, 0.0, 0.0, 0.0, Turn.Left)
+            for (m in 5..MaxBrakeLaterMeters.toInt() step 5) {
+                assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeLater(m))))
+            }
+            for (k in 1..MaxCarryKmh.toInt()) {
+                assertTrue(CueClips.covers(Phrases.corner(corner, Advice.CarrySpeed(k))))
+            }
+            assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeEarlier)))
+        }
+        for (ms in 20_000L..600_000L step 3_700L) {
+            assertTrue(CueClips.covers(Phrases.lapTime(ms, best = false)), Phrases.lapTime(ms, best = false))
+            assertTrue(CueClips.covers(Phrases.lapTime(ms, best = true)))
+        }
+        assertFalse(CueClips.covers("Turn 3, brake 150 metres later"), "a number beyond the clips stays live")
+        assertFalse(CueClips.covers("Box this lap"))
+        assertFalse(CueClips.covers(""))
+    }
+
+    @Test
+    fun `clip file names are distinct`() {
+        val names = CueClips.vocabulary.map(CueClips::fileName)
+        assertEquals(names.size, names.toSet().size)
+        assertTrue("metres_later.wav" in names)
+        assertTrue("05.wav" in names && "5.wav" in names)
+    }
+
+    @Test
+    fun `a wav round trips and stereo mixes down`() {
+        val pcm = Pcm(22_050, shortArrayOf(0, 1_000, -1_000, 32_000))
+        val back = assertNotNull(Wav.read(Wav.write(pcm)))
+        assertEquals(22_050, back.sampleRate)
+        assertContentEquals(pcm.samples, back.samples)
+
+        val stereo = Wav.write(Pcm(8_000, shortArrayOf(100, 300, -200, 0))).also {
+            it[22] = 2 // channels
+        }
+        assertContentEquals(shortArrayOf(200, -100), assertNotNull(Wav.read(stereo)).samples)
+
+        assertNull(Wav.read(ByteArray(10)))
+        assertNull(Wav.read("RIFF....WAVEjunk".toByteArray() + ByteArray(40)))
+    }
+
+    @Test
+    fun `a wav whose writer left the data size unset reads to the end`() {
+        val bytes = Wav.write(Pcm(16_000, shortArrayOf(1, 2, 3)))
+        for (i in 40..43) bytes[i] = 0
+        assertContentEquals(shortArrayOf(1, 2, 3), assertNotNull(Wav.read(bytes)).samples)
+    }
+
+    @Test
+    fun `trimming keeps the word and a little padding`() {
+        val rate = 1_000 // a sample per millisecond
+        val s = ShortArray(200).also { for (i in 80 until 120) it[i] = 5_000 }
+        val t = Pcm(rate, s).trimmed(padMillis = 10)
+        assertEquals(60, t.samples.size)
+        assertEquals(0, Pcm(rate, ShortArray(50)).trimmed().samples.size)
+    }
+
+    @Test
+    fun `joining clips adds each pause`() {
+        val a = Pcm(1_000, ShortArray(10) { 1 })
+        val b = Pcm(1_000, ShortArray(5) { 2 })
+        val j = assertNotNull(Pcm.join(listOf(a to 20, b to 0)))
+        assertEquals(35, j.samples.size)
+        assertEquals(1, j.samples[9].toInt())
+        assertEquals(0, j.samples[10].toInt())
+        assertEquals(2, j.samples[30].toInt())
+        assertNull(Pcm.join(listOf(a to 0, Pcm(2_000, ShortArray(1)) to 0)), "rates differ")
+        assertNull(Pcm.join(emptyList()))
+    }
+
+    @Test
+    fun `the click is short, loud and fades in and out`() {
+        val c = Pcm.click(48_000)
+        assertEquals(40, c.durationMillis)
+        assertEquals(0, c.samples.first().toInt())
+        assertTrue(c.samples.maxOf { it.toInt() } > 15_000)
+    }
+}

@@ -159,20 +159,24 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
         AnalysisScreen(
             state = state,
             onCompare = { compared = it },
-            onAction = {
-                val proposal = (load as? Load.Failed)?.proposal
-                if (proposal == null) {
-                    nav.navigate(Routes.Tracks)
-                } else {
-                    // Kept by Tracks before the editor opens it (one background thread, in order).
-                    tracks.propose(proposal.track, id, proposal.session)
-                    nav.navigate(Routes.trackEditor(proposal.track.id))
-                }
-            },
+            onAction = { unavailableAction(load, nav, tracks, id) },
             onCoachPick = { toggleCoachPick(load, coachPicks, it) },
             layout = layout,
             topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
+            optimalVideo = optimalVideoSlot(id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo),
         )
+    }
+}
+
+/** The unavailable analysis's action: Tracks, or the editor on the track made from session [id]. */
+private fun unavailableAction(load: Load?, nav: NavHostController, tracks: Tracks, id: String) {
+    val proposal = (load as? Load.Failed)?.proposal
+    if (proposal == null) {
+        nav.navigate(Routes.Tracks)
+    } else {
+        // Kept by Tracks before the editor opens it (one background thread, in order).
+        tracks.propose(proposal.track, id, proposal.session)
+        nav.navigate(Routes.trackEditor(proposal.track.id))
     }
 }
 
