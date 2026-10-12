@@ -83,6 +83,15 @@ class PassMeter(
     private var entry: Sample? = null
     private var finished = false
     private var started = false
+    private var line: Sample? = null
+
+    /**
+     * Live, the lap began at the line at [lineMicros], before the first position fed in; a window that
+     * starts at the line is timed from there. Offline the trace's first position is on the line already.
+     */
+    fun start(lineMicros: Long, lineKmh: Double) {
+        line = Sample(0.0, lineMicros, lineKmh)
+    }
 
     fun add(along: Double, tMicros: Long, kmh: Double): CornerPass? {
         if (finished) return null
@@ -103,11 +112,7 @@ class PassMeter(
                 null
             }
             s.along <= window.endInclusive -> {
-                // The lap's first position enters a window that starts at the line.
-                if (inside.isEmpty()) {
-                    val atLine = first && window.start <= 0.0 && s.along <= MaxGapMeters
-                    entry = p?.takeIf { it.along < window.start } ?: s.takeIf { atLine }
-                }
+                if (inside.isEmpty()) entry = entryBefore(p, s, first)
                 inside += s
                 null
             }
@@ -117,6 +122,15 @@ class PassMeter(
                 if (e == null || inside.isEmpty()) null else measure(e, s)
             }
         }
+    }
+
+    /**
+     * Where the window was entered, for [s] the first position inside it: the position before it, or
+     * for the lap's [first] position in a window that starts at the line, the line itself.
+     */
+    private fun entryBefore(p: Sample?, s: Sample, first: Boolean): Sample? {
+        val atLine = first && window.start <= 0.0 && s.along <= MaxGapMeters
+        return p?.takeIf { it.along < window.start } ?: (line ?: s).takeIf { atLine }
     }
 
     /** The car left the path: what was measured so far is not one continuous drive through the window. */

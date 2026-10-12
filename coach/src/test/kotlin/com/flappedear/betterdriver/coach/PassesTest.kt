@@ -73,4 +73,23 @@ class PassesTest {
         assertEquals(lastT + 1_000_000 - 1_000_000, pass.timeMicros)
         assertNull(meter.finish(lineMicros = lastT + 2_000_000))
     }
+
+    @Test
+    fun `live, a window that starts at the line opens at the crossing time`() {
+        val window = map.windows[0]
+        val meter = PassMeter(corners[0], window, 2)
+        // The line was crossed at 0 s; the first position, 10 m on, is 1 s later.
+        meter.start(lineMicros = 0, lineKmh = 100.0)
+        var t = 1_000_000L
+        var along = 10.0
+        var pass: CornerPass? = null
+        while (pass == null) {
+            pass = meter.add(along, t, 100.0)
+            along += 10.0
+            t += 1_000_000
+        }
+        // The window ends at 130 m, reached at 13 s, measured from the line.
+        assertEquals(window.endInclusive, 130.0)
+        assertEquals(13_000_000L, pass.timeMicros)
+    }
 }

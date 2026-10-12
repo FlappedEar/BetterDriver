@@ -284,6 +284,7 @@ class CueEngine(
         if (timed) onTimedLap(lap, now)
         cursor = book?.map?.cursor()
         meters = book?.map?.meters(laps.timer.lapNumber).orEmpty()
+        meters.forEach { it.start(lap.endMicros, laps.speedKmh) }
         plan = null
         openCues.clear()
     }
