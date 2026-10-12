@@ -87,7 +87,7 @@ private fun CueCard(item: ReviewedCue) {
     }
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val where = listOfNotNull("Lap ${cue.lap}", cue.corner?.let { "Turn $it" }).joinToString(" · ")
+            val where = listOfNotNull("Lap ${cue.lap}", cue.heardTurn?.let { "Turn $it" }).joinToString(" · ")
             Text(
                 where,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),

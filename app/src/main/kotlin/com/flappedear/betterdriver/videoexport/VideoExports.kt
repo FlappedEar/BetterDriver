@@ -161,7 +161,8 @@ class VideoExports private constructor(private val context: Context) {
         // A session the analysis cannot handle only leaves the optimal lap out.
         @Suppress("TooGenericExceptionCaught")
         private fun analyseOptimal(): OptimalVideo = try {
-            val analysis = laps?.track?.let { analyzeSession(telemetrySessionOf(data, it)) }
+            // Named by the track's corners (FBBD-172), as the lap analysis names them.
+            val analysis = laps?.track?.let { analyzeSession(telemetrySessionOf(data, it), identity = it.identity) }
             optimalVideo(analysis, video, sets.firstOrNull()?.tMicros ?: 0L, ::durationOf)
         } catch (e: Exception) {
             DebugLog.w(Tag, "analysing ${data.id} for its optimal lap failed", e)

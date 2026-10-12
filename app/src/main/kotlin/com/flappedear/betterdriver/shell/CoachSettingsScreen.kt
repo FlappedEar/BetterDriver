@@ -113,7 +113,7 @@ private fun Picked(picked: List<PickedCorners>, onClear: (String) -> Unit) {
     }
     DimText(
         "At 3 focus corners, picked corners are coached first. " +
-            "The coach's own corner numbers can differ from the analysis's.",
+            "The coach names corners by the lap analysis's numbers.",
     )
 }
 

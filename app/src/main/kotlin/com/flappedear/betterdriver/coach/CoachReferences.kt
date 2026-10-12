@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import android.content.Context
 import android.os.SystemClock
+import com.flappedear.betterdriver.analysis.identity.migrateTrackIdentities
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -27,12 +28,17 @@ private const val RecordingCheckMillis = 2_000L
  * session included), and when the sessions change. Never while a session records: a refresh that
  * finds one stops between sessions and leaves the rest to the coach or the next refresh. Requests that
  * arrive while one is queued are folded into it.
+ *
+ * The first refresh after the app starts also gives the stored tracks without corner ids their
+ * corner identity (FBBD-172), from the sessions recorded there, so the coach names corners as the
+ * lap analysis does before any of them is opened.
  */
 internal object CoachReferences {
     private val io = Executors.newSingleThreadExecutor { r ->
         Thread(r, "coach-references").apply { priority = Thread.MIN_PRIORITY }
     }
     private val queued = AtomicBoolean(false)
+    private val identitiesDone = AtomicBoolean(false)
 
     fun refresh(context: Context) {
         val app = context.applicationContext
@@ -46,8 +52,6 @@ internal object CoachReferences {
     @Suppress("TooGenericExceptionCaught") // A failed refresh only means the coach builds the reference itself.
     private fun refreshNow(context: Context) {
         try {
-            // The coach is off, or says only the basics: it has no use for references.
-            if (coachSettings(context).read().verbosity < Verbosity.Focus) return
             val sessions = SessionStore(sessionsDir(context))
             var checkedAt = 0L
             var recording = false
@@ -60,6 +64,12 @@ internal object CoachReferences {
                 recording
             }
             // Waits for a restore (FBBD-156), so nothing is written into a half-swapped folder.
+            if (!identitiesDone.get()) {
+                AppDataGate.write { migrateTrackIdentities(TrackStore(tracksDir(context)), sessions, stop) }
+                if (!stop()) identitiesDone.set(true)
+            }
+            // The coach is off, or says only the basics: it has no use for references.
+            if (coachSettings(context).read().verbosity < Verbosity.Focus) return
             AppDataGate.write { coachLibrary(context).refresh(stop) }
         } catch (e: Exception) {
             DebugLog.w(Tag, "coach references not refreshed", e)
