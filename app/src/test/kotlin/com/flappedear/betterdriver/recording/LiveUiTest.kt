@@ -100,6 +100,8 @@ class LiveUiTest {
         val lost = liveTrackState(noFix, tiles)
         assertEquals("GNSS signal lost", lost.alert?.title)
         assertEquals("Lost", lost.status.single().value)
+        // The last speed before the loss is not shown as if it were current.
+        assertEquals("–", lost.tiles.first().value)
     }
 
     @Test
