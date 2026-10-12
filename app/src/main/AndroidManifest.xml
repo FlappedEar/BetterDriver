@@ -18,6 +18,8 @@
     <!-- The recorder runs as a foreground service and keeps the CPU awake while recording (FBBD-69). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- And as a connected device, for the receiver and sensors over Bluetooth or Wi-Fi (FBBD-34). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <!-- Phone video runs as its own foreground service (FBBD-21). -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
@@ -75,11 +77,12 @@
             </intent-filter>
         </activity>
 
-        <!-- Own process: a crash in the UI, coach or analysis never stops a recording (FBBD-69). -->
+        <!-- Own process: a crash in the UI, coach or analysis never stops a recording (FBBD-69).
+             Each type is claimed only while its permission is granted (recorderForegroundTypes, FBBD-34). -->
         <service
             android:name=".recording.RecorderService"
             android:exported="false"
-            android:foregroundServiceType="location"
+            android:foregroundServiceType="location|connectedDevice"
             android:process=":recorder" />
 
         <!-- Own process too: a camera crash or hang never reaches the recorder (FBBD-21, FBBD-69). -->

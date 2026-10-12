@@ -5,8 +5,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -184,20 +182,16 @@ class RecorderService : Service() {
         return START_STICKY
     }
 
-    @Suppress("TooGenericExceptionCaught") // Not allowed to go foreground (Android 12+) or no location access (14+).
+    /** As location and connected device, each only while Android accepts it (startRecorderForeground, FBBD-34). */
+    @Suppress("TooGenericExceptionCaught") // Not allowed to go foreground (Android 12+), or no type is allowed.
     private fun goForeground(): Boolean = try {
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        } else {
-            0
-        }
         val info = active?.recording?.info
         val notification = recordingNotification(
             this,
             info?.startUtcMillis ?: System.currentTimeMillis(),
             info?.let(::notificationDetail).orEmpty(),
         )
-        ServiceCompat.startForeground(this, NotificationId, notification, type)
+        startRecorderForeground(NotificationId, notification)
         true
     } catch (e: RuntimeException) {
         DebugLog.e(Tag, "could not go foreground", e)
