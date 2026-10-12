@@ -65,17 +65,18 @@ class RecordingSmokeTest {
             check(running.containsAll(Processes)) { "a process of the recording ended: $running" }
             check(appProcessErrors().isEmpty()) { appProcessErrors().joinToString("\n") }
 
-            // A hold anywhere stops the session.
+            // A hold anywhere stops the session: the ring fills for 3 s, then Drive shows again.
             app.onRoot().performTouchInput { down(center) }
-            app.pumpFor(HoldMs)
-            app.onRoot().performTouchInput { up() }
-            app.pumpUntil(LoadTimeoutMs, "the session to be saved") {
-                SmokeData.sessions().any { it.id !in before && it.state == SessionState.FINISHED }
-            }
+            app.pumpUntilText("Hold to stop", substring = true)
+            app.pumpUntilText("START", timeoutMs = LoadTimeoutMs)
+            // The finger goes up where it went down, unless the turn back to portrait made a new window.
+            runCatching { app.onRoot().performTouchInput { up() } }
+        }
+        app.waitNamed("the session to be saved", LoadTimeoutMs) {
+            SmokeData.sessions().any { it.id !in before && it.state == SessionState.FINISHED }
         }
 
         val session = SmokeData.sessions().single { it.id !in before }
-        app.waitForText("START")
         app.openSessions()
         app.openSession(sessionTitle(session))
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
@@ -88,6 +89,5 @@ class RecordingSmokeTest {
 
         /** Three crossings of the line, a lap apart: two whole laps. */
         const val LapsMs = 130_000L
-        const val HoldMs = 4_000L
     }
 }

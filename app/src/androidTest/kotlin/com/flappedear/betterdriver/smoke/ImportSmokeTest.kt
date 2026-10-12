@@ -89,6 +89,7 @@ class ImportSmokeTest {
         app.openSessions()
         app.openSession(SmokeFixtures.ImportedGpx)
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.back()
 
         app.openTab("Settings")
         app.openTab("Recording")

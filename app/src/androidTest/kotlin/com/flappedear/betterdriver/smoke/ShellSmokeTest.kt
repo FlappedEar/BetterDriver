@@ -66,8 +66,8 @@ class ShellSmokeTest {
         app.openTab("Devices")
         app.waitForText("+ Add equipment").performClick()
         // The Bluetooth search finds nothing on the emulator; the rest is added without it.
-        app.waitForText("Found nearby").assertIsDisplayed()
-        app.waitForText("Add without Bluetooth").performScrollTo()
+        app.waitForText("FOUND NEARBY").assertIsDisplayed()
+        app.waitForText("ADD WITHOUT BLUETOOTH").performScrollTo()
 
         // A Wi-Fi receiver asks for its address, a GoPro started by hand for its model.
         app.waitForText("NMEA or RaceChrono DIY over Wi-Fi").performScrollTo().performClick()
