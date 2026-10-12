@@ -55,7 +55,10 @@ jobs:
           retention-days: 14
       - name: Commit changed goldens
         run: |
-          git add -A -- '*/src/test/screenshots/'
+          # The files, not the directory: a pathspec with a wildcard and a
+          # trailing slash matches nothing.
+          git add -A -- '*/src/test/screenshots/*'
+          git diff --cached --name-status | sed 's/^/::notice title=Golden::/'
           if git diff --cached --quiet; then
             echo "The goldens are unchanged."
             exit 0
@@ -63,4 +66,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Record screenshot goldens"
-          git push
+          # Errors as annotations: they are readable where the log is not.
+          if ! out=$(git push 2>&1); then
+            echo "::error title=git push::$(echo "$out" | tr '\n' ' ')"
+            exit 1
+          fi
