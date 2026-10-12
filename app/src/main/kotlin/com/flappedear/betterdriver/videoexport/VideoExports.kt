@@ -427,8 +427,8 @@ class VideoExports private constructor(private val context: Context) {
 
 /**
  * The RaceBox accelerometer when the session recorded it: X forward, Y to the right (RaceBox
- * protocol); levelled by the app's calibration (FBBD-89). Other receivers' axes are not known, so
- * their G comes from the GNSS path.
+ * protocol). The overlay fits each axis to the GNSS path's G, so a backwards or tilted mount still
+ * reads right. Other receivers' axes are not known, so their G comes from the GNSS path.
  */
 private fun accelOf(data: SessionData): AccelChannels? {
     val x = RaceBoxChannels.ACCEL_X

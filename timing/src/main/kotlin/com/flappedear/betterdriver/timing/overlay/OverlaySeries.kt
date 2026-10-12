@@ -46,6 +46,10 @@ internal class TimeSeries(
         return TimeSeries(times, out, maxGapMicros)
     }
 
+    /** Each value through [f], at the same times. */
+    fun map(f: (Double) -> Double): TimeSeries =
+        TimeSeries(times, DoubleArray(values.size) { f(values[it]) }, maxGapMicros)
+
     companion object {
         /** Longer than any receiver's interval between fixes (1 Hz phones included), shorter than a lost fix. */
         const val DefaultMaxGapMicros = 2_000_000L

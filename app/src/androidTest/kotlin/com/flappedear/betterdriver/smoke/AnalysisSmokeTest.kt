@@ -52,6 +52,9 @@ class AnalysisSmokeTest {
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.waitForText("THEORETICAL").assertIsDisplayed()
         app.waitForText("WHERE TIME GOES").performScrollTo().assertIsDisplayed()
+        // The whole session's G-forces, with their peaks.
+        app.waitForText("G-FORCES · WHOLE SESSION").performScrollTo().assertIsDisplayed()
+        app.waitForText("Peaks: braking", substring = true)
 
         app.openTab("Compare")
         app.waitForText("TIME DELTA").assertIsDisplayed()

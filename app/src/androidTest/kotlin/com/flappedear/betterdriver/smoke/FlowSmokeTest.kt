@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onAllNodesWithText
@@ -20,6 +21,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.hamcrest.Matchers.allOf
 import org.junit.After
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -53,36 +55,55 @@ class FlowSmokeTest {
     @Test
     fun lapReviewComparesTwoLaps() {
         app.openSessions()
-        // The lap review opens on the newest session's best lap against the track's best other lap.
-        // It runs a frame loop, so the clock is advanced by hand while it shows.
+        // The lap review opens on the picker with nothing picked, never on an earlier comparison.
+        app.waitForText("Compare laps").performClick()
+        expectPickerWithNothingPicked()
+
+        // The picker: the circuit's sessions, newest first, with their laps. Pick two and compare them.
+        // The lap review runs a frame loop, so the clock is advanced by hand while it shows.
+        pickLaps2And3()
         app.withManualClock {
-            app.waitForText("Compare laps").performClick()
+            app.onNode(hasText("Compare") and hasClickAction()).performClick()
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+            app.pumpUntilText("Lap 2", substring = true)
             // Both laps play side by side with their video.
             app.pumpUntilText("Play").performClick()
             app.pumpUntilText("Pause")
             app.pumpFor(PlayMs)
             app.pumpUntilText("Pause").performClick()
             app.pumpUntilText("Play")
-            // To the picker.
-            app.pumpUntilText("Change laps").performClick()
-            app.pumpUntilText("Compare laps")
+            // Back goes to the picker with nothing picked.
+            app.pumpBack()
+            app.pumpUntilNode(hasText("Compare") and hasClickAction())
         }
+        expectPickerWithNothingPicked()
 
-        // The picker: the circuit's sessions, newest first, with their laps. Pick two and compare them.
+        // Change laps also goes to the picker with nothing picked.
+        pickLaps2And3()
+        app.withManualClock {
+            app.onNode(hasText("Compare") and hasClickAction()).performClick()
+            app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).performClick()
+            app.pumpUntilNode(hasText("Compare") and hasClickAction())
+        }
+        expectPickerWithNothingPicked()
+
+        // Back to Sessions and in again: the picker, not the last comparison.
+        app.back()
+        app.waitForText("Compare laps").performClick()
+        expectPickerWithNothingPicked()
+    }
+
+    /** The lap picker is showing, with both slots empty and Compare off. */
+    private fun expectPickerWithNothingPicked() {
+        app.waitFor(hasText("Compare") and hasClickAction(), LoadTimeoutMs).assertIsNotEnabled()
+        assertEquals(2, app.onAllNodesWithText("Tap a lap").fetchSemanticsNodes().size)
+    }
+
+    private fun pickLaps2And3() {
         app.waitForText(SmokeFixtures.CircuitName, timeoutMs = LoadTimeoutMs).performClick()
         app.waitFor(hasText("Lap 2") and hasClickAction(), LoadTimeoutMs).performClick()
         app.waitFor(hasText("Lap 3") and hasClickAction()).performClick()
         app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled()
-        app.withManualClock {
-            app.onNode(hasText("Compare") and hasClickAction()).performClick()
-            app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-            app.pumpUntilText("Lap 2", substring = true)
-            // Back goes to the picker, the two laps still picked.
-            app.pumpBack()
-            app.pumpUntilNode(hasText("Compare") and hasClickAction())
-        }
-        app.waitFor(hasText("Compare") and hasClickAction()).assertIsEnabled()
     }
 
     @Test

@@ -29,6 +29,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
@@ -123,13 +124,15 @@ private fun clock(seconds: Double): String {
 }
 
 /**
- * The analysis's message when it has no laps to show (a road drive, say), then the Acceleration
- * card when the session has runs: they need no laps. Then its data quality (FBBD-183), once worked out.
+ * The analysis's message when it has no laps to show (a road drive, say), then the session's
+ * G-forces and the Acceleration card when the session has runs: they need no laps. Then its data
+ * quality (FBBD-183), once worked out.
  */
 @Composable
 internal fun WithAcceleration(
     acceleration: AccelerationUi?,
     quality: QualityUi? = null,
+    gForces: GgTrace? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -142,6 +145,7 @@ internal fun WithAcceleration(
     ) {
         content()
         val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
+        gForces?.let { GForcesCard(it, width) }
         acceleration?.let { AccelerationCard(it, width) }
         quality?.let { QualityCard(it, width) }
     }

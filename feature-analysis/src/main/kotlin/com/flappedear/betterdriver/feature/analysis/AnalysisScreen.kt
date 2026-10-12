@@ -83,7 +83,7 @@ fun AnalysisScreen(
             AnalysisState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is AnalysisState.Unavailable -> WithAcceleration(state.acceleration, state.quality) {
+            is AnalysisState.Unavailable -> WithAcceleration(state.acceleration, state.quality, state.gForces) {
                 Card {
                     Text(state.message, style = MaterialTheme.typography.bodyLarge)
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
@@ -143,6 +143,7 @@ private fun Ready(
                     ui.progress?.let { Progress(it, width) }
                     if (ui.focus.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
+                    ui.gForces?.let { GForcesCard(it, width) }
                     ui.acceleration?.let { AccelerationCard(it, width) }
                     ui.quality?.let { QualityCard(it, width) }
                 }

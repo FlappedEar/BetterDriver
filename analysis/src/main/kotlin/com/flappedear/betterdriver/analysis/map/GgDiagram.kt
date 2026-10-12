@@ -33,7 +33,7 @@ const val AccelerometerSmoothingSeconds = 0.2
 const val MinimumGgSpeedMetersPerSecond = 5.0
 
 /** The accelerometer is used when it covers at least this share of the lap; else GPS. */
-private const val MinimumAccelerometerCoverage = 0.5
+internal const val MinimumAccelerometerCoverage = 0.5
 
 /** Seconds: readings this close to the lap's ends are within it. */
 private const val TimeTolerance = 1e-9
@@ -89,13 +89,13 @@ fun lapGg(analysis: SessionAnalysis, session: TelemetrySession, lapIndex: Int): 
 }
 
 @Suppress("ReturnCount")
-private fun firstPosition(session: TelemetrySession, time: Double): GeoCoordinate? {
+internal fun firstPosition(session: TelemetrySession, time: Double): GeoCoordinate? {
     val lat = session.valueAt(Aliases.LATITUDE, time) ?: return null
     val lon = session.valueAt(Aliases.LONGITUDE, time, Interpolation.Longitude) ?: return null
     return GeoCoordinate(lat, lon)
 }
 
-private fun kinematicAt(session: TelemetrySession, time: Double, origin: GeoCoordinate): KinematicSample? {
+internal fun kinematicAt(session: TelemetrySession, time: Double, origin: GeoCoordinate): KinematicSample? {
     val position = firstPosition(session, time)?.let { projectCoordinate(it, origin) } ?: return null
     val speed = session.channel(Aliases.SPEED)?.let { channel ->
         val unit = effectiveChannelUnit(session, channel.name)
@@ -229,7 +229,7 @@ internal fun accelerometerG(session: TelemetrySession, times: DoubleArray, gps: 
 }
 
 /** The mean of [channel]'s samples within [half] seconds of [time], or its value there; null without one. */
-private fun smoothedAt(channel: TelemetryChannel, time: Double, half: Double): Double? {
+internal fun smoothedAt(channel: TelemetryChannel, time: Double, half: Double): Double? {
     val ts = channel.timestamps
     var i = lowerBound(ts, time - half)
     var sum = 0.0

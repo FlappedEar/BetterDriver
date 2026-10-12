@@ -2,6 +2,8 @@ package com.flappedear.betterdriver.analysis
 
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.Aliases
+import com.flappedear.betterdriver.analysis.map.GgSource
+import com.flappedear.betterdriver.analysis.map.sessionGg
 import com.flappedear.betterdriver.analysis.recorded.ForwardAcceleration
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.ChannelDef
@@ -20,6 +22,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class RecordedSessionTest {
@@ -69,8 +72,11 @@ class RecordedSessionTest {
         right = GeoPoint(centerLat + (-200.0 - 15) / metersPerDegreeLat, centerLon),
     )
 
-    /** Speeding up then braking in a straight line, with accel_x of sign [sign] (+1: forward positive). */
-    private fun straightRun(sign: Double): SessionData {
+    /**
+     * Speeding up then braking in a straight line, with accel_x of sign [sign] (+1: forward positive)
+     * reading [tilt] more from a tilted mount.
+     */
+    private fun straightRun(sign: Double, tilt: Double = 0.0, dead: Boolean = false): SessionData {
         val accelX = ChannelDef(110, "accel_x", "g", "racebox", 3)
         var speed = 10.0
         val sets = (0 until 500).map { i ->
@@ -82,7 +88,7 @@ class RecordedSessionTest {
                     ChannelValue(GnssChannels.LAT.id, centerLat + i * 1e-5),
                     ChannelValue(GnssChannels.LON.id, centerLon),
                     ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
-                    ChannelValue(accelX.id, sign * a),
+                    ChannelValue(accelX.id, if (dead) 0.0 else sign * a + tilt),
                 ),
             )
         }
@@ -94,14 +100,32 @@ class RecordedSessionTest {
     }
 
     @Test
-    fun `the RaceBox X acceleration is signed so braking reads negative`() {
-        for (sign in listOf(1.0, -1.0)) {
-            val session = telemetrySessionOf(straightRun(sign), null)
+    fun `the RaceBox X acceleration is signed so braking reads negative, its tilt taken off`() {
+        for (sign in listOf(1.0, -1.0)) for (tilt in listOf(0.0, -0.187)) {
+            val session = telemetrySessionOf(straightRun(sign, tilt), null)
             assertEquals(ForwardAcceleration, session.aliases[Aliases.LONGITUDINAL_ACCELERATION])
             val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION))
-            assertEquals(0.3, forward.values.first(), 1e-9, "sign $sign")
-            assertEquals(-0.6, forward.values.last(), 1e-9, "sign $sign")
+            assertEquals(0.3, forward.values.first(), 0.01, "sign $sign, tilt $tilt")
+            assertEquals(-0.6, forward.values.last(), 0.01, "sign $sign, tilt $tilt")
         }
+    }
+
+    @Test
+    fun `an accelerometer column of zeros is left out, so GPS is used`() {
+        val session = telemetrySessionOf(straightRun(1.0, dead = true), null)
+        assertNull(session.aliases[Aliases.LONGITUDINAL_ACCELERATION])
+        assertEquals(GgSource.Gps, assertNotNull(sessionGg(session)).source)
+    }
+
+    @Test
+    fun `a drive without laps has its G-forces, from GPS without a lateral axis`() {
+        // No start/finish line, so no laps: the session's G-forces still show its braking.
+        val session = telemetrySessionOf(straightRun(-1.0, tilt = -0.187), null)
+        val gg = assertNotNull(sessionGg(session))
+        // accel_y was not recorded, so the G-G diagram is GPS's for both axes.
+        assertEquals(GgSource.Gps, gg.source)
+        val braking = gg.points.minOf { it.longitudinalG }
+        assertEquals(-0.6, braking, 0.05)
     }
 
     @Test
