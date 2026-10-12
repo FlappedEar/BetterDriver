@@ -22,7 +22,8 @@ import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.RecordingVideoSink
 
-private val CoachEventKinds = setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM, CoachEvents.VOICE)
+private val CoachEventKinds =
+    setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM, CoachEvents.VOICE, CoachEvents.VOICE_END)
 private const val MaxCoachEventChars = 1_000
 
 /** The low-importance channel for the recorder and camera notifications. */
