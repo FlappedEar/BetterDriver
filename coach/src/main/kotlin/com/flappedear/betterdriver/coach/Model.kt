@@ -60,6 +60,15 @@ enum class Verbosity {
     Full,
 }
 
+/** How the coach voices its phrases (FBBD-48). */
+enum class VoiceMode {
+    /** Text-to-speech says each phrase as it is asked for. */
+    Live,
+
+    /** Every phrase's words and numbers are rendered to clips at coach start and joined when asked for. */
+    PreRendered,
+}
+
 /** Coach settings, set in the app (FBBD-98). */
 data class CoachSettings(
     val verbosity: Verbosity = Verbosity.Focus,
@@ -67,6 +76,8 @@ data class CoachSettings(
     val audioDelayMillis: Int = 0,
     /** Timed laps driven in this session before the first corner cue. */
     val learningLaps: Int = DefaultLearningLaps,
+    /** How cues are voiced (FBBD-48): live text-to-speech, or clips rendered at coach start. */
+    val voice: VoiceMode = VoiceMode.Live,
 ) {
     init {
         require(audioDelayMillis in 0..MaxAudioDelayMillis) { "audio delay must be 0 to $MaxAudioDelayMillis ms" }
