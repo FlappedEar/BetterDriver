@@ -117,6 +117,7 @@ fun analyzeSession(
         timed.axis.lengthMeters,
         eligible.map { TimedLapSectors(timed.times[it], population[it].start) },
         TimedLapSectors(fastestTimes, fastest.startTelemetryTime),
+        maximumResults = -1, // all: focus areas count every lap's losses through a segment
     )
     val features = computeTrackFeatures(timed.axis, SegmentReviewSmoothingMeters)
     val cornerMetrics = segments.segments.filter { it.type == TrackSegmentType.Corner }.associate { corner ->

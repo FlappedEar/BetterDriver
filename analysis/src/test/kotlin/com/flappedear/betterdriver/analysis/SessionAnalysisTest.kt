@@ -38,6 +38,8 @@ class SessionAnalysisTest {
         val fastestNumber = analysis.laps.timedLaps[analysis.laps.fastestLapIndex!!].number
         assertTrue(losses.none { it.lapReference == fastestNumber })
         assertEquals(losses.sortedByDescending { it.lossSeconds }, losses)
+        // None left out, so repeated losses are counted over every lap.
+        assertEquals(analysis.losses!!.observationCount, losses.size)
     }
 
     @Test
