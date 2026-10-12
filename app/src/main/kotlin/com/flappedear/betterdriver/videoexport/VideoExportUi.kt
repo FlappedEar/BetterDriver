@@ -22,9 +22,15 @@ data class LapOption(
 
 /**
  * What the picker offers for one session: the whole video ([wholeMicros] long) and each lap; on a
- * point-to-point track ([pointToPoint], FBBD-155) the laps are runs.
+ * point-to-point track ([pointToPoint], FBBD-155) the laps are runs. [optimal] is the optimal lap
+ * (FBBD-163).
  */
-data class VideoExportOptions(val wholeMicros: Long, val laps: List<LapOption>, val pointToPoint: Boolean = false) {
+data class VideoExportOptions(
+    val wholeMicros: Long,
+    val laps: List<LapOption>,
+    val pointToPoint: Boolean = false,
+    val optimal: OptimalOption? = null,
+) {
     /** Chosen when the picker opens: the best lap when it is on video, else the whole video; null with no video. */
     val preselected: VideoPart?
         get() = laps.firstOrNull { it.best && it.onVideo }?.number ?: WholeVideo.takeIf { wholeMicros > 0 }
@@ -57,11 +63,12 @@ internal fun wholeVideoText(micros: Long): String {
 
 /**
  * The file name offered when saving: BetterDriver-<id>-lap7.mp4 (-run2.mp4 for a point-to-point
- * run), or -video.mp4 for all of it.
+ * run), -video.mp4 for all of it, -optimal.mp4 for the optimal lap.
  */
 fun videoExportFileName(sessionId: String, part: VideoPart, pointToPoint: Boolean = false): String {
     val name = when {
         part == WholeVideo -> "video"
+        part == OptimalLap -> "optimal"
         pointToPoint -> "run$part"
         else -> "lap$part"
     }
