@@ -23,6 +23,10 @@ android {
         // Robolectric screenshot tests need the fonts and other resources.
         unitTests.isIncludeAndroidResources = true
     }
+    sourceSets {
+        // Layout checks shared by the screen tests (FBBD-40).
+        getByName("test").java.srcDir("../core-ui/src/layoutTest/kotlin")
+    }
 }
 
 kotlin {

@@ -91,6 +91,16 @@ jobs:
             **/build/reports/
             **/build/outputs/roborazzi/
           retention-days: 7
+      # Pictures of the main screens on phone and tablet from the layout tests (FBBD-40), to look
+      # at; the tests themselves check them, so they have no goldens.
+      - name: Upload layout screenshots
+        if: always() && matrix.robolectric
+        uses: actions/upload-artifact@v4
+        with:
+          name: layout-screenshots
+          path: '**/build/outputs/roborazzi/layout/'
+          if-no-files-found: ignore
+          retention-days: 14
       # Pull requests do not keep the APK; run CI manually on a branch to get one.
       - name: Upload the debug APK
         if: matrix.apk && github.event_name != 'pull_request'

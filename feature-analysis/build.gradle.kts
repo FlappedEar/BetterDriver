@@ -20,6 +20,14 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // The screen layout tests (Robolectric) need the fonts and other resources.
+        unitTests.isIncludeAndroidResources = true
+    }
+    sourceSets {
+        // Layout checks shared by the screen tests (FBBD-40).
+        getByName("test").java.srcDir("../core-ui/src/layoutTest/kotlin")
+    }
 }
 
 kotlin {
@@ -37,4 +45,9 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.compose.ui.test.junit4)
 }

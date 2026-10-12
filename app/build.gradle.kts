@@ -29,6 +29,12 @@ android {
     sourceSets {
         // The smoke tests' sessions are made from the analysis parity corpus (SmokeFixtures).
         getByName("androidTest").assets.srcDir("../analysis/src/test/resources/parity/corpus")
+        // Layout checks shared by the screen tests (FBBD-40).
+        getByName("test").java.srcDir("../core-ui/src/layoutTest/kotlin")
+    }
+    testOptions {
+        // The screen layout tests (Robolectric) need the fonts and other resources.
+        unitTests.isIncludeAndroidResources = true
     }
 
     buildTypes {
@@ -89,6 +95,11 @@ dependencies {
     // JankStats for the debug build's slow-frame log (FBBD-41); release builds do not have it.
     debugImplementation(libs.androidx.metrics.performance)
     testImplementation(libs.junit)
+    testImplementation(platform(libs.compose.bom))
+    testImplementation(libs.robolectric)
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.roborazzi.compose)
+    testImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(platform(libs.compose.bom))
     androidTestImplementation(libs.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.test.runner)
