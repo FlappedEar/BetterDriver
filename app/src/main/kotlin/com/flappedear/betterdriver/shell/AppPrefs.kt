@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import com.flappedear.betterdriver.debug.DebugGuards
 import com.flappedear.betterdriver.setup.LegacySettings
 
 /**
@@ -15,9 +16,11 @@ import com.flappedear.betterdriver.setup.LegacySettings
  * change. Equipment and cars are not here: they are Arek's setup ([SetupRepo], FBBD-83).
  */
 class AppPrefs(private val context: Context) {
-    private val prefs = context.getSharedPreferences(FileName, Context.MODE_PRIVATE)
+    // Read on the main thread before the first screen, which it chooses: StrictMode is told not to
+    // report it (FBBD-41). Changes are saved with apply(), in the background.
+    private val prefs = DebugGuards.allowDisk { context.getSharedPreferences(FileName, Context.MODE_PRIVATE) }
 
-    var setupDone by mutableStateOf(prefs.getBoolean(KeySetupDone, false))
+    var setupDone by mutableStateOf(DebugGuards.allowDisk { prefs.getBoolean(KeySetupDone, false) })
         private set
 
     /** False when a required permission was revoked or expired (one-time grants) since setup. */

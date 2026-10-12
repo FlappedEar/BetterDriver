@@ -81,9 +81,10 @@ private class Draft(val track: Track, val sessionId: String, val session: Editor
  */
 @Suppress("TooManyFunctions") // One entry point per thing the tracks screens and the editor do.
 class Tracks private constructor(private val context: Context) {
-    private val store = TrackStore(tracksDir(context))
-    private val directory = CircuitDirectory(circuitsDir(context))
-    private val sessions = SessionStore(sessionsDir(context))
+    // Made on the io thread when first used: making them reads the disk (FBBD-41).
+    private val store by lazy { TrackStore(tracksDir(context)) }
+    private val directory by lazy { CircuitDirectory(circuitsDir(context)) }
+    private val sessions by lazy { SessionStore(sessionsDir(context)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "tracks-io") }
     private val main = Handler(Looper.getMainLooper())
 

@@ -117,6 +117,7 @@ class GoPros private constructor(private val context: Context) {
                 GoProBleLink(context, address),
                 scope,
                 video = camera.videoMode?.let(::goProVideo),
+                io = Dispatchers.IO,
             )
         }
         // Logged for the real-camera test (FBBD-82); the track screen does not show the GoPros yet.

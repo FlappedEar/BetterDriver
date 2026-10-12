@@ -67,10 +67,11 @@ enum class DeleteState { Running, Recording, Failed }
  * Recovery and export only read chunk files, so they can run while the recorder process records.
  */
 class Sessions private constructor(private val context: Context) {
-    private val store = SessionStore(sessionsDir(context))
+    // Made on the io thread when first used: making them reads the disk (FBBD-41).
+    private val store by lazy { SessionStore(sessionsDir(context)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "sessions-io") }
     private val main = Handler(Looper.getMainLooper())
-    private val coached = CoachedSessions(store, File(coachDir(context), "cues.properties"))
+    private val coached by lazy { CoachedSessions(store, File(coachDir(context), "cues.properties")) }
 
     /** Newest first. */
     var list by mutableStateOf<List<SessionSummary>>(emptyList())

@@ -68,7 +68,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 @OptIn(UnstableApi::class)
 class VideoExports private constructor(private val context: Context) {
-    private val store = SessionStore(sessionsDir(context))
+    // Made on the io thread when first used: making it reads the disk (FBBD-41).
+    private val store by lazy { SessionStore(sessionsDir(context)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "video-export-io") }
     private val main = Handler(Looper.getMainLooper())
 
