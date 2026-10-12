@@ -68,6 +68,8 @@ import com.flappedear.betterdriver.update.UpdateCard
 import com.flappedear.betterdriver.update.UpdateRow
 import com.flappedear.betterdriver.update.hasUpdate
 import com.flappedear.betterdriver.update.updatesBlocked
+import com.flappedear.betterdriver.videoexport.VideoExportFlow
+import com.flappedear.betterdriver.videoexport.VideoExports
 
 private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
 
@@ -160,6 +162,12 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
 @Composable
 private fun FollowRecording(nav: NavHostController, recorder: RecorderClient, sessions: Sessions) {
     val recording = recorder.state.recording
+    // A video with data never renders while a session records (FBBD-152): the recording comes first.
+    val context = LocalContext.current
+    val starting = recording || recorder.state.starting
+    LaunchedEffect(starting) {
+        if (starting) VideoExports.get(context).stopForRecording()
+    }
     LaunchedEffect(recording) {
         if (recording) {
             val current = nav.currentDestination
@@ -254,31 +262,37 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
     val updates = remember(context) { AppUpdates.get(context) }
     val recorder = RecorderClient.get(context)
     val updatesBlocked = updatesBlocked(recorder, sessions)
-    SessionsScreen(
-        header = { SessionsHeader(sessions.list.any(), updates, updatesBlocked) { nav.navigate(Routes.Review) } },
-        transfer = rememberSessionTransfer(recording = recorder.state.recording || recorder.state.starting),
-        sessions = sessions.list,
-        exports = sessions.exports,
-        withVideo = sessions.withVideo,
-        onAnalyse = { s -> nav.navigate(Routes.sessionAnalysis(s.id)) },
-        onExport = export,
-        goPro = GoProCardState(
-            sessions = sessions.goPro,
-            work = goPros.work,
-            problems = goPros.problems,
-            enabled = !goPros.recording,
-            listed = listedGoPros(repo.setup),
-            nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
-            onDownload = { s, camera -> goPros.download(s.id, camera) },
-            onAddFiles = { s, camera -> addFiles(s.id, camera) },
-        ),
-        deleting = SessionDeleting(
-            sizes = sessions.sizes,
-            states = sessions.deletes,
-            onDelete = { s -> sessions.delete(s.id) },
-        ),
-        coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
-    )
+    val recording = recorder.state.recording || recorder.state.starting
+    VideoExportFlow(sessions.list, recording) { videoExport ->
+        SessionsScreen(
+            header = {
+                SessionsHeader(sessions.list.any(), updates, updatesBlocked) { nav.navigate(Routes.Review) }
+            },
+            transfer = rememberSessionTransfer(recording = recording),
+            videoExport = videoExport,
+            sessions = sessions.list,
+            exports = sessions.exports,
+            withVideo = sessions.withVideo,
+            onAnalyse = { s -> nav.navigate(Routes.sessionAnalysis(s.id)) },
+            onExport = export,
+            goPro = GoProCardState(
+                sessions = sessions.goPro,
+                work = goPros.work,
+                problems = goPros.problems,
+                enabled = !goPros.recording,
+                listed = listedGoPros(repo.setup),
+                nameOf = { id -> repo.goProFor(id)?.name ?: legacyGoProName(id) },
+                onDownload = { s, camera -> goPros.download(s.id, camera) },
+                onAddFiles = { s, camera -> addFiles(s.id, camera) },
+            ),
+            deleting = SessionDeleting(
+                sizes = sessions.sizes,
+                states = sessions.deletes,
+                onDelete = { s -> sessions.delete(s.id) },
+            ),
+            coach = SessionCoach(sessions.cues) { s -> nav.navigate(Routes.cueReview(s.id)) },
+        )
+    }
 }
 
 /** Above the sessions list: "Compare laps" once there are sessions, then the update card. */
