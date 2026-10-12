@@ -5,6 +5,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isToggleable
@@ -14,6 +15,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
+import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -22,8 +25,8 @@ import org.junit.runner.RunWith
 /**
  * Sessions and lap analysis on the emulator (FBBD-161): every analysis tab of a circuit session
  * with video, the map, Corners → Every lap → Corner laps (with its video and Compare), the coach
- * picks, the optimal lap video's planner (FBBD-163), and a point-to-point session with its
- * acceleration runs.
+ * picks, the optimal lap video's planner (FBBD-163), a point-to-point session with its
+ * acceleration runs, and the mark on every value that is not measured (FBBD-174).
  */
 @RunWith(AndroidJUnit4::class)
 class AnalysisSmokeTest {
@@ -51,10 +54,15 @@ class AnalysisSmokeTest {
         // The summary: best lap, theoretical best and where time goes.
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.waitForText("THEORETICAL").assertIsDisplayed()
+        // The theoretical best is calculated, never shown as measured: marked, with the legend (FBBD-174).
+        app.waitFor(hasText(NotMeasuredMark, substring = true) and hasText(":", substring = true)).assertIsDisplayed()
+        app.waitFor(hasTestTag(ProvenanceLegendTag)).assertIsDisplayed()
         app.waitForText("WHERE TIME GOES").performScrollTo().assertIsDisplayed()
 
         app.openTab("Compare")
-        app.waitForText("TIME DELTA").assertIsDisplayed()
+        // The time delta is worked out by distance: its chart is marked, and the card has the legend.
+        app.waitForText("${NotMeasuredMark}TIME DELTA").assertIsDisplayed()
+        app.waitFor(hasTestTag(ProvenanceLegendTag)).performScrollTo().assertIsDisplayed()
         app.waitForText("vs best lap", substring = true)
 
         app.openTab("Map")
@@ -68,11 +76,17 @@ class AnalysisSmokeTest {
         app.waitForText("LAPS · TAP ONE TO COMPARE").assertIsDisplayed()
         // Tapping a lap compares it, which opens Compare.
         app.waitForText("Lap 2").performClick()
-        app.waitForText("TIME DELTA")
+        app.waitForText("TIME DELTA", substring = true)
 
         app.openTab("Corners")
         app.waitForText("THEORETICAL BEST BY CORNER").assertIsDisplayed()
         app.waitForText("Corner 1", substring = true)
+        // No brake pedal is recorded: braking points are inferred from the accelerometer, so they are
+        // marked in the corner details, and each such corner says what the mark means.
+        app.waitFor(hasText(NotMeasuredMark, substring = true) and hasText(" m", substring = true))
+            .performScrollTo()
+            .assertIsDisplayed()
+        app.waitFor(hasTestTag(ProvenanceLegendTag)).performScrollTo().assertIsDisplayed()
         app.back()
         app.waitForText("Compare laps")
     }
