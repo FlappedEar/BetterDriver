@@ -30,7 +30,9 @@ class TrackStore(private val dir: File) {
 
     /**
      * Saves [track], replacing any track with the same id. The stored copy has the next revision
-     * and [nowUtcMillis] as its update time; it is returned.
+     * and [nowUtcMillis] as its update time; it is returned. The stored corner identity (FBBD-172) is
+     * kept: only [updateIdentity] changes it, so an editor or an import holding an older one, or none,
+     * never renames the corners here. A new track keeps the identity it comes with.
      */
     fun save(track: Track, nowUtcMillis: Long = System.currentTimeMillis()): Track {
         dir.mkdirs()
@@ -38,8 +40,22 @@ class TrackStore(private val dir: File) {
         val stored = track.copy(
             revision = maxOf(track.revision, (previous?.revision ?: 0) + 1),
             updatedUtcMillis = nowUtcMillis,
+            identity = previous?.identity ?: track.identity,
         )
         writeAtomically(fileFor(track.id), TrackJson.encode(stored))
+        return stored
+    }
+
+    /**
+     * Stores [identity] as the corner identity of track [id] (FBBD-172) when the stored one is still
+     * [expected], so two analyses never replace each other's; the lines, the [Track.revision] and the
+     * update time stay as they are. Returns the track as stored afterwards, null if there is none.
+     */
+    fun updateIdentity(id: String, expected: TrackRevision?, identity: TrackRevision): Track? {
+        val current = get(id)
+        if (current == null || current.identity != expected || current.identity == identity) return current
+        val stored = current.copy(identity = identity)
+        writeAtomically(fileFor(id), TrackJson.encode(stored))
         return stored
     }
 

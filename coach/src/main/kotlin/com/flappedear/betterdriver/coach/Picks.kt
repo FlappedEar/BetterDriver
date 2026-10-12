@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.MaxLatitude
 import com.flappedear.betterdriver.timing.geo.MaxLongitude
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.track.TrackRevision
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -13,9 +14,11 @@ import java.io.IOException
 
 /**
  * A corner the driver picked in a session's lap analysis for the coach to work on next time
- * (FBBD-148). The analysis and the coach find and number corners differently (see [pickedCorners]),
- * so a pick is kept as where the corner is: its line on the analysed session's fastest lap, latitude
- * and longitude every few metres from where the corner starts to where it ends, in driving order.
+ * (FBBD-148). A pick names the track's corner by its CornerId ([cornerId], FBBD-172) in revision
+ * [identityRevision] of the track's corner identity, and keeps where the corner is: its line on the
+ * analysed session's fastest lap, latitude and longitude every few metres from where the corner
+ * starts to where it ends, in driving order. Picks made before corner identities have only the line;
+ * they are placed on the identity by it ([cornerIdIn]).
  */
 @Serializable
 data class CornerPick(
@@ -25,6 +28,8 @@ data class CornerPick(
     val lons: List<Double>,
     /** The session it was picked in. */
     val sessionId: String = "",
+    val cornerId: String? = null,
+    val identityRevision: Int? = null,
 ) {
     init {
         require(lats.isNotEmpty() && lats.size == lons.size) { "a pick needs a line" }
@@ -37,16 +42,39 @@ data class CornerPick(
     fun line(frame: LocalFrame): List<Xy> = lats.indices.map { frame.toXy(lats[it], lons[it]) }
 
     /**
-     * The same corner as [other], picked in another session or on another line: the middle of each
-     * line is within [SamePickMeters] of the other line, running the same way there (the other leg of
-     * a hairpin can be that close, driven the other way). Toggling a corner in the analysis uses it, so a
-     * corner picked in one session shows as picked in every session at the track.
+     * The same corner as [other], picked in another session or on another line: the same CornerId
+     * of the same revision when both have one (FBBD-172); otherwise the middle of each line is within
+     * [SamePickMeters] of the other line, running the same way there (the other leg of a hairpin can be
+     * that close, driven the other way). Toggling a corner in the analysis uses it, so a corner picked
+     * in one session shows as picked in every session at the track.
      */
     fun sameCorner(other: CornerPick): Boolean {
+        if (cornerId != null && other.cornerId != null && identityRevision == other.identityRevision) {
+            return cornerId == other.cornerId
+        }
         val frame = LocalFrame(GeoPoint(lats.first(), lons.first()))
         val a = line(frame)
         val b = other.line(frame)
         return near(a, b) && near(b, a)
+    }
+
+    /**
+     * The CornerId of the picked corner in [identity] (FBBD-172): its own id in the same revision, the
+     * id it maps to from the revision before, or else the corner the middle of its line lies in.
+     */
+    fun cornerIdIn(identity: TrackRevision): String? = when {
+        cornerId != null && identityRevision == identity.number -> cornerId
+        cornerId != null && identityRevision == identity.number - 1 -> identity.previousIds[cornerId]
+        else -> placedIn(identity)
+    }
+
+    /** The CornerId of the corner the middle of the line lies in. */
+    private fun placedIn(identity: TrackRevision): String? {
+        val frame = LocalFrame(identity.start)
+        val line = line(frame)
+        val i = line.size / 2
+        val heading = line[minOf(i + 1, line.size - 1)] - line[maxOf(i - 1, 0)]
+        return identity.locate(frame, line[i], heading.takeIf { it.length() > 0 })?.let { identity.cornerAt(it)?.id }
     }
 
     /** The middle of [line] is within [SamePickMeters] of [other], running the same way. */
@@ -64,27 +92,38 @@ const val SamePickMeters = 15.0
 /** A coach corner's apex is this close to a picked line for the corner to be picked. */
 const val PickMatchMeters = 25.0
 
-/** The direction of travel at an apex is taken over this far either side of it. */
-private const val ApexHeadingMeters = 5.0
-
 /** [picks] with [pick] added, or without it (and anything else at the same corner) if it was there. */
 fun List<CornerPick>.toggled(pick: CornerPick): List<CornerPick> =
     if (any { it.sameCorner(pick) }) filterNot { it.sameCorner(pick) } else this + pick
 
 /**
- * The corners of [map] the driver picked (FBBD-148), by number. Matched by position, never by number:
- * the lap analysis splits its fastest lap into corners by curvature ("Corner 3", flat-out bends too,
- * a quick left-right may be one "Corners 3–4"), while the coach lists only the corners its reference
- * lap brakes for, numbered in lap order. Distances along a lap do not line up either: each module
- * measures from the start/finish line along its own reference lap, on its own line.
+ * The corners of [map] the driver picked (FBBD-148), by the coach's number. With the track's corner
+ * [identity] (FBBD-172) a coach corner is picked when it is in a picked track corner: the coach's
+ * corners carry their CornerId ([identifyCorners]) and each pick names one ([CornerPick.cornerIdIn]).
+ * A pick of a chain of corners picks every braking corner in it; a pick of a bend taken flat out
+ * matches nothing and is never cued.
  *
- * So a coach corner is picked when its apex, the slowest point of the reference lap there, is within
- * [PickMatchMeters] of a picked line and the reference lap there runs the same way as the line (not
- * a neighbouring stretch of track driven the other way). A pick that covers two braking corners picks
- * both; a pick of a bend taken flat out matches nothing and is never cued.
+ * Without an identity the corners are matched by position, never by number: a coach corner is picked
+ * when its apex, the slowest point of the reference lap there, is within [PickMatchMeters] of a
+ * picked line and the reference lap there runs the same way as the line (not a neighbouring stretch
+ * of track driven the other way).
  */
-fun pickedCorners(map: CornerMap, frame: LocalFrame, picks: List<CornerPick>): Set<Int> {
-    if (picks.isEmpty()) return emptySet()
+fun pickedCorners(
+    map: CornerMap,
+    frame: LocalFrame,
+    picks: List<CornerPick>,
+    identity: TrackRevision? = null,
+): Set<Int> = when {
+    picks.isEmpty() -> emptySet()
+    identity != null && map.corners.any { it.cornerId != null } -> {
+        val ids = picks.mapNotNull { it.cornerIdIn(identity) }.toSet()
+        map.corners.filter { it.cornerId in ids }.map { it.number }.toSet()
+    }
+    else -> pickedByLine(map, frame, picks)
+}
+
+/** The corners of [map] whose apex is near a picked line, running its way; for tracks with no identity. */
+private fun pickedByLine(map: CornerMap, frame: LocalFrame, picks: List<CornerPick>): Set<Int> {
     val lines = picks.map { it.line(frame) }
     return map.corners.filter { c ->
         val apex = pointAt(map.path, c.apexAt)

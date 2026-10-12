@@ -69,7 +69,8 @@ internal fun coachSection(events: List<RecorderEvent>, samples: GnssSamples): Qu
 private fun loggedCue(e: RecorderEvent): LoggedCue? {
     val f = fields(e.text.substringBefore(" text="))
     val seq = f["seq"]?.toIntOrNull() ?: return null
-    return LoggedCue(e.tMicros, seq, f["corner"], f["zone_m"]?.toDoubleOrNull())
+    // The corner number said (FBBD-172); cues logged before it have only the coach's own.
+    return LoggedCue(e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull())
 }
 
 private fun voiced(e: RecorderEvent): Voiced? {
