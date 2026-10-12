@@ -3,8 +3,10 @@ package com.flappedear.betterdriver.analysis.map
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
+import com.flappedear.betterdriver.analysis.data.Aliases
 import com.flappedear.betterdriver.analysis.data.StandardGravity
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
+import com.flappedear.betterdriver.analysis.recorded.ForwardAcceleration
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
@@ -34,11 +36,17 @@ class LapMapTest {
     private val accelX = ChannelDef(110, "accel_x", "g", "racebox", 3)
     private val accelY = ChannelDef(111, "accel_y", "g", "racebox", 3)
 
+    /** A RaceChrono DIY receiver's accelerometer (RcChannels), also in g. */
+    private val rcAccelX = ChannelDef(500, "rc_accel_x", "g", "nmea", 3)
+    private val rcAccelY = ChannelDef(501, "rc_accel_y", "g", "nmea", 3)
+
     /**
      * Laps of a 200 m radius circle at 25 Hz, anticlockwise from the south; lap k is 1 m/s slower.
-     * With [lateralSign], a RaceBox's accelerations too: Y across the car, of that sign for a left turn.
+     * With [lateralSign], a RaceBox's accelerations too (a RaceChrono DIY receiver's with [rc]): Y
+     * across the car, of that sign for a left turn.
      */
-    private fun circleSession(laps: Int, lateralSign: Double? = null): SessionData {
+    private fun circleSession(laps: Int, lateralSign: Double? = null, rc: Boolean = false): SessionData {
+        val (x, y) = if (rc) rcAccelX to rcAccelY else accelX to accelY
         val sets = mutableListOf<SampleSet>()
         var t = 0L
         for (lap in 0 until laps) {
@@ -52,14 +60,14 @@ class LapMapTest {
                     ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
                 )
                 if (lateralSign != null) {
-                    values += ChannelValue(accelX.id, 0.0)
-                    values += ChannelValue(accelY.id, lateralSign * speed * speed / radius / StandardGravity)
+                    values += ChannelValue(x.id, 0.0)
+                    values += ChannelValue(y.id, lateralSign * speed * speed / radius / StandardGravity)
                 }
                 sets += SampleSet(t, values)
                 t += 40_000L
             }
         }
-        val channels = GnssChannels.ALL + listOf(accelX, accelY)
+        val channels = GnssChannels.ALL + listOf(x, y)
         return SessionData(
             "s", SessionInfo(startUtcMillis = 0, channels = channels), SessionState.FINISHED,
             channels.associateBy { it.id }, sets, emptyList(), null, 0, 0,
@@ -112,16 +120,18 @@ class LapMapTest {
     }
 
     @Test
-    fun `a RaceBox's lateral acceleration feeds the G-G diagram, whichever way it reads`() {
-        for (sign in listOf(1.0, -1.0)) {
-            val session = telemetrySessionOf(circleSession(4, sign), line)
+    fun `a RaceBox's or RaceChrono DIY receiver's lateral acceleration feeds the G-G diagram, either way round`() {
+        for (rc in listOf(false, true)) for (sign in listOf(1.0, -1.0)) {
+            val session = telemetrySessionOf(circleSession(4, sign, rc), line)
+            assertEquals(if (rc) "rc_accel_y" else "accel_y", session.aliases[Aliases.LATERAL_ACCELERATION])
+            assertEquals(ForwardAcceleration, session.aliases[Aliases.LONGITUDINAL_ACCELERATION])
             val analysis = analyzeSession(session)
             val lap = assertNotNull(analysis.laps.fastestLapIndex)
             val trace = assertNotNull(lapGg(analysis, session, lap))
             assertEquals(GgSource.Accelerometer, trace.source)
             val speed = 2 * PI * radius / analysis.laps.timedLaps[lap].durationSeconds
             val lateral = trace.points.map { it.lateralG }.sorted()[trace.points.size / 2]
-            assertEquals(speed * speed / radius / StandardGravity, lateral, 0.02, "sign $sign")
+            assertEquals(speed * speed / radius / StandardGravity, lateral, 0.02, "rc $rc, sign $sign")
             assertTrue(trace.points.count { it.distanceMeters != null } > trace.points.size / 2)
         }
     }
