@@ -79,9 +79,17 @@ class AppUpdates private constructor(private val context: Context) {
         busy = blocked
     }
 
-    /** On launch and after a session: at most once a day. */
+    /**
+     * On launch and after a session: at most once a day, or sooner after a failed check (offline,
+     * rate-limited), as [Updater.checkIfDue] decides. A failed download keeps its retry for the user.
+     */
     fun checkIfDue() {
-        if (!enabled || state != UpdateState.Idle && state !is UpdateState.UpToDate) return
+        val free = when (val s = state) {
+            UpdateState.Idle, is UpdateState.UpToDate -> true
+            is UpdateState.Failed -> s.release == null
+            else -> false
+        }
+        if (!enabled || !free) return
         submit { updater.checkIfDue() }
     }
 
