@@ -15,7 +15,9 @@ import androidx.core.os.BundleCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.sharing.Backups
 import com.flappedear.betterdriver.sharing.Imports
+import com.flappedear.betterdriver.shell.RestoreUnfinished
 
 class MainActivity : ComponentActivity() {
     private lateinit var recorder: RecorderClient
@@ -25,6 +27,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A restore the app was stopped in finishes before anything reads the data (FBBD-156). If it
+        // cannot, nothing else starts: the data is part restored until it is finished.
+        if (!Backups.finishPending(this)) {
+            setContent { BetterDriverTheme(darkTheme = true) { RestoreUnfinished(onRetry = ::recreate) } }
+            return
+        }
         // Recovers interrupted sessions the first time the app starts in this process (FBBD-71).
         val sessions = Sessions.get(this)
         recorder = RecorderClient.get(this)
@@ -53,14 +61,19 @@ class MainActivity : ComponentActivity() {
                 }
             }
             BetterDriverTheme(darkTheme = true) {
-                BetterDriverApp(recorder = recorder, sessions = sessions)
+                // A restore that failed half way in this process blocks the app until it is finished.
+                if (Backups.unfinished) {
+                    RestoreUnfinished(onRetry = { Backups.finishPending(this@MainActivity) })
+                } else {
+                    BetterDriverApp(recorder = recorder, sessions = sessions)
+                }
             }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        importFrom(intent)
+        if (::recorder.isInitialized) importFrom(intent)
     }
 
     private fun importFrom(intent: Intent?) {
@@ -81,16 +94,18 @@ class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        if (Imports.get(this).state?.running == true) importing?.let { outState.putParcelable(KeyImporting, it) }
+        if (::recorder.isInitialized && Imports.get(this).state?.running == true) {
+            importing?.let { outState.putParcelable(KeyImporting, it) }
+        }
     }
 
     override fun onStart() {
         super.onStart()
-        recorder.bind()
+        if (::recorder.isInitialized) recorder.bind()
     }
 
     override fun onStop() {
-        recorder.unbind()
+        if (::recorder.isInitialized) recorder.unbind()
         super.onStop()
     }
 

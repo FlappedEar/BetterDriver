@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import android.content.Context
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.sharing.AppDataGate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -48,9 +49,9 @@ internal class CoachPicksRepo private constructor(context: Context) {
 
     private fun change(trackId: String, how: (List<CornerPick>) -> List<CornerPick>) {
         scope.launch {
-            val next = how(store.get(trackId))
-            try {
-                store.save(trackId, next)
+            val next = try {
+                // Read and written in one go, never across a restore (FBBD-156).
+                AppDataGate.write { how(store.get(trackId)).also { store.save(trackId, it) } }
             } catch (e: IOException) {
                 DebugLog.w(Tag, "coach picks for $trackId not saved", e)
                 return@launch

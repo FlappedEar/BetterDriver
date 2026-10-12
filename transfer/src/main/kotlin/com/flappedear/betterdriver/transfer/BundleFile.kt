@@ -23,6 +23,8 @@ import java.util.zip.CRC32
  *
  * Sizes are known before a file is written, so neither side needs to seek, files of any size work
  * (no 4 GB limit) and video is stored as is. A file cut short or changed in transit is refused.
+ * A backup (FBBD-156) uses the same container with its own magic, "BDBACKUP", so it is never taken
+ * for a session.
  */
 internal object BundleFile {
     val Magic = "BDBUNDLE".toByteArray(Charsets.US_ASCII)
@@ -33,12 +35,13 @@ internal object BundleFile {
     const val CopyBuffer = 1 shl 16
 
     /** Relative paths of letters, digits, '.', '-' and '_', split by '/', with no empty, '.' or '..' part. */
+    fun validPath(path: String) = path.isNotEmpty() && path.length <= MaxPathChars &&
+        path.split('/').all { part ->
+            part.isNotEmpty() && part != "." && part != ".." && part.all { it.isLetterOrDigit() || it in ".-_" }
+        }
+
     fun checkPath(path: String) {
-        val ok = path.isNotEmpty() && path.length <= MaxPathChars &&
-            path.split('/').all { part ->
-                part.isNotEmpty() && part != "." && part != ".." && part.all { it.isLetterOrDigit() || it in ".-_" }
-            }
-        if (!ok) throw BundleFormatException("bad path in bundle: $path")
+        if (!validPath(path)) throw BundleFormatException("bad path in bundle: $path")
     }
 }
 
@@ -46,12 +49,12 @@ internal object BundleFile {
 class BundleFormatException(message: String, cause: Throwable? = null) : IOException(message, cause)
 
 /** Writes a bundle to [out]. Call [file] for each file, then [finish]; [close] closes [out]. */
-internal class BundleWriter(out: OutputStream) : Closeable {
+internal class BundleWriter(out: OutputStream, magic: ByteArray = BundleFile.Magic) : Closeable {
     private val data = DataOutputStream(BufferedOutputStream(out, BundleFile.CopyBuffer))
     private var files = 0
 
     init {
-        data.write(BundleFile.Magic)
+        data.write(magic)
         data.writeInt(BundleFile.Version)
     }
 
@@ -87,7 +90,7 @@ internal class BundleWriter(out: OutputStream) : Closeable {
 }
 
 /** Reads a bundle from [input], one file at a time. */
-internal class BundleReader(input: InputStream) {
+internal class BundleReader(input: InputStream, private val magic: ByteArray = BundleFile.Magic) {
     private val data = DataInputStream(BufferedInputStream(input, BundleFile.CopyBuffer))
 
     /**
@@ -97,9 +100,9 @@ internal class BundleReader(input: InputStream) {
      */
     @Suppress("ThrowsCount") // One reason per way a bundle can be bad.
     fun read(onFile: (path: String, size: Long, contents: InputStream) -> Unit) = guarded {
-        val magic = ByteArray(BundleFile.Magic.size)
-        data.readFully(magic)
-        if (!magic.contentEquals(BundleFile.Magic)) throw BundleFormatException("not a BetterDriver bundle")
+        val head = ByteArray(magic.size)
+        data.readFully(head)
+        if (!head.contentEquals(magic)) throw BundleFormatException("not a BetterDriver ${kindOf(magic)}")
         val version = data.readInt()
         if (version > BundleFile.Version) throw BundleFormatException("made by a newer app (version $version)")
         if (version < 1) throw BundleFormatException("bad version $version")
@@ -125,6 +128,8 @@ internal class BundleReader(input: InputStream) {
         contents.skipRest()
         if (data.readInt() != contents.crc.value.toInt()) throw BundleFormatException("$path is damaged (CRC)")
     }
+
+    private fun kindOf(magic: ByteArray) = if (magic.contentEquals(BundleFile.Magic)) "bundle" else "backup"
 
     private inline fun guarded(block: () -> Unit) {
         try {
