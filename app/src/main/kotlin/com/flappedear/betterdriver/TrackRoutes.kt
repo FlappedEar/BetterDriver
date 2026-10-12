@@ -119,8 +119,8 @@ private fun EditorScreen(
         },
         onBack = back,
         onShare = { share(state.track) },
-        // A track proposed from a session is not stored yet: there is nothing to delete.
-        onDelete = if (state.proposed) null else onDelete,
+        // Only a track that is stored: a new one proposed from a session has nothing to delete until saved.
+        onDelete = if (loaded.stored != null || !state.proposed) onDelete else null,
     )
 }
 
