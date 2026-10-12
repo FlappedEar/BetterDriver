@@ -9,6 +9,8 @@ complexity:
     ignoreAnnotated: ['Composable']
 style:
   MagicNumber:
+    # detekt's default test folders, plus the app's debug-only tests (FBBD-41).
+    excludes: ['**/test/**', '**/testDebug/**', '**/androidTest/**', '**/commonTest/**', '**/jvmTest/**', '**/androidUnitTest/**', '**/androidInstrumentedTest/**', '**/jsTest/**', '**/iosTest/**']
     ignorePropertyDeclaration: true
     ignoreAnnotated: ['Composable', 'Preview']
   UnusedPrivateMember:

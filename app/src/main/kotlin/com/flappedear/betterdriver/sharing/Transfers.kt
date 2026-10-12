@@ -45,11 +45,12 @@ data class TransferState(
  * Imports are in [Imports]. One per process; disk work runs on one background thread.
  */
 class Transfers private constructor(private val context: Context) {
-    private val store = SessionStore(sessionsDir(context))
-    private val trackStore = TrackStore(tracksDir(context))
+    // Made on the io thread when first used: making them reads the disk (FBBD-41).
+    private val store by lazy { SessionStore(sessionsDir(context)) }
+    private val trackStore by lazy { TrackStore(tracksDir(context)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "transfers-io") }
     private val main = Handler(Looper.getMainLooper())
-    private val outgoingDir = File(context.cacheDir, OutgoingDir)
+    private val outgoingDir by lazy { File(context.cacheDir, OutgoingDir) }
 
     /** Sends and saves, by [sessionKey] or [trackKey]. */
     val outgoing = mutableStateMapOf<String, TransferState>()

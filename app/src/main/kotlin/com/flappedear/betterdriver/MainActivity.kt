@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.core.content.IntentCompat
 import androidx.core.os.BundleCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.debug.DebugGuards
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.sharing.Backups
@@ -28,8 +29,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // A restore the app was stopped in finishes before anything reads the data (FBBD-156). If it
-        // cannot, nothing else starts: the data is part restored until it is finished.
-        if (!Backups.finishPending(this)) {
+        // cannot, nothing else starts: the data is part restored until it is finished. On the main
+        // thread on purpose, so StrictMode is told not to report it (FBBD-41).
+        if (!DebugGuards.allowDisk { Backups.finishPending(this) }) {
             setContent { BetterDriverTheme(darkTheme = true) { RestoreUnfinished(onRetry = ::recreate) } }
             return
         }
@@ -59,11 +61,13 @@ class MainActivity : ComponentActivity() {
                 } else {
                     window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
                 }
+                // Debug builds log slow frames once a minute while recording (FBBD-41).
+                DebugGuards.trackJank(this@MainActivity, recording)
             }
             BetterDriverTheme(darkTheme = true) {
                 // A restore that failed half way in this process blocks the app until it is finished.
                 if (Backups.unfinished) {
-                    RestoreUnfinished(onRetry = { Backups.finishPending(this@MainActivity) })
+                    RestoreUnfinished(onRetry = { DebugGuards.allowDisk { Backups.finishPending(this@MainActivity) } })
                 } else {
                     BetterDriverApp(recorder = recorder, sessions = sessions)
                 }

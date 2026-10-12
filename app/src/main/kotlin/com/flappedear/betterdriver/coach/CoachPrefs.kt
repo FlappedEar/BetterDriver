@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.debug.DebugGuards
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.sharing.AppDataGate
 import java.io.IOException
@@ -16,10 +17,12 @@ import java.util.concurrent.Executors
  * main thread; the recorder and coach processes read it at the next session start.
  */
 internal class CoachPrefs private constructor(context: Context) {
-    private val store = coachSettings(context)
+    // Read on the main thread when Settings first opens: one small file the screen shows at once, so
+    // StrictMode is told not to report it (FBBD-41).
+    private val store = DebugGuards.allowDisk { coachSettings(context) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "coach-prefs") }
 
-    var settings by mutableStateOf(store.read())
+    var settings by mutableStateOf(DebugGuards.allowDisk { store.read() })
         private set
 
     /** Reads the settings file again after a restore replaced it (FBBD-156). */

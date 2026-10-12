@@ -58,4 +58,24 @@ class DebugLogTest {
         val lines = File(dir, "main.log").readLines()
         assertEquals(2, lines.size)
     }
+
+    @Test
+    fun fileWritesRunInsideTheInstalledWrapper() {
+        var wrapped = 0
+        try {
+            DebugLog.install(LogFile(dir, "main"))
+            DebugLog.fileWrites = { write ->
+                wrapped++
+                write()
+            }
+            DebugLog.i("T", "wrapped")
+            DebugLog.fileWrites = null
+            DebugLog.i("T", "direct")
+        } finally {
+            DebugLog.fileWrites = null
+            DebugLog.install(null)
+        }
+        assertEquals(1, wrapped)
+        assertEquals(2, File(dir, "main.log").readLines().size)
+    }
 }

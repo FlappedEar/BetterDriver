@@ -61,10 +61,11 @@ class TransferQuestion(val title: String, val text: String, val answer: (replace
  */
 @Suppress("TooManyFunctions") // One small step per kind of file and per moment of an import.
 class Imports private constructor(private val context: Context) {
-    private val store = SessionStore(sessionsDir(context))
-    private val inbox = SessionInbox(store, File(context.filesDir, StagingDir))
-    private val trackStore = TrackStore(tracksDir(context))
-    private val foreign = SessionImport(store, File(context.filesDir, StagingDir))
+    // Made on the io thread when first used: making them reads the disk (FBBD-41).
+    private val store by lazy { SessionStore(sessionsDir(context)) }
+    private val inbox by lazy { SessionInbox(store, File(context.filesDir, StagingDir)) }
+    private val trackStore by lazy { TrackStore(tracksDir(context)) }
+    private val foreign by lazy { SessionImport(store, File(context.filesDir, StagingDir)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "imports-io") }
     private val main = Handler(Looper.getMainLooper())
 

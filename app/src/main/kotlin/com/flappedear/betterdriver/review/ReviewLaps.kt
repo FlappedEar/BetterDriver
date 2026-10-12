@@ -41,8 +41,9 @@ import java.util.concurrent.Executors
  * thread; [state] is Compose state.
  */
 class ReviewLaps private constructor(context: Context) {
-    private val store = SessionStore(sessionsDir(context))
-    private val tracks = TrackStore(tracksDir(context))
+    // Made on the io thread when first used: making them reads the disk (FBBD-41).
+    private val store by lazy { SessionStore(sessionsDir(context)) }
+    private val tracks by lazy { TrackStore(tracksDir(context)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "review-io") }
     private val main = Handler(Looper.getMainLooper())
 
