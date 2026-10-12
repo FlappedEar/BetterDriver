@@ -3,7 +3,6 @@
 package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.timing.geo.Xy
-import com.flappedear.betterdriver.timing.live.LapKind
 import java.io.File
 import java.nio.file.Files
 import kotlin.test.Test
@@ -131,43 +130,15 @@ class PicksTest {
         }
     }
 
-    /** A circuit whose second bend comes 60 m after the first: too short a straight for its own cue. */
-    private val tight = SimCircuit(w = 600.0, h = 160.0)
-    private val tightTrack = tight.track()
-
-    private fun tightReference(): CoachReference {
-        val laps = tracedLaps(tightTrack, tight.drive(List(3) { steady }).fixes.asSequence())
-            .filter { it.lap.kind == LapKind.Timed }
-        return assertNotNull(buildReference(tightTrack, listOf(SessionLaps("earlier", laps))))
-    }
-
     @Test
-    fun `a picked corner wins the straight it competes for at full`() {
-        val early12 = SimCircuit.Pace(earlierM = listOf(15.0, 15.0, 0.0, 0.0))
-        val paces = List(5) { early12 }
-        val reference = tightReference()
-        assertEquals(4, reference.corners.size)
-        val plain = cornerCues(CueEngine(tightTrack, CoachSettings(Verbosity.Full), reference), tight.drive(paces))
-        // Without picks the second corner's straight is too short: only the first corner is cued.
-        assertEquals(listOf(1), plain.mapNotNull { it.corner }.distinct(), "cues: ${plain.map { it.text }}")
-        val engine = CueEngine(tightTrack, CoachSettings(Verbosity.Full), reference, picks = listOf(tight.pick(1)))
-        val drive = tight.drive(paces)
-        val picked = mutableListOf<Cue>()
-        val at = mutableListOf<Double>()
-        drive.fixes.forEachIndexed { i, f ->
-            engine.update(f).cues.filter { it.kind == CueKind.Corner }.forEach {
-                picked += it
-                at += drive.distance[i] % tight.length
-            }
-        }
+    fun `at full a pick changes no cue and no cue timing`() {
+        val paces = List(7) { earlyEverywhere }
+        val plain = cornerCues(CueEngine(track, CoachSettings(Verbosity.Full), reference()), sim.drive(paces))
+        val engine = CueEngine(track, CoachSettings(Verbosity.Full), reference(), picks = listOf(sim.pick(1)))
+        val picked = cornerCues(engine, sim.drive(paces))
         assertEquals(setOf(2), engine.pickedCorners)
-        // The picked corner's cue wins the straight before the first corner and is said there, before
-        // the first corner's braking point. On the lap after, while the driver tries it, the first
-        // corner gets its own cue back.
-        assertEquals(listOf(2, 1, 2), picked.map { it.corner }, "cues: ${picked.map { it.text }}")
-        assertEquals(listOf(5, 6, 7), picked.map { it.lap })
-        picked.indices.filter { picked[it].corner == 2 }.forEach { i ->
-            assertTrue(at[i] < tight.brakePoint(0, early12), "said at ${at[i]} m")
-        }
+        assertTrue(plain.isNotEmpty())
+        // One cue per straight, for the corner that follows it, at the same moments.
+        assertEquals(plain, picked)
     }
 }

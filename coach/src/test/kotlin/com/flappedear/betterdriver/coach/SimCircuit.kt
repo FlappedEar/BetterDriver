@@ -16,7 +16,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /**
- * A made-up circuit near Poznań: a 600 m by 300 m rectangle (or [w] by [h]) with 40 m radius corners, driven
+ * A made-up circuit near Poznań: a 600 m by 300 m rectangle with 40 m radius corners, driven
  * anticlockwise, start/finish in the middle of the bottom straight. Four braking corners, one per bend,
  * with their apex in the middle of each bend.
  *
@@ -24,12 +24,10 @@ import kotlin.math.sqrt
  * accelerates at [AccelMps2] up to [TopKmh]. A [Pace] moves the braking point earlier (coasting at
  * the minimum speed from there to the apex) or changes the minimum speed, corner by corner.
  */
-class SimCircuit(
-    val origin: GeoPoint = GeoPoint(52.40, 16.80),
-    private val w: Double = 600.0,
-    private val h: Double = 300.0,
-) {
+class SimCircuit(val origin: GeoPoint = GeoPoint(52.40, 16.80)) {
     val frame = LocalFrame(origin)
+    private val w = 600.0
+    private val h = 300.0
     private val r = 40.0
     private val sx = w - 2 * r
     private val sy = h - 2 * r

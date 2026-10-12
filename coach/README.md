@@ -75,12 +75,9 @@ each track's picks with a Clear.
   again from another session (the middles of both lines within 15 m of the other line) toggles it off.
 - **Focus.** The picked corners take the 3 focus places first (those losing most, when more are
   picked); the corners losing most fill the rest.
-- **Competing cues.** Cues for consecutive corners never overlap: each is said on its own straight and
-  ends before its braking zone. They compete when a picked corner's own straight is too short (by the
-  reference lap) to say its cue: then its cue may be said on the straight before the previous corner,
-  still ending before that corner's braking zone. The picked corner wins that straight over a corner
-  not picked, at focus and full verbosity alike; on the next lap, while the driver tries it, the other
-  corner gets its straight back.
+- **Cue timing** does not change: one cue per straight, for the corner that follows it. At full
+  verbosity every corner is cued anyway, and corner cues never compete (each ends before its own
+  braking zone), so picks change nothing there.
 
 Without picks the coach behaves exactly as before.
 
