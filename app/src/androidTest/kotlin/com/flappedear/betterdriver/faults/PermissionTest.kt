@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
+import androidx.test.uiautomator.StaleObjectException
 import androidx.test.uiautomator.Until
 import com.flappedear.betterdriver.shell.PermissionGroup
 import com.flappedear.betterdriver.shell.deniedLine
@@ -105,10 +106,16 @@ class PermissionTest {
     /** Answers each of Android's permission dialogs with "Don't allow" until no more come. */
     private fun denyDialogs() {
         var denied = 0
-        while (denied < MaxDialogs) {
+        var stale = 0
+        while (denied < MaxDialogs && stale < MaxDialogs) {
             val deny = d.device.wait(Until.findObject(By.res(DenyButton)), DialogTimeoutMs) ?: break
-            deny.click()
-            denied++
+            // The dialog can go (or be redrawn) between finding its button and the tap: look again.
+            try {
+                deny.click()
+                denied++
+            } catch (_: StaleObjectException) {
+                stale++
+            }
         }
         // None when Android no longer asks (denied for good): the app then gets the denial at once.
         Log.i(Tag, "denied $denied permission dialogs")

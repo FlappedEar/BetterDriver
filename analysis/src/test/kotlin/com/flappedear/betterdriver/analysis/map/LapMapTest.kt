@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.analysis.data.Aliases
 import com.flappedear.betterdriver.analysis.data.StandardGravity
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.recorded.ForwardAcceleration
+import com.flappedear.betterdriver.analysis.recorded.LeftAcceleration
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
@@ -54,13 +55,17 @@ class LapMapTest {
             val steps = (2 * PI * radius / speed / 0.04).toInt()
             for (i in 0 until steps) {
                 val angle = -PI / 2 + 2 * PI * i / steps
+                // The speed channel swings by up to 2 m/s twice a lap, so the X axis has speeding up
+                // and slowing down to agree with.
+                val turnRate = speed / radius
+                val swing = 2.0 * sin(2 * angle)
                 val values = mutableListOf(
                     ChannelValue(GnssChannels.LAT.id, centerLat + radius * sin(angle) / metersPerDegreeLat),
                     ChannelValue(GnssChannels.LON.id, centerLon + radius * cos(angle) / metersPerDegreeLon),
-                    ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
+                    ChannelValue(GnssChannels.SPEED_KMH.id, (speed + if (lateralSign != null) swing else 0.0) * 3.6),
                 )
                 if (lateralSign != null) {
-                    values += ChannelValue(x.id, 0.0)
+                    values += ChannelValue(x.id, 4.0 * cos(2 * angle) * turnRate / StandardGravity)
                     values += ChannelValue(y.id, lateralSign * speed * speed / radius / StandardGravity)
                 }
                 sets += SampleSet(t, values)
@@ -123,7 +128,7 @@ class LapMapTest {
     fun `a RaceBox's or RaceChrono DIY receiver's lateral acceleration feeds the G-G diagram, either way round`() {
         for (rc in listOf(false, true)) for (sign in listOf(1.0, -1.0)) {
             val session = telemetrySessionOf(circleSession(4, sign, rc), line)
-            assertEquals(if (rc) "rc_accel_y" else "accel_y", session.aliases[Aliases.LATERAL_ACCELERATION])
+            assertEquals(LeftAcceleration, session.aliases[Aliases.LATERAL_ACCELERATION])
             assertEquals(ForwardAcceleration, session.aliases[Aliases.LONGITUDINAL_ACCELERATION])
             val analysis = analyzeSession(session)
             val lap = assertNotNull(analysis.laps.fastestLapIndex)

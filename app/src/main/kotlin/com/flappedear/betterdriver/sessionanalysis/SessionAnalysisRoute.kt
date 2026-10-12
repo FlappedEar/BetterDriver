@@ -23,6 +23,8 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
+import com.flappedear.betterdriver.analysis.map.GgTrace
+import com.flappedear.betterdriver.analysis.map.sessionGg
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
@@ -62,6 +64,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Locale
 
+/**
+ * The cards of a session that need no laps: its acceleration runs (FBBD-154) and its G-forces, each
+ * null when it has none.
+ */
+private class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?)
+
 /** A session read and analysed once; comparing another lap reuses it. */
 private class Loaded(
     val session: TelemetrySession,
@@ -70,8 +78,8 @@ private class Loaded(
     val startUtcMillis: Long,
     val track: Track,
     val tracks: List<Track>,
-    /** The session's acceleration runs (FBBD-154); null when it has none. */
-    val acceleration: AccelerationUi?,
+    /** What the session shows with or without laps: its acceleration runs and G-forces. */
+    val whole: WholeSession,
 ) {
     val title: String get() = track.displayName
 }
@@ -202,11 +210,15 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
     val ui = analysisUi(loaded.title, analysis, comparison)
         ?: return AnalysisState.Unavailable(
             "No lap counts: every lap has a GPS gap or is not a full lap.",
-            acceleration = loaded.acceleration,
+            acceleration = loaded.whole.acceleration,
+            gForces = loaded.whole.gForces,
         )
     // The map and G-G diagram read every sample of two laps; this runs on Dispatchers.Default.
     val map = mapUi(analysis, loaded.session, comparison)
-    return AnalysisState.Ready(ui.copy(progress = progress, map = map, acceleration = loaded.acceleration))
+    val whole = loaded.whole
+    return AnalysisState.Ready(
+        ui.copy(progress = progress, map = map, acceleration = whole.acceleration, gForces = whole.gForces),
+    )
 }
 
 /**
@@ -271,9 +283,11 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
     val session = if (track == null) telemetrySessionOf(data, null) else telemetrySessionOf(data, track)
     // Acceleration runs need no track or laps, so a road drive shows them too.
     val acceleration = accelerationUi(findAccelerationRuns(session))
+    // So do the session's G-forces.
+    val gForces = sessionGg(session)
     if (track == null) {
         val failed = noTrack(data, saved, circuits)
-        return failed.copy(state = failed.state.copy(acceleration = acceleration))
+        return failed.copy(state = failed.state.copy(acceleration = acceleration, gForces = gForces))
     }
     // Analysed through the track's corners and straights (FBBD-172); the first analysis there makes them.
     val analysis = analyzeAtTrack(tracks, track, session)
@@ -283,9 +297,9 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         } else {
             "No complete lap at ${track.displayName}: the car has to cross the start/finish line at least twice."
         }
-        return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration))
+        return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces))
     }
-    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, acceleration)
+    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, WholeSession(acceleration, gForces))
     // No corners to pick where the coach does not run (point-to-point tracks, FBBD-155).
     val candidates = if (coaches(track)) coachCandidates(analysis, id) else emptyMap()
     return Load.Done(loaded, candidates, lapVideo(sessions, data, track))

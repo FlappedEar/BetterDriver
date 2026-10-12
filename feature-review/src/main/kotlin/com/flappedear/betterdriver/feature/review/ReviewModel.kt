@@ -37,9 +37,34 @@ data class ReviewStart(val a: LapKey, val b: LapKey, val atFraction: Double? = n
 fun firstTrack(tracks: List<ReviewTrack>, start: ReviewStart?): ReviewTrack =
     tracks.firstOrNull { start?.on(it) == true } ?: tracks.first()
 
-/** The pair [track] opens on: the laps of [start] when it has both, else [ReviewTrack.defaultPair]. */
+/**
+ * The pair [track] opens on: the laps of [start] when it has both. Else none: the review opens on
+ * the lap picker with nothing picked, as Arek asked (2026-10-12), never on an earlier comparison.
+ */
 fun firstPair(track: ReviewTrack, start: ReviewStart?): Pair<LapKey, LapKey>? =
-    if (start != null && start.on(track)) start.a to start.b else track.defaultPair()
+    if (start != null && start.on(track)) start.a to start.b else null
+
+/**
+ * What the review shows: the picker with laps [a] and [b] picked (encoded [LapKey]s, null when not)
+ * and [active] taking the next tapped lap, or, when [picking] is false, those two laps compared.
+ */
+internal data class Picks(val a: String?, val b: String?, val active: Slot, val picking: Boolean) {
+    /** [lap] into the active slot; the other slot is next. */
+    fun pick(lap: LapKey): Picks =
+        if (active == Slot.A) copy(a = lap.encode(), active = Slot.B) else copy(b = lap.encode(), active = Slot.A)
+
+    /** Leaving a comparison (back or Change laps): the picker again, with nothing picked. */
+    fun leave(): Picks = cleared()
+
+    companion object {
+        /** The picker with nothing picked. */
+        fun cleared() = Picks(null, null, Slot.A, picking = true)
+
+        /** How the review opens on a track: on [pair] compared, else on the picker with nothing picked. */
+        fun opening(pair: Pair<LapKey, LapKey>?): Picks =
+            pair?.let { Picks(it.first.encode(), it.second.encode(), Slot.A, picking = false) } ?: cleared()
+    }
+}
 
 /**
  * One camera's video of a session (FBBD-93): its clips on the session clock and the directory
@@ -86,20 +111,6 @@ data class ReviewSession(
 data class ReviewTrack(val id: String, val name: String, val sessions: List<ReviewSession>) {
     fun lap(key: LapKey): ReviewLap? =
         sessions.firstOrNull { it.id == key.sessionId }?.laps?.firstOrNull { it.number == key.lapNumber }
-
-    /**
-     * The pair shown first: the newest session's best lap against the fastest other timed lap on
-     * the track (from any session), so a new outing is compared with the best so far. Null without
-     * two timed laps.
-     */
-    fun defaultPair(): Pair<LapKey, LapKey>? {
-        val timed = sessions.flatMap { s -> s.laps.filter { it.kind == LapKind.Timed } }
-        // Sessions are newest first, so the first timed lap is from the newest session with one.
-        val a = timed.firstOrNull()?.let { first -> timed.filter { it.trace.sessionId == first.trace.sessionId } }
-            ?.minBy { it.timeMillis }
-        val b = timed.filter { it.key != a?.key }.minByOrNull { it.timeMillis }
-        return if (a == null || b == null) null else a.key to b.key
-    }
 }
 
 /** What the review screen has to show. */

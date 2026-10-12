@@ -10,6 +10,7 @@ import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
 import com.flappedear.betterdriver.analysis.focus.sessionFocus
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
+import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.roundToLong
@@ -22,12 +23,14 @@ sealed interface AnalysisState {
      * Nothing to analyse: [message] says why, [action] (if any) labels the fix the screen offers.
      * [acceleration] still shows the session's acceleration runs, which need no laps.
      * [quality] is the session's data quality (FBBD-183), null while it is worked out.
+     * [gForces] is the whole session's G-G diagram, which needs no laps either; null without movement.
      */
     data class Unavailable(
         val message: String,
         val action: String? = null,
         val acceleration: AccelerationUi? = null,
         val quality: QualityUi? = null,
+        val gForces: GgTrace? = null,
     ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
@@ -177,6 +180,8 @@ data class AnalysisUi(
     val quality: QualityUi? = null,
     /** Where the channels the analysis read come from (FBBD-174). */
     val sources: AnalysisProvenance = AnalysisProvenance(),
+    /** The whole session's G-G diagram; null without movement. */
+    val gForces: GgTrace? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */

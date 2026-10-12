@@ -62,6 +62,9 @@ class AnalysisSmokeTest {
         app.waitFor(theoretical).assertIsDisplayed()
         legend().performScrollTo().assertIsDisplayed()
         app.waitForText("WHERE TIME GOES").performScrollTo().assertIsDisplayed()
+        // The whole session's G-forces, with their peaks.
+        app.waitForText("G-FORCES · WHOLE SESSION").performScrollTo().assertIsDisplayed()
+        app.waitForText("Peaks: braking", substring = true)
 
         app.openTab("Compare")
         // The time delta is worked out by distance: its chart is marked, and the card has the legend.

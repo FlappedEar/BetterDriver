@@ -46,8 +46,30 @@ class ReviewStartTest {
     fun `laps the review does not have leave it as it opens from Sessions`() {
         val missing = ReviewStart(LapKey("s2", 3), LapKey("s9", 1))
         assertEquals("t1", firstTrack(tracks, missing).id)
-        assertEquals(older.defaultPair(), firstPair(older, missing))
+        assertNull(firstPair(older, missing))
         assertEquals("t1", firstTrack(tracks, null).id)
-        assertEquals(newest.defaultPair(), firstPair(newest, null))
+        assertNull(firstPair(newest, null))
+    }
+
+    @Test
+    fun `from Sessions the review opens on the picker with nothing picked`() {
+        assertEquals(Picks(null, null, Slot.A, picking = true), Picks.opening(firstPair(newest, null)))
+    }
+
+    @Test
+    fun `two laps asked for open compared`() {
+        val start = ReviewStart(LapKey("s2", 3), LapKey("s2", 1))
+        assertEquals(Picks("s2:3", "s2:1", Slot.A, picking = false), Picks.opening(firstPair(older, start)))
+    }
+
+    @Test
+    fun `leaving a comparison goes back to the picker with nothing picked`() {
+        val picked = Picks.cleared().pick(LapKey("s2", 2)).pick(LapKey("s1", 1))
+        assertEquals(Picks("s2:2", "s1:1", Slot.A, picking = true), picked)
+        val compared = picked.copy(picking = false)
+        assertEquals(Picks.cleared(), compared.leave())
+        // Also when the review was opened on two laps another screen asked for.
+        val asked = Picks.opening(LapKey("s2", 3) to LapKey("s2", 1))
+        assertEquals(Picks.cleared(), asked.leave())
     }
 }
