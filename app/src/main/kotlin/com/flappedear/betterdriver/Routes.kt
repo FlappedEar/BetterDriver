@@ -12,6 +12,9 @@ object Routes {
     /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
     const val CoachSettings = "settings/coach"
 
+    /** The headset audio-delay test (FBBD-49), opened from the spoken coach settings. */
+    const val CoachAudioDelay = "settings/coach/delay"
+
     /** About and credits, opened from Settings › App (FBBD-79). */
     const val About = "settings/about"
 

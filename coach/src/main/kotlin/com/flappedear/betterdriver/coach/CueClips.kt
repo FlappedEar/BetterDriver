@@ -1,0 +1,77 @@
+package com.flappedear.betterdriver.coach
+
+/** One piece of a phrase said from a pre-rendered clip (FBBD-48): words or a number, and the pause after it. */
+data class ClipPart(val key: String, val pauseAfterMillis: Int)
+
+/**
+ * Pre-rendered cue clips (FBBD-48). Every phrase the coach says ([Phrases]) is words that never change
+ * ("Turn", "brake", "metres later", "Best lap", "point") and numbers. Each of those is rendered to a
+ * clip once at coach start; a phrase is played by joining its clips, so it starts as soon as it is
+ * asked for, without waiting for text-to-speech to synthesise it.
+ */
+object CueClips {
+    /** Numbers rendered as clips: 0 to 99, and "00" to "09" for a lap time's seconds. */
+    const val MaxNumber = 99
+
+    /** Between two clips of one phrase, and where the phrase has a comma. */
+    const val WordGapMillis = 30
+    const val CommaPauseMillis = 140
+
+    /**
+     * [text] as clips, in order. Numbers are clips of their own; the words between them are one clip, so
+     * they keep their natural flow; a comma becomes a longer pause.
+     */
+    fun parts(text: String): List<ClipPart> {
+        val out = mutableListOf<ClipPart>()
+        val words = mutableListOf<String>()
+        fun flush(pause: Int) {
+            if (words.isEmpty()) return
+            out += ClipPart(words.joinToString(" "), pause)
+            words.clear()
+        }
+        for (raw in text.split(' ').filter { it.isNotEmpty() }) {
+            val word = raw.trimEnd(',')
+            when {
+                word.isEmpty() -> Unit
+                word.all(Char::isDigit) -> {
+                    flush(WordGapMillis)
+                    out += ClipPart(word, WordGapMillis)
+                }
+                else -> words += word
+            }
+            if (raw.endsWith(',')) {
+                flush(CommaPauseMillis)
+                if (out.isNotEmpty()) out[out.lastIndex] = out.last().copy(pauseAfterMillis = CommaPauseMillis)
+            }
+        }
+        flush(0)
+        if (out.isNotEmpty()) out[out.lastIndex] = out.last().copy(pauseAfterMillis = 0)
+        return out
+    }
+
+    /** Every clip the coach can need: the fixed words of each kind of phrase, and the numbers. */
+    val vocabulary: Set<String> by lazy {
+        val corner = Corner(1, 0.0, 0.0, 0.0, 0.0, Turn.Straight)
+        val samples = listOf(
+            Phrases.corner(corner, Advice.BrakeLater(SampleNumber)),
+            Phrases.corner(corner, Advice.BrakeEarlier),
+            Phrases.corner(corner, Advice.CarrySpeed(SampleNumber)),
+            Phrases.lapTime(SampleLapMillis, best = true),
+            Phrases.lapTime(SampleLapMillis, best = false),
+        )
+        val words = samples.flatMap(::parts).map { it.key }.filterNot { it.all(Char::isDigit) }
+        val numbers = (0..MaxNumber).map(Int::toString) + (0..<PaddedNumbers).map { "0$it" }
+        (words + numbers).toSortedSet()
+    }
+
+    /** Whether every part of [text] has a clip, so it can be said without live text-to-speech. */
+    fun covers(text: String): Boolean = parts(text).let { p -> p.isNotEmpty() && p.all { it.key in vocabulary } }
+
+    /** A file name for [key]'s clip: lower case, letters and digits, anything else an underscore. */
+    fun fileName(key: String): String =
+        key.map { if (it.isLetterOrDigit()) it.lowercaseChar() else '_' }.joinToString("") + ".wav"
+
+    private const val SampleNumber = 10
+    private const val SampleLapMillis = 92_400L
+    private const val PaddedNumbers = 10
+}

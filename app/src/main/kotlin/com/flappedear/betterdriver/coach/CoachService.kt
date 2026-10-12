@@ -22,7 +22,8 @@ private const val NanosPerMicro = 1_000L
  * crash, hang or kill ends only this process, and the recording carries on untouched (FBBD-69).
  *
  * Everything runs on one background thread: loading the track and its reference from earlier sessions
- * (FBBD-26), the cue engine, and asking text-to-speech to say each cue. Cues and their results are sent
+ * (FBBD-26), the cue engine, and asking the [Voice] to say each cue (it follows playback and renders
+ * pre-rendered clips on a thread of its own). Cues and their results are sent
  * back to the recorder, which logs them in the session for the cue review (FBBD-28).
  */
 class CoachService : Service() {
@@ -75,6 +76,8 @@ class CoachService : Service() {
         val id = data.getString(CoachProtocol.SESSION) ?: return
         val settings = coachSettings(this).read()
         DebugLog.i(Tag, "coaching session $id: $settings")
+        // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
+        voice?.use(settings.voice)
         active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings)
     }
 
