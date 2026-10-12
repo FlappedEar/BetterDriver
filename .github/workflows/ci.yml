@@ -1,7 +1,8 @@
 name: CI
 
-# Unit tests, Android lint, detekt and the APK build on every pull request and
-# on main. They run as parallel jobs, so the slowest one sets the wait. Any
+# Unit tests, Android lint, detekt, the APK build and the emulator smoke tests
+# on every pull request and on main. They run as parallel jobs, so the slowest
+# one sets the wait. Any
 # failing job fails the run, and release.yml only publishes a commit whose
 # whole run succeeded.
 on:
@@ -75,3 +76,71 @@ jobs:
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 14
+
+  # Emulator smoke tests (FBBD-161): boots an Android 14 emulator, installs the
+  # debug app on realistic seeded data (no Bluetooth, GPS or camera), opens
+  # every screen and the 0.3.0 flows, and fails on any crash or ANR. Runs
+  # beside the checks above; one emulator and one Gradle invocation.
+  emulator:
+    name: Emulator smoke tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AVD_KEY: avd-34-google_apis-x86_64-pixel_6-v1
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      # Hardware acceleration for the emulator, as the emulator runner's README says.
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # The AVD and its booted snapshot, so later runs skip the cold boot.
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: ${{ env.AVD_KEY }}
+      - name: Create the AVD and its snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2.37.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: false
+          script: echo "Created the AVD snapshot for the cache."
+      - name: Smoke tests
+        uses: reactivecircus/android-emulator-runner@v2.37.0
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 4096M
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          disable-animations: true
+          script: bash .github/scripts/emulator-smoke.sh
+      - name: Upload logcat and test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: emulator-smoke
+          path: |
+            build/emulator/
+            app/build/reports/androidTests/
+            app/build/outputs/androidTest-results/
+          retention-days: 7

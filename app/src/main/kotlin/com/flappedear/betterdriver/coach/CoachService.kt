@@ -10,9 +10,7 @@ import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
 import com.flappedear.betterdriver.recorder.log.DebugLog
-import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.RecorderProtocol
-import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.timing.track.TrackStore
 
@@ -88,7 +86,7 @@ class CoachService : Service() {
         val a = active ?: return
         val track = data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) }
         val reference = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }?.let {
-            CoachLibrary(SessionStore(sessionsDir(this)), coachReferencesDir(this)).reference(it, exclude = a.id)
+            coachLibrary(this).reference(it, exclude = a.id)
         }
         // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
         val picks = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }

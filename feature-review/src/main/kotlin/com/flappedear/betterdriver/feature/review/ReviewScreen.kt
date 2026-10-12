@@ -3,7 +3,6 @@ package com.flappedear.betterdriver.feature.review
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -27,16 +26,16 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-
-/** Width from which the review uses the tablet layout: videos side by side, chart and map in a row. */
-private val WideFrom = 840.dp
+import com.flappedear.betterdriver.core.ui.layout.LayoutSize
+import com.flappedear.betterdriver.core.ui.layout.WidthClass
 
 /**
  * Lap review (FBBD-24): pick two laps of a track from any sessions, then watch them side by side,
  * each with its own video, synced by track position. Opens on the newest session's best lap
  * against the best other lap of the track, or on [start] when another screen asks for two laps
  * (FBBD-153). Slow work (reading sessions) happens before this screen gets [load]; until then it
- * shows progress.
+ * shows progress. On an Expanded width ([layout], FBBD-40) it uses the tablet layout: videos side by
+ * side, chart and map in a row.
  */
 @Composable
 fun ReviewScreen(
@@ -45,9 +44,10 @@ fun ReviewScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     start: ReviewStart? = null,
+    layout: LayoutSize = LayoutSize.Phone,
 ) {
-    BoxWithConstraints(modifier.fillMaxSize()) {
-        val wide = maxWidth >= WideFrom
+    Box(modifier.fillMaxSize()) {
+        val wide = layout.width == WidthClass.Expanded
         when {
             load is ReviewLoad.Loading -> Message(backIcon, onBack, progress = true) {
                 if (load.total > 0) "Reading sessions: ${load.done} of ${load.total}" else "Reading sessions"

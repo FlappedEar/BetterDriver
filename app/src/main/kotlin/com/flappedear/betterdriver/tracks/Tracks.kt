@@ -14,6 +14,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.BuildConfig
 import com.flappedear.betterdriver.coach.CoachReferenceStore
+import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.coachPicks
 import com.flappedear.betterdriver.coach.coachReferencesDir
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
@@ -193,6 +194,8 @@ class Tracks private constructor(private val context: Context) {
         }
         if (stored != null && draft?.track?.id == track.id) draft = null
         publish()
+        // New lines, or a track made from a session (FBBD-151): its sessions feed its coach reference (FBBD-168).
+        if (stored != null) CoachReferences.refresh(context)
         main.post { if (stored != null) onSaved(stored) else onFailed() }
     }
 
@@ -219,6 +222,8 @@ class Tracks private constructor(private val context: Context) {
         if (gone && draft?.track?.id == id) draft = null
         if (!gone) DebugLog.w(Tag, "deleting track $id failed")
         publish()
+        // Its sessions may now count for another track at the same place (FBBD-168).
+        CoachReferences.refresh(context)
         main.post { onDone(gone) }
     }
 
