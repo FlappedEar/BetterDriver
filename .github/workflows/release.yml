@@ -69,6 +69,12 @@ jobs:
           echo "Version $version, build $build"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "build=$build" >> "$GITHUB_OUTPUT"
+      # The release's acceptance record (docs/RELEASE_CHECKLIST.md): every area
+      # answered, none failed. CI green alone does not release.
+      - name: Acceptance record
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bash .github/scripts/release-acceptance.sh "$VERSION"
 
   # The release goes out only for a commit whose own CI run (ci.yml on the
   # push to main) finished green. A release can start while that run is still
