@@ -9,7 +9,9 @@ import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 
 // What assertLayoutClean looks for (FBBD-40), read from the semantics tree.
 
@@ -39,14 +41,12 @@ fun SemanticsNodeInteractionsProvider.layoutProblems(): List<String> {
 private fun textProblems(node: SemanticsNode, windowHeight: Float): List<String> {
     val problems = ArrayList<String>()
     val name = describe(node)
-    layoutOf(node)?.let { layout ->
-        if (layout.hasVisualOverflow && layout.layoutInput.overflow != TextOverflow.Ellipsis) {
-            problems += "$name does not fit its box and is clipped"
-        }
-    }
+    if (overflowsItsBox(node)) problems += "$name does not fit its box and is clipped"
     val bounds = node.boundsInRoot
     val scrolls = insideVerticalScroll(node)
-    if (bounds.width < node.size.width - Slack) {
+    // Scrolled out of view in a list: nothing of it shows, and nothing needs to.
+    val scrolledAway = scrolls && (bounds.width <= 0f || bounds.height <= 0f)
+    if (!scrolledAway && bounds.width < node.size.width - Slack) {
         problems += "$name is cut off sideways: ${bounds.width} of ${node.size.width} px shown"
     }
     if (!scrolls) {
@@ -58,6 +58,28 @@ private fun textProblems(node: SemanticsNode, windowHeight: Float): List<String>
         }
     }
     return problems
+}
+
+/**
+ * Whether the text needs more room than its own box gives it and is not ellipsized on purpose.
+ * The text is laid out again in the node's size: the layout result the semantics action returns
+ * is made for the widest the text was offered, so its own overflow flags say nothing about the
+ * box it got.
+ */
+private fun overflowsItsBox(node: SemanticsNode): Boolean {
+    val input = layoutOf(node)?.layoutInput
+    if (input == null || input.overflow == TextOverflow.Ellipsis) return false
+    val measurer = TextMeasurer(input.fontFamilyResolver, input.density, input.layoutDirection, cacheSize = 0)
+    val inBox = measurer.measure(
+        text = input.text,
+        style = input.style,
+        overflow = input.overflow,
+        softWrap = input.softWrap,
+        maxLines = input.maxLines,
+        placeholders = input.placeholders,
+        constraints = Constraints(maxWidth = node.size.width + SlackPx, maxHeight = node.size.height + SlackPx),
+    )
+    return inBox.hasVisualOverflow || inBox.multiParagraph.didExceedMaxLines
 }
 
 /** Text nodes that overlap, as pairs; a node and its own descendants are not compared. */
@@ -77,15 +99,10 @@ private fun overlaps(texts: List<SemanticsNode>): List<String> {
     return problems
 }
 
-private fun related(a: SemanticsNode, b: SemanticsNode): Boolean = isAncestor(a, b) || isAncestor(b, a)
-
-private fun isAncestor(ancestor: SemanticsNode, node: SemanticsNode): Boolean {
-    var p = node.parent
-    while (p != null) {
-        if (p.id == ancestor.id) return true
-        p = p.parent
-    }
-    return false
+/** Whether one of [a] and [b] holds the other. */
+private fun related(a: SemanticsNode, b: SemanticsNode): Boolean {
+    fun ancestors(n: SemanticsNode) = generateSequence(n.parent) { it.parent }.map { it.id }
+    return a.id in ancestors(b) || b.id in ancestors(a)
 }
 
 private fun insideVerticalScroll(node: SemanticsNode): Boolean {
@@ -122,3 +139,4 @@ private val AnyNode = SemanticsMatcher("any node") { true }
 
 /** Rounding of positions to whole pixels. */
 private const val Slack = 1f
+private const val SlackPx = 1

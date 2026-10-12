@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver
 
 import android.app.Application
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -10,7 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -19,6 +20,7 @@ import androidx.navigation.compose.rememberNavController
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
+import com.flappedear.betterdriver.core.ui.testing.edgeToEdge
 import com.flappedear.betterdriver.core.ui.testing.assertLayoutClean
 import com.flappedear.betterdriver.core.ui.testing.deviceLayout
 import com.flappedear.betterdriver.core.ui.testing.saveScreenshot
@@ -71,7 +73,7 @@ import java.io.File
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(application = Application::class)
 abstract class MainScreensLayoutTest(private val device: String) {
-    private val compose = createComposeRule()
+    private val compose = createAndroidComposeRule<ComponentActivity>()
 
     @get:Rule
     val rules: RuleChain = RuleChain.outerRule(RegisterComponentActivity()).around(compose)
@@ -151,6 +153,7 @@ abstract class MainScreensLayoutTest(private val device: String) {
     /** Rotating the device recreates the activity: the tab picked in Settings stays picked. */
     @Test
     fun settingsTabSurvivesRotation() {
+        compose.edgeToEdge()
         val restoration = StateRestorationTester(compose)
         restoration.setContent { AppScreen { SettingsAt(SettingsTab.Devices) } }
         compose.onNodeWithText("App").performClick()
@@ -162,6 +165,7 @@ abstract class MainScreensLayoutTest(private val device: String) {
     /** A name half typed into New track here survives a rotation, dialog and all. */
     @Test
     fun newTrackNameSurvivesRotation() {
+        compose.edgeToEdge()
         val restoration = StateRestorationTester(compose)
         restoration.setContent { AppScreen { TracksNearKielce() } }
         compose.onNodeWithText("Not on the list", substring = true).performScrollTo().performClick()
@@ -180,6 +184,7 @@ abstract class MainScreensLayoutTest(private val device: String) {
      * saves its picture and checks its layout.
      */
     private fun checkScreen(name: String, route: String?, screen: @Composable () -> Unit) {
+        compose.edgeToEdge()
         compose.setContent { AppScreen { Chrome(route, screen) } }
         compose.waitForIdle()
         compose.saveScreenshot(device, name)

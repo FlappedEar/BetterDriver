@@ -19,11 +19,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.numberStyle
+import com.flappedear.betterdriver.core.ui.labelStyle
 
 /**
  * Fixed-layout value tile (UI-06 option A), e.g. speed, g, lap, and later
  * car temperatures. Width comes from the parent so digits never move it.
+ * The unit sits on the label's line, so three digits of speed fit a phone's
+ * tile at full size (FBBD-62).
  */
 @Composable
 fun ValueTile(
@@ -55,19 +57,18 @@ fun ValueTile(
             Modifier.padding(horizontal = 10.dp, vertical = 6.dp).fillMaxHeight(),
             verticalArrangement = Arrangement.Center,
         ) {
-            TrackLabel(label, color = labelColor)
             Row(verticalAlignment = Alignment.Bottom) {
-                NumberText(value, size = valueSize, color = valueColor, weight = FontWeight.SemiBold)
-                if (unit.isNotEmpty()) {
-                    Spacer(Modifier.width(2.dp))
-                    Text(
-                        unit,
-                        style = numberStyle(valueSize * 0.5f, FontWeight.Medium),
-                        color = labelColor,
-                        maxLines = 1,
-                    )
+                TrackLabel(label, color = labelColor)
+                // "G" needs no "g" beside it.
+                if (unit.isNotEmpty() && !unit.equals(label, ignoreCase = true)) {
+                    Spacer(Modifier.width(6.dp))
+                    Text(unit, style = labelStyle(UnitSize), color = labelColor, maxLines = 1)
                 }
             }
+            NumberText(value, size = valueSize, color = valueColor, weight = FontWeight.SemiBold)
         }
     }
 }
+
+/** The unit beside the label, as large as the label (TrackLabel's 11 dp). */
+private val UnitSize = 11.dp

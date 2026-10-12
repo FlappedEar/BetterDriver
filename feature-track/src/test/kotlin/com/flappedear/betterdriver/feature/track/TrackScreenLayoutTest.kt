@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.feature.track
 
+import androidx.activity.ComponentActivity
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.height
@@ -17,9 +18,9 @@ import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
-import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.unit.Dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackColors
@@ -33,6 +34,8 @@ import com.flappedear.betterdriver.core.ui.component.ValueState
 import com.flappedear.betterdriver.core.ui.component.ValueTile
 import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
+import com.flappedear.betterdriver.core.ui.testing.edgeToEdge
+import com.flappedear.betterdriver.core.ui.testing.layoutOf
 import com.flappedear.betterdriver.core.ui.testing.layoutProblems
 import com.flappedear.betterdriver.core.ui.testing.saveScreenshot
 import org.junit.Rule
@@ -61,7 +64,7 @@ import kotlin.math.atan
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 abstract class TrackScreenLayoutTest(private val device: String) {
-    private val compose = createComposeRule()
+    private val compose = createAndroidComposeRule<ComponentActivity>()
 
     @get:Rule
     val rules: RuleChain = RuleChain.outerRule(RegisterComponentActivity()).around(compose)
@@ -72,7 +75,13 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     /** When set, the content is drawn at its natural width at these slot heights instead of the screen. */
     private var natural by mutableStateOf<Map<String, Dp>?>(null)
 
-    private fun show() = compose.setContent {
+    private fun show() {
+        compose.edgeToEdge()
+        compose.setContent { Screen() }
+    }
+
+    @Composable
+    private fun Screen() {
         BetterDriverTheme(track = true, trackColors = colors) {
             val heights = natural
             if (heights == null) TrackScreenContent(state) else NaturalWidths(state, heights)
@@ -143,8 +152,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         val small = ArrayList<String>()
         GlanceSlots.forEach { tag ->
             values(tag).forEach { node ->
-                // NumberText's line height is its font size; capitals and digits are about 0.7 of it.
-                val sizeDp = with(compose.density) { node.size.height.toDp() }.value
+                // The font size its digits are drawn at; capitals and digits are about 0.7 of it.
+                val sizeDp = fontSizeDp(node)
                 val capMm = sizeDp * CapHeightEm * MmPerDp
                 val arcMinutes = Math.toDegrees(atan(capMm / ViewingDistanceMm)) * ArcMinutesPerDegree
                 if (arcMinutes < MinArcMinutes) {
@@ -167,8 +176,9 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         (FixedSlots + GlanceSlots).forEach { tag ->
             at[tag] = compose.onNodeWithTag(tag).fetchSemanticsNode().boundsInRoot
         }
-        Labels.forEach { label ->
-            at["label $label"] = compose.onNodeWithText(label, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        Labels.forEach { (label, slot) ->
+            val node = compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag(slot)), useUnmergedTree = true)
+            at["label $label"] = node.fetchSemanticsNode().boundsInRoot
         }
         // Values: the delta and tiles start at a fixed place, lap times end at one; all keep their top.
         values(TrackSlots.Delta).forEachIndexed { i, n -> at["delta value $i"] = leftTop(n) }
@@ -177,6 +187,15 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             values(TrackSlots.tile(t)).forEachIndexed { i, n -> at["tile $t value $i"] = leftTop(n) }
         }
         return at
+    }
+
+    /**
+     * The font size of NumberText [node]'s digits, in dp; its height when no digit shows (as the
+     * row is as tall as its text, at least as tall as the font size).
+     */
+    private fun fontSizeDp(node: SemanticsNode): Float {
+        val font = node.children.firstNotNullOfOrNull { layoutOf(it)?.layoutInput?.style?.fontSize }
+        return with(compose.density) { font?.toDp() ?: node.size.height.toDp() }.value
     }
 
     /** The NumberText values inside the slot tagged [tag], in order. */
@@ -198,7 +217,16 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         val FixedSlots = listOf(TrackSlots.Top, TrackSlots.Coach, TrackSlots.Sectors)
         const val TileCount = 3
         val GlanceSlots = listOf(TrackSlots.Delta, TrackSlots.Laps) + (0 until TileCount).map { TrackSlots.tile(it) }
-        val Labels = listOf("DELTA VS BEST", "PREDICTED", "LAST", "BEST", "SPEED", "G", "LAP")
+        /** Each label and the slot it is in. */
+        val Labels = listOf(
+            "DELTA VS BEST" to TrackSlots.Delta,
+            "PREDICTED" to TrackSlots.Laps,
+            "LAST" to TrackSlots.Laps,
+            "BEST" to TrackSlots.Laps,
+            "SPEED" to TrackSlots.tile(0),
+            "G" to TrackSlots.tile(1),
+            "LAP" to TrackSlots.tile(2),
+        )
 
         val HasDescription = SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription)
 

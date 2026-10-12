@@ -21,6 +21,12 @@ import com.flappedear.betterdriver.core.ui.numberStyle
 private const val Digits = "0123456789"
 
 /**
+ * Stands in for a digit not known yet ("-:--.--"): drawn in a digit's cell, so a placeholder
+ * takes exactly the room of the number that replaces it and nothing moves (FBBD-62).
+ */
+const val DigitPlaceholder = '-'
+
+/**
  * A number whose digits never move as they change (FBBD-39, FBBD-62).
  *
  * The approved number font (Saira Semi Condensed, UI-02 option C) has no
@@ -49,7 +55,7 @@ fun NumberText(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         text.forEach { ch ->
-            if (ch.isDigit()) {
+            if (ch.isDigit() || ch == DigitPlaceholder) {
                 Box(Modifier.width(cell), contentAlignment = Alignment.Center) { Glyph(ch, style, color) }
             } else {
                 Glyph(ch, style, color)

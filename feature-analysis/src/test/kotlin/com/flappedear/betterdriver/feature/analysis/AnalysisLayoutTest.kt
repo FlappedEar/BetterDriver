@@ -1,16 +1,18 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.performClick
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
+import com.flappedear.betterdriver.core.ui.testing.edgeToEdge
 import com.flappedear.betterdriver.core.ui.testing.deviceLayout
 import com.flappedear.betterdriver.core.ui.testing.layoutProblems
 import com.flappedear.betterdriver.core.ui.testing.saveScreenshot
@@ -30,19 +32,21 @@ import org.robolectric.annotation.GraphicsMode
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 abstract class AnalysisLayoutTest(private val device: String) {
-    private val compose = createComposeRule()
+    private val compose = createAndroidComposeRule<ComponentActivity>()
 
     @get:Rule
     val rules: RuleChain = RuleChain.outerRule(RegisterComponentActivity()).around(compose)
 
     @Test
     fun everyTabLaysOutCleanly() {
+        compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
         val problems = ArrayList<String>()
         AnalysisTab.entries.forEach { t ->
             tab(t).performClick()
             compose.waitForIdle()
-            compose.saveScreenshot(device, "analysis_${t.name.lowercase()}")
+            // Roborazzi keeps names ending in "_compare" for itself.
+            compose.saveScreenshot(device, "analysis_${t.name.lowercase()}_tab")
             problems += compose.layoutProblems().map { "${t.title}: $it" }
         }
         check(problems.isEmpty()) { "session analysis on $device (FBBD-40):\n" + problems.joinToString("\n") }
@@ -51,6 +55,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
     /** Rotating the device recreates the activity: the open tab stays open. */
     @Test
     fun openTabSurvivesRotation() {
+        compose.edgeToEdge()
         val restoration = StateRestorationTester(compose)
         restoration.setContent { AppScreen { Analysis() } }
         tab(AnalysisTab.Laps).performClick()

@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.core.ui.testing
 
 import android.content.ComponentName
 import androidx.activity.ComponentActivity
+import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.test.SemanticsNodeInteractionsProvider
+import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.onRoot
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.layout.HeightClass
@@ -52,6 +54,17 @@ class RegisterComponentActivity : ExternalResource() {
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app.packageManager).addActivityIfNotPresent(ComponentName(app, ComponentActivity::class.java))
     }
+}
+
+/**
+ * Lays the activity out edge to edge, as MainActivity does, before content is set: the content
+ * gets the whole screen, and only what pads for the system bars (the app's Scaffold) leaves room
+ * for them. The track screen hides the bars, so it gets the whole screen too. Without this,
+ * Robolectric's activity fits its content between its status and navigation bars, which the app
+ * never does.
+ */
+fun <A : ComponentActivity> AndroidComposeTestRule<*, A>.edgeToEdge() {
+    runOnUiThread { activity.enableEdgeToEdge() }
 }
 
 /** The size class of the configured device, as the app works it out for its window. */
