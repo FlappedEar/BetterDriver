@@ -133,11 +133,12 @@ class NmeaDecoderTest {
         val sink = Sink()
         val decoder = NmeaDecoder(sink)
         decoder.feed(rmc("235958.00", date = "311226") + gga("235958.00"))
-        // GGA only from here: each fix ends when the next one starts.
+        // GGA only from here: the first such fix ends when the next one starts, the rest at once.
         decoder.feed(gga("235959.00") + gga("000000.00") + gga("000001.00"))
         val times = sink.sets.map { it.value(GnssChannels.UTC_MS)!! }
         assertEquals(
-            listOf("2026-12-31T23:59:58Z", "2026-12-31T23:59:59Z", "2027-01-01T00:00:00Z").map(::utc),
+            listOf("2026-12-31T23:59:58Z", "2026-12-31T23:59:59Z", "2027-01-01T00:00:00Z", "2027-01-01T00:00:01Z")
+                .map(::utc),
             times,
         )
         // A GGA-only fix has a position but no speed or heading.
@@ -151,11 +152,14 @@ class NmeaDecoderTest {
         val decoder = NmeaDecoder(sink)
         val vtg = nmeaSentence("GPVTG,054.7,T,034.4,M,005.5,N,010.2,K,A")
         decoder.feed(gga("101112.00", talker = "GP") + vtg + gga("101113.00", talker = "GP") + vtg)
-        val s = sink.sets.single()
-        assertEquals(10.2, s.value(GnssChannels.SPEED_KMH)!!, 0.0)
-        assertEquals(54.7, s.value(GnssChannels.HEADING)!!, 0.0)
-        // GGA has no date and none was seen yet, so there is no UTC time.
-        assertNull(s.value(GnssChannels.UTC_MS))
+        // The first fix ends when the second starts; the second is complete once its VTG is in.
+        assertEquals(2, sink.sets.size)
+        sink.sets.forEach { s ->
+            assertEquals(10.2, s.value(GnssChannels.SPEED_KMH)!!, 0.0)
+            assertEquals(54.7, s.value(GnssChannels.HEADING)!!, 0.0)
+            // GGA has no date and none was seen yet, so there is no UTC time.
+            assertNull(s.value(GnssChannels.UTC_MS))
+        }
     }
 
     @Test
