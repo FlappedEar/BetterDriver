@@ -56,7 +56,7 @@ fun DeltaDisplay(
 }
 
 /** Share of the gain or loss colour mixed into the tile, as in the approved mockup. */
-private const val TintFraction = 0.3f
+internal const val TintFraction = 0.3f
 
 private val Spacing = 8.dp
 

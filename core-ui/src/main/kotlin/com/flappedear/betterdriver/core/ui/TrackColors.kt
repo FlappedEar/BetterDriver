@@ -10,6 +10,11 @@ import androidx.compose.ui.graphics.Color
  * The track screen is always dark and does not follow the system theme.
  * Gain and loss are the only bright colours; amber is a warning, blue is cold,
  * purple marks the best lap. The same token always carries the same meaning.
+ *
+ * High contrast (plan UI principles, FBBD-38): every text colour reaches at
+ * least 4.5:1 (WCAG AA) on the colour it is drawn on, and the main text 7:1.
+ * The `on*` colours are the text on a filled gain, loss or warning area.
+ * TrackContrastTest checks every pair the components draw.
  */
 @Immutable
 data class TrackColors(
@@ -38,7 +43,8 @@ val TrackColorsGreenRed = TrackColors(
     gain = Color(0xFF22D37A),
     onGain = Color(0xFF071009),
     loss = Color(0xFFFF4B4B),
-    onLoss = Color(0xFFFFFFFF),
+    // Dark, like onGain: white on this red is only 3.3:1.
+    onLoss = Color(0xFF180606),
     warning = Color(0xFFFFB020),
     onWarning = Color(0xFF141006),
     cold = Color(0xFF4DA3FF),

@@ -25,8 +25,10 @@ object AppLog {
 
     private fun offMarker(context: Context) = File(dir(context), "off")
 
+    /** Reads a file: off the main thread. */
     fun enabled(context: Context): Boolean = !offMarker(context).exists()
 
+    /** Writes a file: off the main thread. */
     fun setEnabled(context: Context, on: Boolean) {
         val marker = offMarker(context)
         if (on) {
@@ -39,7 +41,8 @@ object AppLog {
         }
     }
 
-    fun install(app: Application) {
+    /** Returns the process name ("com.flappedear.betterdriver:recorder"). */
+    fun install(app: Application): String {
         val process = processName(app)
         val name = process.substringAfter(':', "main")
         DebugLog.echo = { level, tag, message, error ->
@@ -56,6 +59,7 @@ object AppLog {
             DebugLog.e("Crash", "uncaught in thread ${thread.name}", error)
             previous?.uncaughtException(thread, error)
         }
+        return process
     }
 
     /** The switch, read from disk at most every [SwitchCheckMs], so a line costs no file check. */

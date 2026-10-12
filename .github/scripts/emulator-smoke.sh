@@ -12,6 +12,16 @@ out=build/emulator
 mkdir -p "$out"
 log="$out/logcat.txt"
 
+# The screen stays on and unlocked for the whole run, and the system's "isn't responding" dialogs
+# stay hidden: either takes the window focus from the app, and the tests that use Espresso then
+# fail. Crashes and ANRs are still found, in logcat below.
+adb shell svc power stayon true || true
+adb shell settings put system screen_off_timeout 2147483647 || true
+adb shell settings put global hide_error_dialogs 1 || true
+adb shell input keyevent KEYCODE_WAKEUP || true
+adb shell wm dismiss-keyguard || true
+adb shell am broadcast -a android.intent.action.CLOSE_SYSTEM_DIALOGS >/dev/null || true
+
 adb logcat -c || true
 adb logcat -v threadtime > "$log" 2>&1 &
 logcat=$!
@@ -26,22 +36,24 @@ bash .github/scripts/ui-kill.sh || status=1
 sleep 3
 kill "$logcat" 2>/dev/null || true
 
-# Java crashes: "FATAL EXCEPTION" then "Process: <name>, PID: <pid>".
-crashes=$(grep -A2 'FATAL EXCEPTION' "$log" | grep -c "Process: $app" || true)
-# Native crashes: the tombstone header names the process ">>> <name> <<<".
-native=$(grep -c ">>> $app" "$log" || true)
-anrs=$(grep -c "ANR in $app" "$log" || true)
-
-if [ "$crashes" -gt 0 ] || [ "$native" -gt 0 ] || [ "$anrs" -gt 0 ]; then
-  echo "::error::The app crashed ($crashes, native $native) or stopped responding ($anrs) during the smoke tests."
+# Crashes (Java and native) and ANRs of every process, as annotations: errors for the app's
+# processes (UI, recorder, camera, coach), which fail the job, and warnings for the others.
+if ! python3 .github/scripts/logcat-problems.py "$log"; then
+  echo "::group::App crashes and ANRs in logcat"
   grep -A40 'FATAL EXCEPTION' "$log" | grep -A40 "Process: $app" || true
   grep -B2 -A30 ">>> $app" "$log" || true
   grep -A20 "ANR in $app" "$log" || true
+  echo "::endgroup::"
   status=1
 fi
 if [ "$status" -ne 0 ]; then
-  # Gradle prints only the first line of a failure; the whole stack trace is in the results.
+  # Each failed test as an annotation, with its whole stack trace in the log (Gradle prints only
+  # the first line of a failure).
   find app/build/outputs/androidTest-results -name 'TEST-*.xml' -exec python3 .github/scripts/test-failures.py {} \;
+  # What had the window focus and whether the screen was on, as tests that lose focus fail.
+  focus=$(adb shell dumpsys window 2>/dev/null | grep -E 'mCurrentFocus|mFocusedApp' | tr -s ' ' | head -2 | tr '\n' ';')
+  power=$(adb shell dumpsys power 2>/dev/null | grep -E 'mWakefulness=|Display Power' | tr -s ' ' | head -2 | tr '\n' ';')
+  echo "::warning title=Device at the end::$focus $power"
   echo "::error::Emulator smoke tests failed. Logcat and test reports are in the run's artifacts."
 fi
 exit "$status"

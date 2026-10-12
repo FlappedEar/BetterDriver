@@ -33,7 +33,9 @@ import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsUi
 import com.flappedear.betterdriver.shell.recordingRows
 import java.io.IOException
 import java.util.UUID
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 
 private const val RefreshMs = 250L
 
@@ -125,9 +127,12 @@ private class CalibrationState {
 @Composable
 private fun rememberCalibration(address: String?, diag: RaceBoxDiagnostics): CalibrationState {
     val context = LocalContext.current
-    val store = remember { imuCalibrations(context) }
+    val store = remember { lazy { imuCalibrations(context) } }
     val state = remember(address) { CalibrationState() }
-    LaunchedEffect(address) { diag.calibration(address?.let(store::load)) }
+    // The calibration file is read and written off the main thread (FBBD-41).
+    LaunchedEffect(address) {
+        diag.calibration(withContext(Dispatchers.IO) { address?.let { store.value.load(it) } })
+    }
     LaunchedEffect(state.running) {
         if (!state.running) return@LaunchedEffect
         diag.startCapture()
@@ -135,7 +140,7 @@ private fun rememberCalibration(address: String?, diag: RaceBoxDiagnostics): Cal
         state.error = when (val result = ImuCalibration.from(diag.endCapture(), System.currentTimeMillis())) {
             is ImuCalibration.Result.Failed -> result.failure.text
             is ImuCalibration.Result.Ok -> try {
-                address?.let { store.save(it, result.calibration) }
+                withContext(Dispatchers.IO) { address?.let { store.value.save(it, result.calibration) } }
                 diag.calibration(result.calibration)
                 null
             } catch (e: IOException) {

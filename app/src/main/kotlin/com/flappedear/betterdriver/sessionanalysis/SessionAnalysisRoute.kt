@@ -119,7 +119,8 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     var progress by remember(id) { mutableStateOf<SessionProgress?>(null) }
     var analysed by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
     var state by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
-    val store = remember { SessionStore(sessionsDir(context)) }
+    // Made off the main thread when first used: making it reads the disk (FBBD-41).
+    val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
     val coachPicks = remember { CoachPicksRepo.get(context) }
     val allPicks by coachPicks.picks.collectAsState()
@@ -127,7 +128,7 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     val picks = trackId?.let { allPicks[it] }
     LaunchedEffect(id) {
         load = withContext(Dispatchers.Default) {
-            loadSession(store, TrackStore(tracksDir(context)), id, tracks.circuits)
+            loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
         }
     }
     // The earlier sessions at the track are read after the analysis shows, so they never delay it.
@@ -135,7 +136,7 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
         val l = load as? Load.Done ?: return@LaunchedEffect
         progress = withContext(Dispatchers.IO) {
             val loaded = l.loaded
-            val earlier = earlierSessions(store, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
+            val earlier = earlierSessions(store.value, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
             summarizeProgress(loaded.analysis.laps, earlier.sessions).copy(
                 changes = earlier.previous?.let { segmentChanges(loaded.analysis, it) }.orEmpty(),
                 earlierLimited = earlier.limited,

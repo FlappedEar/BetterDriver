@@ -183,6 +183,42 @@ class LibraryTest {
     }
 
     @Test
+    fun `a refresh stopped while building keeps the reference as it was`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        val first = record(store, track, List(2) { SimCircuit.Pace() }, 1_000L)
+        library.refresh()
+        val before = assertNotNull(library.references.get(track.id))
+        record(store, track, List(2) { SimCircuit.Pace(kmh = List(4) { 3.0 }) }, 2_000L)
+        record(store, track, List(2) { SimCircuit.Pace() }, 3_000L)
+        // Asked once per session while matching and once before the track; a recording starts after
+        // the build has read its first session.
+        var asked = 0
+        library.refresh { ++asked > 3 + 1 + 1 }
+        assertTrue(asked > 5)
+        assertEquals(before, library.references.get(track.id))
+        assertEquals(listOf(first), before.sessions)
+        library.refresh()
+        assertEquals(3, assertNotNull(library.references.get(track.id)).sessions.size)
+    }
+
+    @Test
+    fun `a refresh removes the references of deleted tracks`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        var saved = listOf(track)
+        val library = CoachLibrary(store, File(tmp, "coach")) { saved }
+        record(store, track, List(2) { SimCircuit.Pace() }, 1_000L)
+        library.refresh()
+        val ref = assertNotNull(library.references.get(track.id))
+        // Deleted while a build for it was under way, which wrote the reference back.
+        saved = emptyList()
+        library.references.save(ref)
+        library.refresh()
+        assertNull(library.references.get(track.id))
+        assertEquals(emptyList(), library.references.trackIds())
+    }
+
+    @Test
     fun `an area reaches only tracks whose radius gets to it`() {
         val area = assertNotNull(Area.of(sim.drive(listOf(SimCircuit.Pace())).fixes.asSequence()))
         assertTrue(area.reaches(track))

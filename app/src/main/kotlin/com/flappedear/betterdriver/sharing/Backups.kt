@@ -49,9 +49,10 @@ class RestoreOffer internal constructor(val summary: BackupSummary, internal val
  */
 @Suppress("TooManyFunctions") // Back up, check, restore and the small steps they share.
 class Backups private constructor(private val context: Context) {
-    private val root = context.filesDir
-    private val restorer = BackupRestore(root, File(root, StagingDir))
-    private val store = SessionStore(sessionsDir(context))
+    // Made on the io thread when first used: making them reads the disk (FBBD-41).
+    private val root by lazy { context.filesDir }
+    private val restorer by lazy { BackupRestore(root, File(root, StagingDir)) }
+    private val store by lazy { SessionStore(sessionsDir(context)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "backups-io") }
     private val main = Handler(Looper.getMainLooper())
 

@@ -13,9 +13,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.IOException
 import java.time.Clock
+import kotlin.coroutines.CoroutineContext
+import kotlin.coroutines.EmptyCoroutineContext
 
 /**
  * An Open GoPro camera (HERO9 Black and later, MAX2) that starts and stops recording with the
@@ -46,6 +49,8 @@ class OpenGoProSource(
     private val video: GoProVideo? = null,
     private val connectTimeoutMillis: Long = 20_000,
     private val readyTimeoutMillis: Long = 10_000,
+    /** Where the recording note is written; the app passes Dispatchers.IO, as [scope] is the main thread (FBBD-41). */
+    private val io: CoroutineContext = EmptyCoroutineContext,
 ) : LiveVideoSource {
     override val kind = VideoSourceKind.GOPRO
 
@@ -223,10 +228,10 @@ class OpenGoProSource(
         }
     }
 
-    private fun save(session: VideoSessionContext, r: GoProRecording) {
+    private suspend fun save(session: VideoSessionContext, r: GoProRecording) {
         recording = r
         try {
-            GoProRecordings(session.videoDir).put(r)
+            withContext(io) { GoProRecordings(session.videoDir).put(r) }
         } catch (_: IOException) {
             // The download can still find the files by time; nothing else depends on this file.
         }

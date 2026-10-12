@@ -29,8 +29,8 @@ import java.io.File
 
 /**
  * One lap's video (FBBD-93): an ExoPlayer that follows a target frame given every display frame
- * ([follow]). While scrubbing it seeks to the nearest key frame, which keeps dragging smooth; when
- * the finger lifts it seeks to the exact frame. Use from the main thread only.
+ * while the review moves ([follow]). While scrubbing it seeks to the nearest key frame, which keeps
+ * dragging smooth; when the finger lifts it seeks to the exact frame. Use from the main thread only.
  */
 @OptIn(UnstableApi::class)
 internal class LapVideoPlayer(context: Context, muted: Boolean) {
@@ -66,7 +66,8 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
 
     /**
      * Moves the player towards [target] of [video]. [rate] is how fast the target moves against real
-     * time; [nowNanos] is the frame time, used to space out seeks.
+     * time; [nowNanos] is the frame time, used to space out seeks. Returns whether a seek is still
+     * to be made on a later frame ([seekPending]).
      */
     @Suppress("LongParameterList") // One call per display frame with everything it needs.
     fun follow(
@@ -76,11 +77,11 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
         playing: Boolean,
         scrubbing: Boolean,
         nowNanos: Long,
-    ) {
+    ): Boolean {
         showing = target != null && video != null
         if (target == null || video == null) {
             player.playWhenReady = false
-            return
+            return false
         }
         val f = video.file(target.clip)
         if (f != file) {
@@ -93,6 +94,8 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
         precise(!scrubbing)
         val step = followStep(player.currentPosition, target.mediaMillis, rate, playing)
         val gap = if (playing) PlayingSeekGapNanos else ScrubSeekGapNanos
+        // Wanted before this frame's seek, so the frame after a seek still runs and sees it land.
+        val pending = seekPending(step, lastSeekMillis)
         step.seekMillis?.let { ms ->
             if (seekDue(ms, lastSeekMillis) && nowNanos - lastSeekNanos >= gap) {
                 player.seekTo(ms)
@@ -105,6 +108,7 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
             player.setPlaybackSpeed(speed)
         }
         if (player.playWhenReady != playing) player.playWhenReady = playing
+        return pending
     }
 
     fun pause() {

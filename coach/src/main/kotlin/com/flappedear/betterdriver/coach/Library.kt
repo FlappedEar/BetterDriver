@@ -55,8 +55,10 @@ class CoachLibrary(
 
     /**
      * Brings every coached track's reference up to date, so the next coach starts at once: after a
-     * track is saved, edited or deleted, or sessions change. Stops early, keeping what it found,
-     * when [stop] says so (it is asked between sessions).
+     * track is saved, edited or deleted, or sessions change. Stops early, keeping the matches it
+     * found but no half-built reference, when [stop] says so (it is asked between sessions). The
+     * references of tracks deleted meanwhile are removed, so one written back by a build that raced
+     * the delete never outlives it.
      */
     fun refresh(stop: () -> Boolean = { false }) = locked {
         val saved = tracks()
@@ -64,9 +66,11 @@ class CoachLibrary(
         if (found.complete) {
             for (t in saved.filter(::coaches)) {
                 if (stop()) break
-                build(t, found, exclude = null)
+                build(t, found, exclude = null, stop)
             }
         }
+        val ids = tracks().map { it.id }.toSet()
+        references.trackIds().filter { it !in ids }.forEach { references.delete(it) }
     }
 
     /** What [match] found: each usable session's track, and the laps it already traced on the way. */
@@ -158,19 +162,33 @@ class CoachLibrary(
         return at.id
     }
 
-    private fun build(track: Track, found: Found, exclude: String?): CoachReference? {
+    /**
+     * The reference for [track] from the sessions [found] there, rebuilt and saved if they or the
+     * lines changed. When [stop] says so between sessions, nothing is saved and the reference as it
+     * was is returned.
+     */
+    private fun build(track: Track, found: Found, exclude: String?, stop: () -> Boolean = { false }): CoachReference? {
         val usable = sessions.list().filter { it.state != SessionState.RECORDING && it.id != exclude }
         val here = usable.filter { found.trackOf[it.id] == track.id }.map { it.id }
         val current = references.get(track.id)
-        if (current != null && current.fits(track) && current.sessions.toSet() == here.toSet()) return current
-        val laps = here.mapNotNull { id ->
-            val traced = found.laps[id to track.id]
-                ?: tracedLaps(track, (readOrNull(sessions.dir(id)) ?: return@mapNotNull null).coachFixes())
-            SessionLaps(id, traced)
-        }
+        val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet()
+        val laps = if (upToDate) null else lapsAt(track, here, found, stop)
+        if (laps == null) return current
         val built = buildReference(track, laps)
         if (built == null) references.delete(track.id) else references.save(built)
         return built
+    }
+
+    /** The laps at [track] of the sessions [here]; null if [stop] said so before all were read. */
+    private fun lapsAt(track: Track, here: List<String>, found: Found, stop: () -> Boolean): List<SessionLaps>? {
+        val laps = ArrayList<SessionLaps>()
+        for (id in here) {
+            val traced = found.laps[id to track.id]
+            if (traced == null && stop()) return null
+            val read = traced ?: readOrNull(sessions.dir(id))?.let { tracedLaps(track, it.coachFixes()) }
+            read?.let { laps += SessionLaps(id, it) }
+        }
+        return laps
     }
 
     @Suppress("TooGenericExceptionCaught") // A damaged session is skipped, never a reason to stop coaching.

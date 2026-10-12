@@ -30,6 +30,13 @@ object DebugLog {
     @Volatile
     var echo: ((level: Int, tag: String, message: String, error: Throwable?) -> Unit)? = null
 
+    /**
+     * Runs each file write when set; debug builds exempt the log's own writes from StrictMode here
+     * (FBBD-41). Null, as in release builds, writes directly.
+     */
+    @Volatile
+    var fileWrites: ((write: () -> Unit) -> Unit)? = null
+
     fun install(file: LogFile?) {
         this.file = file
     }
@@ -49,7 +56,9 @@ object DebugLog {
         } catch (_: RuntimeException) {
             // logcat unavailable (JVM tests): the file still gets the line.
         }
-        file?.write(level, tag, message, error)
+        val f = file ?: return
+        val around = fileWrites
+        if (around == null) f.write(level, tag, message, error) else around { f.write(level, tag, message, error) }
     }
 }
 

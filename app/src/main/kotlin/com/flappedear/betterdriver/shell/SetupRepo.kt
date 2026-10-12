@@ -6,6 +6,7 @@ import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.debug.DebugGuards
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.setup.Equipment
@@ -32,12 +33,16 @@ fun newSetupId(): String = UUID.randomUUID().toString()
  * a fresh install starts with the phone camera only.
  */
 class SetupRepo private constructor(context: Context) {
-    private val store = SetupStore(File(context.filesDir, FileName))
+    // The setup is read once at startup on the main thread: two small files every screen needs from
+    // its first frame. StrictMode is told not to report these reads (FBBD-41); saves run on [saver].
+    private val files = DebugGuards.allowDisk { context.filesDir }
+    private val store = SetupStore(File(files, FileName))
     private val saver = Executors.newSingleThreadExecutor { r -> Thread(r, "setup-save").apply { isDaemon = true } }
 
-    // Read once at startup on the main thread: one small file.
     var setup by mutableStateOf(
-        store.load() ?: migrate(AppPrefs.legacy(context), ::newSetupId).also { save(store, it) },
+        DebugGuards.allowDisk {
+            store.load() ?: migrate(AppPrefs.legacy(context), ::newSetupId).also { save(store, it) }
+        },
     )
         private set
 
@@ -47,8 +52,8 @@ class SetupRepo private constructor(context: Context) {
      * process restarted mid-session reconnects to the same cameras and tiles. Only read while a
      * session runs; the next START replaces it.
      */
-    private val runningStore = SetupStore(File(context.filesDir, RunningFileName))
-    private var running by mutableStateOf(runningStore.load())
+    private val runningStore = SetupStore(File(files, RunningFileName))
+    private var running by mutableStateOf(DebugGuards.allowDisk { runningStore.load() })
 
     /** What the running session uses. Falls back to [setup] if no session was ever started. */
     fun forSession(): Setup = running ?: setup
@@ -57,8 +62,9 @@ class SetupRepo private constructor(context: Context) {
     fun sessionStarted(): Setup = setup.also {
         running = it
         // Written before the recorder starts, so a UI restarted right after START still finds it.
+        // Main thread on purpose, so StrictMode is told not to report it (FBBD-41).
         try {
-            runningStore.save(it)
+            DebugGuards.allowDisk { runningStore.save(it) }
         } catch (e: IOException) {
             DebugLog.e(Tag, "session setup not saved", e)
         }
