@@ -58,7 +58,11 @@ for group in Camera Notifications Location NearbyDevices; do
   grant_all
 done
 
-# Revoked in system settings while the app is open, then the app comes back (FBBD-35).
+# Revoked in system settings while the app is open, then the app comes back (FBBD-35). The app is
+# opened here, not by the phase: the test runner finishes the activities a phase starts, and
+# --no-restart needs the app's process running.
+adb shell am start -W -n "$app/.MainActivity" >/dev/null || fail "the app did not open"
+sleep 3
 phase openPermissions --no-restart
 revoke Camera
 sleep 2

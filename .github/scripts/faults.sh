@@ -77,6 +77,12 @@ phase seed
 open_app
 phase startRecording --no-restart
 
+# The test runner finishes the activities a phase started, so the app is opened again; with the
+# recording running it opens on the track screen.
+open_app
+focus=$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r')
+echo "$focus" | grep -q "$app" || fail "the app is not in front for FBBD-63: $focus"
+
 # FBBD-63: with the shortest screen timeout, the screen stays on and bright while recording.
 adb shell settings put system screen_off_timeout 10000
 adb shell svc power stayon false

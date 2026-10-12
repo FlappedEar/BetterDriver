@@ -58,10 +58,12 @@ class PermissionTest {
         d.checkNoAppErrors()
     }
 
-    /** Settings › App with every permission allowed, left open for the script to revoke one. */
+    /**
+     * Settings › App with every permission allowed, left open for the script to revoke one. In the
+     * app the script opened: the runner would finish an activity this phase started when it ends.
+     */
     @Test
     fun openPermissions() {
-        d.openApp()
         openPermissionsRow()
         checkNotNull(d.device.wait(Until.findObject(By.text("All allowed")), AppDriver.LoadTimeoutMs)) {
             "Permissions does not say \"All allowed\". ${d.screen()}"
