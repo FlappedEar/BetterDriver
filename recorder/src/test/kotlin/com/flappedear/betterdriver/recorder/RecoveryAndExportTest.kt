@@ -196,4 +196,26 @@ class RecoveryAndExportTest {
         val p = VboValidator.validate(out.toString(Charsets.UTF_8))
         assertEquals("080001.500", p.rows.single()[1])
     }
+
+    @Test
+    fun `no text in the VBO names RaceBox, so Circuit Tools does not demand a RaceBox checksum`() {
+        val store = SessionStore(tmp)
+        val input = ChannelDef(120, "racebox_input", "V", "racebox", 1)
+        val gate = gnss.startFinish.copy(name = "RaceBox gate")
+        val rec = Recorder(store).start(
+            SessionInfo(
+                gnss.startUtcMillis, "Race Box car", "RACEBOX ring", listOf("racebox"), gate,
+                GnssChannels.ALL + input,
+            ),
+        )
+        rec.submit(SampleSet(0, gnss.fix(0) + ChannelValue(input.id, 4.0)))
+        rec.stop()
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out)
+        val text = out.toString(Charsets.UTF_8)
+        assertTrue(!Regex("race\\s*box", RegexOption.IGNORE_CASE).containsMatchIn(text), text)
+        val p = VboValidator.validate(text)
+        assertEquals("gnss_input", p.columnNames.last())
+        assertTrue("Device gnss" in text)
+    }
 }
