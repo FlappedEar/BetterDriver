@@ -85,10 +85,13 @@ private fun overTheLine(
     val lap = analysis.laps.timedLaps[i]
     val next = analysis.laps.timedLaps.getOrNull(i + 1)
     val follows = next != null && abs(next.startTelemetryTime - lap.endTelemetryTime) <= ContiguousLapSeconds
-    val exit = if (follows) analysis.lapTimes.getOrNull(i + 1)?.sector(segmentId)?.endTime else null
+    val after = if (follows) analysis.lapTimes.getOrNull(i + 1)?.sector(segmentId) else null
+    val exit = after?.endTime
+    // Coverage is known per lap only for the whole wrapped sector, so a pass is timed only when
+    // both laps cover it: this lap the part before the line, the next lap the part after it.
+    val covered = sector.seconds != null && after?.seconds != null
     return when {
-        // Timed only when this lap covers the corner's part before the line (seconds is set).
-        exit != null && exit > entry -> exit to sector.seconds?.let { exit - entry }
+        exit != null && exit > entry -> exit to if (covered) exit - entry else null
         lap.endTelemetryTime > entry -> lap.endTelemetryTime to null
         else -> null to null
     }
