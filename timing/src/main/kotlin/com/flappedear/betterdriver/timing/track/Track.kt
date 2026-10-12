@@ -63,6 +63,10 @@ const val DefaultTrackRadiusMeters = 2_000.0
  * A [TrackKind.PointToPoint] track (FBBD-155) times runs from [startFinish], its start line, to
  * [finish]; everywhere else (live timing, review, analysis) a run is a lap. Pit lines do not apply
  * to it. Tracks saved before there were kinds have neither field and read as circuits.
+ *
+ * [identity] is the track's corners and straights (FBBD-172), with the ids every screen and the coach
+ * name them by. It is not part of [revision], which counts edits of the lines: it is made from the
+ * first lap analysed at the track and kept here, and tracks saved before it have none until then.
  */
 @Serializable
 data class Track(
@@ -82,6 +86,7 @@ data class Track(
     val kind: TrackKind = TrackKind.Circuit,
     /** The finish line of a point-to-point track; unused on a circuit. */
     val finish: TrackLine? = null,
+    val identity: TrackRevision? = null,
 ) {
     init {
         require(id.isNotBlank() && id.length <= MaxIdChars && id.all { it.isLetterOrDigit() || it in "-_" }) {

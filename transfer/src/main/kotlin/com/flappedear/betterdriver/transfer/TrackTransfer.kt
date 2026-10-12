@@ -30,9 +30,13 @@ object TrackTransfer {
         else -> TrackMatch.DIFFERENT
     }
 
-    /** Revision and update time are left out: a track copied back and forth is still the same track. */
+    /**
+     * Revision, update time and corner identity (FBBD-172, made from laps on each device) are left
+     * out: a track copied back and forth is still the same track.
+     */
     private fun sameContent(a: Track, b: Track) =
-        a.copy(revision = 1, updatedUtcMillis = 0) == b.copy(revision = 1, updatedUtcMillis = 0)
+        a.copy(revision = 1, updatedUtcMillis = 0, identity = null) ==
+            b.copy(revision = 1, updatedUtcMillis = 0, identity = null)
 
     /** File name offered when sending [track]: its name in plain characters, then the extension. */
     fun fileName(track: Track): String {
