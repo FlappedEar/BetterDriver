@@ -86,6 +86,10 @@ class ReviewSyncTest {
             // Opening: both at the start line. Not timed: the decoders start here.
             players.waitInSync(0L, "opening the review", SystemClock.uptimeMillis(), OpenTimeoutMs)
 
+            // Seeks at other places first, checked but not timed: this debuggable build runs the
+            // seek path interpreted until the JIT has seen it (a release build is installed
+            // compiled), and on the emulator the first seeks took 400 ms, the fifth under 100.
+            WarmUpFractions.forEach { f -> scrubTo(players, c, f) }
             val settles = ScrubFractions.map { f -> scrubTo(players, c, f) }
             check(settles.max() <= SeekSettleMs) {
                 "a seek took longer than $SeekSettleMs ms to settle: ${settles.joinToString()} ms (FBBD-24)"
@@ -201,6 +205,9 @@ class ReviewSyncTest {
     private companion object {
         /** Places along lap A the chart is tapped at (FBBD-24: 5 landmarks or more). */
         val ScrubFractions = listOf(0.1, 0.3, 0.5, 0.7, 0.9)
+
+        /** Untimed seeks before them, between them so none lands where a timed one does. */
+        val WarmUpFractions = listOf(0.2, 0.4, 0.6, 0.8, 0.95)
 
         /** Where playback starts: far enough from the end that both laps still run after every stop. */
         const val PlayFrom = 0.15
