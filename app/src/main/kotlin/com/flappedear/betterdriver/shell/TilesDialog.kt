@@ -50,7 +50,7 @@ internal fun TilesDialog(chosen: List<TrackChannel>, onDone: (List<TrackChannel>
                         )
                         Column {
                             Text(ch.label, style = MaterialTheme.typography.bodyLarge)
-                            if (ch == TrackChannel.G) DimText("Shown in sessions with a RaceBox")
+                            if (ch == TrackChannel.G) DimText("Shown with a RaceBox or a RaceChrono DIY device")
                         }
                     }
                 }

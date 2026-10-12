@@ -3,8 +3,10 @@ package com.flappedear.betterdriver.video
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.io.IOException
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -79,6 +81,16 @@ class VideoIndexTest {
         index.put(clip("x.mp4", 0))
         assertEquals(1, index.clips().size)
         assertTrue(videoDir.listFiles()!!.any { it.name.startsWith("clips.json.unreadable-") })
+    }
+
+    @Test
+    fun `a late write does not bring back a deleted session`() {
+        val session = File(dir, "s1").apply { mkdirs() }
+        val index = VideoIndex(session)
+        index.put(clip("phone-1.mp4", 0))
+        session.deleteRecursively()
+        assertFailsWith<IOException> { index.put(clip("phone-1.mp4", 0)) }
+        assertFalse(session.exists())
     }
 
     @Test

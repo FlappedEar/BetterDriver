@@ -124,6 +124,10 @@ private fun VboxSportMessage.i32(i: Int) = (u16(i) shl Byte2) or u16(i + 2)
 
 private const val MsPerDay = 86_400_000L
 private const val HalfDayMs = MsPerDay / 2
+private const val MicrosPerMs = 1_000L
+
+/** Messages buffered longer than this before one read are stamped on arrival, not by their GNSS time. */
+private const val MaxBufferedMs = 5_000L
 
 /**
  * UTC from a time of day without a date: the instant with that time of day closest to [nowUtcMs]
@@ -140,10 +144,12 @@ fun utcFromTimeOfDay(timeOfDayMs: Long, nowUtcMs: Long): Long {
 
 /**
  * Turns the bytes of a VBOX Sport into sample sets, one per message, stamped with the recorder
- * clock on arrival. Position, speed, heading, altitude and UTC are only included with a fix
- * ([VboxSportFix.hasFix]), so the VBO export never gets rows at 0°, 0°. UTC takes its date from
- * [utcNow] (the phone's clock; see [utcFromTimeOfDay]). Synchronized, so a reconnect can [reset] it
- * from another thread.
+ * clock on arrival. When one read holds several messages (Bluetooth buffered them), the last is
+ * stamped on arrival and each one before it as much earlier as its GNSS time says, so every set
+ * still has its own, increasing time and the lap timer does not skip any. Position, speed, heading,
+ * altitude and UTC are only included with a fix ([VboxSportFix.hasFix]), so the VBO export never
+ * gets rows at 0°, 0°. UTC takes its date from [utcNow] (the phone's clock; see
+ * [utcFromTimeOfDay]). Synchronized, so a reconnect can [reset] it from another thread.
  */
 class VboxSportDecoder(private val sink: SampleSink, private val utcNow: () -> Long = System::currentTimeMillis) {
     private val reader = VboxSportFrameReader()
@@ -151,6 +157,7 @@ class VboxSportDecoder(private val sink: SampleSink, private val utcNow: () -> L
     private var goodSinceReset = false
     private var reportedBad = false
     private var badAtReset = 0L
+    private var lastStamp: Long? = null
 
     /** Messages decoded since the decoder was created. */
     @Volatile
@@ -167,7 +174,16 @@ class VboxSportDecoder(private val sink: SampleSink, private val utcNow: () -> L
     @Synchronized
     fun feed(bytes: ByteArray) {
         val now = sink.nowMicros()
-        reader.feed(bytes) { message(VboxSportFix.from(it), now) }
+        val fixes = buildList { reader.feed(bytes) { add(VboxSportFix.from(it)) } }
+        val lastTime = fixes.lastOrNull()?.timeOfDayMs
+        for (f in fixes) {
+            val ageMs = f.timeOfDayMs?.let { t -> lastTime?.let { Math.floorMod(it - t, MsPerDay) } }
+            val t = now - (ageMs?.takeIf { it <= MaxBufferedMs } ?: 0L) * MicrosPerMs
+            // Never at or before the set before it, whatever the clocks say.
+            val stamp = lastStamp?.let { maxOf(t, it + 1) } ?: t
+            lastStamp = stamp
+            message(f, stamp)
+        }
         val bad = reader.checksumErrors + reader.unsupportedMessages - badAtReset
         if (!goodSinceReset && !reportedBad && bad >= BadMessagesBeforeEvent) {
             reportedBad = true

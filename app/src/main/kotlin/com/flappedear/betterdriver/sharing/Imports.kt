@@ -9,9 +9,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
+import com.flappedear.betterdriver.recording.DeleteState
+import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
@@ -120,6 +123,10 @@ class Imports private constructor(private val context: Context) {
 
     private fun accept(received: SessionBundle.Received, replace: Boolean, title: String) {
         refuseWhileRecording(store) { inbox.discard(received) }
+        if (replace && sessionBusy(context, received.sessionId)) {
+            inbox.discard(received)
+            throw IOException("the session of $title is busy (GoPro video, export, send or delete). Try again after.")
+        }
         val added = inbox.accept(received, replace)
         Sessions.get(context).refresh()
         val what = if (added) "Imported the session of $title." else "Kept the session of $title already here."
@@ -202,6 +209,18 @@ private fun refuseWhileRecording(store: SessionStore, onRefused: () -> Unit = {}
         onRefused()
         throw IOException("A session is recording. Import after it stops.")
     }
+}
+
+/**
+ * Whether other work reads or writes session [id]'s folder: GoPro video being added, a VBO export, a
+ * send or save, or a delete. Replacing the folder under it would mix the two sessions.
+ */
+private fun sessionBusy(context: Context, id: String): Boolean {
+    val sessions = Sessions.get(context)
+    return GoPros.get(context).work[id] != null ||
+        Transfers.get(context).outgoing[Transfers.sessionKey(id)]?.running == true ||
+        sessions.exports[id] == ExportState.Running ||
+        sessions.deletes[id] == DeleteState.Running
 }
 
 /** The file's size for progress; 0 when the provider does not say. */

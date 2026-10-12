@@ -145,11 +145,9 @@ class NmeaParserTest {
         }
         val got = epochs(text, chunkSize = 7)
         assertEquals(3, got.size)
-        got.forEach {
-            assertTrue(it.rmc != null && it.gga != null && it.gsa != null)
-            // The VTG comes after the epoch was passed on.
-            assertNull(it.vtg)
-        }
+        got.forEach { assertTrue(it.rmc != null && it.gga != null && it.gsa != null) }
+        // The first VTG comes after its epoch was passed on; from then on each epoch waits for it.
+        assertEquals(listOf(null, 37.0, 37.0), got.map { it.vtg?.speedKmh })
         assertEquals(listOf(36_672_000L, 36_673_000L, 36_674_000L), got.map { it.timeOfDayMs })
     }
 
@@ -165,11 +163,21 @@ class NmeaParserTest {
         text.lines().filter { it.isNotEmpty() }.forEachIndexed { i, line ->
             parser.feed((line + "\n").toByteArray(), i * 100L) { sizes += it }
         }
-        // The third fix is still open: nothing has ended it yet.
-        assertEquals(2, sizes.size)
+        // The first fix waits for the next one to end it; after that each one is passed on as soon
+        // as its RMC and VTG are in, so the last fix is not held back.
+        assertEquals(3, sizes.size)
         assertTrue(sizes.all { it.vtg?.speedKmh == 37.0 })
         // Stamped when the fix's first sentence arrived, not when the next one ended it.
-        assertEquals(listOf(0L, 200L), sizes.map { it.arrivalMicros })
+        assertEquals(listOf(0L, 200L, 400L), sizes.map { it.arrivalMicros })
+    }
+
+    @Test
+    fun `a receiver that sends GGA after all is waited for again`() {
+        val rmc = { t: Int -> nmeaSentence("GPRMC,$t.00,A,5013.1234,N,01902.5678,E,20.0,90.0,111026,,,A") }
+        val gga = { t: Int -> nmeaSentence("GPGGA,$t.00,5013.1234,N,01902.5678,E,1,09,0.9,250.5,M,40.0,M,,") }
+        // The first GGA was lost, so the first fix looks like RMC only.
+        val got = epochs(rmc(101112) + rmc(101113) + gga(101113) + rmc(101114) + gga(101114))
+        assertEquals(listOf(null, null, 9), got.map { it.gga?.satellites })
     }
 
     @Test

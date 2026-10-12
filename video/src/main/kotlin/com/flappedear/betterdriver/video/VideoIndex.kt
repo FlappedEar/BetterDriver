@@ -24,7 +24,7 @@ import java.nio.file.StandardCopyOption
  * `clips.json.lock` (and, within one process, a monitor), so no change is lost; reads need no lock
  * because the file is only ever replaced whole.
  */
-class VideoIndex(sessionDir: File) {
+class VideoIndex(private val sessionDir: File) {
     val videoDir = File(sessionDir, VideoDirName)
     private val file = File(videoDir, IndexFileName)
 
@@ -46,7 +46,13 @@ class VideoIndex(sessionDir: File) {
             .filter { (kind == null || it.kind == kind) && it.status == ClipStatus.LOCAL && it.covers(sessionTimeUs) }
             .minByOrNull { it.alignment.method.ordinal }
 
+    /**
+     * Throws IOException when the session is gone: the phone camera can finish its last clip a few
+     * seconds after the recording ends, and must not bring back the folder of a session deleted
+     * meanwhile.
+     */
     private fun update(change: (List<VideoClip>) -> List<VideoClip>) = synchronized(lock) {
+        if (!sessionDir.isDirectory) throw IOException("${sessionDir.path} is gone")
         videoDir.mkdirs()
         RandomAccessFile(File(videoDir, IndexFileName + LockSuffix), "rw").channel.use { channel ->
             channel.lock().use {

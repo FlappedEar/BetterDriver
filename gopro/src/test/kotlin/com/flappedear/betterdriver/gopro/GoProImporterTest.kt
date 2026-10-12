@@ -60,6 +60,19 @@ class GoProImporterTest {
     }
 
     @Test
+    fun `another camera's creation time is read as UTC when only that fits the session`() {
+        val session = TestSession.data(400)
+        val dji = GoProImporter.Source(VideoSourceKind.CAMERA_FILES, "dji")
+        // Written as UTC, 60 s into the session; read as local time on a UTC+2 phone it is 2 h off.
+        val createdSince1904 = TestSession.StartUtcMillis / 1000 + 60 + 2_082_844_800L
+        val file = File(videoDir, "dji-DJI_0001.MP4")
+        FakeGoProFile.writeMp4(file, emptyList(), createdSince1904)
+        val result = GoProImporter(zone = ZoneOffset.ofHours(2)).import(dir, session, listOf(file), dji)
+        assertEquals(emptyList(), result.problems)
+        assertEquals(60_000_000L, VideoIndex(dir).clips().single().sessionOffsetUs)
+    }
+
+    @Test
     fun `a file that is not an MP4 is reported, not thrown`() {
         val session = TestSession.data(60)
         val junk = File(videoDir, "GH010002.MP4").apply { writeText("not a video") }

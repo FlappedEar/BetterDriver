@@ -88,7 +88,9 @@ class Transfers private constructor(private val context: Context) {
     /** Writes the track file to the cache and hands its shareable address to [onReady]. */
     fun sendTrack(track: Track, onReady: (Uri) -> Unit) = work(trackKey(track.id)) { _ ->
         removeOld()
-        val file = File(outgoingDir, TrackTransfer.fileName(track))
+        // A folder per track: two tracks with the same name must not share, and overwrite, one file.
+        val folder = File(outgoingDir, "track-" + track.id.filter { it.isLetterOrDigit() || it in "-_" })
+        val file = File(folder.apply { mkdirs() }, TrackTransfer.fileName(track))
         file.writeText(trackText(track))
         handOver(file, onReady)
         "Ready to send"
@@ -141,11 +143,17 @@ class Transfers private constructor(private val context: Context) {
     private fun open(uri: Uri): OutputStream =
         context.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("cannot open the file")
 
-    /** Removes prepared files older than [KeepPreparedMillis], so a Quick Share under way is never cut off. */
+    /**
+     * Removes prepared files older than [KeepPreparedMillis], so a Quick Share under way is never cut
+     * off, and track folders left empty.
+     */
     private fun removeOld() {
         outgoingDir.mkdirs()
         val now = System.currentTimeMillis()
-        outgoingDir.listFiles()?.filter { now - it.lastModified() >= KeepPreparedMillis }?.forEach { it.delete() }
+        outgoingDir.walkBottomUp().filter { it != outgoingDir }.forEach { f ->
+            // delete() leaves a folder that still has files in it.
+            if (f.isDirectory || now - f.lastModified() >= KeepPreparedMillis) f.delete()
+        }
     }
 
     companion object {
