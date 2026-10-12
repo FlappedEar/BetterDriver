@@ -92,6 +92,15 @@ class CueClipsTest {
     }
 
     @Test
+    fun `a wav with a huge chunk size reads to the end or as damaged, never throws`() {
+        val huge = byteArrayOf(0xF0.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0x7F)
+        val data = Wav.write(Pcm(16_000, shortArrayOf(1, 2, 3))).also { huge.copyInto(it, 40) }
+        assertContentEquals(shortArrayOf(1, 2, 3), assertNotNull(Wav.read(data)).samples)
+        val fmt = Wav.write(Pcm(16_000, shortArrayOf(1, 2, 3))).also { huge.copyInto(it, 16) }
+        assertNull(Wav.read(fmt))
+    }
+
+    @Test
     fun `trimming keeps the word and a little padding`() {
         val rate = 1_000 // a sample per millisecond
         val s = ShortArray(200).also { for (i in 80 until 120) it[i] = 5_000 }

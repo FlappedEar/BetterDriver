@@ -210,6 +210,53 @@ class IdentityMigrationTest {
     }
 
     @Test
+    fun `a newer session with no lap does not hide an older one, and an older layout does not come back`() {
+        val trackDir = File(tmp, "tracks")
+        oldTrackFile(trackDir, rectangle.track())
+        val tracks = TrackStore(trackDir)
+        val sessions = SessionStore(File(tmp, "sessions"))
+        rectangle.record(sessions, tracks.get("rectangle"), laps = 3, startUtc = 1_000)
+        val migrations = IdentityMigrations()
+        assertEquals(listOf("rectangle"), migrations.runIfChanged(tracks, sessions))
+
+        // The chicane outing, then a short run that never completed a lap.
+        SimTrack.chicane("rectangle").record(sessions, tracks.get("rectangle"), laps = 3, startUtc = 2_000)
+        rectangle.record(sessions, tracks.get("rectangle"), laps = 0, startUtc = 3_000)
+        assertEquals(listOf("rectangle"), migrations.runIfChanged(tracks, sessions))
+        val r2 = assertNotNull(tracks.get("rectangle")?.identity)
+        assertEquals(2, r2.number)
+        assertEquals(2_000L, r2.madeFromUtcMillis)
+
+        // A session from before the chicane, imported now, leaves the newer layout's identity.
+        rectangle.record(sessions, tracks.get("rectangle"), laps = 3, startUtc = 500)
+        assertEquals(emptyList(), migrations.runIfChanged(tracks, sessions))
+        assertEquals(r2, tracks.get("rectangle")?.identity)
+    }
+
+    @Test
+    fun `an older session opened on the layout before is shown with its corners but does not replace them`() {
+        val r1 = assertNotNull(analyzeSession(telemetrySessionOf(rectangle.session(4), rectangle.track())).identity)
+        val chicane = SimTrack.chicane("rectangle")
+        var kept: TrackRevision? = r1
+        val store = { expected: TrackRevision?, made: TrackRevision ->
+            if (kept == expected) kept = made
+            kept
+        }
+        analyzeKeepingIdentity(telemetrySessionOf(chicane.session(4), chicane.track()), r1, 2_000L, store)
+        val r2 = assertNotNull(kept)
+        assertEquals(2, r2.number)
+        assertEquals(2_000L, r2.madeFromUtcMillis)
+
+        val old = telemetrySessionOf(rectangle.session(4), rectangle.track())
+        assertEquals(3, analyzeKeepingIdentity(old, r2, 1_000L, store).identity?.number)
+        assertEquals(r2, kept)
+        // The same layout driven after the chicane (it was taken out again) is kept.
+        analyzeKeepingIdentity(old, r2, 3_000L, store)
+        assertEquals(3, kept?.number)
+        assertEquals(3_000L, kept?.madeFromUtcMillis)
+    }
+
+    @Test
     fun `an analysis that lost the race to store its identity stores what it shows`() {
         val r1 = assertNotNull(analyzeSession(telemetrySessionOf(rectangle.session(4), rectangle.track())).identity)
         val chicane = SimTrack.chicane("rectangle")

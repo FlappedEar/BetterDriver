@@ -63,7 +63,9 @@ data class RevisionSegment(
  * the centreline for good ([fits] is false) makes the next one ([TrackRevision.revised]), and
  * [previousIds] maps each id of the revision before to the id of the same place in this one; an id
  * that is not there is a corner or straight that is gone. [nextCornerId] and [nextStraightId] number
- * new ids, so an id is never used for two places.
+ * new ids, so an id is never used for two places. [madeFromUtcMillis] is when the session whose lap
+ * made it started, so a session recorded before it (on the layout before) does not replace it; null
+ * for revisions kept before it was.
  */
 @Serializable
 data class TrackRevision(
@@ -75,6 +77,7 @@ data class TrackRevision(
     val previousIds: Map<String, String> = emptyMap(),
     val nextCornerId: Int = segments.count { it.kind == SegmentKind.Corner } + 1,
     val nextStraightId: Int = segments.count { it.kind == SegmentKind.Straight } + 1,
+    val madeFromUtcMillis: Long? = null,
 ) {
     init {
         require(number >= 1) { "revisions start at 1" }

@@ -157,6 +157,17 @@ class GoProImporterTest {
     }
 
     @Test
+    fun `a GoPro file that fits on local time is not read as UTC`() {
+        // A 2 h session; the clip starts 60 s before it on a UTC+2 camera clock written as local
+        // time. Read as UTC it would be inside the session, 2 h late.
+        val session = TestSession.data(7_300)
+        val file = noFixFile("GX010101.MP4", 30, createdAtS = 7_140)
+        val result = GoProImporter(zone = ZoneOffset.ofHours(2)).import(dir, session, listOf(file), hero8)
+        assertEquals(emptyList(), result.problems)
+        assertEquals(0L, VideoIndex(dir).clips().single().sessionOffsetUs)
+    }
+
+    @Test
     fun `a GPS-placed clip outside the session is not moved in`() {
         val clip = VideoClip(
             "GX.MP4", VideoSourceKind.GOPRO_FILES, "hero8", sessionOffsetUs = 50_000_000,

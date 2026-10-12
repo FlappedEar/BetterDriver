@@ -11,6 +11,9 @@ import com.flappedear.betterdriver.recorder.video.VideoEventText
 /** Android's PowerManager.THERMAL_STATUS_SEVERE. */
 private const val Severe = 3
 
+/** Android's PowerManager.THERMAL_STATUS_SHUTDOWN: fails whatever the camera did before. */
+private const val Shutdown = 6
+
 private val StatusNames = listOf("none", "light", "moderate", "severe", "critical", "emergency", "shutdown")
 
 /** Video stops of the thermal policy (`:app`'s PhoneCamera): a step down, or video off. */
@@ -40,7 +43,7 @@ internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): Quali
     val max = statuses.maxOf { it.second }
     val firstSevere = statuses.firstOrNull { it.second >= Severe }?.first
     val firstStep = steps.minOfOrNull { it.tMicros }
-    val ok = firstSevere == null || (firstStep != null && firstStep <= firstSevere)
+    val ok = max < Shutdown && (firstSevere == null || (firstStep != null && firstStep <= firstSevere))
     val metrics = listOf(
         info(
             "thermal.max", "Highest thermal status", max.toDouble(), "", Basis.MEASURED,
@@ -48,7 +51,8 @@ internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): Quali
         ),
         judged(
             "thermal.status", "Thermal mitigation", max.toDouble(), "", ok, Basis.MEASURED, ThermalCriterion,
-            "highest status ${name(max)}; a step-down or stop must come before the first severe reading",
+            "highest status ${name(max)}; a step-down or stop must come before the first severe reading, " +
+                "and a shutdown fails",
         ),
         stepCount,
     ) + notMeasuredYet

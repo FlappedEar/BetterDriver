@@ -264,6 +264,23 @@ class SessionQualityTest {
     }
 
     @Test
+    fun `the drift of a file longer than 30 min is judged per 30 min`() {
+        val file = "camera=phone file=phone_0001.mp4"
+        val events = mutableListOf(RecorderEvent(1_000_000, EventKinds.VIDEO_START, file))
+        for (s in 2..3602) {
+            val t = s * 1_000_000L
+            // A drift of 5e-5: 90 ms per 30 min, 177 ms from the first report to the last minute's.
+            val offset = 1_010_000L + (t - 2_000_000L) / 20_000
+            events += RecorderEvent(t, EventKinds.VIDEO_SYNC, "$file media_us=${t - offset}")
+        }
+        events += RecorderEvent(3_602_000_000, EventKinds.VIDEO_STOP, "$file reason=user")
+        val r = sessionQuality(session(stream(0, 1_000_000), events))
+        // 177 ms over the 3600 s from the first report to the last, as 30 min of it.
+        assertEquals(88.5, r.value("video.phone.drift"))
+        assertEquals(Verdict.PASS, r.verdict("video.phone.drift"))
+    }
+
+    @Test
     fun `each cue's delay, margin to the braking zone and route are measured`() {
         val sets = stream(0, 30_000_000, kmh = 180.0)
         val events = listOf(
@@ -324,6 +341,11 @@ class SessionQualityTest {
         assertEquals(1.0, r.value("thermal.step_downs"))
         assertEquals(Verdict.FAIL, sessionQuality(session(sets, statuses)).verdict("thermal.status"))
         assertEquals(Verdict.NOT_MEASURED, sessionQuality(session(sets)).verdict("thermal.status"))
+        // Reaching shutdown fails even after a step-down.
+        val shutdown = RecorderEvent(400_000_000, EventKinds.THERMAL_STATUS, "status=6 headroom=1.0")
+        val hot = sessionQuality(session(sets, statuses + stop + shutdown))
+        assertEquals(6.0, hot.value("thermal.max"))
+        assertEquals(Verdict.FAIL, hot.verdict("thermal.status"))
     }
 
     @Test

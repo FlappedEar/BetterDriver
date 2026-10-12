@@ -14,10 +14,18 @@ import java.io.IOException
  * [session] analysed with [track]'s corner identity (FBBD-172). When the analysis made one, the
  * track's first or the next revision after its shape changed, it is kept with the track, so the
  * next analysis, the coach and the picks name the corners alike. When another analysis kept one
- * first, the session is analysed again with that one, and what that makes is kept the same way.
+ * first, the session is analysed again with that one, and what that makes is kept the same way. A
+ * session that started ([startUtcMillis]) before the one the kept identity was made from does not
+ * replace it.
  */
-internal fun analyzeAtTrack(store: TrackStore, track: Track, session: TelemetrySession): SessionAnalysis =
-    analyzeKeepingIdentity(session, track.identity) { expected, made -> keepIdentity(store, track, expected, made) }
+internal fun analyzeAtTrack(
+    store: TrackStore,
+    track: Track,
+    session: TelemetrySession,
+    startUtcMillis: Long,
+): SessionAnalysis = analyzeKeepingIdentity(session, track.identity, startUtcMillis) { expected, made ->
+    keepIdentity(store, track, expected, made)
+}
 
 /** Stores [identity] for [track] unless another was stored since [expected]; the identity stored after. */
 private fun keepIdentity(store: TrackStore, track: Track, expected: TrackRevision?, identity: TrackRevision) = try {

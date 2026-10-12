@@ -29,7 +29,7 @@ import java.time.ZoneId
  * - for the first chapter of an Open GoPro recording, the session time at which the camera acknowledged Set Shutter on;
  * - the file's creation time on the camera's clock, read as local time in [zone]. A camera may
  *   write UTC there instead, as the MP4 format says to, so the time of a file the user picked is
- *   read as UTC when only that puts the file inside the session.
+ *   read as UTC when only that puts the file inside the session, within the uncertainty below.
  * GPS UTC on both sides, when present, beats all of these inside the aligner.
  *
  * A file is in the session when it overlaps it somewhere within its placement's uncertainty: a
@@ -149,12 +149,13 @@ class GoProImporter(
             ?: zone.rules.getOffset(Instant.ofEpochMilli(created)).totalSeconds * MillisPerSecond
         fun sessionUs(utc: Long) = (utc - session.info.startUtcMillis) * MicrosPerMilli
         val sessionEndUs = sessionEndUs(session)
-        fun inside(offsetUs: Long) = offsetUs + durationUs >= 0 && offsetUs <= sessionEndUs
+        val uncertainty = if (recording != null) SetClockUncertaintyUs else UnsetClockUncertaintyUs
+        // Overlaps the session somewhere within the uncertainty, as fitIntoSession places it.
+        fun inside(offsetUs: Long) = offsetUs + durationUs >= -uncertainty && offsetUs <= sessionEndUs + uncertainty
         val local = sessionUs(created - offsetMillis)
         val asUtc = sessionUs(created)
         // Only for files the user picked: an Open GoPro camera's clock was just set by the app.
         val utcWritten = source.kind != VideoSourceKind.GOPRO && !inside(local) && inside(asUtc)
-        val uncertainty = if (recording != null) SetClockUncertaintyUs else UnsetClockUncertaintyUs
         return AlignmentResult(if (utcWritten) asUtc else local, Alignment(AlignmentMethod.CAMERA_CLOCK, uncertainty))
     }
 

@@ -15,10 +15,13 @@ const val MaxIdentityStoreTries = 3
  * identity stored after, or null when nothing could be written. When another analysis stored a
  * different one first, the session is analysed again with that one, and what that analysis makes is
  * stored the same way, up to [MaxIdentityStoreTries] times, so the corners shown are the corners kept.
+ * [startUtcMillis] is when the session started: a session older than the one the stored identity was
+ * made from (a layout changed since) is shown with the revision it makes, but the newer one is kept.
  */
 fun analyzeKeepingIdentity(
     session: TelemetrySession,
     stored: TrackRevision?,
+    startUtcMillis: Long? = null,
     store: (expected: TrackRevision?, made: TrackRevision) -> TrackRevision?,
 ): SessionAnalysis {
     var expected = stored
@@ -26,8 +29,8 @@ fun analyzeKeepingIdentity(
     var tries = 0
     var kept = false
     while (!kept && tries++ < MaxIdentityStoreTries) {
-        val made = analysis.identity?.takeIf { it != expected }
-        val now = made?.let { store(expected, it) }
+        val made = analysis.identity?.madeFrom(expected, startUtcMillis)?.takeIf { it != expected }
+        val now = made?.takeUnless { expected.isNewerThan(startUtcMillis) }?.let { store(expected, it) }
         kept = now == null || now == made
         if (!kept) {
             expected = now
@@ -35,4 +38,14 @@ fun analyzeKeepingIdentity(
         }
     }
     return analysis
+}
+
+/** [this] identity, made from a session that started at [startUtcMillis], when it is not [input]. */
+internal fun TrackRevision.madeFrom(input: TrackRevision?, startUtcMillis: Long?): TrackRevision =
+    if (this == input || startUtcMillis == null) this else copy(madeFromUtcMillis = startUtcMillis)
+
+/** Whether [this] identity was made from a session that started after [startUtcMillis]. */
+internal fun TrackRevision?.isNewerThan(startUtcMillis: Long?): Boolean {
+    val made = this?.madeFromUtcMillis
+    return made != null && startUtcMillis != null && startUtcMillis < made
 }

@@ -198,6 +198,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         private var headingCalculated = false
         private var receiver = ""
         private var accelerationProvenance: Provenance? = null
+        private val channelProvenance = HashMap<Int, Provenance>()
 
         /**
          * How many intervals between written points took each number of milliseconds, for the rate:
@@ -226,6 +227,10 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
 
         override fun accelerationSource(provenance: Provenance) {
             accelerationProvenance = provenance
+        }
+
+        override fun channelSource(channelId: Int, provenance: Provenance) {
+            channelProvenance[channelId] = provenance
         }
 
         override fun point(p: ImportPoint) {
@@ -378,8 +383,9 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
 
         /**
          * [info] with each channel's provenance and the file's maker and rate (FBBD-174): the GNSS
-         * channels as the format's receiver measured them, except speed or heading the file lacked
-         * somewhere, which are calculated; acceleration and extra columns keep their defaults.
+         * channels as the file says they were made or else as the format's receiver measured them,
+         * except speed or heading the file lacked somewhere, which are calculated; acceleration and
+         * extra columns as the file says, or their defaults.
          */
         private fun withProvenance(info: SessionInfo, format: ForeignFormat): SessionInfo {
             val measured = if (format == ForeignFormat.VBO) {
@@ -393,7 +399,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
                     def.id !in GnssChannels.IDS -> def.provenance
                     def.id == GnssChannels.SPEED_KMH.id && speedCalculated -> Provenance.CALCULATED
                     def.id == GnssChannels.HEADING.id && headingCalculated -> Provenance.CALCULATED
-                    else -> measured
+                    else -> channelProvenance[def.id] ?: measured
                 }
                 def.copy(provenance = provenance)
             }
