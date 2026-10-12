@@ -140,6 +140,21 @@ class VboxSportDecoderTest {
     }
 
     @Test
+    fun `messages read together are stamped apart by their GNSS times`() {
+        val sink = Sink()
+        val decoder = VboxSportDecoder(sink) { phoneNow }
+        sink.now = 1_000_000
+        // Three 20 Hz messages in one read; ticks are 10 ms.
+        val read = (0..2).map { bluetoothDefaultMessage(data = bluetoothDefaultData(ticks = 3_667_220L + 5 * it)) }
+        decoder.feed(read.reduce(ByteArray::plus))
+        assertEquals(listOf(900_000L, 950_000L, 1_000_000L), sink.sets.map { it.tMicros })
+        // Two with the same time are still one after the other.
+        sink.now = 2_000_000
+        decoder.feed(bluetoothDefaultMessage() + bluetoothDefaultMessage())
+        assertEquals(listOf(2_000_000L, 2_000_001L), sink.sets.drop(3).map { it.tMicros })
+    }
+
+    @Test
     fun `time of day takes the date nearest the phone clock`() {
         val tod = 23 * 3_600_000L + 59 * 60_000L
         assertEquals(utc("2026-10-10T23:59:00Z"), utcFromTimeOfDay(tod, utc("2026-10-11T00:00:30Z")))
