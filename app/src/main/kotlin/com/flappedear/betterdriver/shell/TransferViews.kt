@@ -9,6 +9,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.TransferQuestion
 import com.flappedear.betterdriver.sharing.TransferState
@@ -53,6 +54,17 @@ internal fun ImportCard(state: TransferState?) {
         SectionLabel("Import")
         TransferLine(state)
     }
+}
+
+/** On the card of a session imported from another app's file (FBBD-164): where it came from. */
+@Composable
+internal fun ImportedLine(info: SessionInfo) {
+    importedFrom(info)?.let { DimText(it) }
+}
+
+/** "From lap-12.vbo (VBO)" for a session imported from another app's file (FBBD-164), else null. */
+internal fun importedFrom(info: SessionInfo): String? = info.imported?.let { o ->
+    if (o.fileName.isBlank()) "From a ${o.format} file" else "From ${o.fileName} (${o.format})"
 }
 
 /** Keep or replace, for a session or track that is already on this device. */

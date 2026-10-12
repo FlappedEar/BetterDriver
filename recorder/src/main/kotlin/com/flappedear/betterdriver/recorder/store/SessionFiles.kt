@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.recorder.store
 
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.Gate
+import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
 import java.io.File
 import java.io.FileOutputStream
@@ -125,6 +126,10 @@ object SessionFiles {
             setProperty("startFinish.lat2", g.lat2.toString())
             setProperty("startFinish.lon2", g.lon2.toString())
         }
+        info.imported?.let { o ->
+            setProperty("imported.format", o.format)
+            setProperty("imported.file", o.fileName)
+        }
         setProperty("channels", info.channels.size.toString())
         info.channels.forEachIndexed { i, c ->
             setProperty("channel.$i.id", c.id.toString())
@@ -162,6 +167,7 @@ object SessionFiles {
             devices = p.getProperty("devices", "").split("\n").filter { it.isNotEmpty() },
             startFinish = gate,
             channels = channels,
+            imported = p.getProperty("imported.format")?.let { ImportOrigin(it, p.getProperty("imported.file", "")) },
         )
     }
 }

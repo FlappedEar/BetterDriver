@@ -59,7 +59,16 @@ data class Gate(
     val lon2: Double,
 )
 
-/** What is known about a session when it starts. Written to disk before the first sample (FBBD-70). */
+/**
+ * Where an imported session came from (FBBD-164): [format] as shown on its card ("VBO", "GPX",
+ * "RaceChrono CSV") and the [fileName] it was read from.
+ */
+data class ImportOrigin(val format: String, val fileName: String)
+
+/**
+ * What is known about a session when it starts. Written to disk before the first sample (FBBD-70).
+ * [imported] is set for a session made from another app's file rather than recorded here (FBBD-164).
+ */
 data class SessionInfo(
     val startUtcMillis: Long,
     val car: String = "",
@@ -67,6 +76,7 @@ data class SessionInfo(
     val devices: List<String> = emptyList(),
     val startFinish: Gate? = null,
     val channels: List<ChannelDef> = emptyList(),
+    val imported: ImportOrigin? = null,
 )
 
 /**
