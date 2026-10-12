@@ -37,6 +37,7 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.DeleteState
+import com.flappedear.betterdriver.recording.ExportFormat
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.sessionDetail
 import com.flappedear.betterdriver.recording.sessionTitle
@@ -46,8 +47,9 @@ import java.util.Locale
 
 /**
  * Saved sessions, newest first, each with VBO export (FBBD-66, FBBD-71), plus its video when it
- * has any (FBBD-25). A session recovered after a crash is marked and exports like any other. Built
- * from the approved shell parts; the layout is on the UI review page for approval.
+ * has any (FBBD-25), and CSV and GPX export (FBBD-150), all from one Export menu. A session
+ * recovered after a crash is marked and exports like any other. Built from the approved shell
+ * parts; the layout is on the UI review page for approval.
  *
  * A finished session also shows its GoPro video (FBBD-22): Download for files still on an Open GoPro
  * camera (UI-31) and Add for a GoPro started by hand (UI-32), per camera. Both are off while a session records.
@@ -65,7 +67,7 @@ import java.util.Locale
 fun SessionsScreen(
     sessions: List<SessionSummary>,
     exports: Map<String, ExportState>,
-    onExport: (SessionSummary) -> Unit,
+    onExport: (SessionSummary, ExportFormat) -> Unit,
     modifier: Modifier = Modifier,
     withVideo: Set<String> = emptySet(),
     goPro: GoProCardState = GoProCardState(),
@@ -117,7 +119,7 @@ private fun SessionCard(
     s: SessionSummary,
     export: ExportState?,
     video: Boolean,
-    onExport: (SessionSummary) -> Unit,
+    onExport: (SessionSummary, ExportFormat) -> Unit,
     goPro: GoProCardState,
     deleting: SessionDeleting,
     transfer: SessionTransferState,
@@ -154,7 +156,7 @@ private fun SessionCard(
             canDelete = free,
             onDelete = { asking = true },
             onShare = { transfer.onSend(s) },
-            onExport = { onExport(s) },
+            onExport = { format -> onExport(s, format) },
         )
     }
     if (asking) {
@@ -199,7 +201,7 @@ private fun CardButtons(
     canDelete: Boolean,
     onDelete: () -> Unit,
     onShare: () -> Unit,
-    onExport: () -> Unit,
+    onExport: (ExportFormat) -> Unit,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onDelete, enabled = canDelete) {
@@ -207,9 +209,7 @@ private fun CardButtons(
         }
         ShareButton(enabled = idle, onShare = onShare)
         Spacer(Modifier.weight(1f))
-        FilledTonalButton(onClick = onExport, enabled = idle) {
-            Text(if (video) "Export VBO + video" else "Export VBO")
-        }
+        ExportMenu(video = video, enabled = idle, onExport = onExport)
     }
 }
 
@@ -298,7 +298,7 @@ private fun SessionsScreenPreview() {
                     session("a", 1_760_170_000_000, SessionState.FINISHED, 18),
                 ),
                 exports = mapOf("a" to ExportState.Done),
-                onExport = {},
+                onExport = { _, _ -> },
                 transfer = SessionTransferState(
                     outgoing = mapOf("b" to TransferState("Preparing…", 0.42f, running = true)),
                     incoming = TransferState("Imported the session of 11 Oct 10:42. Added track Tor Poznań."),
