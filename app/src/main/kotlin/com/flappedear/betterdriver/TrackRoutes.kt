@@ -69,7 +69,13 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
     val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions) }
     var leaving by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
+    var removing by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    if (removing) {
+        // Nothing to tap while the delete runs, so a Save cannot bring the track back.
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
     val back: () -> Unit = {
         when {
             state.selected != null -> state.cancel()
@@ -95,19 +101,29 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
     if (deleting) {
         DeleteTrackDialog(
             name = state.track.displayName,
-            onDelete = { deleteAndLeave(nav, tracks, id, context) },
+            onDelete = {
+                removing = true
+                deleteAndLeave(nav, tracks, id, context) { removing = false }
+            },
             onDismiss = { deleting = false },
         )
     }
     if (leaving) DiscardDialog(onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
 }
 
-/** Deletes the track and leaves the editor, or says the delete failed. */
-private fun deleteAndLeave(nav: NavHostController, tracks: Tracks, id: String, context: Context) {
+/** Deletes the track and leaves the editor, or says the delete failed and calls [onFailed]. */
+private fun deleteAndLeave(
+    nav: NavHostController,
+    tracks: Tracks,
+    id: String,
+    context: Context,
+    onFailed: () -> Unit,
+) {
     val editor = nav.currentBackStackEntry
     tracks.delete(id) { gone ->
         if (!gone) {
             Toast.makeText(context, "Delete failed", Toast.LENGTH_LONG).show()
+            onFailed()
         } else if (nav.currentBackStackEntry == editor) {
             // Only while the editor still shows, so a Back pressed meanwhile is not doubled.
             nav.popBackStack()
