@@ -140,7 +140,8 @@ class FaultTest {
 
     /**
      * Kills the recorder process mid-session (FBBD-34, FBBD-69): Android restarts it and a new session
-     * carries on; the killed one is recovered with at most 2 s lost, and exports a valid VBO.
+     * carries on; the killed one is recovered and exports a valid VBO. At most 2 s lost: the whole gap,
+     * from the last fix saved before the kill to the restarted recorder's first fix.
      */
     @Test
     fun recorderKill() {
@@ -158,11 +159,17 @@ class FaultTest {
         val lastFixAt = old.info.startUtcMillis + fixes.last().tMicros / MicrosPerMilli
         val lostMs = killedAt - lastFixAt
         val rows = checkVbo(old, fixes.size)
-        val nextData = d.store.read(next)
-        val firstAgain = nextData.info.startUtcMillis + demoFixes(nextData).first().tMicros / MicrosPerMilli
-        Log.i(Tag, "recorder killed: $lostMs ms lost before the kill, VBO $rows rows, data again after " +
-            "${firstAgain - killedAt} ms in $next")
+        val firstAgain = firstFixAt(next)
+        // What the kill cost: from the last fix saved before it to the first fix after the restart.
+        val gapMs = firstAgain - lastFixAt
+        Log.i(Tag, "recorder killed: $gapMs ms without data ($lostMs ms lost before the kill, data again " +
+            "${firstAgain - killedAt} ms after it), VBO $rows rows, carried on in $next")
         assertTrue("$lostMs ms of data lost before the kill", lostMs <= MaxLostMs)
+        assertTrue(
+            "$gapMs ms without data across the recorder kill ($lostMs ms before it, " +
+                "${firstAgain - killedAt} ms after it to the restarted recorder's first fix)",
+            gapMs <= MaxLostMs,
+        )
         d.saveProps(marker, KeySession to next)
         d.checkNoAppErrors()
     }
@@ -323,6 +330,17 @@ class FaultTest {
             next != null
         }
         return checkNotNull(next)
+    }
+
+    /** The wall-clock ms of the first fix session [id] recorded, waiting for it. */
+    private fun firstFixAt(id: String): Long {
+        var at: Long? = null
+        d.waitFor(CarryOnTimeoutMs, "a fix in $id") {
+            val data = d.store.read(id)
+            at = demoFixes(data).firstOrNull()?.let { data.info.startUtcMillis + it.tMicros / MicrosPerMilli }
+            at != null
+        }
+        return checkNotNull(at)
     }
 
     /** The killed session once recovered: the UI recovers it when the recorder dies; else it is done here. */

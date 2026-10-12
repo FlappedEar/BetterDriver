@@ -146,6 +146,8 @@ sleep 3
 
 phase gnssLossAndReturn --no-restart
 phase recorderKill --no-restart
+gap=$(adb logcat -d -s FaultTest:I | grep "recorder killed:" | tail -1 | sed 's/.*recorder killed: //' | tr -d '\r')
+echo "::notice title=Recorder kill (FBBD-34, FBBD-69)::${gap:-not logged}"
 phase stopTenTimes --no-restart
 restore_screen
 echo "Fault injection test passed."
