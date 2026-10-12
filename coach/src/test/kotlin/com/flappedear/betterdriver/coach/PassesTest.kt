@@ -75,6 +75,23 @@ class PassesTest {
     }
 
     @Test
+    fun `live, a window that ends short of the line closes at its own end`() {
+        // The window ends at 980 m; the line is at 1000 m, crossed 2 s after the last position at 975 m.
+        val meter = PassMeter(corners[1], 900.0..980.0, 1, lineAt = 1000.0)
+        var t = 0L
+        var along = 885.0
+        while (along <= 975.0) {
+            assertNull(meter.add(along, t, 100.0))
+            along += 10.0
+            t += 1_000_000
+        }
+        val lastT = t - 1_000_000
+        val pass = assertNotNull(meter.finish(lineMicros = lastT + 2_500_000, lineKmh = 100.0))
+        // Entered at 900 m (1.5 s); left at 980 m, 5 m of the 25 m to the line, so 0.5 s after 975 m (9.5 s).
+        assertEquals(8_000_000L, pass.timeMicros)
+    }
+
+    @Test
     fun `live, a window that starts at the line opens at the crossing time`() {
         val window = map.windows[0]
         val meter = PassMeter(corners[0], window, 2)
