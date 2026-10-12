@@ -94,6 +94,36 @@ class HardwareChecksTest {
     }
 
     @Test
+    fun `a banner that never shows for an outage, or never clears after it, fails`() {
+        val frames = RecorderEvent(1_000_000, EventKinds.UI_FRAMES, "frames=100 janky=0 frozen=0 worst_ms=10 hist=100")
+        // 5 s without fixes and the screen, drawing all along, never showed the banner.
+        val silent = report(stream(0, 60_000_000, gap = 20_000_000L..25_000_000L), listOf(frames))
+        assertEquals(Verdict.FAIL, silent.metric("ui.banner_show").verdict)
+        assertTrue("1 never reacted to" in silent.metric("ui.banner_show").how)
+        // Shown in time, never cleared once the fixes came back.
+        val stuck = report(
+            stream(0, 60_000_000, gap = 20_000_000L..25_000_000L),
+            listOf(frames, RecorderEvent(21_000_000, EventKinds.GNSS_BANNER, "state=shown")),
+        )
+        assertEquals(Verdict.PASS, stuck.metric("ui.banner_show").verdict)
+        assertEquals(Verdict.FAIL, stuck.metric("ui.banner_clear").verdict)
+        // An outage shorter than the banner's limit need not show it.
+        val short = report(stream(0, 60_000_000, gap = 20_000_000L..21_200_000L), listOf(frames))
+        assertEquals(Verdict.NOT_MEASURED, short.metric("ui.banner_show").verdict)
+    }
+
+    @Test
+    fun `a battery timer that stalls after its first report fails, here and in the soak`() {
+        val sets = stream(0, 31 * 60_000_000L)
+        val health = "battery_c=35 battery_pct=80 plugged=none thermal=0 headroom=n/a"
+        val once = RecorderEvent(0, EventKinds.DEVICE, health)
+        val r = report(sets, listOf(once))
+        assertEquals(1_860.0, r.metric("thermal.battery").value)
+        assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
+        assertEquals(Verdict.FAIL, r.metric("soak.battery").verdict)
+    }
+
+    @Test
     fun `a GoPro that started late, and a clip placed by its clock, fail`() {
         val sets = stream(0, 60_000_000)
         val events = listOf(

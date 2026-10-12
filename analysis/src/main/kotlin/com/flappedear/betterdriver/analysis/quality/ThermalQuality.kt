@@ -18,7 +18,7 @@ private val ThermalStops = setOf("thermal_step", "thermal")
 
 private const val ThermalCriterion = "never SEVERE before the app's mitigation engaged; no thermal shutdown (FBBD-46)"
 
-internal fun thermalSection(events: List<RecorderEvent>): QualitySection {
+internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): QualitySection {
     val fromCamera = events.ofKind(EventKinds.THERMAL_STATUS).mapNotNull { e ->
         fields(e.text)["status"]?.toIntOrNull()?.let { e.tMicros to it }
     }
@@ -31,7 +31,7 @@ internal fun thermalSection(events: List<RecorderEvent>): QualitySection {
         "thermal.step_downs", "Camera thermal step-downs", steps.size.toDouble(), "", Basis.MEASURED,
         "video files ended for a thermal step-down or stop",
     )
-    val notMeasuredYet = battery(events)
+    val notMeasuredYet = battery(events, endMicros)
     if (statuses.isEmpty()) {
         val why = "thermal status is logged while the phone camera records, from this version on"
         val status = notMeasured("thermal.status", "Thermal mitigation", ThermalCriterion, why)
@@ -64,8 +64,12 @@ private const val BatteryCriterion = "battery temperature logged at least every 
 private const val BatterySlackMicros = 5_000_000L
 private const val BatteryEveryMicros = 30_000_000L
 
-/** The battery temperature from the recorder's health reports: logged often enough, and its peak. */
-private fun battery(events: List<RecorderEvent>): List<QualityMetric> {
+/**
+ * The battery temperature from the recorder's health reports: logged often enough, and its peak. The
+ * gaps counted include the session's start to the first report and the last report to its end
+ * ([endMicros]), so a timer that stalls after its first report fails.
+ */
+private fun battery(events: List<RecorderEvent>, endMicros: Long): List<QualityMetric> {
     val temps = events.ofKind(EventKinds.DEVICE).mapNotNull { e ->
         fields(e.text)["battery_c"]?.toDoubleOrNull()?.let { e.tMicros to it }
     }
@@ -73,13 +77,14 @@ private fun battery(events: List<RecorderEvent>): List<QualityMetric> {
         val why = "the recorder logs the battery temperature every 30 s from this version on"
         return listOf(notMeasured("thermal.battery", "Battery temperature logged", BatteryCriterion, why))
     }
-    val longest = temps.map { it.first }.zipWithNext { a, b -> b - a }.maxOrNull() ?: 0L
+    val times = listOf(0L) + temps.map { it.first }.sorted() + maxOf(endMicros, temps.maxOf { it.first })
+    val longest = times.zipWithNext { a, b -> b - a }.max()
     val peak = temps.maxBy { it.second }
     return listOf(
         judged(
             "thermal.battery", "Battery temperature logged", seconds(longest), "s",
             longest <= BatteryEveryMicros + BatterySlackMicros, Basis.MEASURED, BatteryCriterion,
-            "longest time between the recorder's ${temps.size} health reports",
+            "longest time between the recorder's ${temps.size} health reports, the session's start and its end",
         ),
         info(
             "thermal.battery_peak", "Battery temperature peak", peak.second, "C", Basis.MEASURED,

@@ -63,7 +63,7 @@ fun driveChecks(s: LoggedSession): QualityReport {
         videoSection(events, clips, first, last),
         goProSection(events, clips, end),
         coachSection(events, samples),
-        thermalSection(events),
+        thermalSection(events, end),
         screenSection(events, logOutages(seconds, end), end),
         exportSection(events, end),
     )

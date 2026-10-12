@@ -148,12 +148,17 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
     val cleared = banners.filter { it.second == "cleared" }.map { it.first }
     fun during(o: Outage, t: Long) = o.lastFix < t && (o.nextFix ?: endMicros) + BannerSlackMicros >= t
     val wrong = shown.count { b -> outages.none { o -> during(o, b) } }
+    // Null for an outage the banner should have reacted to and never did: one longer than the limit
+    // that it never showed for, or one it showed for and never cleared after the fixes came back.
     val showDelays = outages.mapNotNull { o ->
-        shown.firstOrNull { during(o, it) }?.let { it - o.lastFix }
+        val delay = shown.firstOrNull { during(o, it) }?.let { it - o.lastFix }
+        val long = (o.nextFix ?: endMicros) - o.lastFix > MaxBannerMicros
+        if (delay != null || long) Delay(delay) else null
     }
     val clearDelays = outages.mapNotNull { o ->
-        val back = o.nextFix ?: return@mapNotNull null
-        cleared.firstOrNull { it >= back - BannerSlackMicros }?.let { maxOf(0L, it - back) }
+        val back = o.nextFix
+        if (back == null || shown.none { during(o, it) }) return@mapNotNull null
+        Delay(cleared.firstOrNull { it >= back - BannerSlackMicros }?.let { maxOf(0L, it - back) })
     }
     val how = "banner changes on the track screen against outages of the session's fixes over 1 s"
     return buildList {
@@ -169,13 +174,24 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
     }
 }
 
-/** The share of [delays] within the limit, in whole percent. */
-private fun inTime(delays: List<Long>) = (delays.count { it <= MaxBannerMicros } * Percent / delays.size).roundToLong()
+/** How long the banner took for one outage; [micros] null when it never reacted. */
+private class Delay(val micros: Long?)
 
-private fun delayMetric(id: String, label: String, delays: List<Long>, criterion: String, how: String): QualityMetric {
-    val worst = delays.maxOrNull() ?: return notMeasured(id, label, criterion, "no GNSS outage the screen showed")
+/** The share of [delays] within the limit, in whole percent; one never reacted to is late. */
+private fun inTime(delays: List<Delay>) =
+    (delays.count { it.micros != null && it.micros <= MaxBannerMicros } * Percent / delays.size).roundToLong()
+
+/**
+ * The worst of [delays]; FAIL when any is over the limit or the banner never reacted. The value is the
+ * worst delay measured, or the limit when it never reacted at all.
+ */
+private fun delayMetric(id: String, label: String, delays: List<Delay>, criterion: String, how: String): QualityMetric {
+    if (delays.isEmpty()) return notMeasured(id, label, criterion, "no GNSS outage long enough for the banner")
+    val missed = delays.count { it.micros == null }
+    val worst = delays.mapNotNull { it.micros }.maxOrNull() ?: MaxBannerMicros
+    val ok = missed == 0 && worst <= MaxBannerMicros
     return judged(
-        id, label, seconds(worst), "s", worst <= MaxBannerMicros, Basis.MEASURED, criterion,
-        "$how; worst of ${delays.size}, ${inTime(delays)} % in time",
+        id, label, seconds(worst), "s", ok, Basis.MEASURED, criterion,
+        "$how; worst of ${delays.size}, ${inTime(delays)} % in time, $missed never reacted to",
     )
 }
