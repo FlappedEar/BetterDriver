@@ -141,9 +141,9 @@ private fun videoStamp(dir: File): Long = File(dir, VideoFiles.DIR).listFiles().
 private const val StampPrime = 31L
 
 /**
- * The session's video for review: the phone camera when it recorded, else the first camera with
- * files, as the VBO export picks it. Clips whose file is missing, or cut off by a crash (no index, so
- * it would not play), are left out.
+ * The session's video for review and for the video export (FBBD-152): the phone camera when it
+ * recorded, else the first camera with files, as the VBO export picks it. Clips whose file is
+ * missing, or cut off by a crash (no index, so it would not play), are left out.
  */
 internal fun sessionVideo(dir: File, timeline: VideoTimeline): SessionVideo? {
     val videoDir = File(dir, VideoFiles.DIR)

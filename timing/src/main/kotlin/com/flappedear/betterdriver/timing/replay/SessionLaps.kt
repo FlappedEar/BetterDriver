@@ -2,10 +2,11 @@ package com.flappedear.betterdriver.timing.replay
 
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.export.ExportLap
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
-import com.flappedear.betterdriver.timing.live.DefaultMinLapSeconds
+import com.flappedear.betterdriver.timing.live.defaultMinLapSeconds
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapBook
@@ -75,6 +76,18 @@ data class LapTrace(val sessionId: String, val lap: Lap, val points: List<TraceP
 class SessionLaps(val sessionId: String, val track: Track, val laps: List<LapTrace>, val book: LapBook) {
     /** The fastest timed lap, if any. */
     val best: LapTrace? get() = book.best?.let { b -> laps.firstOrNull { it.lap.number == b.number } }
+
+    /**
+     * The laps for CSV and GPX export (FBBD-150), plus the lap still being driven when the session
+     * stopped. A point-to-point track (FBBD-155) has no such lap: after the last run's finish comes
+     * the drive back, which is no run.
+     */
+    fun exportLaps(): List<ExportLap> {
+        val done = laps.map { ExportLap(it.lap.number, it.lap.startMicros, it.lap.endMicros) }
+        val last = done.lastOrNull()
+        if (last == null || track.pointToPoint) return done
+        return done + ExportLap(last.number + 1, last.endMicros, Long.MAX_VALUE)
+    }
 }
 
 /** The frame of every [TracePoint] of [track]: centred on the track, not on its lines, so edits keep it. */
@@ -83,13 +96,15 @@ fun trackFrame(track: Track) = LocalFrame(track.center)
 /**
  * Laps of a saved session (FBBD-91): its GNSS fixes replayed through the [LapTimer] for [track],
  * as the track screen timed them live. Works for laps from any session of the track, so the tablet
- * review and the analysis (Phase 3) read laps the same way. [track] needs a start/finish line.
+ * review and the analysis (Phase 3) read laps the same way. [track] needs a start/finish line. On
+ * a point-to-point track (FBBD-155) the laps are the runs from start to finish, each with its own
+ * path; aborted runs and the drives back are left out.
  */
 fun replayLaps(
     sessionId: String,
     sets: List<SampleSet>,
     track: Track,
-    minLapSeconds: Double = DefaultMinLapSeconds,
+    minLapSeconds: Double = defaultMinLapSeconds(track),
 ): SessionLaps {
     val timer = LapTimer(track, minLapSeconds)
     val frame = trackFrame(track)

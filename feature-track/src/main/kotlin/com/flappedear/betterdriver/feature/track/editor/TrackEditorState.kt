@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.timing.edit.withLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
 
 /** How a tap places the selected line (UI-24). The editor opens with [FromLap] when there is a lap. */
@@ -117,6 +118,14 @@ class TrackEditorState(
         if (n.isNotEmpty() && n.length <= Track.MaxNameChars) track = track.copy(name = n)
     }
 
+    /**
+     * Makes the track a circuit or point to point (FBBD-155). Lines are kept either way, so switching
+     * back loses nothing; a point-to-point track is timed once its finish line is placed too.
+     */
+    fun setKind(kind: TrackKind) {
+        if (selected == null) track = track.copy(kind = kind)
+    }
+
     /** Removes the selected line and goes back to the list. */
     fun remove() {
         val ref = selected ?: return
@@ -154,18 +163,20 @@ class TrackEditorState(
     }
 }
 
-/** The editor's name for a line (UI-23). */
-fun LineRef.label(): String = when (this) {
-    LineRef.StartFinish -> "Start / finish"
+/** The editor's name for a line (UI-23); a point-to-point track's start/finish line is its start. */
+fun LineRef.label(pointToPoint: Boolean = false): String = when (this) {
+    LineRef.StartFinish -> if (pointToPoint) "Start" else "Start / finish"
     is LineRef.Sector -> "Sector line ${index + 1}"
     LineRef.PitEntry -> "Pit entry"
     LineRef.PitExit -> "Pit exit"
+    LineRef.Finish -> "Finish"
 }
 
 /** The short name drawn next to a line on the map. */
-fun LineRef.mapLabel(): String = when (this) {
-    LineRef.StartFinish -> "S/F"
+fun LineRef.mapLabel(pointToPoint: Boolean = false): String = when (this) {
+    LineRef.StartFinish -> if (pointToPoint) "Start" else "S/F"
     is LineRef.Sector -> "S${index + 1}"
     LineRef.PitEntry -> "Pit in"
     LineRef.PitExit -> "Pit out"
+    LineRef.Finish -> "Finish"
 }

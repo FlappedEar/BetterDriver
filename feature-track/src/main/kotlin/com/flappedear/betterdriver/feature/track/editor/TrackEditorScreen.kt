@@ -67,7 +67,8 @@ private const val FitMarginPx = 48f
  * [sessions] are the recorded sessions at this track, newest first. [onSave] stores the track;
  * [onBack] leaves (the caller asks about unsaved changes). [onShare], when given, sends the saved
  * track to the other device (FBBD-80, UI-56 option B); it is off while there are unsaved changes,
- * so what is sent is what is shown.
+ * so what is sent is what is shown. [onDelete], when given, asks to delete the track (FBBD-157);
+ * the caller confirms first.
  */
 @Composable
 fun TrackEditorScreen(
@@ -79,6 +80,7 @@ fun TrackEditorScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     onShare: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
 ) {
     var books by remember { mutableStateOf<List<LapBook>>(emptyList()) }
     LaunchedEffect(state.track, sessions) {
@@ -97,19 +99,19 @@ fun TrackEditorScreen(
             Row(Modifier.fillMaxSize()) {
                 map(Modifier.weight(1f).fillMaxHeight())
                 Column(Modifier.width(PanelWidth).fillMaxHeight().padding(horizontal = 16.dp)) {
-                    EditorBar(state, backIcon, back, onSave, onShare)
+                    EditorBar(state, backIcon, back, onSave, onShare, onDelete)
                     Column(
                         Modifier.weight(1f).verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         if (state.selected != null) PlacingControls(state) else LineList(state)
-                        SessionLaps(sessions.firstOrNull()?.title, books.firstOrNull(), state.track.sectorCount)
+                        SessionLaps(sessions.firstOrNull()?.title, books.firstOrNull(), state.track)
                     }
                 }
             }
         } else {
             Column(Modifier.fillMaxSize()) {
-                EditorBar(state, backIcon, back, onSave, onShare, Modifier.padding(horizontal = 4.dp))
+                EditorBar(state, backIcon, back, onSave, onShare, onDelete, Modifier.padding(horizontal = 4.dp))
                 map(Modifier.weight(1f).fillMaxWidth())
                 Column(
                     Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState())
@@ -119,7 +121,7 @@ fun TrackEditorScreen(
                         PlacingControls(state)
                     } else {
                         LineList(state)
-                        RetimeNote(sessions.size, books.sumOf { b -> b.laps.size })
+                        RetimeNote(sessions.size, books.sumOf { b -> b.laps.size }, state.track.pointToPoint)
                     }
                 }
             }
@@ -155,6 +157,7 @@ private fun EditorBar(
     onBack: () -> Unit,
     onSave: () -> Unit,
     onShare: (() -> Unit)?,
+    onDelete: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     Row(modifier.fillMaxWidth().height(56.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -162,7 +165,7 @@ private fun EditorBar(
             Icon(backIcon, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            state.selected?.label() ?: state.track.displayName,
+            state.selected?.label(state.track.pointToPoint) ?: state.track.displayName,
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -171,6 +174,9 @@ private fun EditorBar(
         if (state.selected != null) {
             Button(onClick = state::done, enabled = state.selectedLine != null) { Text("Done") }
         } else {
+            if (onDelete != null) {
+                TextButton(onClick = onDelete) { Text("Delete", color = TrackTheme.colors.loss) }
+            }
             if (onShare != null) TextButton(onClick = onShare, enabled = !state.changed) { Text("Share") }
             Button(onClick = onSave, enabled = state.changed) { Text("Save") }
         }
@@ -227,6 +233,7 @@ private fun ColumnScope.PlacingControls(state: TrackEditorState) {
 @Composable
 private fun LineList(state: TrackEditorState) {
     TrackHeader(state)
+    val p2p = state.track.pointToPoint
     val refs = state.track.lineRefs()
     refs.forEachIndexed { i, ref ->
         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -236,7 +243,7 @@ private fun LineList(state: TrackEditorState) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             LineSwatch(ref)
-            Text(ref.label(), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(ref.label(p2p), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             if (state.track.line(ref) != null) {
                 Text("✓", color = TrackTheme.colors.gain, fontWeight = FontWeight.Bold)
             } else {

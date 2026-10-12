@@ -134,4 +134,24 @@ class RecordedSessionTest {
         val median = speeds.sorted()[speeds.size / 2]
         assertTrue(speeds.count { abs(it - median) > 1e-3 } < speeds.size / 50, "speeds $speeds")
     }
+
+    /** A few GNSS samples with a horizontal accuracy channel named [name]. */
+    private fun withAccuracy(name: String, id: Int): SessionData {
+        val accuracy = ChannelDef(id, name, "m", "receiver", 2)
+        val defs = GnssChannels.ALL + accuracy
+        val sets = (0 until 10).map { i ->
+            SampleSet(i * 40_000L, listOf(ChannelValue(GnssChannels.SPEED_KMH.id, 50.0), ChannelValue(id, 0.8)))
+        }
+        return SessionData(
+            "s", SessionInfo(startUtcMillis = 0, channels = defs), SessionState.FINISHED,
+            defs.associateBy { it.id }, sets, emptyList(), null, 0, 0,
+        )
+    }
+
+    @Test
+    fun `the accuracy alias names the receiver's own accuracy channel`() {
+        assertEquals("gnss_hacc", telemetrySessionOf(withAccuracy("gnss_hacc", 101), null).aliases[Aliases.ACCURACY])
+        assertEquals("dragy_hacc", telemetrySessionOf(withAccuracy("dragy_hacc", 621), null).aliases[Aliases.ACCURACY])
+        assertEquals(null, telemetrySessionOf(circleSession(1), null).aliases[Aliases.ACCURACY])
+    }
 }

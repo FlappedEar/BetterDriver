@@ -12,8 +12,17 @@ import kotlinx.serialization.json.jsonPrimitive
 /** Format name in every track file, so a stray JSON file is never read as a track. */
 const val TrackFileFormat = "betterdriver-track"
 
-/** The track file version this build writes. Newer files are refused rather than half read. */
-const val TrackFileVersion = 1
+/**
+ * The newest track file version this build reads and writes. Newer files are refused rather than
+ * half read. Version 2 added point-to-point tracks (FBBD-155).
+ */
+const val TrackFileVersion = 2
+
+/**
+ * The version [track] is written as: 2 for a point-to-point track, which a build from before them
+ * must refuse rather than read as a circuit; 1 for a circuit, so it still moves to older builds.
+ */
+fun trackFileVersion(track: Track): Int = if (track.pointToPoint) TrackFileVersion else 1
 
 private val json = Json {
     prettyPrint = true
@@ -31,7 +40,7 @@ object TrackJson {
         val wrapped = JsonObject(
             mapOf(
                 "format" to json.encodeToJsonElement(TrackFileFormat),
-                "version" to json.encodeToJsonElement(TrackFileVersion),
+                "version" to json.encodeToJsonElement(trackFileVersion(track)),
                 "track" to body,
             ),
         )
