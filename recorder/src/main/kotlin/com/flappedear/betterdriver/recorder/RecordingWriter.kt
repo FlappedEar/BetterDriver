@@ -43,10 +43,14 @@ internal class RecordingWriter(
     private var storageWarned = false
     private var reportedDrops = 0L
 
+    /** The session's metadata as last written: its channels grow as sources define theirs (FBBD-174). */
+    private lateinit var meta: SessionInfo
+
     /** Runs until stopped, storage runs out or a write fails. Returns how it ended. */
     @Suppress("TooGenericExceptionCaught") // Any failure must still end with the data on disk.
-    fun run(initialChannels: List<ChannelDef>): RecorderStatus.Stopped = try {
-        chunks.open(initialChannels)
+    fun run(info: SessionInfo): RecorderStatus.Stopped = try {
+        meta = info
+        chunks.open(info.channels)
         val reason = loop()
         finish(reason)
         RecorderStatus.Stopped(reason)
@@ -105,10 +109,36 @@ internal class RecordingWriter(
     }
 
     private fun writePendingChannels() {
+        val defined = ArrayList<ChannelDef>()
         var def = pendingChannels.poll()
         while (def != null) {
             write(Record.Channel(def))
+            defined += def
             def = pendingChannels.poll()
+        }
+        if (defined.isNotEmpty()) remember(defined)
+    }
+
+    /**
+     * Adds [defined] to the metadata's channels, each replacing an earlier definition of its id, and
+     * rewrites the metadata (atomically) when that changed it: chunks do not store provenance, so the
+     * metadata keeps it for every channel (FBBD-174). A failure here is not worth the recording: the
+     * provenance is then derived from the channel's source when the session is read.
+     */
+    private fun remember(defined: List<ChannelDef>) {
+        val channels = meta.channels.toMutableList()
+        for (def in defined) {
+            val at = channels.indexOfFirst { it.id == def.id }
+            if (at >= 0) channels[at] = def else channels += def
+        }
+        if (channels == meta.channels) return
+        meta = meta.copy(channels = channels)
+        try {
+            SessionFiles.writeAtomically(File(dir, SessionFiles.META), SessionFiles.metaToProps(dir.name, meta))
+        } catch (_: java.io.IOException) {
+            // Derived on load instead (SessionStore.read).
+        } catch (_: IllegalStateException) {
+            // The rename failed; the earlier metadata stays, and provenance is derived on load.
         }
     }
 

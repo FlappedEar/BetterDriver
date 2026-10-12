@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.recorder.store
 
 import com.flappedear.betterdriver.recorder.ChannelDef
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -57,6 +58,16 @@ data class SessionData(
 )
 
 private const val IdSuffixChars = 8
+
+/**
+ * [def], read from a chunk (which stores no provenance), with its provenance from [info]: the
+ * metadata's entry for its id, which the recorder keeps up to date for every channel it writes
+ * (FBBD-174), else one derived as for a session stored before provenance was ([Provenance.forSession]).
+ */
+private fun withProvenance(def: ChannelDef, info: SessionInfo): ChannelDef {
+    val stored = info.channels.firstOrNull { it.id == def.id && it.name == def.name }?.provenance
+    return def.copy(provenance = stored ?: Provenance.forSession(def, info.devices, info.imported))
+}
 
 /** Name prefix of a session directory being deleted; such directories are never listed. */
 private const val DeletingPrefix = ".deleting-"
@@ -207,7 +218,7 @@ class SessionStore(val root: File) {
         for (c in SessionFiles.chunks(dir)) {
             val r = Frames.scan(c.readBytes()) { rec ->
                 when (rec) {
-                    is Record.Channel -> channels[rec.def.id] = rec.def
+                    is Record.Channel -> channels[rec.def.id] = withProvenance(rec.def, info)
                     is Record.Samples -> if (samples) sets += rec.set
                     is Record.Event -> events += rec.event
                     is Record.End -> end = rec

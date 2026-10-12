@@ -23,6 +23,7 @@ import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
@@ -226,7 +227,8 @@ class RecorderService : Service() {
                 car = car,
                 track = track,
                 devices = sources.map { it.name },
-                channels = GnssChannels.ALL,
+                // Demo GNSS positions are stored as made up, never as measured (FBBD-174).
+                channels = if (gnss.demo) FakeGnssSource.Channels else GnssChannels.ALL,
             )
             val recording = Recorder(store).start(info).also { it.listeners.add(LoggingListener(it.id, gnss.name)) }
             val tracker = LiveTracker(
