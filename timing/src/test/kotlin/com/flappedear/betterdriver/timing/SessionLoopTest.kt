@@ -13,6 +13,8 @@ import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.timeSession
 import com.flappedear.betterdriver.timing.track.SessionLoop
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackKind
+import com.flappedear.betterdriver.timing.track.TrackLine
 import com.flappedear.betterdriver.timing.track.findSessionLoop
 import com.flappedear.betterdriver.timing.track.proposeTrack
 import com.flappedear.betterdriver.timing.track.trackAlong
@@ -125,6 +127,22 @@ class SessionLoopTest {
         assertEquals("Long", track.layout)
         assertEquals(lineless.center, track.center)
         assertEquals(loop.startFinish, track.startFinish)
+    }
+
+    @Test
+    fun `a point-to-point track here is left alone and a new circuit is proposed`() {
+        val fixes = oval.drive(laps = 3.0)
+        val loop = assertNotNull(findSessionLoop(fixes))
+        val finish = TrackLine.across(frame.toGeo(Xy(800.0, 300.0)), 270.0)
+        val hill = Track("hill", "Hill", frame.toGeo(Xy(500.0, 500.0)), kind = TrackKind.PointToPoint, finish = finish)
+        val track = proposeTrack(loop, listOf(hill), CircuitList.Empty, "Airfield", id = "airfield")
+        assertEquals("airfield", track.id)
+        assertEquals(TrackKind.Circuit, track.kind)
+        assertEquals(null, track.finish)
+        assertEquals(loop.startFinish, track.startFinish)
+        assertTrue(track.timeable)
+        val timed = timeSession(track, fixes.asSequence()).laps.filter { it.kind == LapKind.Timed }
+        assertEquals(loop.laps, timed.size)
     }
 
     @Test

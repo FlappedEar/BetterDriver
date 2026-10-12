@@ -90,9 +90,11 @@ private fun isPosition(f: Fix): Boolean =
         f.lon in -MaxLongitude..MaxLongitude && !(f.lat == 0.0 && f.lon == 0.0)
 
 /**
- * The track to propose for [loop]: a saved track here that has no start/finish line yet gets it;
+ * The track to propose for [loop]: a saved circuit here that has no start/finish line yet gets it;
  * otherwise a new track, named after the directory circuit whose radius reaches the loop's centre
- * and linked to it, or else called [name]. Its radius reaches past the whole loop.
+ * and linked to it, or else called [name]. Its radius reaches past the whole loop. A point-to-point
+ * track here (FBBD-155) is left alone: the loop's line would become its start line, and the loop
+ * would be timed as runs to its finish, or not at all without one.
  */
 fun proposeTrack(
     loop: SessionLoop,
@@ -104,7 +106,7 @@ fun proposeTrack(
     fun reach(from: GeoPoint) = (distanceMeters(from, loop.center) + loop.extentMeters + RadiusMarginMeters)
         .coerceAtMost(Track.MaxRadiusMeters)
     val lineless = saved
-        .filter { it.startFinish == null }
+        .filter { it.startFinish == null && !it.pointToPoint }
         .map { it to distanceMeters(loop.center, it.center) }
         .filter { (t, d) -> d <= t.radiusMeters }
         .minByOrNull { it.second }

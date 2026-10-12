@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.setup.SetupJson
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
 import com.flappedear.betterdriver.timing.track.TrackStore
 import org.junit.jupiter.api.io.TempDir
@@ -139,6 +140,34 @@ class BackupTest {
         assertFalse(File(tablet, "sessions/$id").exists(), "sessions only with the option")
         assertFalse(File(tablet, "backup-staging/restore").exists(), "nothing left in staging")
         assertEquals(emptyList(), File(tablet, "backup-staging").listFiles()!!.toList())
+    }
+
+    @Test
+    fun `point-to-point tracks come back with their kind and finish line`() {
+        val phone = device("phone")
+        val hill = track("hill").copy(
+            kind = TrackKind.PointToPoint,
+            finish = TrackLine.across(GeoPoint(52.01, 21.0), 0.0),
+        )
+        val stored = TrackStore(File(phone, "tracks")).save(hill, nowUtcMillis = 3_000)
+        // Version 2 on disk, so the check before a restore must read it.
+        assertTrue(File(phone, "tracks/hill.track.json").readText().contains("\"version\": 2"))
+        val bytes = backup(phone)
+
+        val tablet = File(tmp, "tablet").apply { mkdirs() }
+        val (added, _) = restore(tablet, bytes, RestoreMode.MERGE)
+        assertEquals(3, added.tracksAdded)
+        assertEquals(stored, TrackStore(File(tablet, "tracks")).get("hill"))
+
+        // An older circuit copy here is updated to the point-to-point track; replace brings it back too.
+        val old = File(tmp, "old").apply { mkdirs() }
+        TrackStore(File(old, "tracks")).save(track("hill"), nowUtcMillis = 1_000)
+        val (merged, _) = restore(old, bytes, RestoreMode.MERGE)
+        assertEquals(1, merged.tracksUpdated)
+        assertEquals(stored, TrackStore(File(old, "tracks")).get("hill"))
+        TrackStore(File(old, "tracks")).delete("hill")
+        restore(old, bytes, RestoreMode.REPLACE)
+        assertEquals(stored, TrackStore(File(old, "tracks")).get("hill"))
     }
 
     @Test
