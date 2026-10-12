@@ -96,7 +96,13 @@ class RaceBoxDataTest {
     }
 
     @Test
-    fun `wrong length is not a data message`() {
+    fun `too short is not a data message`() {
         assertNull(RaceBoxData.parse(ByteArray(79)))
+    }
+
+    @Test
+    fun `bytes past the documented 80 are ignored`() {
+        val data = checkNotNull(RaceBoxData.parse(RaceBoxTestData.payload() + ByteArray(8)))
+        assertEquals(checkNotNull(RaceBoxData.parse(RaceBoxTestData.payload())), data)
     }
 }

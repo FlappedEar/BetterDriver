@@ -20,7 +20,7 @@ class StreamStatsTest {
         }
         assertEquals(1_500, sent)
         // 65 seconds, each missing two messages.
-        assertEquals("1500 messages, 130 missing (65 on a whole second)", line)
+        assertEquals("1500 messages in 0 notifications, 130 missing (65 on a whole second), 0 other frames", line)
     }
 
     @Test
@@ -28,7 +28,25 @@ class StreamStatsTest {
         val stats = StreamStats()
         var line: String? = null
         for (i in 1..1_500) line = stats.add(i * 40L)
-        assertEquals("1500 messages, 0 missing (0 on a whole second)", line)
+        assertEquals("1500 messages in 0 notifications, 0 missing (0 on a whole second), 0 other frames", line)
         assertNull(stats.add(60_040L))
+    }
+
+    @Test
+    fun countsNotificationsAndOtherFramesThenStartsOver() {
+        val stats = StreamStats()
+        repeat(3) { stats.notification() }
+        stats.other(UbxFrame(0xFF, 0x26, ByteArray(4)))
+        stats.other(UbxFrame(0xFF, 0x01, ByteArray(76)))
+        stats.other(UbxFrame(0xFF, 0x01, ByteArray(76)))
+        var line: String? = null
+        for (i in 1..1_500) line = stats.add(i * 40L)
+        assertEquals(
+            "1500 messages in 3 notifications, 0 missing (0 on a whole second), " +
+                "3 other frames (ff 01 76 B ×2, ff 26 4 B ×1)",
+            line,
+        )
+        for (i in 1..1_500) line = stats.add(60_000L + i * 40L)
+        assertEquals("1500 messages in 0 notifications, 0 missing (0 on a whole second), 0 other frames", line)
     }
 }

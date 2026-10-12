@@ -75,9 +75,12 @@ data class RaceBoxData(
         private const val ShortMask = 0xFFFF
         private const val IntMask = 0xFFFF_FFFFL
 
-        /** Parses the payload of a RaceBox Data Message; null if it has the wrong length. */
+        /**
+         * Parses the payload of a RaceBox Data Message; null if it is too short. Bytes past the
+         * documented 80 are ignored, so a firmware that appends fields still gives data.
+         */
         fun parse(payload: ByteArray): RaceBoxData? {
-            if (payload.size != RaceBoxDataLength) return null
+            if (payload.size < RaceBoxDataLength) return null
             val b = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
             fun u8(i: Int) = b.get(i).toInt() and ByteMask
             fun u16(i: Int) = b.getShort(i).toInt() and ShortMask
