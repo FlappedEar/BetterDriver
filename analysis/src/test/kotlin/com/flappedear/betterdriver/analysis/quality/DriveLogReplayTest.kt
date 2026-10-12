@@ -18,7 +18,7 @@ import kotlin.test.assertTrue
 /**
  * The drive checks replayed over Arek's real drive of 12 Oct 2026, 10:36 to 11:16 UTC (FBBD-183):
  * the debug logs of 0.3.1 as he shared them, and the GNSS of the same session from its VBO export
- * (time, position, speed and video sync columns; the original is 7 MB).
+ * (the copy in resources/real, its positions moved 10° west).
  */
 class DriveLogReplayTest {
     private val sessionId = "20261012-103607-3713ff1a"
@@ -65,18 +65,22 @@ class DriveLogReplayTest {
         }
         log(CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
         val gnss = GnssSecondLog(sessionId, start) { log(CheckLog.GNSS, it) }
-        val vbo = javaClass.getResourceAsStream("/drive-log/vbo-20261012-103607.txt.gz")!!
+        val vbo = javaClass.getResourceAsStream("/real/commute-2026-10-12-1036.vbo.gz")!!
         val text = GZIPInputStream(vbo).bufferedReader()
         var last = 0L
-        text.useLines { rows ->
-            rows.drop(1).forEach { row ->
+        text.useLines { lines ->
+            val all = lines.toList()
+            val names = all[all.indexOf("[column names]") + 1].split(' ')
+            fun column(name: String) = names.indexOf(name).also { check(it >= 0) { name } }
+            val at = listOf("time", "lat", "long", "velocity", "avifileindex", "avisynctime").map(::column)
+            all.drop(all.indexOf("[data]") + 1).filter { it.isNotBlank() }.forEach { row ->
                 val c = row.split(' ')
-                val time = c[1]
-                val lat = c[2]
-                val lon = c[3]
-                val kmh = c[4]
-                val file = c[5]
-                val sync = c[6]
+                val time = c[at[0]]
+                val lat = c[at[1]]
+                val lon = c[at[2]]
+                val kmh = c[at[3]]
+                val file = c[at[4]]
+                val sync = c[at[5]]
                 val hh = time.substring(0, 2).toLong()
                 val mm = time.substring(2, 4).toLong()
                 val ss = time.substring(4).toDouble()
