@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
+import com.flappedear.betterdriver.analysis.quality.logLines
 import com.flappedear.betterdriver.coach.CoachLink
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
@@ -25,6 +26,7 @@ import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveTracker
+import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
@@ -118,6 +120,7 @@ class RecorderService : Service() {
         val tracker: LiveTracker,
         val timing: SessionTiming,
         val coach: CoachLink?,
+        val device: DeviceChecks,
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -259,7 +262,8 @@ class RecorderService : Service() {
                     if (status is RecorderStatus.Stopped) main.post { onEnded(recording, status.reason) }
                 }
             })
-            active = Active(recording, tracker, timing, coach)
+            val device = DeviceChecks(this, recording)
+            active = Active(recording, tracker, timing, coach, device)
             carryOn(wanted, recording, restartOf.also { restartOf = null })
             sources.forEach(recording::attach)
             main.post {
@@ -268,6 +272,7 @@ class RecorderService : Service() {
                 cameraStatus = null
                 coachStatus = CoachStatus.None
                 coach?.bind()
+                device.start()
                 cpu.acquire()
                 rememberWanted(wanted, car, track, gnss, sensors)
                 getSystemService(NotificationManager::class.java)
@@ -298,13 +303,24 @@ class RecorderService : Service() {
         val ended = active
         if (ended == null || ended.recording !== recording) return
         ended.coach?.unbind()
+        ended.device.stop()
         active = null
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
         DebugLog.session = null
+        logQuality(recording.id)
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
         endForeground()
+    }
+
+    /**
+     * The session's report in the drive's log (FBBD-183), made on the control thread once the
+     * recording is closed. Made here, it is also ready for the session screen.
+     */
+    private fun logQuality(id: String) = control.execute {
+        val report = qualityReports(this).load(id) ?: return@execute
+        report.logLines().forEach { DebugLog.forSession(id, CheckLog.QUALITY, it) }
     }
 
     private fun endForeground() {
@@ -340,6 +356,7 @@ class RecorderService : Service() {
     override fun onDestroy() {
         DebugLog.i(Tag, "service destroyed, recording running: ${active != null}")
         active?.coach?.unbind()
+        active?.device?.stop()
         clients.close()
         // Only reached with a recording running if the system destroys the service: finish it cleanly.
         active?.recording?.stop("service_destroyed", DestroyStopTimeoutMs)

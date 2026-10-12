@@ -116,6 +116,19 @@ class HardwareChecksTest {
     }
 
     @Test
+    fun `the report goes in the log as a summary and one line per check`() {
+        val r = report(stream(0, 60_000_000), emptyList())
+        val lines = r.logLines()
+        assertEquals(
+            "summary pass=${r.count(Verdict.PASS)} fail=${r.count(Verdict.FAIL)} not_measured=${r.count(Verdict.NOT_MEASURED)}",
+            lines.first(),
+        )
+        assertEquals(r.metrics.size + 1, lines.size)
+        val rate = lines.single { it.startsWith("gnss.rate ") }
+        assertTrue(Regex("""gnss\.rate PASS value=25(\.0+)? unit=Hz keys=FBBD-\d+.*""").matches(rate), rate)
+    }
+
+    @Test
     fun `issue keys come from the criterion`() {
         assertEquals(listOf("FBBD-21", "FBBD-82"), issueKeys("<= 50 ms at 10 min (FBBD-21, FBBD-82, FBBD-21)"))
         assertEquals(emptyList(), issueKeys(null))

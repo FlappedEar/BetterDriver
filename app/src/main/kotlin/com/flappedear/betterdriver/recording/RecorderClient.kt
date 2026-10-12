@@ -99,6 +99,7 @@ class RecorderClient private constructor(private val context: Context) {
             null
         }
         GoPros.get(context).onRecorderState(running?.sessionId, running?.startUtcMillis ?: 0L, startNanos)
+        UiChecks.follow(live, startNanos)
     }
 
     private val connection = object : ServiceConnection {
@@ -112,6 +113,7 @@ class RecorderClient private constructor(private val context: Context) {
             val error = if (state.recording) "The recorder stopped unexpectedly. The session is saved." else state.error
             state = RecorderState(connected = false, error = error)
             GoPros.get(context).onRecorderState(null, 0L, null)
+            UiChecks.follow(null, null)
             Sessions.get(context).recoverAndRefresh()
         }
     }
