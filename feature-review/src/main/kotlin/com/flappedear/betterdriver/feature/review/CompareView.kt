@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.feature.review
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -227,7 +228,7 @@ private fun TransportRow(c: Comparison, st: ReviewTransport) {
 
 /**
  * Both laps' clocks and speeds, and how far lap B is behind or ahead. Reads [cursor] here only, so
- * only this row recomposes.
+ * only this row recomposes. On a narrow screen the gap goes under the clocks so neither is squeezed.
  */
 @Composable
 private fun Readout(c: Comparison, cursor: () -> Long, modifier: Modifier) {
@@ -235,23 +236,44 @@ private fun Readout(c: Comparison, cursor: () -> Long, modifier: Modifier) {
     val ta = c.aMicros(t)
     val tb = c.bMicros(t)
     val gap = c.gapMetersAt(t).roundToInt()
-    val colors = TrackTheme.colors
-    Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-        Clock("A", ta, c.a.trace.at(ta).speedKmh, LapColors.a)
-        Clock("B", tb, c.b.trace.at(tb).speedKmh, LapColors.b)
-        Spacer(Modifier.weight(1f))
-        Text(
-            when {
-                gap > 0 -> "B $gap m behind"
-                gap < 0 -> "B ${-gap} m ahead"
-                else -> "Level"
-            },
-            style = numberStyle(24.dp),
-            color = if (gap <= 0) colors.gain else colors.loss,
-            modifier = Modifier.background(colors.surface, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
-        )
+    BoxWithConstraints(modifier) {
+        val clocks = @Composable {
+            Clock("A", ta, c.a.trace.at(ta).speedKmh, LapColors.a)
+            Clock("B", tb, c.b.trace.at(tb).speedKmh, LapColors.b)
+        }
+        if (maxWidth < OneRowReadout) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) { clocks() }
+                GapLabel(gap)
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                clocks()
+                Spacer(Modifier.weight(1f))
+                GapLabel(gap)
+            }
+        }
     }
 }
+
+@Composable
+private fun GapLabel(gap: Int) {
+    val colors = TrackTheme.colors
+    Text(
+        when {
+            gap > 0 -> "B $gap m behind"
+            gap < 0 -> "B ${-gap} m ahead"
+            else -> "Level"
+        },
+        style = numberStyle(24.dp),
+        color = if (gap <= 0) colors.gain else colors.loss,
+        maxLines = 1,
+        modifier = Modifier.background(colors.surface, RoundedCornerShape(8.dp)).padding(horizontal = 10.dp),
+    )
+}
+
+/** Below this width the clocks and the gap no longer fit on one row with a three-digit gap. */
+private val OneRowReadout = 420.dp
 
 @Composable
 private fun Clock(letter: String, lapMicros: Long, speedKmh: Double?, color: Color) {
