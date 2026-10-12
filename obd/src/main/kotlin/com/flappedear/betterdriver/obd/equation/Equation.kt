@@ -26,6 +26,9 @@ package com.flappedear.betterdriver.obd.equation
  *   `scale`, `lowPass`, `highPass`, `isNaN`; and the constant `NaN`. The source of the byte and
  *   bit functions must be `raw`. `device()` and `channel()` (DIY API channels) are not supported.
  *
+ * Equations are at most [MaxLength] characters, which keeps the parser's and the evaluator's
+ * recursion shallow (RaceChrono equations are a line or two).
+ *
  * Nothing here throws on bad input: [parse] returns null for an equation that does not parse, and
  * [evaluate] returns null when the response is too short, a division by zero happens, or the result
  * is NaN or infinite. The caller hides the channel then.
@@ -36,15 +39,23 @@ class Equation private constructor(
     private val root: Node,
 ) {
     /** The value for one response's [raw] data (after the echo), or null when there is none. */
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     fun evaluate(raw: ByteArray): Double? = try {
         root.double(raw).takeIf { it.isFinite() }
     } catch (_: EvalFailure) {
+        null
+    } catch (_: RuntimeException) {
+        // Every expected failure is an EvalFailure; this is the backstop that keeps a channel's
+        // equation from ever taking the reader down.
         null
     }
 
     override fun toString(): String = source
 
     companion object {
+        /** The longest equation accepted. */
+        const val MaxLength = 1000
+
         /** [source] parsed, or null when it is not a valid equation. */
         fun parse(source: String): Equation? = compile(source).getOrNull()
 

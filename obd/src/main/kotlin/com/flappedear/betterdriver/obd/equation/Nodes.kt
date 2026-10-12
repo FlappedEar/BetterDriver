@@ -25,7 +25,7 @@ internal abstract class IntNode : Node() {
     override fun double(raw: ByteArray): Double = long(raw).toDouble()
 }
 
-/** A double-valued node; as an integer it is truncated toward zero, and NaN has none. */
+/** A double-valued node; as an integer it is truncated toward zero, and NaN or infinity has none. */
 internal abstract class FloatNode : Node() {
     override val isInt: Boolean get() = false
 
@@ -56,9 +56,12 @@ internal class Negate(private val operand: Node) : Node() {
     override fun double(raw: ByteArray): Double = if (isInt) long(raw).toDouble() else -operand.double(raw)
 }
 
-/** A double as an integer, truncated toward zero like Java's cast; NaN has none. */
+/**
+ * A double as an integer, truncated toward zero like Java's cast. NaN and the infinities have none
+ * (the cast would quietly give 0 or Long.MAX_VALUE / MIN_VALUE).
+ */
 internal fun truncate(d: Double): Long {
-    if (d.isNaN()) throw EvalFailure
+    if (!d.isFinite()) throw EvalFailure
     return d.toLong()
 }
 

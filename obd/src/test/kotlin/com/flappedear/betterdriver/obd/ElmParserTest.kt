@@ -61,6 +61,35 @@ class ElmParserTest {
     }
 
     @Test
+    fun `headerless frames must be numbered in order`() {
+        // Frame 1 twice: duplicate.
+        val duplicate = "014\r0: 49 02 01 31 44 34\r1: 47 50 30 30 52 35 35\r1: 47 50 30 30 52 35 35\r>"
+        assertEquals(ElmError.INCOMPLETE, error(duplicate))
+        // Frames 1 and 2 swapped: same length, wrong bytes if appended.
+        val swapped = "014\r0: 49 02 01 31 44 34\r2: 42 31 32 33 34 35 36\r1: 47 50 30 30 52 35 35\r>"
+        assertEquals(ElmError.INCOMPLETE, error(swapped))
+        // Frame 0 missing.
+        assertEquals(ElmError.INCOMPLETE, error("014\r1: 47 50 30 30 52 35 35\r2: 42 31 32 33 34 35 36\r>"))
+        // A bad block does not spoil the next ECU's.
+        val thenGood = "$swapped\r014\r0: 49 02 01 31 44 34\r1: 47 50 30 30 52 35 35\r2: 42 31 32 33 34 35 36\r>"
+        assertEquals(
+            listOf(msg(null, "49 02 01 31 44 34 47 50 30 30 52 35 35 42 31 32 33 34 35 36")),
+            messages(thenGood.replace(">\r", "\r"), headers = false),
+        )
+    }
+
+    @Test
+    fun `headerless frame numbers wrap from F to 0`() {
+        // 0x76 = 118 bytes: frame 0 holds 6, frames 1..F and 0 again hold 7 each.
+        var n = 0
+        fun next(count: Int) = (0 until count).joinToString(" ") { hex(n++ and 0xFF, 2) }
+        val lines = mutableListOf("076", "0: ${next(6)}")
+        for (i in 1..16) lines += "${hex(i and 0xF, 1)}: ${next(7)}"
+        val bytes = messages(lines.joinToString("\r"), headers = false).single().bytes
+        assertEquals((0 until 118).map { it.toByte() }, bytes.toList())
+    }
+
+    @Test
     fun `multi-frame with headers on, interleaved from two ECUs`() {
         val text = """
             7E8 10 0A 61 01 01 02 03 04

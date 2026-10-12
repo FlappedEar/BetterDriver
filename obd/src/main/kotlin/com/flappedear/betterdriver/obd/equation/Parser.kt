@@ -6,6 +6,7 @@ internal class Parser(private val text: String) {
     private var pos = 0
 
     fun parseAll(): Node {
+        if (text.length > Equation.MaxLength) fail("Longer than ${Equation.MaxLength} characters", 0)
         val node = expression(1)
         skipSpaces()
         if (pos < text.length) fail("Unexpected '${text[pos]}'")

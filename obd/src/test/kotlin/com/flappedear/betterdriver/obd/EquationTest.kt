@@ -143,6 +143,48 @@ class EquationTest {
     }
 
     @Test
+    fun `huge offsets and lengths cannot overflow the bounds check`() {
+        val raw = IntArray(8) { 0xFF }
+        listOf(
+            "bytesToUint(raw, 0x7FFFFFFFFFFFFFFF, 1)", // off + len and off × 8 overflow
+            "bytesToUint(raw, 0x7FFFFFFFFFFFFFFE, 2)",
+            "bytesToUint(raw, 0x1FFFFFFFFFFFFFFF, 1)", // off × 8 wraps to a small negative
+            "bytesToUint(raw, 0x2000000000000000, 1)", // off × 8 wraps to 0
+            "bytesToInt(raw, 0, 0x7FFFFFFFFFFFFFFF)",
+            "bytesToUint(raw, 1, -0x7FFFFFFFFFFFFFFF)", // off + len wraps
+            "bitsToUint(raw, 0x7FFFFFFFFFFFFFFF, 8)",
+            "bitsToUintLe(raw, 0x7FFFFFFFFFFFFFC0, 0x40)",
+            "bitsToInt(raw, 0, 0x8000000000000001)",
+            "bytesToFloat(raw, 0x7FFFFFFFFFFFFFFF, 4)",
+            "bytesToFloatLe(raw, 0x7FFFFFFFFFFFFFFE, 8)",
+            "bytesToUint(raw, int(1.0/0), 1)",
+        ).forEach { assertNull(eval(it, *raw), it) }
+        // The largest in-range reads still work.
+        assertEquals(-1.0, eval("bytesToInt(raw, 0, 8)", *raw))
+        assertEquals(1.0, eval("bitsToUint(raw, 63, 1)", *raw))
+        assertEquals(255.0, eval("bytesToUint(raw, 7, 1)", *raw))
+    }
+
+    @Test
+    fun `infinity has no integer value`() {
+        assertNull(eval("int(1.0 / 0)")) // would be Long.MAX_VALUE
+        assertNull(eval("int(-1.0 / 0)"))
+        assertNull(eval("(1.0 / 0) & 1"))
+        assertNull(eval("A >> (1.0 / 0)", 1))
+        assertNull(eval("int(pow(10, 400))"))
+        assertNull(eval("int(1.0 / 0) * 0"))
+    }
+
+    @Test
+    fun `absurdly long equations do not parse instead of overflowing the stack`() {
+        assertNull(Equation.parse("(".repeat(100_000) + "A" + ")".repeat(100_000)))
+        assertNull(Equation.parse("A" + "+A".repeat(100_000))) // would evaluate 100 000 levels deep
+        assertNull(Equation.parse("-".repeat(100_000) + "A"))
+        assertEquals(500.0, eval("A" + "+A".repeat(499), 1)) // 999 characters
+        assertEquals(1.0, eval("(".repeat(50) + "A" + ")".repeat(50), 1))
+    }
+
+    @Test
     fun `one parse serves many responses`() {
         val rpm = assertNotNull(Equation.parse("(A*256+B)/4.0"))
         assertEquals(750.0, rpm.evaluate(bytes(0x0B, 0xB8)))

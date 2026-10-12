@@ -37,13 +37,15 @@ internal class RawInt(
         val off = offset.long(raw)
         val len = length.long(raw)
         val unitBits = if (bits) 1 else Byte.SIZE_BITS
-        val width = len * unitBits
-        val fits = off >= 0 && len >= 1 && width <= Long.SIZE_BITS &&
-            (off + len) * unitBits <= raw.size.toLong() * Byte.SIZE_BITS
+        // Compared without adding or multiplying the untrusted offset, so no value can overflow:
+        // len is at most 64 bits here, and units counts the response in bits or bytes.
+        val units = raw.size.toLong() * Byte.SIZE_BITS / unitBits
+        val fits = len in 1..Long.SIZE_BITS / unitBits && off >= 0 && off <= units - len
         if (!fits) throw EvalFailure
+        val width = (len * unitBits).toInt()
         val firstBit = (off * unitBits).toInt()
-        val value = if (littleEndian) bitsLe(raw, firstBit, width.toInt()) else bitsBe(raw, firstBit, width.toInt())
-        return if (signed) signExtend(value, width.toInt()) else value
+        val value = if (littleEndian) bitsLe(raw, firstBit, width) else bitsBe(raw, firstBit, width)
+        return if (signed) signExtend(value, width) else value
     }
 }
 
@@ -57,7 +59,7 @@ internal class RawFloat(
         val off = offset.long(raw)
         val len = length.long(raw)
         val validLength = len == FloatBytes || len == DoubleBytes
-        if (!validLength || off < 0 || off + len > raw.size) throw EvalFailure
+        if (!validLength || off < 0 || off > raw.size - len) throw EvalFailure // No off + len: it can overflow.
         val firstBit = (off * Byte.SIZE_BITS).toInt()
         val width = (len * Byte.SIZE_BITS).toInt()
         val bits = if (littleEndian) bitsLe(raw, firstBit, width) else bitsBe(raw, firstBit, width)

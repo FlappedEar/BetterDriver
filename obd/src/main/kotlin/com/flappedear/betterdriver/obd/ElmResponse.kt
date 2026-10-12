@@ -144,10 +144,18 @@ private abstract class Assembler {
     open fun finish(): List<EcuMessage> = done
 }
 
-/** `AT H0`: each line is one ECU's data, except `00E` + `0: …` `1: …` multi-frame blocks. */
+/**
+ * `AT H0`: each line is one ECU's data, except `00E` + `0: …` `1: …` multi-frame blocks. Frame
+ * numbers must run 0, 1, … F, 0, …; a repeated, missing or out-of-order frame makes the block
+ * incomplete and the rest of its frames are skipped.
+ */
 private class HeadersOff : Assembler() {
     private var length = -1
     private var buffer: MutableList<Byte>? = null
+    private var nextIndex = 0
+
+    /** Inside a block that already went wrong: its remaining numbered frames are skipped. */
+    private var discarding = false
 
     @Suppress("ReturnCount")
     override fun add(line: String): Boolean {
@@ -158,11 +166,20 @@ private class HeadersOff : Assembler() {
                 flush()
                 length = compact.toInt(HexRadix)
                 buffer = ArrayList()
+                nextIndex = 0
                 true
             }
             numbered != null -> {
-                val bytes = hexBytes(numbered.groupValues[1]) ?: return false
+                val bytes = hexBytes(numbered.groupValues[2]) ?: return false
+                if (discarding) return true
                 val target = buffer ?: return false
+                if (numbered.groupValues[1].toInt(HexRadix) != nextIndex) {
+                    buffer = null
+                    discarding = true
+                    incomplete = true
+                    return true
+                }
+                nextIndex = (nextIndex + 1) % FRAME_INDICES
                 bytes.forEach { target.add(it) }
                 true
             }
@@ -179,13 +196,15 @@ private class HeadersOff : Assembler() {
     }
 
     private fun flush() {
+        discarding = false
         val b = buffer ?: return
         if (b.size >= length) done += EcuMessage(null, b.subList(0, length).toByteArray()) else incomplete = true
         buffer = null
     }
 
     private companion object {
-        val FRAME_INDEX = Regex("""[0-9A-F]:\s*(.*)""")
+        val FRAME_INDEX = Regex("""([0-9A-F]):\s*(.*)""")
+        const val FRAME_INDICES = 16
         const val LENGTH_DIGITS = 3
     }
 }
