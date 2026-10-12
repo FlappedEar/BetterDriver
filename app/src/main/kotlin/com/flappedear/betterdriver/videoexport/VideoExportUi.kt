@@ -20,25 +20,32 @@ data class LapOption(
     val onVideo: Boolean,
 )
 
-/** What the picker offers for one session: the whole video ([wholeMicros] long) and each lap. */
-data class VideoExportOptions(val wholeMicros: Long, val laps: List<LapOption>) {
+/**
+ * What the picker offers for one session: the whole video ([wholeMicros] long) and each lap; on a
+ * point-to-point track ([pointToPoint], FBBD-155) the laps are runs.
+ */
+data class VideoExportOptions(val wholeMicros: Long, val laps: List<LapOption>, val pointToPoint: Boolean = false) {
     /** Chosen when the picker opens: the best lap when it is on video, else the whole video; null with no video. */
     val preselected: VideoPart?
         get() = laps.firstOrNull { it.best && it.onVideo }?.number ?: WholeVideo.takeIf { wholeMicros > 0 }
 }
 
-/** The picker's line for a lap: "Lap 7 · 1:42.37" over "Best lap", "Out lap", "No video"… */
-internal fun lapOptionText(o: LapOption): Pair<String, String> {
+/**
+ * The picker's line for a lap: "Lap 7 · 1:42.37" over "Best lap", "Out lap", "No video"…; for a
+ * run of a point-to-point track, "Run 2 · 0:58.10" over "Best run".
+ */
+internal fun lapOptionText(o: LapOption, pointToPoint: Boolean = false): Pair<String, String> {
+    val word = if (pointToPoint) "Run" else "Lap"
     val note = listOfNotNull(
         when {
-            o.best -> "Best lap"
+            o.best -> "Best ${word.lowercase()}"
             o.kind == LapKind.Out -> "Out lap"
             o.kind == LapKind.In -> "In lap"
             else -> null
         },
         if (o.onVideo) null else "No video",
     ).joinToString(" · ")
-    return "Lap ${o.number} · ${formatLapTime(o.timeMillis)}" to note
+    return "$word ${o.number} · ${formatLapTime(o.timeMillis)}" to note
 }
 
 /** "18 min of video", "45 s of video". */
@@ -48,9 +55,18 @@ internal fun wholeVideoText(micros: Long): String {
     return if (seconds >= SecondsPerMinute) "$minutes min of video" else "$seconds s of video"
 }
 
-/** The file name offered when saving: BetterDriver-<id>-lap7.mp4, or -video.mp4 for all of it. */
-fun videoExportFileName(sessionId: String, part: VideoPart): String =
-    "BetterDriver-$sessionId-${if (part == WholeVideo) "video" else "lap$part"}.mp4"
+/**
+ * The file name offered when saving: BetterDriver-<id>-lap7.mp4 (-run2.mp4 for a point-to-point
+ * run), or -video.mp4 for all of it.
+ */
+fun videoExportFileName(sessionId: String, part: VideoPart, pointToPoint: Boolean = false): String {
+    val name = when {
+        part == WholeVideo -> "video"
+        pointToPoint -> "run$part"
+        else -> "lap$part"
+    }
+    return "BetterDriver-$sessionId-$name.mp4"
+}
 
 /** The card's line while rendering: "Rendering video · 42%", with the bar. */
 internal fun renderingState(fraction: Float?): TransferState {

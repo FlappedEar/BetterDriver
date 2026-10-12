@@ -78,9 +78,15 @@ internal class DataOverlay(
  * Draws the band (UI for FBBD-152), left to right: speed, lap and lap time, delta to the best lap
  * in the track screen's gain and loss colours; at the right a G meter and the track map with the
  * car. Light text on a dark gradient, in the app's number and label fonts, so it reads on any
- * picture. Sizes all come from [OverlayLayout].
+ * picture. Sizes all come from [OverlayLayout]. On a point-to-point track ([pointToPoint],
+ * FBBD-155) the laps are runs, labelled "RUN".
  */
-internal class OverlayPainter(fonts: OverlayFonts, outline: List<Xy>, colors: TrackColors = TrackColorsGreenRed) {
+internal class OverlayPainter(
+    fonts: OverlayFonts,
+    outline: List<Xy>,
+    private val pointToPoint: Boolean = false,
+    colors: TrackColors = TrackColorsGreenRed,
+) {
     private val outline = thin(outline)
     private val text = colors.text.toArgb()
     private val dim = colors.textDim.toArgb()
@@ -157,9 +163,10 @@ internal class OverlayPainter(fonts: OverlayFonts, outline: List<Xy>, colors: Tr
 
     private fun lap(canvas: Canvas, box: Box, f: OverlayFrame) {
         val lap = f.lap
+        val word = if (pointToPoint) "RUN" else "LAP"
         if (lap == null) {
             ink(dim, dim)
-            slot(canvas, box, "LAP", Dash)
+            slot(canvas, box, word, Dash)
             return
         }
         val kind = when {
@@ -169,7 +176,7 @@ internal class OverlayPainter(fonts: OverlayFonts, outline: List<Xy>, colors: Tr
             else -> ""
         }
         ink(if (lap.isBest) best else dim, text)
-        slot(canvas, box, "LAP ${lap.number}$kind", formatRunningTime(lap.lapMicros / MicrosPerMilli))
+        slot(canvas, box, "$word ${lap.number}$kind", formatRunningTime(lap.lapMicros / MicrosPerMilli))
     }
 
     private fun delta(canvas: Canvas, box: Box, f: OverlayFrame) {
