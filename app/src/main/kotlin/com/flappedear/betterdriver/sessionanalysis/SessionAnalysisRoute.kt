@@ -24,11 +24,14 @@ import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
+import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
+import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -43,14 +46,17 @@ import kotlinx.coroutines.withContext
 
 /** A session read and analysed once; comparing another lap reuses it. */
 private class Loaded(
-    val title: String,
     val session: TelemetrySession,
     val analysis: SessionAnalysis,
     /** When the session started; the earlier sessions at [track] are read against it. */
     val startUtcMillis: Long,
     val track: Track,
     val tracks: List<Track>,
-)
+    /** The session's acceleration runs (FBBD-154); null when it has none. */
+    val acceleration: AccelerationUi?,
+) {
+    val title: String get() = track.displayName
+}
 
 private sealed interface Load {
     data class Done(val loaded: Loaded) : Load
@@ -72,7 +78,7 @@ internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding
 /**
  * Lap analysis of one saved session (FBBD-102). The session is read and analysed off the main
  * thread against its track's start/finish line; a session without a track that has a line, or
- * without two crossings of it, says so.
+ * without two crossings of it, says so. Its acceleration runs (FBBD-154) show either way.
  */
 @Composable
 private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
@@ -122,8 +128,11 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
         null
     }
     val ui = analysisUi(loaded.title, analysis, comparison)
-        ?: return AnalysisState.Unavailable("No lap counts: every lap has a GPS gap or is not a full lap.")
-    return AnalysisState.Ready(ui.copy(progress = progress))
+        ?: return AnalysisState.Unavailable(
+            "No lap counts: every lap has a GPS gap or is not a full lap.",
+            acceleration = loaded.acceleration,
+        )
+    return AnalysisState.Ready(ui.copy(progress = progress, acceleration = loaded.acceleration))
 }
 
 // A damaged session or track file says so instead of crashing the app.
@@ -136,23 +145,30 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String):
         return Load.Failed(AnalysisState.Unavailable("This session could not be read."))
     }
     val saved = tracks.all()
-    val track = trackFor(data, saved) ?: return Load.Failed(
-        AnalysisState.Unavailable(
-            "No laps: this session, a road drive for example, was not recorded at a track with a " +
-                "start/finish line. If it was at a track, set the line in the track editor, then open the " +
-                "analysis again.",
-            action = "Tracks",
-        ),
-    )
-    val session = telemetrySessionOf(data, track.startFinish)
+    val track = trackFor(data, saved)
+    val session = telemetrySessionOf(data, track?.startFinish)
+    // Acceleration runs need no track or laps, so a road drive shows them too.
+    val acceleration = accelerationUi(findAccelerationRuns(session))
+    if (track == null) {
+        return Load.Failed(
+            AnalysisState.Unavailable(
+                "No laps: this session, a road drive for example, was not recorded at a track with a " +
+                    "start/finish line. If it was at a track, set the line in the track editor, then open the " +
+                    "analysis again.",
+                action = "Tracks",
+                acceleration = acceleration,
+            ),
+        )
+    }
     val analysis = analyzeSession(session)
     if (analysis.laps.status != LapSessionStatus.Available || analysis.laps.timedLaps.isEmpty()) {
         return Load.Failed(
             AnalysisState.Unavailable(
                 "No complete lap at ${track.displayName}: the car has to cross the start/finish line " +
                     "at least twice.",
+                acceleration = acceleration,
             ),
         )
     }
-    return Load.Done(Loaded(track.displayName, session, analysis, data.info.startUtcMillis, track, saved))
+    return Load.Done(Loaded(session, analysis, data.info.startUtcMillis, track, saved, acceleration))
 }
