@@ -38,8 +38,8 @@ object CarProfiles {
      *
      * - Brake: 7B0 (ABS/VSC) 21 41, `MIN(100, 1.1*MAX(A-10, 0))`: A less a resting offset of 10,
      *   scaled to percent and capped at 100.
-     * - Accelerator: 01 5A with the default header, `MIN(A, 100)`: A read as percent, capped at 100,
-     *   in place of the generic A·100/255.
+     * - Accelerator: 01 5A with the default header, `MIN(100, A*100.0/255)`: the generic A·100/255
+     *   scaling, capped at 100; listed here so it is polled even when the car's bitmask leaves it out.
      * - Engine oil temperature: 7E0 (engine) 21 01, `BytesToUInt(raw, 28, 1) - 40`. The well-known
      *   Torque definition is `AC-40` on the same request (https://forum.autosportlabs.com/viewtopic.php?p=25811);
      *   Torque's `AC` is the 29th data byte after the `61 01` echo, which RaceChrono users write as
@@ -56,7 +56,7 @@ object CarProfiles {
         name = "2013 Scion FR-S",
         channels = listOf(
             PidChannel("brake", "Brake", 0x7B0, 0x21, 0x41, "MIN(100, 1.1*MAX(A-10, 0))", "%", PollClass.FAST),
-            PidChannel("accelerator", "Accelerator", null, 0x01, 0x5A, "MIN(A, 100)", "%", PollClass.FAST),
+            PidChannel("accelerator", "Accelerator", null, 0x01, 0x5A, "MIN(100, A*100.0/255)", "%", PollClass.FAST),
             PidChannel(
                 "oil_temp", "Engine oil temp", 0x7E0, 0x21, 0x01, "BytesToUInt(raw, 28, 1) - 40", "°C", PollClass.SLOW,
             ),

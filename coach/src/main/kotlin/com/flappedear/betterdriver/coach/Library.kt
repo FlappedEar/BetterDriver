@@ -54,6 +54,17 @@ class CoachLibrary(
     }
 
     /**
+     * Whether a session [reference] was built from ended within [SameDayMillis] before [nowUtcMillis]:
+     * the driver is back out on the same day (FBBD-190).
+     */
+    fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
+        val ids = reference.sessions.toSet()
+        val ended = sessions.list().filter { it.id in ids }
+            .maxOfOrNull { it.info.startUtcMillis + (it.durationMicros ?: 0L) / MicrosPerMilli }
+        return ended != null && nowUtcMillis - ended in 0..SameDayMillis
+    }
+
+    /**
      * Brings every coached track's reference up to date, so the next coach starts at once: after a
      * track is saved, edited or deleted, or sessions change. Stops early, keeping the matches it
      * found but no half-built reference, when [stop] says so (it is asked between sessions). The
@@ -216,6 +227,10 @@ class CoachLibrary(
     private companion object {
         const val PlacesFile = "places.json"
         const val LockFile = "library.lock"
+        const val MicrosPerMilli = 1_000L
+
+        /** A session ended at most this long ago counts as the same day: 12 hours. */
+        const val SameDayMillis = 12L * 60 * 60 * 1_000
 
         /** One lock per process: a second lock on the same file from the same process would throw. */
         val ProcessLock = Any()

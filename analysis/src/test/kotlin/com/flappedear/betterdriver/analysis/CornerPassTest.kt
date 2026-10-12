@@ -125,6 +125,24 @@ class CornerPassTest {
         assertEquals(listOf(1, 2, 3), cornerPasses(over, "c1").map { it.lapNumber })
     }
 
+    @Test
+    fun `a corner over the line is untimed when the next lap has a gap in it`() {
+        // Lap 2 has an exit time but does not cover its sector: its part after the line may be the gap.
+        val over = analysis.copy(
+            laps = LapSession(
+                LapSessionStatus.Available,
+                timedLaps = listOf(lap(1, 10.0, 62.0), lap(2, 72.0, 60.0)),
+            ),
+            lapTimes = listOf(
+                LapSectorTimes(1, sectors = listOf(overLine(70.0, 12.0, 4.0))),
+                LapSectorTimes(2, sectors = listOf(overLine(130.0, 74.5, null))),
+            ),
+        )
+        val first = cornerPasses(over, "c1").single { it.lapNumber == 1 }
+        assertEquals(74.5, first.exitTime)
+        assertNull(first.seconds)
+    }
+
     private fun pass(entry: Double?, exit: Double?, braking: Double? = null) =
         CornerPass(0, 1, entry, exit, null, braking, null, false, null, "")
 

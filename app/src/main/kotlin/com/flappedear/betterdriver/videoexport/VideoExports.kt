@@ -169,12 +169,19 @@ class VideoExports private constructor(private val context: Context) {
             OptimalVideo(null, null)
         }
 
-        /** The file's own length, read from its index; exact, unlike the logged end. */
+        /**
+         * The file's own length, read from its index; exact, unlike the logged end. A malformed index
+         * (the parser throws unchecked exceptions on bad nested boxes) only leaves that clip out.
+         */
+        @Suppress("TooGenericExceptionCaught")
         private fun durationOf(clip: VideoClip): Long? = durations.getOrPut(clip.file) {
             try {
                 Mp4Reader.read(video.file(clip)).durationUs.takeIf { it > 0 }
             } catch (e: IOException) {
                 DebugLog.w(Tag, "unreadable video ${clip.file}", e)
+                null
+            } catch (e: RuntimeException) {
+                DebugLog.w(Tag, "malformed video ${clip.file}", e)
                 null
             }
         }

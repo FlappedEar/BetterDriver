@@ -121,11 +121,15 @@ interface ImportSink {
     fun accelerationSource(provenance: Provenance) = Unit
 }
 
-/** Reads lines up to [ImportLimits.MaxLineChars]; a longer line fails the import instead of filling memory. */
+/**
+ * Reads lines up to [ImportLimits.MaxLineChars]; a longer line fails the import instead of filling memory.
+ * A byte order mark before the first line is dropped, so that line reads as the text it holds.
+ */
 internal class LineReader(private val reader: Reader) {
     private val buf = CharArray(BufferChars)
     private var pos = 0
     private var end = 0
+    private var started = false
 
     /** The next line without its terminator, or null at the end. */
     fun next(): String? {
@@ -146,11 +150,16 @@ internal class LineReader(private val reader: Reader) {
         if (pos < end) return true
         end = reader.read(buf).coerceAtLeast(0)
         pos = 0
-        return end > 0
+        if (!started) {
+            started = true
+            if (end > 0 && buf[0] == Bom) pos = 1
+        }
+        return pos < end
     }
 
     private companion object {
         const val BufferChars = 64 * 1024
+        const val Bom = '\uFEFF'
     }
 }
 

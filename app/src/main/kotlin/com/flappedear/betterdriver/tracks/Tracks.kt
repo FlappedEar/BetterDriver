@@ -40,6 +40,7 @@ import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.detectTrack
 import com.flappedear.betterdriver.update.HttpNetwork
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
 import java.util.concurrent.Executors
@@ -138,18 +139,22 @@ class Tracks private constructor(private val context: Context) {
     /**
      * Fetches a newer circuit list from the repo on GitHub, once per process (FBBD-79), on a thread of
      * its own so a slow network never holds up the tracks; with a newer list the place is found again.
-     * Not while [recording]: nothing goes on the network then. Offline, the bundled or cached list stays.
+     * Not while [recording]: nothing goes on the network then, so a download is also dropped when a
+     * recording starts during it. Offline, the bundled or cached list stays.
      */
-    fun refreshCircuits(recording: Boolean) {
-        if (recording || !circuitsChecked.compareAndSet(false, true)) return
+    fun refreshCircuits(recording: () -> Boolean) {
+        if (recording() || !circuitsChecked.compareAndSet(false, true)) return
         // After the bundled and cached lists are loaded, so a fetched list is compared with them.
         io.execute {
             Thread({
                 val network = HttpNetwork("BetterDriver/${BuildConfig.VERSION_NAME} (Android)")
                 val result = directory.refresh { url ->
-                    val r = network.get(url, maxBytes = MaxCircuitListChars)
+                    if (recording()) throw IOException("recording")
+                    val body = ByteArrayOutputStream()
+                    // Checked after each chunk read: a recording that starts closes the connection.
+                    val r = network.download(url, body, MaxCircuitListChars.toLong()) { !recording() }
                     if (!r.ok) throw IOException("HTTP ${r.code}")
-                    r.body.decodeToString()
+                    body.toByteArray().decodeToString()
                 }
                 DebugLog.i(Tag, "circuit list: $result, revision ${directory.list.revision}")
                 if (result == CircuitRefresh.Updated || result == CircuitRefresh.NotSaved) locate()

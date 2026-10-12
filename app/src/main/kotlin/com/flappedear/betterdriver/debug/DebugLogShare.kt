@@ -105,15 +105,27 @@ object DebugLogShare {
         append("Prepared ${Date()}\n")
     }
 
-    /** The app's own logcat; Android lets an app read its own lines without a permission. */
-    private fun logcat(): String = try {
-        val p = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", LogcatLines.toString())
-            .redirectErrorStream(true).start()
-        val text = p.inputStream.bufferedReader().readText()
-        p.waitFor(LogcatTimeoutSeconds, TimeUnit.SECONDS)
-        text
-    } catch (e: IOException) {
-        "logcat not available: $e\n"
+    /**
+     * The app's own logcat; Android lets an app read its own lines without a permission. It goes to
+     * a file, so a logcat that never ends is stopped at the timeout instead of blocking the share.
+     */
+    private fun logcat(): String {
+        val out = try {
+            File.createTempFile("logcat", ".txt")
+        } catch (e: IOException) {
+            return "logcat not available: $e\n"
+        }
+        return try {
+            val p = ProcessBuilder("logcat", "-d", "-v", "threadtime", "-t", LogcatLines.toString())
+                .redirectErrorStream(true).redirectOutput(out).start()
+            val done = p.waitFor(LogcatTimeoutSeconds, TimeUnit.SECONDS)
+            if (!done) p.destroyForcibly()
+            out.readText() + if (done) "" else "logcat stopped after $LogcatTimeoutSeconds s\n"
+        } catch (e: IOException) {
+            "logcat not available: $e\n"
+        } finally {
+            out.delete()
+        }
     }
 
     private const val Tag = "DebugLogs"

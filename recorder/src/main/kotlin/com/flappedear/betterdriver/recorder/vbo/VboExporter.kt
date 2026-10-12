@@ -76,7 +76,7 @@ object VboExporter {
                 attempt++
                 name = if (attempt == 1) "${base}_${c.id}" else "${base}_${c.id}_$attempt"
             }
-            VboColumn(name, name, c.unit, VboWriter.decimal(c.decimals))
+            VboColumn(name, name, neutral(c.unit), VboWriter.decimal(c.decimals))
         }
     }
 

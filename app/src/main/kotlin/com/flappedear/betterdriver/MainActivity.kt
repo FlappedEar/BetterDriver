@@ -26,6 +26,14 @@ class MainActivity : ComponentActivity() {
     /** The file last opened with the app, kept in the saved state while its import runs. */
     private var importing: Uri? = null
 
+    /**
+     * The same file, kept on disk until its import ends: a saved state taken before the end must not
+     * start the import again after Android ends the process.
+     */
+    private val pendingImport by lazy {
+        DebugGuards.allowDisk { getSharedPreferences(PendingImportFile, MODE_PRIVATE) }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // A restore the app was stopped in finishes before anything reads the data (FBBD-156). If it
@@ -45,6 +53,7 @@ class MainActivity : ComponentActivity() {
             importFrom(intent)
         } else {
             importing = BundleCompat.getParcelable(savedInstanceState, KeyImporting, Uri::class.java)
+                ?.takeIf { DebugGuards.allowDisk { pendingImport.getString(KeyImporting, null) } == it.toString() }
             importing?.let(::startImport)
         }
         // UI-17 option A: the app is always dark, so the system bars use light icons.
@@ -53,6 +62,10 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         setContent {
+            val importRunning = Imports.get(this).state?.running == true
+            LaunchedEffect(importRunning) {
+                if (!importRunning) DebugGuards.allowDisk { pendingImport.edit().remove(KeyImporting).commit() }
+            }
             val recording = recorder.state.recording
             // The screen stays on for the whole outing, on every screen, not only the track screen.
             LaunchedEffect(recording) {
@@ -92,7 +105,10 @@ class MainActivity : ComponentActivity() {
     private fun startImport(uri: Uri) {
         val imports = Imports.get(this)
         // Imports ignores a file opened while another one is being imported.
-        if (imports.state?.running != true && imports.question == null) importing = uri
+        if (imports.state?.running != true && imports.question == null) {
+            importing = uri
+            DebugGuards.allowDisk { pendingImport.edit().putString(KeyImporting, uri.toString()).commit() }
+        }
         imports.import(uri, fromOutside = true)
     }
 
@@ -115,5 +131,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val KeyImporting = "importing"
+        const val PendingImportFile = "pending_import"
     }
 }

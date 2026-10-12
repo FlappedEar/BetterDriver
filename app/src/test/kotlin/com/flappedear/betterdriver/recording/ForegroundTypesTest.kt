@@ -28,10 +28,10 @@ class ForegroundTypesTest {
     }
 
     @Test
-    fun `from Android 14 each type needs its permission`() {
+    fun `from Android 14 location needs its permission and connected device the declared network ones`() {
         assertEquals(setOf(Location, ConnectedDevice), recorderForegroundTypes(34, true, true))
-        assertEquals(setOf(Location), recorderForegroundTypes(34, true, false))
+        assertEquals(setOf(Location, ConnectedDevice), recorderForegroundTypes(34, true, false))
         assertEquals(setOf(ConnectedDevice), recorderForegroundTypes(35, false, true))
-        assertEquals(none, recorderForegroundTypes(36, false, false))
+        assertEquals(setOf(ConnectedDevice), recorderForegroundTypes(36, false, false))
     }
 }

@@ -163,12 +163,16 @@ class LiveTracker(
         )
     }
 
-    /** Fixes a second from the mean interval of those in the [RateWindowMicros] up to [fix]. */
+    /**
+     * Fixes a second from the mean interval of those in the [RateWindowMicros] up to [fix]. A single
+     * fix in the window (the first after a gap) keeps the rate measured before it.
+     */
     private fun measureRate(fix: Long): Int {
         rateFixes.addLast(fix)
         while (rateFixes.first() < fix - RateWindowMicros) rateFixes.removeFirst()
         val span = rateFixes.last() - rateFixes.first()
-        return if (span <= 0) 0 else ((rateFixes.size - 1) * MicrosPerSecond.toDouble() / span).roundToInt()
+        if (span <= 0) return receiverRateHz
+        return ((rateFixes.size - 1) * MicrosPerSecond.toDouble() / span).roundToInt()
     }
 
     /** Keeps only fixes from the second up to [now]. */

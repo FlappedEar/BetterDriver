@@ -337,6 +337,27 @@ class SessionImportTest {
     }
 
     @Test
+    fun `a VBO starting with a byte order mark keeps its date`() {
+        val vbo = """
+            File created on 03/05/2025 @ 10:00:00
+
+            [header]
+            time
+            latitude
+            longitude
+
+            [column names]
+            time lat long
+
+            [data]
+            100000.00 +03145.00000 -01008.70000
+            100000.20 +03145.00100 -01008.70100
+        """.trimIndent()
+        val made = import("\uFEFF$vbo".byteInputStream())
+        assertEquals(Instant.parse("2025-05-03T10:00:00Z").toEpochMilli(), store.read(made.id).info.startUtcMillis)
+    }
+
+    @Test
     fun `broken, empty and foreign files are refused with a reason and leave nothing`() {
         val gpxHead = bytes("trackday-1hz.gpx").toString(Charsets.UTF_8).substringBefore("<trkseg>")
         val cases = mapOf(
