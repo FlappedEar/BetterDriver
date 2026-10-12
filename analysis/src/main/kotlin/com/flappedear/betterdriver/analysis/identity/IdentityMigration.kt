@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
@@ -66,6 +67,32 @@ fun migrateTrackIdentities(
 }
 
 /**
+ * Brings the identity of every stored track that has one up to date with the newest of [newSessions]
+ * recorded there (FBBD-172): when its fastest lap no longer drives the identity's shape (a chicane was
+ * added), the track gets the next revision, as the lap analysis would make it when the session is
+ * opened. One session per track, the newest; [stop] is asked between sessions. Returns the ids of the
+ * tracks given a new revision.
+ */
+fun reviseTrackIdentities(
+    tracks: TrackStore,
+    sessions: SessionStore,
+    newSessions: List<SessionSummary>,
+    stop: () -> Boolean = { false },
+): List<String> {
+    val saved = tracks.all()
+    val unchecked = saved.filter { it.identity != null && !it.needsIdentity }.associateBy { it.id }.toMutableMap()
+    val done = mutableListOf<String>()
+    val listed = newSessions.filter { it.state != SessionState.RECORDING }.sortedByDescending { it.info.startUtcMillis }
+    for (summary in listed.asSequence().takeWhile { unchecked.isNotEmpty() && !stop() }) {
+        val (track, data) = sessionAt(sessions, summary.dir, saved, unchecked) ?: continue
+        unchecked.remove(track.id)
+        val made = identityFrom(track, data)?.takeIf { it != track.identity }
+        if (made != null && tracks.updateIdentity(track.id, track.identity, made)?.identity == made) done += track.id
+    }
+    return done
+}
+
+/**
  * The track among [missing] the session in [dir] was driven at, with the session; null for a session
  * at another track, at none, or that cannot be read. A session that names another saved track counts
  * for that one only.
@@ -99,23 +126,33 @@ private fun readOrNull(sessions: SessionStore, dir: File, samples: Boolean): Ses
 }
 
 /**
- * Runs [migrateTrackIdentities] again only when what it looks at has changed (FBBD-172): the tracks
- * that need an identity (by id and revision) or the finished sessions. A run that was stopped is not
- * counted, so the next one picks it up. For the app's background refresh, which runs after every
- * track or session change: a new, imported or restored track gets its identity without a restart,
- * and a refresh with nothing new costs two listings.
+ * Runs [migrateTrackIdentities] and [reviseTrackIdentities] again only when what they look at has
+ * changed (FBBD-172): the tracks that need an identity (by id and revision) or the finished sessions.
+ * The sessions finished since the last completed run (all of them at the first) are checked against
+ * the identities of their tracks, so a changed layout gets its revision without opening the session.
+ * A run that was stopped is not counted, so the next one picks it up. For the app's background
+ * refresh, which runs after every track or session change: a new, imported or restored track gets its
+ * identity without a restart, and a refresh with nothing new costs two listings.
  */
 class IdentityMigrations {
     private var lastKey: Any? = null
+    private var checkedSessions: Set<String> = emptySet()
 
     @Synchronized
     fun runIfChanged(tracks: TrackStore, sessions: SessionStore, stop: () -> Boolean = { false }): List<String> {
         val key = migrationKey(tracks, sessions)
         if (key == lastKey) return emptyList()
-        val done = migrateTrackIdentities(tracks, sessions, stop)
+        val finished = sessions.list().filter { it.state != SessionState.RECORDING }
+        val made = migrateTrackIdentities(tracks, sessions, stop)
+        val revised = reviseTrackIdentities(tracks, sessions, finished.filter { it.id !in checkedSessions }, stop)
         // Keyed by what is there after the run, so the identities it stored do not count as a change.
-        lastKey = if (stop()) null else migrationKey(tracks, sessions)
-        return done
+        if (stop()) {
+            lastKey = null
+        } else {
+            lastKey = migrationKey(tracks, sessions)
+            checkedSessions = finished.map { it.id }.toSet()
+        }
+        return (made + revised).distinct()
     }
 
     private fun migrationKey(tracks: TrackStore, sessions: SessionStore): Any {

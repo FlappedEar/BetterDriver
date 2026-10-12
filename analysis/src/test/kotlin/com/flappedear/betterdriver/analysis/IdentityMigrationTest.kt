@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.analysis
 
 import com.flappedear.betterdriver.analysis.identity.IdentityMigrations
+import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
 import com.flappedear.betterdriver.analysis.identity.migrateTrackIdentities
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
@@ -10,6 +11,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackEvent
+import com.flappedear.betterdriver.timing.track.TrackRevision
 import com.flappedear.betterdriver.timing.track.TrackStore
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -182,5 +184,51 @@ class IdentityMigrationTest {
         assertTrue(r2.closed)
         assertEquals(2, r2.number)
         assertEquals(r1.corners.map { it.id }, r2.corners.map { it.id })
+    }
+
+    @Test
+    fun `a new session on a changed layout makes the next revision without being opened`() {
+        val trackDir = File(tmp, "tracks")
+        oldTrackFile(trackDir, rectangle.track())
+        val tracks = TrackStore(trackDir)
+        val sessions = SessionStore(File(tmp, "sessions"))
+        rectangle.record(sessions, tracks.get("rectangle"), laps = 3, startUtc = 1_000)
+        val migrations = IdentityMigrations()
+        assertEquals(listOf("rectangle"), migrations.runIfChanged(tracks, sessions))
+        val r1 = assertNotNull(tracks.get("rectangle")?.identity)
+        assertEquals(1, r1.number)
+
+        // A chicane was added to the top straight: the next outing's laps leave the stored centreline.
+        SimTrack.chicane("rectangle").record(sessions, tracks.get("rectangle"), laps = 3, startUtc = 2_000)
+        assertEquals(listOf("rectangle"), migrations.runIfChanged(tracks, sessions))
+        val r2 = assertNotNull(tracks.get("rectangle")?.identity)
+        assertEquals(2, r2.number)
+        for (c in r1.corners) assertEquals(c.id, r2.previousIds[c.id])
+        // The next refresh, with nothing new, leaves it.
+        assertEquals(emptyList(), migrations.runIfChanged(tracks, sessions))
+        assertEquals(r2, tracks.get("rectangle")?.identity)
+    }
+
+    @Test
+    fun `an analysis that lost the race to store its identity stores what it shows`() {
+        val r1 = assertNotNull(analyzeSession(telemetrySessionOf(rectangle.session(4), rectangle.track())).identity)
+        val chicane = SimTrack.chicane("rectangle")
+        val session = telemetrySessionOf(chicane.session(4), chicane.track())
+        // The screen read the track with r1; meanwhile another analysis stored revision 5 of the same shape.
+        var kept: TrackRevision? = r1.copy(number = 5)
+        var writes = 0
+        val analysis = analyzeKeepingIdentity(session, r1) { expected, made ->
+            writes++
+            if (kept == expected) kept = made
+            kept
+        }
+        val shown = assertNotNull(analysis.identity)
+        // Analysed again with revision 5, the chicane makes revision 6, and that is what is stored.
+        assertEquals(6, shown.number)
+        assertEquals(shown, kept)
+        assertEquals(2, writes)
+        // Nothing to store when the identity is unchanged; a failed write still shows the analysis.
+        assertEquals(shown, analyzeKeepingIdentity(session, shown) { _, _ -> error("no write expected") }.identity)
+        assertEquals(2, analyzeKeepingIdentity(session, r1) { _, _ -> null }.identity?.number)
     }
 }
