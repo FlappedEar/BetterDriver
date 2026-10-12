@@ -1,11 +1,15 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -14,16 +18,27 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 /**
  * Corner details (FBBD-104, UI-68): per corner, where the best lap and the compared lap brake, how
  * hard, their minimum and exit speeds and where the throttle comes back, with the spread over the
- * counted laps (interquartile range). Inferred values (no pedal channel) are marked ≈.
+ * counted laps (interquartile range). Inferred values (no pedal channel) are marked ≈. Where the
+ * screen can show every lap through a corner ([LocalCornerLaps], FBBD-153), tapping a corner opens it.
  */
 @Composable
 internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
     val c = TrackTheme.colors
     // With a single counted lap there is no compared lap, and no column for it.
     val other = ui.compare?.otherNumber
+    val everyLap = LocalCornerLaps.current
     for (corner in ui.corners) {
-        Card(modifier) {
-            TrackLabel(corner.name)
+        val open: (() -> Unit)? = if (everyLap != null && corner.id.isNotEmpty()) {
+            { everyLap(corner.id) }
+        } else {
+            null
+        }
+        val tap = if (open == null) Modifier else Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = open)
+        Card(modifier.then(tap)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TrackLabel(corner.name, Modifier.weight(1f))
+                if (open != null) TextButton(onClick = open) { Text("Every lap ›") }
+            }
             Row {
                 Dim("", Modifier.weight(1f))
                 Dim("Lap ${ui.bestLapNumber}", Modifier.width(ValueWidth))

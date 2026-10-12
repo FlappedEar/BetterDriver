@@ -121,7 +121,7 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
             composable(Routes.Sessions) {
                 Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo) }
             }
-            composable(Routes.Review) { ReviewRoute(nav, padding) }
+            reviewDestination(nav, padding)
             analysisDestination(nav, padding)
             cueReview(nav, padding)
             composable(Routes.Settings) {

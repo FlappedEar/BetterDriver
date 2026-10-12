@@ -65,8 +65,15 @@ private class Loaded(
 )
 
 private sealed interface Load {
-    /** [coachCandidates]: each corner (segment id) as a pick for the coach (FBBD-148), on the fastest lap. */
-    data class Done(val loaded: Loaded, val coachCandidates: Map<String, CornerPick>) : Load
+    /**
+     * [coachCandidates]: each corner (segment id) as a pick for the coach (FBBD-148), on the fastest lap.
+     * [lapVideo]: the session's video and the lap review's laps, for every lap through a corner (FBBD-153).
+     */
+    data class Done(
+        val loaded: Loaded,
+        val coachCandidates: Map<String, CornerPick>,
+        val lapVideo: LapVideo? = null,
+    ) : Load
 
     /** No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151). */
     data class Failed(val state: AnalysisState.Unavailable, val proposal: Proposal? = null) : Load
@@ -135,22 +142,24 @@ private fun SessionAnalysisRoute(nav: NavHostController, id: String) {
         val l = load as? Load.Done
         state = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
     }
-    AnalysisScreen(
-        state = state,
-        onCompare = { compared = it },
-        onAction = {
-            val proposal = (load as? Load.Failed)?.proposal
-            if (proposal == null) {
-                nav.navigate(Routes.Tracks)
-            } else {
-                // Kept by Tracks before the editor opens it (one background thread, in order).
-                tracks.propose(proposal.track, id, proposal.session)
-                nav.navigate(Routes.trackEditor(proposal.track.id))
-            }
-        },
-        onCoachPick = { toggleCoachPick(load, coachPicks, it) },
-        topBar = { ShellTopBar("Lap analysis", onBack = { nav.popBackStack() }) },
-    )
+    CornerLapsRoute(nav, id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo) {
+        AnalysisScreen(
+            state = state,
+            onCompare = { compared = it },
+            onAction = {
+                val proposal = (load as? Load.Failed)?.proposal
+                if (proposal == null) {
+                    nav.navigate(Routes.Tracks)
+                } else {
+                    // Kept by Tracks before the editor opens it (one background thread, in order).
+                    tracks.propose(proposal.track, id, proposal.session)
+                    nav.navigate(Routes.trackEditor(proposal.track.id))
+                }
+            },
+            onCoachPick = { toggleCoachPick(load, coachPicks, it) },
+            topBar = { ShellTopBar("Lap analysis", onBack = { nav.popBackStack() }) },
+        )
+    }
 }
 
 private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress?): AnalysisState {
@@ -223,7 +232,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         )
     }
     val loaded = Loaded(track.displayName, session, analysis, data.info.startUtcMillis, track, saved)
-    return Load.Done(loaded, coachCandidates(analysis, id))
+    return Load.Done(loaded, coachCandidates(analysis, id), lapVideo(sessions, data, track))
 }
 
 /**

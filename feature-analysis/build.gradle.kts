@@ -32,6 +32,9 @@ dependencies {
     implementation(project(":core-ui"))
     api(project(":analysis"))
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    // Every lap's pass through a corner on video (FBBD-153).
+    implementation(libs.androidx.media3.exoplayer)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
 }

@@ -22,6 +22,26 @@ data class LapKey(val sessionId: String, val lapNumber: Int) {
 }
 
 /**
+ * Two laps another screen opens the review on (FBBD-153): [a] against [b], with the cursor at
+ * [atFraction] of lap A's distance (as at a corner), or at the start line when null.
+ */
+data class ReviewStart(val a: LapKey, val b: LapKey, val atFraction: Double? = null) {
+    /** [track] has both laps. */
+    fun on(track: ReviewTrack): Boolean = track.lap(a) != null && track.lap(b) != null
+
+    /** Where the cursor starts when [a] and [b] are shown: [atFraction] for the laps asked for. */
+    fun atFor(a: LapKey, b: LapKey): Double? = atFraction.takeIf { a == this.a && b == this.b }
+}
+
+/** The track the review opens on: the one with both laps of [start], else the most recently driven. */
+fun firstTrack(tracks: List<ReviewTrack>, start: ReviewStart?): ReviewTrack =
+    tracks.firstOrNull { start?.on(it) == true } ?: tracks.first()
+
+/** The pair [track] opens on: the laps of [start] when it has both, else [ReviewTrack.defaultPair]. */
+fun firstPair(track: ReviewTrack, start: ReviewStart?): Pair<LapKey, LapKey>? =
+    if (start != null && start.on(track)) start.a to start.b else track.defaultPair()
+
+/**
  * One camera's video of a session (FBBD-93): its clips on the session clock and the directory
  * holding their files. The phone camera is used when the session has it, as in the VBO export.
  */
