@@ -66,4 +66,14 @@ class ReceiverClockTest {
         // Time of week moved on 160 ms in 40 ms: the delay would fall by 120 ms.
         assertEquals(1_110_000L, clock.stamp(1_110_000, 1_200))
     }
+
+    @Test
+    fun `a notification spanning a week wrap stamps each side with its own delay`() {
+        val clock = ReceiverClock()
+        clock.stamp(604_799_950_000, 604_799_920)
+        // The last message of the week and the first of the next arrive together, 50 ms after the wrap.
+        val stamps = clock.stamp(604_800_050_000, listOf(604_799_960L, 0L))
+        assertEquals(listOf(604_799_990_000L, 604_800_050_000L), stamps)
+        assertEquals(604_800_090_000L, clock.stamp(604_800_100_000, 40))
+    }
 }

@@ -148,14 +148,22 @@ class Tracks private constructor(private val context: Context) {
         io.execute {
             Thread({
                 val network = HttpNetwork("BetterDriver/${BuildConfig.VERSION_NAME} (Android)")
+                var dropped = false
                 val result = directory.refresh { url ->
-                    if (recording()) throw IOException("recording")
+                    if (recording()) {
+                        dropped = true
+                        throw IOException("recording")
+                    }
                     val body = ByteArrayOutputStream()
                     // Checked after each chunk read: a recording that starts closes the connection.
-                    val r = network.download(url, body, MaxCircuitListChars.toLong()) { !recording() }
+                    val r = network.download(url, body, MaxCircuitListChars.toLong()) {
+                        !recording().also { dropped = dropped || it }
+                    }
                     if (!r.ok) throw IOException("HTTP ${r.code}")
                     body.toByteArray().decodeToString()
                 }
+                // Dropped for a recording, not checked: the next visit to the tracks tries again.
+                if (dropped) circuitsChecked.set(false)
                 DebugLog.i(Tag, "circuit list: $result, revision ${directory.list.revision}")
                 if (result == CircuitRefresh.Updated || result == CircuitRefresh.NotSaved) locate()
             }, "circuits-refresh").start()

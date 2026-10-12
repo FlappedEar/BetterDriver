@@ -100,6 +100,12 @@ private fun AudioDelayRoute(onBack: () -> Unit) {
         val speaker = ui.step == DelayStep.Speaker
         while (!active.done && active.clicks < MaxClicksPerRun) {
             delay(AudioDelay.nextGapMillis())
+            // Without the headset the clicks would play on the phone: the run is dropped, not measured.
+            if (!speaker && withContext(Dispatchers.Default) { player.headset() } == null) {
+                run = null
+                ui = ui.copy(running = false, taps = 0, headset = null)
+                return@LaunchedEffect
+            }
             withContext(Dispatchers.Default) { player.play(speaker) }?.let(active::onClick)
         }
         // Too many clicks missed: give the last one its time, then take what was tapped.
@@ -111,8 +117,11 @@ private fun AudioDelayRoute(onBack: () -> Unit) {
         ui,
         currentMillis = coach.settings.audioDelayMillis,
         onStart = {
-            ui = ui.copy(running = true, taps = 0)
-            run = TapRun()
+            // The headset run starts only with a headset to play on.
+            if (ui.step != DelayStep.Headset || ui.headset != null) {
+                ui = ui.copy(running = true, taps = 0)
+                run = TapRun()
+            }
         },
         onTap = { t ->
             val r = run

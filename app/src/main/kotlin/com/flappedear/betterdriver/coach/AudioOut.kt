@@ -63,7 +63,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
      * speaker even with a headset connected, for the delay test's baseline. [onStart] gets the time
      * the first audio left, in [SystemClock.elapsedRealtimeNanos]; [onEnd] how it ended: "done",
      * "stopped" when another sound cut it off, or "error". Returns when play was asked for, in
-     * [SystemClock.uptimeMillis], or null if no track could be made.
+     * [SystemClock.uptimeMillis], or null if no track could be made or sent to the speaker.
      */
     fun play(
         pcm: Pcm,
@@ -72,8 +72,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         onEnd: (String) -> Unit = {},
         onStart: (Long) -> Unit = {},
     ): Long? {
-        val t = build(pcm) ?: return null
-        if (speaker) device(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)?.let(t::setPreferredDevice)
+        val t = build(pcm)?.takeIf { !speaker || toSpeaker(it, audio, id) } ?: return null
         t.setPlaybackPositionUpdateListener(
             object : AudioTrack.OnPlaybackPositionUpdateListener {
                 override fun onMarkerReached(track: AudioTrack) = finished(id, track, Done)
@@ -139,9 +138,6 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         synchronized(lock) { current = null }
         audio?.abandonAudioFocusRequest(focus)
     }
-
-    private fun device(type: Int): AudioDeviceInfo? =
-        audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type == type }
 
     private fun finished(id: String, t: AudioTrack, how: String) {
         val mine = synchronized(lock) {
@@ -210,6 +206,21 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             AudioDeviceInfo.TYPE_USB_HEADSET,
         )
     }
+}
+
+/**
+ * Sends [t] to the phone speaker; if that is refused it is released: a baseline click that would
+ * play on the headset is no click.
+ */
+private fun toSpeaker(t: AudioTrack, audio: AudioManager?, id: String): Boolean {
+    val speaker = audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+    val routed = speaker?.let(t::setPreferredDevice) == true
+    if (!routed) {
+        DebugLog.w("AudioOut", "clip $id not routed to the speaker")
+        t.release()
+    }
+    return routed
 }
 
 /** Stops and frees [t]. */
