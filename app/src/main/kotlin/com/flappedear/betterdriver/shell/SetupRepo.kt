@@ -1,10 +1,10 @@
 package com.flappedear.betterdriver.shell
 
 import android.content.Context
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
@@ -57,7 +57,7 @@ class SetupRepo private constructor(context: Context) {
         try {
             runningStore.save(it)
         } catch (e: IOException) {
-            Log.e(Tag, "session setup not saved", e)
+            DebugLog.e(Tag, "session setup not saved", e)
         }
     }
 
@@ -84,7 +84,7 @@ class SetupRepo private constructor(context: Context) {
         try {
             to.save(s)
         } catch (e: IOException) {
-            Log.e(Tag, "setup not saved", e)
+            DebugLog.e(Tag, "setup not saved", e)
         }
     }
 

@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.feature.review.ReviewLoad
 import com.flappedear.betterdriver.feature.review.ReviewSession
 import com.flappedear.betterdriver.feature.review.ReviewTrack
 import com.flappedear.betterdriver.feature.review.SessionVideo
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -99,7 +100,7 @@ class ReviewLaps private constructor(context: Context) {
             Cached(track.id, session.takeIf { it.laps.isNotEmpty() }, revisions(saved), videoStamp(s.dir))
         }
     } catch (e: Exception) {
-        android.util.Log.w(Tag, "reading session ${s.id} failed", e)
+        DebugLog.w(Tag, "reading session ${s.id} failed", e)
         Cached(null, null, revisions(saved), videoStamp(s.dir))
     }
 
@@ -159,6 +160,6 @@ private fun indexedClips(dir: File): List<VideoClip> = try {
             VideoClip(c.kind.name.lowercase(), c.fileName, c.sessionOffsetUs, c.durationUs?.let(c::sessionTimeUs))
         }
 } catch (e: IOException) {
-    android.util.Log.w("ReviewLaps", "unreadable clip index in $dir", e)
+    DebugLog.w("ReviewLaps", "unreadable clip index in $dir", e)
     emptyList()
 }

@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.core.ble.dragy
 import android.content.Context
 import com.flappedear.betterdriver.core.ble.GattLink
 import com.flappedear.betterdriver.core.ble.LinkState
+import com.flappedear.betterdriver.core.ble.logLink
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
 import kotlinx.coroutines.flow.StateFlow
@@ -41,6 +42,7 @@ class DragySource(
             DragyGatt.PROFILE,
             onData = { _, bytes -> decoder.feed(bytes) },
             onState = { s ->
+                logLink(address, s, wasStreaming)
                 val streaming = s is LinkState.Streaming
                 if (streaming && !wasStreaming) sink.event(DragyEvents.CONNECTED, address)
                 if (s is LinkState.Reconnecting) {

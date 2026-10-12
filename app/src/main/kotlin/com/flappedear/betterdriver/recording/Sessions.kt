@@ -12,6 +12,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -106,7 +107,7 @@ class Sessions private constructor(private val context: Context) {
             try {
                 store.recoverInterrupted()
             } catch (e: RuntimeException) {
-                android.util.Log.w(Tag, "recovery failed", e)
+                DebugLog.w(Tag, "recovery failed", e)
             }
             try {
                 publish()
@@ -130,7 +131,7 @@ class Sessions private constructor(private val context: Context) {
             val result = try {
                 store.delete(id)
             } catch (e: SecurityException) {
-                android.util.Log.w(Tag, "delete failed", e)
+                DebugLog.w(Tag, "delete failed", e)
                 DeleteResult.FAILED
             }
             publish()
@@ -152,16 +153,18 @@ class Sessions private constructor(private val context: Context) {
     /** Writes the session as VBO to [uri], a document the user picked. */
     fun export(id: String, uri: Uri) {
         exports[id] = ExportState.Running
+        DebugLog.i(Tag, "export $id as VBO")
         io.execute {
             val result = try {
                 val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
                 out.use { VboExporter.export(store.read(id), it) }
+                DebugLog.i(Tag, "export $id done")
                 ExportState.Done
             } catch (e: IOException) {
-                android.util.Log.w(Tag, "export failed", e)
+                DebugLog.w(Tag, "export failed", e)
                 ExportState.Failed
             } catch (e: IllegalStateException) {
-                android.util.Log.w(Tag, "export failed", e) // unreadable metadata
+                DebugLog.w(Tag, "export failed", e) // unreadable metadata
                 ExportState.Failed
             }
             main.post { exports[id] = result }
@@ -176,6 +179,7 @@ class Sessions private constructor(private val context: Context) {
      */
     fun exportWithVideo(id: String, tree: Uri) {
         exports[id] = ExportState.Running
+        DebugLog.i(Tag, "export $id as VBO with video")
         io.execute {
             val result = try {
                 val dir = store.dir(id)
@@ -200,19 +204,20 @@ class Sessions private constructor(private val context: Context) {
                         }
                     }
                     whole = true
+                    DebugLog.i(Tag, "export $id done: ${video?.orderedClips?.size ?: 0} video files")
                 } finally {
                     // No half export that could later be mistaken for a whole one, whatever stopped it.
                     if (!whole) discard(context.contentResolver, folder)
                 }
                 ExportState.Done
             } catch (e: IOException) {
-                android.util.Log.w(Tag, "export failed", e)
+                DebugLog.w(Tag, "export failed", e)
                 ExportState.Failed
             } catch (e: IllegalStateException) {
-                android.util.Log.w(Tag, "export failed", e) // unreadable metadata
+                DebugLog.w(Tag, "export failed", e) // unreadable metadata
                 ExportState.Failed
             } catch (e: IllegalArgumentException) {
-                android.util.Log.w(Tag, "export failed", e) // folder no longer usable
+                DebugLog.w(Tag, "export failed", e) // folder no longer usable
                 ExportState.Failed
             }
             main.post { exports[id] = result }
@@ -281,7 +286,7 @@ private fun goProOf(dir: File): SessionGoPro {
     val clips = try {
         VideoIndex(dir).clips().filter { it.status == ClipStatus.LOCAL && it.kind.isGoPro }
     } catch (e: IOException) {
-        android.util.Log.w("Sessions", "unreadable clip index in $dir", e)
+        DebugLog.w("Sessions", "unreadable clip index in $dir", e)
         emptyList()
     }
     val onCamera = GoProRecordings(File(dir, VideoFiles.DIR)).all().filter { !it.downloaded }.map { it.sourceId }
@@ -324,7 +329,7 @@ private fun discard(resolver: ContentResolver, folder: Uri) {
     try {
         DocumentsContract.deleteDocument(resolver, folder)
     } catch (e: Exception) {
-        android.util.Log.w("Sessions", "could not remove the failed export", e)
+        DebugLog.w("Sessions", "could not remove the failed export", e)
     }
 }
 

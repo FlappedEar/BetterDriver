@@ -25,6 +25,8 @@ import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.LiveTracker
+import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
@@ -161,6 +163,7 @@ class RecorderService : Service() {
     override fun onBind(intent: Intent): IBinder = clients.messenger.binder
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        DebugLog.i(Tag, "command ${intent?.action ?: "restart after the process was killed"}")
         when (intent?.action) {
             RecorderProtocol.ACTION_START -> {
                 lastError = null
@@ -197,6 +200,7 @@ class RecorderService : Service() {
         ServiceCompat.startForeground(this, NotificationId, notification, type)
         true
     } catch (e: RuntimeException) {
+        DebugLog.e(Tag, "could not go foreground", e)
         lastError = "Could not start recording: ${e.message}"
         stopSelf()
         false
@@ -223,7 +227,7 @@ class RecorderService : Service() {
                 devices = sources.map { it.name },
                 channels = GnssChannels.ALL,
             )
-            val recording = Recorder(store).start(info)
+            val recording = Recorder(store).start(info).also { it.listeners.add(LoggingListener(it.id, gnss.name)) }
             val tracker = LiveTracker(
                 recording.id,
                 info.startUtcMillis,
@@ -266,7 +270,7 @@ class RecorderService : Service() {
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
         } catch (e: Exception) {
-            lastError = "Could not start recording: $e"
+            lastError = "Could not start recording: $e".also { DebugLog.e(Tag, it, e) }
             main.post { endForeground() }
         }
     }
@@ -291,6 +295,7 @@ class RecorderService : Service() {
         if (ended == null || ended.recording !== recording) return
         ended.coach?.unbind()
         active = null
+        DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
@@ -328,6 +333,7 @@ class RecorderService : Service() {
     }
 
     override fun onDestroy() {
+        DebugLog.i(Tag, "service destroyed, recording running: ${active != null}")
         active?.coach?.unbind()
         clients.close()
         // Only reached with a recording running if the system destroys the service: finish it cleanly.
@@ -339,6 +345,7 @@ class RecorderService : Service() {
     }
 
     companion object {
+        private const val Tag = "RecorderService"
         private const val UserStop = "user"
         private const val KeyWanted = "wanted"
         private const val KeyCar = "car"

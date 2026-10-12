@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.camera
 
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
@@ -69,7 +70,7 @@ internal class ClipIndexer(private val index: VideoIndex) {
             try {
                 index.put(clip)
             } catch (e: IOException) {
-                android.util.Log.w("ClipIndexer", "could not index $file", e)
+                DebugLog.w("ClipIndexer", "could not index $file", e)
             }
         }
     }

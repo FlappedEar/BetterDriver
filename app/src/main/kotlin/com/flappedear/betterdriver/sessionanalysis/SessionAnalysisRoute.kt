@@ -31,6 +31,7 @@ import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
@@ -131,7 +132,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String):
     val data = try {
         sessions.read(id)
     } catch (e: Exception) {
-        android.util.Log.w("SessionAnalysis", "reading session $id failed", e)
+        DebugLog.w("SessionAnalysis", "reading session $id failed", e)
         return Load.Failed(AnalysisState.Unavailable("This session could not be read."))
     }
     val saved = tracks.all()

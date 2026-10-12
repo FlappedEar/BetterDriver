@@ -35,6 +35,7 @@ class RaceBoxSource(
         sink.event(RaceBoxEvents.IMU_CALIBRATION, calibration?.encode() ?: "none")
         var wasStreaming = false
         link = RaceBoxLink(context, address, onData = decoder::feed, onState = { s ->
+            logLink(address, s, wasStreaming)
             val streaming = s is LinkState.Streaming
             if (streaming && !wasStreaming) sink.event(RaceBoxEvents.CONNECTED, address)
             if (s is LinkState.Reconnecting) {

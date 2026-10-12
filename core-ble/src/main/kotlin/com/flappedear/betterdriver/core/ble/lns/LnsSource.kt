@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.GattNotifyLink
 import com.flappedear.betterdriver.core.ble.GattNotifySpec
 import com.flappedear.betterdriver.core.ble.LinkState
+import com.flappedear.betterdriver.core.ble.logLink
 import com.flappedear.betterdriver.core.ble.scanBleDevices
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
@@ -47,6 +48,7 @@ class LnsSource(
         // onState runs on the link's one thread, so this needs no lock.
         var wasStreaming = false
         link = GattNotifyLink(context, address, LnsSpec, onData = decoder::feed, onState = { s ->
+            logLink(address, s, wasStreaming)
             val streaming = s is LinkState.Streaming
             if (streaming && !wasStreaming) sink.event(LnsEvents.CONNECTED, address)
             if (s is LinkState.Reconnecting) {

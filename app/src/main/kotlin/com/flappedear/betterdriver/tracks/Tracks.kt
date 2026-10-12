@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.BuildConfig
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.feature.track.editor.TileLoader
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.circuitsDir
@@ -109,7 +110,7 @@ class Tracks private constructor(private val context: Context) {
         val stored = try {
             store.save(track)
         } catch (e: IOException) {
-            android.util.Log.w(Tag, "saving track ${track.id} failed", e)
+            DebugLog.w(Tag, "saving track ${track.id} failed", e)
             null
         }
         publish()
@@ -149,7 +150,7 @@ class Tracks private constructor(private val context: Context) {
     private fun readFixes(id: String): List<Fix>? = try {
         sessions.read(id).sampleSets.mapNotNull { it.toFix() }.filter { it.lat != 0.0 || it.lon != 0.0 }
     } catch (e: Exception) {
-        android.util.Log.w(Tag, "reading session $id failed", e)
+        DebugLog.w(Tag, "reading session $id failed", e)
         null
     }
 

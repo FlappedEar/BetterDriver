@@ -1,10 +1,10 @@
 package com.flappedear.betterdriver.coach
 
 import android.content.Context
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.io.IOException
 import java.util.concurrent.Executors
 
@@ -25,7 +25,7 @@ internal class CoachPrefs private constructor(context: Context) {
             try {
                 store.write(s)
             } catch (e: IOException) {
-                Log.w("CoachPrefs", "coach settings not saved", e)
+                DebugLog.w("CoachPrefs", "coach settings not saved", e)
             }
         }
     }

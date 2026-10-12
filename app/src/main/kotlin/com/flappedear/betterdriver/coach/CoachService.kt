@@ -9,7 +9,7 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
-import android.util.Log
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.RecorderProtocol
 import com.flappedear.betterdriver.recording.sessionsDir
@@ -67,7 +67,7 @@ class CoachService : Service() {
                 else -> return false
             }
         } catch (e: Exception) {
-            Log.w(Tag, "coach failed", e)
+            DebugLog.w(Tag, "coach failed", e)
             active?.let { report(it, it.now(), CoachEvents.PROBLEM, "error $e") }
         }
         return true
@@ -75,7 +75,9 @@ class CoachService : Service() {
 
     private fun begin(data: Bundle, replyTo: Messenger?) {
         val id = data.getString(CoachProtocol.SESSION) ?: return
-        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, coachSettings(this).read())
+        val settings = coachSettings(this).read()
+        DebugLog.i(Tag, "coaching session $id: $settings")
+        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
