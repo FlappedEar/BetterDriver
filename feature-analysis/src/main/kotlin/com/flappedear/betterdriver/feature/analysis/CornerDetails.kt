@@ -19,13 +19,15 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 @Composable
 internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
     val c = TrackTheme.colors
+    // With a single counted lap there is no compared lap, and no column for it.
+    val other = ui.compare?.otherNumber
     for (corner in ui.corners) {
         Card(modifier) {
             TrackLabel(corner.name)
             Row {
                 Dim("", Modifier.weight(1f))
                 Dim("Lap ${ui.bestLapNumber}", Modifier.width(ValueWidth))
-                Dim("Lap ${ui.compare?.otherNumber ?: ""}", Modifier.width(ValueWidth))
+                if (other != null) Dim("Lap $other", Modifier.width(ValueWidth))
                 Dim("Spread", Modifier.width(ValueWidth))
             }
             for (row in corner.rows) {
@@ -37,7 +39,9 @@ internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
                         Modifier.width(ValueWidth),
                         fontWeight = FontWeight.SemiBold,
                     )
-                    Text(formatMeasure(row.lap, row.measure, corner.speedUnit), Modifier.width(ValueWidth))
+                    if (other != null) {
+                        Text(formatMeasure(row.lap, row.measure, corner.speedUnit), Modifier.width(ValueWidth))
+                    }
                     Dim(formatMeasure(row.spread, row.measure, corner.speedUnit), Modifier.width(ValueWidth))
                 }
             }

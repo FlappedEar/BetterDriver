@@ -18,6 +18,8 @@ data class EarlierSession(val label: String, val laps: LapSession)
 data class SessionProgress(
     /** Earlier sessions at the track, with or without a counted lap. */
     val earlierSessions: Int = 0,
+    /** True when only the newest [earlierSessions] were compared: older ones here may exist. */
+    val earlierLimited: Boolean = false,
     /** Laps of this session that count. */
     val eligibleLapCount: Int = 0,
     /** This session's best lap; null without a counted lap. */

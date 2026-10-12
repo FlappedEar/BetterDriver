@@ -16,8 +16,11 @@ internal const val MaxEarlierSessions = 20
 /** Of at most this many earlier sessions, at any track. */
 internal const val MaxScannedSessions = 60
 
-/** The earlier sessions at a track, newest first, and the session before in full. */
-internal class Earlier(val sessions: List<EarlierSession>, val previous: PreviousLaps?)
+/**
+ * The earlier sessions at a track, newest first, and the session before in full. [limited] is true
+ * when older sessions were not read, so one of them could still hold a quicker lap.
+ */
+internal class Earlier(val sessions: List<EarlierSession>, val previous: PreviousLaps?, val limited: Boolean)
 
 /** A session's name on screen: when it started, in the phone's own date style. */
 internal fun sessionLabel(startUtcMillis: Long): String =
@@ -37,9 +40,10 @@ internal fun earlierSessions(
     saved: List<Track>,
 ): Earlier {
     var previous: PreviousLaps? = null
-    val sessions = store.list().asSequence()
+    val before = store.list()
         .filter { it.id != id && it.state != SessionState.RECORDING }
         .filter { it.info.startUtcMillis < startUtcMillis }
+    val sessions = before.asSequence()
         .take(MaxScannedSessions)
         .mapNotNull { summary ->
             try {
@@ -51,7 +55,8 @@ internal fun earlierSessions(
                 val laps = deriveSourceLapSession(session)
                 // Only the session before keeps its samples, for its corner and straight times.
                 if (previous == null && laps.fastestLapIndex != null) previous = PreviousLaps(session, laps)
-                EarlierSession(sessionLabel(summary.info.startUtcMillis), laps)
+                // The others keep only their lap times: up to 4,096 trace points a lap add up.
+                EarlierSession(sessionLabel(summary.info.startUtcMillis), laps.copy(lapTraces = emptyList()))
             } catch (e: Exception) {
                 android.util.Log.w("SessionAnalysis", "reading earlier session ${summary.id} failed", e)
                 null
@@ -59,5 +64,5 @@ internal fun earlierSessions(
         }
         .take(MaxEarlierSessions)
         .toList()
-    return Earlier(sessions, previous)
+    return Earlier(sessions, previous, before.size > MaxScannedSessions || sessions.size == MaxEarlierSessions)
 }

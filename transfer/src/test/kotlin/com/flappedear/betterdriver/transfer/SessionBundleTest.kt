@@ -221,14 +221,14 @@ class SessionBundleTest {
         // Killed after the old session was moved aside, before the new one was moved in.
         inbox.receive(bundle(phone, dir).inputStream())
         assertTrue(tablet.dir(dir.name).renameTo(File(staging, "old-" + dir.name)))
-        inbox.clearStaging()
+        assertTrue(inbox.clearStaging(), "the session that was here went back")
         assertEquals(here, files(tablet.dir(dir.name)))
         assertEquals(emptyList(), staging.listFiles()!!.toList())
 
         // Killed after the swap, before the old copy was deleted: the new one stays.
         tablet.dir(dir.name).copyRecursively(File(staging, "old-" + dir.name))
         File(tablet.dir(dir.name), "video/new.mp4").writeBytes(ByteArray(10))
-        inbox.clearStaging()
+        assertFalse(inbox.clearStaging())
         assertTrue(File(tablet.dir(dir.name), "video/new.mp4").exists())
         assertEquals(emptyList(), staging.listFiles()!!.toList())
     }

@@ -71,13 +71,12 @@ internal fun GoProLines(
     onAddFiles: (String) -> Unit,
 ) {
     val c = TrackTheme.colors
-    val withVideo = goPro.cameras.map { it.sourceId }.toSet()
     for (cam in goPro.cameras) {
-        val name = listed.firstOrNull { it.sourceId == cam.sourceId }?.name ?: nameOf(cam.sourceId)
-        val canDownload = listed.any { it.sourceId == cam.sourceId && it.download }
+        val name = listed.firstOrNull { it.answersFor(cam.sourceId) }?.name ?: nameOf(cam.sourceId)
+        val canDownload = listed.any { it.answersFor(cam.sourceId) && it.download }
         CameraLine(cam, name, work, enabled, canDownload) { onDownload(cam.sourceId) }
     }
-    for (cam in listed.filter { !it.download && it.sourceId !in withVideo }) {
+    for (cam in listed.filter { l -> !l.download && goPro.cameras.none { l.answersFor(it.sourceId) } }) {
         if (work is GoProWork.Adding && work.sourceId == cam.sourceId) {
             ValueLine(c.warning, "${cam.name} · copying and lining up ${files(work.files)}", null)
             Progress(work.bytes, work.total)

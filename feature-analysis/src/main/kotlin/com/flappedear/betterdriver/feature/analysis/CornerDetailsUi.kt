@@ -47,8 +47,9 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
             name = segment.name,
             rows = rows(segment.startProgressMeters, analysis.axis?.lengthMeters ?: 0.0, best, other, variability),
             speedUnit = best.speeds.unit,
+            // Only with a recorded accuracy: without one the spread is neither within nor beyond it.
             lineWithinGps = variability != null && variability.lineOffset.available &&
-                !variability.lineSpreadResolvable,
+                variability.typicalGpsAccuracyMeters != null && !variability.lineSpreadResolvable,
             lineSpreadMeters = variability?.lineOffset?.interquartileRange,
         )
     }

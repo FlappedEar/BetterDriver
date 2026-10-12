@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,6 +49,7 @@ class CornerDetailsTest {
             "s1" to CornerVariability(
                 minimumSpeed = ConsistencySummary(count = 3, interquartileRange = 1.5, available = true),
                 lineOffset = ConsistencySummary(count = 3, interquartileRange = 0.4, available = true),
+                typicalGpsAccuracyMeters = 0.5,
                 lineSpreadResolvable = false,
             ),
         ),
@@ -65,6 +67,14 @@ class CornerDetailsTest {
         assertEquals(30.0, rows.getValue("Throttle").best!!, 1e-9)
         assertEquals(60.0, rows.getValue("Throttle").lap!!, 1e-9)
         assertTrue(corners.single().lineWithinGps)
+    }
+
+    @Test
+    fun `a line spread is not within GPS accuracy when no accuracy was recorded`() {
+        val unknown = analysis.variability.getValue("s1").copy(typicalGpsAccuracyMeters = null)
+        val corner = cornerDetails(analysis.copy(variability = mapOf("s1" to unknown)), 0, 1).single()
+        assertFalse(corner.lineWithinGps)
+        assertEquals(0.4, corner.lineSpreadMeters!!, 1e-9)
     }
 
     @Test
