@@ -1,0 +1,73 @@
+name: Screenshots
+
+# Records the screenshot goldens (FBBD-62) of core-ui and feature-track with
+# Roborazzi on a GitHub runner, the same machine type that verifies them in
+# ci.yml, so fonts and anti-aliasing match pixel for pixel.
+#
+# Start it either way:
+# - add the label "record-screenshots" to a pull request (remove and add it
+#   again to record once more), or
+# - run this workflow from the Actions tab on a branch.
+# It uploads the goldens as an artifact and commits any changed ones to the
+# branch. A push made with the workflow token starts no CI run, so push again
+# (or rerun CI) to verify against the new goldens.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: screenshots-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  record:
+    name: Record screenshots
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'record-screenshots'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The branch itself, not the pull request's merge commit, so the
+          # goldens can be committed to it.
+          ref: ${{ github.head_ref || github.ref_name }}
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@v4
+      # Robolectric downloads its Android framework jar on the first run.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
+      - name: ./gradlew recordRoborazziDebug
+        run: ./gradlew recordRoborazziDebug --stacktrace
+      - uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: '*/src/test/screenshots/'
+          if-no-files-found: error
+          retention-days: 14
+      - name: Commit changed goldens
+        run: |
+          # The files, not the directory: a pathspec with a wildcard and a
+          # trailing slash matches nothing.
+          git add -A -- '*/src/test/screenshots/*'
+          git diff --cached --name-status | sed 's/^/::notice title=Golden::/'
+          if git diff --cached --quiet; then
+            echo "The goldens are unchanged."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Record screenshot goldens"
+          # Errors as annotations: they are readable where the log is not.
+          if ! out=$(git push 2>&1); then
+            echo "::error title=git push::$(echo "$out" | tr '\n' ' ')"
+            exit 1
+          fi

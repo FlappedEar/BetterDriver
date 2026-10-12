@@ -32,9 +32,12 @@ JDK 17 and the Android SDK (compile SDK 36).
 
 ## CI and releases
 
-- `.github/workflows/ci.yml`: unit tests (`test`), Android lint (`lint`),
-  detekt and `assemble` as parallel jobs on every pull request and on `main`.
-  The debug APK is kept as an artifact of runs on `main` and manual runs.
+- `.github/workflows/ci.yml`: unit tests (`test`, which also verifies the
+  screenshot goldens), Android lint (`lint`), detekt and `assemble` as
+  parallel jobs on every pull request and on `main`. The debug APK is kept as
+  an artifact of runs on `main` and manual runs.
+- `.github/workflows/screenshots.yml`: records the screenshot goldens; see
+  below.
 - `.github/workflows/release.yml`: a tag `vX.Y.Z` on `main` (or a manual run
   with the version) publishes `BetterDriver-X.Y.Z-android.apk` and
   `SHA256SUMS.txt` on GitHub Releases, once CI is green on that commit. The
@@ -42,3 +45,23 @@ JDK 17 and the Android SDK (compile SDK 36).
   number is the commit count. Versions below 1.0.0 are pre-releases.
 - `.github/workflows/signing-key.yml`: daily check of the signing key secret.
   See [docs/signing-key.md](docs/signing-key.md).
+
+## Screenshot tests
+
+`core-ui` (theme and components) and `feature-track` (the whole track screen)
+have JVM screenshot tests with [Roborazzi](https://github.com/takahirom/roborazzi)
+on Robolectric. The goldens are the PNGs in `<module>/src/test/screenshots`,
+the same pictures as the `@Preview`s.
+
+- CI runs `./gradlew test -Proborazzi.test.verify=true` and fails on any pixel
+  difference; the failed run's `reports-Unit tests` artifact holds the actual
+  and diff images (`build/outputs/roborazzi`).
+- After a deliberate UI change, record new goldens on a GitHub runner, so they
+  match the runner that verifies them: add the label `record-screenshots` to
+  the pull request (remove and add it again for another recording), or run the
+  Screenshots workflow on the branch. It commits the changed goldens to the
+  branch and uploads them as the `screenshots` artifact. Push again (or rerun
+  CI) to verify against them.
+- Locally: `./gradlew recordRoborazziDebug`, `verifyRoborazziDebug` or
+  `compareRoborazziDebug`. Goldens recorded on another OS can differ in
+  anti-aliasing, so commit only goldens recorded in CI.
