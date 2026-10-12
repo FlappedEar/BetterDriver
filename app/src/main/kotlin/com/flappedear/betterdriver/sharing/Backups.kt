@@ -128,7 +128,7 @@ class Backups private constructor(private val context: Context) {
         offer = null
         state = TransferState("Restoring…", running = true)
         io.execute {
-            val result = guarded("Restore failed", onFailed = { restorer.discard(o.backup) }) {
+            val result = guarded("Restore failed", onFailed = { afterFailedRestore(o) }) {
                 refuseWhileRecording()
                 refuseWhileImporting()
                 // Writes made meanwhile wait; values taken before are dropped and [reload] shows the result.
@@ -139,6 +139,21 @@ class Backups private constructor(private val context: Context) {
                 restoreResultText(done)
             }
             main.post { state = result }
+        }
+    }
+
+    /**
+     * A restore that failed after its commit left the data part restored: finishing it is tried once
+     * more here, and otherwise at the next start ([finishPending]), before anything reads the data.
+     */
+    private fun afterFailedRestore(o: RestoreOffer) {
+        restorer.discard(o.backup)
+        if (!restorer.pending) return
+        try {
+            restorer.finishPending { writePrefs(context, it) }
+            main.post(::reload)
+        } catch (e: IOException) {
+            DebugLog.e(Tag, "could not finish the restore", e)
         }
     }
 
@@ -208,6 +223,7 @@ class Backups private constructor(private val context: Context) {
         private const val Tag = "Backups"
         private const val StagingDir = "backup-staging"
         private const val SpaceMarginBytes = 200L shl 20
+        private const val FinishTries = 3
         private val AppVersion = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
 
         @Volatile
@@ -222,22 +238,27 @@ class Backups private constructor(private val context: Context) {
 
         /**
          * Finishes a restore the app was killed in after its commit (renames only), so nothing reads
-         * half-restored data. Once per process, before the setup, tracks or sessions are read; usually
-         * it only looks for the marker file.
+         * half-restored data. Call before the setup, tracks or sessions are read; usually it only
+         * looks for the marker file. Returns false when it still fails after a few tries: the data
+         * is then part old, part restored, nothing may read it, and the marker stays for the next try.
          */
-        fun finishPending(context: Context) {
-            synchronized(this) {
-                if (pendingChecked) return
-                pendingChecked = true
-            }
+        @Synchronized
+        fun finishPending(context: Context): Boolean {
             val root = context.filesDir
-            try {
-                if (BackupRestore(root, File(root, StagingDir)).finishPending { writePrefs(context, it) }) {
-                    DebugLog.i(Tag, "finished a restore the app was stopped in")
+            val restorer = BackupRestore(root, File(root, StagingDir))
+            var tries = 0
+            while (!pendingChecked && tries < FinishTries) {
+                tries++
+                try {
+                    if (restorer.finishPending { writePrefs(context, it) }) {
+                        DebugLog.i(Tag, "finished a restore the app was stopped in")
+                    }
+                    pendingChecked = true
+                } catch (e: IOException) {
+                    DebugLog.e(Tag, "could not finish the restore (try $tries)", e)
                 }
-            } catch (e: IOException) {
-                DebugLog.e(Tag, "could not finish the restore", e)
             }
+            return pendingChecked
         }
 
         /** Replaces the app's preferences with [prefs]; throws if they could not be written. */

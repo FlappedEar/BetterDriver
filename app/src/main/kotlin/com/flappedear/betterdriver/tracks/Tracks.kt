@@ -126,13 +126,37 @@ class Tracks private constructor(private val context: Context) {
     /** The circuit list, once loaded (an empty one before). */
     val circuits: CircuitList get() = directory.list
 
-    /** Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be written. */
-    fun save(track: Track, onFailed: () -> Unit = {}, onSaved: (Track) -> Unit) = io.execute {
+    /**
+     * Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be
+     * written. With [still], the track stored now is checked first, under the same hold as the write
+     * (FBBD-156): if [still] says it is no longer the one the caller decided on (a restore or another
+     * write replaced it), nothing is stored and [onChanged] runs on the main thread instead.
+     */
+    fun save(
+        track: Track,
+        onFailed: () -> Unit = {},
+        still: (Track?) -> Boolean = { true },
+        onChanged: () -> Unit = {},
+        onSaved: (Track) -> Unit,
+    ) = io.execute {
+        var changed = false
         val stored = try {
-            AppDataGate.write { store.save(track) } // waits for a restore (FBBD-156)
+            // Waits for a restore (FBBD-156).
+            AppDataGate.write {
+                if (still(store.get(track.id))) {
+                    store.save(track)
+                } else {
+                    changed = true
+                    null
+                }
+            }
         } catch (e: IOException) {
             DebugLog.w(Tag, "saving track ${track.id} failed", e)
             null
+        }
+        if (changed) {
+            main.post { onChanged() }
+            return@execute
         }
         if (stored != null && draft?.track?.id == track.id) draft = null
         publish()

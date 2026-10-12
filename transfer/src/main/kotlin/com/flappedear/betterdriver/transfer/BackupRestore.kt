@@ -159,6 +159,9 @@ class BackupRestore(private val root: File, private val staging: File) {
         return true
     }
 
+    /** Whether a committed restore is still to be finished ([finishPending]). */
+    val pending: Boolean get() = commitFile.isFile
+
     /** Removes what an unfinished check or restore left behind. Not while one runs. */
     fun clearStaging() {
         if (!commitFile.isFile) staging.deleteRecursively()

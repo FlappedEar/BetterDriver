@@ -87,6 +87,10 @@ object Backup {
     private const val MaxSmallEntry = 4L shl 20
     internal const val MaxTrackBytes = 1L shl 20
     internal const val MaxSetupBytes = 4L shl 20
+    internal const val MaxMetaBytes = 1L shl 20
+
+    /** Far more channels than any receiver records; a larger count is a damaged file. */
+    internal const val MaxChannels = 1024
 
     /** The files a backup of [root] (the app's files folder) holds, by entry path. */
     fun contents(root: File, includeSessions: Boolean): List<Pair<String, File>> = buildList {
@@ -184,11 +188,12 @@ object Backup {
         }
     }
 
-    /** Tracks and the setup are read whole when checked and merged, so their size is bounded. */
+    /** Tracks, the setup and session metadata are read whole when checked, so their size is bounded. */
     private fun checkSize(path: String, size: Long) {
         val max = when {
             path == SetupFile -> MaxSetupBytes
             path.startsWith("$Tracks/") -> MaxTrackBytes
+            path.startsWith("$Sessions/") && path.endsWith("/${SessionFiles.META}") -> MaxMetaBytes
             else -> return
         }
         if (size > max) throw BundleFormatException("$path is too large ($size bytes)")
@@ -246,10 +251,15 @@ object Backup {
         throw BundleFormatException("bad equipment and cars: ${e.message}", e)
     }
 
-    @Suppress("TooGenericExceptionCaught") // Damaged metadata fails in many ways (as in SessionStore.list).
+    // Damaged metadata fails in many ways (as in SessionStore.list).
+    @Suppress("TooGenericExceptionCaught", "ThrowsCount")
     private fun readInfo(sessionDir: File) {
         val props = SessionFiles.readProps(File(sessionDir, SessionFiles.META))
             ?: throw BundleFormatException("session ${sessionDir.name} has no metadata")
+        val channels = props.getProperty("channels", "0").toIntOrNull()
+        if (channels == null || channels !in 0..MaxChannels) {
+            throw BundleFormatException("session ${sessionDir.name} has a bad channel count")
+        }
         try {
             SessionFiles.propsToMeta(props)
         } catch (e: RuntimeException) {

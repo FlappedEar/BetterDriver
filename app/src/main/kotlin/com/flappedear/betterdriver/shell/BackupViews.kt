@@ -1,8 +1,10 @@
 package com.flappedear.betterdriver.shell
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -132,5 +134,29 @@ internal fun RestoreSheet(summary: BackupSummary, onMerge: () -> Unit, onReplace
             },
             dismissButton = { TextButton(onClick = { confirming = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * Shown instead of the app when a restore the app was stopped in could not be finished at start
+ * (FBBD-156): the data is part restored, so nothing reads it until Try again finishes it.
+ */
+@Composable
+internal fun RestoreUnfinished(onRetry: () -> Unit) {
+    Column(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .padding(24.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text("The restore could not be finished", style = MaterialTheme.typography.titleLarge)
+        DimText(
+            "BetterDriver stopped while restoring a backup, and finishing it failed, often because the " +
+                "phone is out of space. The app stays closed until it is finished, so old and restored " +
+                "data never mix. Free some space, then try again.",
+        )
+        Button(onClick = onRetry) { Text("Try again") }
     }
 }

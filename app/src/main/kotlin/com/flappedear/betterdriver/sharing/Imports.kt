@@ -151,8 +151,18 @@ class Imports private constructor(private val context: Context) {
     private fun addTrack(track: Track, done: (String) -> Unit, failed: (String) -> Unit) {
         val tracks = Tracks.get(context)
         val name = track.displayName
-        val save = { message: String -> tracks.save(track, onFailed = { failed(name) }) { done(message) } }
-        when (TrackTransfer.match(track, trackStore.get(track.id))) {
+        val here = trackStore.get(track.id)
+        // Stored only if the track here is still the one decided on; a restore (FBBD-156) or an edit
+        // in between means deciding again.
+        val save = { message: String ->
+            tracks.save(
+                track,
+                onFailed = { failed(name) },
+                still = { it == here },
+                onChanged = { io.execute { guarded { addTrack(track, done, failed) } } },
+            ) { done(message) }
+        }
+        when (TrackTransfer.match(track, here)) {
             TrackMatch.NEW -> save("Added track $name.")
             TrackMatch.SAME -> done("Track $name is already here.")
             TrackMatch.DIFFERENT -> ask(

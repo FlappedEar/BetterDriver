@@ -248,6 +248,33 @@ class BackupTest {
     }
 
     @Test
+    fun `session metadata that is huge or claims absurd channels is refused`() {
+        val phone = device("phone")
+        val id = session(phone)
+        val good = File(phone, "sessions/$id/${SessionFiles.META}").readText()
+        val tablet = File(tmp, "tablet")
+        fun withMeta(text: String): ByteArray {
+            val out = ByteArrayOutputStream()
+            BundleWriter(out, Backup.Magic).apply {
+                val m = "format=${Backup.Format}\nversion=1\ncreated=1\n".toByteArray()
+                file(Backup.ManifestEntry, m.size.toLong(), m.inputStream())
+                val meta = text.toByteArray()
+                file("sessions/$id/${SessionFiles.META}", meta.size.toLong(), meta.inputStream())
+                finish()
+            }
+            return out.toByteArray()
+        }
+
+        restorer(tablet).unpack(withMeta(good).inputStream()) // the real one is fine
+        val absurd = good.replace(Regex("(?m)^channels=.*$"), "") + "channels=2000000000\n"
+        val e = assertFailsWith<BundleFormatException> { restorer(tablet).unpack(withMeta(absurd).inputStream()) }
+        assertTrue(e.message!!.contains("channel count"), e.message)
+        val huge = good + "#" + " ".repeat(Backup.MaxMetaBytes.toInt()) + "\n"
+        val big = assertFailsWith<BundleFormatException> { restorer(tablet).unpack(withMeta(huge).inputStream()) }
+        assertTrue(big.message!!.contains("too large"), big.message)
+    }
+
+    @Test
     fun `a backup from a newer app is refused`() {
         val out = ByteArrayOutputStream()
         BundleWriter(out, Backup.Magic).apply {
@@ -402,6 +429,7 @@ class BackupTest {
             r.restore(unpacked, RestoreMode.REPLACE, emptyMap()) { error("killed") }
         }
         assertTrue(File(tablet, "backup-staging/restore/commit").isFile, "still marked to finish")
+        assertTrue(r.pending)
         r.clearStaging() // must not drop a committed restore
         assertTrue(File(tablet, "backup-staging/restore/commit").isFile)
 
@@ -412,6 +440,7 @@ class BackupTest {
         assertEquals(1, SessionStore(File(tablet, "sessions")).list().size)
         assertFalse(File(tablet, "backup-staging/restore").exists())
         assertFalse(restorer(tablet).finishPending { error("nothing pending") })
+        assertFalse(restorer(tablet).pending)
     }
 
     @Test
