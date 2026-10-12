@@ -125,21 +125,30 @@ class ReviewSyncTest {
     /**
      * Taps the chart at [fraction] of lap A's distance; returns how long both players took to show
      * the cursor's frames.
+     *
+     * Timed to when each player put its frame on screen (the release time it reports to
+     * [LapReviewProbe]), not to when a picture copy first read it: each look at the two surfaces
+     * takes the emulator tens of ms, which is the test's time, not the review's. A player that put
+     * nothing new on screen since the tap counts no time, and with no release time to go by the
+     * time of the copy counts.
      */
     private fun scrubTo(players: Players, c: Comparison, fraction: Double): Long {
         val cursor = c.microsAtDistance(fraction * c.a.trace.lengthMeters)
         val chart = app.onNodeWithTag(ReviewChartTag).performScrollTo()
         // The scroll (if any) and the last seek run their course before the timed tap.
         app.pumpFor(FrameMs * SettleFrames)
+        val startNanos = System.nanoTime()
         val start = SystemClock.uptimeMillis()
         chart.performTouchInput { click(Offset((fraction * width).toFloat(), centerY)) }
         val what = "a tap at ${(fraction * Percent).toInt()} % of the lap"
-        val settled = players.waitInSync(cursor, what, start, SeekTimeoutMs)
+        val polled = players.waitInSync(cursor, what, start, SeekTimeoutMs)
         val shown = LapReviewProbe.cursorMicros
         check(abs(shown - cursor) <= CursorToleranceMicros) {
             "a tap at $fraction put the cursor at $shown µs, the lap alignment says $cursor µs"
         }
-        return settled
+        val released = (0 until Lanes).map { LapReviewProbe.lastReleaseNanos(it) }
+        if (released.all { it == 0L }) return polled
+        return released.maxOf { (it - startNanos).coerceAtLeast(0L) } / NanosPerMilli
     }
 
     /**
@@ -157,6 +166,10 @@ class ReviewSyncTest {
             val wantA = expectedFrame(a, cursor)
             val wantB = expectedFrame(b, cursor)
             while (true) {
+                // The display frame first: on a device the next one comes within a frame of the tap,
+                // and the review only seeks on a frame.
+                app.mainClock.advanceTimeByFrame()
+                Thread.sleep(FrameMs)
                 val (va, vb) = views ?: surfaces()
                 val fa = frames.frameOf(va)
                 val fb = frames.frameOf(vb)
@@ -169,8 +182,6 @@ class ReviewSyncTest {
                         "$what: ${wants.format(wantA, wantB)} (cursor $cursor µs, after $timeoutMs ms)",
                     )
                 }
-                app.mainClock.advanceTimeByFrame()
-                Thread.sleep(FrameMs)
             }
         }
 
@@ -207,6 +218,10 @@ class ReviewSyncTest {
         const val SettleFrames = 10
         const val Percent = 100
         const val MicrosPerMilli = 1_000L
+        const val NanosPerMilli = 1_000_000L
+
+        /** Lap A's and lap B's players. */
+        const val Lanes = 2
         const val MillisPerSecond = 1_000.0
 
         /** "Lap 7 · 1:41.89", as the review names a lap. */

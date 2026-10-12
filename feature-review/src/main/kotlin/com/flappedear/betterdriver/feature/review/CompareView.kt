@@ -75,8 +75,8 @@ internal fun CompareView(
     startFraction: Double? = null,
 ) {
     val context = LocalContext.current
-    val pa = remember { LapVideoPlayer(context, muted = false) }
-    val pb = remember { LapVideoPlayer(context, muted = true) }
+    val pa = remember { LapVideoPlayer(context, muted = false, lane = 0) }
+    val pb = remember { LapVideoPlayer(context, muted = true, lane = 1) }
     DisposableEffect(Unit) {
         onDispose {
             pa.release()
