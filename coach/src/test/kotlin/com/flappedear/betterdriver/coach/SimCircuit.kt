@@ -31,7 +31,7 @@ class SimCircuit(val origin: GeoPoint = GeoPoint(52.40, 16.80)) {
     private val r = 40.0
     private val sx = w - 2 * r
     private val sy = h - 2 * r
-    private val arc = PI * r / 2
+    val arc = PI * r / 2
     val length = 2 * sx + 2 * sy + 4 * arc
 
     /** Distance from the line to each apex. */

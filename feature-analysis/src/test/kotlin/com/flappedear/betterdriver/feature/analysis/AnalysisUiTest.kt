@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.laps.TimedLap
+import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
 import com.flappedear.betterdriver.analysis.segments.RankedTimeLoss
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
@@ -13,6 +14,7 @@ import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
 import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
 import com.flappedear.betterdriver.analysis.segments.TimeLossRole
 import com.flappedear.betterdriver.analysis.segments.TimeLossWindow
+import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -71,6 +73,47 @@ class AnalysisUiTest {
         assertEquals(true, focus.observation.contains("0.200 s slower through Corner 1 than lap 3"))
         assertEquals(2, focus.compareIndex)
         assertEquals(3, focus.compareNumber)
+    }
+
+    @Test
+    fun `corners in where time goes and next session can be picked for the coach, each on one row`() {
+        fun row(id: String, type: TrackSegmentType, loss: Double) = TheoreticalBestRow(
+            id, "Segment $id", type, 0.0, 1.0, 1.0, 3, actualSeconds = 1.0, lossSeconds = loss,
+        )
+        val rows = listOf(row("c1", TrackSegmentType.Corner, 0.3), row("s1", TrackSegmentType.Straight, 0.2))
+        fun loss(lap: Int, id: String, type: TrackSegmentType, seconds: Double) = RankedTimeLoss(
+            lap, 0.0, TimeLossWindow(id, "Segment $id", type, TimeLossRole.Corner, "", 0.0, 1.0), seconds, 1.0, 1.0,
+        )
+        val segments = ApprovedSegments(
+            listOf(
+                TrackSegment("c1", "Segment c1", TrackSegmentType.Corner, 0.0, 1.0),
+                TrackSegment("s1", "Segment s1", TrackSegmentType.Straight, 1.0, 2.0),
+                TrackSegment("c2", "Segment c2", TrackSegmentType.Corner, 2.0, 3.0),
+            ),
+            "auto-lap-2",
+        )
+        val losses = listOf(
+            loss(3, "c1", TrackSegmentType.Corner, 0.4),
+            loss(1, "c2", TrackSegmentType.Corner, 0.3),
+            loss(3, "s1", TrackSegmentType.Straight, 0.2),
+        )
+        val ui = analysisUi(
+            "t",
+            analysis.copy(
+                segments = segments,
+                summary = TheoreticalBestSummary(rows, rows),
+                losses = TimeLossRanking(losses = losses, valid = true),
+            ),
+            null,
+        )!!
+        assertEquals(listOf("c1", null), ui.gains.map { it.cornerId })
+        assertEquals(listOf("c1", "c2", null), ui.losses.map { it.cornerId })
+        assertEquals("c1", ui.focus.first().cornerId)
+        // Nothing to pick until the coach's picks are known.
+        assertEquals(false, firstCornerRows(ui).any)
+        val rowsWithToggle = firstCornerRows(ui.copy(coachPickable = setOf("c1", "c2")))
+        assertEquals(setOf(0), rowsWithToggle.gains)
+        assertEquals(setOf(1), rowsWithToggle.losses)
     }
 
     @Test

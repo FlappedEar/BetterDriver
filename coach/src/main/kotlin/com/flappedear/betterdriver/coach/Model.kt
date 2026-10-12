@@ -53,7 +53,7 @@ enum class Verbosity {
     /** Each timed lap's time, nothing about corners. */
     LapTimes,
 
-    /** Cues only for the three corners losing the most time, plus lap times. */
+    /** Cues only for three corners, those picked in the lap analysis first, then those losing most; lap times. */
     Focus,
 
     /** Cues for any corner, plus lap times. */

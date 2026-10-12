@@ -60,7 +60,8 @@ import kotlin.math.roundToInt
  * speed, corners shaded, a cursor to read values), every lap's time, and the theoretical best
  * corner by corner with the compared lap's loss and the spread of the counted laps, one section
  * per tab (UI-62 B), and the compared lap on the map with its G-G diagram (FBBD-149). Tapping a lap
- * or a loss compares it. [topBar] is the app's bar with its back button.
+ * or a loss compares it. [onCoachPick] picks or unpicks a corner (segment id) for the spoken coach's
+ * next session at the track (FBBD-148). [topBar] is the app's bar with its back button.
  */
 @Composable
 fun AnalysisScreen(
@@ -68,6 +69,7 @@ fun AnalysisScreen(
     onCompare: (lapIndex: Int) -> Unit,
     modifier: Modifier = Modifier,
     onAction: () -> Unit = {},
+    onCoachPick: (cornerId: String) -> Unit = {},
     topBar: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
@@ -82,7 +84,7 @@ fun AnalysisScreen(
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
                 }
             }
-            is AnalysisState.Ready -> Ready(state.ui, onCompare)
+            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick)
         }
     }
 }
@@ -99,7 +101,7 @@ internal enum class AnalysisTab(val title: String) {
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
+private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit) {
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
     // Picking a lap or a loss compares it, so the Compare tab opens.
     val compare: (Int) -> Unit = {
@@ -128,8 +130,8 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit) {
                 AnalysisTab.Summary -> {
                     Summary(ui, width)
                     ui.progress?.let { Progress(it, width) }
-                    if (ui.focus.isNotEmpty()) Focus(ui, compare, width)
-                    if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, width)
+                    if (ui.focus.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
+                    if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }

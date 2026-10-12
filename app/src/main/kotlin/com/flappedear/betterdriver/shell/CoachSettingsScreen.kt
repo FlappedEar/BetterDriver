@@ -56,14 +56,24 @@ internal fun coachLabel(s: CoachSettings): String = when (s.verbosity) {
 
 private fun seconds(ms: Int) = String.format(Locale.ROOT, "%.1f s", ms / MillisPerSecond)
 
+/** The corners picked for the coach at one track (FBBD-148), as the settings page lists them. */
+data class PickedCorners(val trackId: String, val trackName: String, val corners: List<String>)
+
 /**
  * Spoken coach settings (FBBD-98, UI-64 option B), a page of its own opened from Settings › App: how
- * much it says, the audio delay of the headset (up to 2 s, so a cue still ends before the braking
- * zone), and how many laps it learns before the first corner cue. Each change is saved at once.
- * "Test voice" says a sample cue on the current audio output.
+ * much it says, the corners picked for it in the lap analysis at each track with a Clear for each
+ * (FBBD-148; null while they are read), the audio delay of the headset (up to 2 s, so a cue still ends
+ * before the braking zone), and how many laps it learns before the first corner cue. Each change is
+ * saved at once. "Test voice" says a sample cue on the current audio output.
  */
 @Composable
-fun CoachSettingsScreen(current: CoachSettings, onChange: (CoachSettings) -> Unit, onBack: () -> Unit) {
+fun CoachSettingsScreen(
+    current: CoachSettings,
+    onChange: (CoachSettings) -> Unit,
+    onBack: () -> Unit,
+    picked: List<PickedCorners>? = null,
+    onClearPicked: (trackId: String) -> Unit = {},
+) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Spoken coach", onBack = onBack)
         Column(
@@ -71,10 +81,33 @@ fun CoachSettingsScreen(current: CoachSettings, onChange: (CoachSettings) -> Uni
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ShellCard { VerbosityPicker(current, onChange) }
+            picked?.let { ShellCard { Picked(it, onClearPicked) } }
             ShellCard { DelayAndLaps(current, onChange) }
             ShellCard { TestVoice() }
         }
     }
+}
+
+@Composable
+private fun Picked(picked: List<PickedCorners>, onClear: (String) -> Unit) {
+    Text("Picked corners", style = MaterialTheme.typography.bodyLarge)
+    if (picked.isEmpty()) {
+        DimText("None. In a session's lap analysis, tap “Coach this next time” on a corner to pick it.")
+        return
+    }
+    picked.forEach { p ->
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(p.trackName, style = MaterialTheme.typography.bodyLarge)
+                DimText(p.corners.joinToString(" · "))
+            }
+            TextButton(onClick = { onClear(p.trackId) }) { Text("Clear") }
+        }
+    }
+    DimText(
+        "At 3 focus corners, picked corners are coached first. " +
+            "The coach's own corner numbers can differ from the analysis's.",
+    )
 }
 
 @Composable
@@ -135,7 +168,12 @@ private fun TestVoice() {
 private fun CoachSettingsScreenPreview() {
     BetterDriverTheme(darkTheme = true) {
         Box(Modifier.background(MaterialTheme.colorScheme.background)) {
-            CoachSettingsScreen(CoachSettings(), onChange = {}, onBack = {})
+            CoachSettingsScreen(
+                CoachSettings(),
+                onChange = {},
+                onBack = {},
+                picked = listOf(PickedCorners("t1", "Tor Poznań", listOf("Corner 3", "Corners 5–6"))),
+            )
         }
     }
 }
