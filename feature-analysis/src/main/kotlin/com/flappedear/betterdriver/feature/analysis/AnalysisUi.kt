@@ -14,8 +14,15 @@ import kotlin.math.roundToLong
 sealed interface AnalysisState {
     data object Loading : AnalysisState
 
-    /** Nothing to analyse: [message] says why, [action] (if any) labels the fix the screen offers. */
-    data class Unavailable(val message: String, val action: String? = null) : AnalysisState
+    /**
+     * Nothing to analyse: [message] says why, [action] (if any) labels the fix the screen offers.
+     * [acceleration] still shows the session's acceleration runs, which need no laps.
+     */
+    data class Unavailable(
+        val message: String,
+        val action: String? = null,
+        val acceleration: AccelerationUi? = null,
+    ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
 }
@@ -113,10 +120,14 @@ data class AnalysisUi(
     val focus: List<FocusRow> = emptyList(),
     /** This session against the earlier sessions at its track; null while they are read. */
     val progress: SessionProgress? = null,
+    /** The compared lap on the map and its G-G diagram; null without GPS on the session's axis. */
+    val map: MapUi? = null,
     /** Corners (segment ids) that can be picked for the coach's next session (FBBD-148); none while read. */
     val coachPickable: Set<String> = emptySet(),
     /** Of [coachPickable], the corners picked at this track, in this session or another. */
     val coachPicked: Set<String> = emptySet(),
+    /** The session's acceleration runs; null when it has none. */
+    val acceleration: AccelerationUi? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */
