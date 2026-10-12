@@ -45,8 +45,8 @@ kill9() {
   adb root >/dev/null && adb wait-for-device && adb shell kill -9 "$1"
 }
 
-adb install -r -g app/build/outputs/apk/debug/app-debug.apk || fail "app not installed"
-adb install -r -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || fail "test APK not installed"
+adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk || fail "app not installed"
+adb install -r -t -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || fail "test APK not installed"
 
 phase seed
 open_app
