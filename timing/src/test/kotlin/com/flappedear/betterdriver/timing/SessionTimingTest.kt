@@ -10,15 +10,18 @@ import com.flappedear.betterdriver.timing.circuits.Circuit
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.SessionTiming
+import com.flappedear.betterdriver.timing.live.lapLineText
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackLine
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Track detection at session start feeding live timing (FBBD-55, FBBD-12). */
 class SessionTimingTest {
@@ -48,6 +51,23 @@ class SessionTimingTest {
         val state = assertNotNull(timing.state)
         assertEquals(40_000L, state.bestMillis)
         assertEquals(40_000L, state.lastMillis)
+    }
+
+    @Test
+    fun `each lap is reported with the predicted lap time shown before its line`() {
+        val lines = mutableListOf<String>()
+        val timing = SessionTiming({ listOf(lined) }, circuits, onLap = { lap, predicted ->
+            lines += lapLineText(lap, predicted)
+        })
+        drive(timing)
+        val timed = lines.filter { "kind=Timed" in it }
+        assertEquals(3, timed.size, lines.toString())
+        // The first timed lap has no best lap to predict from; the next ones, at the same pace, predict it.
+        assertEquals("time_ms=40000 predicted_ms=none", timed.first().substringAfter("kind=Timed "))
+        for (line in timed.drop(1)) {
+            val predicted = line.substringAfter("predicted_ms=").toLong()
+            assertTrue(abs(predicted - 40_000) <= 40, line)
+        }
     }
 
     @Test

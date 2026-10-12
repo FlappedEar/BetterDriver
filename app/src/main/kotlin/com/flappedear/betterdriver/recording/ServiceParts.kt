@@ -22,7 +22,7 @@ import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.RecordingVideoSink
 
-private val CoachEventKinds = setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM)
+private val CoachEventKinds = setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM, CoachEvents.VOICE)
 private const val MaxCoachEventChars = 1_000
 
 /** The low-importance channel for the recorder and camera notifications. */
@@ -160,6 +160,11 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
         RecorderProtocol.VIDEO_SYNCED -> sink.synced(file, at, data.getLong(RecorderProtocol.VIDEO_MEDIA_US))
         RecorderProtocol.VIDEO_STOPPED -> sink.stopped(file, at, text)
         RecorderProtocol.VIDEO_STATUS -> sink.status(text, data.getBoolean(RecorderProtocol.VIDEO_OK))
+        RecorderProtocol.VIDEO_THERMAL -> sink.thermal(
+            at,
+            data.getInt(RecorderProtocol.VIDEO_THERMAL_STATUS),
+            data.getFloat(RecorderProtocol.VIDEO_HEADROOM, Float.NaN).takeUnless { it.isNaN() },
+        )
     }
 }
 

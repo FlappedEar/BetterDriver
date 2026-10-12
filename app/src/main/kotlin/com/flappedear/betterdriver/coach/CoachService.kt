@@ -106,9 +106,31 @@ class CoachService : Service() {
             data.getDouble(CoachProtocol.LON),
             speed.takeUnless { it.isNaN() },
         )
-        val out = coach.onFix(fix, a.now()) { text -> voice?.say(text) == true }
+        var asked: Asked? = null
+        val out = coach.onFix(fix, a.now()) { text ->
+            val ask = Asked(a.now()).also { asked = it }
+            voice?.say(text) { nanoTime, path, route ->
+                // Posted, so it runs after this fix: by then the cue's number is known.
+                handler.post {
+                    val text = ask.voiceText(path, route)
+                    val at = (nanoTime - a.startNanos) / NanosPerMicro
+                    if (text != null && active === a) report(a, at, CoachEvents.VOICE, text)
+                }
+            } == true
+        }
         for (e in out.events) report(a, e.tMicros, e.kind, e.text)
+        // At most one cue per fix; its sound start is logged against its number (FBBD-183).
+        asked?.seq = out.events.firstOrNull { it.kind == CoachEvents.CUE }
+            ?.let { CoachEvents.parseCue(it.tMicros, it.text)?.seq }
         updateStatus(a, out.status)
+    }
+
+    /** A cue asked of the voice at session time [askedMicros]; [seq] is set once the coach has logged it. */
+    private class Asked(val askedMicros: Long) {
+        var seq: Int? = null
+
+        /** The event text of its sound starting, how it was said and where it went; null if never logged. */
+        fun voiceText(path: String, route: String) = seq?.let { CoachEvents.voiceText(it, path, askedMicros, route) }
     }
 
     private fun updateStatus(a: Active, status: CoachStatus) {

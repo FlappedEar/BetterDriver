@@ -70,11 +70,16 @@ internal object RecorderProtocol {
     const val VIDEO_TEXT = "text"
     const val VIDEO_OK = "ok"
 
+    /** In a [VIDEO_THERMAL] report: the thermal status, and the headroom forecast (absent if unknown). */
+    const val VIDEO_THERMAL_STATUS = "thermalStatus"
+    const val VIDEO_HEADROOM = "headroom"
+
     /** Values of [VIDEO_KIND]. */
     const val VIDEO_STARTED = 1
     const val VIDEO_SYNCED = 2
     const val VIDEO_STOPPED = 3
     const val VIDEO_STATUS = 4
+    const val VIDEO_THERMAL = 5
 
     /**
      * Coach to service (FBBD-98): an event to log in the running session, in msg.data with

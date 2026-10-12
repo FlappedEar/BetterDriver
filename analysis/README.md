@@ -39,6 +39,13 @@ Kotlin file comes from.
   track's start/finish line as the start gate.
 - **Lap comparison** (`compare`, FBBD-102): two laps by distance on the session's axis, the time
   delta and both speed traces, for the charts.
+- **Session validation report** (`quality`, FBBD-183): the P0 pass criteria (FBBD-8, -12/61, -21,
+  -27/49, -43, -46, -72) checked against what a session recorded: GNSS rate, drops, gaps,
+  reconnects and parked noise; laps and the predicted lap time at the line; recorder drops and
+  restarts; video offset, drift and coverage; coach cue delay and margin; thermal status. Each
+  value is PASS, FAIL or NOT_MEASURED (with why), and says whether it was read straight from the
+  data (MEASURED) or worked out by a stated heuristic (DERIVED). The app stores it as
+  `quality.json` in the session's folder and puts it in the debug-log zip.
 
 ## Tests
 

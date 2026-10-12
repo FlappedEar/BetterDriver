@@ -120,6 +120,11 @@ data class Cue(
     val advice: Advice? = null,
     val before: CornerPass? = null,
     val target: CornerPass? = null,
+    /**
+     * Metres from the car to where braking for the corner may start, when the cue was asked for
+     * (FBBD-183): with the GNSS distance driven until its sound started, the margin it was heard with.
+     */
+    val zoneMeters: Double? = null,
 )
 
 /**

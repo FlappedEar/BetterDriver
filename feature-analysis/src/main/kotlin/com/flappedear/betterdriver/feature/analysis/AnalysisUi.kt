@@ -17,11 +17,13 @@ sealed interface AnalysisState {
     /**
      * Nothing to analyse: [message] says why, [action] (if any) labels the fix the screen offers.
      * [acceleration] still shows the session's acceleration runs, which need no laps.
+     * [quality] is the session's data quality (FBBD-183), null while it is worked out.
      */
     data class Unavailable(
         val message: String,
         val action: String? = null,
         val acceleration: AccelerationUi? = null,
+        val quality: QualityUi? = null,
     ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
@@ -128,6 +130,8 @@ data class AnalysisUi(
     val coachPicked: Set<String> = emptySet(),
     /** The session's acceleration runs; null when it has none. */
     val acceleration: AccelerationUi? = null,
+    /** The session's data quality (FBBD-183); null while it is worked out, or when it cannot be. */
+    val quality: QualityUi? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */

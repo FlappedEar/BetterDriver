@@ -253,6 +253,12 @@ class CameraService : LifecycleService() {
             putBoolean(RecorderProtocol.VIDEO_OK, ok)
         }
 
+        override fun thermal(atMicros: Long, status: Int, headroom: Float?) =
+            report(RecorderProtocol.VIDEO_THERMAL, "", atMicros) {
+                putInt(RecorderProtocol.VIDEO_THERMAL_STATUS, status)
+                headroom?.let { putFloat(RecorderProtocol.VIDEO_HEADROOM, it) }
+            }
+
         private fun report(kind: Int, file: String, atMicros: Long, extra: Bundle.() -> Unit = {}) {
             val to = recorder ?: return
             val data = Bundle().apply {

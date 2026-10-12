@@ -3,6 +3,8 @@
 // fixtures. It reads recorded sessions; the recorder never depends on it.
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    // The session validation report is stored as JSON next to the session (FBBD-183).
+    alias(libs.plugins.kotlin.serialization)
 }
 
 kotlin {
@@ -12,8 +14,9 @@ kotlin {
 dependencies {
     implementation(project(":recorder"))
     implementation(project(":timing"))
+    // api: QualityReport is @Serializable, so its users see the serializer types.
+    api(libs.kotlinx.serialization.json)
     testImplementation(kotlin("test"))
-    testImplementation(libs.kotlinx.serialization.json)
     testImplementation(platform(libs.junit5.bom))
     testImplementation(libs.junit5.jupiter)
     testRuntimeOnly(libs.junit5.launcher)

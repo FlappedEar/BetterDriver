@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.EventKinds
 import java.util.Locale
 
 /**
@@ -17,6 +18,12 @@ object CoachEvents {
     /** The coach could not speak: no voice, or a cue came too late to say. Text is the reason. */
     const val PROBLEM = "coach_problem"
 
+    /**
+     * A cue's sound started (FBBD-183); text from [voiceText]. Defined with the recorder's event kinds
+     * so the session validation report (`:analysis`) reads it too.
+     */
+    const val VOICE = EventKinds.COACH_VOICE
+
     fun cueText(cue: Cue): String = buildString {
         append("seq=").append(cue.seq)
         append(" lap=").append(cue.lap)
@@ -25,8 +32,17 @@ object CoachEvents {
         cue.advice?.let { append(" advice=").append(adviceText(it)) }
         cue.before?.let { append(" before=").append(passText(it)) }
         cue.target?.let { append(" target=").append(passText(it)) }
+        cue.zoneMeters?.let { append(" zone_m=").append(String.format(Locale.ROOT, "%.1f", it)) }
         append(" text=").append(cue.text)
     }
+
+    /**
+     * The text of a [VOICE] event: cue [seq], how it was said ([path], "live" or "clip"), when the
+     * voice was asked for it ([askedMicros], session time) and where the sound went ([route],
+     * "headset" or "speaker").
+     */
+    fun voiceText(seq: Int, path: String, askedMicros: Long, route: String) =
+        "seq=$seq path=$path asked_us=$askedMicros route=$route"
 
     fun resultText(r: CueResult): String = buildString {
         append("seq=").append(r.cue.seq)
@@ -51,6 +67,7 @@ object CoachEvents {
             advice = fields["advice"]?.let(::parseAdvice),
             before = corner?.let { c -> fields["before"]?.let { parsePass(c, it) } },
             target = corner?.let { c -> fields["target"]?.let { parsePass(c, it) } },
+            zoneMeters = fields["zone_m"]?.toDouble(),
         )
     }.getOrNull()
 

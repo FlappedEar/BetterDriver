@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.core.ble.nmea.RcChannels
+import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderListener
@@ -29,6 +30,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.SessionTiming
+import com.flappedear.betterdriver.timing.live.lapLineText
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
@@ -151,6 +153,10 @@ class RecorderService : Service() {
     /** The coach line, for the running recording (FBBD-98). Main thread. */
     private var coachStatus: CoachStatus = CoachStatus.None
 
+    /** The session a restart after a kill carries on from, for the next recording to name (FBBD-183). */
+    @Volatile
+    private var restartOf: String? = null
+
     override fun onCreate() {
         super.onCreate()
         store = SessionStore(sessionsDir(this))
@@ -174,6 +180,7 @@ class RecorderService : Service() {
             // running, the old session is recovered at the next app start and a new one carries on.
             null -> if (wanted.getBoolean(KeyWanted, false) && goForeground()) {
                 val car = wanted.getString(KeyCar, "").orEmpty()
+                restartOf = wanted.getString(KeySession, null)
                 startRecording(car, wanted.getString(KeyTrack, "").orEmpty(), wantedGnss(wanted), wantedSensors(wanted))
             } else {
                 stopSelf(startId)
@@ -232,9 +239,10 @@ class RecorderService : Service() {
             recording.listeners.add(tracker)
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
             // listener thread, so a timing failure is logged in the session and never stops it.
-            val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits) { found ->
-                recording.event(TrackEvent.KIND, TrackEvent.text(found))
-            }
+            // Each lap is logged with the predicted lap time shown before its line (FBBD-183).
+            val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits, onLap = { lap, predicted ->
+                recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
+            }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
             recording.listeners.add(timing)
             // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
             val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
@@ -250,6 +258,7 @@ class RecorderService : Service() {
                 }
             })
             active = Active(recording, tracker, timing, coach)
+            carryOn(wanted, recording, restartOf.also { restartOf = null })
             sources.forEach(recording::attach)
             main.post {
                 // Already ended on its own (storage full): no wake lock or coach binding may outlive it.
@@ -343,9 +352,22 @@ class RecorderService : Service() {
         private const val KeyWanted = "wanted"
         private const val KeyCar = "car"
 
+        /** The session being recorded, so a restart after a kill can name it (FBBD-183). */
+        private const val KeySession = "session"
+
         /** Shown on the track screen when a start has no GNSS receiver; nothing is recorded. */
         const val NoReceiver = "No GNSS receiver. Add one in Settings › Devices."
         private const val KeyTrack = "track"
+
+        /**
+         * Names in [recording] the session [previous] the killed process recorded, when it carries one
+         * on, so the validation report can measure the data lost (FBBD-183); remembers [recording] for
+         * the next restart. Control thread.
+         */
+        private fun carryOn(wanted: SharedPreferences, recording: Recording, previous: String?) {
+            previous?.let { recording.event(EventKinds.RECORDER_RESTART, "previous=$it") }
+            wanted.edit().putString(KeySession, recording.id).commit()
+        }
 
         /** What a restart after this process is killed records again (START_STICKY). Main thread. */
         private fun rememberWanted(

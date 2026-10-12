@@ -104,7 +104,8 @@ jobs:
   # Emulator smoke tests (FBBD-161): boots an Android 14 emulator, installs the
   # debug app on realistic seeded data (no Bluetooth, GPS or camera), opens
   # every screen and the 0.3.0 flows, and fails on any crash or ANR. Runs
-  # beside the checks above; one emulator and one Gradle invocation.
+  # beside the checks above; one emulator and one Gradle invocation. Then it
+  # kills the UI process during a recording (FBBD-72, ui-kill.sh).
   emulator:
     name: Emulator smoke tests
     runs-on: ubuntu-latest
