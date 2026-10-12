@@ -165,7 +165,8 @@ abstract class MainScreensLayoutTest(private val device: String) {
     /** A name half typed into New track here survives a rotation, dialog and all. */
     @Test
     fun newTrackNameSurvivesRotation() {
-        compose.edgeToEdge()
+        // Not edge to edge: with the field focused, Robolectric's phone window never settles its
+        // insets (the test never gets idle), and a name kept or lost has nothing to do with insets.
         val restoration = StateRestorationTester(compose)
         restoration.setContent { AppScreen { TracksNearKielce() } }
         compose.onNodeWithText("Not on the list", substring = true).performScrollTo().performClick()

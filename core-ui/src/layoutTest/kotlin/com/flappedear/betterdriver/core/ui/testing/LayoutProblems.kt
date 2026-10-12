@@ -41,7 +41,7 @@ fun SemanticsNodeInteractionsProvider.layoutProblems(): List<String> {
 private fun textProblems(node: SemanticsNode, windowHeight: Float): List<String> {
     val problems = ArrayList<String>()
     val name = describe(node)
-    if (overflowsItsBox(node)) problems += "$name does not fit its box and is clipped"
+    overflow(node)?.let { problems += "$name does not fit its box and is clipped ($it)" }
     val bounds = node.boundsInRoot
     val scrolls = insideVerticalScroll(node)
     // Scrolled out of view in a list: nothing of it shows, and nothing needs to.
@@ -61,14 +61,15 @@ private fun textProblems(node: SemanticsNode, windowHeight: Float): List<String>
 }
 
 /**
- * Whether the text needs more room than its own box gives it and is not ellipsized on purpose.
+ * How much more room the text needs than its own box gives it ("needs W x H px, has W x H px"), or
+ * null when it fits or is ellipsized on purpose.
  * The text is laid out again in the node's size: the layout result the semantics action returns
  * is made for the widest the text was offered, so its own overflow flags say nothing about the
  * box it got.
  */
-private fun overflowsItsBox(node: SemanticsNode): Boolean {
+private fun overflow(node: SemanticsNode): String? {
     val input = layoutOf(node)?.layoutInput
-    if (input == null || input.overflow == TextOverflow.Ellipsis) return false
+    if (input == null || input.overflow == TextOverflow.Ellipsis) return null
     val measurer = TextMeasurer(input.fontFamilyResolver, input.density, input.layoutDirection, cacheSize = 0)
     val inBox = measurer.measure(
         text = input.text,
@@ -79,7 +80,9 @@ private fun overflowsItsBox(node: SemanticsNode): Boolean {
         placeholders = input.placeholders,
         constraints = Constraints(maxWidth = node.size.width + SlackPx, maxHeight = node.size.height + SlackPx),
     )
-    return inBox.hasVisualOverflow || inBox.multiParagraph.didExceedMaxLines
+    val fits = !inBox.hasVisualOverflow && !inBox.multiParagraph.didExceedMaxLines
+    val needs = "%.0f x %.0f".format(inBox.multiParagraph.width, inBox.multiParagraph.height)
+    return if (fits) null else "needs $needs px, has ${node.size.width} x ${node.size.height} px"
 }
 
 /** Text nodes that overlap, as pairs; a node and its own descendants are not compared. */

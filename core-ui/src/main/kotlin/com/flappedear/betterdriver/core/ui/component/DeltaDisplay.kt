@@ -23,7 +23,8 @@ import com.flappedear.betterdriver.core.ui.format.isDeltaGain
  * [deltaSeconds] negative means ahead. The whole tile tints with the gain or
  * loss colour and the number stays white. Null shows "—" on a plain tile
  * (no reference lap yet). The number shrinks below [numberSize] when the tile
- * is too short for it, so it never overflows on a short window.
+ * is too short for it, so it never overflows on a short window: what has to
+ * fit is its line, which the number font makes taller than its size.
  */
 @Composable
 fun DeltaDisplay(
@@ -37,13 +38,16 @@ fun DeltaDisplay(
         isDeltaGain(deltaSeconds) -> lerp(c.surface, c.gain, TintFraction)
         else -> lerp(c.surface, c.loss, TintFraction)
     }
+    val lineFactor = numberLineFactor()
     BoxWithConstraints(
         modifier = modifier
             .background(tint, RoundedCornerShape(8.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
-        val fitted = min(numberSize, (maxHeight - LabelHeight - Spacing).coerceAtLeast(MinNumberSize))
+        // The number's line is taller than its size; a dp to spare for rounding to whole pixels.
+        val room = (maxHeight - LabelHeight - Spacing - 1.dp) / lineFactor
+        val fitted = min(numberSize, room.coerceAtLeast(MinNumberSize))
         Column(verticalArrangement = Arrangement.spacedBy(Spacing)) {
             TrackLabel("Delta vs best", color = if (deltaSeconds == null) c.textDim else c.text)
             NumberText(

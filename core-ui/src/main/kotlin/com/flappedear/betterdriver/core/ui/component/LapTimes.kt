@@ -9,19 +9,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
-import com.flappedear.betterdriver.core.ui.numberStyle
 
 /** A lap time not known yet, as wide as a real one (a placeholder per digit). */
 private val NoTime = "$DigitPlaceholder:$DigitPlaceholder$DigitPlaceholder.$DigitPlaceholder$DigitPlaceholder"
@@ -44,13 +40,7 @@ fun LapTimes(
 ) {
     val c = TrackTheme.colors
     val small = heroSize * SmallFraction
-    val heroStyle = numberStyle(heroSize, FontWeight.Bold)
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
-    // How tall a row of numbers is for its font size, from the number font itself.
-    val lineFactor = remember(heroStyle, density) {
-        with(density) { measurer.measure("0", heroStyle).size.height.toDp() } / heroSize
-    }
+    val lineFactor = numberLineFactor()
     BoxWithConstraints(
         modifier = modifier
             .background(c.surface, RoundedCornerShape(8.dp))
@@ -58,7 +48,8 @@ fun LapTimes(
         contentAlignment = Alignment.Center,
     ) {
         val hero = if (constraints.hasBoundedHeight) {
-            min(heroSize, (maxHeight - RowGap * 2) / lineFactor - small * 2).coerceAtLeast(small)
+            // A dp to spare, for the rounding of each row to whole pixels.
+            min(heroSize, (maxHeight - RowGap * 2 - 1.dp) / lineFactor - small * 2).coerceAtLeast(small)
         } else {
             heroSize
         }

@@ -16,6 +16,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.numberStyle
 
 private const val Digits = "0123456789"
@@ -68,3 +69,17 @@ fun NumberText(
 private fun Glyph(ch: Char, style: TextStyle, color: Color) {
     Text(ch.toString(), style = style, color = color, maxLines = 1, softWrap = false)
 }
+
+/**
+ * How tall a line of [NumberText] is per dp of its size: the number font's own line height, which
+ * is more than its size. Components that fit a number to a height divide by it (FBBD-62).
+ */
+@Composable
+internal fun numberLineFactor(weight: FontWeight = FontWeight.Bold): Float {
+    val style = numberStyle(ProbeSize, weight)
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    return remember(style, density) { with(density) { measurer.measure("0", style).size.height.toDp() } / ProbeSize }
+}
+
+private val ProbeSize = 100.dp
