@@ -78,7 +78,7 @@ fun AnalysisScreen(
             AnalysisState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is AnalysisState.Unavailable -> Box(Modifier.padding(16.dp)) {
+            is AnalysisState.Unavailable -> WithAcceleration(state.acceleration) {
                 Card {
                     Text(state.message, style = MaterialTheme.typography.bodyLarge)
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
@@ -132,6 +132,7 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String
                     ui.progress?.let { Progress(it, width) }
                     if (ui.focus.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
+                    ui.acceleration?.let { AccelerationCard(it, width) }
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
