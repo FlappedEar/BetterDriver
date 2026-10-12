@@ -13,9 +13,11 @@ import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
+import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.export.CsvExporter
 import com.flappedear.betterdriver.recorder.export.ExportLap
 import com.flappedear.betterdriver.recorder.export.GpxExporter
+import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionData
@@ -184,7 +186,7 @@ class Sessions private constructor(private val context: Context) {
                 val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
                 out.use {
                     when (format) {
-                        ExportFormat.Vbo -> VboExporter.export(data, it)
+                        ExportFormat.Vbo -> logExport(id, data) { VboExporter.export(data, it) }
                         ExportFormat.Csv -> CsvExporter.export(data, it, exportLaps(data, tracksDir(context)))
                         ExportFormat.Gpx -> GpxExporter.export(data, it, exportLaps(data, tracksDir(context)))
                     }
@@ -228,7 +230,9 @@ class Sessions private constructor(private val context: Context) {
                 ) ?: throw IOException("cannot create a folder in $picked")
                 var whole = false
                 try {
-                    create(folder, VboMimeType, "BetterDriver-$id.vbo").use { VboExporter.export(data, it, video) }
+                    create(folder, VboMimeType, "BetterDriver-$id.vbo").use {
+                        logExport(id, data) { VboExporter.export(data, it, video) }
+                    }
                     video?.orderedClips?.forEachIndexed { i, clip ->
                         create(folder, Mp4MimeType, video.fileName(i)).use { out ->
                             File(File(dir, VideoFiles.DIR), clip.file).inputStream().use { it.copyTo(out, CopyBuffer) }
@@ -253,6 +257,18 @@ class Sessions private constructor(private val context: Context) {
             }
             main.post { exports[id] = result }
         }
+    }
+
+    /**
+     * Runs a VBO export of session [id] and puts what it wrote and how long it took in the drive's
+     * log (FBBD-14), as an event of that session at its end.
+     */
+    private fun logExport(id: String, data: SessionData, export: () -> VboExporter.Written) {
+        val started = System.nanoTime()
+        val written = export()
+        val ms = (System.nanoTime() - started) / NanosPerMilli
+        val end = data.sampleSets.maxOfOrNull { it.tMicros } ?: 0L
+        CheckLog.event(id, end, EventKinds.VBO_EXPORT, "rows=${written.rows} samples=${written.fixes} ms=$ms")
     }
 
     /** The session's clip index (clips.json) on the recorder's terms; clips still on a camera are left out. */
@@ -301,6 +317,7 @@ class Sessions private constructor(private val context: Context) {
         private const val VboMimeType = "application/octet-stream"
         private const val Mp4MimeType = "video/mp4"
         private const val CopyBuffer = 1 shl 20
+        private const val NanosPerMilli = 1_000_000L
 
         /** The newest sessions whose validation report is made in the background; older ones on opening. */
         private const val ReportedAhead = 3

@@ -83,9 +83,11 @@ class RecoveryAndExportTest {
         val id = crashedSession(store, 250)
         store.recoverInterrupted()
         val out = ByteArrayOutputStream()
-        VboExporter.export(store.read(id), out)
+        val written = VboExporter.export(store.read(id), out)
         val p = VboValidator.validate(out.toString(Charsets.UTF_8))
         assertEquals(250, p.rows.size)
+        // What the drive's log gets for the export check (FBBD-14).
+        assertEquals(VboExporter.Written(rows = 250, fixes = 250), written)
         assertTrue(p.body["[comments]"]!!.contains("Recovered after an interrupted recording"))
         assertEquals(listOf("sats", "time", "lat", "long", "velocity", "heading", "height"), p.columnNames)
         assertEquals("080000.000", p.rows.first()[1])

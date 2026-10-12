@@ -38,10 +38,16 @@ object VboExporter {
         GnssChannels.ALT_M to VboColumn("height", "height", "", VboWriter::height),
     )
 
-    fun export(session: SessionData, out: OutputStream, video: VboVideo? = null) {
+    /** What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers. */
+    data class Written(val rows: Int, val fixes: Int)
+
+    fun export(session: SessionData, out: OutputStream, video: VboVideo? = null): Written {
         // Sources queue independently, so file order is not time order; sample-and-hold needs time order.
         // The sort is stable: sets with equal times keep their file order.
         val sets = session.sampleSets.sortedBy { it.tMicros }
+        val from = video?.startMicros ?: Long.MIN_VALUE
+        val fixes = sets.count { isFix(it) && it.tMicros >= from }
+        var rows = 0
         val firstValue = HashMap<Int, Double>()
         for (set in sets) for (v in set.values) firstValue.putIfAbsent(v.channelId, v.value)
         val extra = session.channels.values
@@ -58,10 +64,11 @@ object VboExporter {
                 gates = gates(session),
                 aviBaseName = video?.baseName,
                 aviExtension = video?.takeIf { it.extensionLine }?.extension,
-                rows = rows(session, sets, extra.map { it.id }, firstValue, video),
+                rows = rows(session, sets, extra.map { it.id }, firstValue, video).onEach { rows++ },
             ),
         )
         writer.flush()
+        return Written(rows, fixes)
     }
 
     private fun extraColumns(extra: List<ChannelDef>): List<VboColumn> {
