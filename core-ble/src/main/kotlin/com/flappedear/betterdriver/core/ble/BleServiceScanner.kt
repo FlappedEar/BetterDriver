@@ -17,6 +17,9 @@ import kotlinx.coroutines.launch
 
 private const val ForgetAfterMs = 5_000L
 
+/** How often the list is re-checked for devices that went quiet. */
+private const val RecheckMs = 1_000L
+
 /** A BLE device seen in a scan. [name] is empty when it advertises none. */
 data class FoundBleDevice(val name: String, val address: String, val rssi: Int) {
     /** Signal strength as 0 to 4 bars, on the same thresholds as [FoundRaceBox.bars]. */
@@ -67,7 +70,7 @@ fun scanBleDevices(
     if (started) {
         launch {
             while (true) {
-                delay(ForgetAfterMs / 5)
+                delay(RecheckMs)
                 synchronized(seen) { emit() }
             }
         }

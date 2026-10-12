@@ -16,6 +16,9 @@ import kotlinx.coroutines.launch
 
 private const val ForgetAfterMs = 5_000L
 
+/** How often the list is re-checked for devices that went quiet. */
+private const val RecheckMs = 1_000L
+
 /**
  * Scans for RaceBoxes while collected and emits those heard in the last 5 s, strongest first.
  * Matches on the advertised name, so a RaceBox is found even if it does not put its service
@@ -55,7 +58,7 @@ fun scanRaceBoxes(context: Context): Flow<List<FoundRaceBox>> = callbackFlow {
     if (started) {
         launch {
             while (true) {
-                delay(ForgetAfterMs / 5)
+                delay(RecheckMs)
                 synchronized(seen) { emit() }
             }
         }
