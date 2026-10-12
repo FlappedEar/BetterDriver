@@ -158,7 +158,7 @@ private fun analyzeLaps(
     return SessionAnalysis(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
         publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
-        identified?.identity,
+        identity = identified?.identity,
     )
 }
 

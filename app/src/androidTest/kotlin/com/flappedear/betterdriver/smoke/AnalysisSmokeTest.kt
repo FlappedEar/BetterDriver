@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.smoke
 
+import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasClickAction
@@ -55,14 +56,17 @@ class AnalysisSmokeTest {
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.waitForText("THEORETICAL").assertIsDisplayed()
         // The theoretical best is calculated, never shown as measured: marked, with the legend (FBBD-174).
-        app.waitFor(hasText(NotMeasuredMark, substring = true) and hasText(":", substring = true)).assertIsDisplayed()
-        app.waitFor(hasTestTag(ProvenanceLegendTag)).assertIsDisplayed()
+        // A lap time is drawn glyph by glyph (NumberText) and read as one content description.
+        val theoretical = hasContentDescription(NotMeasuredMark, substring = true) and
+            hasContentDescription(":", substring = true)
+        app.waitFor(theoretical).assertIsDisplayed()
+        legend().performScrollTo().assertIsDisplayed()
         app.waitForText("WHERE TIME GOES").performScrollTo().assertIsDisplayed()
 
         app.openTab("Compare")
         // The time delta is worked out by distance: its chart is marked, and the card has the legend.
         app.waitForText("${NotMeasuredMark}TIME DELTA").assertIsDisplayed()
-        app.waitFor(hasTestTag(ProvenanceLegendTag)).performScrollTo().assertIsDisplayed()
+        legend().performScrollTo().assertIsDisplayed()
         app.waitForText("vs best lap", substring = true)
 
         app.openTab("Map")
@@ -82,11 +86,14 @@ class AnalysisSmokeTest {
         app.waitForText("THEORETICAL BEST BY CORNER").assertIsDisplayed()
         app.waitForText("Corner 1", substring = true)
         // No brake pedal is recorded: braking points are inferred from the accelerometer, so they are
-        // marked in the corner details, and each such corner says what the mark means.
-        app.waitFor(hasText(NotMeasuredMark, substring = true) and hasText(" m", substring = true))
-            .performScrollTo()
-            .assertIsDisplayed()
-        app.waitFor(hasTestTag(ProvenanceLegendTag)).performScrollTo().assertIsDisplayed()
+        // marked in the corner details, and each such corner says what the mark means. A corner card
+        // that opens Every lap is one clickable node, so its values are looked up unmerged.
+        val inferred = hasText(NotMeasuredMark, substring = true) and hasText(" m", substring = true)
+        app.waitNamed("a marked corner value") {
+            app.onAllNodes(inferred, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        app.onAllNodes(inferred, useUnmergedTree = true)[0].performScrollTo().assertIsDisplayed()
+        legend().performScrollTo().assertIsDisplayed()
         app.back()
         app.waitForText("Compare laps")
     }
@@ -200,6 +207,18 @@ class AnalysisSmokeTest {
         app.waitForText("Touch or drag along the line", substring = true)
         app.back()
         app.waitForText("Compare laps")
+    }
+
+    /**
+     * The first "≈" legend line (FBBD-174), looked up unmerged: in a corner card that opens Every lap,
+     * the merged tree shows one clickable node without its children's tags.
+     */
+    private fun legend(): SemanticsNodeInteraction {
+        val tag = hasTestTag(ProvenanceLegendTag)
+        app.waitNamed("the provenance legend") {
+            app.onAllNodes(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+        }
+        return app.onAllNodes(tag, useUnmergedTree = true)[0]
     }
 
     private companion object {
