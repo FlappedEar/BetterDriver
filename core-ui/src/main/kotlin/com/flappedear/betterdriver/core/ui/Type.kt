@@ -8,7 +8,6 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
@@ -44,9 +43,6 @@ fun numberStyle(size: Dp, weight: FontWeight = FontWeight.Bold): TextStyle = Tex
     fontWeight = weight,
     fontSize = size.fixedSp(),
     lineHeight = size.fixedSp(),
-    // A line exactly the size, digits centred in it. Without this a line took about 1.6 times the
-    // size (this font's own ascent and descent), and short slots clipped the digits (FBBD-40).
-    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.None),
 )
 
 @Composable

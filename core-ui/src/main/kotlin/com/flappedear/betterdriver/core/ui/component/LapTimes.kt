@@ -29,6 +29,9 @@ private val NoTime = "$DigitPlaceholder:$DigitPlaceholder$DigitPlaceholder.$Digi
  * In a short window (the system bars shown by a swipe) the predicted time gives way to fit;
  * last and best keep their size, so they stay readable at a glance (FBBD-65) and never get
  * squeezed out of the block.
+ *
+ * The rows have no padding or gap above and below: a line of the number font is about 1.6 times
+ * its size, and the room above and below the digits already sets them apart (FBBD-40).
  */
 @Composable
 fun LapTimes(
@@ -44,16 +47,16 @@ fun LapTimes(
     BoxWithConstraints(
         modifier = modifier
             .background(c.surface, RoundedCornerShape(8.dp))
-            .padding(horizontal = 16.dp, vertical = 10.dp),
+            .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
     ) {
         val hero = if (constraints.hasBoundedHeight) {
-            // A dp to spare, for the rounding of each row to whole pixels.
-            min(heroSize, (maxHeight - RowGap * 2 - 1.dp) / lineFactor - small * 2).coerceAtLeast(small)
+            // Some room to spare, for the rounding of each row to whole pixels.
+            min(heroSize, (maxHeight - RoundingSpare) / lineFactor - small * 2).coerceAtLeast(small)
         } else {
             heroSize
         }
-        Column(verticalArrangement = Arrangement.spacedBy(RowGap, Alignment.CenterVertically)) {
+        Column(verticalArrangement = Arrangement.Center) {
             LapRow("Predicted", predictedMillis, hero, FontWeight.Bold, c.text)
             LapRow("Last", lastMillis, small, FontWeight.SemiBold, c.text)
             LapRow("Best", bestMillis, small, FontWeight.SemiBold, c.best)
@@ -64,7 +67,7 @@ fun LapTimes(
 /** Last and best, against the predicted time's size. */
 private const val SmallFraction = 0.55f
 
-private val RowGap = 4.dp
+private val RoundingSpare = 2.dp
 
 @Composable
 private fun LapRow(label: String, millis: Long?, size: Dp, weight: FontWeight, color: Color) {
