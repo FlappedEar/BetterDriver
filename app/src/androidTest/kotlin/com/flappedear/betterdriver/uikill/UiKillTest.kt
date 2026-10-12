@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.uikill
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
@@ -115,8 +116,8 @@ class UiKillTest {
         // Stop with the 3 s hold, anywhere on the track screen, as Arek does.
         val x = device.displayWidth / 2
         val y = device.displayHeight / 2
+        val holdWall = System.currentTimeMillis()
         device.swipe(x, y, x, y, HoldSteps)
-        val stopWall = System.currentTimeMillis()
         val finished = waitFor(StopTimeoutMs, "the session to finish") {
             store.list().singleOrNull()?.state == SessionState.FINISHED
         }
@@ -128,14 +129,16 @@ class UiKillTest {
             .sortedBy { it.tMicros }
         // Every fix Demo GNSS sent, in order, none missing or repeated, across the kill.
         fixes.forEachIndexed { i, s -> assertEquals("fix $i", gnss.fix(i.toLong()), s.values) }
-        // And the session ran the whole time: at 25 Hz, the fixes cover the wall-clock length of the
-        // recording, less the receiver's start and the stop.
-        val coveredMs = fixes.size * MillisPerSecond / gnss.rateHz
-        val lengthMs = stopWall - startWall
-        assertTrue(
-            "${fixes.size} fixes cover $coveredMs ms of a $lengthMs ms recording",
-            coveredMs >= lengthMs - SlackMs,
-        )
+        // And the session recorded the whole time: the recorder stamps each fix as it arrives, and no
+        // two are far apart, across the kill and the time with no UI, up to the hold that stops it.
+        // Fixes come at 25 Hz, so a gap of a second would be a stall.
+        val arrivals = fixes.map { it.tMicros }
+        val maxGapMs = arrivals.zipWithNext { a, b -> b - a }.maxOrNull()?.div(MicrosPerMilli) ?: 0
+        val spanMs = (arrivals.last() - arrivals.first()) / MicrosPerMilli
+        val lengthMs = holdWall - startWall
+        Log.i(Tag, "${fixes.size} fixes over $spanMs ms of $lengthMs ms before the hold, largest gap $maxGapMs ms")
+        assertTrue("a $maxGapMs ms gap between fixes", maxGapMs < MaxGapMs)
+        assertTrue("fixes span $spanMs ms of the $lengthMs ms before the hold", spanMs >= lengthMs - SlackMs)
 
         // The VBO is the one an uninterrupted recording of the same fixes gives.
         val reference = uninterrupted(data, fixes.size)
@@ -225,9 +228,11 @@ class UiKillTest {
         /** UiAutomator injects a swipe step about every 5 ms: 800 steps hold for about 4 s, past the 3 s. */
         const val HoldSteps = 800
 
-        /** The receiver's start after the session opens, and the stop after the hold, in ms. */
+        /** The receiver's start after the session opens, in ms. */
         const val SlackMs = 3_000L
-        const val MillisPerSecond = 1_000L
+        const val MaxGapMs = 1_000L
+        const val MicrosPerMilli = 1_000L
+        const val Tag = "UiKillTest"
         const val MicrosPerSecond = 1_000_000L
     }
 }
