@@ -81,7 +81,8 @@ class RaceBoxDecoder(
             val data = RaceBoxData.parse(frame.payload) ?: return@feed
             messages++
             stats.add(data.iTowMs)?.let {
-                DebugLog.i("RaceBox", "$it, ${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped")
+                val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
+                DebugLog.i("RaceBox", "$it, $reads")
             }
             if (data.hasFix != hadFix) {
                 if (hadFix != null || data.hasFix) {
@@ -132,6 +133,9 @@ class RaceBoxDecoder(
 private const val StepMs = 40L
 private const val StatsEveryMessages = 1_500
 
+/** A step longer than this has at least one message missing. */
+private const val GapMs = 60L
+
 /**
  * Message counts for the debug log (FBBD-147): every [StatsEveryMessages] messages (a minute at
  * 25 Hz) it returns a line with the messages missing from the receiver's time of week, and how many
@@ -145,26 +149,25 @@ internal class StreamStats {
     private var missedOnSecond = 0L
 
     fun add(iTowMs: Long): String? {
-        val previous = last
+        last?.let { countGap(it, iTowMs) }
         last = iTowMs
-        if (previous != null) {
-            val step = iTowMs - previous
-            // A step back is the week wrapping or a reconnect: nothing to count.
-            if (step > StepMs * 3 / 2) {
-                var t = previous + StepMs
-                while (t < iTowMs - StepMs / 2) {
-                    missed++
-                    if (onWholeSecond(t)) missedOnSecond++
-                    t += StepMs
-                }
-            }
-        }
         if (++count < StatsEveryMessages) return null
         val line = "$count messages, $missed missing ($missedOnSecond on a whole second)"
         count = 0
         missed = 0
         missedOnSecond = 0
         return line
+    }
+
+    /** A step back is the week wrapping or a reconnect: nothing to count. */
+    private fun countGap(previous: Long, iTowMs: Long) {
+        if (iTowMs - previous <= GapMs) return
+        var t = previous + StepMs
+        while (t < iTowMs - StepMs / 2) {
+            missed++
+            if (onWholeSecond(t)) missedOnSecond++
+            t += StepMs
+        }
     }
 
     private fun onWholeSecond(t: Long): Boolean {

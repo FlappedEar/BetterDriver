@@ -31,7 +31,7 @@ class DebugLogTest {
 
     @Test
     fun rotatesAndKeepsOnlyTheNewestFiles() {
-        val log = LogFile(dir, "camera", maxBytes = 200, keep = 2)
+        val log = LogFile(dir, "camera", LogFile.Rotation(maxBytes = 200, keep = 2))
         repeat(40) { log.write(DebugLog.INFO, "T", "line $it with some padding text", null) }
         val names = dir.list().orEmpty().sorted()
         assertEquals(listOf("camera.1.log", "camera.2.log", "camera.log"), names)

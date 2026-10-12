@@ -54,15 +54,14 @@ object DebugLog {
 }
 
 /**
- * A log file that rotates at [maxBytes]: `<name>.log` is the newest, then `<name>.1.log` up to
+ * A log file that rotates as [rotation] says: `<name>.log` is the newest, then `<name>.1.log` up to
  * `<name>.<keep>.log`. Each line is flushed at once, so a crash or a killed process keeps every
  * line before it. [enabled] is asked before each line; the app keeps it cheap.
  */
 class LogFile(
     private val dir: File,
     private val name: String,
-    private val maxBytes: Long = DefaultMaxBytes,
-    private val keep: Int = DefaultKeep,
+    private val rotation: Rotation = Rotation(),
     private val enabled: () -> Boolean = { true },
     private val clock: () -> Long = System::currentTimeMillis,
     private val pid: Int = 0,
@@ -94,7 +93,7 @@ class LogFile(
             o.write(bytes)
             o.flush()
             size += bytes.size
-            if (size >= maxBytes) rotate()
+            if (size >= rotation.maxBytes) rotate()
         } catch (_: IOException) {
             close()
         }
@@ -109,8 +108,8 @@ class LogFile(
 
     private fun rotate() {
         close()
-        File(dir, "$name.$keep.log").delete()
-        for (i in keep - 1 downTo 1) File(dir, "$name.$i.log").renameTo(File(dir, "$name.${i + 1}.log"))
+        File(dir, "$name.${rotation.keep}.log").delete()
+        for (i in rotation.keep - 1 downTo 1) File(dir, "$name.$i.log").renameTo(File(dir, "$name.${i + 1}.log"))
         current.renameTo(File(dir, "$name.1.log"))
         size = 0
     }
@@ -124,6 +123,9 @@ class LogFile(
         }
         out = null
     }
+
+    /** A file rotates at [maxBytes]; [keep] older files are kept beside the current one. */
+    data class Rotation(val maxBytes: Long = DefaultMaxBytes, val keep: Int = DefaultKeep)
 
     companion object {
         const val DefaultMaxBytes = 1_000_000L

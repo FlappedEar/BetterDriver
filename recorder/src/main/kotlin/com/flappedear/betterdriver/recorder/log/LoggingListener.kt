@@ -9,7 +9,11 @@ import com.flappedear.betterdriver.recorder.RecorderStatus
  * Copies a recording's events (receiver links, fixes, video files, coach, storage) and status into
  * the debug log (FBBD-146). Video sync events come every second per file and are left out.
  */
-class LoggingListener(private val sessionId: String) : RecorderListener {
+class LoggingListener(private val sessionId: String, detail: String) : RecorderListener {
+    init {
+        DebugLog.i(Tag, "$sessionId started: $detail")
+    }
+
     override fun onEvent(event: RecorderEvent) {
         if (event.kind == EventKinds.VIDEO_SYNC) return
         DebugLog.i(Tag, "$sessionId t=${event.tMicros / MicrosPerMilli}ms ${event.kind} ${event.text}")

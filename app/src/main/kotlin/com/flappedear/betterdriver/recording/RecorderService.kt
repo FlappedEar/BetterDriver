@@ -227,9 +227,7 @@ class RecorderService : Service() {
                 devices = sources.map { it.name },
                 channels = GnssChannels.ALL,
             )
-            val recording = Recorder(store).start(info)
-            DebugLog.i(Tag, "recording ${recording.id} started: ${gnss.type} ${gnss.name}, sensors ${sensors.size}")
-            recording.listeners.add(LoggingListener(recording.id))
+            val recording = Recorder(store).start(info).also { it.listeners.add(LoggingListener(it.id, gnss.name)) }
             val tracker = LiveTracker(
                 recording.id,
                 info.startUtcMillis,
@@ -272,8 +270,7 @@ class RecorderService : Service() {
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
         } catch (e: Exception) {
-            DebugLog.e(Tag, "could not start recording", e)
-            lastError = "Could not start recording: $e"
+            lastError = "Could not start recording: $e".also { DebugLog.e(Tag, it, e) }
             main.post { endForeground() }
         }
     }
