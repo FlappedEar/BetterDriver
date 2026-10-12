@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.confidence.SessionConfidence
+import com.flappedear.betterdriver.analysis.confidence.assessConfidence
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerVariability
 import com.flappedear.betterdriver.analysis.corners.measureCornerLap
@@ -84,6 +86,11 @@ data class SessionAnalysis(
      * Kept with the track when it differs from the one passed in. Null without segments.
      */
     val identity: TrackRevision? = null,
+    /**
+     * How far its conclusions can be trusted (FBBD-177): what the position evidence shows in each
+     * segment on each lap, and what applies to the whole session.
+     */
+    val confidence: SessionConfidence = SessionConfidence(),
 ) {
     /** Whether [segments] are [identity]'s corners and straights, under its ids (FBBD-172). */
     val identified: Boolean
@@ -102,7 +109,10 @@ fun analyzeSession(
     session: TelemetrySession,
     laps: LapSession = deriveSourceLapSession(session),
     identity: TrackRevision? = null,
-): SessionAnalysis = analyzeLaps(session, laps, identity).copy(provenance = analysisProvenance(session))
+): SessionAnalysis {
+    val analysis = analyzeLaps(session, laps, identity).copy(provenance = analysisProvenance(session))
+    return analysis.copy(confidence = assessConfidence(session, analysis))
+}
 
 @Suppress("ReturnCount", "LongMethod")
 private fun analyzeLaps(
