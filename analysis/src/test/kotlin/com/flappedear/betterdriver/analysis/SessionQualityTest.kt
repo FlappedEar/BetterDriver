@@ -6,9 +6,12 @@ import com.flappedear.betterdriver.analysis.quality.QualityMetric
 import com.flappedear.betterdriver.analysis.quality.QualityReport
 import com.flappedear.betterdriver.analysis.quality.Verdict
 import com.flappedear.betterdriver.analysis.quality.sessionQuality
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.ImportOrigin
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -321,6 +324,32 @@ class SessionQualityTest {
         assertEquals(1.0, r.value("thermal.step_downs"))
         assertEquals(Verdict.FAIL, sessionQuality(session(sets, statuses)).verdict("thermal.status"))
         assertEquals(Verdict.NOT_MEASURED, sessionQuality(session(sets)).verdict("thermal.status"))
+    }
+
+    @Test
+    fun `each channel is listed with its provenance, rate, longest gap and accuracy`() {
+        val hacc = ChannelDef(101, "gnss_hacc", "m", "racebox", 2)
+        val speed = GnssChannels.SPEED_KMH.copy(provenance = Provenance.CALCULATED)
+        val channels = listOf(GnssChannels.UTC_MS, GnssChannels.LAT, GnssChannels.LON, speed, hacc)
+        val sets = stream(0, 10_000_000).map { it.copy(values = it.values + ChannelValue(hacc.id, 0.5)) }
+        val origin = ImportOrigin("GPX", "a.gpx", "GPSLogger 131", 25.0)
+        val data = session(sets).let {
+            it.copy(info = it.info.copy(imported = origin), channels = channels.associateBy { c -> c.id })
+        }
+        val report = sessionQuality(data)
+        val section = report.sections.single { it.title == "Channels" }
+        assertEquals(channels.map { it.name }.sorted(), section.metrics.map { it.label }.sorted())
+        val lat = report.metric("channel.${GnssChannels.LAT.id}")
+        assertEquals(Verdict.INFO, lat.verdict)
+        assertEquals(Basis.MEASURED, lat.basis)
+        assertEquals(25.0, lat.value!!, 1e-9)
+        assertTrue("MEASURED_GNSS_RECEIVER" in lat.how && "longest gap 0.04 s" in lat.how, lat.how)
+        assertTrue("median horizontal accuracy 0.50 m" in lat.how, lat.how)
+        val calculated = report.metric("channel.${speed.id}")
+        assertEquals(Basis.DERIVED, calculated.basis)
+        assertTrue(calculated.how.startsWith("Calculated (CALCULATED)"), calculated.how)
+        assertTrue("accuracy" !in calculated.how)
+        assertTrue(section.notes.single().text.contains("GPX file a.gpx, made by GPSLogger 131, 25.0 Hz"))
     }
 
     @Test

@@ -72,6 +72,8 @@ data class SessionAnalysis(
     val cornerMetrics: Map<String, List<CornerLapMetrics>> = emptyMap(),
     /** How repeatable each corner's braking, speeds, pickup and line are over the eligible laps. */
     val variability: Map<String, CornerVariability> = emptyMap(),
+    /** Where the channels the analysis reads come from (FBBD-174). */
+    val provenance: AnalysisProvenance = AnalysisProvenance(),
 )
 
 /**
@@ -80,11 +82,13 @@ data class SessionAnalysis(
  * the best lap cannot be split (a circle has no straight) or its line disagrees with the other laps;
  * laps can still be compared by distance then.
  */
-@Suppress("ReturnCount")
 fun analyzeSession(
     session: TelemetrySession,
     laps: LapSession = deriveSourceLapSession(session),
-): SessionAnalysis {
+): SessionAnalysis = analyzeLaps(session, laps).copy(provenance = analysisProvenance(session))
+
+@Suppress("ReturnCount")
+private fun analyzeLaps(session: TelemetrySession, laps: LapSession): SessionAnalysis {
     val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps)
     val fastest = laps.timedLaps[fastestIndex]
     val review = computeSegmentReview(

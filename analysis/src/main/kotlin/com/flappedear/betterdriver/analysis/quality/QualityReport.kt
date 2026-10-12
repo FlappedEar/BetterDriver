@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /** Bumped whenever what the report holds or how it is worked out changes; an older stored report is made again. */
-const val QualityFormat = 1
+const val QualityFormat = 2 // 2: the Channels section (FBBD-174)
 
 /** A value against its pass criterion (FBBD-183). */
 @Serializable
@@ -54,7 +54,7 @@ data class QualityMetric(
 @Serializable
 data class QualityNote(val tMicros: Long, val text: String)
 
-/** One part of the report: GNSS, timing, recording, video, coach or thermal. */
+/** One part of the report: GNSS, timing, recording, video, coach, thermal or channels. */
 @Serializable
 data class QualitySection(
     val title: String,
