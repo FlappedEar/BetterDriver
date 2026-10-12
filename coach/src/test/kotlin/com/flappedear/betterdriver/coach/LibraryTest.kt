@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -27,11 +29,22 @@ class LibraryTest {
     private val sim = SimCircuit()
     private val track = sim.track()
 
-    private fun record(store: SessionStore, at: Track?, paces: List<SimCircuit.Pace>, startUtc: Long): String {
+    /** Another circuit, 200 km away. */
+    private val elsewhere = SimCircuit(GeoPoint(50.4, 19.0))
+
+    private fun record(
+        store: SessionStore,
+        at: Track?,
+        paces: List<SimCircuit.Pace>,
+        startUtc: Long,
+        circuit: SimCircuit = sim,
+    ): String = record(store, at, circuit.drive(paces).fixes, startUtc)
+
+    private fun record(store: SessionStore, at: Track?, fixes: List<CoachFix>, startUtc: Long): String {
         val rec = Recorder(store, RecorderConfig(queueCapacity = 200_000))
             .start(SessionInfo(startUtcMillis = startUtc, channels = GnssChannels.ALL))
         rec.event(TrackEvent.KIND, TrackEvent.text(at?.let { TrackDetection.Saved(it, 0.0) } ?: TrackDetection.Unknown))
-        for (f in sim.drive(paces).fixes) {
+        for (f in fixes) {
             rec.submit(
                 SampleSet(
                     f.tMicros,
@@ -47,13 +60,17 @@ class LibraryTest {
         return rec.id
     }
 
+    private fun place(id: String): SessionPlace =
+        assertNotNull(SessionPlaces(File(tmp, "coach/places.json")).read()[id])
+
     @Test
     fun `a reference is built from one earlier session and rebuilt when another appears`() {
         val store = SessionStore(File(tmp, "sessions"))
-        val library = CoachLibrary(store, File(tmp, "coach"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
         assertNull(library.reference(track))
         val first = record(store, track, List(3) { SimCircuit.Pace() }, 1_000L)
-        record(store, null, List(2) { SimCircuit.Pace() }, 2_000L)
+        // Laps somewhere else, with no track: not this track's.
+        record(store, null, List(2) { SimCircuit.Pace() }, 2_000L, elsewhere)
         val ref = assertNotNull(library.reference(track))
         assertEquals(listOf(first), ref.sessions)
         assertEquals(4, ref.corners.size)
@@ -69,5 +86,107 @@ class LibraryTest {
         assertEquals(2, assertNotNull(library.reference(edited)).trackRevision)
         // The session being recorded is left out.
         assertEquals(listOf(first), assertNotNull(library.reference(edited, exclude = second)).sessions)
+    }
+
+    @Test
+    fun `a session recorded with no track feeds the reference of a track made from it`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val saved = mutableListOf<Track>()
+        val library = CoachLibrary(store, File(tmp, "coach")) { saved.toList() }
+        // Recorded before the track existed: its track event says "unknown".
+        val drive = record(store, null, List(3) { SimCircuit.Pace() }, 1_000L)
+        library.refresh()
+        assertNull(place(drive).matched)
+        // Make a track from this session (FBBD-151): a new id, with lines where the session drove.
+        val made = track.copy(id = "made-from-session")
+        saved += made
+        library.refresh()
+        assertEquals(made.id, place(drive).matched)
+        val ref = assertNotNull(library.references.get(made.id))
+        assertEquals(listOf(drive), ref.sessions)
+        assertEquals(4, ref.corners.size)
+        // The coach starting at the new track gets it as it is.
+        assertEquals(ref, CoachLibrary(store, File(tmp, "coach")) { saved.toList() }.reference(made))
+    }
+
+    @Test
+    fun `a session whose track was deleted feeds the track at its place`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val gone = track.copy(id = "deleted")
+        val again = track.copy(id = "made-again")
+        val id = record(store, gone, List(2) { SimCircuit.Pace() }, 1_000L)
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(again) }
+        assertEquals(listOf(id), assertNotNull(library.reference(again)).sessions)
+        // While the track it recorded exists, the session is that track's only.
+        val both = CoachLibrary(store, File(tmp, "coach")) { listOf(gone, again) }
+        assertNull(both.reference(again))
+        assertEquals(listOf(id), assertNotNull(both.reference(gone)).sessions)
+    }
+
+    @Test
+    fun `a drive past the track with no timed lap there does not count`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        // Round the far end of the circuit, never over the line.
+        val fixes = (0..400).map { i ->
+            val g = sim.frame.toGeo(sim.xy(200.0 + i * 2.0))
+            CoachFix(1_000_000L + i * 100_000L, g.lat, g.lon, 72.0)
+        }
+        val past = record(store, null, fixes, 1_000L)
+        assertNull(library.reference(track))
+        assertTrue(place(past).read)
+        assertNull(place(past).matched)
+    }
+
+    @Test
+    fun `matches are kept until a track near the session changes`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        var saved = listOf(track)
+        val library = CoachLibrary(store, File(tmp, "coach")) { saved }
+        val drive = record(store, null, List(2) { SimCircuit.Pace() }, 1_000L)
+        library.refresh()
+        val first = place(drive)
+        assertEquals(track.id, first.matched)
+        // A track saved far away is no reason to read the session again.
+        saved = saved + elsewhere.track().copy(id = "far")
+        library.refresh()
+        assertEquals(first, place(drive))
+        // Lines edited: matched again with the new lines, and the reference follows them.
+        val edited = track.copy(revision = 2)
+        saved = listOf(edited)
+        library.refresh()
+        assertNotEquals(first.against, place(drive).against)
+        assertEquals(track.id, place(drive).matched)
+        assertEquals(2, assertNotNull(library.references.get(track.id)).trackRevision)
+        // Deleted: the session no longer matches anything.
+        saved = emptyList()
+        library.refresh()
+        assertNull(place(drive).matched)
+        // Back, then the session deleted: the reference is rebuilt without it.
+        saved = listOf(edited)
+        assertNotNull(library.reference(edited))
+        store.delete(drive)
+        assertNull(library.reference(edited))
+        assertNull(library.references.get(track.id))
+        assertNull(SessionPlaces(File(tmp, "coach/places.json")).read()[drive])
+    }
+
+    @Test
+    fun `a refresh asked to stop builds nothing, and the next one finishes`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        record(store, track, List(2) { SimCircuit.Pace() }, 1_000L)
+        library.refresh { true }
+        assertNull(library.references.get(track.id))
+        library.refresh()
+        assertNotNull(library.references.get(track.id))
+    }
+
+    @Test
+    fun `an area reaches only tracks whose radius gets to it`() {
+        val area = assertNotNull(Area.of(sim.drive(listOf(SimCircuit.Pace())).fixes.asSequence()))
+        assertTrue(area.reaches(track))
+        assertTrue(!area.reaches(elsewhere.track()))
+        assertNull(Area.of(emptySequence()))
     }
 }

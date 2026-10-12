@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
 import com.flappedear.betterdriver.recorder.export.CsvExporter
@@ -287,6 +288,8 @@ class Sessions private constructor(private val context: Context) {
         // After the list is shown: the first time, this reads each session once.
         val cueCounts = coached.counts(sessions)
         main.post { cues = cueCounts }
+        // Sessions added, recovered or deleted: the coach references follow (FBBD-168).
+        CoachReferences.refresh(context)
     }
 
     companion object {
