@@ -1,12 +1,14 @@
 package com.flappedear.betterdriver.uikill
 
 import android.content.Context
+import android.content.Intent
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
+import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -38,12 +40,12 @@ import java.util.concurrent.atomic.AtomicLong
  * process, the UI reconnects to it, and the session is exactly what an uninterrupted run gives.
  *
  * Three phases, run by .github/scripts/ui-kill.sh on the emulator. [seed] writes the setup (Demo
- * GNSS as the receiver). The script opens the app, and [startRecording] attaches to it (`am
- * instrument --no-restart`, so the app and its recorder are never force-stopped), presses START and
- * leaves the session recording. The script opens the app on the track screen, SIGKILLs the UI
- * process (as Android does to free memory), checks the recorder process lives on, waits, and opens
- * the app again; [reconnectAndStop] attaches to it, checks it shows the running session, stops it
- * with the 3 s hold and checks every fix of the whole session is there.
+ * GNSS as the receiver). The script starts the app's process, and [startRecording] attaches to it
+ * (`am instrument --no-restart`, so the app and its recorder are never force-stopped), opens Drive,
+ * presses START and leaves the session recording. The script opens the app on the track screen,
+ * SIGKILLs the UI process (as Android does to free memory), checks the recorder process lives on,
+ * waits, and starts the app again; [reconnectAndStop] attaches to it, opens it, checks it shows the
+ * running session, stops it with the 3 s hold and checks every fix of the whole session is there.
  * Demo GNSS sends the same fix for each index ([FakeGnss]), so any lost or repeated fix shows.
  */
 @RunWith(AndroidJUnit4::class)
@@ -76,9 +78,9 @@ class UiKillTest {
 
     @Test
     fun startRecording() {
-        // The script opened the app on Drive.
+        openApp()
         val start = device.wait(Until.findObject(By.text("START")), LoadTimeoutMs)
-        checkNotNull(start) { "Drive shows no START" }.click()
+        checkNotNull(start) { "Drive shows no START. ${screen()}" }.click()
         waitForTrackScreen()
         val live = waitForRecorder("the recording to start") { it.recording }.live!!
         // Some data before the kill, written well before it.
@@ -103,8 +105,8 @@ class UiKillTest {
         assertEquals(id, before.id)
         assertEquals("still recording after the UI was killed", SessionState.RECORDING, before.state)
 
-        // The script opened the app again: it reconnects to the running session and shows it on the
-        // track screen.
+        // The app, opened again, reconnects to the running session and shows it on the track screen.
+        openApp()
         waitForTrackScreen()
         val live = waitForRecorder("the UI to reconnect") { it.recording }.live!!
         assertEquals("reconnected to another session", id, live.sessionId)
@@ -157,10 +159,30 @@ class UiKillTest {
 
     private fun String.withoutSessionId(id: String) = replace(id, "<session>")
 
+    /**
+     * Opens the app from this process, after the attach: the runner's activity monitoring only sees
+     * activities started once it runs, and the script's `am start` can leave the launcher in front.
+     */
+    private fun openApp() {
+        val intent = Intent(app, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        app.startActivity(intent)
+        device.wait(Until.hasObject(By.pkg(app.packageName).depth(0)), LoadTimeoutMs)
+    }
+
     /** The track screen's status strip shows the receiver's rate once fixes arrive ("25 Hz · 14 sats"). */
     private fun waitForTrackScreen() {
         val shown = device.wait(Until.hasObject(By.textContains(" Hz")), LoadTimeoutMs)
-        check(shown == true) { "the track screen shows no live GNSS" }
+        check(shown == true) { "the track screen shows no live GNSS. ${screen()}" }
+    }
+
+    /** What is on screen and what the recorder says, for a failure message. */
+    private fun screen(): String {
+        var state = RecorderState()
+        instrumentation.runOnMainSync { state = RecorderClient.get(app).state }
+        val texts = device.findObjects(By.textContains("")).mapNotNull { it.text }.take(MaxTexts)
+        return "Front: ${device.currentPackageName}; texts: $texts; recording=${state.recording}, " +
+            "live=${state.live?.let { "${it.sessionId} ${it.gnss}" }}"
     }
 
     private fun waitForRecorder(what: String, condition: (RecorderState) -> Boolean): RecorderState {
@@ -189,6 +211,7 @@ class UiKillTest {
         const val StopTimeoutMs = 30_000L
         const val BeforeKillMs = 5_000L
         const val PollMs = 200L
+        const val MaxTexts = 30
 
         /** UiAutomator injects a swipe step about every 5 ms: 800 steps hold for about 4 s, past the 3 s. */
         const val HoldSteps = 800
