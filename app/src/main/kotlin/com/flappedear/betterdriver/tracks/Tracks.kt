@@ -157,8 +157,8 @@ class Tracks private constructor(private val context: Context) {
         }
         val coachGone = references.get(id) == null && picks.get(id).isEmpty()
         if (coachGone) store.delete(id)
-        if (draft?.track?.id == id) draft = null
         val gone = coachGone && store.get(id) == null
+        if (gone && draft?.track?.id == id) draft = null
         if (!gone) DebugLog.w(Tag, "deleting track $id failed")
         publish()
         main.post { onDone(gone) }
