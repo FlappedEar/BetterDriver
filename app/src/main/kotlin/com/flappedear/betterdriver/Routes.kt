@@ -12,6 +12,9 @@ object Routes {
     /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
     const val CoachSettings = "settings/coach"
 
+    /** The headset audio-delay test (FBBD-49), opened from the spoken coach settings. */
+    const val CoachAudioDelay = "settings/coach/delay"
+
     /** Add equipment (UI-34 B): scan for a RaceBox or Open GoPro camera, or add one without Bluetooth. */
     const val AddEquipment = "add-equipment"
 
