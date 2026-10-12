@@ -21,6 +21,9 @@ android {
         versionName = appVersionName
         // Emulator smoke tests (FBBD-161): ./gradlew :app:connectedDebugAndroidTest
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        // The UI-process kill test (FBBD-72) runs in phases with the process killed between them,
+        // so .github/scripts/ui-kill.sh runs it on its own, not with the smoke tests.
+        testInstrumentationRunnerArguments["notAnnotation"] = "com.flappedear.betterdriver.uikill.UiKillPhase"
     }
 
     sourceSets {
@@ -91,4 +94,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.espresso.core)
     androidTestImplementation(libs.androidx.test.espresso.intents)
+    androidTestImplementation(libs.androidx.test.uiautomator)
 }
