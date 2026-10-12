@@ -267,6 +267,20 @@ object SmokeData {
         Tracks.get(app).refresh()
     }
 
+    /** [ReviewFixtures.seed], then the app reads the sessions and tracks again. */
+    fun seedReview() {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        ReviewFixtures.seed(app.filesDir) { name -> assets.open(name) }
+        Sessions.get(app).refresh()
+        Tracks.get(app).refresh()
+    }
+
+    /** The session store the app reads, for a test that checks what a screen shows against the data. */
+    fun store(): SessionStore = SessionStore(sessionsDir)
+
+    /** The id of the session of [car]. */
+    fun sessionOf(car: String): String = sessions().first { it.info.car == car }.id
+
     /** A file of the analysis parity corpus, as text. */
     fun corpus(name: String): String =
         InstrumentationRegistry.getInstrumentation().context.assets.open(name).bufferedReader().use { it.readText() }

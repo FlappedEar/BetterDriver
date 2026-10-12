@@ -38,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -74,8 +75,8 @@ internal fun CompareView(
     startFraction: Double? = null,
 ) {
     val context = LocalContext.current
-    val pa = remember { LapVideoPlayer(context, muted = false) }
-    val pb = remember { LapVideoPlayer(context, muted = true) }
+    val pa = remember { LapVideoPlayer(context, muted = false, lane = 0) }
+    val pb = remember { LapVideoPlayer(context, muted = true, lane = 1) }
     DisposableEffect(Unit) {
         onDispose {
             pa.release()
@@ -85,6 +86,8 @@ internal fun CompareView(
     val st = remember(c) { ReviewTransport(c, startFraction) }
     PauseWhenHidden { st.playing = false }
     LaunchedEffect(st) { followFrames(c, st, pa, pb) }
+    // Tagged so the emulator tests can scrub it (FBBD-24).
+    val chart = Modifier.fillMaxWidth().height(ChartHeight).testTag(ReviewChartTag)
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         CompareBar(c, onChangeLaps)
         if (wide) {
@@ -100,7 +103,7 @@ internal fun CompareView(
                     TransportRow(c, st)
                     LapMap(c, st::cursor, Modifier.weight(1f).fillMaxWidth())
                     Spacer(Modifier.height(12.dp))
-                    DeltaChart(c, st::cursorFractions, st.scrub, Modifier.fillMaxWidth().height(ChartHeight))
+                    DeltaChart(c, st::cursorFractions, st.scrub, chart)
                 }
             }
         } else {
@@ -109,7 +112,7 @@ internal fun CompareView(
                 Spacer(Modifier.height(8.dp))
                 LapPane(c.b, "B", LapColors.b, pb, Modifier.fillMaxWidth().height(PhoneVideoHeight))
                 TransportRow(c, st)
-                DeltaChart(c, st::cursorFractions, st.scrub, Modifier.fillMaxWidth().height(ChartHeight))
+                DeltaChart(c, st::cursorFractions, st.scrub, chart)
                 Spacer(Modifier.height(12.dp))
                 LapMap(c, st::cursor, Modifier.fillMaxWidth().height(ChartHeight).padding(bottom = 12.dp))
             }
@@ -131,6 +134,7 @@ private suspend fun followFrames(c: Comparison, st: ReviewTransport, pa: LapVide
             st.tick(if (last == 0L) 0L else now - last)
             last = now
             t = st.cursor
+            LapReviewProbe.frame(t)
             val playA = st.playing && t < c.a.trace.lap.timeMicros
             val playB = st.playing && t < c.b.trace.lap.timeMicros
             val seekA = pa.follow(c.a.videoAt(c.aMicros(t)), c.a.video, st.speed, playA, st.scrubbing, now)

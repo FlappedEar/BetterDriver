@@ -45,8 +45,14 @@ jobs:
         with:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ hashFiles('gradle/libs.versions.toml', '**/robolectric.properties') }}
-      - name: ./gradlew recordRoborazziDebug
-        run: ./gradlew recordRoborazziDebug --stacktrace
+      # Only the golden tests: a failing check elsewhere in these modules (the layout or contrast
+      # tests, FBBD-40/62/65) must not keep the goldens from being recorded.
+      - name: Record the goldens
+        run: >-
+          ./gradlew
+          :core-ui:testDebugUnitTest --tests '*ScreenshotTest'
+          :feature-track:testDebugUnitTest --tests '*ScreenshotTest'
+          -Proborazzi.test.record=true --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: screenshots

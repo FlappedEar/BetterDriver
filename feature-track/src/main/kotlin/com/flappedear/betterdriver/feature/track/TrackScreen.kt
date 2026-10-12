@@ -17,6 +17,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
@@ -102,7 +103,7 @@ fun TrackScreenContent(state: TrackScreenState, modifier: Modifier = Modifier) {
         modifier.fillMaxSize().background(c.background).padding(gap),
         verticalArrangement = Arrangement.spacedBy(gap),
     ) {
-        val top = Modifier.fillMaxWidth().height(30.dp)
+        val top = Modifier.fillMaxWidth().height(30.dp).testTag(TrackSlots.Top)
         val alert = state.alert
         if (alert != null) {
             AlertBanner(alert.title, alert.detail, alert.level, state.recordingTime, top)
@@ -110,19 +111,37 @@ fun TrackScreenContent(state: TrackScreenState, modifier: Modifier = Modifier) {
             StatusStrip(state.status, state.recordingTime, top)
         }
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight())
-            LapTimes(state.predictedMillis, state.lastMillis, state.bestMillis, Modifier.weight(0.38f).fillMaxHeight())
+            DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Delta))
+            LapTimes(
+                state.predictedMillis,
+                state.lastMillis,
+                state.bestMillis,
+                Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
+            )
         }
-        CoachLine(state.coachCorner, state.coachCue, Modifier.fillMaxWidth().height(44.dp))
+        CoachLine(state.coachCorner, state.coachCue, Modifier.fillMaxWidth().height(44.dp).testTag(TrackSlots.Coach))
         Row(Modifier.fillMaxWidth().height(80.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
-            SectorStrip(state.sectors, Modifier.weight(0.62f).fillMaxHeight())
+            SectorStrip(state.sectors, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Sectors))
             Row(Modifier.weight(0.38f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {
-                state.tiles.take(3).forEach { t ->
-                    ValueTile(t.label, t.value, t.unit, Modifier.weight(1f).fillMaxHeight(), t.state)
+                state.tiles.take(3).forEachIndexed { i, t ->
+                    val slot = Modifier.weight(1f).fillMaxHeight().testTag(TrackSlots.tile(i))
+                    ValueTile(t.label, t.value, t.unit, slot, t.state)
                 }
             }
         }
     }
+}
+
+/** Test tags of the track screen's fixed slots, for the layout tests (FBBD-40, FBBD-62). */
+object TrackSlots {
+    const val Top = "track-top"
+    const val Delta = "track-delta"
+    const val Laps = "track-laps"
+    const val Coach = "track-coach"
+    const val Sectors = "track-sectors"
+
+    /** The [index]th info tile, from the left. */
+    fun tile(index: Int) = "track-tile-$index"
 }
 
 /** Example values matching the round 1 review mockups. Not real data. */

@@ -31,12 +31,14 @@ import java.io.File
  * One lap's video (FBBD-93): an ExoPlayer that follows a target frame given every display frame
  * while the review moves ([follow]). While scrubbing it seeks to the nearest key frame, which keeps
  * dragging smooth; when the finger lifts it seeks to the exact frame. Use from the main thread only.
+ * [lane] (0: lap A, 1: lap B) is where it reports its frames to [LapReviewProbe].
  */
 @OptIn(UnstableApi::class)
-internal class LapVideoPlayer(context: Context, muted: Boolean) {
+internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
     val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         if (muted) volume = 0f
         setSeekParameters(SeekParameters.EXACT)
+        setVideoFrameMetadataListener { _, releaseNanos, _, _ -> LapReviewProbe.released(lane, releaseNanos) }
     }
 
     /** There is video at the current place of the lap. */
