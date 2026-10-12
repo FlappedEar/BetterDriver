@@ -9,9 +9,11 @@ import android.content.Context
 import android.os.SystemClock
 import java.util.UUID
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 private const val ForgetAfterMs = 5_000L
 
@@ -61,6 +63,15 @@ fun scanBleDevices(
         false
     }
     if (!started) trySend(emptyList())
+    // A device that stops advertising sends no more results; this drops it from the list anyway.
+    if (started) {
+        launch {
+            while (true) {
+                delay(ForgetAfterMs / 5)
+                synchronized(seen) { emit() }
+            }
+        }
+    }
     awaitClose {
         try {
             if (started) scanner?.stopScan(callback)

@@ -112,7 +112,7 @@ fun gnssRefOf(e: Equipment): GnssRef? {
 
 /**
  * Data sources for a new recording: the chosen receiver, each kind of which reconnects on its own
- * if the link drops, or Demo GNSS, plus every listed sensor. There is no fallback: without a
+ * if the link drops, or Demo GNSS, plus the first listed heart rate monitor. There is no fallback: without a
  * receiver nothing is recorded, never simulated positions (FBBD-83).
  */
 internal object Sources {
@@ -128,7 +128,8 @@ internal object Sources {
             GnssType.DRAGY -> DragySource(app, gnss.address, gnss.name)
             GnssType.RACEBOX -> RaceBoxSource(app, gnss.address, gnss.name, imuCalibrations(context).load(gnss.address))
         }
-        return listOf(receiver) + sensors.map { HeartRateSource(app, it.address, it.name) }
+        // Heart rate has fixed channel ids, so two monitors would merge into one stream: the first records.
+        return listOf(receiver) + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }
 }
 

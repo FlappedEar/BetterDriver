@@ -11,6 +11,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
@@ -60,6 +61,8 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
     val model = item.advertisedName ?: item.name
     val diag = remember(address) { RaceBoxDiagnostics(isMicro = !model.startsWith("RaceBox Mini")) }
     val link = diagnosticsLink(address?.takeIf { allowed && !recording }, diag)
+    // The polling loop below outlives recompositions; it reads the link as it is now, not as first composed.
+    val currentLink by rememberUpdatedState(link)
     val calibration = rememberCalibration(address, diag)
     var view by remember { mutableStateOf<DiagnosticsView?>(null) }
 
@@ -70,7 +73,7 @@ internal fun RaceBoxDiagnosticsRoute(item: Equipment, recorder: RecorderClient, 
                 !allowed -> DiagnosticsView.NoPermission
                 else -> {
                     val s = diag.snapshot(SystemClock.elapsedRealtime())
-                    val state = link?.state?.value ?: LinkState.Connecting
+                    val state = currentLink?.state?.value ?: LinkState.Connecting
                     DiagnosticsView.Live(
                         RaceBoxDiagnosticsUi.header(item.name, state, s),
                         RaceBoxDiagnosticsUi.sections(s, state is LinkState.Streaming, calibration.error),
