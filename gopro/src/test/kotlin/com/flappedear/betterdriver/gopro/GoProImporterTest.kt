@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.gopro
 
+import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
+import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
 import com.flappedear.betterdriver.video.gpmf.FakeGoProFile
@@ -10,6 +12,7 @@ import java.io.File
 import java.time.ZoneOffset
 import kotlin.math.abs
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class GoProImporterTest {
@@ -72,11 +75,72 @@ class GoProImporterTest {
         assertEquals(60_000_000L, VideoIndex(dir).clips().single().sessionOffsetUs)
     }
 
+    /** A HERO8 file with no GPS fix, [seconds] long, created at session time [createdAtS] on a UTC camera clock. */
+    private fun noFixFile(name: String, seconds: Int, createdAtS: Long): File {
+        val file = File(videoDir, name)
+        val payloads = List(seconds) {
+            FakeGoProFile.gps5Payload(TestSession.StartUtcMillis, List(18) { 0.0 }, fix = 0)
+        }
+        FakeGoProFile.writeMp4(file, payloads, TestSession.StartUtcMillis / 1000 + createdAtS + Since1904)
+        return file
+    }
+
+    @Test
+    fun `a short session keeps a clip whose rough camera clock puts it just past the end`() {
+        // FBBD-201: a 40 s session; a hand-started GoPro without GPS fix whose clock runs 90 s
+        // ahead. The clock is only good to half an hour, so the clip belongs to the session.
+        val session = TestSession.data(40)
+        val file = noFixFile("GX010099.MP4", 30, createdAtS = 90)
+        val result = GoProImporter(zone = ZoneOffset.UTC).import(dir, session, listOf(file), hero8)
+        assertEquals(emptyList(), result.problems)
+        val clip = VideoIndex(dir).clips().single()
+        assertEquals(AlignmentMethod.CAMERA_CLOCK, clip.alignment.method)
+        assertTrue(clip.sessionOffsetUs in 0..10_000_000, "${clip.sessionOffsetUs}")
+    }
+
+    @Test
+    fun `an Open GoPro clip acknowledged after the last sample of a short session is kept`() {
+        val session = TestSession.data(20)
+        val gopro = GoProImporter.Source(VideoSourceKind.GOPRO, "hero11")
+        val file = noFixFile("GX010099.MP4", 15, createdAtS = 21)
+        val recording = GoProRecording("hero11", startAckSessionUs = 21_000_000, startAckUtcMillis = 0)
+        val result = GoProImporter(zone = ZoneOffset.UTC).import(dir, session, listOf(file), gopro, recording)
+        assertEquals(emptyList(), result.problems)
+        val clip = VideoIndex(dir).clips().single()
+        assertEquals(AlignmentMethod.COMMAND_ACK, clip.alignment.method)
+        assertTrue(clip.sessionOffsetUs <= 20_000_000, "${clip.sessionOffsetUs}")
+    }
+
+    @Test
+    fun `a GoPro file whose clock is written as UTC is read as UTC when only that fits`() {
+        val session = TestSession.data(400)
+        val file = noFixFile("GX010100.MP4", 30, createdAtS = 60)
+        // Read as local time on a UTC+2 phone it would be 2 h off.
+        val result = GoProImporter(zone = ZoneOffset.ofHours(2)).import(dir, session, listOf(file), hero8)
+        assertEquals(emptyList(), result.problems)
+        assertEquals(60_000_000L, VideoIndex(dir).clips().single().sessionOffsetUs)
+    }
+
+    @Test
+    fun `a GPS-placed clip outside the session is not moved in`() {
+        val clip = VideoClip(
+            "GX.MP4", VideoSourceKind.GOPRO_FILES, "hero8", sessionOffsetUs = 50_000_000,
+            alignment = Alignment(AlignmentMethod.GPS_UTC, 1_000_000), durationUs = 10_000_000,
+        )
+        assertNull(fitIntoSession(clip, 40_000_000))
+        assertEquals(clip, fitIntoSession(clip, 60_000_000))
+        assertEquals(39_500_000, fitIntoSession(clip.copy(sessionOffsetUs = 40_500_000), 40_000_000)?.sessionOffsetUs)
+    }
+
     @Test
     fun `a file that is not an MP4 is reported, not thrown`() {
         val session = TestSession.data(60)
         val junk = File(videoDir, "GH010002.MP4").apply { writeText("not a video") }
         val result = GoProImporter().import(dir, session, listOf(junk), hero8)
         assertEquals(1, result.problems.size)
+    }
+
+    private companion object {
+        const val Since1904 = 2_082_844_800L
     }
 }
