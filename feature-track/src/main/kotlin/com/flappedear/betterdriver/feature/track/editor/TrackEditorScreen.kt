@@ -105,7 +105,7 @@ fun TrackEditorScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         if (state.selected != null) PlacingControls(state) else LineList(state)
-                        SessionLaps(sessions.firstOrNull()?.title, books.firstOrNull(), state.track.sectorCount)
+                        SessionLaps(sessions.firstOrNull()?.title, books.firstOrNull(), state.track)
                     }
                 }
             }
@@ -121,7 +121,7 @@ fun TrackEditorScreen(
                         PlacingControls(state)
                     } else {
                         LineList(state)
-                        RetimeNote(sessions.size, books.sumOf { b -> b.laps.size })
+                        RetimeNote(sessions.size, books.sumOf { b -> b.laps.size }, state.track.pointToPoint)
                     }
                 }
             }
@@ -165,7 +165,7 @@ private fun EditorBar(
             Icon(backIcon, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            state.selected?.label() ?: state.track.displayName,
+            state.selected?.label(state.track.pointToPoint) ?: state.track.displayName,
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -233,6 +233,7 @@ private fun ColumnScope.PlacingControls(state: TrackEditorState) {
 @Composable
 private fun LineList(state: TrackEditorState) {
     TrackHeader(state)
+    val p2p = state.track.pointToPoint
     val refs = state.track.lineRefs()
     refs.forEachIndexed { i, ref ->
         if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outline)
@@ -242,7 +243,7 @@ private fun LineList(state: TrackEditorState) {
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             LineSwatch(ref)
-            Text(ref.label(), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            Text(ref.label(p2p), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             if (state.track.line(ref) != null) {
                 Text("✓", color = TrackTheme.colors.gain, fontWeight = FontWeight.Bold)
             } else {

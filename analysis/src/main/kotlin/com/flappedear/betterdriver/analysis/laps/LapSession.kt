@@ -37,6 +37,12 @@ data class LapDetectionOptions(
     val maximumLapSeconds: Double = 3600.0,
     /** A lap whose GPS path is shorter than this is not plausible. */
     val minimumLapDistanceMeters: Double = 200.0,
+    /**
+     * Point-to-point runs (FBBD-155) in place of [minimumLapSeconds] and [minimumLapDistanceMeters]:
+     * start and finish are different lines, so a short sprint is still a run.
+     */
+    val minimumRunSeconds: Double = 1.0,
+    val minimumRunDistanceMeters: Double = 20.0,
     /** 100 m/s is 360 km/h on average. */
     val maximumAverageSpeedMetersPerSecond: Double = 100.0,
     /** A lap shorter than this share of the session's median lap path cut the circuit short. */

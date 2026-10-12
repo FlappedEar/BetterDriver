@@ -52,7 +52,7 @@ internal fun earlierSessions(
                 if (named != null && named != track.id) return@mapNotNull null
                 val data = store.read(summary.dir)
                 if (trackFor(data, saved)?.id != track.id) return@mapNotNull null
-                val session = telemetrySessionOf(data, track.startFinish)
+                val session = telemetrySessionOf(data, track)
                 val laps = deriveSourceLapSession(session)
                 // Only the session before keeps its samples, for its corner and straight times.
                 if (previous == null && laps.fastestLapIndex != null) previous = PreviousLaps(session, laps)

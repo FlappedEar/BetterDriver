@@ -59,12 +59,16 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         lastMillis = null,
         bestMillis = null,
         sectors = listOf(SectorState("S1", null, current = true), SectorState("S2", null), SectorState("S3", null)),
-        tiles = tiles.map { ch -> TrackTile(ch.label, tileValue(ch, live, timing) ?: NoValue, ch.unit) },
+        tiles = tiles.map { ch -> TrackTile(tileLabel(ch, timing), tileValue(ch, live, timing) ?: NoValue, ch.unit) },
         coachCorner = state.coach?.corner,
         coachCue = state.coach?.text,
     )
     return if (timing == null) screen else screen.withTiming(timing)
 }
+
+/** At a point-to-point track (FBBD-155) the lap tile counts runs. */
+private fun tileLabel(ch: TrackChannel, timing: LiveTimingState?): String =
+    if (ch == TrackChannel.LAP && timing?.pointToPoint == true) "Run" else ch.label
 
 private fun tileValue(ch: TrackChannel, live: LiveSnapshot?, timing: LiveTimingState?): String? = when (ch) {
     TrackChannel.SPEED -> live?.speedKmh?.roundToInt()?.toString()

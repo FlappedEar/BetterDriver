@@ -23,7 +23,7 @@ internal fun savedTrackId(events: List<RecorderEvent>): String? {
  */
 @Suppress("ReturnCount")
 internal fun trackFor(data: SessionData, saved: List<Track>): Track? {
-    val withLine = saved.filter { it.startFinish != null }
+    val withLine = saved.filter { it.timeable }
     savedTrackId(data.events)?.let { id -> withLine.firstOrNull { it.id == id }?.let { return it } }
     return trackAlong(positions(data), withLine)
 }

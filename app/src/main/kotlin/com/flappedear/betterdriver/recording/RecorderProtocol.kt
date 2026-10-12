@@ -118,6 +118,7 @@ internal object RecorderProtocol {
     private const val VS_LAP = "timing.sectorsVsBestLap"
     private const val VS_SECTOR = "timing.sectorsVsBestSector"
     private const val CURRENT = "timing.currentSector"
+    private const val POINT_TO_POINT = "timing.pointToPoint"
 
     fun toBundle(s: LiveSnapshot) = Bundle().apply {
         putString(SESSION_ID, s.sessionId)
@@ -165,6 +166,7 @@ internal object RecorderProtocol {
         putDoubleArray(VS_LAP, t.sectors.map { it.deltaVsBestLapSeconds ?: Double.NaN }.toDoubleArray())
         putDoubleArray(VS_SECTOR, t.sectors.map { it.deltaVsBestSectorSeconds ?: Double.NaN }.toDoubleArray())
         putInt(CURRENT, t.sectors.indexOfFirst { it.current })
+        putBoolean(POINT_TO_POINT, t.pointToPoint)
     }
 
     /** Live timing from a [MSG_STATE] bundle, or null when the recording is not being timed. */
@@ -186,6 +188,7 @@ internal object RecorderProtocol {
             sectors = List(minOf(vsLap.size, vsSector.size)) { i ->
                 LiveSector(sectorName(i), vsLap[i].known(), vsSector[i].known(), current = i == current)
             },
+            pointToPoint = b.getBoolean(POINT_TO_POINT, false),
         )
     }
 }

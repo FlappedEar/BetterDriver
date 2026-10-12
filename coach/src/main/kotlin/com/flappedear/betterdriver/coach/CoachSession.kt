@@ -15,6 +15,12 @@ data class CoachEvent(val tMicros: Long, val kind: String, val text: String)
 /** What one fix led to: events to log, and the coach line. */
 data class CoachOutput(val events: List<CoachEvent>, val status: CoachStatus)
 
+/**
+ * Whether the coach works at [track]: it needs laps, so a start/finish line. Point-to-point tracks
+ * (FBBD-155) are left out for now: the coach learns corners from laps that close on themselves.
+ */
+fun coaches(track: Track): Boolean = track.timeable && !track.pointToPoint
+
 /** A cue asked for more than this long before it could be spoken is dropped: it would land too late. */
 const val MaxCueAgeMicros = 400_000L
 
@@ -33,7 +39,7 @@ class CoachSession(
     reference: CoachReference?,
     picks: List<CornerPick> = emptyList(),
 ) {
-    private val engine = track?.takeIf { it.timeable && settings.verbosity != Verbosity.Off }
+    private val engine = track?.takeIf { coaches(it) && settings.verbosity != Verbosity.Off }
         ?.let { CueEngine(it, settings, reference, picks = picks) }
 
     private var lastCue: Cue? = null

@@ -135,10 +135,13 @@ private fun NameDialog(onDone: (String) -> Unit, onCancel: () -> Unit) {
     )
 }
 
-private fun trackDetail(t: Track): String = if (t.timeable) {
-    if (t.sectorCount == 1) "1 sector" else "${t.sectorCount} sectors"
-} else {
-    "No lines yet"
+private fun trackDetail(t: Track): String {
+    val lines = when {
+        !t.timeable -> if (t.pointToPoint && t.startFinish != null) "No finish line yet" else "No lines yet"
+        t.sectorCount == 1 -> "1 sector"
+        else -> "${t.sectorCount} sectors"
+    }
+    return if (t.pointToPoint) "Point to point · $lines" else lines
 }
 
 private fun away(meters: Double): String =
