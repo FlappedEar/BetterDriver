@@ -48,6 +48,16 @@ class CoachSessionTest {
     }
 
     @Test
+    fun `with no learning laps and no earlier session it learns one lap, not 0 of 0`() {
+        val first = CoachSession(CoachSettings(Verbosity.Full, learningLaps = 0), track, null)
+        assertEquals(CoachStatus(null, "Coach learning · 0 of 1 laps"), first.status)
+        val known = CoachSession(CoachSettings(Verbosity.Full, learningLaps = 0), track, reference())
+        assertEquals(CoachStatus(null, "Coach on"), known.status)
+        for (f in sim.drive(List(2) { SimCircuit.Pace() }).fixes) first.onFix(f, f.tMicros) { true }
+        assertFalse("learning" in first.status.text.orEmpty())
+    }
+
+    @Test
     fun `the coach stays quiet at a point-to-point track`() {
         val p2p = track.copy(kind = TrackKind.PointToPoint, finish = track.startFinish)
         assertFalse(coaches(p2p))

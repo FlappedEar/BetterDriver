@@ -37,7 +37,8 @@ class CoachLibrary(private val sessions: SessionStore, private val dir: File) {
         var changed = false
         for (s in usable) {
             if (known.containsKey(s.id)) continue
-            known[s.id] = readOrNull(s.dir)?.savedTrackId().orEmpty()
+            // Only the events name the track: samples are read just for the sessions at it.
+            known[s.id] = readOrNull(s.dir, samples = false)?.savedTrackId().orEmpty()
             changed = true
         }
         if (changed) writeIndex(known)
@@ -54,8 +55,8 @@ class CoachLibrary(private val sessions: SessionStore, private val dir: File) {
     }
 
     @Suppress("TooGenericExceptionCaught") // A damaged session is skipped, never a reason to stop coaching.
-    private fun readOrNull(sessionDir: File): SessionData? = try {
-        sessions.read(sessionDir)
+    private fun readOrNull(sessionDir: File, samples: Boolean = true): SessionData? = try {
+        sessions.read(sessionDir, samples)
     } catch (_: IOException) {
         null
     } catch (_: RuntimeException) {

@@ -20,7 +20,7 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
  * (FBBD-49) on the same path. Track callbacks run on [handler]'s thread.
  */
 internal class AudioOut(context: Context, private val handler: Handler) {
-    private val audio: AudioManager = context.applicationContext.getSystemService(AudioManager::class.java)
+    private val audio: AudioManager? = context.applicationContext.getSystemService(AudioManager::class.java)
     private val lock = Any()
 
     /** The phrase playing or queued; the focus is held until it ends. Guarded by [lock]. */
@@ -37,7 +37,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     /** Asks for focus for phrase [id], which replaces any phrase before it. */
     fun begin(id: String) {
         synchronized(lock) { current = id }
-        val result = audio.requestAudioFocus(focus)
+        val result = audio?.requestAudioFocus(focus)
         if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
             DebugLog.w(Tag, "audio focus refused ($result) for $id; playing anyway")
         }
@@ -46,7 +46,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     /** Phrase [id] ended, was stopped or failed: the focus goes back unless a newer phrase holds it. */
     fun end(id: String) {
         val last = synchronized(lock) { (current == id).also { if (it) current = null } }
-        if (last) audio.abandonAudioFocusRequest(focus)
+        if (last) audio?.abandonAudioFocusRequest(focus)
     }
 
     /**
@@ -92,17 +92,17 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     }
 
     /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
-    fun headset(): String? = audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        .firstOrNull { it.type in HeadsetTypes }?.productName?.toString()
+    fun headset(): String? = audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+        ?.firstOrNull { it.type in HeadsetTypes }?.productName?.toString()
 
     fun shutdown() {
         stopClip()
         synchronized(lock) { current = null }
-        audio.abandonAudioFocusRequest(focus)
+        audio?.abandonAudioFocusRequest(focus)
     }
 
     private fun device(type: Int): AudioDeviceInfo? =
-        audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type == type }
+        audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type == type }
 
     private fun finished(id: String, t: AudioTrack) {
         val mine = synchronized(lock) { (track === t).also { if (it) track = null } }
