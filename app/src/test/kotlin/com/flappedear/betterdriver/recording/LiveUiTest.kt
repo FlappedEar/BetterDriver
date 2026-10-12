@@ -114,6 +114,8 @@ class LiveUiTest {
         assertEquals("2023 Toyota Corolla · 18 min", sessionDetail(s))
         assertNull(lastSessionLine(listOf(s.copy(state = SessionState.RECORDING))))
         assertEquals(true, lastSessionLine(listOf(s))?.endsWith("18 min · recovered"))
-        assertEquals("BetterDriver-id.vbo", vboFileName(s))
+        assertEquals("BetterDriver-id.vbo", exportFileName(s, ExportFormat.Vbo))
+        assertEquals("BetterDriver-id.csv", exportFileName(s, ExportFormat.Csv))
+        assertEquals("BetterDriver-id.gpx", exportFileName(s, ExportFormat.Gpx))
     }
 }

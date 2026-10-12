@@ -1,7 +1,5 @@
 package com.flappedear.betterdriver
 
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -45,7 +40,7 @@ import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTrackState
-import com.flappedear.betterdriver.recording.vboFileName
+import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
@@ -81,9 +76,6 @@ private val TopLevelItems = listOf(
     TopLevelItem(Routes.Sessions, "Sessions", ShellIcons.Sessions),
     TopLevelItem(Routes.Settings, "Settings", ShellIcons.Settings),
 )
-
-/** VBO has no registered type; a generic one keeps the .vbo file name. */
-private const val VboMimeType = "application/octet-stream"
 
 private val Version = "${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE})"
 
@@ -251,27 +243,13 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
     }
 }
 
-/**
- * Sessions list. Export asks where to save the VBO file, then writes it in the background. A session
- * with video asks for a folder instead, because the VBO and its video files must sit side by side.
- */
+/** Sessions list. Export asks where to save, then writes in the background (rememberSessionExport). */
 @Composable
 private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: SetupRepo) {
     val context = LocalContext.current
     val goPros = remember(context) { GoPros.get(context) }
     val addFiles = rememberGoProFilePicker(goPros)
-    // Saveable: the activity can be re-created while the file picker is open.
-    var exporting by rememberSaveable { mutableStateOf<String?>(null) }
-    val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(VboMimeType)) { uri ->
-        val id = exporting
-        exporting = null
-        if (uri != null && id != null) sessions.export(id, uri)
-    }
-    val pickFolder = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        val id = exporting
-        exporting = null
-        if (uri != null && id != null) sessions.exportWithVideo(id, uri)
-    }
+    val export = rememberSessionExport(sessions)
     LaunchedEffect(Unit) { sessions.refresh() }
     val updates = remember(context) { AppUpdates.get(context) }
     val recorder = RecorderClient.get(context)
@@ -283,10 +261,7 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
         exports = sessions.exports,
         withVideo = sessions.withVideo,
         onAnalyse = { s -> nav.navigate(Routes.sessionAnalysis(s.id)) },
-        onExport = { s ->
-            exporting = s.id
-            if (s.id in sessions.withVideo) pickFolder.launch(null) else pickFile.launch(vboFileName(s))
-        },
+        onExport = export,
         goPro = GoProCardState(
             sessions = sessions.goPro,
             work = goPros.work,
