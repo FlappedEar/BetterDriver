@@ -103,7 +103,8 @@ class PassMeter(
         val first = !started
         previous = s
         started = true
-        if (p != null && (s.along - p.along > MaxGapMeters || s.along < p.along - MaxGapMeters)) {
+        val jumped = p != null && (s.along - p.along > MaxGapMeters || s.along < p.along - MaxGapMeters)
+        if (jumped) {
             // A jump: whatever was measured so far is not one continuous drive.
             inside.clear()
             entry = null
@@ -115,7 +116,7 @@ class PassMeter(
                 null
             }
             s.along <= window.endInclusive -> {
-                if (inside.isEmpty()) entry = entryBefore(p, s, first)
+                if (inside.isEmpty()) entry = entryBefore(p.takeUnless { jumped }, s, first)
                 inside += s
                 null
             }

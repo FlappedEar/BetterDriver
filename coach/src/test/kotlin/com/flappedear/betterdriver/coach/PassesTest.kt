@@ -56,6 +56,16 @@ class PassesTest {
     }
 
     @Test
+    fun `a jump across the window's start is not measured`() {
+        val meter = PassMeter(corners[1], 900.0..980.0, 1, lineAt = 1000.0)
+        // Every 10 m up to 880 m, then a 35 m jump into the window, then on past its end.
+        val alongs = listOf(860.0, 870.0, 880.0) + (915..995 step 10).map { it.toDouble() }
+        val passes = alongs.mapIndexedNotNull { i, along -> meter.add(along, i * 1_000_000L, 100.0) }
+        assertEquals(emptyList(), passes)
+        assertNull(meter.finish(lineMicros = alongs.size * 1_000_000L, lineKmh = 100.0))
+    }
+
+    @Test
     fun `live, a window that ends at the line closes at the crossing time`() {
         val window = map.windows[1]
         val meter = PassMeter(corners[1], window, 1)
