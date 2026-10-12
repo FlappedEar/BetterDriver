@@ -96,6 +96,22 @@ fun followStep(positionMillis: Long, targetMillis: Long, rate: Double, playing: 
 fun seekDue(targetMillis: Long, lastMillis: Long?): Boolean =
     lastMillis == null || abs(targetMillis - lastMillis) > PausedToleranceMillis
 
+/**
+ * Whether a player last sent to [lastSeekMillis] still has a seek to make for [step], so it needs
+ * another frame even while the review is still (a seek held back to space seeks out, or the exact
+ * frame wanted again when the finger lifts).
+ */
+fun seekPending(step: FollowStep, lastSeekMillis: Long?): Boolean =
+    step.seekMillis?.let { seekDue(it, lastSeekMillis) } == true
+
+/**
+ * Whether the review needs the next display frame: while it plays, while a finger scrubs, and
+ * until both players have made their last seek. Otherwise the screen stays idle until the cursor,
+ * play or scrub changes, so a paused review costs no frames.
+ */
+fun frameLoopNeeded(playing: Boolean, scrubbing: Boolean, seekPending: Boolean): Boolean =
+    playing || scrubbing || seekPending
+
 /** The review cursor after [elapsedNanos] of real time at [speed]; stops at the end of the lap. */
 fun advance(lapMicros: Long, elapsedNanos: Long, speed: Double, lengthMicros: Long): Long =
     (lapMicros + (elapsedNanos / NanosPerMicro * speed).toLong()).coerceIn(0, lengthMicros)

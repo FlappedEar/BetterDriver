@@ -31,6 +31,7 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,6 +48,7 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.core.ui.format.formatRunningTime
 import com.flappedear.betterdriver.core.ui.numberStyle
+import kotlinx.coroutines.flow.first
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -82,20 +84,7 @@ internal fun CompareView(
     }
     val st = remember(c) { ReviewTransport(c, startFraction) }
     PauseWhenHidden { st.playing = false }
-    LaunchedEffect(st) {
-        var last = 0L
-        while (true) {
-            withFrameNanos { now ->
-                st.tick(if (last == 0L) 0L else now - last)
-                last = now
-                val t = st.cursor
-                val playA = st.playing && t < c.a.trace.lap.timeMicros
-                val playB = st.playing && t < c.b.trace.lap.timeMicros
-                pa.follow(c.a.videoAt(c.aMicros(t)), c.a.video, st.speed, playA, st.scrubbing, now)
-                pb.follow(c.b.videoAt(c.bMicros(t)), c.b.video, st.speed, playB, st.scrubbing, now)
-            }
-        }
-    }
+    LaunchedEffect(st) { followFrames(c, st, pa, pb) }
     Column(modifier.fillMaxSize().padding(horizontal = 12.dp)) {
         CompareBar(c, onChangeLaps)
         if (wide) {
@@ -124,6 +113,35 @@ internal fun CompareView(
                 Spacer(Modifier.height(12.dp))
                 LapMap(c, st::cursor, Modifier.fillMaxWidth().height(ChartHeight).padding(bottom = 12.dp))
             }
+        }
+    }
+}
+
+/**
+ * Moves the cursor and the players one step a display frame while the review moves. Still (paused,
+ * no finger, both players on their frames) it waits for the cursor, play or scrub to change, so
+ * Compose can go idle and a paused review costs no frames ([frameLoopNeeded]).
+ */
+private suspend fun followFrames(c: Comparison, st: ReviewTransport, pa: LapVideoPlayer, pb: LapVideoPlayer) {
+    var last = 0L
+    while (true) {
+        var t = 0L
+        var seeking = false
+        withFrameNanos { now ->
+            st.tick(if (last == 0L) 0L else now - last)
+            last = now
+            t = st.cursor
+            val playA = st.playing && t < c.a.trace.lap.timeMicros
+            val playB = st.playing && t < c.b.trace.lap.timeMicros
+            val seekA = pa.follow(c.a.videoAt(c.aMicros(t)), c.a.video, st.speed, playA, st.scrubbing, now)
+            val seekB = pb.follow(c.b.videoAt(c.bMicros(t)), c.b.video, st.speed, playB, st.scrubbing, now)
+            seeking = seekA || seekB
+        }
+        if (!frameLoopNeeded(st.playing, st.scrubbing, seeking)) {
+            // The first frame after the wait counts no time, as the very first frame does.
+            last = 0L
+            val still = t
+            snapshotFlow { st.playing || st.scrubbing || st.cursor != still }.first { it }
         }
     }
 }
