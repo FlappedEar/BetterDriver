@@ -97,11 +97,12 @@ object Wav {
                 "data" -> {
                     val f = format ?: return null
                     // A file whose writer stopped early can leave the size unset: take what is there.
-                    val end = if (size <= 0 || body + size > bytes.size) bytes.size else body + size
+                    val end = if (size <= 0 || size > bytes.size - body) bytes.size else body + size
                     return samples(b, body, end, f)
                 }
             }
-            if (size < 0) return null
+            // Compared without adding, so a damaged size cannot overflow.
+            if (size < 0 || size > bytes.size - body) return null
             at = body + size + (size and 1)
         }
         return null

@@ -35,25 +35,42 @@ internal class ReceiverClock(private val windowMessages: Int = WindowMessages) {
     /**
      * Stamps the messages of one notification, oldest first. All of them arrived together, so the
      * newest, least delayed one sets the delay for all: stamping each before seeing the next would
-     * give messages 40 ms apart nearly the same stamp.
+     * give messages 40 ms apart nearly the same stamp. Where the receiver's time breaks off inside
+     * the notification (a week wrap, a jump), the messages before it are stamped first, with the
+     * delay from before the break.
      */
     fun stamp(arrivalMicros: Long, iTowsMs: List<Long>): List<Long> {
-        if (iTowsMs.isEmpty()) return emptyList()
-        iTowsMs.forEach { observe(arrivalMicros, it) }
-        val lowest = window.first().second
-        return iTowsMs.map { tow ->
-            maxOf(tow * MicrosPerMilli + lowest, lastStamp + 1).also { lastStamp = it }
+        val stamps = ArrayList<Long>(iTowsMs.size)
+        var segment = 0
+        iTowsMs.forEachIndexed { i, tow ->
+            if (!continues(arrivalMicros, tow)) {
+                stampSegment(iTowsMs.subList(segment, i), stamps)
+                segment = i
+                window.clear()
+            }
+            observe(arrivalMicros, tow)
         }
+        stampSegment(iTowsMs.subList(segment, iTowsMs.size), stamps)
+        return stamps
+    }
+
+    private fun stampSegment(iTowsMs: List<Long>, into: MutableList<Long>) {
+        if (iTowsMs.isEmpty()) return
+        val lowest = window.first().second
+        iTowsMs.mapTo(into) { tow -> maxOf(tow * MicrosPerMilli + lowest, lastStamp + 1).also { lastStamp = it } }
+    }
+
+    /** Whether a message continues the receiver's time the window was taken over. */
+    private fun continues(arrivalMicros: Long, iTowMs: Long): Boolean {
+        val step = lastTowMs?.let { iTowMs - it }
+        val lowest = window.firstOrNull()?.second
+        val offset = arrivalMicros - iTowMs * MicrosPerMilli
+        return step != null && step in 1..MaxStepMs && lowest != null && offset >= lowest - MaxOffsetDropMicros
     }
 
     private fun observe(arrivalMicros: Long, iTowMs: Long) {
-        val step = lastTowMs?.let { iTowMs - it }
         lastTowMs = iTowMs
         val offset = arrivalMicros - iTowMs * MicrosPerMilli
-        val lowest = window.firstOrNull()?.second
-        val jumped = lowest != null && offset < lowest - MaxOffsetDropMicros
-        val continues = step != null && step in 1..MaxStepMs && !jumped
-        if (!continues) window.clear()
         count++
         while (window.isNotEmpty() && window.last().second >= offset) window.removeLast()
         window.addLast(count to offset)

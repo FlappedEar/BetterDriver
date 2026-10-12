@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
+import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
@@ -20,6 +21,7 @@ import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.io.File
+import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sqrt
 import kotlin.test.Test
@@ -86,15 +88,21 @@ class MockSessionTest {
     /** The parts of a VBO a mock track needs: its name, gates and positions with heading. */
     private class Vbo(val name: String, val gates: List<Pair<String, TrackLine>>, val fixes: List<DoubleArray>) {
 
-        /** A track with the VBO's start/finish line and splits (in name order), each square to the car's heading. */
+        /**
+         * A track with the VBO's start/finish line and splits (in name order), each square to the car's
+         * heading, recognised as far out as the VBO's farthest fix (so its first fix is detected).
+         */
         fun track(trackName: String): Track {
             val lines = gates.map { (label, gate) -> label to across(gate) }
             val start = lines.first { it.first == "Start" }.second
             val splits = lines.filter { it.first.startsWith("Split") }.sortedBy { it.first }.map { it.second }
+            val center = midpoint(start)
+            val reach = fixes.maxOfOrNull { metres(center, GeoPoint(it[0], it[1])) } ?: 0.0
             return Track(
                 id = "mock-" + trackName.lowercase().filter { it.isLetterOrDigit() },
                 name = trackName,
-                center = midpoint(start),
+                center = center,
+                radiusMeters = (reach + RadiusMarginMeters).coerceAtMost(Track.MaxRadiusMeters),
                 startFinish = start,
                 sectorLines = splits,
             )
@@ -112,6 +120,7 @@ class MockSessionTest {
             private const val MovingKmh = 20.0
             private const val MinWidth = 20.0
             private const val MaxWidth = 40.0
+            private const val RadiusMarginMeters = 500.0
             private const val EarthRadiusMetres = 6_371_008.8
 
             fun read(file: File): Vbo {
@@ -131,12 +140,22 @@ class MockSessionTest {
                         section == "[column names]" -> if (columns.isEmpty()) columns = line.split(Regex("\\s+"))
                         section == "[data]" -> {
                             val f = line.split(Regex("\\s+"))
-                            val v = { c: String -> f[columns.indexOf(c)].toDouble() }
+                            // NaN for a column the VBO lacks (heading is then derived below).
+                            val v = { c: String -> f.getOrNull(columns.indexOf(c))?.toDouble() ?: Double.NaN }
                             fixes += doubleArrayOf(v("lat") / 60, -v("long") / 60, v("heading"), v("velocity"))
                         }
                     }
                 }
-                return Vbo(name, gates, fixes)
+                return Vbo(name, gates, withHeadings(fixes))
+            }
+
+            /** A heading the VBO lacks taken from the neighbouring positions, as SessionImport derives it. */
+            private fun withHeadings(fixes: List<DoubleArray>): List<DoubleArray> = fixes.mapIndexed { i, p ->
+                if (!p[2].isNaN()) return@mapIndexed p
+                val a = fixes[maxOf(i - 1, 0)]
+                val b = fixes[minOf(i + 1, fixes.lastIndex)]
+                val d = LocalFrame(GeoPoint(a[0], a[1])).toXy(b[0], b[1])
+                p.copyOf().also { it[2] = (Math.toDegrees(atan2(d.x, d.y)) + 360) % 360 }
             }
 
             /** "Start  lon1 lat1 lon2 lat2 ¬ name": minutes, longitude positive west. */

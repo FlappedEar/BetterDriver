@@ -51,6 +51,13 @@ class LapTrace(
         return value(lo) + u * (value(hi) - value(lo))
     }
 
+    /** The lowest speed in km/h from [fromMeters] to [toMeters] along the trace, every point in it included. */
+    fun slowestBetween(fromMeters: Double, toMeters: Double): Double {
+        var slowest = minOf(speedAt(fromMeters), speedAt(toMeters))
+        for (i in along.indices) if (along[i] in fromMeters..toMeters) slowest = minOf(slowest, speedsKmh[i])
+        return slowest
+    }
+
     /** The trace at every [stepMeters], interpolated linearly; repeated points are dropped. */
     fun resample(stepMeters: Double = ResampleStepMeters): Resampled {
         val n = (lengthMeters / stepMeters).toInt() + 1
@@ -151,8 +158,9 @@ fun findCorners(trace: LapTrace): List<Corner> {
         for (k in peak..i) if (v[k] >= v[peak] - PeakToleranceKmh) brake = k
         // Smoothing rounds off the bottom of the speed trace; the apex is the slowest raw point near it.
         val apex = slowestNear(r.speedsKmh, i, smoothHalf)
-        // A stop: the next corner's braking point comes after it, once the car is going again.
-        val stop = r.speedsKmh[apex] < StopKmh
+        // A stop: the next corner's braking point comes after it, once the car is going again. Read
+        // from the trace itself: a hard stop can fall between two resampled points.
+        val stop = trace.slowestBetween(r.along(i - smoothHalf), r.along(i + smoothHalf)) < StopKmh
         if (stop) segmentStart = i
         if (stop || v[brake] - v[i] < MinCornerDropKmh || !braked(r, brake, apex)) continue
         corners += Corner(

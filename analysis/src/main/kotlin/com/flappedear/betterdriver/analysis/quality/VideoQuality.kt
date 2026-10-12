@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoEventText
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import kotlin.math.abs
+import kotlin.math.roundToLong
 
 // The video part of the session validation report (FBBD-183), against FBBD-21: the start offset
 // each camera's video is placed with and how it was found, its drift against the session clock,
@@ -16,6 +17,9 @@ private const val MinCoveragePercent = 99.0
 
 /** The drift is the change of the lowest media offset from a file's first minute to its last. */
 private const val DriftWindowMicros = 60_000_000L
+
+/** The drift limit is per this much video: 30 min. */
+private const val DriftPerMicros = 1_800_000_000L
 
 /** Video stops that are no fault: the driver stopped, or a file reached its size limit and the next began. */
 private val PlainStops = setOf("user", "file_full")
@@ -65,7 +69,7 @@ private const val DriftCriterion = "<= 100 ms over 30 min (FBBD-21)"
 /**
  * How far each file's media clock moved against the session clock: the lowest media offset its sync
  * reports imply in its first minute against that in its last (a late report only raises an offset,
- * so the lowest is the best). The worst file counts.
+ * so the lowest is the best), per 30 min for a longer file. The worst file counts.
  */
 private fun drift(camera: String, own: List<VideoClip>, events: List<RecorderEvent>): QualityMetric {
     val label = "Video drift ($camera)"
@@ -84,19 +88,23 @@ private fun drift(camera: String, own: List<VideoClip>, events: List<RecorderEve
     }
     val worst = drifts.maxBy { abs(it) }
     val how = "change of the lowest media offset from the first to the last minute of each file, from the " +
-        "camera's once-a-second sync reports; worst of ${drifts.size} file(s)"
+        "camera's once-a-second sync reports, per 30 min of a longer file; worst of ${drifts.size} file(s)"
     val ok = abs(worst) <= MaxDriftMicros
     return judged("video.$camera.drift", label, millis(worst), "ms", ok, Basis.DERIVED, DriftCriterion, how)
 }
 
-/** The drift of one file from its (session time, media offset) reports; null under two minutes. */
+/**
+ * The drift of one file from its (session time, media offset) reports; null under two minutes. A file
+ * longer than 30 min gives its drift per 30 min; a shorter one its drift as it is, so a few
+ * milliseconds' jitter over a short file is not scaled up past the limit.
+ */
 private fun fileDrift(reports: List<Pair<Long, Long>>): Long? {
     val first = reports.minOf { it.first }
     val last = reports.maxOf { it.first }
     if (last - first < 2 * DriftWindowMicros) return null
     val start = reports.filter { it.first <= first + DriftWindowMicros }.minOf { it.second }
     val end = reports.filter { it.first >= last - DriftWindowMicros }.minOf { it.second }
-    return end - start
+    return ((end - start) * (DriftPerMicros.toDouble() / maxOf(last - first, DriftPerMicros))).roundToLong()
 }
 
 private const val CoverageCriterion = "100 % of the session, or stops per the thermal policy, logged (FBBD-21)"

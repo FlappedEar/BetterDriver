@@ -276,6 +276,24 @@ class SessionImportTest {
     }
 
     @Test
+    fun `RaceChrono's sources row gives speed, heading and altitude their provenance too`() {
+        val text = bytes("racechrono-v3.csv").toString(Charsets.UTF_8)
+        // Altitude (column 6) calculated, Speed (column 13) from the OBD reader; the rest from the GPS.
+        val gps = "100: gps,"
+        val sources = ",,,," + gps.repeat(10) + "101: acc,"
+        val changed = ",,,," + gps.repeat(2) + "300: calc," + gps.repeat(6) + "200: obd,101: acc,"
+        assertTrue(sources in text)
+        val csv = store.read(import(text.replace(sources, changed).byteInputStream(), "c.csv").id)
+        fun kind(name: String) = channel(csv, name).provenance
+        assertEquals(Provenance.MEASURED_OBD, kind("gnss_speed"))
+        assertEquals(Provenance.CALCULATED, kind("gnss_alt"))
+        assertEquals(Provenance.MEASURED_GPS, kind("gnss_heading"))
+        assertEquals(Provenance.MEASURED_GPS, kind("gnss_sats"))
+        assertEquals(Provenance.MEASURED_GPS, kind("gnss_lat"))
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, kind("accel_y"))
+    }
+
+    @Test
     fun `each import gets its own session id`() {
         val a = import(fixture("racelogic-25hz.vbo"))
         val b = import(fixture("racelogic-25hz.vbo"))

@@ -119,6 +119,9 @@ interface ImportSink {
 
     /** Where the file says its acceleration columns come from, when it says (FBBD-174). */
     fun accelerationSource(provenance: Provenance) = Unit
+
+    /** Where the file says a GNSS channel's values (by its GnssChannels id) come from, when it says (FBBD-174). */
+    fun channelSource(channelId: Int, provenance: Provenance) = Unit
 }
 
 /**

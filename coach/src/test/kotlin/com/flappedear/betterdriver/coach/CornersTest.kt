@@ -101,6 +101,14 @@ class CornersTest {
     }
 
     @Test
+    fun `a hard stop between two resampled points is not a corner`() {
+        // Braking at 0.75 g to a stop 164.25 m in: below 5 km/h only from 164.175 to 164.475 m.
+        val trace = drive(15.0, 10.0 to 0.0, 2.0 to -7.5, 2.0 to 0.0, 4.0 to 7.5, 10.0 to 0.0)
+        assertTrue(trace.resample().speedsKmh.all { it >= StopKmh })
+        assertEquals(emptyList(), findCorners(trace))
+    }
+
+    @Test
     fun `a pass entered slowly is measured at the corner, and a pass with a stop is no pass (FBBD-202)`() {
         val trace = stopThenCorner()
         val map = CornerMap(trace, findCorners(trace))

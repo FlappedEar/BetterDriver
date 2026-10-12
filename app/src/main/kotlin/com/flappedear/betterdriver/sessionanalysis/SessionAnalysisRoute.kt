@@ -290,7 +290,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         return failed.copy(state = failed.state.copy(acceleration = acceleration, gForces = gForces))
     }
     // Analysed through the track's corners and straights (FBBD-172); the first analysis there makes them.
-    val analysis = analyzeAtTrack(tracks, track, session)
+    val analysis = analyzeAtTrack(tracks, track, session, data.info.startUtcMillis)
     if (analysis.laps.status != LapSessionStatus.Available || analysis.laps.timedLaps.isEmpty()) {
         val why = if (track.pointToPoint) {
             "No complete run at ${track.displayName}: a run goes from the start line to the finish line."

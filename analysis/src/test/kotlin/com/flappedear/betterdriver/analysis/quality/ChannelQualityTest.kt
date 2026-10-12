@@ -39,4 +39,11 @@ class ChannelQualityTest {
         assertNull(Centimetres().median())
         assertEquals(0.5, Centimetres().apply { add(0.5) }.median()!!, 1e-12)
     }
+
+    @Test
+    fun `accuracies past 100 m count as 100 m`() {
+        val cm = Centimetres().apply { listOf(1e9, 250.0, 3.5).forEach { add(it) } }
+        assertEquals(100.0, cm.median()!!, 1e-12)
+        assertEquals(3.5, cm.apply { listOf(1.0, 2.0).forEach { add(it) } }.median()!!, 1e-12)
+    }
 }

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.transfer.foreign
 
+import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
 import java.io.Reader
 
@@ -9,7 +10,7 @@ import java.io.Reader
  * row, then rows of units and channel sources, then the data. The columns row is the first with
  * Timestamp, Latitude and Longitude; the row after it gives the units; any row whose timestamp is
  * not a number (a sources row) is passed over, except that the sources row ("100: gps", "101: acc",
- * "200: obd") gives the acceleration and extra channels their provenance (FBBD-174).
+ * "200: obd") gives the mapped and extra channels their provenance (FBBD-174).
  *
  * Mapped: Timestamp (Unix seconds), Latitude, Longitude, Speed (m/s, km/h or mph by its unit),
  * Bearing, Altitude, Satellites, Longitudinal and Lateral acc (G, or m/s² by its unit). A name that
@@ -51,7 +52,7 @@ internal object RaceChronoCsvReader {
                     // Units right after the names; sources and other description rows after that.
                     when {
                         unitsPending -> c.units(cells.map { it.trim() })
-                        sourcesPending -> c.sources(cells.map { it.trim() })?.let(sink::accelerationSource)
+                        sourcesPending -> c.sources(cells.map { it.trim() }, sink)
                     }
                     sourcesPending = unitsPending
                     unitsPending = false
@@ -131,13 +132,18 @@ internal object RaceChronoCsvReader {
         }
 
         /**
-         * Reads the sources row: each extra channel's provenance, and the acceleration columns'
-         * provenance, which is returned (null when the row names none for them).
+         * Reads the sources row: each extra channel's provenance, and those of the mapped columns,
+         * passed to [sink] where the row names one.
          */
-        fun sources(row: List<String>): Provenance? {
+        fun sources(row: List<String>, sink: ImportSink) {
             val of = { i: Int -> if (i < 0) null else sourceProvenance(row.getOrNull(i).orEmpty()) }
             extras = extras.mapIndexed { k, e -> e.copy(provenance = of(extraIdx[k])) }
-            return of(forward) ?: of(lateral)
+            (of(forward) ?: of(lateral))?.let(sink::accelerationSource)
+            val mapped = mapOf(
+                GnssChannels.SPEED_KMH.id to speed, GnssChannels.HEADING.id to bearing,
+                GnssChannels.ALT_M.id to altitude, GnssChannels.SATS.id to sats,
+            )
+            for ((id, i) in mapped) of(i)?.let { sink.channelSource(id, it) }
         }
 
         fun point(cells: List<String>): ImportPoint? {
