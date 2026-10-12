@@ -15,7 +15,10 @@ enum class Turn { Left, Right, Straight }
 /**
  * A braking corner of the reference lap (FBBD-96). Distances are metres along the reference path from
  * the start/finish line. Corners are numbered from 1 in lap order; only corners the driver brakes for
- * are listed, so the numbers are the coach's own, not the circuit's.
+ * are listed, so [number] is the coach's own key for it. What the driver hears and reads is [turn]:
+ * the number of the track's corner it is in (FBBD-172, [cornerId] is that corner's id), the same
+ * number the lap analysis shows. A track without a corner identity yet has neither, and the coach's
+ * own number is said.
  */
 @Serializable
 data class Corner(
@@ -27,7 +30,14 @@ data class Corner(
     val entryKmh: Double,
     val minKmh: Double,
     val turn: Turn,
-)
+    /** The track's CornerId of the corner this braking corner is in (FBBD-172). */
+    val cornerId: String? = null,
+    /** The corner number the driver hears: the track corner's (FBBD-172). */
+    val turnNumber: Int? = null,
+) {
+    /** The number said and shown for it: the track's corner number, else the coach's own. */
+    val label: Int get() = turnNumber ?: number
+}
 
 /**
  * One drive through one corner, measured against the reference path (FBBD-96, FBBD-97). Distances are
@@ -125,7 +135,14 @@ data class Cue(
      * (FBBD-183): with the GNSS distance driven until its sound started, the margin it was heard with.
      */
     val zoneMeters: Double? = null,
-)
+    /** For a corner cue, the corner number said ([Corner.label]); null in cues logged before FBBD-172. */
+    val turn: Int? = null,
+    /** For a corner cue, the track's CornerId of the corner (FBBD-172), when the track has one. */
+    val cornerId: String? = null,
+) {
+    /** The corner number the driver heard, for a corner cue. */
+    val heardTurn: Int? get() = turn ?: corner
+}
 
 /**
  * The pass right after a corner cue (FBBD-28): [improved] says whether the driver moved the way the

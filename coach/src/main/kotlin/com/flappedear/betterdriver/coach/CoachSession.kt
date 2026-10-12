@@ -50,7 +50,7 @@ class CoachSession(
             val e = engine ?: return CoachStatus.None
             val cue = lastCue
             return when {
-                cue != null -> CoachStatus(cue.corner?.let { "T$it" }, lineText(cue))
+                cue != null -> CoachStatus(cue.heardTurn?.let { "T$it" }, lineText(cue))
                 else -> when (val p = e.phase) {
                     is CoachPhase.Learning -> CoachStatus(null, "Coach learning · ${p.done} of ${p.needed} laps")
                     CoachPhase.Coaching -> CoachStatus(null, "Coach on")

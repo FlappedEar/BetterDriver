@@ -67,7 +67,9 @@ private fun Double.centi() = (this * CentiUnits).roundToLong() / CentiUnits
 fun buildReference(track: Track, sessions: List<SessionLaps>): CoachReference? {
     val timed = sessions.flatMap { s -> s.laps.filter { it.lap.kind == LapKind.Timed }.map { s.sessionId to it } }
     val (bestSession, best) = timed.minByOrNull { it.second.lap.timeMicros } ?: return null
-    val corners = findCorners(best.trace)
+    val found = findCorners(best.trace)
+    // Named by the track's corners (FBBD-172); the coach names them again from the track it runs at.
+    val corners = lapFrame(track)?.let { identifyCorners(found, best.trace, it, track.identity) } ?: found
     val map = CornerMap(best.trace, corners)
     val targets = bestPasses(timed.flatMap { (_, l) -> map.passes(l.trace, l.lap.number) })
     val t = best.trace

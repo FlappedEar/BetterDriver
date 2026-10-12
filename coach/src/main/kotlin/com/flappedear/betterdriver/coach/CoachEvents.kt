@@ -33,6 +33,8 @@ object CoachEvents {
         cue.before?.let { append(" before=").append(passText(it)) }
         cue.target?.let { append(" target=").append(passText(it)) }
         cue.zoneMeters?.let { append(" zone_m=").append(String.format(Locale.ROOT, "%.1f", it)) }
+        cue.turn?.let { append(" turn=").append(it) }
+        cue.cornerId?.let { append(" corner_id=").append(it) }
         append(" text=").append(cue.text)
     }
 
@@ -68,6 +70,8 @@ object CoachEvents {
             before = corner?.let { c -> fields["before"]?.let { parsePass(c, it) } },
             target = corner?.let { c -> fields["target"]?.let { parsePass(c, it) } },
             zoneMeters = fields["zone_m"]?.toDouble(),
+            turn = fields["turn"]?.toInt(),
+            cornerId = fields["corner_id"],
         )
     }.getOrNull()
 

@@ -132,11 +132,15 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, v
     }
 }
 
-/** The first timed lap of a session without an earlier reference sets the corners. */
-private fun cornersFrom(traced: TracedLap, picked: (CornerMap) -> Set<Int>): CornerBook? {
+/** The first timed lap of a session without an earlier reference sets the corners, [identify]d on the track's. */
+private fun cornersFrom(
+    traced: TracedLap,
+    picked: (CornerMap) -> Set<Int>,
+    identify: (CornerMap) -> CornerMap,
+): CornerBook? {
     val found = findCorners(traced.trace)
     if (found.isEmpty()) return null
-    val m = CornerMap(traced.trace, found)
+    val m = identify(CornerMap(traced.trace, found))
     return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)), picked(m))
 }
 
@@ -209,9 +213,12 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
- * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by position
- *   ([pickedCorners]). At [Verbosity.Focus] they take the focus places first; cue timing is
- *   unchanged: one cue per straight, for the corner that follows it.
+ * - **Corner numbers** are the track's (FBBD-172): each braking corner is said by the number of the
+ *   track corner it is in ([identifyCorners]), as the lap analysis numbers it.
+ * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by CornerId, or by
+ *   position on a track without corner identities ([pickedCorners]). At [Verbosity.Focus] they take
+ *   the focus places first; cue timing is unchanged: one cue per straight, for the corner that
+ *   follows it.
  *
  * Pure and single-threaded.
  */
@@ -224,9 +231,10 @@ class CueEngine(
 ) {
     private val laps = LapCollector(track)
     private val speech = SpeechTiming(settings, latencyMicros)
-    private val picked: (CornerMap) -> Set<Int> = { pickedCorners(it, laps.frame, picks) }
+    private val identity = track.identity
+    private val picked: (CornerMap) -> Set<Int> = { pickedCorners(it, laps.frame, picks, identity) }
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
-        r.map().let { m -> CornerBook(m, r.targets, picked(m)) }
+        identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m)) }
     }
 
     private var cursor: PathCursor? = null
@@ -296,7 +304,7 @@ class CueEngine(
         val traced = laps.finished.lastOrNull { it.lap.number == lap.number }
         val b = book
         if (b == null && timed && traced != null) {
-            book = cornersFrom(traced, picked)
+            book = cornersFrom(traced, picked) { identified(it, laps.frame, identity) }
         } else if (b != null && timed) {
             b.onTimedLap(lapPasses)
         }
@@ -400,7 +408,10 @@ class CueEngine(
         val target = b.targets[i]?.takeIf { it !== last }
         val advice = if (last != null && target != null && mayCue(b, corner, lap)) advise(last, target) else null
         return advice?.let {
-            Cue(0, now, lap, CueKind.Corner, Phrases.corner(corner, it), corner.number, it, last, target)
+            Cue(
+                0, now, lap, CueKind.Corner, Phrases.corner(corner, it), corner.number, it, last, target,
+                turn = corner.label, cornerId = corner.cornerId,
+            )
         }
     }
 
