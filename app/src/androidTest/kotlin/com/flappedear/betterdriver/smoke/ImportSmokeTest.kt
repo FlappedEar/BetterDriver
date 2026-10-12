@@ -82,9 +82,10 @@ class ImportSmokeTest {
             SmokeData.tracks().any { it.name == SmokeFixtures.LoopName }
         }
 
-        // The session is timed on the new track now.
-        app.back()
-        app.back()
+        // The session is timed on the new track now. Back also closes the keyboard the name left open.
+        repeat(BackSteps) {
+            if (app.onAllNodes(tab("Sessions")).fetchSemanticsNodes().isEmpty()) app.back()
+        }
         app.openSessions()
         app.openSession(SmokeFixtures.ImportedGpx)
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
@@ -102,5 +103,10 @@ class ImportSmokeTest {
             .respondWith(ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file))))
         app.openSessions()
         app.waitForText("Import session").performClick()
+    }
+
+    private companion object {
+        /** The keyboard, the editor and the analysis. */
+        const val BackSteps = 3
     }
 }

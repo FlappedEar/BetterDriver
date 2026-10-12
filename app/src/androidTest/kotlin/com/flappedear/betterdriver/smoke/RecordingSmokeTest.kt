@@ -48,7 +48,7 @@ class RecordingSmokeTest {
         val before = SmokeData.sessions().map { it.id }.toSet()
         app.openTab("Settings")
         app.openTab("Devices")
-        app.waitForText("Add equipment").performClick()
+        app.waitForText("+ Add equipment").performClick()
         app.waitForText("For trying the app").performScrollTo().performClick()
         app.waitFor(hasText("Demo GNSS") and hasClickAction())
         app.openTab("Drive")

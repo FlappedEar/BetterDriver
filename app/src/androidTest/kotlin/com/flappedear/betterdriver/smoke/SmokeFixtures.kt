@@ -434,7 +434,7 @@ object SmokeFixtures {
             startFinish = TrackLine(shifted(line.left), shifted(line.right)),
             revision = 3,
         )
-        File(filesDir, "tracks").apply { mkdirs() }.resolve("$OldTrackId.json").writeText(oldTrackFile(track))
+        File(filesDir, "tracks").apply { mkdirs() }.resolve("$OldTrackId.track.json").writeText(oldTrackFile(track))
         val samples = circuitSamples(vbo(PlainVbo)).map { s ->
             val values = s.values.map { v ->
                 if (v.channelId == GnssChannels.LAT.id) ChannelValue(v.channelId, v.value + OldLatOffset) else v

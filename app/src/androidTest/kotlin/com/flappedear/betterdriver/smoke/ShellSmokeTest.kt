@@ -64,7 +64,7 @@ class ShellSmokeTest {
     fun devicesAddEquipmentWithoutBluetooth() {
         app.openTab("Settings")
         app.openTab("Devices")
-        app.waitForText("Add equipment").performClick()
+        app.waitForText("+ Add equipment").performClick()
         // The Bluetooth search finds nothing on the emulator; the rest is added without it.
         app.waitForText("Found nearby").assertIsDisplayed()
         app.waitForText("Add without Bluetooth").performScrollTo()
@@ -85,7 +85,7 @@ class ShellSmokeTest {
         app.waitForText("Made-up positions on a circle", substring = true)
         app.waitForText("Remove").performClick()
         app.waitUntilGone("Demo GNSS")
-        app.waitForText("Add equipment")
+        app.waitForText("+ Add equipment")
     }
 
     @Test
