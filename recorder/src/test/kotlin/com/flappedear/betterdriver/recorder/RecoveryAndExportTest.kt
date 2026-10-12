@@ -200,7 +200,7 @@ class RecoveryAndExportTest {
     @Test
     fun `no text in the VBO names RaceBox, so Circuit Tools does not demand a RaceBox checksum`() {
         val store = SessionStore(tmp)
-        val input = ChannelDef(120, "racebox_input", "V", "racebox", 1)
+        val input = ChannelDef(120, "racebox_input", "RaceBox V", "racebox", 1)
         val gate = gnss.startFinish.copy(name = "RaceBox gate")
         val rec = Recorder(store).start(
             SessionInfo(
