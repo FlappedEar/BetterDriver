@@ -73,8 +73,10 @@ class ThermalPolicy(
         val due = lastStepAt?.let { nowMicros - it >= minStepMicros } ?: true
         return when {
             status >= Thermal.CRITICAL -> ThermalAction.StopVideo
-            !hot || !(urgent || due) -> ThermalAction.Keep
+            !hot -> ThermalAction.Keep
+            // The interval only spaces step-downs: hot at the last step stops video at once.
             current >= steps - 1 -> ThermalAction.StopVideo
+            !(urgent || due) -> ThermalAction.Keep
             else -> {
                 current++
                 lastStepAt = nowMicros

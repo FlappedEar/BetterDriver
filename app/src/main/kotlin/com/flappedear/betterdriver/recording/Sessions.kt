@@ -191,6 +191,7 @@ class Sessions private constructor(private val context: Context) {
                     DocumentsContract.Document.MIME_TYPE_DIR,
                     "BetterDriver-$id",
                 ) ?: throw IOException("cannot create a folder in $picked")
+                var whole = false
                 try {
                     create(folder, VboMimeType, "BetterDriver-$id.vbo").use { VboExporter.export(data, it, video) }
                     video?.orderedClips?.forEachIndexed { i, clip ->
@@ -198,10 +199,10 @@ class Sessions private constructor(private val context: Context) {
                             File(File(dir, VideoFiles.DIR), clip.file).inputStream().use { it.copyTo(out, CopyBuffer) }
                         }
                     }
-                } catch (e: IOException) {
-                    // No half export that could later be mistaken for a whole one.
-                    discard(context.contentResolver, folder)
-                    throw e
+                    whole = true
+                } finally {
+                    // No half export that could later be mistaken for a whole one, whatever stopped it.
+                    if (!whole) discard(context.contentResolver, folder)
                 }
                 ExportState.Done
             } catch (e: IOException) {
