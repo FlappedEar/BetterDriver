@@ -183,11 +183,13 @@ class SetupTest {
     }
 
     @Test
-    fun nmeaReceiverHasNoG() {
+    fun nmeaReceiverKeepsGForRaceChronoDiyLines() {
         val s = Setup().addEquipment(EquipmentModel.NMEA_GNSS, "Qstarz 818XT", "AA", ids)
             .chooseTiles(listOf(TrackChannel.SPEED, TrackChannel.G))
         assertEquals("Qstarz 818XT", s.active().gnss?.name)
-        assertEquals(listOf(TrackChannel.SPEED), s.active().tiles)
+        assertEquals(listOf(TrackChannel.SPEED, TrackChannel.G), s.active().tiles)
+        val wifi = Setup().addEquipment(EquipmentModel.TCP_GNSS, "Wi-Fi GPS", "192.168.4.1:2000", ids)
+        assertTrue(TrackChannel.G in channelsFor(wifi.active().gnss))
         assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.NMEA_GNSS, newId = ids) }
     }
 

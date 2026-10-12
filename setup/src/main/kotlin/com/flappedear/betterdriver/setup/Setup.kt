@@ -484,11 +484,13 @@ data class Setup(
 /**
  * Channels a session can show with [gnss] as its receiver. Lap needs only a position; G needs an
  * accelerometer, which every RaceBox has (Mini, Mini S and Micro send acceleration in each data
- * message, RaceBox BLE protocol rev. 8) and an NMEA receiver does not report. Without a receiver
- * there is nothing to show.
+ * message, RaceBox BLE protocol rev. 8). A plain NMEA receiver does not report one, but a RaceChrono
+ * DIY device streaming $RC2/$RC3 lines over Bluetooth or Wi-Fi does (FBBD-115), and the setup
+ * cannot tell them apart, so G is offered for both. Without a receiver there is nothing to show.
  */
 fun channelsFor(gnss: Equipment?): Set<TrackChannel> = when (gnss?.model) {
     null -> emptySet()
-    EquipmentModel.RACEBOX -> setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G)
+    EquipmentModel.RACEBOX, EquipmentModel.NMEA_GNSS, EquipmentModel.TCP_GNSS ->
+        setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G)
     else -> setOf(TrackChannel.SPEED, TrackChannel.LAP)
 }
