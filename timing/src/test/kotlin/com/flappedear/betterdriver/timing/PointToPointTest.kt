@@ -18,6 +18,7 @@ import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.LapTimer
 import com.flappedear.betterdriver.timing.live.LiveTiming
 import com.flappedear.betterdriver.timing.live.timeSession
+import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.replay.LapAlignment
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
@@ -290,6 +291,36 @@ class PointToPointTest {
         val open = laps.last()
         assertEquals(Long.MAX_VALUE, open.endMicros)
         assertEquals(laps[laps.size - 2].endMicros, open.startMicros)
+    }
+
+    @Test
+    fun `the video overlay shows each run, and no run between runs or after the last`() {
+        val sets = session(threeRuns.fixes)
+        val laps = replayLaps("hill-1", sets, hill)
+        val data = OverlayData(sets, laps)
+        assertTrue(data.pointToPoint)
+
+        // Part way up run 1: the run, its time and the delta to run 2, the best.
+        val inRun = assertNotNull(data.at(sectors[0].roundToLong()).lap)
+        assertEquals(1, inRun.number)
+        assertEquals(LapKind.Timed, inRun.kind)
+        assertFalse(inRun.isBest)
+        assertEquals(sectors[0] - starts[0], inRun.lapMicros.toDouble(), 2_000.0)
+        val gap = (sectors[0] - starts[0]) - (sectors[1] - starts[1])
+        assertEquals(gap, assertNotNull(inRun.deltaMicros).toDouble(), 30_000.0)
+        assertTrue(assertNotNull(data.at(sectors[1].roundToLong()).lap).isBest)
+
+        // Before the first run, on the drive back and after the last finish: no run, as on the track screen.
+        assertNull(data.at(starts[0].roundToLong() - 1_000_000).lap)
+        assertNull(data.at(((finishes[0] + starts[1]) / 2).roundToLong()).lap)
+        assertNull(data.at(finishes[2].roundToLong() + 2_000_000).lap)
+        assertNotNull(data.at(threeRuns.fixes.last().tMicros).position, "the car is still on the map")
+
+        // A circuit keeps counting the lap being driven after the last line.
+        val circuit = replayLaps("hill-1", sets, hill.copy(kind = TrackKind.Circuit))
+        val open = OverlayData(sets, circuit)
+        assertFalse(open.pointToPoint)
+        assertNotNull(open.at(threeRuns.fixes.last().tMicros).lap)
     }
 
     @Test

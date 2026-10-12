@@ -66,7 +66,7 @@ fun VideoExportFlow(
         onExport = { part ->
             picking = null
             saving = "$id:$part"
-            pickFile.launch(videoExportFileName(session.id, part))
+            pickFile.launch(videoExportFileName(session.id, part, loaded?.second?.pointToPoint == true))
         },
         onDismiss = { picking = null },
     )

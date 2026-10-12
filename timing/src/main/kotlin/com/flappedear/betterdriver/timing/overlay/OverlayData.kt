@@ -14,8 +14,9 @@ import com.flappedear.betterdriver.timing.replay.SessionLaps
 import com.flappedear.betterdriver.timing.replay.trackFrame
 
 /**
- * The lap being driven at one moment. [number] and [lapMicros] (time since the lap started) are
- * always known; [kind] is null for the lap still being driven when the session stopped.
+ * The lap being driven at one moment, or the run on a point-to-point track (FBBD-155). [number] and
+ * [lapMicros] (time since the lap started) are always known; [kind] is null for the lap still being
+ * driven when the session stopped.
  * [deltaMicros] is the live delta to the session's best lap, matched by track position as on the
  * track screen; null on out and in laps, and without a best lap.
  */
@@ -59,6 +60,9 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, accel: AccelChannel
     private val best: LapTrace? = laps?.best
     private val starts = LongArray(traces.size) { traces[it].lap.startMicros }
     private val alignments = HashMap<Int, LapAlignment>()
+
+    /** The laps are runs of a point-to-point track (FBBD-155): the overlay says "Run", and between runs shows none. */
+    val pointToPoint: Boolean = laps?.track?.pointToPoint == true
 
     /** The track's shape for the map: the best lap's path, else the longest lap's, else every position. */
     val outline: List<Xy>
@@ -111,14 +115,19 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, accel: AccelChannel
         )
     }
 
-    /** The lap at [t]; after the last finished lap, the one being driven when the session stopped. */
+    /**
+     * The lap at [t]; after the last finished lap, the one being driven when the session stopped. A
+     * point-to-point track has no such lap: after the last run's finish comes the drive back.
+     */
     private fun lapAt(t: Long): OverlayLap? {
         val last = traces.lastOrNull()?.lap
         val trace = if (traces.isEmpty() || t < starts.first()) null else traces[floorIndex(starts, t)]
         return when {
             last == null || trace == null -> null
+            t >= last.endMicros && pointToPoint -> null
             t >= last.endMicros -> OverlayLap(last.number + 1, null, t - last.endMicros, null, isBest = false)
-            // A lap whose path could not be traced (a GNSS gap at the line) leaves a hole: no lap is shown there.
+            // A lap whose path could not be traced (a GNSS gap at the line), or the drive back between
+            // point-to-point runs, leaves a hole: no lap is shown there.
             t >= trace.lap.endMicros -> null
             else -> {
                 val lapMicros = t - trace.lap.startMicros
