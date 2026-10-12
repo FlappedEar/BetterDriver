@@ -46,9 +46,10 @@ private const val KmhPerMps = 3.6
 
 /**
  * Turns raw notification bytes into sample sets. Each RaceBox Data Message becomes one set,
- * stamped with the recorder's clock when it arrived. Position, speed, heading and altitude are only
- * included while there is a fix, so the VBO export (one row per set with a position) never gets
- * rows at 0°, 0°. Synchronized: notifications may arrive on more than one binder thread.
+ * stamped on the recorder's clock from the receiver's time of week ([ReceiverClock]). Position,
+ * speed, heading and altitude are only included while there is a fix, so the VBO export (one row
+ * per set with a position) never gets rows at 0°, 0°. Synchronized: notifications may arrive on
+ * more than one binder thread.
  *
  * With a [calibration] (FBBD-89), acceleration and rotation are written levelled and with the gyro
  * offset removed.
@@ -61,6 +62,7 @@ class RaceBoxDecoder(
     private val reader = UbxFrameReader()
     private var hadFix: Boolean? = null
     private val stats = StreamStats()
+    private val clock = ReceiverClock()
 
     /** Data messages decoded since the link was created. */
     @Volatile
@@ -96,7 +98,7 @@ class RaceBoxDecoder(
                 }
                 hadFix = data.hasFix
             }
-            sink.submit(SampleSet(sink.nowMicros(), values(data)))
+            sink.submit(SampleSet(clock.stamp(sink.nowMicros(), data.iTowMs), values(data)))
         }
     }
 
@@ -104,6 +106,7 @@ class RaceBoxDecoder(
     @Synchronized
     fun reset() {
         reader.reset()
+        clock.reset()
     }
 
     private fun values(d: RaceBoxData): List<ChannelValue> = buildList {
