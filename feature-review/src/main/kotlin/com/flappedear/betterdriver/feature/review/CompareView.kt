@@ -61,9 +61,16 @@ private const val MicrosPerMilli = 1_000L
  * line (UI-60 B), so the faster car pulls ahead; the readout and the map show the gap as distance.
  * One cursor moves both; drag or tap the chart to scrub. [wide] (the tablet) stacks the videos on
  * the left with the readout, map and chart on the right (UI-59 B); a phone stacks everything.
+ * [startFraction] (of lap A's distance) is where the cursor starts, as at a corner (FBBD-153).
  */
 @Composable
-internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit, modifier: Modifier = Modifier) {
+internal fun CompareView(
+    c: Comparison,
+    wide: Boolean,
+    onChangeLaps: () -> Unit,
+    modifier: Modifier = Modifier,
+    startFraction: Double? = null,
+) {
     val context = LocalContext.current
     val pa = remember { LapVideoPlayer(context, muted = false) }
     val pb = remember { LapVideoPlayer(context, muted = true) }
@@ -73,7 +80,7 @@ internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit,
             pb.release()
         }
     }
-    val st = remember(c) { ReviewTransport(c) }
+    val st = remember(c) { ReviewTransport(c, startFraction) }
     PauseWhenHidden { st.playing = false }
     LaunchedEffect(st) {
         var last = 0L
@@ -122,13 +129,13 @@ internal fun CompareView(c: Comparison, wide: Boolean, onChangeLaps: () -> Unit,
 }
 
 /** The review cursor (time since the start line), play state and speed. Compose state, changed on the main thread. */
-private class ReviewTransport(private val c: Comparison) {
-    var cursor by mutableLongStateOf(0L)
+private class ReviewTransport(private val c: Comparison, startFraction: Double?) {
+    private val length = c.a.trace.lengthMeters
+
+    var cursor by mutableLongStateOf(startFraction?.let { c.microsAtDistance(it.coerceIn(0.0, 1.0) * length) } ?: 0L)
     var playing by mutableStateOf(false)
     var scrubbing by mutableStateOf(false)
     var speed by mutableDoubleStateOf(Speeds.first())
-
-    private val length = c.a.trace.lengthMeters
 
     val scrub = Scrub(
         onMove = { f -> cursor = c.microsAtDistance(f * length) },

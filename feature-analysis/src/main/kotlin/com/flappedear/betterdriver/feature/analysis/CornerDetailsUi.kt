@@ -30,6 +30,8 @@ data class CornerDetail(
     /** The line's spread is no larger than the GPS accuracy, so it says little. */
     val lineWithinGps: Boolean,
     val lineSpreadMeters: Double?,
+    /** The corner's segment id. */
+    val id: String = "",
 )
 
 /**
@@ -51,6 +53,7 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
             lineWithinGps = variability != null && variability.lineOffset.available &&
                 variability.typicalGpsAccuracyMeters != null && !variability.lineSpreadResolvable,
             lineSpreadMeters = variability?.lineOffset?.interquartileRange,
+            id = segment.id,
         )
     }
 }

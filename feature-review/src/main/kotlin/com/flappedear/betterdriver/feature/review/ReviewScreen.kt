@@ -34,11 +34,18 @@ private val WideFrom = 840.dp
 /**
  * Lap review (FBBD-24): pick two laps of a track from any sessions, then watch them side by side,
  * each with its own video, synced by track position. Opens on the newest session's best lap
- * against the best other lap of the track. Slow work (reading sessions) happens before this
- * screen gets [load]; until then it shows progress.
+ * against the best other lap of the track, or on [start] when another screen asks for two laps
+ * (FBBD-153). Slow work (reading sessions) happens before this screen gets [load]; until then it
+ * shows progress.
  */
 @Composable
-fun ReviewScreen(load: ReviewLoad, backIcon: ImageVector, onBack: () -> Unit, modifier: Modifier = Modifier) {
+fun ReviewScreen(
+    load: ReviewLoad,
+    backIcon: ImageVector,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+    start: ReviewStart? = null,
+) {
     BoxWithConstraints(modifier.fillMaxSize()) {
         val wide = maxWidth >= WideFrom
         when {
@@ -48,16 +55,22 @@ fun ReviewScreen(load: ReviewLoad, backIcon: ImageVector, onBack: () -> Unit, mo
             load is ReviewLoad.Ready && load.tracks.isEmpty() -> Message(backIcon, onBack, progress = false) {
                 "No laps to compare yet. Laps are timed at a saved track with a start/finish line."
             }
-            load is ReviewLoad.Ready -> Review(load.tracks, wide, backIcon, onBack)
+            load is ReviewLoad.Ready -> Review(load.tracks, wide, backIcon, onBack, start)
         }
     }
 }
 
 @Composable
-private fun Review(tracks: List<ReviewTrack>, wide: Boolean, backIcon: ImageVector, onBack: () -> Unit) {
-    var trackId by rememberSaveable { mutableStateOf(tracks.first().id) }
+private fun Review(
+    tracks: List<ReviewTrack>,
+    wide: Boolean,
+    backIcon: ImageVector,
+    onBack: () -> Unit,
+    start: ReviewStart?,
+) {
+    var trackId by rememberSaveable { mutableStateOf(firstTrack(tracks, start).id) }
     val track = tracks.firstOrNull { it.id == trackId } ?: tracks.first()
-    val pair = remember(track) { track.defaultPair() }
+    val pair = remember(track) { firstPair(track, start) }
     var aKey by rememberSaveable(track.id) { mutableStateOf(pair?.first?.encode()) }
     var bKey by rememberSaveable(track.id) { mutableStateOf(pair?.second?.encode()) }
     var active by rememberSaveable(track.id) { mutableStateOf(Slot.A) }
@@ -68,7 +81,8 @@ private fun Review(tracks: List<ReviewTrack>, wide: Boolean, backIcon: ImageVect
     BackHandler(enabled = !picking && shown != null) { picking = true }
     if (!picking && shown != null) {
         val c = remember(shown) { Comparison(shown.first, shown.second) }
-        CompareView(c, wide, onChangeLaps = { picking = true })
+        val at = start?.atFor(shown.first.key, shown.second.key)
+        CompareView(c, wide, onChangeLaps = { picking = true }, startFraction = at)
     } else {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             TopBar("Compare laps", backIcon, onBack)

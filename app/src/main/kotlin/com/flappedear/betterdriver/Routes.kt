@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver
 
+import android.net.Uri
+
 /** App destinations. */
 object Routes {
     const val Setup = "setup"
@@ -33,6 +35,15 @@ object Routes {
 
     /** Two laps side by side with their videos (FBBD-24). */
     const val Review = "review"
+
+    /** The review opened on two laps (FBBD-153): each lap's key ("session:lap"), and where along lap A to start. */
+    const val ReviewPattern = "review?a={a}&b={b}&at={at}"
+    const val ReviewAArg = "a"
+    const val ReviewBArg = "b"
+    const val ReviewAtArg = "at"
+
+    fun review(a: String, b: String, at: Double?) =
+        "review?a=${Uri.encode(a)}&b=${Uri.encode(b)}" + (at?.let { "&at=$it" } ?: "")
 
     /** Lap analysis of one saved session (FBBD-102). */
     const val SessionAnalysisPattern = "sessions/{id}/analysis"
