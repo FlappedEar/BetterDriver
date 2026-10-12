@@ -79,6 +79,7 @@ class RaceBoxDecoder(
     @Synchronized
     fun feed(bytes: ByteArray) {
         stats.notification()
+        val decoded = mutableListOf<RaceBoxData>()
         reader.feed(bytes) { frame ->
             val isData = frame.messageClass == RaceBoxClass && frame.messageId == RaceBoxDataId
             val data = if (isData) RaceBoxData.parse(frame.payload) else null
@@ -95,7 +96,12 @@ class RaceBoxDecoder(
                 }
                 hadFix = data.hasFix
             }
-            sink.submit(SampleSet(clock.stamp(sink.nowMicros(), data.iTowMs), values(data)))
+            decoded += data
+        }
+        // One notification can carry several messages; they are stamped together (ReceiverClock).
+        if (decoded.isNotEmpty()) {
+            val stamps = clock.stamp(sink.nowMicros(), decoded.map { it.iTowMs })
+            decoded.zip(stamps) { data, at -> sink.submit(SampleSet(at, values(data))) }
         }
         // After the whole notification, so its messages and the notification count stay in one line.
         stats.line()?.let {
@@ -139,12 +145,14 @@ class RaceBoxDecoder(
     }
 }
 
-/** Expected time between RaceBox data messages: 25 Hz. */
-private const val StepMs = 40L
 private const val StatsEveryMessages = 1_500
 
-/** A step longer than this has at least one message missing. */
-private const val GapMs = 60L
+/** Recent steps whose median is the stream's usual step, as in [RaceBoxDiagnostics]. */
+private const val StepWindow = 25
+private const val MinSteps = 5
+
+/** A step over this many usual steps has at least one message missing. */
+private const val GapSteps = 1.5
 
 /**
  * Message counts for the debug log (FBBD-147): after every [StatsEveryMessages] messages (a minute
@@ -157,6 +165,7 @@ private const val GapMs = 60L
  */
 internal class StreamStats {
     private var last: Long? = null
+    private val steps = ArrayDeque<Long>()
     private var count = 0
     private var missed = 0L
     private var missedOnSecond = 0L
@@ -202,20 +211,32 @@ internal class StreamStats {
         return line
     }
 
-    /** A step back is the week wrapping or a reconnect: nothing to count. */
+    /**
+     * A step back is the week wrapping or a reconnect: nothing to count. A step over 1.5 usual steps
+     * has messages missing; the usual step is the median of recent ones, so a RaceBox set below
+     * 25 Hz for standalone recording is not counted as missing every other message.
+     */
     private fun countGap(previous: Long, iTowMs: Long) {
-        if (iTowMs - previous <= GapMs) return
-        var t = previous + StepMs
-        while (t < iTowMs - StepMs / 2) {
+        val gap = iTowMs - previous
+        if (gap <= 0) return
+        val step = usualStep()
+        steps.addLast(gap)
+        if (steps.size > StepWindow) steps.removeFirst()
+        if (step == null || gap <= step * GapSteps) return
+        var t = previous + step
+        while (t < iTowMs - step / 2) {
             missed++
-            if (onWholeSecond(t)) missedOnSecond++
-            t += StepMs
+            if (onWholeSecond(t, step)) missedOnSecond++
+            t += step
         }
     }
 
-    private fun onWholeSecond(t: Long): Boolean {
+    /** Null for the first few steps of a stream, which are not checked. */
+    private fun usualStep(): Long? = if (steps.size < MinSteps) null else steps.sorted()[steps.size / 2]
+
+    private fun onWholeSecond(t: Long, step: Long): Boolean {
         val ms = t % MillisPerSecond
-        return ms < StepMs / 2 || ms > MillisPerSecond - StepMs / 2
+        return ms < step / 2 || ms > MillisPerSecond - step / 2
     }
 
     private companion object {
