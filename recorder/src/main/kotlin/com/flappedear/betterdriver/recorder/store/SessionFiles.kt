@@ -173,9 +173,12 @@ object SessionFiles {
                 p.getProperty("channel.$i.source"),
                 p.getProperty("channel.$i.decimals").toInt(),
             )
-            // A session stored before FBBD-174 has none: derived from what its metadata says.
-            val provenance = Provenance.parse(p.getProperty("channel.$i.provenance"))
-                ?: Provenance.forSession(def, devices, imported)
+            // A session stored before FBBD-174 has none: derived from what its metadata says. A kind
+            // this version does not know (from a newer app) is unknown, never guessed as measured.
+            val provenance = when (val stored = p.getProperty("channel.$i.provenance")) {
+                null -> Provenance.forSession(def, devices, imported)
+                else -> Provenance.parse(stored) ?: Provenance.UNKNOWN
+            }
             def.copy(provenance = provenance)
         }
         return SessionInfo(

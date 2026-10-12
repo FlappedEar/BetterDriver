@@ -182,6 +182,17 @@ class ProvenanceTest {
     }
 
     @Test
+    fun `a kind this version does not know is unknown, never derived as measured`() {
+        val info = SessionInfo(gnss.startUtcMillis, devices = listOf("racebox"), channels = listOf(GnssChannels.LAT))
+        val props = SessionFiles.metaToProps("x", info)
+        props.setProperty("channel.0.provenance", "MEASURED_BY_A_NEWER_APP")
+        assertEquals(Provenance.UNKNOWN, SessionFiles.propsToMeta(props).channels.single().provenance)
+        // Absent, it is derived from the source as before.
+        props.remove("channel.0.provenance")
+        assertEquals(Provenance.MEASURED_GNSS_RECEIVER, SessionFiles.propsToMeta(props).channels.single().provenance)
+    }
+
+    @Test
     fun `an import's source details survive the metadata`() {
         val origin = ImportOrigin("GPX", "ride.gpx", receiver = "Garmin Edge 530", sampleRateHz = 1.0)
         val lat = GnssChannels.LAT.copy(provenance = Provenance.MEASURED_GPS)

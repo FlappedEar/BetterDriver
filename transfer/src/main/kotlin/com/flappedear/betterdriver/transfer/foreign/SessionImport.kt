@@ -199,8 +199,11 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         private var receiver = ""
         private var accelerationProvenance: Provenance? = null
 
-        /** How many intervals between written points took each number of milliseconds, for the rate. */
-        private val intervals = HashMap<Long, Int>()
+        /**
+         * How many intervals between written points took each number of milliseconds, for the rate:
+         * a fixed array, longer intervals counted in its last slot, so no file can make it grow.
+         */
+        private val intervals = IntArray(MaxIntervalMs + 1)
 
         override fun extras(columns: List<ExtraColumn>) {
             if (chunks != null) return // too late: the channel table is written
@@ -284,7 +287,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
                 skipped++
                 return
             }
-            if (lastT >= 0) intervals.merge((t - lastT) / MicrosPerMilliLong, 1, Int::plus)
+            if (lastT >= 0) intervals[minOf((t - lastT) / MicrosPerMilliLong, MaxIntervalMs.toLong()).toInt()]++
             lastT = t
             w.write(Record.Samples(SampleSet(t, valuesOf(p))))
             points++
@@ -400,13 +403,13 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
 
         /** Positions per second at the median interval between them, or null with none. */
         private fun sampleRateHz(): Double? {
-            val total = intervals.values.sum()
+            val total = intervals.sum()
             var seen = 0
-            for ((ms, n) in intervals.toSortedMap()) {
-                seen += n
-                if (seen * 2 >= total) return if (ms > 0) MillisPerSecond / ms else null
+            val median = intervals.indices.firstOrNull { ms ->
+                seen += intervals[ms]
+                total > 0 && seen * 2 >= total
             }
-            return null
+            return median?.takeIf { it > 0 }?.let { MillisPerSecond / it }
         }
 
         /** Stops the chunk writer's sync thread after a failure; the staged folder is then removed. */
@@ -458,6 +461,9 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         private const val MicrosPerMilli = 1_000.0
         private const val MicrosPerMilliLong = 1_000L
         private const val MillisPerSecond = 1_000.0
+
+        /** Intervals from this many milliseconds up count as this long for the rate (0.1 Hz). */
+        private const val MaxIntervalMs = 10_000
         private const val KmhPerMs = 3.6
         private const val MinMoveMetres = 0.5
         private const val EarthRadiusMetres = 6_371_008.8
