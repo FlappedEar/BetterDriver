@@ -10,7 +10,8 @@ private const val MaxReconnectMicros = 5_000_000L
 
 /**
  * The link-drop events of the GNSS sources (core-ble's `*Events.DISCONNECTED`). Heart rate
- * (`hr_disconnected`) is no GNSS source and is left out.
+ * (`hr_disconnected`) is no GNSS source and is left out. Demo GNSS logs its drops too when an emulator
+ * test switches it off (FakeGnssEvents, FBBD-43).
  */
 internal val GnssDisconnectKinds = setOf(
     "racebox_disconnected",
@@ -19,6 +20,7 @@ internal val GnssDisconnectKinds = setOf(
     "dragy_disconnected",
     "diy_disconnected",
     "lns_disconnected",
+    "demo_gnss_disconnected",
 )
 
 /**

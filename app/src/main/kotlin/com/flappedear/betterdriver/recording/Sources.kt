@@ -121,7 +121,8 @@ internal object Sources {
     fun create(context: Context, gnss: GnssRef, sensors: List<SensorRef> = emptyList()): List<DataSource> {
         val app = context.applicationContext
         val receiver = when (gnss.type) {
-            GnssType.DEMO -> FakeGnssSource()
+            // Debug builds let the emulator tests switch it off (FBBD-43, FBBD-64).
+            GnssType.DEMO -> FakeGnssSource(receiverOn = DemoGnssHook.receiverOn(app))
             GnssType.NMEA -> NmeaSource(app, gnss.address, gnss.name)
             GnssType.LNS -> LnsSource(app, gnss.address, gnss.name)
             GnssType.DIY -> DiyBleSource(app, gnss.address, gnss.name)
