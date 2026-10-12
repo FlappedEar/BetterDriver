@@ -14,7 +14,9 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -22,11 +24,14 @@ import androidx.navigation.NavHostController
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorScreen
 import com.flappedear.betterdriver.feature.track.editor.TrackEditorState
+import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.TracksScreen
 import com.flappedear.betterdriver.sharing.rememberTrackShare
 import com.flappedear.betterdriver.sharing.rememberTrackTransfer
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackFormatException
+import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.newTrackAt
 import com.flappedear.betterdriver.timing.track.newTrackFrom
 import com.flappedear.betterdriver.tracks.EditorData
@@ -35,9 +40,12 @@ import com.flappedear.betterdriver.tracks.Tracks
 /** Tracks (UI-27 option A): where you are, then your tracks; creating one opens the editor. */
 @Composable
 internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
+    val context = LocalContext.current
     LaunchedEffect(Unit) {
         tracks.refresh()
         tracks.locate()
+        val recorder = RecorderClient.get(context).state
+        tracks.refreshCircuits(recording = recorder.recording || recorder.starting)
     }
     val openNew: (Track) -> Unit = { t -> nav.navigate(Routes.trackEditor(t.id)) }
     TracksScreen(
@@ -58,6 +66,8 @@ internal fun TracksRoute(nav: NavHostController, tracks: Tracks) {
 @Composable
 internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String) {
     var data by remember(id) { mutableStateOf<EditorData?>(null) }
+    // Unsaved lines outlive a rotation or the app being killed in the background: the editor reopens with them.
+    var unsaved by rememberSaveable(id) { mutableStateOf<String?>(null) }
     var missing by remember(id) { mutableStateOf(false) }
     LaunchedEffect(id) { tracks.openEditor(id) { d -> if (d == null) missing = true else data = d } }
     val loaded = data
@@ -69,7 +79,13 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         return
     }
-    val state = remember(loaded) { TrackEditorState(loaded.track, loaded.sessions, loaded.stored, loaded.proposed) }
+    val state = remember(loaded) {
+        val kept = unsaved?.let(::decodeOrNull)?.takeIf { it.id == loaded.track.id }
+        TrackEditorState(kept ?: loaded.track, loaded.sessions, loaded.stored, loaded.proposed)
+    }
+    LaunchedEffect(state) {
+        snapshotFlow { state.track.takeIf { state.changed } }.collect { t -> unsaved = t?.let(TrackJson::encode) }
+    }
     var leaving by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var removing by remember { mutableStateOf(false) }
@@ -95,6 +111,12 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
         }
     }
     if (leaving) DiscardDialog(state.proposed, onDiscard = { nav.popBackStack() }, onDismiss = { leaving = false })
+}
+
+private fun decodeOrNull(text: String): Track? = try {
+    TrackJson.decode(text)
+} catch (_: TrackFormatException) {
+    null
 }
 
 /** The editor with Save and Share; [onDelete] is offered only for a saved track (FBBD-157). */

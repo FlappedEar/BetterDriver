@@ -9,6 +9,7 @@
 
 package com.flappedear.betterdriver.analysis.segments
 
+import com.flappedear.betterdriver.analysis.progress.ProgressAxis
 import kotlin.math.abs
 
 // Port of FlappedEar Telemetry analysis/time_loss.dart and rankOutingTimeLosses of
@@ -301,6 +302,12 @@ fun rankPopulationTimeLosses(
         fastest.values.map { timed[it] }
     }
     return rankTimeLosses(
-        approved, sectors.axis.lengthMeters, compared, TimedLapSectors(actualBest, start), maximumResults,
+        approved, wrapLengthMeters(sectors.axis), compared, TimedLapSectors(actualBest, start), maximumResults,
     )
 }
+
+/**
+ * The axis length time-loss windows wrap at: none (0) on an open axis (FBBD-162), where a corner
+ * ending at the finish does not continue onto the straight from the start.
+ */
+fun wrapLengthMeters(axis: ProgressAxis): Double = if (axis.closed) axis.lengthMeters else 0.0

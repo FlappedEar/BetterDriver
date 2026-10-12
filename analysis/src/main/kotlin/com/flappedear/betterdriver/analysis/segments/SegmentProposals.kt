@@ -136,6 +136,15 @@ private fun circularRuns(labels: IntArray): List<Run> {
     return runs
 }
 
+/** Runs from the first sample to the last, for an open axis; empty when every sample has the same label. */
+private fun linearRuns(labels: IntArray): List<Run> {
+    val runs = mutableListOf<Run>()
+    for (i in labels.indices) {
+        if (runs.isEmpty() || labels[i] != runs.last().label) runs += Run(labels[i], i, 1) else ++runs.last().count
+    }
+    return if (runs.size < 2) emptyList() else runs
+}
+
 private fun circularDistance(a: Double, b: Double, length: Double): Double {
     val direct = abs(a - b)
     return min(direct, length - direct)
@@ -165,7 +174,8 @@ private fun validOptions(options: SegmentProposalOptions): Boolean {
  * Classifies [axis]'s smoothed curvature into alternating corner and straight proposals.
  * [features] must come from `computeTrackFeatures(axis, ...)`. [gpsGaps] are progress ranges
  * where the analysed lap lacks GPS coverage; boundaries within tolerance of a gap are uncertain.
- * Returns `valid == false` for invalid inputs.
+ * Returns `valid == false` for invalid inputs. On an open axis (a point-to-point run, FBBD-162)
+ * the proposals go from its start to its finish, and none wraps.
  */
 fun proposeTrackSegments(
     axis: ProgressAxis,
@@ -215,7 +225,8 @@ fun proposeTrackSegments(
     fun unsplittable() =
         unresolved(if (labels.first() == 0) UnresolvedProposal.NoCorners else UnresolvedProposal.ContinuousCorner)
 
-    var runs = circularRuns(labels)
+    fun runsOf(labels: IntArray) = if (axis.closed) circularRuns(labels) else linearRuns(labels)
+    var runs = runsOf(labels)
     if (runs.isEmpty()) return unsplittable()
     // A turning run too small to be a corner is a kink: fold it into the straight.
     for (run in runs) {
@@ -223,7 +234,7 @@ fun proposeTrackSegments(
             for (k in 0 until run.count) labels[(run.first + k) % n] = 0
         }
     }
-    runs = circularRuns(labels)
+    runs = runsOf(labels)
     if (runs.isEmpty()) return unsplittable()
 
     val tolerance = features.smoothingMeters + spacing
@@ -239,7 +250,7 @@ fun proposeTrackSegments(
             straightLength < options.certainStraightMeters
         ) {
             pieces[k].start.add(BoundaryUncertainty.ShortStraight)
-            pieces[(k + 1) % m].start.add(BoundaryUncertainty.ShortStraight)
+            if (axis.closed || k + 1 < m) pieces[(k + 1) % m].start.add(BoundaryUncertainty.ShortStraight)
         }
     }
 
@@ -254,12 +265,23 @@ fun proposeTrackSegments(
         }
     }
     if (anchor < 0) return unresolved(UnresolvedProposal.ContinuousCorner)
+    // An open axis is walked from its start, so no chain joins its finish to its start.
+    if (!axis.closed) anchor = 0
     val kept = mutableListOf<Piece>()
     val chained = mutableListOf<Int>()
     for (step in 0 until m) {
         val piece = pieces[(anchor + step) % m]
         val straightPiece = piece.run.label == 0
         val proposedStraight = straightPiece && piece.run.count * spacing >= options.connectedStraightMeters
+        val first = kept.singleOrNull()?.run
+        if (!axis.closed && !straightPiece && first != null && first.label == 0 &&
+            first.count * spacing < options.connectedStraightMeters
+        ) {
+            // A run's opening straight too short to propose belongs to its first corner.
+            kept[0] = Piece(Run(piece.run.label, first.first, first.count + piece.run.count), kept[0].start)
+            chained[0] = 1
+            continue
+        }
         if (proposedStraight || kept.isEmpty() || kept.last().run.label == 0) {
             // A copy: the chain below extends the kept run, never the piece's own.
             kept += Piece(Run(piece.run.label, piece.run.first, piece.run.count), piece.start.copy())

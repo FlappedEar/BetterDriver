@@ -176,6 +176,8 @@ private fun AppTab(
         ListRow("Track screen colours", "Green / red")
         ListRow("Spoken coach", coachLabel(coach), onClick = onOpenCoach)
         ListRow("Version", version)
+        // The built-in circuit directory's source (FBBD-79).
+        ListRow("Circuit list", "Wikidata · CC0 1.0")
         updateRow()
         backupRows()
         ListRow("Run setup again", onClick = onRunSetup)

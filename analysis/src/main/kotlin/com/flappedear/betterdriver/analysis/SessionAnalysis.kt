@@ -28,6 +28,7 @@ import com.flappedear.betterdriver.analysis.segments.lineConsensus
 import com.flappedear.betterdriver.analysis.segments.publishTheoreticalBest
 import com.flappedear.betterdriver.analysis.segments.rankTimeLosses
 import com.flappedear.betterdriver.analysis.segments.timePopulation
+import com.flappedear.betterdriver.analysis.segments.wrapLengthMeters
 
 /**
  * One session analysed end to end: its laps, the corners and straights proposed on its fastest
@@ -114,7 +115,7 @@ fun analyzeSession(
     val fastestTimes = timed.times[fastestIndex]
     val losses = rankTimeLosses(
         segments,
-        timed.axis.lengthMeters,
+        wrapLengthMeters(timed.axis),
         eligible.map { TimedLapSectors(timed.times[it], population[it].start) },
         TimedLapSectors(fastestTimes, fastest.startTelemetryTime),
         maximumResults = -1, // all: focus areas count every lap's losses through a segment
