@@ -164,10 +164,11 @@ fun SmokeRule.back() {
 }
 
 /**
- * Runs [block] with the test's frame clock under manual control, for the lap review: its player
- * asks for every frame (CompareView's frame loop), so Compose never goes idle there and the
- * automatic clock would wait for it forever. Inside, wait with the pump helpers, which advance the
- * clock a frame at a time, and leave the lap review before [block] ends.
+ * Runs [block] with the test's frame clock under manual control, for the lap review while it plays:
+ * then its player asks for every frame (CompareView's frame loop), so Compose never goes idle and
+ * the automatic clock would wait for it forever. Paused, the review is idle like any screen. Inside,
+ * wait with the pump helpers, which advance the clock a frame at a time, and pause the review (or
+ * leave it) before [block] ends.
  */
 fun <T> SmokeRule.withManualClock(block: () -> T): T {
     mainClock.autoAdvance = false
@@ -209,18 +210,6 @@ fun SmokeRule.pumpUntilText(
         onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
     }
     return onAllNodesWithText(text, substring = substring)[0]
-}
-
-/** With the manual clock: [waitFor]. */
-fun SmokeRule.pumpUntilNode(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
-    pumpUntil(timeoutMs, matcher.description) { onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
-    return onAllNodes(matcher)[0]
-}
-
-/** With the manual clock: Android's back. */
-fun SmokeRule.pumpBack() {
-    Espresso.pressBack()
-    pumpFor(FrameMs * SettleFrames)
 }
 
 private const val FrameMs = 16L
