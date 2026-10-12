@@ -39,6 +39,7 @@ import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
+import com.flappedear.betterdriver.feature.analysis.mapUi
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
@@ -173,7 +174,9 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
             "No lap counts: every lap has a GPS gap or is not a full lap.",
             acceleration = loaded.acceleration,
         )
-    return AnalysisState.Ready(ui.copy(progress = progress, acceleration = loaded.acceleration))
+    // The map and G-G diagram read every sample of two laps; this runs on Dispatchers.Default.
+    val map = mapUi(analysis, loaded.session, comparison)
+    return AnalysisState.Ready(ui.copy(progress = progress, map = map, acceleration = loaded.acceleration))
 }
 
 /**

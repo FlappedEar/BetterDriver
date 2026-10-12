@@ -21,7 +21,23 @@ private val HorizontalAccuracy = listOf("gnss_hacc", "dragy_hacc")
 /** The RaceBox's acceleration along its X axis, which the mount points forward (RaceBoxChannels.ACCEL_X). */
 private const val AccelerationX = "accel_x"
 
-/** [AccelerationX] signed so that speeding up is positive, as the Corner Analyzer reads it. */
+/**
+ * The RaceBox's acceleration along its Y axis, across the car (RaceBoxChannels.ACCEL_Y). Its sign is
+ * left as recorded: the G-G diagram, its only reader, checks it against the GPS turn.
+ */
+private const val AccelerationY = "accel_y"
+
+/** The RaceChrono DIY receivers' (NMEA and TCP) accelerations, in g like the RaceBox's (RcChannels). */
+private const val RcAccelerationX = "rc_accel_x"
+private const val RcAccelerationY = "rc_accel_y"
+
+/**
+ * Accelerometer channel pairs (forward X, sideways Y) a recording may hold, in order of preference:
+ * the RaceBox's, then a RaceChrono DIY receiver's. Both record g; the unit travels with the channel.
+ */
+private val AccelerometerAxes = listOf(AccelerationX to AccelerationY, RcAccelerationX to RcAccelerationY)
+
+/** The accelerometer's X axis signed so that speeding up is positive, as the Corner Analyzer reads it. */
 const val ForwardAcceleration = "accel_forward"
 
 /** Half the span of the speed difference the acceleration's sign is checked against. */
@@ -59,13 +75,16 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?): TelemetrySes
         val channelValues = values.getValue(id).toDoubleArray()
         channels[def.name] = TelemetryChannel(def.name, ts.toDoubleArray(), channelValues, def.unit)
     }
-    forwardAcceleration(channels)?.let { channels[it.name] = it }
+    // The first accelerometer the recording has, X and Y from the same receiver.
+    val axes = AccelerometerAxes.firstOrNull { (x, _) -> x in channels } ?: AccelerometerAxes.first()
+    forwardAcceleration(channels, axes.first)?.let { channels[it.name] = it }
     val aliases = mapOf(
         Aliases.LATITUDE to GnssChannels.LAT.name,
         Aliases.LONGITUDE to GnssChannels.LON.name,
         Aliases.SPEED to GnssChannels.SPEED_KMH.name,
         Aliases.ACCURACY to HorizontalAccuracy.firstOrNull { it in channels }.orEmpty(),
         Aliases.LONGITUDINAL_ACCELERATION to ForwardAcceleration,
+        Aliases.LATERAL_ACCELERATION to axes.second,
     ).filterValues { it in channels }
     val gates = listOfNotNull(
         startFinish?.let {
@@ -81,12 +100,13 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?): TelemetrySes
 }
 
 /**
- * [AccelerationX] as [ForwardAcceleration], or null without it or a speed. Its sign is taken from
- * the recording itself: the channel is negated when it runs against the change in GPS speed, so a
- * RaceBox mounted backwards, or reporting the opposite convention, still reads braking as negative.
+ * Channel [name] (an accelerometer's X axis) as [ForwardAcceleration], or null without it or a
+ * speed. Its sign is taken from the recording itself: the channel is negated when it runs against
+ * the change in GPS speed, so a receiver mounted backwards, or reporting the opposite convention,
+ * still reads braking as negative.
  */
-private fun forwardAcceleration(channels: Map<String, TelemetryChannel>): TelemetryChannel? {
-    val x = channels[AccelerationX]
+private fun forwardAcceleration(channels: Map<String, TelemetryChannel>, name: String): TelemetryChannel? {
+    val x = channels[name]
     val speed = channels[GnssChannels.SPEED_KMH.name]
     if (x == null || speed == null) return null
     var agreement = 0.0
