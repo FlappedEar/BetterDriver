@@ -59,9 +59,9 @@ import kotlin.math.roundToInt
  * the other laps' largest losses), the lap compared with the fastest by distance (time delta and
  * speed, corners shaded, a cursor to read values), every lap's time, and the theoretical best
  * corner by corner with the compared lap's loss and the spread of the counted laps, one section
- * per tab (UI-62 B). Tapping a lap or a loss compares it. [onCoachPick] picks or unpicks a corner
- * (segment id) for the spoken coach's next session at the track (FBBD-148). [topBar] is the app's bar
- * with its back button.
+ * per tab (UI-62 B), and the compared lap on the map with its G-G diagram (FBBD-149). Tapping a lap
+ * or a loss compares it. [onCoachPick] picks or unpicks a corner (segment id) for the spoken coach's
+ * next session at the track (FBBD-148). [topBar] is the app's bar with its back button.
  */
 @Composable
 fun AnalysisScreen(
@@ -93,10 +93,12 @@ fun AnalysisScreen(
 internal enum class AnalysisTab(val title: String) {
     Summary("Summary"),
     Compare("Compare"),
+    Map("Map"),
     Laps("Laps"),
     Corners("Corners"),
 }
 
+@Suppress("CyclomaticComplexMethod") // One branch per tab.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String) -> Unit) {
@@ -122,6 +124,8 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
+            // The map and the G-G diagram sit side by side on a wide screen, so their tab is wider.
+            val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
             when (AnalysisTab.entries[tab]) {
                 AnalysisTab.Summary -> {
                     Summary(ui, width)
@@ -131,6 +135,8 @@ private fun Ready(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (String
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
+                AnalysisTab.Map -> ui.map?.let { MapTab(it, wide) }
+                    ?: Card(width) { Dim("No map: the laps of this session have no usable GPS line.") }
                 AnalysisTab.Laps -> Laps(ui, compare, width)
                 AnalysisTab.Corners -> {
                     Sectors(ui, width)
@@ -357,7 +363,7 @@ internal fun Dim(text: String, modifier: Modifier = Modifier, color: Color = Tra
 private fun AnalysisScreenPreview() {
     BetterDriverTheme {
         Box(Modifier.background(MaterialTheme.colorScheme.background)) {
-            AnalysisScreen(AnalysisState.Ready(PreviewUi), onCompare = {})
+            AnalysisScreen(AnalysisState.Ready(PreviewUi.copy(map = PreviewMap)), onCompare = {})
         }
     }
 }
