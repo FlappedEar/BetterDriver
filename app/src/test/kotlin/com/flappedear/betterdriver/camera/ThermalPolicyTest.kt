@@ -67,6 +67,14 @@ class ThermalPolicyTest {
     }
 
     @Test
+    fun hotAtTheLastStepStopsWithoutWaitingForTheInterval() {
+        val p = ThermalPolicy(2, minStepMicros = minute)
+        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
+        p.moveTo(1)
+        assertEquals(ThermalAction.StopVideo, p.onReading(minute / 12, Thermal.MODERATE, null))
+    }
+
+    @Test
     fun moveToStartsFromTheGivenStep() {
         val p = ThermalPolicy(4)
         p.moveTo(2)

@@ -9,11 +9,16 @@ import android.content.Context
 import android.os.SystemClock
 import java.util.UUID
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 private const val ForgetAfterMs = 5_000L
+
+/** How often the list is re-checked for devices that went quiet. */
+private const val RecheckMs = 1_000L
 
 /** A BLE device seen in a scan. [name] is empty when it advertises none. */
 data class FoundBleDevice(val name: String, val address: String, val rssi: Int) {
@@ -61,6 +66,15 @@ fun scanBleDevices(
         false
     }
     if (!started) trySend(emptyList())
+    // A device that stops advertising sends no more results; this drops it from the list anyway.
+    if (started) {
+        launch {
+            while (true) {
+                delay(RecheckMs)
+                synchronized(seen) { emit() }
+            }
+        }
+    }
     awaitClose {
         try {
             if (started) scanner?.stopScan(callback)

@@ -8,11 +8,16 @@ import android.bluetooth.le.ScanSettings
 import android.content.Context
 import android.os.SystemClock
 import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 private const val ForgetAfterMs = 5_000L
+
+/** How often the list is re-checked for devices that went quiet. */
+private const val RecheckMs = 1_000L
 
 /**
  * Scans for RaceBoxes while collected and emits those heard in the last 5 s, strongest first.
@@ -49,6 +54,15 @@ fun scanRaceBoxes(context: Context): Flow<List<FoundRaceBox>> = callbackFlow {
         false
     }
     if (!started) trySend(emptyList())
+    // A device that stops advertising sends no more results; this drops it from the list anyway.
+    if (started) {
+        launch {
+            while (true) {
+                delay(RecheckMs)
+                synchronized(seen) { emit() }
+            }
+        }
+    }
     awaitClose {
         try {
             if (started) scanner?.stopScan(callback)
