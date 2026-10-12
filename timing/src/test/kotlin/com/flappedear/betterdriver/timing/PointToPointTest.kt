@@ -279,6 +279,18 @@ class PointToPointTest {
     }
 
     @Test
+    fun `the export has the runs and no open lap for the drive back`() {
+        val runs = replayLaps("hill-1", session(threeRuns.fixes), hill).exportLaps()
+        assertEquals(listOf(1, 2, 3), runs.map { it.number })
+        assertTrue(runs.none { it.endMicros == Long.MAX_VALUE })
+        // A circuit keeps the lap still being driven at the end.
+        val laps = replayLaps("hill-1", session(threeRuns.fixes), hill.copy(kind = TrackKind.Circuit)).exportLaps()
+        val open = laps.last()
+        assertEquals(Long.MAX_VALUE, open.endMicros)
+        assertEquals(laps[laps.size - 2].endMicros, open.startMicros)
+    }
+
+    @Test
     fun `replay leaves out an aborted run`() {
         val legs = listOf(Leg(Xy(700.0, 0.0), 1.0), Leg(Xy(700.0, 8.0), 0.2), Leg(Xy(0.0, 8.0), 0.6)) +
             Leg(Xy(0.0, 0.0), 0.2) + runAndBack(1.0)

@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.timing.replay
 
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.export.ExportLap
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
@@ -75,6 +76,18 @@ data class LapTrace(val sessionId: String, val lap: Lap, val points: List<TraceP
 class SessionLaps(val sessionId: String, val track: Track, val laps: List<LapTrace>, val book: LapBook) {
     /** The fastest timed lap, if any. */
     val best: LapTrace? get() = book.best?.let { b -> laps.firstOrNull { it.lap.number == b.number } }
+
+    /**
+     * The laps for CSV and GPX export (FBBD-150), plus the lap still being driven when the session
+     * stopped. A point-to-point track (FBBD-155) has no such lap: after the last run's finish comes
+     * the drive back, which is no run.
+     */
+    fun exportLaps(): List<ExportLap> {
+        val done = laps.map { ExportLap(it.lap.number, it.lap.startMicros, it.lap.endMicros) }
+        val last = done.lastOrNull()
+        if (last == null || track.pointToPoint) return done
+        return done + ExportLap(last.number + 1, last.endMicros, Long.MAX_VALUE)
+    }
 }
 
 /** The frame of every [TracePoint] of [track]: centred on the track, not on its lines, so edits keep it. */
