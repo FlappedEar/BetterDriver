@@ -95,18 +95,11 @@ class ComparisonTest {
     }
 
     @Test
-    fun defaultPairIsNewestBestAgainstFastestOther() {
-        val newest = ReviewSession(
-            "new", "Today", "",
-            listOf(lap("new", 1, 30.0, 0, LapKind.Out), lap("new", 2, 45.0, 0), lap("new", 3, 48.0, 0)),
-            3,
-        )
-        val older = ReviewSession("old", "Last week", "", listOf(lap("old", 2, 50.0, 0), lap("old", 3, 47.0, 0)), 2)
-        val track = ReviewTrack("t", "Track", listOf(newest, older))
-        assertEquals(LapKey("new", 3) to LapKey("old", 2), track.defaultPair())
-        val alone = ReviewTrack("t", "Track", listOf(newest.copy(laps = newest.laps.take(2))))
-        assertNull(alone.defaultPair())
+    fun lapIsFoundByKey() {
+        val newest = ReviewSession("new", "Today", "", listOf(lap("new", 2, 45.0, 0), lap("new", 3, 48.0, 0)), 2)
+        val track = ReviewTrack("t", "Track", listOf(newest))
         assertEquals(LapKey("new", 3), track.lap(LapKey("new", 3))!!.key)
+        assertNull(track.lap(LapKey("new", 4)))
     }
 
     @Test

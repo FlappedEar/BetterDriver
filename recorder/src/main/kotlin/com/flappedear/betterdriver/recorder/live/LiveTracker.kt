@@ -111,22 +111,28 @@ class LiveTracker(
     private var speedKmh: Double? = null
     private var accelX: Double? = null
     private var accelY: Double? = null
+    private val standing = StandingBias()
     private var storageLowBytes: Long? = null
     private var stoppedReason: String? = null
 
     override fun onSamples(set: SampleSet) = synchronized(this) {
         var lat = false
         var lon = false
+        var accel = false
         for (v in set.values) {
             when (v.channelId) {
                 GnssChannels.LAT.id -> lat = true
                 GnssChannels.LON.id -> lon = true
                 GnssChannels.SATS.id -> sats = v.value.toInt()
                 GnssChannels.SPEED_KMH.id -> speedKmh = v.value
-                accelIds?.first -> accelX = v.value
+                accelIds?.first -> {
+                    accelX = v.value
+                    accel = true
+                }
                 accelIds?.second -> accelY = v.value
             }
         }
+        if (accel) standing.update(speedKmh, accelX, accelY)
         if (lat && lon) {
             fixes++
             lastFixMicros = maxOf(lastFixMicros ?: Long.MIN_VALUE, set.tMicros)
@@ -158,7 +164,7 @@ class LiveTracker(
             storageLowBytes = storageLowBytes,
             stoppedReason = stoppedReason,
             droppedSamples = droppedSamples(),
-            gCombined = accelX?.let { x -> accelY?.let { y -> hypot(x, y) } },
+            gCombined = accelX?.let { x -> accelY?.let { y -> hypot(x - standing.x, y - standing.y) } },
             receiverRateHz = receiverRateHz,
         )
     }
@@ -178,5 +184,40 @@ class LiveTracker(
     /** Keeps only fixes from the second up to [now]. */
     private fun trim(now: Long) {
         while (recentFixes.isNotEmpty() && recentFixes.first() <= now - MicrosPerSecond) recentFixes.removeFirst()
+    }
+}
+
+/**
+ * What the accelerometer reads while the car stands still: gravity along a tilted mount (a RaceBox
+ * pitched back by 11° reads 0.19 g at a standstill), taken off the live G so a standing car reads
+ * 0.00 g. Averaged over about a second of readings below [StandingKmh]; zero until the car has stood.
+ */
+internal class StandingBias {
+    var x = 0.0
+        private set
+    var y = 0.0
+        private set
+    private var seen = false
+
+    fun update(speedKmh: Double?, ax: Double?, ay: Double?) {
+        val standing = speedKmh != null && speedKmh < StandingKmh
+        if (!standing || ax == null || ay == null) return
+        if (!ax.isFinite() || !ay.isFinite()) return
+        if (seen) {
+            x += (ax - x) * StandingWeight
+            y += (ay - y) * StandingWeight
+        } else {
+            x = ax
+            y = ay
+            seen = true
+        }
+    }
+
+    private companion object {
+        /** Below this the car stands (GNSS speed noise at a standstill stays under it). */
+        const val StandingKmh = 1.0
+
+        /** Each standing reading's share: about a second at the RaceBox's 25 Hz. */
+        const val StandingWeight = 0.04
     }
 }

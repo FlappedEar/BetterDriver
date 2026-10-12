@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder
 
+import com.flappedear.betterdriver.recorder.accel.fitAxis
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.GnssCue
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -166,6 +168,39 @@ class LiveTrackerTest {
         val without = LiveTracker("s", 0, { 0L })
         without.onSamples(SampleSet(0, listOf(ChannelValue(110, 0.3), ChannelValue(111, -0.4))))
         assertNull(without.snapshot().gCombined)
+    }
+
+    @Test
+    fun `a tilted mount reads no G standing still and its tilt is taken off on the move`() {
+        // Arek's RaceBox, 2026-10-12: pitched back, it reads X -0.187 g and Y 0.015 g at a standstill.
+        val tracker = LiveTracker("s", 0, { 0L }, accelIds = 110 to 111)
+        fun at(t: Long, kmh: Double, x: Double, y: Double) = tracker.onSamples(
+            SampleSet(
+                t,
+                listOf(ChannelValue(GnssChannels.SPEED_KMH.id, kmh), ChannelValue(110, x), ChannelValue(111, y)),
+            ),
+        )
+        for (i in 0 until 50) at(i * 40_000L, 0.2, -0.187, 0.015)
+        assertEquals(0.0, assertNotNull(tracker.snapshot().gCombined), 1e-3)
+        // Braking at 0.4 g on the move: the X axis reads 0.4 g more than at rest.
+        at(2_000_000, 60.0, -0.187 + 0.4, 0.015)
+        assertEquals(0.4, assertNotNull(tracker.snapshot().gCombined), 1e-3)
+    }
+
+    @Test
+    fun `axis fit turns a backwards axis round and takes its tilt off`() {
+        val gps = DoubleArray(200) { kotlin.math.sin(it / 10.0) * 0.3 }
+        val backwards = DoubleArray(gps.size) { -gps[it] - 0.19 + if (it % 2 == 0) 0.01 else -0.01 }
+        val fit = assertNotNull(fitAxis(backwards, gps))
+        assertEquals(-1.0, fit.sign)
+        assertEquals(-0.19, fit.bias, 0.005)
+        assertTrue(fit.usable)
+        assertEquals(0.25, fit.correct(-0.25 - 0.19), 0.005)
+        // An all-zero column (a VBO whose device had no accelerometer) has nothing to fit.
+        assertNull(fitAxis(DoubleArray(gps.size), gps))
+        // An axis that does not follow GPS (mounted across the car) is not trusted.
+        val across = DoubleArray(gps.size) { kotlin.math.cos(it / 10.0) * 0.3 }
+        assertFalse(assertNotNull(fitAxis(across, gps)).usable)
     }
 
     @Test

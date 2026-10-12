@@ -152,13 +152,24 @@ class OverlayTest {
     }
 
     @Test
-    fun `an accelerometer is used when the session has one`() {
+    fun `an accelerometer is fitted to the GNSS G, turned round and its tilt taken off, a dead axis left out`() {
         val drive = circuit.drive(listOf(1.0))
+        val plain = OverlayData(session(drive), null)
+        val gnss = drive.fixes.associate { it.tMicros to plain.at(it.tMicros).g }
         val accel = AccelChannels(forward = 110, right = 111)
-        val sets = session(drive) { listOf(ChannelValue(110, -0.8), ChannelValue(111, 0.3)) }
-        val g = assertNotNull(OverlayData(sets, null, accel).at(drive.fixes[50].tMicros).g)
-        assertEquals(GForce(-0.8, 0.3).longitudinal, g.longitudinal, 1e-9)
-        assertEquals(0.3, g.lateral, 1e-9)
+        // Y mounted the other way and tilted; X a dead column of zeros, as in a VBO without an accelerometer.
+        val sets = session(drive) { t ->
+            listOfNotNull(ChannelValue(110, 0.0), gnss[t]?.let { ChannelValue(111, -it.lateral + 0.15) })
+        }
+        val data = OverlayData(sets, null, accel)
+        val checked = drive.fixes.filter { gnss[it.tMicros] != null }
+        assertTrue(checked.size > 100)
+        for (f in checked.filterIndexed { i, _ -> i % 25 == 0 }) {
+            val expected = assertNotNull(gnss[f.tMicros])
+            val g = assertNotNull(data.at(f.tMicros).g)
+            assertEquals(expected.lateral, g.lateral, 0.05, "at ${f.tMicros}")
+            assertEquals(expected.longitudinal, g.longitudinal, 1e-9, "at ${f.tMicros}")
+        }
     }
 
     @Test

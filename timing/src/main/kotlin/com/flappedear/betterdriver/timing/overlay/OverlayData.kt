@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.timing.overlay
 
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.accel.fitAxis
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
@@ -46,7 +47,8 @@ data class AccelChannels(val forward: Int, val right: Int)
  *
  * Built once per export from the session's sample sets and its replayed laps ([laps], null when
  * the session was not at a saved track with a start/finish line: then there is no lap or delta).
- * G comes from [accel] when the session has that accelerometer, else from the GNSS path.
+ * G comes from [accel] when the session has that accelerometer and it agrees with the GNSS path
+ * (fitted to it, see [fitAxis]), else from the GNSS path.
  *
  * Not thread-safe: the exporter draws frames one at a time.
  */
@@ -87,18 +89,27 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, accel: AccelChannel
         y = TimeSeries.of(times.indices.map { times[it] to path[it].y })
         speed = TimeSeries.of(sorted.mapNotNull { s -> s.valueOf(GnssChannels.SPEED_KMH.id)?.let { s.tMicros to it } })
 
-        val forward = accel?.let { a -> sorted.mapNotNull { s -> s.valueOf(a.forward)?.let { s.tMicros to it } } }
-        val right = accel?.let { a -> sorted.mapNotNull { s -> s.valueOf(a.right)?.let { s.tMicros to it } } }
-        val hasAccel = forward.orEmpty().size >= 2 && right.orEmpty().size >= 2
-        if (hasAccel) {
-            gLong = TimeSeries.of(forward.orEmpty()).smoothed(AccelHalfWindowMicros)
-            gLat = TimeSeries.of(right.orEmpty()).smoothed(AccelHalfWindowMicros)
-        } else {
-            val v = if (fixSpeeds.all { it != null }) DoubleArray(fixSpeeds.size) { fixSpeeds[it]!! } else null
-            val g = gnssG(times, path, v)
-            gLong = TimeSeries.of(times.indices.mapNotNull { i -> g[i]?.let { times[i] to it.longitudinal } })
-            gLat = TimeSeries.of(times.indices.mapNotNull { i -> g[i]?.let { times[i] to it.lateral } })
+        val v = if (fixSpeeds.all { it != null }) DoubleArray(fixSpeeds.size) { fixSpeeds[it]!! } else null
+        val g = gnssG(times, path, v)
+        val gnssLong = TimeSeries.of(times.indices.mapNotNull { i -> g[i]?.let { times[i] to it.longitudinal } })
+        val gnssLat = TimeSeries.of(times.indices.mapNotNull { i -> g[i]?.let { times[i] to it.lateral } })
+        // Each accelerometer axis is fitted to the GNSS path's G: turned round when it reads the
+        // other way (a receiver mounted backwards), the mount's tilt taken off, and left out for
+        // the GNSS path's own G when it does not agree with it (an all-zero column in a VBO).
+        val moving = times.indices.filter { g[it] != null }
+        fun fitted(channel: Int?, gnss: TimeSeries): TimeSeries? {
+            val raw = channel?.let { c -> sorted.mapNotNull { s -> s.valueOf(c)?.let { s.tMicros to it } } }
+            val series = raw?.takeIf { it.size >= 2 }?.let { TimeSeries.of(it).smoothed(AccelHalfWindowMicros) }
+            val fit = series?.let { a ->
+                fitAxis(
+                    DoubleArray(moving.size) { a.at(times[moving[it]]) ?: Double.NaN },
+                    DoubleArray(moving.size) { gnss.at(times[moving[it]]) ?: Double.NaN },
+                )
+            }
+            return if (series != null && fit != null && fit.usable) series.map(fit::correct) else null
         }
+        gLong = fitted(accel?.forward, gnssLong) ?: gnssLong
+        gLat = fitted(accel?.right, gnssLat) ?: gnssLat
         outline = (best ?: traces.maxByOrNull { it.lengthMeters })?.points?.map { it.xy } ?: path
     }
 

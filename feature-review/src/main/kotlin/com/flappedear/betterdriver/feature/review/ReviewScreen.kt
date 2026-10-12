@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -31,11 +32,11 @@ import com.flappedear.betterdriver.core.ui.layout.WidthClass
 
 /**
  * Lap review (FBBD-24): pick two laps of a track from any sessions, then watch them side by side,
- * each with its own video, synced by track position. Opens on the newest session's best lap
- * against the best other lap of the track, or on [start] when another screen asks for two laps
- * (FBBD-153). Slow work (reading sessions) happens before this screen gets [load]; until then it
- * shows progress. On an Expanded width ([layout], FBBD-40) it uses the tablet layout: videos side by
- * side, chart and map in a row.
+ * each with its own video, synced by track position. Opens on the lap picker with nothing picked,
+ * or on [start] when another screen asks for two laps (FBBD-153); leaving a comparison goes back to
+ * the picker with nothing picked. Slow work (reading sessions) happens before this screen gets
+ * [load]; until then it shows progress. On an Expanded width ([layout], FBBD-40) it uses the
+ * tablet layout: videos side by side, chart and map in a row.
  */
 @Composable
 fun ReviewScreen(
@@ -70,37 +71,39 @@ private fun Review(
 ) {
     var trackId by rememberSaveable { mutableStateOf(firstTrack(tracks, start).id) }
     val track = tracks.firstOrNull { it.id == trackId } ?: tracks.first()
-    val pair = remember(track) { firstPair(track, start) }
-    var aKey by rememberSaveable(track.id) { mutableStateOf(pair?.first?.encode()) }
-    var bKey by rememberSaveable(track.id) { mutableStateOf(pair?.second?.encode()) }
-    var active by rememberSaveable(track.id) { mutableStateOf(Slot.A) }
-    var picking by rememberSaveable(track.id) { mutableStateOf(pair == null) }
-    val a = LapKey.decode(aKey)?.let(track::lap)
-    val b = LapKey.decode(bKey)?.let(track::lap)
+    // Nothing is picked until the driver picks it, unless another screen asked for two laps (FBBD-153).
+    var picks by rememberSaveable(track.id, stateSaver = PicksSaver) {
+        mutableStateOf(Picks.opening(firstPair(track, start)))
+    }
+    val a = LapKey.decode(picks.a)?.let(track::lap)
+    val b = LapKey.decode(picks.b)?.let(track::lap)
     val shown = if (a != null && b != null && a.key != b.key) a to b else null
-    BackHandler(enabled = !picking && shown != null) { picking = true }
-    if (!picking && shown != null) {
+    BackHandler(enabled = !picks.picking && shown != null) { picks = picks.leave() }
+    if (!picks.picking && shown != null) {
         val c = remember(shown) { Comparison(shown.first, shown.second) }
         val at = start?.atFor(shown.first.key, shown.second.key)
-        CompareView(c, wide, onChangeLaps = { picking = true }, startFraction = at)
+        CompareView(c, wide, onChangeLaps = { picks = picks.leave() }, startFraction = at)
     } else {
         Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
             TopBar("Compare laps", backIcon, onBack)
             LapPicker(
-                PickerState(tracks, track, a, b, active),
+                PickerState(tracks, track, a, b, picks.active),
                 PickerActions(
                     onTrack = { trackId = it.id },
-                    onSlot = { active = it },
-                    onLap = { lap ->
-                        if (active == Slot.A) aKey = lap.key.encode() else bKey = lap.key.encode()
-                        active = if (active == Slot.A) Slot.B else Slot.A
-                    },
-                    onCompare = { picking = false },
+                    onSlot = { picks = picks.copy(active = it) },
+                    onLap = { lap -> picks = picks.pick(lap.key) },
+                    onCompare = { picks = picks.copy(picking = false) },
                 ),
             )
         }
     }
 }
+
+/** [Picks] in saved state, as its four fields. */
+private val PicksSaver = listSaver<Picks, Any?>(
+    save = { listOf(it.a, it.b, it.active.name, it.picking) },
+    restore = { Picks(it[0] as String?, it[1] as String?, Slot.valueOf(it[2] as String), it[3] as Boolean) },
+)
 
 @Composable
 private fun TopBar(title: String, backIcon: ImageVector, onBack: () -> Unit) {
