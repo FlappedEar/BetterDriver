@@ -62,13 +62,20 @@ data class TrackScreenState(
  * theme across the full window. The caller must not pad it for
  * insets; it pads its own content. [state] holds the live values; it defaults
  * to [ExampleTrackState]. Holding a finger anywhere for 3 s stops the session
- * (UI-16 option A).
+ * (UI-16 option A). [brightness] is the Settings choice: full brightness by default, so the
+ * screen reads in sunlight (FBBD-63).
  */
 @Composable
-fun TrackScreen(onStop: () -> Unit, modifier: Modifier = Modifier, state: TrackScreenState = ExampleTrackState) {
+fun TrackScreen(
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+    state: TrackScreenState = ExampleTrackState,
+    brightness: TrackBrightness = TrackBrightness.Max,
+) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
     KeepScreenOn(view)
+    LockBrightness(activity, brightness)
     LockLandscape(activity)
     LightSystemBarIcons(activity, view)
     HideSystemBars(activity, view)

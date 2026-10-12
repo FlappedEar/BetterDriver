@@ -34,6 +34,7 @@ import com.flappedear.betterdriver.debug.DebugLogRows
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
+import com.flappedear.betterdriver.recording.GnssSound
 import com.flappedear.betterdriver.recording.SensorRef
 import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
@@ -46,6 +47,7 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.TrackScreenPrefs
 import com.flappedear.betterdriver.shell.legacyGoProName
 import com.flappedear.betterdriver.shell.listedGoPros
 import com.flappedear.betterdriver.shell.SessionCardActions
@@ -238,7 +240,9 @@ private fun Drive(
 @Composable
 private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, recorder: RecorderClient) {
     if (prefs.hasRequiredPermissions()) {
+        GnssSound(recorder.state.live?.gnss, enabled = prefs.gnssSound)
         TrackScreen(
+            brightness = prefs.trackBrightness,
             state = liveTrackState(recorder.state, repo.forSession().active().tiles),
             onStop = {
                 recorder.stop()
@@ -365,6 +369,11 @@ private fun Settings(
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
         coach = coach.settings,
         onOpenCoach = { nav.navigate(Routes.CoachSettings) },
+        trackScreen = TrackScreenPrefs(prefs.trackBrightness, prefs.gnssSound),
+        onTrackScreen = { p ->
+            prefs.updateTrackBrightness(p.brightness)
+            prefs.updateGnssSound(p.gnssSound)
+        },
     )
 }
 

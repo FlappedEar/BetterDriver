@@ -28,6 +28,7 @@ class LiveUiTest {
         storageLowBytes = null,
         stoppedReason = null,
         droppedSamples = 0,
+        receiverRateHz = 25,
     )
 
     @Test
@@ -96,10 +97,13 @@ class LiveUiTest {
         val failed = liveTrackState(stopped, tiles)
         assertEquals("Not recording", failed.alert?.title)
         assertEquals("Storage full. The session is saved.", failed.alert?.detail)
-        val noFix = RecorderState(connected = true, live = live.copy(lastFixAgeMicros = 3_000_000))
+        // A 25 Hz receiver is lost 1 s after its last fix (FBBD-64).
+        val noFix = RecorderState(connected = true, live = live.copy(lastFixAgeMicros = 1_100_000))
         val lost = liveTrackState(noFix, tiles)
         assertEquals("GNSS signal lost", lost.alert?.title)
         assertEquals("Lost", lost.status.single().value)
+        val late = RecorderState(connected = true, live = live.copy(lastFixAgeMicros = 900_000))
+        assertEquals(null, liveTrackState(late, tiles).alert)
     }
 
     @Test
