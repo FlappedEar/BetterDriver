@@ -141,11 +141,11 @@ private fun videoStamp(dir: File): Long = File(dir, VideoFiles.DIR).listFiles().
 private const val StampPrime = 31L
 
 /**
- * The session's video for review: the phone camera when it recorded, else the first camera with
- * files, as the VBO export picks it. Clips whose file is missing, or cut off by a crash (no index, so
- * it would not play), are left out.
+ * The session's video for review and for the video export (FBBD-152): the phone camera when it
+ * recorded, else the first camera with files, as the VBO export picks it. Clips whose file is
+ * missing, or cut off by a crash (no index, so it would not play), are left out.
  */
-private fun sessionVideo(dir: File, timeline: VideoTimeline): SessionVideo? {
+internal fun sessionVideo(dir: File, timeline: VideoTimeline): SessionVideo? {
     val videoDir = File(dir, VideoFiles.DIR)
     val present = timeline.clips.filter { File(videoDir, it.file).let { f -> f.isFile && Mp4Reader.isComplete(f) } }
     val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
@@ -153,7 +153,7 @@ private fun sessionVideo(dir: File, timeline: VideoTimeline): SessionVideo? {
 }
 
 /** The session's clip index on the recorder's terms; clips still on a camera are left out (as Sessions). */
-private fun indexedClips(dir: File): List<VideoClip> = try {
+internal fun indexedClips(dir: File): List<VideoClip> = try {
     VideoIndex(dir).clips()
         .filter { it.status == ClipStatus.LOCAL }
         .map { c ->

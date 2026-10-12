@@ -13,6 +13,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.BuildConfig
+import com.flappedear.betterdriver.coach.CoachReferenceStore
+import com.flappedear.betterdriver.coach.coachPicks
+import com.flappedear.betterdriver.coach.coachReferencesDir
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.feature.track.editor.TileLoader
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -161,6 +164,29 @@ class Tracks private constructor(private val context: Context) {
         if (stored != null && draft?.track?.id == track.id) draft = null
         publish()
         main.post { if (stored != null) onSaved(stored) else onFailed() }
+    }
+
+    /**
+     * Deletes the track with its coach reference and picked corners (FBBD-157); sessions recorded
+     * there stay, with the track name they were recorded under. The coach files go first, so a track
+     * re-created with the same id never picks up stale ones. [onDone] gets false when any is left.
+     */
+    fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
+        val references = CoachReferenceStore(coachReferencesDir(context))
+        val picks = coachPicks(context)
+        references.delete(id)
+        try {
+            picks.save(id, emptyList())
+        } catch (e: IOException) {
+            DebugLog.w(Tag, "deleting coach picks for $id failed", e)
+        }
+        val coachGone = references.get(id) == null && picks.get(id).isEmpty()
+        if (coachGone) store.delete(id)
+        val gone = coachGone && store.get(id) == null
+        if (gone && draft?.track?.id == id) draft = null
+        if (!gone) DebugLog.w(Tag, "deleting track $id failed")
+        publish()
+        main.post { onDone(gone) }
     }
 
     /**

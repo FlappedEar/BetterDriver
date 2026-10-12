@@ -70,6 +70,9 @@ dependencies {
     // CameraX hands out ListenableFuture. Media3 (lap review) brings Guava, which swaps the standalone
     // listenablefuture jar for an empty one but keeps Guava itself off the compile classpath.
     implementation(libs.guava)
+    // "Video with data" export (FBBD-152): renders the data overlay into the session's video on the phone.
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.effect)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.compose.material3.window.size)
     debugImplementation(libs.compose.ui.tooling)
