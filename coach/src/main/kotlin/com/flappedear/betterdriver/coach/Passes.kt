@@ -171,7 +171,12 @@ class PassMeter(
         return if (e == null || last == null) null else measure(e, line ?: last)
     }
 
-    private fun measure(before: Sample, after: Sample): CornerPass {
+    /**
+     * The pass from [before] the window to [after] it, or null if the car stopped in it (waiting
+     * past the line, a pit stop): that says nothing about how the corner was driven (FBBD-202).
+     */
+    private fun measure(before: Sample, after: Sample): CornerPass? {
+        if (inside.any { it.kmh < StopKmh }) return null
         val t0 = timeAt(before, inside.first(), window.start)
         val t1 = timeAt(inside.last(), after, window.endInclusive)
         val v = DoubleArray(inside.size) { i ->
@@ -179,8 +184,7 @@ class PassMeter(
             val hi = minOf(inside.size - 1, i + SmoothSamples)
             (lo..hi).sumOf { inside[it].kmh } / (hi - lo + 1)
         }
-        var min = 0
-        for (i in v.indices) if (v[i] < v[min]) min = i
+        val min = slowestBraked(v)
         // Smoothing rounds off the bottom; the apex is the slowest raw sample near the smoothed one.
         var apex = min
         for (i in maxOf(0, min - SmoothSamples)..minOf(v.size - 1, min + SmoothSamples)) {
@@ -205,6 +209,23 @@ class PassMeter(
             intervalMicros = steps[steps.size / 2],
             speedMeasured = inside.all { it.measured },
         )
+    }
+
+    /**
+     * The slowest point the car slowed into, at least [MinCornerDropKmh] below the fastest point
+     * before it in the window (FBBD-202). A window entered slowly (getting going after the line)
+     * is slowest at its start, which is not the corner. Without such a point, the slowest point.
+     */
+    private fun slowestBraked(v: DoubleArray): Int {
+        var min = 0
+        var braked = -1
+        var fastest = v[0]
+        for (i in v.indices) {
+            fastest = maxOf(fastest, v[i])
+            if (v[i] < v[min]) min = i
+            if (fastest - v[i] >= MinCornerDropKmh && (braked < 0 || v[i] < v[braked])) braked = i
+        }
+        return if (braked >= 0) braked else min
     }
 
     private fun timeAt(a: Sample, b: Sample, along: Double): Double {
