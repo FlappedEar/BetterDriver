@@ -4,6 +4,7 @@ package com.flappedear.betterdriver.analysis.data
 
 import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.wrapLongitudeDegrees
+import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.abs
 import kotlin.math.min
 
@@ -32,12 +33,14 @@ data class SamplePoint(val time: Double, val value: Double)
 /**
  * One recorded quantity: strictly increasing, finite times in seconds and values where NaN means
  * no data. The arrays are owned by the channel; callers must not change them afterwards.
+ * [provenance] is where its values come from (FBBD-174), null when the source does not say.
  */
 class TelemetryChannel(
     val name: String,
     val timestamps: DoubleArray,
     val values: DoubleArray,
     val unit: String = "",
+    val provenance: Provenance? = null,
 ) {
     init {
         require(timestamps.size == values.size) {
@@ -164,6 +167,9 @@ class TelemetrySession(
 ) {
     /** The channel named [name], or the channel an alias of that name points to. */
     fun channel(name: String): TelemetryChannel? = channels[aliases[name] ?: name]
+
+    /** Where the values of [name] (a channel or an alias) come from; null without one, or when not known. */
+    fun provenanceOf(name: String): Provenance? = channel(name)?.provenance
 
     fun valueAt(name: String, time: Double, mode: Interpolation = Interpolation.Linear): Double? =
         channel(name)?.valueAt(time, mode)

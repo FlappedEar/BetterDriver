@@ -60,6 +60,19 @@ class StoredFormatTest {
         val old = Properties().apply { load(meta031.byteInputStream(Charsets.ISO_8859_1)) }
         val info = SessionFiles.propsToMeta(old)
         val written = SessionFiles.metaToProps(old.getProperty("id"), info)
+        // Each channel's provenance is added (FBBD-174); 0.3.1 ignores keys it does not know.
+        val added = written.stringPropertyNames() - old.stringPropertyNames()
+        assertEquals(setOf("channel.0.provenance", "channel.1.provenance"), added)
+        added.forEach { written.remove(it) }
         assertEquals(old, written)
+    }
+
+    @Test
+    fun `a 0_3_1 session gets its channels' provenance from their source`() {
+        val props = Properties().apply { load(meta031.byteInputStream(Charsets.ISO_8859_1)) }
+        val info = SessionFiles.propsToMeta(props)
+        // A RaceBox's position and its accuracy figure: both measured by the receiver.
+        val receiver = Provenance.MEASURED_GNSS_RECEIVER
+        assertEquals(listOf(receiver, receiver), info.channels.map { it.provenance })
     }
 }

@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionData
@@ -126,6 +127,28 @@ class RecordedSessionTest {
         assertEquals(GgSource.Gps, gg.source)
         val braking = gg.points.minOf { it.longitudinalG }
         assertEquals(-0.6, braking, 0.05)
+    }
+
+    @Test
+    fun `each analysis channel keeps its recorded provenance, the signed acceleration included`() {
+        val data = straightRun(1.0)
+        val calculatedSpeed = GnssChannels.SPEED_KMH.copy(provenance = Provenance.CALCULATED)
+        val channels = data.channels + (calculatedSpeed.id to calculatedSpeed)
+        val session = telemetrySessionOf(data.copy(channels = channels), null)
+        assertEquals(Provenance.MEASURED_GNSS_RECEIVER, session.provenanceOf(Aliases.LATITUDE))
+        assertEquals(Provenance.CALCULATED, session.provenanceOf(Aliases.SPEED))
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf("accel_x"))
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf(Aliases.LONGITUDINAL_ACCELERATION))
+        val sources = analysisProvenance(session)
+        assertEquals(Provenance.CALCULATED, sources.speed)
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, sources.acceleration)
+        assertNull(sources.brake)
+        // A braking point from deceleration is inferred; one from a pedal is the pedal channel's.
+        assertEquals(Provenance.INFERRED, sources.braking("inferred"))
+        assertNull(sources.braking("measured"))
+        assertEquals(Provenance.MEASURED_CAN, sources.copy(brake = Provenance.MEASURED_CAN).braking("measured"))
+        assertEquals(Provenance.INFERRED, sources.pickup("inferred"))
+        assertEquals(sources, analyzeSession(session).provenance)
     }
 
     @Test

@@ -148,6 +148,7 @@ private fun Header(ui: CornerLapsUi, modifier: Modifier = Modifier) {
             },
         )
         if (!ui.anyVideo && ui.rows.isNotEmpty()) Dim("No video of this corner in this session.")
+        if (ui.anyMarked) ProvenanceLegend()
     }
 }
 
@@ -208,7 +209,8 @@ private fun PassRow(ui: CornerLapsUi, row: CornerLapRow, ticked: Boolean, shown:
                     row.deltaSeconds != null -> Text(formatDelta(row.deltaSeconds), color = c.loss)
                 }
             }
-            Dim("Brakes ${brakingText(row)} · Min ${minimumText(row, ui.speedUnit)}", Modifier.padding(start = 14.dp))
+            val min = minimumText(row, ui.speedUnit, ui.speedProvenance)
+            Dim("Brakes ${brakingText(row)} · Min $min", Modifier.padding(start = 14.dp))
         }
         if (row.video == null) {
             Dim("No video")

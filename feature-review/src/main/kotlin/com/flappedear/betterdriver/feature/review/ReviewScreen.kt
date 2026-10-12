@@ -35,8 +35,8 @@ import com.flappedear.betterdriver.core.ui.layout.WidthClass
  * each with its own video, synced by track position. Opens on the lap picker with nothing picked,
  * or on [start] when another screen asks for two laps (FBBD-153); leaving a comparison goes back to
  * the picker with nothing picked. Slow work (reading sessions) happens before this screen gets
- * [load]; until then it shows progress. On an Expanded width ([layout], FBBD-40) it uses the tablet layout: videos side by
- * side, chart and map in a row.
+ * [load]; until then it shows progress. On an Expanded width ([layout], FBBD-40) it uses the
+ * tablet layout: videos side by side, chart and map in a row.
  */
 @Composable
 fun ReviewScreen(

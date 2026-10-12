@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Runs the emulator smoke tests (FBBD-161) on the emulator that is already
 # running, in one Gradle invocation, then the UI-process kill test (FBBD-72,
-# ui-kill.sh), and fails when any process of the app
+# ui-kill.sh), fault injection during a recording (FBBD-34, 69, 43, 64, 63,
+# faults.sh) and the permissions flow (FBBD-35, permissions.sh), and fails when
+# any process of the app
 # (UI, recorder, camera, coach) crashed or stopped responding meanwhile, as
 # logcat reports it: a crash in a background process does not fail a test by
 # itself. The log is kept in build/emulator/logcat.txt for the workflow to
@@ -31,6 +33,10 @@ status=$?
 
 # The UI-process kill test (FBBD-72), with the APKs Gradle built; logcat still runs.
 bash .github/scripts/ui-kill.sh || status=1
+# Fault injection during a recording: memory pressure, screen off, GNSS loss, recorder kill, 10 stops.
+bash .github/scripts/faults.sh || status=1
+# Permissions denied and revoked; last, as each revoke ends the app.
+bash .github/scripts/permissions.sh || status=1
 
 # Lets logcat write the last lines before it stops.
 sleep 3

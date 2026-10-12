@@ -84,7 +84,7 @@ fun accelerationInG(session: TelemetrySession, name: String): AccelerationInG? {
             } else {
                 DoubleArray(found.values.size) { (found.values[it] * factor).toFloat().toDouble() }
             }
-            TelemetryChannel(found.name, found.timestamps, values, "g")
+            TelemetryChannel(found.name, found.timestamps, values, "g", found.provenance)
         }
     }
     return AccelerationInG(converted, unit, true)

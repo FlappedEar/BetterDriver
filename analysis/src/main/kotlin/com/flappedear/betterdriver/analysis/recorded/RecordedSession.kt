@@ -81,7 +81,7 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: Track
     for ((id, ts) in times) {
         val def = data.channels[id] ?: data.info.channels.firstOrNull { it.id == id } ?: continue
         val channelValues = values.getValue(id).toDoubleArray()
-        channels[def.name] = TelemetryChannel(def.name, ts.toDoubleArray(), channelValues, def.unit)
+        channels[def.name] = TelemetryChannel(def.name, ts.toDoubleArray(), channelValues, def.unit, def.provenance)
     }
     val positions = mapOf(
         Aliases.LATITUDE to GnssChannels.LAT.name,
@@ -147,5 +147,6 @@ private fun corrected(
     }
     val fit = fitAxis(readings, DoubleArray(gps.size) { component(gps[it]) })?.takeIf { it.usable } ?: return null
     val values = DoubleArray(channel.sampleCount) { fit.correct(channel.values[it]) }
-    return TelemetryChannel(name, channel.timestamps, values, channel.unit)
+    // The values are still the accelerometer's, turned round and levelled.
+    return TelemetryChannel(name, channel.timestamps, values, channel.unit, channel.provenance)
 }

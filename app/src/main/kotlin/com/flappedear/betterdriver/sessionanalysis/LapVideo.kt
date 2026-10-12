@@ -61,6 +61,7 @@ internal fun cornerLaps(analysis: SessionAnalysis, cornerId: String, lapVideo: L
             }
         },
         reviewable = { reviewLap(analysis, lapVideo, it.lapIndex) != null },
+        speedProvenance = analysis.provenance.speed,
     )
 }
 
