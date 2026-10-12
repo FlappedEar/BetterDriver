@@ -12,6 +12,17 @@ import java.util.concurrent.Executors
 
 private const val RewriteIntervalMicros = 10_000_000L
 
+/** How often the camera reports its progress (media recorded so far) to the recorder and the clip index. */
+private const val SyncIntervalMicros = 1_000_000L
+
+/**
+ * Whether a progress report at [nowMicros] is due: the first one at once ([lastMicros] null), then
+ * about once a second. A "never reported" of Long.MIN_VALUE would overflow `now - last` to a negative
+ * number, and no report would ever be due.
+ */
+internal fun syncDue(nowMicros: Long, lastMicros: Long?): Boolean =
+    lastMicros == null || nowMicros - lastMicros >= SyncIntervalMicros
+
 /**
  * Not measured: how late CameraX reports media progress after the frame. The offset comes from the
  * earliest report, so this is a rough bound until FBBD-51 checks it against Circuit Tools.

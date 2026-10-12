@@ -26,7 +26,6 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
 import java.io.File
-import kotlin.math.abs
 
 /**
  * One lap's video (FBBD-93): an ExoPlayer that follows a target frame given every display frame
@@ -49,7 +48,8 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
         private set
 
     private var file: File? = null
-    private var lastSeekMillis = Long.MIN_VALUE
+    /** Where the player was last sent; null when the next frame must be sought again whatever it is. */
+    private var lastSeekMillis: Long? = null
     private var lastSeekNanos = 0L
     private var speed = 1f
     private var exact = true
@@ -94,7 +94,7 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
         val step = followStep(player.currentPosition, target.mediaMillis, rate, playing)
         val gap = if (playing) PlayingSeekGapNanos else ScrubSeekGapNanos
         step.seekMillis?.let { ms ->
-            if (abs(ms - lastSeekMillis) > PausedToleranceMillis && nowNanos - lastSeekNanos >= gap) {
+            if (seekDue(ms, lastSeekMillis) && nowNanos - lastSeekNanos >= gap) {
                 player.seekTo(ms)
                 lastSeekMillis = ms
                 lastSeekNanos = nowNanos
@@ -118,7 +118,7 @@ internal class LapVideoPlayer(context: Context, muted: Boolean) {
         if (on == exact) return
         exact = on
         player.setSeekParameters(if (on) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC)
-        if (on) lastSeekMillis = Long.MIN_VALUE
+        if (on) lastSeekMillis = null
     }
 
     private companion object {
