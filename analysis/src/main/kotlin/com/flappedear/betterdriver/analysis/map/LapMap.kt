@@ -6,7 +6,6 @@ import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.data.Aliases
 import com.flappedear.betterdriver.analysis.data.Interpolation
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
-import com.flappedear.betterdriver.analysis.data.TimingGateType
 import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.geo.hypot
@@ -125,30 +124,16 @@ fun lapMap(
         if (run.isNotEmpty()) runs += run
     }
     if (runs.isEmpty()) return null
-    val pointToPoint = session.timingGates.any { it.type == TimingGateType.Finish }
+    // A point-to-point run's axis is open (FBBD-162): the outline is the road from start to finish.
     return LapMap(
         lapIndex,
         compared?.referenceIndex,
         axis.lengthMeters,
         runs,
-        thin(if (pointToPoint) runOutline(analysis, axis) else axis.points, MaxOutlinePoints),
+        thin(axis.points, MaxOutlinePoints),
         mapCorners(analysis, axis),
-        closed = !pointToPoint,
+        closed = axis.closed,
     )
-}
-
-/**
- * The part of [axis] its run covers, on a point-to-point track: the axis is a loop, so past the
- * finish it goes straight back across the map to the start, where no car drove.
- */
-private fun runOutline(analysis: SessionAnalysis, axis: ProgressAxis): List<MetricPoint> {
-    val run = analysis.laps.timedLaps.indexOfFirst { it.number == analysis.axisLapNumber }
-    val end = analysis.traces.getOrNull(run).orEmpty()
-        .flatMap { it.samples }
-        .filter { it.valid }
-        .maxOfOrNull { it.progressMeters }
-        ?: return axis.points
-    return axis.points.filterIndexed { i, _ -> i < axis.cumulative.size && axis.cumulative[i] <= end }
 }
 
 @Suppress("ReturnCount")

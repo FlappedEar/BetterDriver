@@ -21,7 +21,6 @@ import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.shell.CueReviewScreen
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
 
 /** The cue review destination, [Routes.CueReviewPattern]. */
 internal fun NavGraphBuilder.cueReview(nav: NavHostController, padding: PaddingValues) {
@@ -34,21 +33,17 @@ internal fun NavGraphBuilder.cueReview(nav: NavHostController, padding: PaddingV
     }
 }
 
-/** The cue review of session [id] (FBBD-99), opened from its card. The session is read off the main thread. */
+/**
+ * The cue review of session [id] (FBBD-99), opened from its card. Only the session's events are read,
+ * off the main thread: an hour at 25 Hz is not held in memory for them.
+ */
 @Composable
 internal fun CueReviewRoute(nav: NavHostController, id: String) {
     val context = LocalContext.current
     val review by produceState<CueReview?>(null, id) {
-        value = withContext(Dispatchers.IO) {
-            try {
-                CueReview.of(SessionStore(sessionsDir(context)).read(id).events)
-            } catch (_: IOException) {
-                CueReview(emptyList(), 0)
-            } catch (_: IllegalStateException) {
-                CueReview(emptyList(), 0)
-            }
-        }
+        value = withContext(Dispatchers.IO) { CueReview.read(SessionStore(sessionsDir(context)), id) }
     }
     val title = Sessions.get(context).list.firstOrNull { it.id == id }?.let(::sessionTitle).orEmpty()
     CueReviewScreen(title, review, onBack = { nav.popBackStack() })
 }
+

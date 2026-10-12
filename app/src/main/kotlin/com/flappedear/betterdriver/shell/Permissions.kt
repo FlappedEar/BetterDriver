@@ -33,6 +33,10 @@ internal fun optionalPermissions(): List<String> = buildList {
 internal fun Context.allGranted(permissions: List<String>): Boolean =
     permissions.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }
 
+/** The groups of [permissions] not granted, each with what will not work without it (FBBD-35). */
+internal fun Context.deniedPermissionGroups(permissions: List<String>): List<PermissionGroup> =
+    deniedGroups(permissions.filterNot { allGranted(listOf(it)) })
+
 /**
  * True when a permission is still denied and Android will not show its dialog
  * again. Only meaningful right after a request result: before the first request

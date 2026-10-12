@@ -5,8 +5,6 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
-import android.content.pm.ServiceInfo
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -184,20 +182,16 @@ class RecorderService : Service() {
         return START_STICKY
     }
 
-    @Suppress("TooGenericExceptionCaught") // Not allowed to go foreground (Android 12+) or no location access (14+).
+    /** As location and connected device, each only while Android accepts it (startRecorderForeground, FBBD-34). */
+    @Suppress("TooGenericExceptionCaught") // Not allowed to go foreground (Android 12+), or no type is allowed.
     private fun goForeground(): Boolean = try {
-        val type = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
-        } else {
-            0
-        }
         val info = active?.recording?.info
         val notification = recordingNotification(
             this,
             info?.startUtcMillis ?: System.currentTimeMillis(),
             info?.let(::notificationDetail).orEmpty(),
         )
-        ServiceCompat.startForeground(this, NotificationId, notification, type)
+        startRecorderForeground(NotificationId, notification)
         true
     } catch (e: RuntimeException) {
         DebugLog.e(Tag, "could not go foreground", e)
@@ -258,14 +252,13 @@ class RecorderService : Service() {
             active = Active(recording, tracker, timing, coach)
             sources.forEach(recording::attach)
             main.post {
+                // Already ended on its own (storage full): no wake lock or coach binding may outlive it.
+                if (active?.recording !== recording) return@post
                 cameraStatus = null
                 coachStatus = CoachStatus.None
                 coach?.bind()
                 cpu.acquire()
-                wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
-                    .putString(KeyRaceBoxAddress, gnss.address).putString(KeyRaceBoxName, gnss.name)
-                    .putBoolean(KeyGnssDemo, gnss.demo).putString(KeyGnssType, gnss.type.name)
-                    .putString(KeySensors, sensors.joinToString("\n") { it.encode() }).commit()
+                rememberWanted(wanted, car, track, gnss, sensors)
                 getSystemService(NotificationManager::class.java)
                     .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
             }
@@ -353,5 +346,19 @@ class RecorderService : Service() {
         /** Shown on the track screen when a start has no GNSS receiver; nothing is recorded. */
         const val NoReceiver = "No GNSS receiver. Add one in Settings › Devices."
         private const val KeyTrack = "track"
+
+        /** What a restart after this process is killed records again (START_STICKY). Main thread. */
+        private fun rememberWanted(
+            wanted: SharedPreferences,
+            car: String,
+            track: String,
+            gnss: GnssRef,
+            sensors: List<SensorRef>,
+        ) {
+            wanted.edit().putBoolean(KeyWanted, true).putString(KeyCar, car).putString(KeyTrack, track)
+                .putString(KeyRaceBoxAddress, gnss.address).putString(KeyRaceBoxName, gnss.name)
+                .putBoolean(KeyGnssDemo, gnss.demo).putString(KeyGnssType, gnss.type.name)
+                .putString(KeySensors, sensors.joinToString("\n") { it.encode() }).commit()
+        }
     }
 }
