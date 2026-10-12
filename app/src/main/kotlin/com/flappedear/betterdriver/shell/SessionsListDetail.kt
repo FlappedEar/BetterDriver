@@ -45,7 +45,9 @@ internal fun SessionsListDetail(
     BackHandler(enabled = shown != null, onBack = onClose)
     when (sessionsPanes(layout, shown)) {
         SessionsPanes.List -> states.SaveableStateProvider(ListKey) { list(Modifier) }
-        SessionsPanes.Detail -> shown?.let { id -> states.SaveableStateProvider(id) { detail(id, layout, onClose) } }
+        SessionsPanes.Detail -> shown?.let { id ->
+            states.SaveableStateProvider(detailKey(id)) { detail(id, layout, onClose) }
+        }
         SessionsPanes.ListAndDetail -> BoxWithConstraints(Modifier.fillMaxSize()) {
             val listWidth = sessionListWidthDp(maxWidth.value)
             val pane = layout.pane(maxWidth.value - listWidth)
@@ -56,7 +58,7 @@ internal fun SessionsListDetail(
                     if (shown == null) {
                         PickSession()
                     } else {
-                        states.SaveableStateProvider(shown) { detail(shown, pane, null) }
+                        states.SaveableStateProvider(detailKey(shown)) { detail(shown, pane, null) }
                     }
                 }
             }
@@ -76,6 +78,9 @@ private fun PickSession() {
 }
 
 private const val ListKey = "list"
+
+/** A session's state key, kept apart from [ListKey] whatever the session id. */
+private fun detailKey(id: String) = "detail:$id"
 
 @Preview(widthDp = 1280, heightDp = 800)
 @Composable

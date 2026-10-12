@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.EventKinds
 import java.util.Locale
 
@@ -8,6 +9,7 @@ import java.util.Locale
  * (FBBD-28, FBBD-99) reads exactly what was said and what happened next. Text is `key=value` pairs
  * separated by spaces; the spoken text comes last, after `text=`, and may hold spaces.
  */
+@Suppress("TooManyFunctions") // One writer and one reader per kind of event.
 object CoachEvents {
     /** A cue was spoken; its event time is when the coach asked for it. */
     const val CUE = "coach_cue"
@@ -24,6 +26,9 @@ object CoachEvents {
      */
     const val VOICE = EventKinds.COACH_VOICE
 
+    /** A cue's sound ended (FBBD-47); text from [voiceEndText]. */
+    const val VOICE_END = EventKinds.COACH_VOICE_END
+
     fun cueText(cue: Cue): String = buildString {
         append("seq=").append(cue.seq)
         append(" lap=").append(cue.lap)
@@ -35,16 +40,38 @@ object CoachEvents {
         cue.zoneMeters?.let { append(" zone_m=").append(String.format(Locale.ROOT, "%.1f", it)) }
         cue.turn?.let { append(" turn=").append(it) }
         cue.cornerId?.let { append(" corner_id=").append(it) }
+        if (cue.kind == CueKind.Corner) append(" conf=").append(cue.confidence.name)
+        if (cue.doubts.isNotEmpty()) append(" why=").append(cue.doubts.joinToString(",") { it.code })
         append(" text=").append(cue.text)
     }
 
     /**
      * The text of a [VOICE] event: cue [seq], how it was said ([path], "live" or "clip"), when the
      * voice was asked for it ([askedMicros], session time) and where the sound went ([route],
-     * "headset" or "speaker").
+     * "headset" or "speaker"). Then, when known (FBBD-47): when its first audio was ready
+     * ([readyMicros], session time), the output [device] type, whether audio focus was granted
+     * ([focus]), and the headset's own delay from the tap test ([outDelayMillis], "none" when not run).
      */
-    fun voiceText(seq: Int, path: String, askedMicros: Long, route: String) =
-        "seq=$seq path=$path asked_us=$askedMicros route=$route"
+    @Suppress("LongParameterList")
+    fun voiceText(
+        seq: Int,
+        path: String,
+        askedMicros: Long,
+        route: String,
+        readyMicros: Long? = null,
+        device: String? = null,
+        focus: Boolean? = null,
+        outDelayMillis: Int? = null,
+    ) = buildString {
+        append("seq=$seq path=$path asked_us=$askedMicros route=$route")
+        readyMicros?.let { append(" ready_us=").append(it) }
+        device?.let { append(" device=").append(it) }
+        focus?.let { append(" focus=").append(if (it) "granted" else "refused") }
+        append(" out_delay_ms=").append(outDelayMillis?.takeIf { it > 0 }?.toString() ?: "none")
+    }
+
+    /** The text of a [VOICE_END] event: cue [seq]'s sound [end]ed: "done", "stopped" (cut off) or "error". */
+    fun voiceEndText(seq: Int, end: String) = "seq=$seq end=$end"
 
     fun resultText(r: CueResult): String = buildString {
         append("seq=").append(r.cue.seq)
@@ -72,6 +99,10 @@ object CoachEvents {
             zoneMeters = fields["zone_m"]?.toDouble(),
             turn = fields["turn"]?.toInt(),
             cornerId = fields["corner_id"],
+            // Cues logged before FBBD-177 were all said with their numbers.
+            confidence = Confidence.parse(fields["conf"]) ?: Confidence.HIGH,
+            doubts = fields["why"]?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
+                .map { CueDoubt(it, CueDoubts.cap(it), CueDoubts.text(it)) },
         )
     }.getOrNull()
 
@@ -98,18 +129,25 @@ object CoachEvents {
         return fields to spoken
     }
 
+    /** "brake_later:10", or "brake_later:10:vague" for advice said without its number (FBBD-177). */
     private fun adviceText(a: Advice) = when (a) {
-        is Advice.BrakeLater -> "brake_later:${a.meters}"
+        is Advice.BrakeLater -> "brake_later:${a.meters}" + (if (a.precise) "" else ":$Vague")
         Advice.BrakeEarlier -> "brake_earlier"
-        is Advice.CarrySpeed -> "carry:${a.kmh}"
+        is Advice.CarrySpeed -> "carry:${a.kmh}" + (if (a.precise) "" else ":$Vague")
     }
 
-    private fun parseAdvice(s: String): Advice = when (s.substringBefore(':')) {
-        "brake_later" -> Advice.BrakeLater(s.substringAfter(':').toInt())
-        "brake_earlier" -> Advice.BrakeEarlier
-        "carry" -> Advice.CarrySpeed(s.substringAfter(':').toInt())
-        else -> throw IllegalArgumentException("unknown advice $s")
+    private fun parseAdvice(s: String): Advice {
+        val parts = s.split(':')
+        val precise = parts.getOrNull(2) != Vague
+        return when (parts[0]) {
+            "brake_later" -> Advice.BrakeLater(parts[1].toInt(), precise)
+            "brake_earlier" -> Advice.BrakeEarlier
+            "carry" -> Advice.CarrySpeed(parts[1].toInt(), precise)
+            else -> throw IllegalArgumentException("unknown advice $s")
+        }
     }
+
+    private const val Vague = "vague"
 
     /** "lap,brakeAt,apexAt,entryKmh,minKmh,timeMicros", distances and speeds to 0.1. */
     private fun passText(p: CornerPass) = String.format(

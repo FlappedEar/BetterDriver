@@ -12,7 +12,8 @@ kotlin {
 }
 
 dependencies {
-    implementation(project(":recorder"))
+    // api: channels and the analysis carry the recorder's Provenance (FBBD-174).
+    api(project(":recorder"))
     // api: SessionAnalysis carries the track's corner identity (FBBD-172), a :timing type.
     api(project(":timing"))
     // api: QualityReport is @Serializable, so its users see the serializer types.
@@ -20,6 +21,8 @@ dependencies {
     testImplementation(kotlin("test"))
     // The coach's corners are checked against the analysis's (FBBD-172); the coach never depends on the analysis.
     testImplementation(project(":coach"))
+    // Arek's real recordings are read through the session import, as the app reads them (FBBD-164).
+    testImplementation(project(":transfer"))
     testImplementation(platform(libs.junit5.bom))
     testImplementation(libs.junit5.jupiter)
     testRuntimeOnly(libs.junit5.launcher)

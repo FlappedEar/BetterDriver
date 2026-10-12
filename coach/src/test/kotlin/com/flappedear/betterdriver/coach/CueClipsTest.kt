@@ -47,6 +47,9 @@ class CueClipsTest {
                 assertTrue(CueClips.covers(Phrases.corner(corner, Advice.CarrySpeed(k))))
             }
             assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeEarlier)))
+            // Below High confidence, without the number (FBBD-177).
+            assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeLater(10, precise = false))))
+            assertTrue(CueClips.covers(Phrases.corner(corner, Advice.CarrySpeed(4, precise = false))))
         }
         for (ms in 20_000L..600_000L step 3_700L) {
             assertTrue(CueClips.covers(Phrases.lapTime(ms, best = false)), Phrases.lapTime(ms, best = false))

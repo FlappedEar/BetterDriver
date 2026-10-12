@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.corners.CornerPass
+import com.flappedear.betterdriver.recorder.Provenance
 import java.util.Locale
 
 /** A corner pass on video, for the inline player: the file at [path] from [startMillis] to [endMillis]. */
@@ -32,8 +33,15 @@ data class CornerLapsUi(
     val name: String,
     val speedUnit: String,
     val rows: List<CornerLapRow>,
+    /** Where the minimum speeds come from (FBBD-174); null when not known. */
+    val speedProvenance: Provenance? = null,
 ) {
     val anyVideo: Boolean get() = rows.any { it.video != null }
+
+    /** Some value is shown with [NotMeasuredMark]: an inferred braking point, or a speed not measured. */
+    val anyMarked: Boolean
+        get() = rows.any { it.brakingInferred && it.brakingMeters != null } ||
+            (speedProvenance.notMeasured && rows.any { it.minimumSpeed != null })
 
     fun row(lapIndex: Int): CornerLapRow? = rows.firstOrNull { it.lapIndex == lapIndex }
 }
@@ -41,14 +49,17 @@ data class CornerLapsUi(
 /**
  * The screen model of corner [cornerId] ([name]) from its [passes] (fastest first, as
  * [com.flappedear.betterdriver.analysis.corners.cornerPasses] lists them), with each pass's video
- * ([video]) and whether the lap review has its lap ([reviewable]).
+ * ([video]) and whether the lap review has its lap ([reviewable]). [speedProvenance] is where the
+ * session's speed channel comes from.
  */
+@Suppress("LongParameterList") // The corner, its passes and what is known about each.
 fun cornerLapsUi(
     cornerId: String,
     name: String,
     passes: List<CornerPass>,
     video: (CornerPass) -> CornerVideoUi?,
     reviewable: (CornerPass) -> Boolean,
+    speedProvenance: Provenance? = null,
 ): CornerLapsUi {
     val fastest = passes.mapNotNull { it.seconds }.minOrNull()
     val rows = passes.map { p ->
@@ -66,7 +77,8 @@ fun cornerLapsUi(
             reviewable = reviewable(p),
         )
     }
-    return CornerLapsUi(cornerId, name, passes.firstOrNull { it.speedUnit.isNotEmpty() }?.speedUnit.orEmpty(), rows)
+    val unit = passes.firstOrNull { it.speedUnit.isNotEmpty() }?.speedUnit.orEmpty()
+    return CornerLapsUi(cornerId, name, unit, rows, speedProvenance)
 }
 
 /** At most this many laps are ticked: the lap review compares two. */
@@ -94,11 +106,17 @@ internal fun encodeTicked(ticked: List<Int>) = ticked.joinToString(",")
 internal fun decodeTicked(text: String): List<Int> = text.split(',').mapNotNull { it.toIntOrNull() }
 
 /** The braking point of [row], metres before the corner: "≈42 m" when inferred, "–" without one. */
-internal fun brakingText(row: CornerLapRow): String = row.brakingMeters?.let {
-    (if (row.brakingInferred) "≈" else "") + formatMeasure(it, CornerMeasure.Meters, "")
-} ?: "–"
+internal fun brakingText(row: CornerLapRow): String = marked(
+    formatMeasure(row.brakingMeters, CornerMeasure.Meters, ""),
+    if (row.brakingInferred) Provenance.INFERRED else null,
+)
 
-/** The minimum speed of [row]: "82 km/h", "–" without one. */
-internal fun minimumText(row: CornerLapRow, unit: String): String = row.minimumSpeed?.let {
-    if (unit.isEmpty()) String.format(Locale.ROOT, "%.0f", it) else String.format(Locale.ROOT, "%.0f %s", it, unit)
-} ?: "–"
+/** The minimum speed of [row]: "82 km/h", "≈82 km/h" from a speed that is not measured, "–" without one. */
+internal fun minimumText(row: CornerLapRow, unit: String, provenance: Provenance? = null): String =
+    marked(
+        row.minimumSpeed?.let {
+            val speed = String.format(Locale.ROOT, "%.0f", it)
+            if (unit.isEmpty()) speed else "$speed $unit"
+        } ?: Missing,
+        provenance,
+    )

@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.gopro
 
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
@@ -8,6 +9,7 @@ import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
 import com.flappedear.betterdriver.video.gpmf.GpmfGps
+import com.flappedear.betterdriver.video.gpmf.GpsSample
 import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import com.flappedear.betterdriver.video.sync.AlignmentResult
 import com.flappedear.betterdriver.video.sync.GpsAligner
@@ -25,12 +27,19 @@ import java.time.ZoneId
  * speed. The starting guess, best first:
  * - the chapter before it, plus that chapter's duration (chapters of one recording are back to back);
  * - for the first chapter of an Open GoPro recording, the session time at which the camera acknowledged Set Shutter on;
- * - the file's creation time on the camera's clock, read as local time in [zone]. Another action
- *   camera ([VideoSourceKind.CAMERA_FILES]) may write UTC there, as the MP4 format says to, so its
- *   time is read as UTC when only that puts the file inside the session.
+ * - the file's creation time on the camera's clock, read as local time in [zone]. A camera may
+ *   write UTC there instead, as the MP4 format says to, so the time of a file the user picked is
+ *   read as UTC when only that puts the file inside the session.
  * GPS UTC on both sides, when present, beats all of these inside the aligner.
  *
- * A file that cannot be placed inside the session is not indexed and is reported.
+ * A file is in the session when it overlaps it somewhere within its placement's uncertainty: a
+ * hand-started camera's clock or the shutter acknowledgement is only a rough start time, and a
+ * short session is shorter than that error (FBBD-201). Such a file is moved by no more than that
+ * uncertainty to overlap the session as much as it can, and keeps its weak alignment method. A
+ * file that cannot be placed inside the session even so is not indexed and is reported.
+ *
+ * Each import goes in the drive's log with the session's id, and for a file matched by GPS so do
+ * two-minute stretches of it aligned on their own, which show the camera clock's drift (FBBD-82).
  */
 class GoProImporter(
     private val aligner: GpsAligner = GpsAligner(),
@@ -53,7 +62,7 @@ class GoProImporter(
         recording: GoProRecording? = null,
     ): Result {
         val speeds = sessionSpeeds(session)
-        val durationUs = session.sampleSets.lastOrNull()?.tMicros ?: 0L
+        val durationUs = sessionEndUs(session)
         val clips = mutableListOf<VideoClip>()
         val problems = mutableListOf<String>()
         var previous: VideoClip? = null
@@ -66,15 +75,27 @@ class GoProImporter(
             }
             if (placed == null) {
                 if (problems.none { it.startsWith(file.name) }) problems += "${file.name}: could not be placed in time"
+                logRejected(session.id, source.id, file.name, "not placed")
                 continue
             }
-            val end = placed.sessionOffsetUs + (placed.durationUs ?: 0)
-            if (end < 0 || placed.sessionOffsetUs > durationUs) {
+            val fitted = fitIntoSession(placed.clip, durationUs)
+            val clip = placed.clip
+            val moved = fitted?.takeIf { it != clip }?.let { " -> ${it.sessionOffsetUs} us" }.orEmpty()
+            DebugLog.i(
+                Tag,
+                "${file.name}: ${clip.alignment.method} at ${clip.sessionOffsetUs} us " +
+                    "± ${clip.alignment.uncertaintyUs} us, ${clip.durationUs ?: 0} us long, " +
+                    "session $durationUs us$moved",
+            )
+            if (fitted == null) {
+                DebugLog.w(Tag, "${file.name}: recorded outside this session")
                 problems += "${file.name}: recorded outside this session"
+                logRejected(session.id, source.id, file.name, "outside session")
             } else {
-                clips += placed
+                clips += fitted
+                logImport(session.id, source.id, fitted, probes(aligner, placed.gps, speeds, fitted))
             }
-            previous = placed
+            previous = fitted ?: clip
         }
         if (clips.isNotEmpty()) VideoIndex(sessionDir).putAll(clips)
         return Result(clips, problems)
@@ -89,7 +110,7 @@ class GoProImporter(
         recording: GoProRecording?,
         session: SessionData,
         speeds: List<SpeedPoint>,
-    ): VideoClip? {
+    ): Placed? {
         val info = Mp4Reader.read(file)
         val prior = previous?.let {
             AlignmentResult(
@@ -99,8 +120,9 @@ class GoProImporter(
         } ?: recording?.takeIf { chapter == 1 }?.let {
             AlignmentResult(it.startAckSessionUs, Alignment(AlignmentMethod.COMMAND_ACK, CommandAckUncertaintyUs))
         } ?: info.creationTimeMillis?.let { cameraClock(it, info.durationUs, source, recording, session) }
-        val result = aligner.align(GpmfGps.read(file), speeds, prior) ?: return null
-        return VideoClip(
+        val gps = GpmfGps.read(file)
+        val result = aligner.align(gps, speeds, prior) ?: return null
+        val clip = VideoClip(
             fileName = file.name,
             kind = source.kind,
             sourceId = source.id,
@@ -109,7 +131,11 @@ class GoProImporter(
             durationUs = info.durationUs.takeIf { it > 0 },
             chapter = chapter,
         )
+        return Placed(clip, gps)
     }
+
+    /** A file placed in time, with its GPS for the drift probes. */
+    private class Placed(val clip: VideoClip, val gps: List<GpsSample>)
 
     /** The session time of a file created at [created] on the camera's clock; see the class comment. */
     private fun cameraClock(
@@ -122,16 +148,18 @@ class GoProImporter(
         val offsetMillis = recording?.cameraUtcOffsetMinutes?.let { it * MillisPerMinute }
             ?: zone.rules.getOffset(Instant.ofEpochMilli(created)).totalSeconds * MillisPerSecond
         fun sessionUs(utc: Long) = (utc - session.info.startUtcMillis) * MicrosPerMilli
-        val sessionEndUs = session.sampleSets.lastOrNull()?.tMicros ?: 0L
+        val sessionEndUs = sessionEndUs(session)
         fun inside(offsetUs: Long) = offsetUs + durationUs >= 0 && offsetUs <= sessionEndUs
         val local = sessionUs(created - offsetMillis)
         val asUtc = sessionUs(created)
-        val utcWritten = source.kind == VideoSourceKind.CAMERA_FILES && !inside(local) && inside(asUtc)
+        // Only for files the user picked: an Open GoPro camera's clock was just set by the app.
+        val utcWritten = source.kind != VideoSourceKind.GOPRO && !inside(local) && inside(asUtc)
         val uncertainty = if (recording != null) SetClockUncertaintyUs else UnsetClockUncertaintyUs
         return AlignmentResult(if (utcWritten) asUtc else local, Alignment(AlignmentMethod.CAMERA_CLOCK, uncertainty))
     }
 
     private companion object {
+        const val Tag = "GoProImport"
         const val MicrosPerMilli = 1000L
         const val MillisPerSecond = 1000L
         const val MillisPerMinute = 60_000L
@@ -146,6 +174,26 @@ class GoProImporter(
         /** Clock of a GoPro started by hand, set by someone else at some point: allow half an hour either way. */
         const val UnsetClockUncertaintyUs = 30L * 60 * 1_000_000
     }
+}
+
+/** The session time of its last sample set; sample sets are not guaranteed to be in time order. */
+internal fun sessionEndUs(session: SessionData): Long = session.sampleSets.maxOfOrNull { it.tMicros } ?: 0L
+
+/**
+ * [clip] moved by no more than its alignment uncertainty to overlap a session that runs from 0 to
+ * [sessionEndUs] as much as it can, or null when no such move makes it overlap. A clip that
+ * already overlaps stays where it is.
+ */
+internal fun fitIntoSession(clip: VideoClip, sessionEndUs: Long): VideoClip? {
+    val offset = clip.sessionOffsetUs
+    val length = clip.durationUs ?: 0L
+    val overlaps = offset + length >= 0 && offset <= sessionEndUs
+    if (overlaps) return clip
+    // Starts with the most overlap: the clip inside the session, or the session inside the clip.
+    val bestStart = offset.coerceIn(minOf(0L, sessionEndUs - length), maxOf(0L, sessionEndUs - length))
+    val u = clip.alignment.uncertaintyUs
+    val moved = bestStart.coerceIn(offset - u, offset + u)
+    return if (moved + length >= 0 && moved <= sessionEndUs) clip.copy(sessionOffsetUs = moved) else null
 }
 
 /** The session's GNSS speed with its UTC time, for alignment. */

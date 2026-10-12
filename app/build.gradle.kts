@@ -92,8 +92,8 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.compose.material3.window.size)
     debugImplementation(libs.compose.ui.tooling)
-    // JankStats for the debug build's slow-frame log (FBBD-41); release builds do not have it.
-    debugImplementation(libs.androidx.metrics.performance)
+    // JankStats: the frames of every drive go in its log (FBBD-41, FBBD-62).
+    implementation(libs.androidx.metrics.performance)
     testImplementation(libs.junit)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.robolectric)

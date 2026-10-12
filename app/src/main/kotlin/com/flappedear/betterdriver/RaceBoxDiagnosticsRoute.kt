@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxMessages
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.imuCalibrations
 import com.flappedear.betterdriver.setup.Equipment
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.shell.CalibrationMs
 import com.flappedear.betterdriver.shell.DiagnosticsView
 import com.flappedear.betterdriver.shell.RaceBoxDiagnosticsScreen
@@ -140,7 +141,10 @@ private fun rememberCalibration(address: String?, diag: RaceBoxDiagnostics): Cal
         state.error = when (val result = ImuCalibration.from(diag.endCapture(), System.currentTimeMillis())) {
             is ImuCalibration.Result.Failed -> result.failure.text
             is ImuCalibration.Result.Ok -> try {
-                withContext(Dispatchers.IO) { address?.let { store.value.save(it, result.calibration) } }
+                // Under the restore gate (FBBD-156), so a restore swapping the calibrations never drops it.
+                withContext(Dispatchers.IO) {
+                    address?.let { AppDataGate.write { store.value.save(it, result.calibration) } }
+                }
                 diag.calibration(result.calibration)
                 null
             } catch (e: IOException) {

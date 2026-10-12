@@ -15,9 +15,10 @@ import kotlin.math.roundToLong
 
 /**
  * What the coach knows about a track from earlier sessions (FBBD-26, FBBD-96): the fastest timed lap's
- * path and corners, and for each corner the fastest pass over every timed lap, so a cue only ever asks
- * for something the driver has already done there. Positions are in the lap timer's frame for the
- * track revision it was built with; a track whose lines changed gets a new reference.
+ * path and corners, and for each corner the two fastest passes over every timed lap, so a cue only
+ * ever asks for something the driver has already done there, twice (FBBD-177). Positions are in the
+ * lap timer's frame for the track revision it was built with; a track whose lines changed gets a new
+ * reference.
  */
 @kotlinx.serialization.Serializable
 data class CoachReference(
@@ -34,7 +35,10 @@ data class CoachReference(
     val timesMicros: List<Long>,
     val speedsKmh: List<Double>,
     val corners: List<Corner>,
-    /** The fastest pass of each corner, in corner order; a corner with no complete pass is left out. */
+    /**
+     * The two fastest passes of each corner (FBBD-177: a cue aims at a time driven twice), in corner
+     * order, fastest first; passes too weak to coach from and corners with no complete pass are left out.
+     */
     val targets: List<CornerPass>,
     /** Sessions it was built from. */
     val sessions: List<String>,
@@ -48,7 +52,8 @@ data class CoachReference(
 
     companion object {
         const val Format = "betterdriver-coach-reference"
-        const val Version = 1
+        /** 2: two targets per corner (FBBD-177); a version 1 file is rebuilt from the sessions. */
+        const val Version = 2
     }
 }
 
@@ -62,7 +67,7 @@ private fun Double.centi() = (this * CentiUnits).roundToLong() / CentiUnits
 /**
  * The reference for [track] from [sessions] (FBBD-96), or null without a timed lap. The fastest timed
  * lap gives the path and corners; every timed lap's passes are measured against it and the fastest
- * pass of each corner becomes its target.
+ * two passes of each corner become its targets.
  */
 fun buildReference(track: Track, sessions: List<SessionLaps>): CoachReference? {
     val timed = sessions.flatMap { s -> s.laps.filter { it.lap.kind == LapKind.Timed }.map { s.sessionId to it } }
@@ -71,7 +76,7 @@ fun buildReference(track: Track, sessions: List<SessionLaps>): CoachReference? {
     // Named by the track's corners (FBBD-172); the coach names them again from the track it runs at.
     val corners = lapFrame(track)?.let { identifyCorners(found, best.trace, it, track.identity) } ?: found
     val map = CornerMap(best.trace, corners)
-    val targets = bestPasses(timed.flatMap { (_, l) -> map.passes(l.trace, l.lap.number) })
+    val targets = bestPasses(timed.flatMap { (_, l) -> map.passes(l.trace, l.lap.number) }, ConfirmingPasses)
     val t = best.trace
     return CoachReference(
         trackId = track.id,
@@ -89,9 +94,10 @@ fun buildReference(track: Track, sessions: List<SessionLaps>): CoachReference? {
     )
 }
 
-/** The fastest pass of each corner, in corner order. */
-fun bestPasses(passes: List<CornerPass>): List<CornerPass> =
-    passes.groupBy { it.corner }.values.map { p -> p.minBy { it.timeMicros } }.sortedBy { it.corner }
+/** The [count] fastest passes of each corner that are not too weak to coach from, in corner order, fastest first. */
+fun bestPasses(passes: List<CornerPass>, count: Int = 1): List<CornerPass> =
+    passes.filterNot { it.unusable() }.groupBy { it.corner }.toSortedMap().values
+        .flatMap { p -> p.sortedBy { it.timeMicros }.take(count) }
 
 /**
  * One reference file per track in [dir] (`<track id>.coach.json`). Writes are synced and renamed into

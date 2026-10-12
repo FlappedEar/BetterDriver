@@ -5,7 +5,8 @@ import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.video.VideoEventText
 
 // The thermal part of the session validation report (FBBD-183), against FBBD-46: the phone's
-// thermal status while the camera recorded and the camera's thermal step-downs.
+// thermal status (from the camera while it records, and from the recorder's health reports every
+// 30 s), the camera's thermal step-downs and the battery temperature.
 
 /** Android's PowerManager.THERMAL_STATUS_SEVERE. */
 private const val Severe = 3
@@ -17,22 +18,20 @@ private val ThermalStops = setOf("thermal_step", "thermal")
 
 private const val ThermalCriterion = "never SEVERE before the app's mitigation engaged; no thermal shutdown (FBBD-46)"
 
-internal fun thermalSection(events: List<RecorderEvent>): QualitySection {
-    val statuses = events.ofKind(EventKinds.THERMAL_STATUS).mapNotNull { e ->
+internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): QualitySection {
+    val fromCamera = events.ofKind(EventKinds.THERMAL_STATUS).mapNotNull { e ->
         fields(e.text)["status"]?.toIntOrNull()?.let { e.tMicros to it }
     }
+    val fromRecorder = events.ofKind(EventKinds.DEVICE).mapNotNull { e ->
+        fields(e.text)["thermal"]?.toIntOrNull()?.let { e.tMicros to it }
+    }
+    val statuses = (fromCamera + fromRecorder).sortedBy { it.first }
     val steps = events.ofKind(EventKinds.VIDEO_STOP).filter { reason(it) in ThermalStops }
     val stepCount = info(
         "thermal.step_downs", "Camera thermal step-downs", steps.size.toDouble(), "", Basis.MEASURED,
         "video files ended for a thermal step-down or stop",
     )
-    val notMeasuredYet = listOf(
-        notMeasured(
-            "thermal.battery", "Battery temperature", "logged every 30 s, peak reported (FBBD-46)",
-            "not logged in the session",
-        ),
-        notMeasured("thermal.jank", "UI jank", "< 5 % of frames (FBBD-46)", "not logged in the session"),
-    )
+    val notMeasuredYet = battery(events, endMicros)
     if (statuses.isEmpty()) {
         val why = "thermal status is logged while the phone camera records, from this version on"
         val status = notMeasured("thermal.status", "Thermal mitigation", ThermalCriterion, why)
@@ -53,9 +52,45 @@ internal fun thermalSection(events: List<RecorderEvent>): QualitySection {
         ),
         stepCount,
     ) + notMeasuredYet
-    val notes = statuses.map { (t, s) -> QualityNote(t, "thermal status ${name(s)}") } +
+    val changes = statuses.filterIndexed { i, (_, s) -> i == 0 || statuses[i - 1].second != s }
+    val notes = changes.map { (t, s) -> QualityNote(t, "thermal status ${name(s)}") } +
         steps.map { QualityNote(it.tMicros, "camera ${reason(it)?.replace('_', ' ')}") }
     return QualitySection("Thermal", metrics, notes.sortedBy { it.tMicros })
+}
+
+private const val BatteryCriterion = "battery temperature logged at least every 30 s, peak reported (FBBD-46)"
+
+/** A health report this much later than 30 s still counts as on time: the timer is not exact. */
+private const val BatterySlackMicros = 5_000_000L
+private const val BatteryEveryMicros = 30_000_000L
+
+/**
+ * The battery temperature from the recorder's health reports: logged often enough, and its peak. The
+ * gaps counted include the session's start to the first report and the last report to its end
+ * ([endMicros]), so a timer that stalls after its first report fails.
+ */
+private fun battery(events: List<RecorderEvent>, endMicros: Long): List<QualityMetric> {
+    val temps = events.ofKind(EventKinds.DEVICE).mapNotNull { e ->
+        fields(e.text)["battery_c"]?.toDoubleOrNull()?.let { e.tMicros to it }
+    }
+    if (temps.isEmpty()) {
+        val why = "the recorder logs the battery temperature every 30 s from this version on"
+        return listOf(notMeasured("thermal.battery", "Battery temperature logged", BatteryCriterion, why))
+    }
+    val times = listOf(0L) + temps.map { it.first }.sorted() + maxOf(endMicros, temps.maxOf { it.first })
+    val longest = times.zipWithNext { a, b -> b - a }.max()
+    val peak = temps.maxBy { it.second }
+    return listOf(
+        judged(
+            "thermal.battery", "Battery temperature logged", seconds(longest), "s",
+            longest <= BatteryEveryMicros + BatterySlackMicros, Basis.MEASURED, BatteryCriterion,
+            "longest time between the recorder's ${temps.size} health reports, the session's start and its end",
+        ),
+        info(
+            "thermal.battery_peak", "Battery temperature peak", peak.second, "C", Basis.MEASURED,
+            "highest battery temperature reported, at ${seconds(peak.first).toLong()} s",
+        ),
+    )
 }
 
 private fun reason(e: RecorderEvent) = VideoEventText.parse(e.text)[VideoEventText.REASON]

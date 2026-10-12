@@ -13,9 +13,11 @@ enum class RecorderForegroundType { Location, ConnectedDevice }
  * - None before Android 10, which has no types.
  * - Location: from Android 14 only while location (precise or approximate) is allowed; before it,
  *   always, as the recorder has always done.
- * - Connected device (the receiver and sensors over Bluetooth or Wi-Fi): from Android 12 only while
- *   nearby devices (BLUETOOTH_CONNECT) is allowed, which Android 14 accepts for it; before Android 12
- *   there is no such permission, so always.
+ * - Connected device (the receiver and sensors over Bluetooth or Wi-Fi): on Android 12 and 13 only
+ *   while nearby devices (BLUETOOTH_CONNECT) is allowed; before Android 12 there is no such
+ *   permission, so always. From Android 14 always, as Android also accepts it for CHANGE_NETWORK_STATE
+ *   and CHANGE_WIFI_STATE, which the manifest declares and are granted at install: a Wi-Fi receiver
+ *   needs no runtime permission.
  *
  * Empty from Android 10 on means the recorder must not go foreground at all.
  */
@@ -26,6 +28,6 @@ fun recorderForegroundTypes(
 ): Set<RecorderForegroundType> = buildSet {
     if (sdk >= ApiQ) {
         if (sdk < ApiU || locationGranted) add(RecorderForegroundType.Location)
-        if (sdk < ApiS || bluetoothConnectGranted) add(RecorderForegroundType.ConnectedDevice)
+        if (sdk < ApiS || sdk >= ApiU || bluetoothConnectGranted) add(RecorderForegroundType.ConnectedDevice)
     }
 }

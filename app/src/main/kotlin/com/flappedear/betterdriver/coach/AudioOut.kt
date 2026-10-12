@@ -29,6 +29,14 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     /** The clip track playing, released when it ends or another replaces it. Guarded by [lock]. */
     private var track: AudioTrack? = null
 
+    /** Told how the playing clip ended: "done", or "stopped" when cut off. Guarded by [lock]. */
+    private var trackEnd: ((String) -> Unit)? = null
+
+    /** Whether the last phrase got audio focus (FBBD-47). */
+    @Volatile
+    var focusGranted = true
+        private set
+
     private val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
         .setAudioAttributes(Attributes)
         .setOnAudioFocusChangeListener({ }, handler)
@@ -38,7 +46,8 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     fun begin(id: String) {
         synchronized(lock) { current = id }
         val result = audio?.requestAudioFocus(focus)
-        if (result != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+        focusGranted = result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        if (!focusGranted) {
             DebugLog.w(Tag, "audio focus refused ($result) for $id; playing anyway")
         }
     }
@@ -52,15 +61,22 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     /**
      * Plays [pcm] at once as phrase [id], stopping any clip still playing. [speaker] sends it to the phone
      * speaker even with a headset connected, for the delay test's baseline. [onStart] gets the time
-     * the first audio left, in [SystemClock.elapsedRealtimeNanos]. Returns when play was asked for, in
+     * the first audio left, in [SystemClock.elapsedRealtimeNanos]; [onEnd] how it ended: "done",
+     * "stopped" when another sound cut it off, or "error". Returns when play was asked for, in
      * [SystemClock.uptimeMillis], or null if no track could be made.
      */
-    fun play(pcm: Pcm, id: String, speaker: Boolean = false, onStart: (Long) -> Unit = {}): Long? {
+    fun play(
+        pcm: Pcm,
+        id: String,
+        speaker: Boolean = false,
+        onEnd: (String) -> Unit = {},
+        onStart: (Long) -> Unit = {},
+    ): Long? {
         val t = build(pcm) ?: return null
         if (speaker) device(AudioDeviceInfo.TYPE_BUILTIN_SPEAKER)?.let(t::setPreferredDevice)
         t.setPlaybackPositionUpdateListener(
             object : AudioTrack.OnPlaybackPositionUpdateListener {
-                override fun onMarkerReached(track: AudioTrack) = finished(id, track)
+                override fun onMarkerReached(track: AudioTrack) = finished(id, track, Done)
 
                 override fun onPeriodicNotification(track: AudioTrack) {
                     track.positionNotificationPeriod = 0
@@ -71,8 +87,13 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         )
         t.notificationMarkerPosition = pcm.samples.size
         t.positionNotificationPeriod = pcm.frames(StartCheckMillis).coerceAtLeast(1)
-        val old = synchronized(lock) { track.also { track = t } }
-        old?.let(::release)
+        val old = synchronized(lock) {
+            (track to trackEnd).also {
+                track = t
+                trackEnd = onEnd
+            }
+        }
+        cutOff(old)
         begin(id)
         val at = SystemClock.uptimeMillis()
         return try {
@@ -80,15 +101,33 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             at
         } catch (e: IllegalStateException) {
             DebugLog.w(Tag, "clip not played", e)
-            finished(id, t)
+            finished(id, t, Failed)
             null
         }
     }
 
     /** Stops the clip playing, if any, for a phrase said another way. */
     fun stopClip() {
-        val old = synchronized(lock) { track.also { track = null } }
-        old?.let(::release)
+        val old = synchronized(lock) {
+            (track to trackEnd).also {
+                track = null
+                trackEnd = null
+            }
+        }
+        cutOff(old)
+    }
+
+    /** The type of output the sound goes to (FBBD-47): the headset's, else "speaker". */
+    fun output(): String {
+        val headset = audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
+        return when (headset?.type) {
+            null -> "speaker"
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt_sco"
+            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble"
+            AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
+            else -> "wired"
+        }
     }
 
     /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
@@ -104,9 +143,21 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     private fun device(type: Int): AudioDeviceInfo? =
         audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type == type }
 
-    private fun finished(id: String, t: AudioTrack) {
-        val mine = synchronized(lock) { (track === t).also { if (it) track = null } }
-        if (mine) release(t)
+    private fun finished(id: String, t: AudioTrack, how: String) {
+        val mine = synchronized(lock) {
+            if (track === t) {
+                true to trackEnd.also {
+                    track = null
+                    trackEnd = null
+                }
+            } else {
+                false to null
+            }
+        }
+        if (mine.first) {
+            release(t)
+            mine.second?.invoke(how)
+        }
         end(id)
     }
 
@@ -135,15 +186,6 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         }
     }
 
-    private fun release(t: AudioTrack) {
-        try {
-            t.stop()
-        } catch (_: IllegalStateException) {
-            // Never started or already stopped.
-        }
-        t.release()
-    }
-
     companion object {
         /** Navigation guidance speech: ducks music, and the system routes it like a sat-nav's voice. */
         val Attributes: AudioAttributes = AudioAttributes.Builder()
@@ -152,6 +194,8 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             .build()
 
         private const val Tag = "AudioOut"
+        private const val Done = "done"
+        private const val Failed = "error"
 
         /** How much of a clip plays before its start is logged; a few milliseconds. */
         private const val StartCheckMillis = 5
@@ -165,5 +209,24 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
             AudioDeviceInfo.TYPE_USB_HEADSET,
         )
+    }
+}
+
+/** Stops and frees [t]. */
+private fun release(t: AudioTrack) {
+    try {
+        t.stop()
+    } catch (_: IllegalStateException) {
+        // Never started or already stopped.
+    }
+    t.release()
+}
+
+/** Frees the clip track another sound replaced, telling whoever played it that it was cut off. */
+private fun cutOff(old: Pair<AudioTrack?, ((String) -> Unit)?>) {
+    val (t, onEnd) = old
+    if (t != null) {
+        release(t)
+        onEnd?.invoke("stopped")
     }
 }

@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.debug.DebugGuards
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.UiChecks
 import com.flappedear.betterdriver.sharing.Backups
 import com.flappedear.betterdriver.sharing.Imports
 import com.flappedear.betterdriver.shell.RestoreUnfinished
@@ -25,6 +26,14 @@ class MainActivity : ComponentActivity() {
 
     /** The file last opened with the app, kept in the saved state while its import runs. */
     private var importing: Uri? = null
+
+    /**
+     * The same file, kept on disk until its import ends: a saved state taken before the end must not
+     * start the import again after Android ends the process.
+     */
+    private val pendingImport by lazy {
+        DebugGuards.allowDisk { getSharedPreferences(PendingImportFile, MODE_PRIVATE) }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -45,6 +54,7 @@ class MainActivity : ComponentActivity() {
             importFrom(intent)
         } else {
             importing = BundleCompat.getParcelable(savedInstanceState, KeyImporting, Uri::class.java)
+                ?.takeIf { DebugGuards.allowDisk { pendingImport.getString(KeyImporting, null) } == it.toString() }
             importing?.let(::startImport)
         }
         // UI-17 option A: the app is always dark, so the system bars use light icons.
@@ -53,6 +63,10 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
         )
         setContent {
+            val importRunning = Imports.get(this).state?.running == true
+            LaunchedEffect(importRunning) {
+                if (!importRunning) DebugGuards.allowDisk { pendingImport.edit().remove(KeyImporting).commit() }
+            }
             val recording = recorder.state.recording
             // The screen stays on for the whole outing, on every screen, not only the track screen.
             LaunchedEffect(recording) {
@@ -63,6 +77,8 @@ class MainActivity : ComponentActivity() {
                 }
                 // Debug builds log slow frames once a minute while recording (FBBD-41).
                 DebugGuards.trackJank(this@MainActivity, recording)
+                // Every build puts the frames in the drive's log every 30 s while recording (FBBD-62).
+                UiChecks.trackFrames(this@MainActivity, recording)
             }
             BetterDriverTheme(darkTheme = true) {
                 // A restore that failed half way in this process blocks the app until it is finished.
@@ -92,7 +108,10 @@ class MainActivity : ComponentActivity() {
     private fun startImport(uri: Uri) {
         val imports = Imports.get(this)
         // Imports ignores a file opened while another one is being imported.
-        if (imports.state?.running != true && imports.question == null) importing = uri
+        if (imports.state?.running != true && imports.question == null) {
+            importing = uri
+            DebugGuards.allowDisk { pendingImport.edit().putString(KeyImporting, uri.toString()).commit() }
+        }
         imports.import(uri, fromOutside = true)
     }
 
@@ -115,5 +134,6 @@ class MainActivity : ComponentActivity() {
 
     private companion object {
         const val KeyImporting = "importing"
+        const val PendingImportFile = "pending_import"
     }
 }

@@ -32,6 +32,7 @@ class LapCollector(track: Track) {
     private val points = mutableListOf<Xy>()
     private val times = mutableListOf<Long>()
     private val speeds = mutableListOf<Double>()
+    private val measuredSpeeds = mutableListOf<Boolean>()
 
     /** Position of the last fix in [frame], and its speed in km/h. */
     var position: Xy? = null
@@ -39,10 +40,16 @@ class LapCollector(track: Track) {
     var speedKmh: Double = 0.0
         private set
 
+    /** [speedKmh] came from the receiver, not worked out from positions (FBBD-177). */
+    var speedMeasured: Boolean = true
+        private set
+
     /** Laps finished by [fix]; a lap whose start was not at the line has no usable path and is left out. */
     fun update(fix: CoachFix): List<LapEvent> {
         val p = frame.toXy(fix.lat, fix.lon)
-        val kmh = fix.speedKmh?.takeIf { it.isFinite() && it >= 0 } ?: derivedKmh(p, fix.tMicros)
+        val measured = fix.speedKmh?.takeIf { it.isFinite() && it >= 0 }
+        val kmh = measured ?: derivedKmh(p, fix.tMicros)
+        speedMeasured = measured != null
         if (fix.tMicros > lastT || lastPoint == null) {
             lastPoint = p
             lastT = fix.tMicros
@@ -57,6 +64,7 @@ class LapCollector(track: Track) {
             points += p
             times += fix.tMicros - timer.lapStartMicros
             speeds += kmh
+            measuredSpeeds += speedMeasured
         }
         return events
     }
@@ -72,6 +80,7 @@ class LapCollector(track: Track) {
                 listOf(start) + points + end,
                 listOf(0L) + times + lap.timeMicros,
                 listOf(speeds.firstOrNull() ?: kmh) + speeds + kmh,
+                listOf(measuredSpeeds.firstOrNull() ?: speedMeasured) + measuredSpeeds + speedMeasured,
             )
             finished += TracedLap(lap, trace)
         }
@@ -79,6 +88,7 @@ class LapCollector(track: Track) {
         points.clear()
         times.clear()
         speeds.clear()
+        measuredSpeeds.clear()
     }
 
     private fun derivedKmh(p: Xy, t: Long): Double {

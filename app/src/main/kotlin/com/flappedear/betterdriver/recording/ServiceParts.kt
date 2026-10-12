@@ -21,8 +21,10 @@ import com.flappedear.betterdriver.coach.CoachProtocol
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.RecordingVideoSink
+import com.flappedear.betterdriver.recorder.log.CheckLog
 
-private val CoachEventKinds = setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM, CoachEvents.VOICE)
+private val CoachEventKinds =
+    setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM, CoachEvents.VOICE, CoachEvents.VOICE_END)
 private const val MaxCoachEventChars = 1_000
 
 /** The low-importance channel for the recorder and camera notifications. */
@@ -89,6 +91,7 @@ internal class LiveClients(
     private val state: () -> Bundle,
     private val onVideo: (Bundle) -> Unit = {},
     private val onCoach: (Int, Bundle) -> Unit = { _, _ -> },
+    private val onUi: (Bundle) -> Unit = {},
 ) {
     private val main = Handler(Looper.getMainLooper())
     private val clients = mutableListOf<Messenger>()
@@ -110,6 +113,10 @@ internal class LiveClients(
             }
             msg.what == RecorderProtocol.MSG_COACH_EVENT || msg.what == RecorderProtocol.MSG_COACH_STATUS -> {
                 onCoach(msg.what, msg.data)
+                true
+            }
+            msg.what == RecorderProtocol.MSG_UI_EVENT -> {
+                onUi(msg.data)
                 true
             }
             client == null -> false
@@ -157,7 +164,12 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
     val sink = RecordingVideoSink(recording, camera) { _, status, ok -> onStatus(status, ok) }
     when (data.getInt(RecorderProtocol.VIDEO_KIND)) {
         RecorderProtocol.VIDEO_STARTED -> sink.started(file, at)
-        RecorderProtocol.VIDEO_SYNCED -> sink.synced(file, at, data.getLong(RecorderProtocol.VIDEO_MEDIA_US))
+        RecorderProtocol.VIDEO_SYNCED -> sink.synced(
+            file,
+            at,
+            data.getLong(RecorderProtocol.VIDEO_MEDIA_US),
+            data.getLong(RecorderProtocol.VIDEO_FRAME_US).takeIf { data.containsKey(RecorderProtocol.VIDEO_FRAME_US) },
+        )
         RecorderProtocol.VIDEO_STOPPED -> sink.stopped(file, at, text)
         RecorderProtocol.VIDEO_STATUS -> sink.status(text, data.getBoolean(RecorderProtocol.VIDEO_OK))
         RecorderProtocol.VIDEO_THERMAL -> sink.thermal(
@@ -173,6 +185,14 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
  * only for the running session, so nothing the coach sends can stop the recording. The coach line
  * goes to [onStatus].
  */
+/** Records a UI report ([RecorderProtocol.MSG_UI_EVENT]) in [recording], when it is for it (FBBD-183). */
+internal fun logUiReport(recording: Recording, data: Bundle) {
+    val kind = data.getString(RecorderProtocol.UI_KIND).orEmpty()
+    if (data.getString(RecorderProtocol.UI_SESSION) != recording.id || kind !in CheckLog.UiEventKinds) return
+    val text = data.getString(RecorderProtocol.UI_TEXT).orEmpty().take(MaxCoachEventChars)
+    recording.eventAt(data.getLong(RecorderProtocol.UI_T_US), kind, text)
+}
+
 internal fun logCoachReport(recording: Recording, what: Int, data: Bundle, onStatus: (CoachStatus) -> Unit) {
     if (data.getString(CoachProtocol.SESSION) != recording.id) return
     when (what) {

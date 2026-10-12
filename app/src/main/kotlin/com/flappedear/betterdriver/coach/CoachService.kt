@@ -75,6 +75,7 @@ class CoachService : Service() {
     private fun begin(data: Bundle, replyTo: Messenger?) {
         val id = data.getString(CoachProtocol.SESSION) ?: return
         val settings = coachSettings(this).read()
+        DebugLog.session = id
         DebugLog.i(Tag, "coaching session $id: $settings")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice)
@@ -85,14 +86,17 @@ class CoachService : Service() {
     private fun track(data: Bundle) {
         val a = active ?: return
         val track = data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) }
+        val library = coachLibrary(this)
         val reference = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }?.let {
-            coachLibrary(this).reference(it, exclude = a.id)
+            library.reference(it, exclude = a.id)
         }
+        // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
+        val sameDay = reference != null && library.drivenSameDay(reference, System.currentTimeMillis())
         // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
         val picks = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
             ?.let { coachPicks(this).get(it.id) }.orEmpty()
         if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
-        a.coach = CoachSession(a.settings, track, reference, picks)
+        a.coach = CoachSession(a.settings, track, reference, picks, sameDay)
         updateStatus(a, a.coach?.status ?: CoachStatus.None)
     }
 
@@ -109,12 +113,20 @@ class CoachService : Service() {
         var asked: Asked? = null
         val out = coach.onFix(fix, a.now()) { text ->
             val ask = Asked(a.now()).also { asked = it }
-            voice?.say(text) { nanoTime, path, route ->
-                // Posted, so it runs after this fix: by then the cue's number is known.
+            fun micros(nanoTime: Long) = (nanoTime - a.startNanos) / NanosPerMicro
+            // Both posted, so they run after this fix: by then the cue's number is known.
+            val ended = Ended { nanoTime, end ->
                 handler.post {
-                    val text = ask.voiceText(path, route)
-                    val at = (nanoTime - a.startNanos) / NanosPerMicro
-                    if (text != null && active === a) report(a, at, CoachEvents.VOICE, text)
+                    val seq = ask.seq
+                    if (seq != null && active === a) {
+                        report(a, micros(nanoTime), CoachEvents.VOICE_END, CoachEvents.voiceEndText(seq, end))
+                    }
+                }
+            }
+            voice?.say(text, ended) { start ->
+                handler.post {
+                    val voiced = ask.voiceText(start, start.readyNanos?.let(::micros), a.settings.audioDelayMillis)
+                    if (voiced != null && active === a) report(a, micros(start.nanoTime), CoachEvents.VOICE, voiced)
                 }
             } == true
         }
@@ -130,7 +142,11 @@ class CoachService : Service() {
         var seq: Int? = null
 
         /** The event text of its sound starting, how it was said and where it went; null if never logged. */
-        fun voiceText(path: String, route: String) = seq?.let { CoachEvents.voiceText(it, path, askedMicros, route) }
+        fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int) = seq?.let {
+            CoachEvents.voiceText(
+                it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
+            )
+        }
     }
 
     private fun updateStatus(a: Active, status: CoachStatus) {

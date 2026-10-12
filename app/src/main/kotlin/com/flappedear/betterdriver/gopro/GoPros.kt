@@ -10,11 +10,13 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.UiChecks
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
@@ -112,12 +114,19 @@ class GoPros private constructor(private val context: Context) {
         }
         sources = cameras.mapNotNull { camera ->
             val address = camera.address ?: return@mapNotNull null
+            val id = CameraIds.goPro(camera.id)
             OpenGoProSource(
-                CameraIds.goPro(camera.id),
+                id,
                 GoProBleLink(context, address),
                 scope,
                 video = camera.videoMode?.let(::goProVideo),
                 io = Dispatchers.IO,
+                // Into the drive's log under this session, also for the stop that comes after it ends (FBBD-82).
+                acks = { ack ->
+                    val result = if (ack.ok) "ok" else "failed"
+                    val text = "camera=$id action=${ack.action} result=$result"
+                    UiChecks.report(sessionId, ack.sessionUs, EventKinds.GOPRO, text)
+                },
             )
         }
         // Logged for the real-camera test (FBBD-82); the track screen does not show the GoPros yet.

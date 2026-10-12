@@ -2,80 +2,112 @@ package com.flappedear.betterdriver.recorder.log
 
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class DebugLogTest {
     @TempDir
     lateinit var dir: File
 
+    private val logFile get() = File(dir, "betterdriver.log")
+
+    private fun log(process: String = "main", background: Boolean = false) =
+        LogFile(logFile, process, pid = 7, clock = { 0L }, uptimeMicros = { 4_711_204_518L }, background = background)
+
     @Test
-    fun writesOneTimestampedLinePerCall() {
-        val log = LogFile(dir, "main", clock = { 0L }, pid = 7)
-        log.write(DebugLog.INFO, "Camera", "4K · 60 started", null)
-        val text = File(dir, "main.log").readText()
-        assertTrue(text.startsWith("1970-01-01T00:00:00.000Z 7 "), text)
-        assertTrue(text.endsWith(" I Camera: 4K · 60 started\n"), text)
+    fun writesOneLineWithBothClocksProcessAndSession() {
+        log("recorder").write(DebugLog.INFO, "Camera", "4K · 60 started", null, "s1")
+        val text = logFile.readText()
+        val prefix = "1970-01-01T00:00:00.000Z 4711.204518 recorder 7 "
+        assertTrue(text.startsWith(prefix), text)
+        assertTrue(text.endsWith(" I Camera [s1]: 4K · 60 started\n"), text)
+        val line = assertNotNull(LogLine.parse(text.trimEnd()))
+        val thread = Thread.currentThread().name.replace(' ', '_')
+        assertEquals(LogLine(0L, 4_711_204_518L, "recorder", 7, thread, 'I', "Camera", "s1", "4K · 60 started"), line)
+    }
+
+    @Test
+    fun aLineOutsideASessionSaysSo() {
+        log().write(DebugLog.WARN, "App", "no session: here", null, null)
+        val line = assertNotNull(LogLine.parse(logFile.readText().trimEnd()))
+        assertNull(line.session)
+        assertEquals("no session: here", line.message)
+    }
+
+    @Test
+    fun readsTheFilesOfOlderBuilds() {
+        val text = "2026-10-12T10:56:54.251Z 13207 main W Thermal: status=light headroom=0.9 at 4K · 60"
+        val line = assertNotNull(LogLine.parse(text, "camera"))
+        assertEquals("camera", line.process)
+        assertEquals("Thermal", line.tag)
+        assertNull(line.uptimeMicros)
+        assertEquals("status=light headroom=0.9 at 4K · 60", line.message)
     }
 
     @Test
     fun errorsCarryTheirStackTrace() {
-        val log = LogFile(dir, "main")
-        log.write(DebugLog.ERROR, "Crash", "uncaught", IllegalStateException("boom"))
-        val text = File(dir, "main.log").readText()
+        log().write(DebugLog.ERROR, "Crash", "uncaught", IllegalStateException("boom"), null)
+        val text = logFile.readText()
         assertTrue("java.lang.IllegalStateException: boom" in text, text)
         assertTrue("\tat " in text, text)
+        assertNull(LogLine.parse(text.lines()[1]))
     }
 
     @Test
-    fun rotatesAndKeepsOnlyTheNewestFiles() {
-        val log = LogFile(dir, "camera", LogFile.Rotation(maxBytes = 200, keep = 2))
-        repeat(40) { log.write(DebugLog.INFO, "T", "line $it with some padding text", null) }
-        val names = dir.list().orEmpty().sorted()
-        assertEquals(listOf("camera.1.log", "camera.2.log", "camera.log"), names)
-        assertTrue("line 39" in File(dir, "camera.log").readText() || "line 39" in File(dir, "camera.1.log").readText())
-        assertFalse("line 0 " in File(dir, "camera.2.log").readText())
+    fun neverRotatesOrTrims() {
+        val l = log()
+        repeat(5_000) { l.write(DebugLog.INFO, "T", "line $it with some padding text to grow the file", null, null) }
+        assertEquals(listOf("betterdriver.log"), dir.list().orEmpty().toList())
+        assertEquals(5_000, logFile.readLines().size)
     }
 
     @Test
-    fun writesNothingWhileOff() {
-        var on = false
-        val log = LogFile(dir, "main", enabled = { on })
-        log.write(DebugLog.INFO, "T", "hidden", null)
-        on = true
-        log.write(DebugLog.INFO, "T", "shown", null)
-        val text = File(dir, "main.log").readText()
-        assertFalse("hidden" in text)
-        assertTrue("shown" in text)
+    fun processesAppendToTheSameFileWithoutMixingLines() {
+        val writers = (1..4).map { p ->
+            thread {
+                val l = LogFile(logFile, "p$p", background = true)
+                repeat(500) { l.write(DebugLog.INFO, "T", "process $p line $it", null, null) }
+                l.close()
+            }
+        }
+        writers.forEach { it.join() }
+        val lines = logFile.readLines()
+        assertEquals(2_000, lines.size)
+        assertTrue(lines.all { LogLine.parse(it) != null })
     }
 
     @Test
-    fun appendsAfterAReopen() {
-        LogFile(dir, "main").apply { write(DebugLog.INFO, "T", "first", null); close() }
-        LogFile(dir, "main").write(DebugLog.INFO, "T", "second", null)
-        val lines = File(dir, "main.log").readLines()
-        assertEquals(2, lines.size)
+    fun startsAgainAfterTheLogIsCleared() {
+        val l = log()
+        l.write(DebugLog.INFO, "T", "before", null, null)
+        assertTrue(logFile.delete())
+        l.write(DebugLog.INFO, "T", "after", null, null)
+        assertEquals(1, logFile.readLines().size)
     }
 
     @Test
-    fun fileWritesRunInsideTheInstalledWrapper() {
+    fun flushWritesQueuedLinesInsideTheInstalledWrapper() {
         var wrapped = 0
         try {
-            DebugLog.install(LogFile(dir, "main"))
+            DebugLog.install(log(background = true))
             DebugLog.fileWrites = { write ->
                 wrapped++
                 write()
             }
-            DebugLog.i("T", "wrapped")
-            DebugLog.fileWrites = null
-            DebugLog.i("T", "direct")
+            DebugLog.session = "s9"
+            DebugLog.i("T", "queued")
+            DebugLog.flush()
         } finally {
             DebugLog.fileWrites = null
+            DebugLog.session = null
             DebugLog.install(null)
         }
         assertEquals(1, wrapped)
-        assertEquals(2, File(dir, "main.log").readLines().size)
+        val line = assertNotNull(LogLine.parse(logFile.readLines().single()))
+        assertEquals("s9", line.session)
     }
 }

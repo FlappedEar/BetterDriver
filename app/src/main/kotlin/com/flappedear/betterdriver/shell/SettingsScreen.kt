@@ -185,8 +185,10 @@ private fun AppTab(
         backupRows()
         ListRow("Run setup again", onClick = onRunSetup)
         ListRow("About and credits", onClick = onOpenAbout)
-        debugRows()
     }
+    // Settings › Diagnostics: the app's one log, to share after a drive or clear (FBBD-183).
+    SectionLabel("Diagnostics")
+    ShellCard { debugRows() }
 }
 
 @Preview(widthDp = 411, heightDp = 700)

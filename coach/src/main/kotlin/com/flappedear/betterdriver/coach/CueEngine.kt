@@ -29,6 +29,9 @@ const val FocusCorners = 3
 /** Time from deciding to speak to the start of the sound, before any audio delay setting. */
 const val DefaultLatencyMicros = 300_000L
 
+/** Timed laps before corner cues when the track was driven earlier the same day (FBBD-190): a warm-up lap. */
+const val WarmUpLaps = 1
+
 /** A cue starts at most this long before it must have ended, so it is still fresh at the corner. */
 private const val LeadMicros = 1_500_000L
 
@@ -56,6 +59,9 @@ private const val NeverCued = Int.MIN_VALUE / 2
 /** Losses kept per corner for picking focus corners. */
 private const val LossHistory = 3
 
+/** A cue's target has been driven this many times at least (FBBD-177): never a time seen once. */
+const val ConfirmingPasses = 2
+
 private const val MetresStep = 5
 private const val KmhPerMps = 3.6
 private const val MicrosPerSecond = 1_000_000.0
@@ -70,23 +76,50 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
 /**
  * Per-corner state of one session (FBBD-97): each corner's target (the fastest pass so far), its last
  * pass, recent losses against the target, and the lap it was last cued on. [picked] are the corners
- * the driver picked in the lap analysis (FBBD-148).
+ * the driver picked in the lap analysis (FBBD-148). [stoppedBefore] has, for each corner the lap that
+ * set the corners came to from a stop, where it stopped (FBBD-202).
+ *
+ * Cues aim at the [confirmed] target (FBBD-177): the second fastest pass, so what they ask for has
+ * been done on two laps at least; a corner improved on one lap only gets no cue for it. Passes too
+ * weak to coach from ([unusable]) are never targets.
  */
-private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, val picked: Set<Int>) {
+private class CornerBook(
+    val map: CornerMap,
+    initialTargets: List<CornerPass>,
+    val picked: Set<Int>,
+    private val stoppedBefore: List<Double?> = emptyList(),
+) {
     private val n = map.corners.size
+    private val fastest = Array(n) { mutableListOf<CornerPass>() }
     val targets = arrayOfNulls<CornerPass>(n)
     val lastPass = arrayOfNulls<CornerPass>(n)
-    private val losses = Array(n) { ArrayDeque<Long>() }
+    /** Each corner's recent losses against its target, oldest first. */
+    val losses = Array(n) { ArrayDeque<Long>() }
     val cuedOnLap = IntArray(n) { NeverCued }
 
     init {
-        initialTargets.forEach { t -> if (t.corner in 1..n) targets[t.corner - 1] = t }
+        initialTargets.forEach { t -> if (t.corner in 1..n) consider(t) }
     }
+
+    /** [p] is one of the corner's two fastest passes if it is faster than one of them. */
+    private fun consider(p: CornerPass) {
+        if (p.unusable()) return
+        val i = p.corner - 1
+        val best = fastest[i]
+        best += p
+        best.sortBy { it.timeMicros }
+        while (best.size > ConfirmingPasses) best.removeAt(best.lastIndex)
+        targets[i] = best.first()
+    }
+
+    /** The fastest time through corner [i] seen on two passes at least: the cue's target. */
+    fun confirmed(i: Int): CornerPass? = fastest[i].getOrNull(ConfirmingPasses - 1)
+
 
     fun onPass(pass: CornerPass) {
         val i = pass.corner - 1
         lastPass[i] = pass
-        targets[i]?.let { t ->
+        targets[i]?.takeUnless { pass.unusable() }?.let { t ->
             losses[i].addLast(pass.timeMicros - t.timeMicros)
             while (losses[i].size > LossHistory) losses[i].removeFirst()
         }
@@ -94,11 +127,7 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, v
 
     /** A timed lap's passes become targets where they are faster. */
     fun onTimedLap(passes: List<CornerPass>) {
-        for (p in passes) {
-            val i = p.corner - 1
-            val t = targets[i]
-            if (t == null || p.timeMicros < t.timeMicros) targets[i] = p
-        }
+        passes.forEach(::consider)
     }
 
     /**
@@ -119,29 +148,64 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, v
     /** The first corner whose braking zone is still ahead. */
     fun next(along: Double): Corner? = map.corners.firstOrNull { zoneStart(it) > along }
 
-    /** Where braking for [c] may start: the earliest of the reference, the target and the last pass. */
-    fun zoneStart(c: Corner): Double {
-        val i = c.number - 1
-        return minOf(c.brakeAt, targets[i]?.brakeAt ?: c.brakeAt, lastPass[i]?.brakeAt ?: c.brakeAt)
+    /** Whether [along] is on a straight: clear of the last corner, before the next braking zone. */
+    fun onStraight(along: Double): Boolean {
+        val next = next(along)
+        val previous = if (next == null) map.corners.lastOrNull() else map.corners.getOrNull(next.number - 2)
+        return previous == null || along >= zoneEnd(previous) + ClearOfCornerMeters
     }
 
-    /** Where braking for [c] ends: the latest apex of the reference, the target and the last pass. */
+    /**
+     * Where the car came to [c] from a stop on the lap that set the corners, until a lap of this
+     * session has passed it: where it brakes for it at speed is not known yet (FBBD-202).
+     */
+    private fun unknownFrom(c: Corner): Double? = stoppedBefore.getOrNull(c.number - 1)
+        ?.takeIf { lastPass[c.number - 1] == null }
+
+    /**
+     * Where braking for [c] may start: the earliest of the reference, the target and the last pass.
+     * For a corner not yet known at speed, anywhere after the stop before it.
+     */
+    fun zoneStart(c: Corner): Double {
+        val i = c.number - 1
+        return unknownFrom(c)
+            ?: minOf(c.brakeAt, targets[i]?.brakeAt ?: c.brakeAt, lastPass[i]?.brakeAt ?: c.brakeAt)
+    }
+
+    /**
+     * Where braking for [c] ends: the latest apex of the reference, the target and the last pass.
+     * For a corner not yet known at speed, the end of its measuring window.
+     */
     fun zoneEnd(c: Corner): Double {
         val i = c.number - 1
-        return maxOf(c.apexAt, targets[i]?.apexAt ?: c.apexAt, lastPass[i]?.apexAt ?: c.apexAt)
+        return if (unknownFrom(c) != null) {
+            map.windows[i].endInclusive
+        } else {
+            maxOf(c.apexAt, targets[i]?.apexAt ?: c.apexAt, lastPass[i]?.apexAt ?: c.apexAt)
+        }
     }
 }
 
-/** The first timed lap of a session without an earlier reference sets the corners, [identify]d on the track's. */
+/**
+ * The first timed lap of a session without an earlier reference sets the corners, [identify]d on the
+ * track's. Where that lap stopped (waiting past the line, a pit stop), the corner after the stop was
+ * driven from a standstill: its braking zone on a lap at speed is not known yet (FBBD-202).
+ */
 private fun cornersFrom(
     traced: TracedLap,
     picked: (CornerMap) -> Set<Int>,
     identify: (CornerMap) -> CornerMap,
 ): CornerBook? {
-    val found = findCorners(traced.trace)
+    val trace = traced.trace
+    val found = findCorners(trace)
     if (found.isEmpty()) return null
-    val m = identify(CornerMap(traced.trace, found))
-    return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)), picked(m))
+    val m = identify(CornerMap(trace, found))
+    val stops = trace.along.indices.filter { trace.speedsKmh[it] < StopKmh }.map { trace.along[it] }
+    val stoppedBefore = m.corners.mapIndexed { i, c ->
+        val after = m.corners.getOrNull(i - 1)?.apexAt ?: 0.0
+        stops.lastOrNull { it >= after && it <= c.brakeAt }
+    }
+    return CornerBook(m, bestPasses(m.passes(trace, traced.lap.number)), picked(m), stoppedBefore)
 }
 
 /**
@@ -205,14 +269,23 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  * start/finish line, in time order; it returns what to say and when.
  *
  * - **Reference.** Corners come from the [earlier] reference when it fits the track's lines, else
- *   from this session's first timed lap. Each corner's target is the fastest pass so far, from earlier
- *   sessions and this one, so a cue only asks for what the driver has already done there.
- * - **Learning.** No corner cue until [CoachSettings.learningLaps] timed laps of this session are done.
+ *   from this session's first timed lap. Each corner's target is the second fastest pass so far, from
+ *   earlier sessions and this one, so a cue only asks for what the driver has already done there on
+ *   two laps at least (FBBD-177). A corner that first lap reached from a stop has no known braking
+ *   zone until a lap has passed it, so nothing is said on the straight before it until then (FBBD-202).
+ * - **Confidence** (FBBD-177). Each corner cue is graded from its evidence ([cueDoubts]): Low (a
+ *   gap in the positions, a near stop) says nothing, Medium says it without its number ("brake a
+ *   little later"), High with it.
+ * - **Learning.** No corner cue until [CoachSettings.learningLaps] timed laps of this session are done;
+ *   when the [earlier] reference has a session driven [sameDay] (back out after a break in the pits,
+ *   FBBD-190), at most [WarmUpLaps], since the corners and targets are known already.
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
  *   there and may give one cue: brake later, brake earlier, or carry more speed. It is timed to end,
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
+ * - **In-lap** ([InLap], FBBD-202): nothing is said once the driver lifts off on a straight to cool
+ *   down, to the end of that lap, nor after a lap ends in the pit lane, whose time is not said.
  * - **Corner numbers** are the track's (FBBD-172): each braking corner is said by the number of the
  *   track corner it is in ([identifyCorners]), as the lap analysis numbers it.
  * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by CornerId, or by
@@ -228,14 +301,18 @@ class CueEngine(
     earlier: CoachReference? = null,
     latencyMicros: Long = DefaultLatencyMicros,
     private val picks: List<CornerPick> = emptyList(),
+    sameDay: Boolean = false,
 ) {
     private val laps = LapCollector(track)
     private val speech = SpeechTiming(settings, latencyMicros)
+    private val inLap = InLap()
     private val identity = track.identity
     private val picked: (CornerMap) -> Set<Int> = { pickedCorners(it, laps.frame, picks, identity) }
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
         identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m)) }
     }
+    private val learningLaps =
+        if (sameDay && book != null) minOf(settings.learningLaps, WarmUpLaps) else settings.learningLaps
 
     private var cursor: PathCursor? = null
     private var meters: List<PassMeter> = emptyList()
@@ -267,9 +344,9 @@ class CueEngine(
     val phase: CoachPhase
         get() = when {
             settings.verbosity < Verbosity.Focus -> CoachPhase.Quiet
-            book == null || timedLaps < settings.learningLaps -> {
+            book == null || timedLaps < learningLaps -> {
                 // With no earlier reference the corners come from this session's first timed lap: at least one.
-                val needed = if (book == null) maxOf(settings.learningLaps, 1) else settings.learningLaps
+                val needed = if (book == null) maxOf(learningLaps, 1) else learningLaps
                 CoachPhase.Learning(minOf(timedLaps, needed), needed)
             }
             else -> CoachPhase.Coaching
@@ -284,11 +361,13 @@ class CueEngine(
         if (along == null) meters.forEach(PassMeter::lost)
         if (along != null) {
             for (m in meters) {
-                m.add(along, fix.tMicros, laps.speedKmh)?.let { pass -> onPass(pass, fix.tMicros)?.let(results::add) }
+                val pass = m.add(along, fix.tMicros, laps.speedKmh, laps.speedMeasured)
+                pass?.let { onPass(it, fix.tMicros)?.let(results::add) }
             }
         }
+        inLap.update(fix.tMicros, laps.speedKmh, along?.takeIf { book?.onStraight(it) == true }, book?.map?.path)
         val cue = when {
-            settings.verbosity == Verbosity.Off -> null
+            settings.verbosity == Verbosity.Off || inLap.quiet -> null
             along == null -> speakLapTime(fix.tMicros, null, anywhere = true)
             else -> speak(fix.tMicros, along)
         }
@@ -309,7 +388,9 @@ class CueEngine(
             b.onTimedLap(lapPasses)
         }
         lapPasses.clear()
-        if (timed) onTimedLap(lap, now)
+        val inPits = inLap.onLapDone(laps.speedKmh, book?.map?.path)
+        if (inPits) pendingLap = null
+        if (timed) onTimedLap(lap, now, say = !inPits)
         cursor = book?.map?.cursor()
         meters = book?.map?.meters(laps.timer.lapNumber).orEmpty()
         meters.forEach { it.start(lap.endMicros, laps.speedKmh) }
@@ -317,12 +398,13 @@ class CueEngine(
         openCues.clear()
     }
 
-    private fun onTimedLap(lap: Lap, now: Long) {
+    /** A timed lap is done; its time is said if [say] (not after an in-lap). */
+    private fun onTimedLap(lap: Lap, now: Long, say: Boolean) {
         timedLaps++
         val best = bestLapMicros
         val isBest = best == null || lap.timeMicros < best
         if (isBest) bestLapMicros = lap.timeMicros
-        if (settings.verbosity >= Verbosity.LapTimes) {
+        if (say && settings.verbosity >= Verbosity.LapTimes) {
             pendingLap = PendingLap(Phrases.lapTime(lap.timeMillis, isBest), lap.number, now + LapCueExpiryMicros)
         }
     }
@@ -332,7 +414,9 @@ class CueEngine(
         lapPasses += pass
         val cue = openCues.remove(pass.corner)
         val before = cue?.before
-        return if (cue == null || before == null) {
+        // A pass too weak to coach from (FBBD-177) says nothing about whether the cue worked: no
+        // result, so the review shows no gain and no Better or Not yet for it.
+        return if (cue == null || before == null || pass.unusable()) {
             null
         } else {
             CueResult(now, cue, pass, improved(cue.advice, before, pass), before.timeMicros - pass.timeMicros)
@@ -405,18 +489,23 @@ class CueEngine(
         val i = corner.number - 1
         val lap = laps.timer.lapNumber
         val last = b.lastPass[i]?.takeIf { it.lap == lap - 1 }
-        val target = b.targets[i]?.takeIf { it !== last }
-        val advice = if (last != null && target != null && mayCue(b, corner, lap)) advise(last, target) else null
+        val target = b.confirmed(i)?.takeIf { it !== last }
+        if (last == null || target == null || !mayCue(b, corner, lap)) return null
+        val unidentified = identity != null && corner.cornerId == null
+        val doubts = cueDoubts(last, target, b.losses[i].toList(), unidentified)
+        val confidence = confidenceOf(doubts)
+        // Low: weak evidence gives no advice at all; Medium: advice without its number.
+        val advice = advise(last, target)?.takeIf { confidence.advises }?.withPrecision(confidence.precise)
         return advice?.let {
             Cue(
                 0, now, lap, CueKind.Corner, Phrases.corner(corner, it), corner.number, it, last, target,
-                turn = corner.label, cornerId = corner.cornerId,
+                turn = corner.label, cornerId = corner.cornerId, confidence = confidence, doubts = doubts,
             )
         }
     }
 
     private fun mayCue(b: CornerBook, corner: Corner, lap: Int): Boolean {
-        val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= settings.learningLaps
+        val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         // The driver gets a lap to try the last cue.
         val rested = b.cuedOnLap[corner.number - 1] != lap - 1
         return learned && rested && (settings.verbosity == Verbosity.Full || corner.number in b.focus())

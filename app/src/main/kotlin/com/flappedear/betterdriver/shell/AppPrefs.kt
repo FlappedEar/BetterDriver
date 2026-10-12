@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.shell
 
 import android.Manifest
 import android.content.Context
+import android.content.SharedPreferences
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,15 +32,23 @@ class AppPrefs(private val context: Context) {
     fun cameraGranted(): Boolean = context.allGranted(listOf(Manifest.permission.CAMERA))
 
     /** Track screen brightness (FBBD-63): full brightness unless set to the phone's own. */
-    var trackBrightness by mutableStateOf(
-        TrackBrightness.entries.firstOrNull { it.name == prefs.getString(KeyTrackBrightness, null) }
-            ?: TrackBrightness.Max,
-    )
+    var trackBrightness by mutableStateOf(brightnessOf(prefs))
         private set
 
     /** A short sound on the track screen when GNSS is lost and when it comes back (FBBD-64). Off by default. */
     var gnssSound by mutableStateOf(prefs.getBoolean(KeyGnssSound, false))
         private set
+
+    // A restore rewrites the file (FBBD-156): the values here follow. Kept here, as the file only holds it weakly.
+    private val restored = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+        setupDone = prefs.getBoolean(KeySetupDone, false)
+        trackBrightness = brightnessOf(prefs)
+        gnssSound = prefs.getBoolean(KeyGnssSound, false)
+    }
+
+    init {
+        prefs.registerOnSharedPreferenceChangeListener(restored)
+    }
 
     fun updateSetupDone(value: Boolean) {
         setupDone = value
@@ -69,6 +78,10 @@ class AppPrefs(private val context: Context) {
         private const val KeyCar = "car"
         private const val KeyRaceBoxAddress = "racebox_address"
         private const val KeyRaceBoxName = "racebox_name"
+
+        private fun brightnessOf(p: SharedPreferences) =
+            TrackBrightness.entries.firstOrNull { it.name == p.getString(KeyTrackBrightness, null) }
+                ?: TrackBrightness.Max
 
         /** What an older build saved; values never set are null, so a default is not taken for a choice. */
         fun legacy(context: Context): LegacySettings {

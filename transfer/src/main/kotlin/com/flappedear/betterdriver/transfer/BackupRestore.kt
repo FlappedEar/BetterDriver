@@ -139,6 +139,8 @@ class BackupRestore(private val root: File, private val staging: File) {
             if (!newDir.mkdirs()) throw IOException("could not prepare the restore")
             val result = prepare(backup, mode, BackupPrefs.kept(prefsHere))
             beforeCommit()
+            // Each prepared file is synced; its folders are too before the marker makes them the data.
+            syncDirs(newDir)
             writeSynced(commitFile, mode.name)
             committed = true
             apply(writePrefs)
@@ -197,7 +199,7 @@ class BackupRestore(private val root: File, private val staging: File) {
             val here = trackHere(File(live, f.name))
             val take = mode == RestoreMode.REPLACE || here == null || RestoreRules.newer(incoming, here)
             if (!take) continue
-            f.copyTo(File(target, f.name), overwrite = true)
+            copyFile(f, File(target, f.name))
             when {
                 here == null -> added++
                 TrackTransfer.match(incoming, here) != TrackMatch.SAME -> updated++
@@ -324,6 +326,10 @@ class BackupRestore(private val root: File, private val staging: File) {
     private fun copyFile(from: File, to: File) {
         to.parentFile.mkdirs()
         from.inputStream().use { input -> SessionBundle.copyTo(to, input) {} }
+    }
+
+    private fun syncDirs(dir: File) {
+        dir.walkBottomUp().filter { it.isDirectory }.forEach(SessionFiles::syncDir)
     }
 
     private fun writeSynced(file: File, text: String) {

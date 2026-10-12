@@ -2,13 +2,17 @@
 
 package com.flappedear.betterdriver.transfer
 
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.ImportOrigin
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.recorder.store.Frames
 import com.flappedear.betterdriver.recorder.store.Record
+import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -133,6 +137,34 @@ class SessionBundleTest {
         assertTrue(timed.all { it.allSectors }, "every sector of a timed lap is timed")
         assertEquals(before, laps(tablet, dir.name))
         assertEquals(emptyList(), File(tmp, "tablet/transfer").listFiles()!!.toList(), "nothing left in staging")
+    }
+
+    @Test
+    fun `every channel's provenance survives the transfer, imported origin included`() {
+        val phone = SessionStore(File(tmp, "phone"))
+        // A channel of every kind, as the recorder stores them: in the metadata and the chunk.
+        val kinds = Provenance.entries.mapIndexed { i, kind -> ChannelDef(700 + i, "c$i", "", "test", 2, kind) }
+        val origin = ImportOrigin("RaceChrono CSV", "a.csv", receiver = "RaceChrono v9.0.6", sampleRateHz = 10.0)
+        val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + kinds, imported = origin)
+        val (id, dir) = phone.createSession(info)
+        File(dir, SessionFiles.chunkName(1)).outputStream().use { out ->
+            (GnssChannels.ALL + kinds).forEach { out.write(Frames.encode(Record.Channel(it))) }
+            out.write(Frames.encode(Record.Samples(SampleSet(0, gnss.fix(0)))))
+        }
+        SessionFiles.writeAtomically(File(dir, SessionFiles.FINISHED), Properties())
+        val sent = phone.read(id)
+
+        val tablet = SessionStore(File(tmp, "tablet"))
+        val inbox = SessionInbox(tablet, File(tmp, "staging"))
+        val received = inbox.receive(bundle(phone, dir).inputStream())
+        assertEquals(origin, received.info.imported)
+        assertTrue(inbox.accept(received, replace = false))
+
+        val arrived = tablet.read(id)
+        assertEquals(origin, arrived.info.imported)
+        fun kinds(data: SessionData) = data.channels.mapValues { it.value.provenance }
+        assertEquals(kinds(sent), kinds(arrived))
+        for (def in kinds) assertEquals(def.provenance, arrived.channels.getValue(def.id).provenance, def.name)
     }
 
     @Test

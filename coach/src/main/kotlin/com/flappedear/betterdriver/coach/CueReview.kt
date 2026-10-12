@@ -97,6 +97,16 @@ fun ReviewedCue.outcome(): String? {
     return "$change · ${timeChange(r.gainMicros)}"
 }
 
+/**
+ * How far a corner cue could be trusted (FBBD-177), for the review: "High confidence", or for one
+ * said without its number why, as "Medium confidence: positions far apart". Null for a lap-time cue.
+ */
+fun Cue.confidenceText(): String? {
+    if (kind != CueKind.Corner) return null
+    val label = "${confidence.label} confidence"
+    return if (doubts.isEmpty()) label else "$label: " + doubts.joinToString("; ") { it.text }
+}
+
 private const val NearMeters = 2
 private const val NearKmh = 1
 private const val MicrosPerSecond = 1_000_000.0

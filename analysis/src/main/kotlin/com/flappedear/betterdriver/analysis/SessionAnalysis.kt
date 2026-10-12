@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.confidence.SessionConfidence
+import com.flappedear.betterdriver.analysis.confidence.assessConfidence
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerVariability
 import com.flappedear.betterdriver.analysis.corners.measureCornerLap
@@ -76,12 +78,19 @@ data class SessionAnalysis(
     val cornerMetrics: Map<String, List<CornerLapMetrics>> = emptyMap(),
     /** How repeatable each corner's braking, speeds, pickup and line are over the eligible laps. */
     val variability: Map<String, CornerVariability> = emptyMap(),
+    /** Where the channels the analysis reads come from (FBBD-174). */
+    val provenance: AnalysisProvenance = AnalysisProvenance(),
     /**
      * The track's corner identity [segments] come from (FBBD-172): the one passed in, or a new one,
      * the first for the track or the next revision when the fastest lap left the old one's shape.
      * Kept with the track when it differs from the one passed in. Null without segments.
      */
     val identity: TrackRevision? = null,
+    /**
+     * How far its conclusions can be trusted (FBBD-177): what the position evidence shows in each
+     * segment on each lap, and what applies to the whole session.
+     */
+    val confidence: SessionConfidence = SessionConfidence(),
 ) {
     /** Whether [segments] are [identity]'s corners and straights, under its ids (FBBD-172). */
     val identified: Boolean
@@ -96,11 +105,20 @@ data class SessionAnalysis(
  * disagrees with the other laps, or when there is no identity to place and the best lap cannot be
  * split (a circle has no straight); laps can still be compared by distance then.
  */
-@Suppress("ReturnCount", "LongMethod")
 fun analyzeSession(
     session: TelemetrySession,
     laps: LapSession = deriveSourceLapSession(session),
     identity: TrackRevision? = null,
+): SessionAnalysis {
+    val analysis = analyzeLaps(session, laps, identity).copy(provenance = analysisProvenance(session))
+    return analysis.copy(confidence = assessConfidence(session, analysis))
+}
+
+@Suppress("ReturnCount", "LongMethod")
+private fun analyzeLaps(
+    session: TelemetrySession,
+    laps: LapSession,
+    identity: TrackRevision?,
 ): SessionAnalysis {
     val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps)
     val fastest = laps.timedLaps[fastestIndex]
@@ -150,7 +168,7 @@ fun analyzeSession(
     return SessionAnalysis(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
         publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
-        identified?.identity,
+        identity = identified?.identity,
     )
 }
 

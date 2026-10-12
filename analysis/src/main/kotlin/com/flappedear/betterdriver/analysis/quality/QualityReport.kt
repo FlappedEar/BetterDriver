@@ -5,7 +5,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /** Bumped whenever what the report holds or how it is worked out changes; an older stored report is made again. */
-const val QualityFormat = 1
+const val QualityFormat = 3 // 2: the Channels section (FBBD-174); 3: the hardware checks of every drive
 
 /** A value against its pass criterion (FBBD-183). */
 @Serializable
@@ -35,8 +35,9 @@ enum class Basis {
 
 /**
  * One value of the session validation report (FBBD-183). [value] is in [unit], null when not
- * measured. [criterion] is the pass criterion with the issue it comes from, null for information.
- * [how] says how the value was obtained, or why it could not be.
+ * measured. [criterion] is the pass criterion with the issue it comes from, null for information;
+ * [keys] are the Jira issues it checks (FBBD-8 and on), read from it. [how] says how the value was
+ * obtained, or why it could not be.
  */
 @Serializable
 data class QualityMetric(
@@ -48,13 +49,20 @@ data class QualityMetric(
     val basis: Basis,
     val criterion: String?,
     val how: String,
+    val keys: List<String> = issueKeys(criterion),
 )
+
+private val IssueKey = Regex("""FBBD-\d+""")
+
+/** The Jira issues [criterion] names, in order, each once. */
+fun issueKeys(criterion: String?): List<String> =
+    criterion?.let { c -> IssueKey.findAll(c).map { it.value }.distinct().toList() }.orEmpty()
 
 /** Something that happened at session time [tMicros], such as a gap or a reconnect. */
 @Serializable
 data class QualityNote(val tMicros: Long, val text: String)
 
-/** One part of the report: GNSS, timing, recording, video, coach or thermal. */
+/** One part of the report: GNSS, timing, recording, video, coach, thermal or channels. */
 @Serializable
 data class QualitySection(
     val title: String,

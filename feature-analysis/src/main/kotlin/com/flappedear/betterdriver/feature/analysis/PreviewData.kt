@@ -13,6 +13,8 @@ import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.summary.SegmentChange
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.recorder.Confidence
+import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sin
@@ -53,7 +55,11 @@ internal val PreviewUi = AnalysisUi(
         ),
     ),
     sectorsNote = null,
-    gains = listOf(GainRow("Corners 2–3", 0.21, 1, "s2"), GainRow("Corner 4", 0.12, 3, "s5")),
+    gains = listOf(
+        GainRow("Corners 2–3", 0.21, 1, "s2"),
+        GainRow("Corner 4", 0.12, 3, "s5", ConfidenceUi(Confidence.MEDIUM, "within the usual spread of 0.14 s")),
+    ),
+    withheld = listOf(WithheldRow("Corner 1", "seen on one lap only")),
     losses = listOf(
         LossRow(0, 1, "Corner 4", 0.44, "s5"),
         LossRow(2, 3, "Corners 2–3", 0.28, "s2"),
@@ -67,7 +73,7 @@ internal val PreviewUi = AnalysisUi(
                 CornerMetricRow("Peak braking", CornerMeasure.G, 0.83, 0.79, null),
                 CornerMetricRow("Min speed", CornerMeasure.Speed, 63.9, 62.4, 1.8),
                 CornerMetricRow("Exit speed", CornerMeasure.Speed, 67.0, 66.1, 1.5),
-                CornerMetricRow("Throttle", CornerMeasure.Meters, 31.0, 38.5, 5.2, inferred = true),
+                CornerMetricRow("Throttle", CornerMeasure.Meters, 31.0, 38.5, 5.2, Provenance.INFERRED),
             ),
             speedUnit = "km/h",
             lineWithinGps = false,

@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
+import com.flappedear.betterdriver.analysis.quality.logLines
 import com.flappedear.betterdriver.coach.CoachLink
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
@@ -23,18 +24,21 @@ import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveTracker
+import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
-import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.live.lapLineText
 import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
+import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
 private const val NotificationId = 1
@@ -117,6 +121,7 @@ class RecorderService : Service() {
         val tracker: LiveTracker,
         val timing: SessionTiming,
         val coach: CoachLink?,
+        val device: DeviceChecks,
     )
 
     private val main = Handler(Looper.getMainLooper())
@@ -135,11 +140,9 @@ class RecorderService : Service() {
         onCoach = { what, data ->
             active?.recording?.let { logCoachReport(it, what, data) { status -> coachStatus = status } }
         },
+        onUi = { data -> active?.recording?.let { logUiReport(it, data) } },
     )
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
-
-    /** Read once, on the control thread; names circuits for tracks not saved yet (FBBD-79). */
-    private val circuits: CircuitList by lazy { CircuitDirectory(circuitsDir(this)).load() }
 
     @Volatile
     private var active: Active? = null
@@ -226,9 +229,10 @@ class RecorderService : Service() {
                 car = car,
                 track = track,
                 devices = sources.map { it.name },
-                channels = GnssChannels.ALL,
+                // Demo GNSS positions are stored as made up, never as measured (FBBD-174).
+                channels = if (gnss.demo) FakeGnssSource.Channels else GnssChannels.ALL,
             )
-            val recording = Recorder(store).start(info).also { it.listeners.add(LoggingListener(it.id, gnss.name)) }
+            val recording = Recorder(store).start(info).also { logTo(it, gnss.name) }
             val tracker = LiveTracker(
                 recording.id,
                 info.startUtcMillis,
@@ -237,6 +241,9 @@ class RecorderService : Service() {
                 accelIds = accelIdsFor(gnss),
             )
             recording.listeners.add(tracker)
+            // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
+            // newer one the UI process fetched since the last session is used.
+            val circuits = CircuitDirectory(circuitsDir(this)).load()
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
             // listener thread, so a timing failure is logged in the session and never stops it.
             // Each lap is logged with the predicted lap time shown before its line (FBBD-183).
@@ -257,7 +264,7 @@ class RecorderService : Service() {
                     if (status is RecorderStatus.Stopped) main.post { onEnded(recording, status.reason) }
                 }
             })
-            active = Active(recording, tracker, timing, coach)
+            active = Active(recording, tracker, timing, coach, DeviceChecks(this, recording).also { it.start() })
             carryOn(wanted, recording, restartOf.also { restartOf = null })
             sources.forEach(recording::attach)
             main.post {
@@ -296,8 +303,11 @@ class RecorderService : Service() {
         val ended = active
         if (ended == null || ended.recording !== recording) return
         ended.coach?.unbind()
+        ended.device.stop()
         active = null
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
+        DebugLog.session = null
+        logQuality(this, control, recording.id)
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
@@ -337,6 +347,7 @@ class RecorderService : Service() {
     override fun onDestroy() {
         DebugLog.i(Tag, "service destroyed, recording running: ${active != null}")
         active?.coach?.unbind()
+        active?.device?.stop()
         clients.close()
         // Only reached with a recording running if the system destroys the service: finish it cleanly.
         active?.recording?.stop("service_destroyed", DestroyStopTimeoutMs)
@@ -367,6 +378,26 @@ class RecorderService : Service() {
         private fun carryOn(wanted: SharedPreferences, recording: Recording, previous: String?) {
             previous?.let { recording.event(EventKinds.RECORDER_RESTART, "previous=$it") }
             wanted.edit().putString(KeySession, recording.id).commit()
+        }
+
+        /**
+         * Every line of this process now names [recording]; the log holds its events and its GNSS
+         * second by second, so the hardware checks need nothing else (FBBD-183).
+         */
+        private fun logTo(recording: Recording, receiver: String) {
+            DebugLog.session = recording.id
+            val start = recording.info.startUtcMillis
+            recording.listeners.add(LoggingListener(recording.id, receiver, start, recording::nowMicros))
+            recording.listeners.add(GnssSecondLog(recording.id, start))
+        }
+
+        /**
+         * The session's report in the drive's log (FBBD-183), made on [control] once the recording
+         * is closed. Made here, it is also ready for the session screen.
+         */
+        private fun logQuality(context: Context, control: Executor, id: String) = control.execute {
+            val report = qualityReports(context).load(id) ?: return@execute
+            report.logLines().forEach { DebugLog.forSession(id, CheckLog.QUALITY, it) }
         }
 
         /** What a restart after this process is killed records again (START_STICKY). Main thread. */

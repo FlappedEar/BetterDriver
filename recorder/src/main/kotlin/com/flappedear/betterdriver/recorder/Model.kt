@@ -2,7 +2,8 @@ package com.flappedear.betterdriver.recorder
 
 /**
  * A logged channel. [id] is unique within a session and is what samples refer to.
- * [decimals] is the precision used when the channel is exported (VBO).
+ * [decimals] is the precision used when the channel is exported (VBO). [provenance] is where its
+ * values come from (FBBD-174); by default what its [source] and [name] say ([Provenance.derive]).
  */
 data class ChannelDef(
     val id: Int,
@@ -10,6 +11,7 @@ data class ChannelDef(
     val unit: String,
     val source: String,
     val decimals: Int = 3,
+    val provenance: Provenance = Provenance.derive(source, name),
 ) {
     init {
         require(id in 0..MaxChannelId) { "channel id out of range: $id" }
@@ -61,9 +63,16 @@ data class Gate(
 
 /**
  * Where an imported session came from (FBBD-164): [format] as shown on its card ("VBO", "GPX",
- * "RaceChrono CSV") and the [fileName] it was read from.
+ * "RaceChrono CSV") and the [fileName] it was read from. [receiver] is the device or app the file
+ * names as its maker, empty when it names none; [sampleRateHz] the file's typical position rate,
+ * null when not known (an import made before FBBD-174).
  */
-data class ImportOrigin(val format: String, val fileName: String)
+data class ImportOrigin(
+    val format: String,
+    val fileName: String,
+    val receiver: String = "",
+    val sampleRateHz: Double? = null,
+)
 
 /**
  * What is known about a session when it starts. Written to disk before the first sample (FBBD-70).
@@ -123,7 +132,9 @@ object EventKinds {
 
     /**
      * Text "camera=<name> file=<file name> media_us=<n>": at tMicros the file held n microseconds
-     * of media. Refines the start and gives an end if the camera dies (video.VideoTimeline).
+     * of media. Refines the start and gives an end if the camera dies (video.VideoTimeline). The phone
+     * camera adds "frame_us=<session time its newest frame was captured, from the sensor timestamp>"
+     * (FBBD-21), so its sync can be measured against frame times rather than report times.
      */
     const val VIDEO_SYNC = "video_sync"
 
@@ -149,7 +160,9 @@ object EventKinds {
 
     /**
      * A coach cue's sound started (FBBD-27, FBBD-183). Text "seq=<cue seq> path=<live|clip>
-     * asked_us=<session time the voice was asked> route=<headset|speaker>"; the event time is the start.
+     * asked_us=<session time the voice was asked> route=<headset|speaker>", and from FBBD-47 on also
+     * "ready_us=<session time its audio was ready> device=<output type> focus=<granted|refused>
+     * out_delay_ms=<headset delay from the tap test, or none>"; the event time is the start.
      */
     const val COACH_VOICE = "coach_voice"
 
@@ -158,4 +171,55 @@ object EventKinds {
      * time> predicted_ms=<predicted lap time shown just before the line, or none>".
      */
     const val LAP_LINE = "lap_line"
+
+    /**
+     * The phone's health every 30 s while recording (FBBD-46, FBBD-183). Text "battery_c=<battery
+     * temperature, °C> battery_pct=<charge> plugged=<ac|usb|wireless|none> thermal=<Android thermal
+     * status> headroom=<forecast or n/a>".
+     */
+    const val DEVICE = "device"
+
+    /** The screen went off or came on while recording (FBBD-63). Text "state=<off|on>". */
+    const val SCREEN = "screen"
+
+    /**
+     * The track screen's frames over a stretch of the recording (FBBD-41, FBBD-62), from JankStats.
+     * Text "frames=<n> janky=<n> frozen=<n over 700 ms> worst_ms=<n> hist=<counts per [FrameBuckets]>".
+     */
+    const val UI_FRAMES = "ui_frames"
+
+    /**
+     * The track screen's GNSS-lost banner was shown or cleared (FBBD-64). Text "state=<shown|cleared>
+     * fix_age_us=<age of the last fix the screen knew>". The event time is when the screen changed.
+     */
+    const val GNSS_BANNER = "gnss_banner"
+
+    /**
+     * A GoPro acknowledged a start or stop command (FBBD-82, FBBD-22); the event time is the
+     * acknowledgement. Text "camera=<id> action=<start|stop> result=<ok|failed>".
+     */
+    const val GOPRO = "gopro"
+
+    /**
+     * A video file was placed on the session's timeline after it, or refused (FBBD-22). Text
+     * "camera=<id> file=<name> result=<aligned|rejected> method=<alignment method> offset_us=<session
+     * time of media time 0>".
+     */
+    const val VIDEO_IMPORT = "video_import"
+
+    /**
+     * One stretch of an imported video aligned on its own against the session's GNSS (FBBD-82): how
+     * far its offset is from the whole file's shows the camera's drift. The event time is the stretch's
+     * middle. Text "camera=<id> file=<name> offset_us=<this stretch's offset> clip_offset_us=<the file's>".
+     */
+    const val VIDEO_PROBE = "video_probe"
+
+    /** A coach cue's sound ended (FBBD-47). Text "seq=<cue seq> end=<done|stopped|error>". */
+    const val COACH_VOICE_END = "coach_voice_end"
+
+    /** The session was exported as VBO (FBBD-14). Text "rows=<data rows> samples=<GNSS sets> ms=<time taken>". */
+    const val VBO_EXPORT = "vbo_export"
 }
+
+/** Upper edges in ms of the frame-time buckets of [EventKinds.UI_FRAMES]; a last bucket takes the rest. */
+val FrameBuckets = listOf(8, 12, 16, 20, 25, 33, 50, 100, 200, 700)

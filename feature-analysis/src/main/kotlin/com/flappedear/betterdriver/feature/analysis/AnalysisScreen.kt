@@ -39,6 +39,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -141,7 +142,7 @@ private fun Ready(
                 AnalysisTab.Summary -> {
                     Summary(ui, width, optimalVideo)
                     ui.progress?.let { Progress(it, width) }
-                    if (ui.focus.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
+                    if (ui.focus.isNotEmpty() || ui.withheld.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                     ui.acceleration?.let { AccelerationCard(it, width) }
                     ui.quality?.let { QualityCard(it, width) }
@@ -168,19 +169,21 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composab
             Figure("Best lap", formatLapTime(ui.bestLapMillis), "Lap ${ui.bestLapNumber}", c.best, Modifier.weight(1f))
             Figure(
                 "Theoretical",
-                ui.theoreticalMillis?.let(::formatLapTime) ?: "–",
+                theoreticalText(ui, ::formatLapTime),
                 "Best of each corner",
                 c.text,
                 Modifier.weight(1f),
             )
             Figure(
                 "To gain",
-                ui.gainSeconds?.let { formatDelta(-it) } ?: "–",
+                gainText(ui, ::formatDelta),
                 "s",
-                if (ui.gainSeconds != null) c.gain else c.textDim,
+                if (ui.gainSeconds != null && !ui.gainConfidence.doubtful) c.gain else c.textDim,
                 Modifier.weight(0.8f),
             )
         }
+        if (ui.gainSeconds != null) ConfidenceNote(ui.gainConfidence, about = "To gain")
+        if (ui.theoreticalMillis != null) ProvenanceLegend()
         optimalVideo?.invoke()
     }
 }
@@ -207,7 +210,7 @@ private fun Compare(ui: CompareUi, modifier: Modifier) {
             Text("${ui.referenceNumber}", color = c.best, fontWeight = FontWeight.SemiBold)
         }
         CursorReadout(ui, cursor)
-        TrackLabel("Time delta")
+        TrackLabel(marked("Time delta", DeltaProvenance))
         LapChart(
             lines = listOf(ChartLine(ui.delta, c.warning)),
             lengthMeters = ui.lengthMeters,
@@ -220,7 +223,7 @@ private fun Compare(ui: CompareUi, modifier: Modifier) {
             modifier = Modifier.fillMaxWidth().height(110.dp),
             zeroLine = true,
         )
-        TrackLabel("Speed, km/h")
+        TrackLabel(marked("Speed, km/h", ui.speedProvenance))
         LapChart(
             lines = listOf(ChartLine(ui.referenceSpeed, c.best), ChartLine(ui.otherSpeed, c.cold)),
             lengthMeters = ui.lengthMeters,
@@ -236,6 +239,7 @@ private fun Compare(ui: CompareUi, modifier: Modifier) {
             Dim("0 m", Modifier.weight(1f))
             Dim("${ui.lengthMeters.roundToInt()} m")
         }
+        ProvenanceLegend()
     }
 }
 
@@ -246,13 +250,14 @@ private fun CursorReadout(ui: CompareUi, cursor: Double?) {
         Dim("Touch the charts to read a point. Shaded: corners.")
         return
     }
-    fun speed(runs: List<List<ChartPoint>>) = valueAt(runs, cursor)?.let { "${it.roundToInt()}" } ?: "–"
+    fun speed(runs: List<List<ChartPoint>>) =
+        marked(valueAt(runs, cursor)?.let { "${it.roundToInt()}" } ?: Missing, ui.speedProvenance)
     val delta = valueAt(ui.delta, cursor)
     val corner = ui.corners.firstOrNull { inBand(it, cursor) }?.name
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Dim("${cursor.roundToInt()} m" + (corner?.let { " · $it" } ?: ""))
         Text(
-            delta?.let(::formatDelta) ?: "–",
+            marked(delta?.let(::formatDelta) ?: Missing, DeltaProvenance),
             color = when {
                 delta == null -> c.textDim
                 isDeltaGain(delta) -> c.gain
@@ -367,9 +372,26 @@ internal fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScop
     )
 }
 
+/** The legend line: what [NotMeasuredMark] means (FBBD-174). */
+@Composable
+internal fun ProvenanceLegend(modifier: Modifier = Modifier) {
+    Dim(ProvenanceLegendText, modifier.testTag(ProvenanceLegendTag))
+}
+
 @Composable
 internal fun Dim(text: String, modifier: Modifier = Modifier, color: Color = TrackTheme.colors.textDim) {
     Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
+}
+
+/**
+ * A conclusion's confidence next to it (FBBD-177): "High confidence", or below High its level and
+ * why, in the warning colour.
+ */
+@Composable
+internal fun ConfidenceNote(confidence: ConfidenceUi, modifier: Modifier = Modifier, about: String? = null) {
+    val c = TrackTheme.colors
+    val text = if (about == null) confidence.note else "$about: ${confidence.note}"
+    Dim(text, modifier, color = if (confidence.doubtful) c.warning else c.textDim)
 }
 
 @Preview(widthDp = 400, heightDp = 1400)
