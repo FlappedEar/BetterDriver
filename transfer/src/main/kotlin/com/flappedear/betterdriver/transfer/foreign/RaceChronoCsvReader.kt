@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.transfer.foreign
 
+import com.flappedear.betterdriver.recorder.Provenance
 import java.io.Reader
 
 /**
@@ -7,7 +8,8 @@ import java.io.Reader
  * using RaceChrono…", "Format,3", "Session title,…", "Created,…"), a blank line, the column names
  * row, then rows of units and channel sources, then the data. The columns row is the first with
  * Timestamp, Latitude and Longitude; the row after it gives the units; any row whose timestamp is
- * not a number (a sources row) is passed over.
+ * not a number (a sources row) is passed over, except that the sources row ("100: gps", "101: acc",
+ * "200: obd") gives the acceleration and extra channels their provenance (FBBD-174).
  *
  * Mapped: Timestamp (Unix seconds), Latitude, Longitude, Speed (m/s, km/h or mph by its unit),
  * Bearing, Altitude, Satellites, Longitudinal and Lateral acc (G, or m/s² by its unit). A name that
@@ -34,6 +36,7 @@ internal object RaceChronoCsvReader {
         var columns: Columns? = null
             private set
         private var unitsPending = false
+        private var sourcesPending = false
 
         fun row(cells: List<String>) {
             val c = columns
@@ -44,7 +47,11 @@ internal object RaceChronoCsvReader {
                 }
                 cells.getOrNull(c.timestamp)?.trim()?.toDoubleOrNull() == null -> {
                     // Units right after the names; sources and other description rows after that.
-                    if (unitsPending) c.units(cells.map { it.trim() })
+                    when {
+                        unitsPending -> c.units(cells.map { it.trim() })
+                        sourcesPending -> c.sources(cells.map { it.trim() })?.let(sink::accelerationSource)
+                    }
+                    sourcesPending = unitsPending
                     unitsPending = false
                 }
                 else -> data(c, cells)
@@ -56,9 +63,10 @@ internal object RaceChronoCsvReader {
                 unitsPending = false
                 c.units(emptyList())
             }
+            sourcesPending = false
             if (!c.announced) {
                 c.announced = true
-                sink.extras(c.extras.map { ExtraColumn(it.name, it.unit) })
+                sink.extras(c.extras)
             }
             // A row without a position holds only another channel's sample (OBD, say) and is passed over.
             c.point(cells)?.let(sink::point)
@@ -107,6 +115,16 @@ internal object RaceChronoCsvReader {
             extras = extraIdx.mapIndexed { k, i -> ExtraColumn(extraNames[k], unit(i)) }
         }
 
+        /**
+         * Reads the sources row: each extra channel's provenance, and the acceleration columns'
+         * provenance, which is returned (null when the row names none for them).
+         */
+        fun sources(row: List<String>): Provenance? {
+            val of = { i: Int -> if (i < 0) null else sourceProvenance(row.getOrNull(i).orEmpty()) }
+            extras = extras.mapIndexed { k, e -> e.copy(provenance = of(extraIdx[k])) }
+            return of(forward) ?: of(lateral)
+        }
+
         fun point(cells: List<String>): ImportPoint? {
             fun v(i: Int) = if (i < 0) Double.NaN else cells.getOrNull(i)?.trim()?.toDoubleOrNull() ?: Double.NaN
             val seconds = v(timestamp)
@@ -130,6 +148,19 @@ internal object RaceChronoCsvReader {
                 },
             )
         }
+    }
+
+    /**
+     * The provenance of a RaceChrono source cell such as "200: obd": the kind after the colon. Null
+     * for a kind not known here. A "gps" channel is a GPS's of unknown kind: RaceChrono does not say which.
+     */
+    private fun sourceProvenance(cell: String): Provenance? = when (cell.substringAfter(':', "").trim().lowercase()) {
+        "gps" -> Provenance.MEASURED_GPS
+        "acc" -> Provenance.MEASURED_ACCELEROMETER
+        "obd" -> Provenance.MEASURED_OBD
+        "can" -> Provenance.MEASURED_CAN
+        "calc" -> Provenance.CALCULATED
+        else -> null
     }
 
     /** RaceChrono's own lap and distance bookkeeping and position-quality columns not worth a channel. */

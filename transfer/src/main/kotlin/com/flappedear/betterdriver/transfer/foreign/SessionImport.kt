@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.ImportOrigin
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -53,6 +54,11 @@ data class ImportedSession(
  * chunk files, metadata and end marker a recording leaves, with no video, so lap timing, analysis,
  * the review, exports, sharing and backup work on it as on any session. The session's metadata
  * names the source format and file ([SessionInfo.imported]).
+ *
+ * Every channel's provenance is stored with it (FBBD-174): a VBO file's GNSS channels as a GNSS
+ * receiver's, a GPX or RaceChrono file's as a GPS of unknown kind; speed or heading the file lacks
+ * anywhere, as calculated; acceleration as calculated (these apps usually work it out from GPS);
+ * other columns as unknown. The origin also keeps the file's maker, when it names one, and its rate.
  *
  * The file may be gzip-compressed; its format is decided by its content ([ForeignFormat.detect]).
  * Positions are kept in time order (one at or before the previous time is dropped); speed and
@@ -164,6 +170,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
     }
 
     /** Writes the points a reader finds as a session, as the recorder would have. */
+    @Suppress("TooManyFunctions") // The sink's calls, plus noting each channel's provenance (FBBD-174).
     private class Writer(
         private val staged: SessionStore,
         private val origin: ImportOrigin,
@@ -186,18 +193,36 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         private var forwardSeen = false
         private var lateralSeen = false
 
+        /** Some point's speed or heading was worked out from positions rather than read from the file. */
+        private var speedCalculated = false
+        private var headingCalculated = false
+        private var receiver = ""
+        private var accelerationProvenance: Provenance? = null
+
+        /** How many intervals between written points took each number of milliseconds, for the rate. */
+        private val intervals = HashMap<Long, Int>()
+
         override fun extras(columns: List<ExtraColumn>) {
             if (chunks != null) return // too late: the channel table is written
             val used = (GnssChannels.ALL + Accel).map { it.name }.toMutableSet()
             extraDefs = columns.take(ImportLimits.MaxExtraChannels).mapIndexed { i, c ->
                 var name = c.name.replace(Regex("\\s+"), "_").take(NameChars).ifEmpty { "channel_${i + 1}" }
                 if (!used.add(name)) name = "import_$name".take(NameChars).also { used.add(it) }
-                ChannelDef(FirstExtraId + i, name, c.unit.take(NameChars), Source, ExtraDecimals)
+                val def = ChannelDef(FirstExtraId + i, name, c.unit.take(NameChars), Source, ExtraDecimals)
+                c.provenance?.let { def.copy(provenance = it) } ?: def
             }
         }
 
         override fun skipped() {
             skipped++
+        }
+
+        override fun receiver(name: String) {
+            receiver = name.take(NameChars)
+        }
+
+        override fun accelerationSource(provenance: Provenance) {
+            accelerationProvenance = provenance
         }
 
         override fun point(p: ImportPoint) {
@@ -214,6 +239,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         private fun advance(prev: ImportPoint, p: ImportPoint) {
             val sameSegment = p.segment == prev.segment
             val derived = if (sameSegment) derive(prev, p) else null
+            if (derived != null) noteCalculated(prev, p)
             val current = if (derived == null) p else p.copy(
                 speedKmh = p.speedKmh.takeUnless { it.isNaN() } ?: derived.first,
                 headingDeg = p.headingDeg.takeUnless { it.isNaN() } ?: derived.second,
@@ -225,6 +251,18 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
             )
             emit(first)
             pending = current
+        }
+
+        /** Notes when [a] or [b] takes a speed or heading from [derive] because the file has none. */
+        private fun noteCalculated(a: ImportPoint, b: ImportPoint) {
+            if (a.speedKmh.isNaN() || b.speedKmh.isNaN()) speedCalculated = true
+            if (a.headingDeg.isNaN() || b.headingDeg.isNaN()) headingCalculated = true
+        }
+
+        /** A speed [p] lacks is written as 0, a heading it lacks as the last one: neither is measured. */
+        private fun noteMissing(p: ImportPoint) {
+            if (p.speedKmh.isNaN()) speedCalculated = true
+            if (p.headingDeg.isNaN() && !lastHeading.isNaN()) headingCalculated = true
         }
 
         /** Speed (km/h) and heading (deg, NaN when standing) from [a] to [b]. */
@@ -246,6 +284,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
                 skipped++
                 return
             }
+            if (lastT >= 0) intervals.merge((t - lastT) / MicrosPerMilliLong, 1, Int::plus)
             lastT = t
             w.write(Record.Samples(SampleSet(t, valuesOf(p))))
             points++
@@ -253,6 +292,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
 
         /** The channel values of [p]; heading is held while standing, speed is 0 where unknown. */
         private fun valuesOf(p: ImportPoint): List<ChannelValue> {
+            noteMissing(p)
             if (!p.headingDeg.isNaN()) lastHeading = p.headingDeg
             val values = ArrayList<ChannelValue>(DefaultValues + p.extras.size)
             values += ChannelValue(GnssChannels.UTC_MS.id, p.utcMicros / MicrosPerMilli)
@@ -305,12 +345,18 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         fun finish(format: ForeignFormat): ImportedSession {
             pending?.let { last ->
                 pending = null
+                if (last.speedKmh.isNaN()) speedCalculated = true
                 emit(if (last.speedKmh.isNaN()) last.copy(speedKmh = 0.0) else last)
             }
             if (points < MinPoints) throw ImportFormatException("the file has no positions with times")
             val w = checkNotNull(chunks)
             val sessionId = checkNotNull(id)
-            val sessionInfo = checkNotNull(info)
+            val sessionInfo = withProvenance(checkNotNull(info), format)
+            // The metadata was written at the first point; now it can say where each channel came from.
+            SessionFiles.writeAtomically(
+                File(staged.dir(sessionId), SessionFiles.META),
+                SessionFiles.metaToProps(sessionId, sessionInfo),
+            )
             val note = "format=${format.label} points=$points skipped=$skipped accel=${forwardSeen || lateralSeen}"
             w.write(Record.Event(RecorderEvent(lastT, ImportedEvent, note)))
             w.write(Record.End(lastT, EndReason))
@@ -325,6 +371,42 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
                 },
             )
             return ImportedSession(sessionId, sessionInfo, format, points, skipped, lastT, detection)
+        }
+
+        /**
+         * [info] with each channel's provenance and the file's maker and rate (FBBD-174): the GNSS
+         * channels as the format's receiver measured them, except speed or heading the file lacked
+         * somewhere, which are calculated; acceleration and extra columns keep their defaults.
+         */
+        private fun withProvenance(info: SessionInfo, format: ForeignFormat): SessionInfo {
+            val measured = if (format == ForeignFormat.VBO) {
+                Provenance.MEASURED_GNSS_RECEIVER
+            } else {
+                Provenance.MEASURED_GPS
+            }
+            val channels = info.channels.map { def ->
+                val provenance = when {
+                    def in Accel -> accelerationProvenance ?: def.provenance
+                    def.id !in GnssChannels.IDS -> def.provenance
+                    def.id == GnssChannels.SPEED_KMH.id && speedCalculated -> Provenance.CALCULATED
+                    def.id == GnssChannels.HEADING.id && headingCalculated -> Provenance.CALCULATED
+                    else -> measured
+                }
+                def.copy(provenance = provenance)
+            }
+            val source = origin.copy(receiver = receiver, sampleRateHz = sampleRateHz())
+            return info.copy(channels = channels, imported = source)
+        }
+
+        /** Positions per second at the median interval between them, or null with none. */
+        private fun sampleRateHz(): Double? {
+            val total = intervals.values.sum()
+            var seen = 0
+            for ((ms, n) in intervals.toSortedMap()) {
+                seen += n
+                if (seen * 2 >= total) return if (ms > 0) MillisPerSecond / ms else null
+            }
+            return null
         }
 
         /** Stops the chunk writer's sync thread after a failure; the staged folder is then removed. */
@@ -375,6 +457,7 @@ class SessionImport(private val store: SessionStore, private val staging: File) 
         private const val MicrosPerSecond = 1_000_000.0
         private const val MicrosPerMilli = 1_000.0
         private const val MicrosPerMilliLong = 1_000L
+        private const val MillisPerSecond = 1_000.0
         private const val KmhPerMs = 3.6
         private const val MinMoveMetres = 0.5
         private const val EarthRadiusMetres = 6_371_008.8

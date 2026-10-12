@@ -3,7 +3,9 @@
 package com.flappedear.betterdriver.transfer.foreign
 
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
@@ -30,6 +32,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -221,6 +224,43 @@ class SessionImportTest {
         assertTrue(data.channels.values.none { it.name in setOf("Lap_#", "Fragment_ID", "Elapsed_time") })
         // The OBD speed in km/h is a second "Speed" column: the GPS one is used, and it is no extra.
         assertTrue(data.channels.values.none { it.name.contains("Speed") })
+    }
+
+    @Test
+    fun `an import stores where each channel came from, with the file's maker and rate`() {
+        val vbo = store.read(import(fixture("racelogic-25hz.vbo"), "a.vbo").id)
+        val gpx = store.read(import(fixture("trackday-1hz.gpx"), "a.gpx").id)
+        val csv = store.read(import(fixture("racechrono-v3.csv"), "a.csv").id)
+        fun kind(data: SessionData, name: String) = channel(data, name).provenance
+
+        // A VBO logger is a GNSS receiver; its acceleration is worked out from GPS speed.
+        assertEquals(Provenance.MEASURED_GNSS_RECEIVER, kind(vbo, "gnss_lat"))
+        assertEquals(Provenance.MEASURED_GNSS_RECEIVER, kind(vbo, "gnss_speed"))
+        assertEquals(Provenance.CALCULATED, kind(vbo, "accel_y"))
+        assertEquals(Provenance.UNKNOWN, kind(vbo, "vert-vel"))
+        assertEquals(25.0, vbo.info.imported?.sampleRateHz)
+
+        // A GPX without speed or course: positions from a GPS, speed and heading calculated from them.
+        assertEquals(Provenance.MEASURED_GPS, kind(gpx, "gnss_lat"))
+        assertEquals(Provenance.CALCULATED, kind(gpx, "gnss_speed"))
+        assertEquals(Provenance.CALCULATED, kind(gpx, "gnss_heading"))
+        assertEquals("GPSLogger 131", gpx.info.imported?.receiver)
+        assertEquals(1.0, gpx.info.imported?.sampleRateHz)
+
+        // RaceChrono's sources row: its accelerometer and the OBD reader.
+        assertEquals(Provenance.MEASURED_GPS, kind(csv, "gnss_speed"))
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, kind(csv, "accel_y"))
+        assertEquals(Provenance.MEASURED_OBD, kind(csv, "Engine_RPM"))
+        assertEquals(Provenance.MEASURED_GPS, kind(csv, "Accuracy"))
+        assertEquals(10.0, csv.info.imported?.sampleRateHz)
+
+        // Stored for every channel, in the metadata the session list and a transfer read.
+        for (data in listOf(vbo, gpx, csv)) {
+            val meta = SessionFiles.readProps(File(store.dir(data.id), SessionFiles.META))!!
+            val count = meta.getProperty("channels").toInt()
+            assertEquals(data.channels.size, count)
+            for (i in 0 until count) assertNotNull(Provenance.parse(meta.getProperty("channel.$i.provenance")))
+        }
     }
 
     @Test
