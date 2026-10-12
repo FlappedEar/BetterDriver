@@ -14,7 +14,15 @@ root="$(cd "$(dirname "$0")/../.." && pwd)"
 video="$out/$(basename "${vbo%.*}").mp4"
 start_ms="$(python3 -I "$root/tools/mock-session/render.py" "$vbo" "$video")"
 duration_us="$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$video" | awk '{ printf "%d", $1 * 1000000 }')"
-"$root/gradlew" -p "$root" :transfer:test --tests '*MockSessionTest*' --rerun -i \
+log="$(mktemp)"
+trap 'rm -f "$log"' EXIT
+# Gradle's output goes to a file first so that its failure stops the script (a pipe into grep would
+# hide it, and a bundle left from an earlier run would look like success).
+if ! "$root/gradlew" -p "$root" :transfer:test --tests '*MockSessionTest*' --rerun -i \
   -PmockVbo="$vbo" -PmockVideo="$video" -PmockVideoStartUtcMs="$start_ms" \
-  -PmockVideoDurationUs="$duration_us" -PmockOut="$out" | grep -E '^ *(mock session|lap )' || true
+  -PmockVideoDurationUs="$duration_us" -PmockOut="$out" >"$log" 2>&1; then
+  cat "$log" >&2
+  exit 1
+fi
+grep -E '^ *(mock session|lap )' "$log" || true
 ls "$out"/*.bdsession

@@ -19,7 +19,7 @@ for area in Recording Timing Video Analysis Coach Storage Hardware; do
   elif [ -z "$line" ]; then
     echo "::error::$notes has no line '- $area: PASS | NOT RUN | N/A - evidence'."
     status=1
-  elif ! grep -Eq "^- $area: (PASS|NOT RUN|N/A) - .+" <<<"$line"; then
+  elif ! grep -Eq "^- $area: (PASS|NOT RUN|N/A) - .*[^[:space:]]" <<<"$line"; then
     echo "::error::$notes: '$line' must be PASS, NOT RUN or N/A, then ' - ' and the evidence (a FAIL stops the release)."
     status=1
   fi
