@@ -5,4 +5,7 @@
     <string name="recording_title">Recording session</string>
     <!-- Phone video notification (required for the camera's foreground service, FBBD-21). -->
     <string name="video_title">Recording phone video</string>
+    <!-- Video with data export notification (required for its foreground service, FBBD-152). -->
+    <string name="video_export_channel">Video export</string>
+    <string name="video_export_title">Making a video with data</string>
 </resources>

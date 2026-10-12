@@ -63,3 +63,19 @@ track, and from then on times every fix against it if it has a start/finish
 line. The detection is written into the session as a `track` event; the track's
 name, lap, delta and sectors go to the track screen with the recorder's live
 state.
+
+## Video overlay (FBBD-152)
+
+`timing.overlay` is the data behind the app's "Video with data" export, pure so
+it is tested here; the app draws it into the video with Media3 Transformer.
+
+- **`OverlayData`** looks up speed, position, G and the lap at any session time,
+  interpolating between samples (nothing across a gap of over 2 s). The delta is
+  to the session's best lap, matched by position as on the track screen; out and
+  in laps have none. G is the RaceBox accelerometer when the session has it,
+  else from GNSS: change of speed, and speed times the path's turn rate.
+- **`videoCuts`** turns a time range (a lap, or everything) into pieces of the
+  camera's files, back to back; a lap across two files is two cuts. Each cut maps
+  a frame's time in the export back to session time.
+- **`OverlayLayout`**, **`MapFit`** and **`gDot`** place the band along the
+  bottom of the picture, scaled from one unit so every resolution looks the same.

@@ -17,30 +17,58 @@ import com.flappedear.betterdriver.recording.ExportFormat
 /**
  * Export opens a short menu of formats (FBBD-150): VBO (with its video when the session has any)
  * for Circuit Tools, CSV with every channel for spreadsheets, GPX for maps. Choosing one asks
- * where to save, as VBO export always did.
+ * where to save, as VBO export always did. A session with video also offers Video with data
+ * ([dataVideo], FBBD-152): a lap or the whole video with the data drawn in, chosen in a picker.
  */
 @Composable
-internal fun ExportMenu(video: Boolean, enabled: Boolean, onExport: (ExportFormat) -> Unit) {
+internal fun ExportMenu(
+    video: Boolean,
+    enabled: Boolean,
+    onExport: (ExportFormat) -> Unit,
+    dataVideo: DataVideoItem? = null,
+) {
     var open by remember { mutableStateOf(false) }
     Box {
         FilledTonalButton(onClick = { open = true }, enabled = enabled) { Text("Export ▾") }
         DropdownMenu(expanded = open && enabled, onDismissRequest = { open = false }) {
             exportChoices(video).forEach { choice ->
-                DropdownMenuItem(
-                    text = {
-                        Column {
-                            Text(choice.label, style = MaterialTheme.typography.bodyLarge)
-                            DimText(choice.detail)
-                        }
-                    },
-                    onClick = {
-                        open = false
-                        onExport(choice.format)
-                    },
-                )
+                MenuLine(choice.label, choice.detail) {
+                    open = false
+                    onExport(choice.format)
+                }
+            }
+            if (video && dataVideo != null) {
+                MenuLine("Video with data", dataVideo.detail, dataVideo.enabled) {
+                    open = false
+                    dataVideo.onClick()
+                }
             }
         }
     }
+}
+
+@Composable
+private fun MenuLine(label: String, detail: String, enabled: Boolean = true, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = {
+            Column {
+                Text(label, style = MaterialTheme.typography.bodyLarge)
+                DimText(detail)
+            }
+        },
+        onClick = onClick,
+        enabled = enabled,
+    )
+}
+
+/** The Video with data line of the Export menu; off while a session records or another video renders. */
+internal data class DataVideoItem(val enabled: Boolean, val detail: String, val onClick: () -> Unit)
+
+/** What the Video with data line says under its name. */
+internal fun dataVideoDetail(recording: Boolean, busy: Boolean): String = when {
+    recording -> "Not while a session is recording"
+    busy -> "Another video is being made"
+    else -> "MP4 of a lap or all of it, with speed, times, G and map"
 }
 
 /** One line of the Export menu. */

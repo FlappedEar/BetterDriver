@@ -62,6 +62,9 @@ import java.util.Locale
  *
  * A session the coach spoke in opens its cue review (FBBD-99): each cue and whether the next pass
  * through that corner got better.
+ *
+ * A session with video also exports Video with data (FBBD-152): a lap or all of it with the data drawn
+ * in. Its progress shows on the card with Cancel; meanwhile the card's other actions wait.
  */
 @Composable
 fun SessionsScreen(
@@ -74,6 +77,7 @@ fun SessionsScreen(
     deleting: SessionDeleting = SessionDeleting(),
     transfer: SessionTransferState = SessionTransferState(),
     coach: SessionCoach = SessionCoach(),
+    videoExport: SessionVideoExport = SessionVideoExport(),
     onAnalyse: (SessionSummary) -> Unit = {},
     header: @Composable () -> Unit = {},
 ) {
@@ -98,6 +102,7 @@ fun SessionsScreen(
                 items(sessions, key = { it.id }) { s ->
                     SessionCard(
                         s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach,
+                        videoExport,
                     )
                 }
             }
@@ -125,12 +130,16 @@ private fun SessionCard(
     transfer: SessionTransferState,
     onAnalyse: (SessionSummary) -> Unit,
     coach: SessionCoach,
+    videoExport: SessionVideoExport,
 ) {
     val c = TrackTheme.colors
     val delete = deleting.states[s.id]
     val sending = transfer.outgoing[s.id]
     var asking by rememberSaveable(s.id) { mutableStateOf(false) }
-    val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running
+    // A video with data being rendered reads the session's files: nothing else may change them meanwhile.
+    val rendering = videoExport.running == s.id
+    val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running &&
+        !rendering
     // The whole card opens lap analysis (UI-61 B), except while it records or is being deleted.
     val opens = s.state != SessionState.RECORDING && delete != DeleteState.Running
     ShellCard(
@@ -141,7 +150,8 @@ private fun SessionCard(
         CardTitle(s, opens)
         val detail = sessionDetail(s)
         if (detail.isNotEmpty()) DimText(detail)
-        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = sending?.running == true)
+        val busy = sending?.running == true || rendering
+        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = busy)
         SessionCoachRow(s, coach)
         val (status, bad) = cardStatus(delete, export)
         // A share copies the session folder, so it must not run while GoPro video is being added, and the
@@ -150,6 +160,7 @@ private fun SessionCard(
         if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
         TransferLine(sending)
         if (free) SaveInstead(sending) { transfer.onSave(s) }
+        VideoExportLine(videoExport.states[s.id], rendering) { videoExport.onCancel(s) }
         CardButtons(
             video = video,
             idle = free,
@@ -157,6 +168,7 @@ private fun SessionCard(
             onDelete = { asking = true },
             onShare = { transfer.onSend(s) },
             onExport = { format -> onExport(s, format) },
+            dataVideo = videoExport.menuItem { videoExport.onExport(s) },
         )
     }
     if (asking) {
@@ -202,6 +214,7 @@ private fun CardButtons(
     onDelete: () -> Unit,
     onShare: () -> Unit,
     onExport: (ExportFormat) -> Unit,
+    dataVideo: DataVideoItem,
 ) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         TextButton(onClick = onDelete, enabled = canDelete) {
@@ -209,7 +222,7 @@ private fun CardButtons(
         }
         ShareButton(enabled = idle, onShare = onShare)
         Spacer(Modifier.weight(1f))
-        ExportMenu(video = video, enabled = idle, onExport = onExport)
+        ExportMenu(video = video, enabled = idle, onExport = onExport, dataVideo = dataVideo)
     }
 }
 

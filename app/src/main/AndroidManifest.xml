@@ -22,6 +22,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Video with data is rendered while the app may be in the background (FBBD-152). -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING" />
 
     <!-- Open GoPro download after a session: join the camera's own Wi-Fi (FBBD-22). -->
     <!-- A Wi-Fi GPS receiver's socket is kept on Wi-Fi (FBBD-115). -->
@@ -92,6 +95,13 @@
             android:name=".coach.CoachService"
             android:exported="false"
             android:process=":coach" />
+
+        <!-- Keeps the app alive while a video with data renders (FBBD-152). In the UI process, where the
+             export runs; never in the recorder's. Media processing on Android 15+, data sync before. -->
+        <service
+            android:name=".videoexport.VideoExportService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync|mediaProcessing" />
 
         <!-- Hands a downloaded, checked update to Android's installer (FBBD-73). -->
         <provider
