@@ -72,7 +72,7 @@ object SmokeFixtures {
     const val PlainStartUtc = 1_789_201_800_000L
     const val HillStartUtc = 1_788_606_000_000L
 
-    private val Gnss = listOf(
+    internal val Gnss = listOf(
         GnssChannels.UTC_MS,
         GnssChannels.LAT,
         GnssChannels.LON,
@@ -134,7 +134,7 @@ object SmokeFixtures {
      * long as they do. The session names [track] as the app does when it starts at a saved track.
      * With [video], the phone camera's file covers the whole session.
      */
-    private fun record(
+    internal fun record(
         store: SessionStore,
         info: SessionInfo,
         track: Track,
@@ -276,7 +276,7 @@ object SmokeFixtures {
         fun lineAt(x: Double) = TrackLine(geo(x, y(x) + 15), geo(x, y(x) - 15))
     }
 
-    private fun gnss(seconds: Double, lat: Double, lon: Double, kmh: Double, heading: Double) = listOf(
+    internal fun gnss(seconds: Double, lat: Double, lon: Double, kmh: Double, heading: Double) = listOf(
         ChannelValue(GnssChannels.UTC_MS.id, Math.round(seconds * 1_000).toDouble()),
         ChannelValue(GnssChannels.LAT.id, lat),
         ChannelValue(GnssChannels.LON.id, lon),
