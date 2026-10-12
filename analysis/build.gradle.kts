@@ -20,6 +20,8 @@ dependencies {
     testImplementation(kotlin("test"))
     // The coach's corners are checked against the analysis's (FBBD-172); the coach never depends on the analysis.
     testImplementation(project(":coach"))
+    // Arek's real recordings are read through the session import, as the app reads them (FBBD-164).
+    testImplementation(project(":transfer"))
     testImplementation(platform(libs.junit5.bom))
     testImplementation(libs.junit5.jupiter)
     testRuntimeOnly(libs.junit5.launcher)
