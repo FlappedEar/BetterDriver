@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.summary.SegmentChange
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.PI
 import kotlin.math.cos
@@ -54,7 +55,11 @@ internal val PreviewUi = AnalysisUi(
         ),
     ),
     sectorsNote = null,
-    gains = listOf(GainRow("Corners 2–3", 0.21, 1, "s2"), GainRow("Corner 4", 0.12, 3, "s5")),
+    gains = listOf(
+        GainRow("Corners 2–3", 0.21, 1, "s2"),
+        GainRow("Corner 4", 0.12, 3, "s5", ConfidenceUi(Confidence.MEDIUM, "within the usual spread of 0.14 s")),
+    ),
+    withheld = listOf(WithheldRow("Corner 1", "seen on one lap only")),
     losses = listOf(
         LossRow(0, 1, "Corner 4", 0.44, "s5"),
         LossRow(2, 3, "Corners 2–3", 0.28, "s2"),

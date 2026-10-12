@@ -29,6 +29,12 @@ internal const val Missing = "–"
 internal fun theoreticalText(ui: AnalysisUi, format: (Long) -> String): String =
     marked(ui.theoreticalMillis?.let(format) ?: Missing, TheoreticalProvenance)
 
-/** The time to gain to the theoretical best, marked as calculated. */
-internal fun gainText(ui: AnalysisUi, format: (Double) -> String): String =
-    marked(ui.gainSeconds?.let { format(-it) } ?: Missing, TheoreticalProvenance)
+/**
+ * The time to gain to the theoretical best, marked as calculated; below High confidence (FBBD-177)
+ * said in a word instead ([timeText]), which carries no mark.
+ */
+internal fun gainText(ui: AnalysisUi, format: (Double) -> String): String {
+    val gain = ui.gainSeconds ?: return marked(Missing, TheoreticalProvenance)
+    val text = timeText(gain, ui.gainConfidence) { format(-it) }
+    return if (ui.gainConfidence.doubtful) text else marked(text, TheoreticalProvenance)
+}

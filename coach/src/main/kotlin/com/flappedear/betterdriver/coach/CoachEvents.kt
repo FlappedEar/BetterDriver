@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.EventKinds
 import java.util.Locale
 
@@ -39,6 +40,8 @@ object CoachEvents {
         cue.zoneMeters?.let { append(" zone_m=").append(String.format(Locale.ROOT, "%.1f", it)) }
         cue.turn?.let { append(" turn=").append(it) }
         cue.cornerId?.let { append(" corner_id=").append(it) }
+        if (cue.kind == CueKind.Corner) append(" conf=").append(cue.confidence.name)
+        if (cue.doubts.isNotEmpty()) append(" why=").append(cue.doubts.joinToString(",") { it.code })
         append(" text=").append(cue.text)
     }
 
@@ -96,6 +99,10 @@ object CoachEvents {
             zoneMeters = fields["zone_m"]?.toDouble(),
             turn = fields["turn"]?.toInt(),
             cornerId = fields["corner_id"],
+            // Cues logged before FBBD-177 were all said with their numbers.
+            confidence = Confidence.parse(fields["conf"]) ?: Confidence.HIGH,
+            doubts = fields["why"]?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
+                .map { CueDoubt(it, CueDoubts.cap(it), CueDoubts.text(it)) },
         )
     }.getOrNull()
 
@@ -122,18 +129,25 @@ object CoachEvents {
         return fields to spoken
     }
 
+    /** "brake_later:10", or "brake_later:10:vague" for advice said without its number (FBBD-177). */
     private fun adviceText(a: Advice) = when (a) {
-        is Advice.BrakeLater -> "brake_later:${a.meters}"
+        is Advice.BrakeLater -> "brake_later:${a.meters}" + (if (a.precise) "" else ":$Vague")
         Advice.BrakeEarlier -> "brake_earlier"
-        is Advice.CarrySpeed -> "carry:${a.kmh}"
+        is Advice.CarrySpeed -> "carry:${a.kmh}" + (if (a.precise) "" else ":$Vague")
     }
 
-    private fun parseAdvice(s: String): Advice = when (s.substringBefore(':')) {
-        "brake_later" -> Advice.BrakeLater(s.substringAfter(':').toInt())
-        "brake_earlier" -> Advice.BrakeEarlier
-        "carry" -> Advice.CarrySpeed(s.substringAfter(':').toInt())
-        else -> throw IllegalArgumentException("unknown advice $s")
+    private fun parseAdvice(s: String): Advice {
+        val parts = s.split(':')
+        val precise = parts.getOrNull(2) != Vague
+        return when (parts[0]) {
+            "brake_later" -> Advice.BrakeLater(parts[1].toInt(), precise)
+            "brake_earlier" -> Advice.BrakeEarlier
+            "carry" -> Advice.CarrySpeed(parts[1].toInt(), precise)
+            else -> throw IllegalArgumentException("unknown advice $s")
+        }
     }
+
+    private const val Vague = "vague"
 
     /** "lap,brakeAt,apexAt,entryKmh,minKmh,timeMicros", distances and speeds to 0.1. */
     private fun passText(p: CornerPass) = String.format(

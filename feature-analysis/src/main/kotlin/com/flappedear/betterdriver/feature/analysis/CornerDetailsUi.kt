@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
+import com.flappedear.betterdriver.analysis.confidence.measureConfidence
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerVariability
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
@@ -24,9 +25,20 @@ data class CornerMetricRow(
      * acceleration, not a pedal; else the provenance of the channel read. Null when not known.
      */
     val provenance: Provenance? = null,
+    /**
+     * How far the best lap's value ([confidence]) and the compared lap's ([lapConfidence]) can be
+     * trusted (FBBD-177), for a braking point or a minimum speed; null for the other rows. A Low
+     * value is not shown.
+     */
+    val confidence: ConfidenceUi? = null,
+    val lapConfidence: ConfidenceUi? = null,
 ) {
     /** The row's values carry [NotMeasuredMark]. */
     val marked: Boolean get() = provenance.notMeasured
+
+    /** The lower of the two values' confidence, shown next to the row; null for a row without one. */
+    val shownConfidence: ConfidenceUi?
+        get() = listOfNotNull(confidence, lapConfidence).minByOrNull { it.level }
 }
 
 /** The braking, speeds, pickup and line of one corner (UI-68). */
@@ -61,7 +73,12 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
                 other,
                 variability,
                 analysis.provenance,
-            ),
+            ).map { row ->
+                // How far a braking point or a minimum speed of each lap can be trusted (FBBD-177).
+                fun graded(index: Int?) = index?.takeIf { row.label in GradedRows }
+                    ?.let { analysis.measureConfidence(segment.id, it, row.provenance).ui() }
+                row.copy(confidence = graded(bestIndex), lapConfidence = graded(otherIndex?.takeIf { other != null }))
+            },
             speedUnit = best.speeds.unit,
             // Only with a recorded accuracy: without one the spread is neither within nor beyond it.
             lineWithinGps = variability != null && variability.lineOffset.available &&
@@ -71,6 +88,9 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
         )
     }
 }
+
+/** The rows whose values are graded (FBBD-177): what a coach would advise from. */
+private val GradedRows = setOf("Brakes", "Min speed")
 
 /** Where a corner starts on the lap ([entry]) and the lap's [length], metres. */
 private class Lap(val entry: Double, val length: Double)

@@ -8,6 +8,8 @@ import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.laps.TimedLap
 import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
+import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
+import com.flappedear.betterdriver.analysis.segments.SectorTime
 import com.flappedear.betterdriver.analysis.segments.RankedTimeLoss
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
@@ -16,9 +18,11 @@ import com.flappedear.betterdriver.analysis.segments.TimeLossRole
 import com.flappedear.betterdriver.analysis.segments.TimeLossWindow
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
+import com.flappedear.betterdriver.recorder.Confidence
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
+import java.util.Locale
 
 class AnalysisUiTest {
     private fun lap(number: Int, seconds: Double, issue: LapReferenceIssue = LapReferenceIssue.None) =
@@ -31,6 +35,18 @@ class AnalysisUiTest {
             fastestLapIndex = 1,
         ),
     )
+
+    /**
+     * Each lap's times through [ids], in lap order: laps 1 and 3 a little faster than the fastest
+     * lap (2) through each, so what the best of each shows is seen on two laps (FBBD-177).
+     */
+    private fun lapTimes(vararg ids: String, fastest: Double = 1.2, others: Double = 1.0) =
+        listOf(others, fastest, others, others + 0.5).mapIndexed { i, seconds ->
+            val sectors = ids.map {
+                SectorTime(it, "Segment $it", TrackSegmentType.Corner, 0.0, 1.0, seconds = seconds)
+            }
+            LapSectorTimes(i + 1, sectors = sectors)
+        }
 
     @Test
     fun `laps are listed with their delta to the fastest and why a lap is not counted`() {
@@ -61,6 +77,7 @@ class AnalysisUiTest {
             analysis.copy(
                 summary = TheoreticalBestSummary(rows, rows),
                 losses = TimeLossRanking(losses = listOf(loss(3, "1", 0.4), loss(1, "2", 0.03)), valid = true),
+                lapTimes = lapTimes("1"),
             ),
             null,
         )!!
@@ -73,6 +90,52 @@ class AnalysisUiTest {
         assertEquals(true, focus.observation.contains("0.200 s slower through Corner 1 than lap 3"))
         assertEquals(2, focus.compareIndex)
         assertEquals(3, focus.compareNumber)
+        assertEquals(Confidence.HIGH, focus.confidence.level)
+        assertEquals(ConfidenceUi.High, ui.gainConfidence)
+        assertEquals("+0.20", ui.gains.single().lossText { String.format(Locale.ROOT, "+%.2f", it) })
+    }
+
+    @Test
+    fun `a time seen on one lap only is no focus area, and its gain is shown without a number`() {
+        val row = TheoreticalBestRow(
+            "1", "Corner 1", TrackSegmentType.Corner, 0.0, 1.0, 1.0, 3, actualSeconds = 1.0, lossSeconds = 0.2,
+        )
+        // Only lap 3 was faster through Corner 1 than the fastest lap.
+        val times = lapTimes("1", fastest = 1.2, others = 1.25).mapIndexed { i, lap ->
+            if (i != 2) lap else lap.copy(sectors = lap.sectors.map { it.copy(seconds = 1.0) })
+        }
+        val ui = analysisUi(
+            "t",
+            analysis.copy(summary = TheoreticalBestSummary(listOf(row), listOf(row)), lapTimes = times),
+            null,
+        )!!
+        assertEquals(emptyList<FocusRow>(), ui.focus)
+        val withheld = ui.withheld.single()
+        assertEquals("Corner 1", withheld.name)
+        assertEquals(true, withheld.why.contains("one lap"))
+        val gain = ui.gains.single()
+        assertEquals(Confidence.MEDIUM, gain.confidence.level)
+        assertEquals(SomeTimeText, gain.lossText { "+%.2f".format(it) })
+        assertEquals(true, gain.confidence.note.startsWith("Medium confidence · "))
+        // The time to gain it adds to is no more certain than it: said in a word, with why.
+        assertEquals(Confidence.MEDIUM, ui.gainConfidence.level)
+        assertEquals(true, ui.gainConfidence.why.startsWith("Corner 1: "))
+        assertEquals(SomeTimeText, gainText(ui.copy(gainSeconds = 0.2)) { "%.2f".format(it) })
+        val sure = ui.copy(gainSeconds = 0.2, gainConfidence = ConfidenceUi.High)
+        assertEquals("≈-0.20", gainText(sure) { String.format(Locale.ROOT, "%.2f", it) })
+    }
+
+    @Test
+    fun `below High a time is said in words, and at Low not at all`() {
+        val format = { s: Double -> String.format(Locale.ROOT, "%.2f", s) }
+        assertEquals("0.31", timeText(0.31, ConfidenceUi.High, format))
+        assertEquals(SomeTimeText, timeText(0.31, ConfidenceUi(Confidence.MEDIUM, "only 2 usable laps"), format))
+        assertEquals(UnclearText, timeText(0.31, ConfidenceUi(Confidence.LOW, "lap 3: no position"), format))
+        assertEquals("High confidence", ConfidenceUi.High.note)
+        assertEquals("Low confidence · lap 3: no position", ConfidenceUi(Confidence.LOW, "lap 3: no position").note)
+        assertEquals(Missing, valueText("64 m", ConfidenceUi(Confidence.LOW, "x")))
+        assertEquals("64 m", valueText("64 m", ConfidenceUi(Confidence.MEDIUM, "x")))
+        assertEquals("64 m", valueText("64 m", null))
     }
 
     @Test
@@ -103,6 +166,7 @@ class AnalysisUiTest {
                 segments = segments,
                 summary = TheoreticalBestSummary(rows, rows),
                 losses = TimeLossRanking(losses = losses, valid = true),
+                lapTimes = lapTimes("c1", "s1", "c2"),
             ),
             null,
         )!!

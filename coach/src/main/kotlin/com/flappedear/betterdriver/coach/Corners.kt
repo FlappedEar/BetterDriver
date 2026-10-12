@@ -7,11 +7,19 @@ import kotlin.math.hypot
 
 /**
  * One lap's path in the lap timer's local frame, from its start/finish crossing to the next one:
- * positions, microseconds since the lap started, and speed in km/h at each point.
+ * positions, microseconds since the lap started, and speed in km/h at each point. [speedsMeasured]
+ * says at each point whether the speed came from the receiver or was worked out from positions
+ * (FBBD-177); null when not known (a stored reference path).
  */
-class LapTrace(val points: List<Xy>, val timesMicros: List<Long>, val speedsKmh: List<Double>) {
+class LapTrace(
+    val points: List<Xy>,
+    val timesMicros: List<Long>,
+    val speedsKmh: List<Double>,
+    val speedsMeasured: List<Boolean>? = null,
+) {
     init {
         require(points.size == timesMicros.size && points.size == speedsKmh.size) { "trace arrays differ in size" }
+        require(speedsMeasured == null || speedsMeasured.size == points.size) { "trace arrays differ in size" }
         require(points.size >= 2) { "a trace needs at least two points" }
     }
 

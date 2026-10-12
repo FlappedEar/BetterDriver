@@ -142,7 +142,7 @@ private fun Ready(
                 AnalysisTab.Summary -> {
                     Summary(ui, width, optimalVideo)
                     ui.progress?.let { Progress(it, width) }
-                    if (ui.focus.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
+                    if (ui.focus.isNotEmpty() || ui.withheld.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                     ui.acceleration?.let { AccelerationCard(it, width) }
                     ui.quality?.let { QualityCard(it, width) }
@@ -178,10 +178,11 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composab
                 "To gain",
                 gainText(ui, ::formatDelta),
                 "s",
-                if (ui.gainSeconds != null) c.gain else c.textDim,
+                if (ui.gainSeconds != null && !ui.gainConfidence.doubtful) c.gain else c.textDim,
                 Modifier.weight(0.8f),
             )
         }
+        if (ui.gainSeconds != null) ConfidenceNote(ui.gainConfidence, about = "To gain")
         if (ui.theoreticalMillis != null) ProvenanceLegend()
         optimalVideo?.invoke()
     }
@@ -380,6 +381,17 @@ internal fun ProvenanceLegend(modifier: Modifier = Modifier) {
 @Composable
 internal fun Dim(text: String, modifier: Modifier = Modifier, color: Color = TrackTheme.colors.textDim) {
     Text(text, modifier = modifier, color = color, style = MaterialTheme.typography.bodyMedium)
+}
+
+/**
+ * A conclusion's confidence next to it (FBBD-177): "High confidence", or below High its level and
+ * why, in the warning colour.
+ */
+@Composable
+internal fun ConfidenceNote(confidence: ConfidenceUi, modifier: Modifier = Modifier, about: String? = null) {
+    val c = TrackTheme.colors
+    val text = if (about == null) confidence.note else "$about: ${confidence.note}"
+    Dim(text, modifier, color = if (confidence.doubtful) c.warning else c.textDim)
 }
 
 @Preview(widthDp = 400, heightDp = 1400)
