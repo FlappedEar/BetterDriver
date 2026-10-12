@@ -15,7 +15,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
-import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
 import androidx.navigation.compose.rememberNavController
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
@@ -165,12 +165,13 @@ abstract class MainScreensLayoutTest(private val device: String) {
     /** A name half typed into New track here survives a rotation, dialog and all. */
     @Test
     fun newTrackNameSurvivesRotation() {
-        // Not edge to edge: with the field focused, Robolectric's phone window never settles its
-        // insets (the test never gets idle), and a name kept or lost has nothing to do with insets.
+        compose.edgeToEdge()
         val restoration = StateRestorationTester(compose)
         restoration.setContent { AppScreen { TracksNearKielce() } }
         compose.onNodeWithText("Not on the list", substring = true).performScrollTo().performClick()
-        compose.onNode(hasSetTextAction()).performTextInput("Kartodrom")
+        // Set without focusing the field: a focused field on Robolectric's phone window never let
+        // the test get idle, and whether the name is kept does not depend on focus.
+        compose.onNode(hasSetTextAction()).performTextReplacement("Kartodrom")
         restoration.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("New track here").assertExists()
         compose.onNodeWithText("Kartodrom").assertExists()
