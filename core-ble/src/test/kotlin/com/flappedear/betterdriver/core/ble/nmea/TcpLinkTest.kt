@@ -100,6 +100,18 @@ class TcpLinkTest {
     }
 
     @Test
+    fun `looks up the host name through the network it connects on`() {
+        val network = object : TcpNetwork {
+            override fun createSocket(): Socket = TcpNetwork.Default.createSocket()
+
+            override fun resolve(host: String): InetAddress =
+                if (host == "receiver.lan") InetAddress.getLoopbackAddress() else error("looked up $host")
+        }
+        link = TcpLink("receiver.lan", port, onData = {}, network = { network }).also { it.start() }
+        server.accept().use { assertTrue(it.isConnected) }
+    }
+
+    @Test
     fun `a silent connection is closed and retried`() {
         start(StreamTiming(firstRetryMs = 100, maxRetryMs = 200, silenceTimeoutMs = 500))
         server.accept().use {

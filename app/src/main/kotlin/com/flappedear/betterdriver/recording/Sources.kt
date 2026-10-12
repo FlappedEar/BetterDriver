@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TcpAddress
 import java.io.File
 import java.io.IOException
+import java.net.InetAddress
 import java.net.Socket
 
 /** Where sessions are stored. Both processes use the same app-private directories. */
@@ -143,8 +144,8 @@ private fun tcpSource(context: Context, gnss: GnssRef): DataSource {
 /**
  * The Wi-Fi network, looked up for each connect: after Wi-Fi drops and comes back it can be a new
  * Network, and the old one's sockets no longer work. A receiver that runs its own access point has
- * no internet, and Android then sends other sockets over mobile data. Falls back to the default
- * with no Wi-Fi.
+ * no internet, and Android then sends other sockets and name lookups over mobile data. Falls back to
+ * the default with no Wi-Fi.
  */
 @Suppress("DEPRECATION") // allNetworks: the callback API would need a listener for one lookup.
 private fun wifiNetwork(context: Context): TcpNetwork {
@@ -154,5 +155,7 @@ private fun wifiNetwork(context: Context): TcpNetwork {
     } ?: return TcpNetwork.Default
     return object : TcpNetwork {
         override fun createSocket(): Socket = wifi.socketFactory.createSocket()
+
+        override fun resolve(host: String): InetAddress = wifi.getByName(host)
     }
 }

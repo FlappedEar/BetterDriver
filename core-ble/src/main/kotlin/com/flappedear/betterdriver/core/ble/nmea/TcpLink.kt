@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.core.ble.nmea
 import com.flappedear.betterdriver.core.ble.LinkState
 import java.io.IOException
 import java.io.InputStream
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import javax.net.SocketFactory
@@ -16,9 +17,14 @@ interface TcpNetwork {
     /** A socket that is not connected yet. */
     fun createSocket(): Socket
 
+    /** Looks up [host] with this network's DNS; throws UnknownHostException. */
+    fun resolve(host: String): InetAddress
+
     /** The system's default network. */
     object Default : TcpNetwork {
         override fun createSocket(): Socket = SocketFactory.getDefault().createSocket()
+
+        override fun resolve(host: String): InetAddress = InetAddress.getByName(host)
     }
 }
 
@@ -50,11 +56,14 @@ class TcpLink(
     }
 
     override fun open(): InputStream {
-        val socket = attach(network().createSocket())
+        val net = network()
+        val socket = attach(net.createSocket())
         try {
             socket.tcpNoDelay = true
-            // Resolves the host here, on the reader thread; an unknown host fails like a refused connect.
-            socket.connect(InetSocketAddress(host, port), ConnectTimeoutMs)
+            // Resolves the host here, on the reader thread and through the same network as the socket
+            // (the receiver's access point may be the only one that knows its name); an unknown host
+            // fails like a refused connect.
+            socket.connect(InetSocketAddress(net.resolve(host), port), ConnectTimeoutMs)
         } catch (e: IOException) {
             closeQuietly(socket)
             throw LinkFailure("connect to $host:$port failed: ${e.message}", e)
