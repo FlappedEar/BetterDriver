@@ -45,4 +45,18 @@ class AccelerationUiTest {
         assertEquals(MaxRunsPerKind - 1, ui.kinds.single().others.size)
         assertEquals(14, ui.kinds.single().count)
     }
+
+    @Test
+    fun `a quicker flagged run stays the best, with its note`() {
+        val ui = accelerationUi(
+            listOf(
+                run(AccelerationRunKind.ZeroTo100Kmh, 10.0, 4.0, setOf(RunQualityIssue.PoorAccuracy)),
+                run(AccelerationRunKind.ZeroTo100Kmh, 80.0, 4.4),
+            ),
+        )!!
+        val kind = ui.kinds.single()
+        assertEquals(4.0, kind.best.seconds, 1e-9)
+        assertEquals("GPS accuracy over 2 m", kind.best.note)
+        assertEquals("", kind.others.single().note)
+    }
 }

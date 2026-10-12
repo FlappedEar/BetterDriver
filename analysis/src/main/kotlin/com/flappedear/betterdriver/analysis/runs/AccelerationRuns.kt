@@ -114,13 +114,16 @@ private const val BreakGapSeconds = 1.0
 /** Peak G from speed alone is the slope over at least this many seconds, to keep GNSS noise out. */
 private const val SpeedSlopeSeconds = 0.3
 
-/** A speed sample, time in session seconds and speed in km/h. */
-private class Point(val t: Double, val kmh: Double)
+/**
+ * A speed sample, time in session seconds and speed in km/h. [afterMissing]: a missing (NaN)
+ * sample came just before it, so it is not continuous with the one before.
+ */
+private class Point(val t: Double, val kmh: Double, val afterMissing: Boolean = false)
 
 /**
- * Every acceleration run in [session], best first within each kind (runs without a quality issue
- * ahead of those with one, then quickest first), kinds in [AccelerationRunKind] order. Empty
- * without a speed channel in a known unit.
+ * Every acceleration run in [session], quickest first within each kind (a run with a quality
+ * issue keeps its place by time and is marked by [AccelerationRun.quality]), kinds in
+ * [AccelerationRunKind] order. Empty without a speed channel in a known unit.
  *
  * A standing run starts after the car has been below [StandstillKmh] for [StandstillSeconds]. Its
  * start is interpolated at the last sample below that speed: the line through it and the first
@@ -128,7 +131,8 @@ private class Point(val t: Double, val kmh: Double)
  * [rolloutMeters] above zero the timer starts once the car has covered that distance, and the
  * distances count from there. A speed band starts at the last rising crossing of its lower speed
  * before the upper one. Any run ends without a time when speed drops more than
- * [InterruptionDropKmh] below its highest, when a standing car stops again, or at a loss of signal.
+ * [InterruptionDropKmh] below its highest, when a standing car stops again, or at a loss of signal:
+ * a missing (NaN) speed sample, or samples farther apart than the channel's gap threshold.
  */
 @Suppress("ReturnCount")
 fun findAccelerationRuns(session: TelemetrySession, rolloutMeters: Double = 0.0): List<AccelerationRun> {
@@ -136,9 +140,15 @@ fun findAccelerationRuns(session: TelemetrySession, rolloutMeters: Double = 0.0)
     val unit = effectiveChannelUnit(session, speed.name)
     val mps = metresPerSecondPerSpeedUnit(unit) ?: return emptyList()
     val points = ArrayList<Point>(speed.sampleCount)
+    var missing = false
     for (i in speed.timestamps.indices) {
         val v = speed.values[i]
-        if (v.isFinite()) points += Point(speed.timestamps[i], max(0.0, v * mps * KmhPerMps))
+        if (!v.isFinite()) {
+            missing = true
+            continue
+        }
+        points += Point(speed.timestamps[i], max(0.0, v * mps * KmhPerMps), afterMissing = missing)
+        missing = false
     }
     if (points.size < 2) return emptyList()
     val reader = RunReader(
@@ -150,7 +160,7 @@ fun findAccelerationRuns(session: TelemetrySession, rolloutMeters: Double = 0.0)
     )
     val runs = reader.standingRuns(max(0.0, rolloutMeters)) + reader.bandRuns(AccelerationRunKind.From100To200Kmh)
     return runs.sortedWith(
-        compareBy<AccelerationRun> { it.kind.ordinal }.thenBy { it.lowQuality }.thenBy { it.timeSeconds },
+        compareBy<AccelerationRun> { it.kind.ordinal }.thenBy { it.timeSeconds },
     )
 }
 
@@ -163,7 +173,8 @@ private class RunReader(
     private val standingKinds = AccelerationRunKind.entries.filter { it.standing }
     private val times = DoubleArray(points.size) { points[it].t }
 
-    private fun gapBefore(i: Int) = i > 0 && points[i].t - points[i - 1].t > breakGap
+    /** Whether the signal was lost between samples i - 1 and [i]: a missing sample or a long gap. */
+    private fun gapBefore(i: Int) = i > 0 && (points[i].afterMissing || points[i].t - points[i - 1].t > breakGap)
 
     /** Every standing run: one per kind reached from each standing start. */
     @Suppress("LoopWithTooManyJumpStatements")

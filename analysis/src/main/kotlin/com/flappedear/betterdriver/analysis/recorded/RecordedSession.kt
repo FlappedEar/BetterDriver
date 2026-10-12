@@ -12,8 +12,11 @@ import com.flappedear.betterdriver.timing.track.TrackLine
 
 private const val MicrosPerSecond = 1_000_000.0
 
-/** The RaceBox's horizontal position accuracy, metres (RaceBoxChannels.H_ACC). */
-private const val HorizontalAccuracy = "gnss_hacc"
+/**
+ * Receivers' horizontal position accuracy in metres, by preference: the RaceBox's
+ * (RaceBoxChannels.H_ACC) and the Dragy's (DragyChannels.H_ACC). Other receivers report none in metres.
+ */
+private val HorizontalAccuracy = listOf("gnss_hacc", "dragy_hacc")
 
 /** The RaceBox's acceleration along its X axis, which the mount points forward (RaceBoxChannels.ACCEL_X). */
 private const val AccelerationX = "accel_x"
@@ -61,7 +64,7 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?): TelemetrySes
         Aliases.LATITUDE to GnssChannels.LAT.name,
         Aliases.LONGITUDE to GnssChannels.LON.name,
         Aliases.SPEED to GnssChannels.SPEED_KMH.name,
-        Aliases.ACCURACY to HorizontalAccuracy,
+        Aliases.ACCURACY to HorizontalAccuracy.firstOrNull { it in channels }.orEmpty(),
         Aliases.LONGITUDINAL_ACCELERATION to ForwardAcceleration,
     ).filterValues { it in channels }
     val gates = listOfNotNull(

@@ -202,6 +202,15 @@ class AccelerationRunsTest {
     }
 
     @Test
+    fun `a missing speed sample ends the run like a loss of signal`() {
+        val profile = launchKmh(2.0, 5.0)
+        val runs = findAccelerationRuns(session(25.0, 20.0) { t -> if (t == 4.0) Double.NaN else profile(t) })
+        assertTrue(runs.none { it.kind.standing })
+        // The band run, after the missing sample, still counts.
+        assertEquals(100 / 3.6 / 5.0, runs.of(AccelerationRunKind.From100To200Kmh).single().timeSeconds, eps)
+    }
+
+    @Test
     fun `GNSS under 10 Hz marks runs low quality but keeps exact times`() {
         val a = 5.0
         val runs = findAccelerationRuns(session(5.0, 20.0, kmh = launchKmh(2.0, a)))
@@ -272,6 +281,33 @@ class AccelerationRunsTest {
         assertEquals(100 / 3.6 / 4.0, times[1], eps)
         val order = runs.map { it.kind.ordinal }
         assertEquals(order.sorted(), order)
+    }
+
+    @Test
+    fun `a quicker run with a quality issue still comes first`() {
+        val times = (0..600).map { it / 10.0 }
+        // Poor accuracy during the second, quicker launch only.
+        val accuracy = TelemetryChannel(
+            "hacc",
+            times.toDoubleArray(),
+            times.map { if (it in 31.0..32.0) 3.0 else 0.5 }.toDoubleArray(),
+            "m",
+        )
+        val runs = findAccelerationRuns(
+            session(25.0, 60.0, extra = mapOf("hacc" to accuracy), aliases = mapOf(Aliases.ACCURACY to "hacc")) { t ->
+                when {
+                    t < 2.0 -> 0.0
+                    t < 12.0 -> min(120.0, (t - 2.0) * 4.0 * 3.6)
+                    t < 30.0 -> max(0.0, 120.0 - (t - 12.0) * 20.0)
+                    else -> min(120.0, (t - 30.0) * 6.0 * 3.6)
+                }
+            },
+        )
+        val zeroTo100 = runs.of(AccelerationRunKind.ZeroTo100Kmh)
+        assertEquals(2, zeroTo100.size)
+        assertEquals(100 / 3.6 / 6.0, zeroTo100[0].timeSeconds, eps)
+        assertEquals(setOf(RunQualityIssue.PoorAccuracy), zeroTo100[0].quality)
+        assertTrue(zeroTo100[1].quality.isEmpty())
     }
 
     @Test
