@@ -17,10 +17,13 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.DeleteState
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.circuitsDir
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
+import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.tracks.Tracks
 import com.flappedear.betterdriver.transfer.BundleFormatException
@@ -30,6 +33,10 @@ import com.flappedear.betterdriver.transfer.SessionBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
 import com.flappedear.betterdriver.transfer.TrackMatch
 import com.flappedear.betterdriver.transfer.TrackTransfer
+import com.flappedear.betterdriver.transfer.foreign.ImportFormatException
+import com.flappedear.betterdriver.transfer.foreign.ImportLimits
+import com.flappedear.betterdriver.transfer.foreign.ImportedSession
+import com.flappedear.betterdriver.transfer.foreign.SessionImport
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -44,18 +51,21 @@ class TransferQuestion(val title: String, val text: String, val answer: (replace
 /**
  * Bringing in sessions (with video) and tracks from the other device (FBBD-23, FBBD-80): a file the
  * user picks, or one opened with the app from Quick Share or a file manager. The file's first bytes
- * say whether it is a session bundle or a track file.
+ * say whether it is a session bundle or a track file. Anything else is tried as a session from
+ * another app, a VBO, GPX or RaceChrono CSV file (FBBD-164, [SessionImport]).
  *
  * A session is unpacked and checked before it is listed ([SessionInbox]); a damaged file adds
  * nothing. A session or track already here with other content needs a keep-or-replace answer
  * ([question]). Imports are refused while a session records, so that question never comes up
  * during an outing. One per process; disk work runs on one background thread.
  */
+@Suppress("TooManyFunctions") // One small step per kind of file and per moment of an import.
 class Imports private constructor(private val context: Context) {
     // Made on the io thread when first used: making them reads the disk (FBBD-41).
     private val store by lazy { SessionStore(sessionsDir(context)) }
     private val inbox by lazy { SessionInbox(store, File(context.filesDir, StagingDir)) }
     private val trackStore by lazy { TrackStore(tracksDir(context)) }
+    private val foreign by lazy { SessionImport(store, File(context.filesDir, StagingDir)) }
     private val io = Executors.newSingleThreadExecutor { Thread(it, "imports-io") }
     private val main = Handler(Looper.getMainLooper())
 
@@ -99,8 +109,33 @@ class Imports private constructor(private val context: Context) {
                 finish("could not store track $name", failed = true)
             }
             IncomingKind.BACKUP -> throw BundleFormatException("this is a backup. Restore it in Settings › App.")
-            IncomingKind.UNKNOWN -> throw BundleFormatException("this is not a BetterDriver session or track")
+            // VBO, GPX or RaceChrono CSV, possibly gzip-compressed; SessionImport tells by the content.
+            IncomingKind.UNKNOWN -> importForeign(uri)
         }
+    }
+
+    /**
+     * A session from another app (FBBD-164): read into a new session with no video, its track
+     * detected as a recording's is. Refused while a session records, checked again just before it is
+     * added. Under [AppDataGate], so a restore never swaps the sessions folder under it.
+     */
+    private fun importForeign(uri: Uri) {
+        val total = sizeOf(context, uri)
+        if (total > ImportLimits.MaxBytes) {
+            throw ImportFormatException("the file is too large (over ${ImportLimits.MaxMegabytes} MB)")
+        }
+        val progress = progressOf(main, total) { f -> state = TransferState("Reading the session…", f, running = true) }
+        val tracks = trackStore.all()
+        val circuits = CircuitDirectory(circuitsDir(context)).load()
+        val name = displayNameOf(context, uri)
+        val made = AppDataGate.write {
+            read(uri) { input ->
+                foreign.import(input, name, tracks, circuits, progress, beforeAdd = { refuseWhileRecording(store) })
+            }
+        }
+        DebugLog.i(Tag, "imported ${made.format.label} as ${made.id}: ${made.points} points, ${made.skipped} skipped")
+        Sessions.get(context).refresh()
+        finish(importedText(made, sessionTitle(SessionSummary(made.id, File(""), made.info, SessionState.FINISHED))))
     }
 
     private fun <T> read(uri: Uri, block: (InputStream) -> T): T =
@@ -237,6 +272,34 @@ private fun sessionBusy(context: Context, id: String): Boolean {
         sessions.exports[id] == ExportState.Running ||
         sessions.deletes[id] == DeleteState.Running
 }
+
+/**
+ * The message after a session from another app was imported (FBBD-164): its format, when it was,
+ * where the track detection put it, how many positions it holds and what was left out.
+ */
+internal fun importedText(made: ImportedSession, title: String): String {
+    val place = when (val d = made.detection) {
+        is TrackDetection.Saved ->
+            " at ${d.track.displayName}" + if (d.track.timeable) "" else " (no start/finish line yet, so no laps)"
+        is TrackDetection.Directory -> " at ${d.circuit.name} (not one of your tracks yet, so no laps)"
+        TrackDetection.Unknown -> ""
+    }
+    val skipped = when (made.skipped) {
+        0 -> ""
+        1 -> " 1 row could not be read and was left out."
+        else -> " ${made.skipped} rows could not be read and were left out."
+    }
+    return "Imported the ${made.format.label} session of $title$place: ${made.points} positions.$skipped"
+}
+
+/** The file's name as the picker shows it, for an imported session's card; empty when unknown. */
+private fun displayNameOf(context: Context, uri: Uri): String = try {
+    context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+        if (c.moveToFirst() && !c.isNull(0)) c.getString(0) else null
+    }
+} catch (_: IllegalArgumentException) {
+    null
+}.orEmpty()
 
 /** The file's size for progress; 0 when the provider does not say. */
 internal fun sizeOf(context: Context, uri: Uri): Long = try {

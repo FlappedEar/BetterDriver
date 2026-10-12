@@ -12,6 +12,9 @@ object Routes {
     /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
     const val CoachSettings = "settings/coach"
 
+    /** About and credits, opened from Settings › App (FBBD-79). */
+    const val About = "settings/about"
+
     /** Add equipment (UI-34 B): scan for a RaceBox or Open GoPro camera, or add one without Bluetooth. */
     const val AddEquipment = "add-equipment"
 
