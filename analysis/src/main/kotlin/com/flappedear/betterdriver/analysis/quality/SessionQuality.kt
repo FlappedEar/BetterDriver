@@ -1,0 +1,62 @@
+package com.flappedear.betterdriver.analysis.quality
+
+import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.timing.track.Track
+
+/**
+ * One video file of the session as its clip index (`:video`) has it: media time 0 is session time
+ * [startMicros], found by [method] with a stated [uncertaintyMicros]. [endMicros] is null when unknown.
+ */
+data class QualityClip(
+    val camera: String,
+    val file: String,
+    val startMicros: Long,
+    val endMicros: Long?,
+    val method: String,
+    val uncertaintyMicros: Long,
+)
+
+/**
+ * The session a recorder restart carried on from (FBBD-72): when it started, and its last GNSS sample
+ * on its session clock and on the receiver's clock (UTC ms), each null when it has none.
+ */
+data class PreviousSession(
+    val id: String,
+    val startUtcMillis: Long,
+    val lastSampleMicros: Long?,
+    val lastUtcMillis: Long?,
+)
+
+/** [data] as the session a restart carried on from. */
+fun previousSession(data: SessionData): PreviousSession {
+    val s = GnssSamples(data.sampleSets)
+    val lastUtc = s.utc.lastOrNull { it != GnssSamples.NoUtc }
+    return PreviousSession(data.id, data.info.startUtcMillis, s.t.lastOrNull(), lastUtc)
+}
+
+/**
+ * The validation report of a session (FBBD-183): the P0 pass criteria measured from what it
+ * recorded. [track] is its saved track, for laps replayed when live timing logged none; [clips] its
+ * video index; [previous] the session a recorder restart carried on from, when it names one. Pure:
+ * reading the session and its files is the caller's.
+ */
+fun sessionQuality(
+    data: SessionData,
+    track: Track? = null,
+    clips: List<QualityClip> = emptyList(),
+    previous: PreviousSession? = null,
+    computedAtUtcMillis: Long = 0L,
+): QualityReport {
+    val samples = GnssSamples(data.sampleSets)
+    val lastEvent = data.events.maxOfOrNull { it.tMicros } ?: 0L
+    val end = data.end?.tMicros ?: maxOf(samples.t.lastOrNull() ?: 0L, lastEvent)
+    val sections = listOf(
+        gnssSection(samples, data.events, end),
+        timingSection(data, track),
+        recordingSection(data, samples, previous),
+        videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end),
+        coachSection(data.events, samples),
+        thermalSection(data.events),
+    )
+    return QualityReport(QualityFormat, data.id, data.state.name, computedAtUtcMillis, sections)
+}

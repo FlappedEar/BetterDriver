@@ -37,6 +37,8 @@ class CoachSessionTest {
         val cueEvent = events.single { it.kind == CoachEvents.CUE && "kind=Corner" in it.text }
         val cue = assertNotNull(CoachEvents.parseCue(cueEvent.tMicros, cueEvent.text))
         assertEquals(2, cue.corner)
+        // The distance to the braking zone when it was asked for, for the validation report (FBBD-183).
+        assertTrue(assertNotNull(cue.zoneMeters) > 0.0)
         assertTrue(cue.advice is Advice.BrakeLater)
         assertTrue(cue.text in said)
         assertEquals(cue.before!!.corner, 2)

@@ -46,6 +46,12 @@ interface VideoSink {
 
     /** Short state for the track screen's status strip, such as "4K · 60" or "Stopped: too hot". */
     fun status(text: String, ok: Boolean)
+
+    /**
+     * Android's thermal [status] (PowerManager.THERMAL_STATUS_*) at session time [atMicros], first and
+     * on each change, with the [headroom] forecast if known (FBBD-183). Cameras without it never call it.
+     */
+    fun thermal(atMicros: Long, status: Int, headroom: Float?) = Unit
 }
 
 /** Video files of a session live in its directory under [DIR], next to the clip index (clips.json). */

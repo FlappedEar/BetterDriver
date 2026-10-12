@@ -45,13 +45,16 @@ class TimingListener(track: Track, private val onState: (LiveTimingState) -> Uni
  * Live timing for a whole recording (FBBD-55, FBBD-12). At the first position it picks the track
  * from [tracks] (read then, so lines saved just before the outing count) and [directory]; if that
  * is a saved track with a start/finish line, every later fix is timed against it. The result is
- * fixed for the outing. [onDetected] runs once, on the listener thread.
+ * fixed for the outing. [onDetected] runs once, on the listener thread. [onLap] gets each finished
+ * lap with the predicted lap time the track screen showed on the fix before its line, for the
+ * session's validation report (FBBD-183).
  *
  * Runs on the recorder's listener thread; [detection] and [state] can be read from any thread.
  */
 class SessionTiming(
     private val tracks: () -> List<Track>,
     private val directory: CircuitList,
+    private val onLap: (lap: Lap, predictedMillis: Long?) -> Unit = { _, _ -> },
     private val onDetected: (TrackDetection) -> Unit = {},
 ) : RecorderListener {
     @Volatile
@@ -75,9 +78,18 @@ class SessionTiming(
             detection = found
             onDetected(found)
         }
-        timing?.let { state = it.update(fix) }
+        timing?.let { t ->
+            val shown = state?.predictedMillis
+            val before = t.book.count
+            state = t.update(fix)
+            if (t.book.count > before) t.book.laps.drop(before).forEach { onLap(it, shown) }
+        }
     }
 }
+
+/** The text of a [com.flappedear.betterdriver.recorder.EventKinds.LAP_LINE] event. */
+fun lapLineText(lap: Lap, predictedMillis: Long?): String =
+    "lap=${lap.number} kind=${lap.kind.name} time_ms=${lap.timeMillis} predicted_ms=${predictedMillis ?: "none"}"
 
 /** The track's name for screens: a saved track, or the directory circuit the car is at. */
 val TrackDetection.placeName: String?

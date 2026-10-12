@@ -353,13 +353,17 @@ class CueEngine(
         if (previous != null && along < b.zoneEnd(previous) + ClearOfCornerMeters) return null
         val p = plan?.takeIf { it.corner == next.number && it.lap == lap }
             ?: Plan(next.number, lap, cornerCue(b, next, now)).also { plan = it }
-        val time = speech.timeTo(b.map.path, along, b.zoneStart(next))
+        val zoneStart = b.zoneStart(next)
+        val time = speech.timeTo(b.map.path, along, zoneStart)
         val cue = p.cue
-        return if (cue != null) speakCorner(cue, now, time) else speakLapTime(now, time)
+        return if (cue != null) speakCorner(cue, now, time, zoneStart - along) else speakLapTime(now, time)
     }
 
-    /** Says [planned] when it fits on this straight; drops it once it no longer can. */
-    private fun speakCorner(planned: Cue, now: Long, timeToZone: Long?): Cue? {
+    /**
+     * Says [planned] when it fits on this straight; drops it once it no longer can. [zoneMeters] is the
+     * distance to the braking zone, logged with the cue.
+     */
+    private fun speakCorner(planned: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
         val need = speech.needMicros(planned.text) + MarginMicros
         val late = timeToZone != null && timeToZone < need
         if (late) plan = Plan(planned.corner!!, planned.lap, null)
@@ -367,7 +371,7 @@ class CueEngine(
         if (!ready || !speech.free(now)) return null
         plan = Plan(planned.corner!!, planned.lap, null)
         pendingLap = null // One cue per straight.
-        val cue = speech.said(planned.copy(seq = ++seq, tMicros = now))
+        val cue = speech.said(planned.copy(seq = ++seq, tMicros = now, zoneMeters = zoneMeters))
         openCues[planned.corner] = cue
         book?.cuedOnLap?.set(planned.corner - 1, planned.lap)
         return cue
