@@ -70,9 +70,15 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
 /**
  * Per-corner state of one session (FBBD-97): each corner's target (the fastest pass so far), its last
  * pass, recent losses against the target, and the lap it was last cued on. [picked] are the corners
- * the driver picked in the lap analysis (FBBD-148).
+ * the driver picked in the lap analysis (FBBD-148). [stoppedBefore] has, for each corner the lap that
+ * set the corners came to from a stop, where it stopped (FBBD-202).
  */
-private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, val picked: Set<Int>) {
+private class CornerBook(
+    val map: CornerMap,
+    initialTargets: List<CornerPass>,
+    val picked: Set<Int>,
+    private val stoppedBefore: List<Double?> = emptyList(),
+) {
     private val n = map.corners.size
     val targets = arrayOfNulls<CornerPass>(n)
     val lastPass = arrayOfNulls<CornerPass>(n)
@@ -119,29 +125,57 @@ private class CornerBook(val map: CornerMap, initialTargets: List<CornerPass>, v
     /** The first corner whose braking zone is still ahead. */
     fun next(along: Double): Corner? = map.corners.firstOrNull { zoneStart(it) > along }
 
-    /** Where braking for [c] may start: the earliest of the reference, the target and the last pass. */
+    /**
+     * Where the car came to [c] from a stop on the lap that set the corners, until a lap of this
+     * session has passed it: where it brakes for it at speed is not known yet (FBBD-202).
+     */
+    private fun unknownFrom(c: Corner): Double? = stoppedBefore.getOrNull(c.number - 1)
+        ?.takeIf { lastPass[c.number - 1] == null }
+
+    /**
+     * Where braking for [c] may start: the earliest of the reference, the target and the last pass.
+     * For a corner not yet known at speed, anywhere after the stop before it.
+     */
     fun zoneStart(c: Corner): Double {
         val i = c.number - 1
-        return minOf(c.brakeAt, targets[i]?.brakeAt ?: c.brakeAt, lastPass[i]?.brakeAt ?: c.brakeAt)
+        return unknownFrom(c)
+            ?: minOf(c.brakeAt, targets[i]?.brakeAt ?: c.brakeAt, lastPass[i]?.brakeAt ?: c.brakeAt)
     }
 
-    /** Where braking for [c] ends: the latest apex of the reference, the target and the last pass. */
+    /**
+     * Where braking for [c] ends: the latest apex of the reference, the target and the last pass.
+     * For a corner not yet known at speed, the end of its measuring window.
+     */
     fun zoneEnd(c: Corner): Double {
         val i = c.number - 1
-        return maxOf(c.apexAt, targets[i]?.apexAt ?: c.apexAt, lastPass[i]?.apexAt ?: c.apexAt)
+        return if (unknownFrom(c) != null) {
+            map.windows[i].endInclusive
+        } else {
+            maxOf(c.apexAt, targets[i]?.apexAt ?: c.apexAt, lastPass[i]?.apexAt ?: c.apexAt)
+        }
     }
 }
 
-/** The first timed lap of a session without an earlier reference sets the corners, [identify]d on the track's. */
+/**
+ * The first timed lap of a session without an earlier reference sets the corners, [identify]d on the
+ * track's. Where that lap stopped (waiting past the line, a pit stop), the corner after the stop was
+ * driven from a standstill: its braking zone on a lap at speed is not known yet (FBBD-202).
+ */
 private fun cornersFrom(
     traced: TracedLap,
     picked: (CornerMap) -> Set<Int>,
     identify: (CornerMap) -> CornerMap,
 ): CornerBook? {
-    val found = findCorners(traced.trace)
+    val trace = traced.trace
+    val found = findCorners(trace)
     if (found.isEmpty()) return null
-    val m = identify(CornerMap(traced.trace, found))
-    return CornerBook(m, bestPasses(m.passes(traced.trace, traced.lap.number)), picked(m))
+    val m = identify(CornerMap(trace, found))
+    val stops = trace.along.indices.filter { trace.speedsKmh[it] < StopKmh }.map { trace.along[it] }
+    val stoppedBefore = m.corners.mapIndexed { i, c ->
+        val after = m.corners.getOrNull(i - 1)?.apexAt ?: 0.0
+        stops.lastOrNull { it >= after && it <= c.brakeAt }
+    }
+    return CornerBook(m, bestPasses(m.passes(trace, traced.lap.number)), picked(m), stoppedBefore)
 }
 
 /**
@@ -206,7 +240,9 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *
  * - **Reference.** Corners come from the [earlier] reference when it fits the track's lines, else
  *   from this session's first timed lap. Each corner's target is the fastest pass so far, from earlier
- *   sessions and this one, so a cue only asks for what the driver has already done there.
+ *   sessions and this one, so a cue only asks for what the driver has already done there. A corner
+ *   that first lap reached from a stop has no known braking zone until a lap has passed it, so
+ *   nothing is said on the straight before it until then (FBBD-202).
  * - **Learning.** No corner cue until [CoachSettings.learningLaps] timed laps of this session are done.
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
  *   there and may give one cue: brake later, brake earlier, or carry more speed. It is timed to end,
