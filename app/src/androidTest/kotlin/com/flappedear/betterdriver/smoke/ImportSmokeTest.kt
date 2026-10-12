@@ -13,6 +13,7 @@ import androidx.compose.ui.test.isDialog
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.espresso.Espresso
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intending
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
@@ -82,10 +83,11 @@ class ImportSmokeTest {
             SmokeData.tracks().any { it.name == SmokeFixtures.LoopName }
         }
 
-        // The session is timed on the new track now. Back also closes the keyboard the name left open.
-        repeat(BackSteps) {
-            if (app.onAllNodes(tab("Sessions")).fetchSemanticsNodes().isEmpty()) app.back()
-        }
+        // The session is timed on the new track now: from the editor, back to its analysis and Sessions.
+        Espresso.closeSoftKeyboard()
+        app.back()
+        app.waitForText("Lap analysis")
+        app.back()
         app.openSessions()
         app.openSession(SmokeFixtures.ImportedGpx)
         app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
@@ -104,10 +106,5 @@ class ImportSmokeTest {
             .respondWith(ActivityResult(Activity.RESULT_OK, Intent().setData(Uri.fromFile(file))))
         app.openSessions()
         app.waitForText("Import session").performClick()
-    }
-
-    private companion object {
-        /** The keyboard, the editor and the analysis. */
-        const val BackSteps = 3
     }
 }

@@ -73,7 +73,7 @@ internal fun NavGraphBuilder.setupDestinations(
         val recorder = RecorderClient.get(LocalContext.current)
         Box(Modifier.padding(padding)) {
             if (item == null) {
-                LaunchedEffect(Unit) { nav.popBackStack() }
+                LeaveWhenGone(nav, Routes.DiagnosticsPattern)
             } else {
                 RaceBoxDiagnosticsRoute(item, recorder, onBack = { nav.popBackStack() })
             }
@@ -165,13 +165,22 @@ private fun goProName(goPro: GoProModel): String = when (goPro) {
     else -> "GoPro ${goPro.label}"
 }
 
+/**
+ * Leaves the screen at [route] whose item is gone, unless it is already being left: Remove pops it,
+ * and while it animates out it would otherwise pop Settings under it too, back to Drive.
+ */
+@Composable
+private fun LeaveWhenGone(nav: NavHostController, route: String) {
+    LaunchedEffect(Unit) { if (nav.currentDestination?.route == route) nav.popBackStack() }
+}
+
 /** One equipment item (UI-33 B). Removing it drops it from the session choice too. */
 @Composable
 internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String) {
     val item = repo.setup.equipment(id)
     if (item == null) {
         // Removed, or a stale back stack: nothing to show.
-        LaunchedEffect(Unit) { nav.popBackStack() }
+        LeaveWhenGone(nav, Routes.EquipmentPattern)
         return
     }
     EquipmentScreen(
@@ -193,7 +202,7 @@ internal fun EquipmentRoute(nav: NavHostController, repo: SetupRepo, id: String)
 internal fun CarRoute(nav: NavHostController, repo: SetupRepo, id: String) {
     val car = repo.setup.car(id)
     if (car == null && id != Routes.NewCar) {
-        LaunchedEffect(Unit) { nav.popBackStack() }
+        LeaveWhenGone(nav, Routes.CarPattern)
         return
     }
     CarScreen(
