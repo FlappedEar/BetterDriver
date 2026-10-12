@@ -58,6 +58,7 @@ import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.rememberAppPrefs
+import com.flappedear.betterdriver.sharing.BackupRows
 import com.flappedear.betterdriver.sharing.FollowTransfers
 import com.flappedear.betterdriver.sharing.rememberSessionTransfer
 import com.flappedear.betterdriver.timing.live.placeName
@@ -331,6 +332,7 @@ private fun Settings(
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
         debugRows = { DebugLogRows() },
+        backupRows = { BackupRows() },
         setup = repo.setup,
         version = Version,
         initialTab = tab,

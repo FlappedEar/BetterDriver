@@ -95,6 +95,7 @@ class Imports private constructor(private val context: Context) {
             IncomingKind.TRACK -> addTrack(read(uri, TrackTransfer::read), { finish(it) }) { name ->
                 finish("could not store track $name", failed = true)
             }
+            IncomingKind.BACKUP -> throw BundleFormatException("this is a backup. Restore it in Settings › App.")
             IncomingKind.UNKNOWN -> throw BundleFormatException("this is not a BetterDriver session or track")
         }
     }
@@ -225,7 +226,7 @@ private fun sessionBusy(context: Context, id: String): Boolean {
 }
 
 /** The file's size for progress; 0 when the provider does not say. */
-private fun sizeOf(context: Context, uri: Uri): Long = try {
+internal fun sizeOf(context: Context, uri: Uri): Long = try {
     context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
         if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
     } ?: 0L

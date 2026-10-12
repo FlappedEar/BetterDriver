@@ -15,6 +15,7 @@ import androidx.core.os.BundleCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.sharing.Backups
 import com.flappedear.betterdriver.sharing.Imports
 
 class MainActivity : ComponentActivity() {
@@ -25,6 +26,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A restore the app was stopped in finishes before anything reads the data (FBBD-156).
+        Backups.finishPending(this)
         // Recovers interrupted sessions the first time the app starts in this process (FBBD-71).
         val sessions = Sessions.get(this)
         recorder = RecorderClient.get(this)

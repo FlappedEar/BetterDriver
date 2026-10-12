@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.coach
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -18,6 +20,12 @@ internal class CoachPrefs private constructor(context: Context) {
 
     var settings by mutableStateOf(store.read())
         private set
+
+    /** Reads the settings file again after a restore replaced it (FBBD-156). */
+    fun reload() = io.execute {
+        val read = store.read()
+        Handler(Looper.getMainLooper()).post { settings = read }
+    }
 
     fun update(s: CoachSettings) {
         settings = s

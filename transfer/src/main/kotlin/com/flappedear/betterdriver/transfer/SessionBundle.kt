@@ -147,7 +147,7 @@ object SessionBundle {
         }
     }
 
-    private fun copyTo(target: File, contents: InputStream, onBytes: (Int) -> Unit) {
+    internal fun copyTo(target: File, contents: InputStream, onBytes: (Int) -> Unit) {
         target.parentFile.mkdirs()
         FileOutputStream(target).use { out ->
             val buf = ByteArray(BundleFile.CopyBuffer)
@@ -162,7 +162,7 @@ object SessionBundle {
     }
 
     /** Whether a file in a session directory goes into the bundle. */
-    private fun travels(name: String) =
+    internal fun travels(name: String) =
         name != SessionFiles.LOCK && !name.endsWith(".tmp") && !name.endsWith(".part") &&
             !name.endsWith(".lock") && !name.contains(".unreadable-")
 }

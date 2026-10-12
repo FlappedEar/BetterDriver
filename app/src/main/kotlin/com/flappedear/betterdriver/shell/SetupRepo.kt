@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.shell
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -59,6 +61,12 @@ class SetupRepo private constructor(context: Context) {
         } catch (e: IOException) {
             DebugLog.e(Tag, "session setup not saved", e)
         }
+    }
+
+    /** Reads the setup file again after a restore replaced it (FBBD-156). */
+    fun reload() = saver.execute {
+        val loaded = store.load() ?: return@execute
+        Handler(Looper.getMainLooper()).post { setup = loaded }
     }
 
     /** Applies [change] and saves the result. Main thread only. */
