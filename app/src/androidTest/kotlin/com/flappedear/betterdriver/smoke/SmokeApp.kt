@@ -27,8 +27,6 @@ import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
-import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
-import androidx.test.runner.lifecycle.Stage
 import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -157,7 +155,7 @@ private fun composeRoots(): List<ViewRootForTest> {
     val views = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         WindowInspector.getGlobalWindowViews()
     } else {
-        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).map { it.window.decorView }
+        windowManagerViews()
     }
     val roots = mutableListOf<ViewRootForTest>()
     fun visit(view: View) {
@@ -169,6 +167,19 @@ private fun composeRoots(): List<ViewRootForTest> {
     }
     views.forEach(::visit)
     return roots
+}
+
+/**
+ * Every window's root view before Android 10, which has no WindowInspector: dialogs and popups are
+ * windows of their own, not in an activity's decor view. Read from WindowManagerGlobal, as
+ * Espresso's own root lookup does there.
+ */
+private fun windowManagerViews(): List<View> {
+    val global = Class.forName("android.view.WindowManagerGlobal")
+    val instance = global.getMethod("getInstance").invoke(null)
+    val field = global.getDeclaredField("mViews").apply { isAccessible = true }
+    val lock = global.getDeclaredField("mLock").apply { isAccessible = true }.get(instance)
+    return synchronized(checkNotNull(lock)) { (field.get(instance) as List<*>).filterIsInstance<View>() }
 }
 
 /** Waits until a node shows [text] (or contains it, with [substring]) and returns the first. */
