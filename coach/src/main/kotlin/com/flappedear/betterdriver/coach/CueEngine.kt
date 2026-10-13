@@ -444,7 +444,8 @@ class CueEngine(
         return if (cue == null || before == null || pass.unusable()) {
             null
         } else {
-            CueResult(now, cue, pass, improved(cue.advice, before, pass), before.timeMicros - pass.timeMicros)
+            val gain = before.timeMicros - pass.timeMicros
+            CueResult(now, cue, pass, improved(cue.advice, before, pass), gain, confidenceOf(passDoubts(pass)))
         }
     }
 

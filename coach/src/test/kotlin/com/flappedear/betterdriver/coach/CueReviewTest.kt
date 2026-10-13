@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderEvent
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -123,5 +125,56 @@ class CueReviewTest {
         // Its metadata gone: unreadable.
         assertTrue(File(store.dir(coached.id), "meta.properties").delete())
         assertTrue(CueReview.read(store, coached.id).cues.isEmpty())
+    }
+
+    /** Turn 2 cued "brake 10 m later" at [cueConf], and the pass after it at [afterConf] (null: logged without one). */
+    private fun reviewed(cueConf: Confidence, afterConf: Confidence?): ReviewedCue {
+        val before = CornerPass(2, 4, 120.0, 160.0, 140.0, 80.0, 6_500_000)
+        val target = CornerPass(2, 2, 135.0, 160.0, 141.0, 82.0, 6_200_000)
+        val after = CornerPass(2, 5, 129.0, 160.0, 140.0, 81.0, 6_380_000)
+        val advice = Advice.BrakeLater(10, precise = cueConf.precise)
+        val cue = Cue(
+            7, 0, 5, CueKind.Corner, "Turn 2, brake 10 metres later", 2, advice, before, target,
+            confidence = cueConf,
+        )
+        val logged = CoachEvents.resultText(CueResult(1, cue, after, true, 120_000, afterConf ?: Confidence.HIGH))
+        val text = if (afterConf == null) logged.replace(Regex(" conf=\\w+"), "") else logged
+        val events = listOf(
+            RecorderEvent(0, CoachEvents.CUE, CoachEvents.cueText(cue)),
+            RecorderEvent(1, CoachEvents.RESULT, text),
+        )
+        return CueReview.of(events).cues.single()
+    }
+
+    @Test
+    fun `the review gives numbers only when the cue and the pass after it are both High`() {
+        val high = assertNotNull(reviewed(Confidence.HIGH, Confidence.HIGH).outcome())
+        assertEquals("Braked 9 m later, 6 m short of best · 0.12 s gained", high)
+        assertEquals(Confidence.HIGH, reviewed(Confidence.HIGH, Confidence.HIGH).result?.confidence)
+        for ((cueConf, afterConf) in listOf(
+            Confidence.HIGH to Confidence.MEDIUM,
+            Confidence.MEDIUM to Confidence.HIGH,
+            Confidence.HIGH to null, // A result logged before FBBD-177 is not taken as High.
+        )) {
+            val item = reviewed(cueConf, afterConf)
+            val outcome = assertNotNull(item.outcome())
+            assertEquals("Braked later, short of best · time gained", outcome, "$cueConf / $afterConf")
+            assertFalse(outcome.any { it.isDigit() }, outcome)
+        }
+        assertEquals(Confidence.MEDIUM, reviewed(Confidence.HIGH, null).result?.confidence)
+    }
+
+    @Test
+    fun `a speed outcome without numbers keeps its words`() {
+        val before = CornerPass(3, 4, 120.0, 160.0, 140.0, 80.0, 6_500_000)
+        val target = CornerPass(3, 2, 120.0, 160.0, 141.0, 86.0, 6_200_000)
+        val after = CornerPass(3, 5, 120.0, 160.0, 140.0, 83.0, 6_560_000)
+        val cue = Cue(
+            8, 0, 5, CueKind.Corner, "Turn 3, carry a little more speed", 3, Advice.CarrySpeed(6, precise = false),
+            before, target, confidence = Confidence.MEDIUM,
+        )
+        val r = CueResult(1, cue, after, true, -60_000, Confidence.HIGH)
+        val item = ReviewedCue(cue, CoachEvents.parseResult(CoachEvents.resultText(r)))
+        assertEquals("Minimum speed higher, under best · time lost", item.outcome())
     }
 }

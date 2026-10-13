@@ -32,6 +32,7 @@ import com.flappedear.betterdriver.coach.outcome
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
+import com.flappedear.betterdriver.recorder.Confidence
 
 /**
  * The cue review of one session (FBBD-28, FBBD-99): every cue the coach said, in order, and for a
@@ -112,7 +113,7 @@ private fun CueReviewPreview() {
     val review = CueReview(
         listOf(
             ReviewedCue(Cue(4, 0, 4, CueKind.LapTime, "1 32 point 4"), null),
-            ReviewedCue(corner, CoachEvents.Result(5, after, improved = true, gainMicros = 180_000)),
+            ReviewedCue(corner, CoachEvents.Result(5, after, improved = true, gainMicros = 180_000, confidence = Confidence.HIGH)),
         ),
         problems = 0,
     )
