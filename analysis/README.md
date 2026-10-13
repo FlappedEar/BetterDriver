@@ -33,7 +33,9 @@ Kotlin file comes from.
   the screens show it, with what the best lap leaves in each segment, largest first.
 - **Session analysis** (`analyzeSession`): all of the above for one session. Segments are the
   track's lasting corner identity (`identity`, FBBD-172) placed on the fastest eligible lap's axis,
-  or proposed on it when the track has none yet. The driver's corner corrections (rename, move,
+  or proposed on it when the track has none yet or the lap does not drive the identity's shape
+  (a changed layout, or a track that became a circuit or a point-to-point course); those proposals
+  become the identity's next revision. The driver's corner corrections (rename, move,
   split, merge, remove, retype, FBBD-179) are kept with the track in the app and reach analysis as
   that identity. Without segments (a lap that cannot be split, or a line far from the other laps)
   the axis and every lap's projection are still there for comparison.
