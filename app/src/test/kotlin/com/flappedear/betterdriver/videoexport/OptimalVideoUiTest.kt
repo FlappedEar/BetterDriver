@@ -39,7 +39,8 @@ class OptimalVideoUiTest {
         assertTrue(o.enabled)
         assertEquals(60_000L, o.totalMillis)
         assertEquals(
-            "Raw theoretical best · 1:00.00" to "Fastest of each corner from laps 1, 2 and 4, joined whatever the joint",
+            "Raw theoretical best · 1:00.00" to
+                "Fastest of each corner from laps 1, 2 and 4, joined whatever the joint",
             optimalOptionText(o),
         )
         assertNull(missingText(o))

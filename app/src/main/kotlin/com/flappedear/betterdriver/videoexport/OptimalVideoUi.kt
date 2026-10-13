@@ -16,19 +16,6 @@ const val RealisticOptimalLap: VideoPart = -1
 /** The part of a video export that is the raw theoretical best, filmed (FBBD-163). */
 const val RawTheoreticalLap: VideoPart = -2
 
-/** The video part that films [kind]. */
-fun videoPartOf(kind: OptimalKind): VideoPart = when (kind) {
-    OptimalKind.RealisticOptimal -> RealisticOptimalLap
-    OptimalKind.RawTheoreticalBest -> RawTheoreticalLap
-}
-
-/** The composite lap [part] films, or null for the whole video or a lap. */
-fun optimalKindOf(part: VideoPart): OptimalKind? = when (part) {
-    RealisticOptimalLap -> OptimalKind.RealisticOptimal
-    RawTheoreticalLap -> OptimalKind.RawTheoreticalBest
-    else -> null
-}
-
 /** The name the screens give [kind] (FBBD-178): never "optimal" alone, never one name for both. */
 fun kindName(kind: OptimalKind): String = when (kind) {
     OptimalKind.RealisticOptimal -> "Realistic optimal"

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.videoexport
 
+import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.timing.live.LapKind
@@ -10,6 +11,19 @@ typealias VideoPart = Int
 
 /** The part that is all of the session's video. Lap numbers start at 1. */
 const val WholeVideo: VideoPart = 0
+
+/** The video part that films [kind]. */
+fun videoPartOf(kind: OptimalKind): VideoPart = when (kind) {
+    OptimalKind.RealisticOptimal -> RealisticOptimalLap
+    OptimalKind.RawTheoreticalBest -> RawTheoreticalLap
+}
+
+/** The composite lap [part] films, or null for the whole video or a lap. */
+fun optimalKindOf(part: VideoPart): OptimalKind? = when (part) {
+    RealisticOptimalLap -> OptimalKind.RealisticOptimal
+    RawTheoreticalLap -> OptimalKind.RawTheoreticalBest
+    else -> null
+}
 
 /** One lap in the picker: its time, and whether it has video to export. */
 data class LapOption(
