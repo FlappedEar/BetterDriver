@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flappedear.betterdriver.feature.analysis.CornerTracesTag
 import com.flappedear.betterdriver.feature.analysis.EveryPassText
+import com.flappedear.betterdriver.feature.analysis.EveryPassTitle
 import com.flappedear.betterdriver.feature.analysis.LatestPassesText
 import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
 import com.flappedear.betterdriver.feature.analysis.ProgressionCornersTag
@@ -31,7 +32,7 @@ import org.junit.runner.RunWith
 
 /**
  * Sessions and lap analysis on the emulator (FBBD-161): every analysis tab of a circuit session
- * with video, the map, Corners → Every lap → Corner laps (with its video and Compare), the coach
+ * with video, the map, Corners → Every pass → Corner laps (with its video and Compare), the coach
  * picks, the optimal lap video's planner (FBBD-163), a point-to-point session with its
  * acceleration runs, the mark on every value that is not measured (FBBD-174), and the progression
  * at a session's track (FBBD-181).
@@ -98,7 +99,7 @@ class AnalysisSmokeTest {
         app.waitForText("Corner 1", substring = true)
         // No brake pedal is recorded: braking points are inferred from the accelerometer, so they are
         // marked in the corner details, and each such corner says what the mark means. A corner card
-        // that opens Every lap is one clickable node, so its values are looked up unmerged.
+        // that opens Every pass is one clickable node, so its values are looked up unmerged.
         val inferred = hasText(NotMeasuredMark, substring = true) and hasText(" m", substring = true)
         app.waitNamed("a marked corner value") {
             app.exists(inferred, useUnmergedTree = true)
@@ -115,11 +116,11 @@ class AnalysisSmokeTest {
         app.openSession(SmokeFixtures.VideoCar)
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
         app.openTab("Corners")
-        app.waitForText("Every lap ›").performScrollTo().performClick()
+        app.waitForText(EveryPassText).performScrollTo().performClick()
 
         // Corner laps: every counted lap through the corner, fastest first, each with its video, and
         // every pass's traces over the corner (FBBD-93).
-        app.waitForText("Every lap")
+        app.waitForText(EveryPassTitle)
         app.waitForText("fastest through the corner first", substring = true, timeoutMs = LoadTimeoutMs)
         app.waitFor(hasTestTag(CornerTracesTag)).performScrollTo().assertIsDisplayed()
         app.waitForText("TIME THROUGH THE CORNER", substring = true)
@@ -241,7 +242,7 @@ class AnalysisSmokeTest {
         if (app.exists(everyPass)) {
             app.waitFor(everyPass).performScrollTo()
             app.clickAction(everyPass)
-            app.waitForText("Every lap")
+            app.waitForText(EveryPassTitle)
             app.waitFor(hasTestTag(CornerTracesTag), timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
             app.back()
             app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
@@ -258,7 +259,7 @@ class AnalysisSmokeTest {
         val passes = hasText(LatestPassesText) and hasClickAction()
         app.waitFor(passes).performScrollTo()
         app.clickAction(passes)
-        app.waitForText("Every lap", timeoutMs = LoadTimeoutMs)
+        app.waitForText(EveryPassTitle, timeoutMs = LoadTimeoutMs)
         app.waitFor(hasTestTag(CornerTracesTag), timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
         // Opened from the progression: back goes back there.
         app.back()
@@ -285,7 +286,7 @@ class AnalysisSmokeTest {
     }
 
     /**
-     * The first "≈" legend line (FBBD-174), looked up unmerged: in a corner card that opens Every lap,
+     * The first "≈" legend line (FBBD-174), looked up unmerged: in a corner card that opens Every pass,
      * the merged tree shows one clickable node without its children's tags.
      */
     private fun legend(): SemanticsNodeInteraction {

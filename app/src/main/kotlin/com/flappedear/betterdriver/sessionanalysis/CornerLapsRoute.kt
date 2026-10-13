@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.navigation.NavHostController
 import com.flappedear.betterdriver.feature.analysis.CornerLapsScreen
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
+import com.flappedear.betterdriver.feature.analysis.EveryPassTitle
 import com.flappedear.betterdriver.feature.analysis.ProvideCornerLaps
 import com.flappedear.betterdriver.shell.ShellTopBar
 import kotlinx.coroutines.Dispatchers
@@ -63,7 +64,7 @@ internal fun CornerLapsRoute(
             onCompare = { a, b ->
                 analysis?.let { cornerReviewRoute(it, sessionId, lapVideo, a, b, open) }?.let { nav.navigate(it) }
             },
-            topBar = { ShellTopBar("Every lap", onBack = { back() }) },
+            topBar = { ShellTopBar(EveryPassTitle, onBack = { back() }) },
         )
     }
 }

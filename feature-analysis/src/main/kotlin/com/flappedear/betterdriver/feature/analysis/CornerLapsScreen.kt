@@ -47,12 +47,12 @@ import com.flappedear.betterdriver.core.ui.format.formatDelta
 
 /**
  * Opens the Corner laps screen of a corner (its segment id, FBBD-153); null where nothing can show
- * it, and then the corners offer no "Every lap".
+ * it, and then the corners offer no "Every pass".
  */
 internal val LocalCornerLaps = staticCompositionLocalOf<((String) -> Unit)?> { null }
 
 /**
- * [content] (the analysis screen) with "Every lap" on each corner of its Corners tab (FBBD-153):
+ * [content] (the analysis screen) with "Every pass" on each corner of its Corners tab (FBBD-153):
  * tapping a corner calls [open] with its segment id.
  */
 @Composable

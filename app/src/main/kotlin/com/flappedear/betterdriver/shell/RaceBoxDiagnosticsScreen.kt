@@ -31,7 +31,7 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 @Composable
 fun RaceBoxDiagnosticsScreen(view: DiagnosticsView, onBack: () -> Unit, onCalibrate: () -> Unit = {}) {
     Column(Modifier.fillMaxSize()) {
-        ShellTopBar("Diagnostics", onBack = onBack)
+        ShellTopBar(RaceBoxDiagnosticsTitle, onBack = onBack)
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -114,3 +114,9 @@ private fun RaceBoxDiagnosticsPreview() {
         )
     }
 }
+
+/**
+ * The screen's title: the RaceBox's live values, not Settings › Diagnostics (the app's log), so the
+ * two are never one name.
+ */
+const val RaceBoxDiagnosticsTitle = "RaceBox diagnostics"

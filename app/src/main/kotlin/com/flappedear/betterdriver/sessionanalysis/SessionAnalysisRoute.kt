@@ -175,7 +175,9 @@ internal fun SessionAnalysisRoute(
     LaunchedEffect(id) {
         load = withContext(Dispatchers.Default) {
             val epoch = AppDataGate.epoch
-            val read = loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            val read = analysedOr<Load>(id, { Load.Failed(it) }) {
+                loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            }
             if (read is Load.Done) read.copy(epoch = epoch) else read
         }
     }
@@ -199,7 +201,9 @@ internal fun SessionAnalysisRoute(
         analysed = when (val l = load) {
             null -> AnalysisState.Loading
             is Load.Failed -> l.state
-            is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared, progress) }
+            is Load.Done -> withContext(Dispatchers.Default) {
+                analysedOr<AnalysisState>(id, { it }) { readyState(l.loaded, compared, progress) }
+            }
         }
     }
     // What to work on next (FBBD-20) is kept for the track's next session's coach once analysed, and
@@ -392,7 +396,7 @@ private fun proposal(data: SessionData, saved: List<Track>, circuits: CircuitLis
     val label = sessionLabel(data.info.startUtcMillis)
     val fallback = data.info.track.ifBlank { "Track of $label" }.take(Track.MaxNameChars)
     val track = proposeTrack(loop, saved, circuits, fallback)
-    val km = String.format(Locale.getDefault(), "%.2f", loop.lengthMeters / MetersPerKm)
+    val km = kmText(loop.lengthMeters)
     val at = if (track.name == fallback) "" else " at ${track.displayName}"
     val laps = if (loop.laps == 1) "1 lap" else "${loop.laps} laps"
     return Load.Failed(
@@ -407,3 +411,25 @@ private fun proposal(data: SessionData, saved: List<Track>, circuits: CircuitLis
 }
 
 private const val MetersPerKm = 1_000.0
+
+/**
+ * "2.41": a length in km as every other number of the app is written, with a point whatever the
+ * phone's language (never "2,41" beside "1:52.07").
+ */
+internal fun kmText(meters: Double): String = String.format(Locale.ROOT, "%.2f", meters / MetersPerKm)
+
+/** Said when the analysis of a session that could be read fails: the screen says so instead of the app closing. */
+internal const val NotAnalysedText =
+    "This session could not be analysed. The log in Settings › Diagnostics has the details."
+
+/**
+ * [block]'s result, or when it throws, [failed] with [NotAnalysedText]: a session the analysis trips
+ * over shows that on its screen, never a spinner that does not end or the app closing.
+ */
+@Suppress("TooGenericExceptionCaught") // Whatever the analysis throws, the screen says so.
+internal fun <T> analysedOr(id: String, failed: (AnalysisState.Unavailable) -> T, block: () -> T): T = try {
+    block()
+} catch (e: Exception) {
+    DebugLog.w("SessionAnalysis", "analysing session $id failed", e)
+    failed(AnalysisState.Unavailable(NotAnalysedText))
+}

@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.VideoExportLine
