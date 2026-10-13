@@ -107,6 +107,9 @@ class PhoneCamera(
 
     /** This camera's bound use case. Only it is unbound when this camera ends, never all of them. */
     private var bound: VideoCapture<Recorder>? = null
+
+    /** The ladder step [bound] records at; -1 when nothing is bound. */
+    private var boundStep = -1
     private var steps: List<VideoMode> = ladder
     private var policy = ThermalPolicy(ladder.size)
 
@@ -203,29 +206,22 @@ class PhoneCamera(
     /** The ladder steps the back camera supports. */
     private fun supportedSteps(p: ProcessCameraProvider): List<VideoMode> = supportedPhoneModes(p, ladder)
 
-    /** Binds the camera at [stepIndex] of [steps] and starts the next file. Falls down the ladder if binding fails. */
+    /**
+     * Starts the next file at [stepIndex] of [steps], binding the camera only for a new step. Falls down
+     * the ladder if that fails.
+     */
     @SuppressLint("MissingPermission") // Audio is only enabled when RECORD_AUDIO is granted (CameraService).
     @Suppress("TooGenericExceptionCaught") // CameraX reports unsupported settings and busy cameras as exceptions.
-    @OptIn(ExperimentalCamera2Interop::class)
     private fun begin(stepIndex: Int) {
         val p = provider ?: return
         val step = steps[stepIndex]
         policy.moveTo(stepIndex)
         try {
-            val recorder = Recorder.Builder()
-                .setQualitySelector(QualitySelector.from(phoneQuality(step.size)))
-                .build()
-            val builder = VideoCapture.Builder(recorder)
-                .setTargetFrameRate(Range(step.fps, step.fps))
-            Camera2Interop.Extender(builder).setSessionCaptureCallback(frames)
-            val capture = builder.build()
-            p.unbindAll()
-            lastFrameNanos = 0L
-            val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
-            realtimeFrames = Camera2CameraInfo.from(back.cameraInfo)
-                .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
-                CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
-            bound = capture
+            // A full file at the same step keeps the camera open: closing and reopening it left about
+            // 2 s without video between files. Only a new step (or the first file) binds again.
+            val reuse = bound?.takeIf { boundStep == stepIndex }
+            val capture = reuse ?: bind(p, step).also { boundStep = stepIndex }
+            val recorder = capture.output
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
             val output = FileOutputOptions.Builder(File(dir, name)).setFileSizeLimit(MaxFileBytes).build()
@@ -262,6 +258,7 @@ class PhoneCamera(
         } catch (e: Exception) {
             DebugLog.w(Tag, "could not start ${step.label}", e)
             policy.failed(stepIndex)
+            boundStep = -1 // whatever is bound may be the fault: the next try binds afresh
             if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
         }
     }
@@ -286,11 +283,34 @@ class PhoneCamera(
             }
             error && restarts < MaxRestarts -> {
                 restarts++
+                boundStep = -1 // after an error the camera is closed and opened again
                 sink.status("Restarting", ok = false)
                 main.postDelayed({ if (!stopping) begin(policy.current) }, RetryDelayMs)
             }
             else -> fail("Camera error")
         }
+    }
+
+    /** Binds a new [VideoCapture] for [step] in place of any camera bound before. */
+    @OptIn(ExperimentalCamera2Interop::class)
+    private fun bind(p: ProcessCameraProvider, step: VideoMode): VideoCapture<Recorder> {
+        val recorder = Recorder.Builder()
+            .setQualitySelector(QualitySelector.from(phoneQuality(step.size)))
+            .build()
+        val builder = VideoCapture.Builder(recorder)
+            .setTargetFrameRate(Range(step.fps, step.fps))
+        Camera2Interop.Extender(builder).setSessionCaptureCallback(frames)
+        val capture = builder.build()
+        bound = null
+        boundStep = -1
+        p.unbindAll()
+        lastFrameNanos = 0L
+        val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
+        realtimeFrames = Camera2CameraInfo.from(back.cameraInfo)
+            .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+            CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
+        bound = capture
+        return capture
     }
 
     /** Why a file ended, for the session's video event. */
