@@ -17,6 +17,18 @@ import java.nio.file.StandardOpenOption
 /** The saved track a session was recorded at, from its track event; null if none. */
 fun SessionData.savedTrackId(): String? = TrackEvent.savedTrackId(events)
 
+private const val MicrosPerMilli = 1_000L
+
+/**
+ * When [s] ended: from its length, or for a session not yet recovered (no length), when its files
+ * were last written.
+ */
+private fun endedUtcMillis(s: SessionSummary): Long {
+    val start = s.info.startUtcMillis
+    val length = s.durationMicros ?: return maxOf(start, s.dir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0L)
+    return start + length / MicrosPerMilli
+}
+
 /** The session's fixes, in time order. */
 fun SessionData.coachFixes(): Sequence<CoachFix> = sampleSets.asSequence().mapNotNull { it.toCoachFix() }
 
@@ -59,8 +71,7 @@ class CoachLibrary(
      */
     fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
         val ids = reference.sessions.toSet()
-        val ended = sessions.list().filter { it.id in ids }
-            .maxOfOrNull { it.info.startUtcMillis + (it.durationMicros ?: 0L) / MicrosPerMilli }
+        val ended = sessions.list().filter { it.id in ids }.maxOfOrNull(::endedUtcMillis)
         return ended != null && nowUtcMillis - ended in 0..SameDayMillis
     }
 
@@ -227,7 +238,6 @@ class CoachLibrary(
     private companion object {
         const val PlacesFile = "places.json"
         const val LockFile = "library.lock"
-        const val MicrosPerMilli = 1_000L
 
         /** A session ended at most this long ago counts as the same day: 12 hours. */
         const val SameDayMillis = 12L * 60 * 60 * 1_000

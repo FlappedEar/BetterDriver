@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
@@ -103,6 +104,20 @@ class LibraryTest {
         assertFalse(library.drivenSameDay(ref, ended + 12 * hour + 1))
         // A clock behind the session's end is not trusted.
         assertFalse(library.drivenSameDay(ref, start))
+    }
+
+    @Test
+    fun `a session not yet recovered ended when its files were last written`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        val now = System.currentTimeMillis()
+        val hour = 60 * 60 * 1_000L
+        // Started 13 hours ago and never stopped cleanly: no length is known.
+        val id = record(store, track, List(2) { SimCircuit.Pace() }, now - 13 * hour)
+        val ref = assertNotNull(library.reference(track))
+        assertTrue(File(store.dir(id), SessionFiles.FINISHED).delete())
+        assertNull(store.list().single { it.id == id }.durationMicros)
+        assertTrue(library.drivenSameDay(ref, now + 5 * 60 * 1_000L))
     }
 
     @Test
