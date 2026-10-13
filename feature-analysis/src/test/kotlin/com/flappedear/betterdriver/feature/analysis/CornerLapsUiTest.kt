@@ -138,11 +138,27 @@ class CornerLapsUiTest {
         val pass = PassTrace(0, listOf(run))
         val traces = CornerTraces(180.0, 120.0, 160.0, listOf(pass), "km/h", Provenance.MEASURED_GPS)
         assertTrue(speedNumbersShown(traces))
-        assertEquals("Speed · 62–92 km/h", speedLabel(traces))
+        assertEquals("Speed · 62–92 km/h", speedLabel(ui, traces))
         assertEquals("120 m", approachText(traces))
-        assertEquals("≈Speed", speedLabel(traces.copy(speedProvenance = Provenance.CALCULATED)))
-        assertEquals("Speed", speedLabel(traces.copy(speedUnit = "")))
-        assertEquals("Speed", speedLabel(traces.copy(speedProvenance = null)))
+        assertEquals("≈Speed", speedLabel(ui, traces.copy(speedProvenance = Provenance.CALCULATED)))
+        assertEquals("Speed", speedLabel(ui, traces.copy(speedUnit = "")))
+        assertEquals("Speed", speedLabel(ui, traces.copy(speedProvenance = null)))
+    }
+
+    @Test
+    fun `the speed range leaves out a doubtful pass, whose numbers are shown nowhere`() {
+        val trusted = PassTrace(1, listOf(listOf(ChartPoint(0.0, 92.4), ChartPoint(50.0, 61.6))))
+        val doubtful = PassTrace(0, listOf(listOf(ChartPoint(0.0, 131.0), ChartPoint(50.0, 40.0))))
+        val traces = CornerTraces(180.0, 120.0, 160.0, listOf(trusted, doubtful), "km/h", Provenance.MEASURED_GPS)
+        val medium = PassMarks(
+            confidence = { if (it.lapIndex == 0) ConfidenceUi(Confidence.MEDIUM) else ConfidenceUi.High },
+        )
+        val graded = cornerLapsUi("c1", "Corner 1", passes, { null }, { true }, marks = medium)
+        assertEquals("Speed · 62–92 km/h", speedLabel(graded, traces))
+        // Every pass doubtful: the trace is a shape, with no numbers.
+        val low = PassMarks(confidence = { ConfidenceUi(Confidence.LOW) })
+        val none = cornerLapsUi("c1", "Corner 1", passes, { null }, { true }, marks = low)
+        assertEquals("Speed", speedLabel(none, traces))
     }
 
     @Test

@@ -51,7 +51,7 @@ internal fun CornerTracesCard(
     val band = listOf(CornerBand(ui.name, traces.entryMeters, traces.exitMeters))
     val style = TraceStyle(PassColors.a, PassColors.b, c.textDim.copy(alpha = DimAlpha), c.line.copy(alpha = BandAlpha))
     Card(modifier.testTag(CornerTracesTag)) {
-        TraceChart(speedLabel(traces), traces, highlight, band, style, SpeedHeight, PassTrace::speed)
+        TraceChart(speedLabel(ui, traces), traces, highlight, band, style, SpeedHeight, PassTrace::speed)
         if (traces.hasBrake) {
             val label = marked("Brake", traces.brakeProvenance)
             TraceChart(label, traces, highlight, band, style, PedalHeight, PassTrace::brake)

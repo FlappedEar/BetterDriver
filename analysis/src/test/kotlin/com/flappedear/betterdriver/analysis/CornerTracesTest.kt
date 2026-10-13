@@ -45,6 +45,8 @@ class CornerTracesTest {
                 TrackSegment("c1", "Corner 1", TrackSegmentType.Corner, 400.0, 500.0),
                 // Over the start/finish line.
                 TrackSegment("c9", "Corner 9", TrackSegmentType.Corner, 950.0, 50.0),
+                // Starts closer to the line than the approach the traces show.
+                TrackSegment("c2", "Corner 2", TrackSegmentType.Corner, 60.0, 150.0),
             ),
             "r1",
         ),
@@ -100,6 +102,22 @@ class CornerTracesTest {
         // Lap 2 is the last: its pass ends at the line.
         val last = t.of(1)!!.speed.flatten()
         assertEquals(length - (950.0 - CornerTraceLeadMeters), last.maxOf { it.distanceMeters }, 1e-9)
+    }
+
+    @Test
+    fun `an approach that begins before the line is read on the previous lap`() {
+        val t = assertNotNull(cornerTraces(analysis(listOf(trace(10.0), trace(70.0))), session, "c2", listOf(0, 1)))
+        // The full approach on every pass, the window starting 60 m before the line.
+        assertEquals(CornerTraceLeadMeters, t.entryMeters, 1e-9)
+        assertEquals(CornerTraceLeadMeters + 90.0 + CornerTraceTailMeters, t.lengthMeters, 1e-9)
+        // Lap 2 follows lap 1 without a break: its approach starts on lap 1, 60 m before the line.
+        val second = t.of(1)!!.speed.flatten()
+        assertEquals(0.0, second.first().distanceMeters, 1e-9)
+        assertEquals(60.0 + 10.0 + 940.0 * SecondsPerMeter, second.first().value, 1e-6)
+        assertEquals(t.lengthMeters, second.maxOf { it.distanceMeters }, 1e-9)
+        // Lap 1 is the first: nothing before the line, so its pass starts at the line.
+        val first = t.of(0)!!.speed.flatten()
+        assertEquals(60.0, first.minOf { it.distanceMeters }, 1e-9)
     }
 
     @Test
