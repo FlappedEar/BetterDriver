@@ -121,6 +121,18 @@ class LibraryTest {
     }
 
     @Test
+    fun `an old session copied in without its length does not count as the same day`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        val now = System.currentTimeMillis()
+        // Driven a week ago and imported now: its files are new, its start is not.
+        val id = record(store, track, List(2) { SimCircuit.Pace() }, now - 7 * 24 * 60 * 60 * 1_000L)
+        val ref = assertNotNull(library.reference(track))
+        assertTrue(File(store.dir(id), SessionFiles.FINISHED).delete())
+        assertFalse(library.drivenSameDay(ref, now + 5 * 60 * 1_000L))
+    }
+
+    @Test
     fun `a session recorded with no track feeds the reference of a track made from it`() {
         val store = SessionStore(File(tmp, "sessions"))
         val saved = mutableListOf<Track>()

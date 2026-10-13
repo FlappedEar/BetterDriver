@@ -19,14 +19,20 @@ fun SessionData.savedTrackId(): String? = TrackEvent.savedTrackId(events)
 
 private const val MicrosPerMilli = 1_000L
 
+/** No drive lasts longer than this: 3 hours. */
+private const val MaxDriveMillis = 3L * 60 * 60 * 1_000
+
 /**
  * When [s] ended: from its length, or for a session not yet recovered (no length), when its files
- * were last written.
+ * were last written, but at most [MaxDriveMillis] after its start, since a session copied in
+ * (import, restore) has the copy's file times.
  */
 private fun endedUtcMillis(s: SessionSummary): Long {
     val start = s.info.startUtcMillis
-    val length = s.durationMicros ?: return maxOf(start, s.dir.listFiles()?.maxOfOrNull { it.lastModified() } ?: 0L)
-    return start + length / MicrosPerMilli
+    val length = s.durationMicros
+    if (length != null) return start + length / MicrosPerMilli
+    val written = s.dir.listFiles()?.maxOfOrNull { it.lastModified() } ?: start
+    return written.coerceIn(start, start + MaxDriveMillis)
 }
 
 /** The session's fixes, in time order. */
