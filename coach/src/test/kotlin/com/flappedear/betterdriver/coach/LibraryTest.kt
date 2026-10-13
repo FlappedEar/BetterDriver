@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
@@ -103,6 +104,34 @@ class LibraryTest {
         assertFalse(library.drivenSameDay(ref, ended + 12 * hour + 1))
         // A clock behind the session's end is not trusted.
         assertFalse(library.drivenSameDay(ref, start))
+    }
+
+    @Test
+    fun `a session not yet recovered ended at its last sample`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        val now = System.currentTimeMillis()
+        val fixes = sim.drive(List(2) { SimCircuit.Pace() }).fixes
+        val driveMillis = fixes.last().tMicros / 1_000
+        // Never stopped cleanly: no length is known. Started more than 12 hours ago, but its last
+        // sample is less than 12 hours ago.
+        val id = record(store, track, fixes, now - 12 * 60 * 60 * 1_000L - driveMillis / 2)
+        val ref = assertNotNull(library.reference(track))
+        assertTrue(File(store.dir(id), SessionFiles.FINISHED).delete())
+        assertNull(store.list().single { it.id == id }.durationMicros)
+        assertTrue(library.drivenSameDay(ref, now))
+    }
+
+    @Test
+    fun `a short session copied in without its length counts from its samples, not its file times`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
+        val now = System.currentTimeMillis()
+        // Driven 14 hours ago for a few minutes and imported now: its files are new, its samples are not.
+        val id = record(store, track, List(2) { SimCircuit.Pace() }, now - 14 * 60 * 60 * 1_000L)
+        val ref = assertNotNull(library.reference(track))
+        assertTrue(File(store.dir(id), SessionFiles.FINISHED).delete())
+        assertFalse(library.drivenSameDay(ref, now))
     }
 
     @Test
