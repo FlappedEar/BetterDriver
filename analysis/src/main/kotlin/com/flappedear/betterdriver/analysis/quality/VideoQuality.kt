@@ -95,16 +95,22 @@ private fun drift(camera: String, own: List<VideoClip>, events: List<RecorderEve
 
 /**
  * The drift of one file from its (session time, media offset) reports; null under two minutes. A file
- * longer than 30 min gives its drift per 30 min; a shorter one its drift as it is, so a few
- * milliseconds' jitter over a short file is not scaled up past the limit.
+ * longer than 30 min gives its drift per 30 min of the time between the two reports used; a shorter
+ * one its drift as it is, so a few milliseconds' jitter over a short file is not scaled up past the limit.
  */
 private fun fileDrift(reports: List<Pair<Long, Long>>): Long? {
     val first = reports.minOf { it.first }
     val last = reports.maxOf { it.first }
     if (last - first < 2 * DriftWindowMicros) return null
-    val start = reports.filter { it.first <= first + DriftWindowMicros }.minOf { it.second }
-    val end = reports.filter { it.first >= last - DriftWindowMicros }.minOf { it.second }
-    return ((end - start) * (DriftPerMicros.toDouble() / maxOf(last - first, DriftPerMicros))).roundToLong()
+    val start = reports.filter { it.first <= first + DriftWindowMicros }.minBy { it.second }
+    val end = reports.filter { it.first >= last - DriftWindowMicros }.minBy { it.second }
+    val drift = end.second - start.second
+    // Per 30 min of the time between the two reports the offsets came from, not the whole file.
+    return if (last - first < DriftPerMicros) {
+        drift
+    } else {
+        (drift * (DriftPerMicros.toDouble() / (end.first - start.first))).roundToLong()
+    }
 }
 
 private const val CoverageCriterion = "100 % of the session, or stops per the thermal policy, logged (FBBD-21)"

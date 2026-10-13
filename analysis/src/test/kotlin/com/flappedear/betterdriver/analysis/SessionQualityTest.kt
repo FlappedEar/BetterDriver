@@ -275,9 +275,25 @@ class SessionQualityTest {
         }
         events += RecorderEvent(3_602_000_000, EventKinds.VIDEO_STOP, "$file reason=user")
         val r = sessionQuality(session(stream(0, 1_000_000), events))
-        // 177 ms over the 3600 s from the first report to the last, as 30 min of it.
-        assertEquals(88.5, r.value("video.phone.drift"))
+        // 177 ms over the 3540 s between the two lowest offsets (2 s and 3542 s), as 30 min of it.
+        assertEquals(90.0, r.value("video.phone.drift"))
         assertEquals(Verdict.PASS, r.verdict("video.phone.drift"))
+    }
+
+    @Test
+    fun `a drift just over the limit on a 31 min file is scaled over the reports used, and fails`() {
+        val file = "camera=phone file=phone_0001.mp4"
+        val events = mutableListOf(RecorderEvent(1_000_000, EventKinds.VIDEO_START, file))
+        for (s in 2..1862) {
+            val t = s * 1_000_000L
+            // 103 ms per 30 min; the lowest offsets are at 2 s and 1802 s, 30 min apart.
+            val offset = 1_010_000L + (t - 2_000_000L) * 103 / 1_800_000
+            events += RecorderEvent(t, EventKinds.VIDEO_SYNC, "$file media_us=${t - offset}")
+        }
+        events += RecorderEvent(1_862_000_000, EventKinds.VIDEO_STOP, "$file reason=user")
+        val r = sessionQuality(session(stream(0, 1_000_000), events))
+        assertEquals(103.0, r.value("video.phone.drift"))
+        assertEquals(Verdict.FAIL, r.verdict("video.phone.drift"))
     }
 
     @Test
