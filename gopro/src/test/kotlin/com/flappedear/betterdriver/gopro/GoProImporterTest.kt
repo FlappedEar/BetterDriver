@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.LogFile
 import com.flappedear.betterdriver.recorder.log.LogLine
+import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.VideoClip
@@ -144,6 +145,19 @@ class GoProImporterTest {
         val clip = VideoIndex(dir).clips().single()
         assertEquals(AlignmentMethod.COMMAND_ACK, clip.alignment.method)
         assertTrue(clip.sessionOffsetUs <= 20_000_000, "${clip.sessionOffsetUs}")
+    }
+
+    @Test
+    fun `a session with no GNSS samples ends at its end record, not at 0`() {
+        // FBBD-201, log 2026-10-13 05:01: RaceBox never delivered a sample; GoPro acknowledged at
+        // 5.78 s, clip 13.6 s, session stopped at 19.78 s. The clip was rejected with "session 0 us".
+        val session = TestSession.data(0).copy(end = Record.End(19_776_846, "user"))
+        val gopro = GoProImporter.Source(VideoSourceKind.GOPRO, "hero11")
+        val file = noFixFile("GX010101.MP4", 13, createdAtS = 6)
+        val recording = GoProRecording("hero11", startAckSessionUs = 5_784_583, startAckUtcMillis = 0)
+        val result = GoProImporter(zone = ZoneOffset.UTC).import(dir, session, listOf(file), gopro, recording)
+        assertEquals(emptyList(), result.problems)
+        assertEquals(5_784_583, VideoIndex(dir).clips().single().sessionOffsetUs)
     }
 
     @Test
