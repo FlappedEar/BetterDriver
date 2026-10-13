@@ -7,7 +7,6 @@ import com.flappedear.betterdriver.analysis.geo.geoMidpoint
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.progress.ProgressAxis
 import com.flappedear.betterdriver.analysis.progress.ProgressSegment
-import com.flappedear.betterdriver.analysis.progress.buildProgressAxis
 import com.flappedear.betterdriver.analysis.progress.projectLapTrace
 
 // Port of FlappedEar Telemetry analysis/theoretical_best.dart and the sector part of
@@ -113,20 +112,35 @@ data class PopulationSectors(
  * Times [population] against [approved] on the axis built from lap [axisLapNumber] of
  * [axisLaps] (the lap the segments were approved on, usually the fastest), as Telemetry's
  * calculateOutingTheoreticalBest does. Null when that lap has no trace or the axis is invalid.
+ * [robustness] is how the axis is built and read: Telemetry's by default (FBBD-215).
  */
 fun timePopulation(
     axisLaps: LapSession,
     axisLapNumber: Int,
     approved: ApprovedSegments,
     population: List<PopulationLap>,
+    robustness: AxisRobustness = AxisRobustness.Telemetry,
 ): PopulationSectors? {
     val gate = axisLaps.startGate ?: return null
     val trace = axisLaps.lapTraces.firstOrNull { it.lapNumber == axisLapNumber } ?: return null
-    val axis = buildProgressAxis(
-        trace, geoMidpoint(gate.endpointA, gate.endpointB), gate, closed = axisLaps.finishGate == null,
+    val axis = buildRobustAxis(
+        trace, geoMidpoint(gate.endpointA, gate.endpointB), gate, axisLaps.finishGate == null, robustness,
     )
     if (!axis.valid) return null
-    val traces = population.map { projectLapTrace(axis, it.session, it.start, it.end) }
+    return timeOnAxis(axis, approved, population, robustness)
+}
+
+/** Times [population] against [approved] on [axis], each lap projected as [robustness] says. */
+fun timeOnAxis(
+    axis: ProgressAxis,
+    approved: ApprovedSegments,
+    population: List<PopulationLap>,
+    robustness: AxisRobustness = AxisRobustness.Telemetry,
+): PopulationSectors {
+    val traces = population.map {
+        val projected = projectLapTrace(axis, it.session, it.start, it.end, robustness.movementBaselineMeters)
+        steadiedTrace(projected, it.session, robustness.progressWindowSeconds)
+    }
     val times = population.mapIndexed { i, lap ->
         computeLapSectorTimes(approved, axis.lengthMeters, traces[i], lap.start, lap.end, lap.reference)
     }

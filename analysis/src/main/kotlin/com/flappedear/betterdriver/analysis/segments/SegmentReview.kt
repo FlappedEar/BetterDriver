@@ -12,7 +12,6 @@ import com.flappedear.betterdriver.analysis.laps.LapTracePoint
 import com.flappedear.betterdriver.analysis.progress.ProgressAxis
 import com.flappedear.betterdriver.analysis.progress.ProgressSegment
 import com.flappedear.betterdriver.analysis.progress.TrackFeatures
-import com.flappedear.betterdriver.analysis.progress.buildProgressAxis
 import com.flappedear.betterdriver.analysis.progress.computeTrackFeatures
 import com.flappedear.betterdriver.analysis.progress.projectLapTrace
 import kotlin.math.abs
@@ -207,6 +206,8 @@ data class SegmentReview(
  * gate's midpoint, features use [SegmentReviewSmoothingMeters], and the lap's coverage gaps mark
  * uncertain boundaries. With [splitCornerChains], a lap that would split into too many segments
  * keeps its chains, and [approved] segments from earlier get the proposals matching more of them.
+ * [robustness] is how the axis is built and its proposals made: Telemetry's by default, the app's
+ * in [com.flappedear.betterdriver.analysis.analyzeSession] (FBBD-215).
  */
 fun computeSegmentReview(
     session: TelemetrySession,
@@ -216,11 +217,12 @@ fun computeSegmentReview(
     endTime: Double,
     splitCornerChains: Boolean = true,
     approved: List<TrackSegment> = emptyList(),
+    robustness: AxisRobustness = AxisRobustness.Telemetry,
 ): SegmentReview {
-    val review = segmentReview(session, laps, lapNumber, startTime, endTime, splitCornerChains)
+    val review = segmentReview(session, laps, lapNumber, startTime, endTime, splitCornerChains, robustness)
     val tooMany = review.proposals.unresolvedReason == UnresolvedProposal.TooManySegments
     if (!splitCornerChains || (approved.isEmpty() && !tooMany)) return review
-    val chained = segmentReview(session, laps, lapNumber, startTime, endTime, false)
+    val chained = segmentReview(session, laps, lapNumber, startTime, endTime, false, robustness)
     if (tooMany) return chained
     val split = matches(review, approved)
     val kept = matches(chained, approved)
@@ -249,18 +251,26 @@ private fun segmentReview(
     startTime: Double,
     endTime: Double,
     splitCornerChains: Boolean,
+    robustness: AxisRobustness,
 ): SegmentReview {
     val gate = laps.startGate
     val trace = laps.lapTraces.firstOrNull { it.lapNumber == lapNumber }
     if (gate == null || trace == null) return SegmentReview(unavailable = SegmentReviewUnavailable.NoTrace)
     val origin = geoMidpoint(gate.endpointA, gate.endpointB)
-    val axis = buildProgressAxis(trace, origin, gate, closed = laps.finishGate == null)
-    val features = if (axis.valid) computeTrackFeatures(axis, SegmentReviewSmoothingMeters) else TrackFeatures()
+    val axis = buildRobustAxis(trace, origin, gate, closed = laps.finishGate == null, robustness)
+    val features = if (axis.valid) {
+        computeTrackFeatures(smoothedAxis(axis, robustness.lineSmoothingMeters), SegmentReviewSmoothingMeters)
+    } else {
+        TrackFeatures()
+    }
     if (!features.valid) return SegmentReview(axis = axis, unavailable = SegmentReviewUnavailable.NoAxis)
-    val lapTrace = projectLapTrace(axis, session, startTime, endTime)
+    val lapTrace = projectLapTrace(axis, session, startTime, endTime, robustness.movementBaselineMeters)
     val gaps = coverageGaps(lapTrace, axis.lengthMeters)
     val proposals = proposeTrackSegments(
-        axis, features, gaps, SegmentProposalOptions(splitCornerChains = splitCornerChains),
+        axis,
+        features,
+        gaps,
+        SegmentProposalOptions(splitCornerChains = splitCornerChains, exitCurvatureShare = robustness.cornerExitShare),
     )
     val unavailable = when {
         !proposals.valid -> SegmentReviewUnavailable.Invalid

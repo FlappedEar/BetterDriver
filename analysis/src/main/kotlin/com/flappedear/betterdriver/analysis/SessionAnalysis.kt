@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.analysis.progress.ProgressAxis
 import com.flappedear.betterdriver.analysis.progress.ProgressSegment
 import com.flappedear.betterdriver.analysis.progress.computeTrackFeatures
 import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
+import com.flappedear.betterdriver.analysis.segments.AxisRobustness
 import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
 import com.flappedear.betterdriver.analysis.segments.LineConsensus
 import com.flappedear.betterdriver.analysis.segments.PopulationLap
@@ -99,6 +100,8 @@ data class SessionAnalysis(
      * minima. Null without segments or when no chain covers every segment.
      */
     val realisticOptimal: RealisticOptimalLap? = null,
+    /** How [axis] was built, segmented and read (FBBD-215); another session is timed on it the same way. */
+    val robustness: AxisRobustness = AxisRobustness.App,
 ) {
     /** Whether [segments] are [identity]'s corners and straights, under its ids (FBBD-172). */
     val identified: Boolean
@@ -111,14 +114,16 @@ data class SessionAnalysis(
  * [identity] (FBBD-172) placed on that axis, or proposed on it when there is none yet or the lap no
  * longer drives its shape ([SessionAnalysis.identity]). They are left out when the best lap's line
  * disagrees with the other laps, or when there is no identity to place and the best lap cannot be
- * split (a circle has no straight); laps can still be compared by distance then.
+ * split (a circle has no straight); laps can still be compared by distance then. [robustness] is
+ * how the axis is built, segmented and read: the app's (FBBD-215) unless a test asks for Telemetry's.
  */
 fun analyzeSession(
     session: TelemetrySession,
     laps: LapSession = deriveSourceLapSession(session),
     identity: TrackRevision? = null,
+    robustness: AxisRobustness = AxisRobustness.App,
 ): SessionAnalysis {
-    val analysis = analyzeLaps(session, laps, identity).copy(provenance = analysisProvenance(session))
+    val analysis = analyzeLaps(session, laps, identity, robustness).copy(provenance = analysisProvenance(session))
     return analysis.copy(confidence = assessConfidence(session, analysis))
 }
 
@@ -127,11 +132,13 @@ private fun analyzeLaps(
     session: TelemetrySession,
     laps: LapSession,
     identity: TrackRevision?,
+    robustness: AxisRobustness,
 ): SessionAnalysis {
-    val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps)
+    val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps, robustness = robustness)
     val fastest = laps.timedLaps[fastestIndex]
     val review = computeSegmentReview(
         session, laps, fastest.number, fastest.startTelemetryTime, fastest.endTelemetryTime,
+        robustness = robustness,
     )
     val consensus = lineConsensus(review.axis, laps.lapTraces.filter { it.lapNumber != fastest.number })
     val identified = if (consensus.disagrees || !review.axis.valid) {
@@ -144,10 +151,13 @@ private fun analyzeLaps(
     val population = laps.timedLaps.map {
         PopulationLap(session, it.startTelemetryTime, it.endTelemetryTime, it.number)
     }
-    val timed = timePopulation(laps, fastest.number, segments ?: NoSegments, population)
-        ?: return SessionAnalysis(laps, fastest.number, review, consensus)
+    val timed = timePopulation(laps, fastest.number, segments ?: NoSegments, population, robustness)
+        ?: return SessionAnalysis(laps, fastest.number, review, consensus, robustness = robustness)
     if (segments == null) {
-        return SessionAnalysis(laps, fastest.number, review, consensus, axis = timed.axis, traces = timed.traces)
+        return SessionAnalysis(
+            laps, fastest.number, review, consensus,
+            axis = timed.axis, traces = timed.traces, robustness = robustness,
+        )
     }
     val eligible = laps.timedLaps.indices.filter { laps.timedLaps[it].referenceEligible }
     val eligibleTimes = eligible.map { timed.times[it] }
@@ -180,6 +190,7 @@ private fun analyzeLaps(
         realisticOptimal = realisticOptimal(
             session, timed.axis, segments, laps.timedLaps, timed.times, timed.traces, fastestIndex,
         ),
+        robustness = robustness,
     )
 }
 

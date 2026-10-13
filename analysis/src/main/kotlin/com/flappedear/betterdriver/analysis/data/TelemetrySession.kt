@@ -178,7 +178,8 @@ class TelemetrySession(
      * Actual samples of [name] between [rangeStart] and [rangeEnd] (either order), split at every
      * missing value and every interval longer than the gap threshold. Each of [maximumPoints] time
      * buckets contributes its ordered minimum and maximum; when that still exceeds twice
-     * [maximumPoints], the overall extremes plus evenly spaced samples are kept.
+     * [maximumPoints], the overall extremes plus evenly spaced samples are kept. An interval up to
+     * [minimumGapSeconds] is never a gap ([TelemetryChannel.gapThreshold]).
      */
     @Suppress("ReturnCount", "CyclomaticComplexMethod", "LongMethod", "NestedBlockDepth")
     fun sampledSegments(
@@ -186,6 +187,7 @@ class TelemetrySession(
         rangeStart0: Double,
         rangeEnd0: Double,
         maximumPoints: Int,
+        minimumGapSeconds: Double = 0.0,
     ): List<List<SamplePoint>> {
         if (!rangeStart0.isFinite() || !rangeEnd0.isFinite() || maximumPoints < 2) return emptyList()
         val rangeStart = min(rangeStart0, rangeEnd0)
@@ -197,7 +199,7 @@ class TelemetrySession(
 
         val raw = mutableListOf<List<SamplePoint>>()
         var current = mutableListOf<SamplePoint>()
-        val gap = found.gapThreshold()
+        val gap = found.gapThreshold(minimumGapSeconds)
         for (i in found.timestamps.indices) {
             val t = found.timestamps[i]
             val v = found.values[i]
