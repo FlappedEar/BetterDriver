@@ -5,8 +5,13 @@ import android.app.ActivityManager
 import android.content.Context
 import android.os.Build
 import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import android.view.inspector.WindowInspector
+import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
@@ -22,6 +27,8 @@ import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.rule.GrantPermissionRule
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -112,29 +119,77 @@ class SmokeSetup {
 const val LoadTimeoutMs = 90_000L
 private const val StepTimeoutMs = 20_000L
 
+/**
+ * How many nodes match [matcher] now, matched on the main thread (FBBD-208).
+ *
+ * Compose's own `onAllNodes(matcher).fetchSemanticsNodes()` (ui-test 1.9) collects the nodes on the
+ * main thread but matches them on the test thread. Matching a node of the merged tree reads its
+ * children's semantics, and when the screen has changed them since (a corner flag tapped, a card
+ * laid out by a load that finished), that read runs the owner's snapshot observer on the test
+ * thread while the main thread draws with it: "Detected multithreaded access to
+ * SnapshotStateObserver". The polls below run all the time the screen changes, so they look the
+ * nodes up and match them in one go on the main thread, after the same wait for idle.
+ */
+fun SmokeRule.countNodes(matcher: SemanticsMatcher, useUnmergedTree: Boolean = false): Int {
+    waitForIdle()
+    var n = 0
+    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+        n = composeRoots().sumOf { root ->
+            root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = !useUnmergedTree).count(matcher::matches)
+        }
+    }
+    return n
+}
+
+/** Whether a node matches [matcher] now, matched on the main thread ([countNodes]). */
+fun SmokeRule.exists(matcher: SemanticsMatcher, useUnmergedTree: Boolean = false): Boolean =
+    countNodes(matcher, useUnmergedTree) > 0
+
+/** Whether a node shows [text] (or contains it, with [substring]) now ([countNodes]). */
+fun SmokeRule.showsText(text: String, substring: Boolean = false, useUnmergedTree: Boolean = false): Boolean =
+    exists(hasText(text, substring = substring), useUnmergedTree)
+
+/**
+ * The app's Compose roots on screen now, every window (dialogs and popups are windows of their own),
+ * as the Compose test rule finds them. Main thread.
+ */
+private fun composeRoots(): List<ViewRootForTest> {
+    val views = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        WindowInspector.getGlobalWindowViews()
+    } else {
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).map { it.window.decorView }
+    }
+    val roots = mutableListOf<ViewRootForTest>()
+    fun visit(view: View) {
+        if (view is ViewRootForTest) {
+            if (view.isAttachedToWindow && view.isLifecycleInResumedState) roots += view
+            return
+        }
+        if (view is ViewGroup) for (i in 0 until view.childCount) visit(view.getChildAt(i))
+    }
+    views.forEach(::visit)
+    return roots
+}
+
 /** Waits until a node shows [text] (or contains it, with [substring]) and returns the first. */
 fun SmokeRule.waitForText(
     text: String,
     substring: Boolean = false,
     timeoutMs: Long = StepTimeoutMs,
 ): SemanticsNodeInteraction {
-    waitNamed("\"$text\"", timeoutMs) {
-        onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
-    }
+    waitNamed("\"$text\"", timeoutMs) { showsText(text, substring) }
     return onAllNodesWithText(text, substring = substring)[0]
 }
 
 /** Waits until a node matching [matcher] exists and returns the first. */
 fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
-    waitNamed(matcher.description, timeoutMs) { onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    waitNamed(matcher.description, timeoutMs) { exists(matcher) }
     return onAllNodes(matcher)[0]
 }
 
 /** Waits until no node shows [text]. */
 fun SmokeRule.waitUntilGone(text: String, substring: Boolean = false, timeoutMs: Long = StepTimeoutMs) {
-    waitNamed("no \"$text\"", timeoutMs) {
-        onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isEmpty()
-    }
+    waitNamed("no \"$text\"", timeoutMs) { !showsText(text, substring) }
 }
 
 /** [waitUntil] that says what it waited for when it times out. */
@@ -218,15 +273,13 @@ fun SmokeRule.pumpUntilText(
     substring: Boolean = false,
     timeoutMs: Long = StepTimeoutMs,
 ): SemanticsNodeInteraction {
-    pumpUntil(timeoutMs, "\"$text\"") {
-        onAllNodesWithText(text, substring = substring).fetchSemanticsNodes().isNotEmpty()
-    }
+    pumpUntil(timeoutMs, "\"$text\"") { showsText(text, substring) }
     return onAllNodesWithText(text, substring = substring)[0]
 }
 
 /** With the manual clock: [waitFor]. */
 fun SmokeRule.pumpUntilNode(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
-    pumpUntil(timeoutMs, matcher.description) { onAllNodes(matcher).fetchSemanticsNodes().isNotEmpty() }
+    pumpUntil(timeoutMs, matcher.description) { exists(matcher) }
     return onAllNodes(matcher)[0]
 }
 
