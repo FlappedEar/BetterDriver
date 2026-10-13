@@ -26,8 +26,11 @@ import java.util.zip.ZipFile
 fun driveChecks(lines: List<LogLine>): List<QualityReport> {
     val life = AppLife.of(lines)
     var since: Long? = null
-    return DriveLog.sessions(lines).map { s ->
-        driveChecks(s, life, since).also { since = maxOf(since ?: Long.MIN_VALUE, endUtcMillis(s)) }
+    val sessions = DriveLog.sessions(lines)
+    return sessions.mapIndexed { i, s ->
+        val nextStart = sessions.getOrNull(i + 1)?.startUtcMillis
+        // The end of a recording without a stop line is inferred, as its report infers it.
+        driveChecks(s, life, since, nextStart).also { since = maxOf(since ?: Long.MIN_VALUE, endUtcMillis(s)) }
     }
 }
 
@@ -53,14 +56,18 @@ fun readLog(file: File): List<LogLine> = when {
 private fun processOf(name: String) = name.substringAfterLast('/').substringBefore('.')
 
 /** The report of one recording from the log alone, without the app's starts and process ends around it. */
-fun driveChecks(s: LoggedSession): QualityReport = driveChecks(s, AppLife(emptyList(), emptyList(), emptyList()), null)
+fun driveChecks(s: LoggedSession): QualityReport =
+    driveChecks(s, AppLife(emptyList(), emptyList(), emptyList()), null, null)
 
-/** The report of one recording; [life] and [sinceUtc] as [driveChecks] of the whole log gives them. */
-private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?): QualityReport {
+/**
+ * The report of one recording; [life] and [sinceUtc] as [driveChecks] of the whole log gives them,
+ * [nextStartUtc] the start of the recording after it, if any.
+ */
+private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextStartUtc: Long?): QualityReport {
     val seconds = s.seconds.sortedBy { it.tMicros }
     val events = s.events.sortedBy { it.tMicros }
     val sets = seconds.map(::sampleSet)
-    val end = s.endMicros ?: maxOf(sets.lastOrNull()?.tMicros ?: 0L, events.maxOfOrNull { it.tMicros } ?: 0L)
+    val end = endMicros(s)
     val data = SessionData(
         s.id, SessionInfo(s.startUtcMillis ?: 0L, devices = listOfNotNull(s.source)), SessionState.FINISHED,
         emptyMap(), sets, events, Record.End(end, s.stopReason ?: "unknown"), truncatedBytes = 0, skippedBytes = 0,
@@ -79,14 +86,23 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?): Quali
         thermalSection(events, end),
         screenSection(events, logOutages(seconds, end), end),
         exportSection(events, end),
-        startupSection(life, sinceUtc, s.startUtcMillis ?: 0L, endUtcMillis(s, end)),
+        startupSection(
+            life, sinceUtc, s.startUtcMillis ?: 0L, endUtcMillis(s),
+            unfinishedUntilUtc = if (s.endMicros == null) nextStartUtc ?: Long.MAX_VALUE else null,
+        ),
     )
     return QualityReport(QualityFormat, s.id, "LOGGED", s.startUtcMillis ?: 0L, withSoak(sections, end))
 }
 
-/** When [s] ended on the phone's wall clock: its start plus [endMicros], its logged end when not given. */
-private fun endUtcMillis(s: LoggedSession, endMicros: Long? = s.endMicros): Long =
-    (s.startUtcMillis ?: 0L) + (endMicros ?: 0L) / MicrosPerMilli
+/**
+ * When [s] ended on the session clock: its logged end, or for a recording without a stop line (the
+ * process ended) its last GNSS second or event.
+ */
+private fun endMicros(s: LoggedSession): Long =
+    s.endMicros ?: maxOf(s.seconds.maxOfOrNull { it.tMicros } ?: 0L, s.events.maxOfOrNull { it.tMicros } ?: 0L)
+
+/** When [s] ended on the phone's wall clock, as [endMicros] gives it. */
+private fun endUtcMillis(s: LoggedSession): Long = (s.startUtcMillis ?: 0L) + endMicros(s) / MicrosPerMilli
 
 /** One sample per logged second: its first sample's time, the receiver time, the mean fix and speed. */
 private fun sampleSet(g: GnssSecond) = SampleSet(
