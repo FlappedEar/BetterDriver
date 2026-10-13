@@ -92,7 +92,7 @@ private fun Primary(row: FocusRow, onCompare: (Int) -> Unit, modifier: Modifier)
             )
             row.timeText(::focusSeconds)?.let { time ->
                 Column(horizontalAlignment = Alignment.End) {
-                    NumberText(time, size = 24.dp, color = if (row.confidence.doubtful) c.textDim else c.gain)
+                    NumberText(time, size = 24.dp, color = if (row.timeDoubtful) c.textDim else c.gain)
                     Dim("a lap")
                 }
             }
@@ -117,7 +117,7 @@ private fun Secondary(row: FocusRow, onCompare: (Int) -> Unit) {
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(row.name, Modifier.weight(1f), color = c.text, fontWeight = FontWeight.SemiBold)
-            row.timeText(::focusSeconds)?.let { Text(it, color = if (row.confidence.doubtful) c.textDim else c.gain) }
+            row.timeText(::focusSeconds)?.let { Text(it, color = if (row.timeDoubtful) c.textDim else c.gain) }
         }
         Dim(row.what.ifEmpty { row.observation })
         if (row.confidence.doubtful) ConfidenceNote(row.confidence)

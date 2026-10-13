@@ -38,6 +38,7 @@ class FocusRecordTest {
             ),
             confidence = Graded(if (role == FocusRole.Primary) Confidence.HIGH else Confidence.MEDIUM),
             timeAvailableSeconds = seconds,
+            timeConfidence = if (role == FocusRole.Primary) Confidence.HIGH else Confidence.MEDIUM,
             changes = changes,
             fasterLaps = 2,
             otherLaps = 3,
@@ -67,7 +68,8 @@ class FocusRecordTest {
         assertEquals(listOf("repeatedLoss", "repeatedLoss"), record.targets.map { it.kind })
         val primary = record.targets[0]
         assertEquals(0.18, primary.timeAvailableSeconds!!, 1e-9)
-        assertEquals(listOf(FocusChangeRecord("brakingPoint", 120.0, 128.0, "m", true)), primary.changes)
+        assertEquals(listOf(FocusChangeRecord("brakingPoint", 120.0, 128.0, "m", true, "HIGH")), primary.changes)
+        assertEquals(listOf("HIGH", "MEDIUM"), record.targets.map { it.timeConfidence })
         assertEquals(line.lats, primary.lats)
         // The coach places the primary by its CornerId; a focus without a line is kept but not handed on.
         assertEquals(listOf("c4"), record.picks().map { it.cornerId })

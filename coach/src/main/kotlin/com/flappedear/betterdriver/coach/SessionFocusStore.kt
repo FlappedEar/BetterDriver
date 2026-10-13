@@ -11,7 +11,8 @@ import java.io.IOException
 /**
  * One difference between the faster and the other passes through a focus corner (FBBD-20), as
  * stored: [metric] is `brakingPoint`, `minimumSpeed` or `exitSpeed`; [other] and [faster] are the
- * medians of the two groups in [unit] (metres along the lap for a braking point).
+ * medians of the two groups in [unit] (metres along the lap for a braking point). [confidence] is
+ * the lowest of the passes the change uses (FBBD-177); null in records from before it was kept.
  */
 @Serializable
 data class FocusChangeRecord(
@@ -20,6 +21,7 @@ data class FocusChangeRecord(
     val faster: Double,
     val unit: String = "",
     val measured: Boolean = true,
+    val confidence: String? = null,
 )
 
 /**
@@ -48,6 +50,8 @@ data class FocusTarget(
     val confidence: String,
     /** What a typical pass leaves against the target (the second fastest pass), seconds; null when unknown. */
     val timeAvailableSeconds: Double? = null,
+    /** How far [timeAvailableSeconds] can be trusted (FBBD-177); null in records from before it was kept. */
+    val timeConfidence: String? = null,
     val changes: List<FocusChangeRecord> = emptyList(),
     /** The evidence in words, as the summary showed it. */
     val observation: String = "",

@@ -3,6 +3,10 @@
 package com.flappedear.betterdriver.analysis
 
 import com.flappedear.betterdriver.analysis.confidence.ClaimCodes
+import com.flappedear.betterdriver.analysis.confidence.ConfidenceReason
+import com.flappedear.betterdriver.analysis.confidence.Graded
+import com.flappedear.betterdriver.analysis.confidence.SegmentConfidence
+import com.flappedear.betterdriver.analysis.confidence.SessionConfidence
 import com.flappedear.betterdriver.analysis.corners.BrakingMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerLapObservation
@@ -79,7 +83,10 @@ class NextSessionFocusTest {
         )
     }
 
-    private fun handBuilt(drop: Set<String> = emptySet()): SessionAnalysis {
+    private fun handBuilt(
+        drop: Set<String> = emptySet(),
+        times: Map<String, List<Double>> = this.times,
+    ): SessionAnalysis {
         val ids = times.keys.filter { it !in drop }
         val laps = (1..6).map { n -> TimedLap(n, n * 100.0, n * 100.0 + 80.0 + (if (n == 2) 0.0 else 0.5), 80.0) }
         val segments = ids.mapIndexed { i, id ->
@@ -233,6 +240,55 @@ class NextSessionFocusTest {
         )
         assertFalse(Regex("\\d").containsMatchIn(medium), medium)
         assertEquals("", changeText(changes, 3, 5, Confidence.LOW))
+    }
+
+    /** [analysis] with lap [index] (0-based) graded Medium through c1 only, the rest of c1 High. */
+    private fun mediumLap(index: Int, analysis: SessionAnalysis = handBuilt()): SessionAnalysis = analysis.let { a ->
+        val medium = Graded.of(ConfidenceReason("gps_accuracy", Confidence.MEDIUM, "lap ${index + 1}: weak positions"))
+        val laps = (0 until 6).map { if (it == index) medium else Graded.High }
+        a.copy(confidence = SessionConfidence(segments = mapOf("c1" to SegmentConfidence("c1", laps = laps))))
+    }
+
+    @Test
+    fun `a change or a time resting on one pass below High is said without its number`() {
+        // Lap 5, a slower pass that the braking and speed medians use, is Medium in c1; the focus is High.
+        val primary = assertNotNull(nextSessionPlan(mediumLap(4)).primary)
+        assertEquals("c1", primary.segmentId)
+        assertEquals(Confidence.HIGH, primary.confidence.level)
+        assertEquals(listOf(Confidence.MEDIUM, Confidence.MEDIUM), primary.changes.map { it.confidence })
+        assertTrue(primary.changes.none { it.precise })
+        assertEquals(
+            "Your 2 fastest passes braked later and carried more minimum speed than your other 4.",
+            primary.what,
+        )
+        // Its time is lap 2's loss to lap 1 (0.40 s), both High there: it keeps its number.
+        assertEquals(0.40, primary.timeAvailableSeconds!!, 1e-9)
+        assertEquals(Confidence.HIGH, primary.timeConfidence)
+        // On the High-only session every change and the time keep their numbers.
+        val high = assertNotNull(nextSessionPlan(handBuilt()).primary)
+        assertTrue(high.changes.all { it.precise && it.confidence == Confidence.HIGH })
+        assertEquals(Confidence.HIGH, high.timeConfidence)
+
+        // With laps 4 to 6 slower still in c1, its time is what a typical pass leaves against the
+        // second fastest (10.55 - 10.12 s), from every pass: with lap 5 Medium, no number.
+        val typical = handBuilt(times = times + ("c1" to listOf(10.10, 10.50, 10.12, 10.60, 10.62, 10.64)))
+        val c1 = assertNotNull(nextSessionPlan(mediumLap(4, typical)).primary)
+        assertEquals("c1", c1.segmentId)
+        assertEquals(0.43, c1.timeAvailableSeconds!!, 1e-9)
+        assertEquals(Confidence.MEDIUM, c1.timeConfidence)
+        assertEquals(Confidence.HIGH, assertNotNull(nextSessionPlan(typical).primary).timeConfidence)
+    }
+
+    @Test
+    fun `a speed without its unit is said without its number`() {
+        val noUnit = listOf(FocusChange(FocusMetric.MinimumSpeed, 70.0, 74.0, ""))
+        assertFalse(noUnit.single().precise)
+        assertEquals(
+            "Your 2 fastest passes carried more minimum speed than your other 4.",
+            changeText(noUnit, 2, 4, Confidence.HIGH),
+        )
+        val medium = listOf(FocusChange(FocusMetric.BrakingPoint, 120.0, 128.0, "m", confidence = Confidence.MEDIUM))
+        assertEquals("Your 2 fastest passes braked later than your other 4.", changeText(medium, 2, 4, Confidence.HIGH))
     }
 
     @Test

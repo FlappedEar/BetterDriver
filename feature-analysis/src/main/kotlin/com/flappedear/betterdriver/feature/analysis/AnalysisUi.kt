@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.roundToLong
 
@@ -112,9 +113,15 @@ data class FocusRow(
     val primary: Boolean = false,
     val timeSeconds: Double? = null,
     val what: String = "",
+    /** How far [timeSeconds] can be trusted: [confidence], or lower when a pass it rests on is. */
+    val timeConfidence: Confidence = confidence.level,
 ) {
     /** The time available as shown: no number below High confidence; null when unknown. */
-    fun timeText(format: (Double) -> String): String? = timeSeconds?.let { timeText(it, confidence, format) }
+    fun timeText(format: (Double) -> String): String? =
+        timeSeconds?.let { timeText(it, ConfidenceUi(timeConfidence), format) }
+
+    /** Whether the time available is shown below High, in the dim colour. */
+    val timeDoubtful: Boolean get() = timeConfidence != Confidence.HIGH
 }
 
 /**
@@ -362,6 +369,7 @@ fun nextSession(analysis: SessionAnalysis): NextSession {
             primary = f.role == FocusRole.Primary,
             timeSeconds = f.timeAvailableSeconds,
             what = f.what,
+            timeConfidence = f.timeConfidence,
         )
     }
     return NextSession(focus, plan.withheld.map { WithheldRow(it.name, it.confidence.why) })

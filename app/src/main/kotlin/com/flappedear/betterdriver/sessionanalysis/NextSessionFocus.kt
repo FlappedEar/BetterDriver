@@ -72,7 +72,10 @@ internal fun focusRecord(
             kind = f.area.kind.code,
             confidence = f.confidence.level.name,
             timeAvailableSeconds = f.timeAvailableSeconds,
-            changes = f.changes.map { FocusChangeRecord(it.metric.code, it.other, it.faster, it.unit, it.measured) },
+            timeConfidence = f.timeConfidence.name,
+            changes = f.changes.map {
+                FocusChangeRecord(it.metric.code, it.other, it.faster, it.unit, it.measured, it.confidence.name)
+            },
             observation = f.area.observation,
             what = f.what,
             lats = line?.lats.orEmpty(),

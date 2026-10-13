@@ -6,11 +6,8 @@ import com.flappedear.betterdriver.analysis.confidence.Graded
 import com.flappedear.betterdriver.analysis.confidence.MinimumSupportingLaps
 import com.flappedear.betterdriver.analysis.confidence.segmentSeconds
 import com.flappedear.betterdriver.analysis.confidence.usableLaps
-import com.flappedear.betterdriver.analysis.corners.CornerLapObservation
-import com.flappedear.betterdriver.analysis.data.sameSpeedUnit
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
-import kotlin.math.abs
 import kotlin.math.max
 
 // What to work on next session (FBBD-20): one primary focus and at most two secondary ones, picked
@@ -54,7 +51,8 @@ enum class FocusMetric(val code: String) {
  * [measured] is false for a braking point inferred from the speed (no brake signal) and for speeds
  * not measured (calculated from positions); such a change is said without its number.
  * [fasterCount] and [otherCount] are how many passes of each group had a value for [metric]
- * ([MinimumSupportingLaps] each at least); 0 when not known.
+ * ([MinimumSupportingLaps] each at least); 0 when not known. Its number is said only when it is
+ * [precise] and the focus is High confidence.
  */
 data class FocusChange(
     val metric: FocusMetric,
@@ -64,8 +62,13 @@ data class FocusChange(
     val measured: Boolean = true,
     val fasterCount: Int = 0,
     val otherCount: Int = 0,
+    /** The lowest confidence of the passes the change uses, in its corner (FBBD-177). */
+    val confidence: Confidence = Confidence.HIGH,
 ) {
     val delta: Double get() = faster - other
+
+    /** Whether its number may be said: measured, in a known unit, from passes all graded High. */
+    val precise: Boolean get() = measured && confidence == Confidence.HIGH && unit.isNotBlank()
 }
 
 /**
@@ -81,6 +84,11 @@ data class NextFocus(
     val area: FocusArea,
     val confidence: Graded,
     val timeAvailableSeconds: Double?,
+    /**
+     * How far [timeAvailableSeconds] can be trusted: [confidence], and below it the lowest of the
+     * passes it was worked out from (FBBD-177). Its number is said only at High.
+     */
+    val timeConfidence: Confidence,
     val changes: List<FocusChange>,
     val fasterLaps: Int,
     val otherLaps: Int,
@@ -119,8 +127,14 @@ fun nextSessionPlan(analysis: SessionAnalysis, lapLabel: (Any?) -> String = { "l
     val corners = analysis.segments?.segments.orEmpty()
         .filter { it.type == TrackSegmentType.Corner }.map { it.id }.toSet()
     val candidates = found.areas.filter { it.area.segmentId in corners }.map { graded ->
-        val times = listOfNotNull(cornerTimeAvailable(analysis, graded.area.segmentId), secondsOf(graded.area))
-        Candidate(graded, times.maxOrNull())
+        val level = graded.confidence.level
+        val own = secondsOf(graded.area)
+        val corner = cornerTime(analysis, graded.area.segmentId)
+        if (corner != null && (own == null || corner.first > own)) {
+            Candidate(graded, corner.first, minOf(level, corner.second))
+        } else {
+            Candidate(graded, own, level)
+        }
     }.sortedWith(
         compareByDescending<Candidate> { it.graded.confidence.level }
             .thenByDescending { it.seconds ?: 0.0 }
@@ -147,7 +161,7 @@ fun nextSessionPlan(analysis: SessionAnalysis, lapLabel: (Any?) -> String = { "l
     )
 }
 
-private class Candidate(val graded: GradedFocusArea, val seconds: Double?)
+private class Candidate(val graded: GradedFocusArea, val seconds: Double?, val level: Confidence)
 
 /** The area's own value when it is a time. */
 private fun secondsOf(area: FocusArea): Double? = area.value.takeIf { area.unit == "s" && it.isFinite() }
@@ -163,6 +177,7 @@ private fun focusOf(analysis: SessionAnalysis, c: Candidate, role: FocusRole): N
         area = graded.area,
         confidence = graded.confidence,
         timeAvailableSeconds = c.seconds,
+        timeConfidence = c.level,
         changes = changes,
         fasterLaps = groups?.faster?.size ?: 0,
         otherLaps = groups?.other?.size ?: 0,
@@ -174,88 +189,14 @@ private fun focusOf(analysis: SessionAnalysis, c: Candidate, role: FocusRole): N
  * What a typical pass through [segmentId] leaves against the second fastest usable pass, seconds;
  * null with fewer than [ConsistentLaps] usable laps timed there.
  */
-fun cornerTimeAvailable(analysis: SessionAnalysis, segmentId: String): Double? {
-    val times = analysis.usableLaps(segmentId).mapNotNull { analysis.segmentSeconds(segmentId, it) }
-        .filter { it.isFinite() }.sorted()
-    if (times.size < ConsistentLaps) return null
-    return max(0.0, median(times) - times[MinimumSupportingLaps - 1])
-}
+fun cornerTimeAvailable(analysis: SessionAnalysis, segmentId: String): Double? = cornerTime(analysis, segmentId)?.first
 
-/** The usable laps through a corner, by lap index: the fastest third (two at least) and the others. */
-private class PassGroups(val faster: List<Int>, val other: List<Int>)
-
-private fun passGroups(analysis: SessionAnalysis, segmentId: String): PassGroups? {
+/** [cornerTimeAvailable], and the lowest confidence of the passes it is worked out from. */
+private fun cornerTime(analysis: SessionAnalysis, segmentId: String): Pair<Double, Confidence>? {
     val timed = analysis.usableLaps(segmentId)
         .mapNotNull { i -> analysis.segmentSeconds(segmentId, i)?.takeIf { it.isFinite() }?.let { i to it } }
-        .sortedBy { it.second }
-    val k = max(MinimumSupportingLaps, timed.size / FastShareDivisor)
-    // Three laps at least, so there is one other pass besides the faster ones.
-    return if (timed.size < ConsistentLaps || timed.size <= k) {
-        null
-    } else {
-        PassGroups(timed.take(k).map { it.first }, timed.drop(k).map { it.first })
-    }
-}
-
-private const val FastShareDivisor = 3
-
-/** How the faster passes through [segmentId] differ from the others, where the difference is worth a change. */
-private fun cornerChanges(analysis: SessionAnalysis, segmentId: String, groups: PassGroups): List<FocusChange> {
-    val metrics = analysis.cornerMetrics[segmentId] ?: return emptyList()
-    fun observations(laps: List<Int>) = laps.mapNotNull { metrics.getOrNull(it)?.observation }
-    val faster = observations(groups.faster)
-    val other = observations(groups.other)
-    // Each change is precise only when its own channel is measured (FBBD-174, FBBD-177): speeds
-    // calculated from positions, a braking point inferred from the speed or read from a brake
-    // channel of unknown or calculated origin carry no number.
-    val speedMeasured = analysis.provenance.speed?.measured != false
-    return listOfNotNull(
-        brakingChange(faster, other) { method -> analysis.provenance.braking(method)?.measured != false },
-        speedChange(FocusMetric.MinimumSpeed, faster, other, speedMeasured) { it.minimumSpeed },
-        speedChange(FocusMetric.ExitSpeed, faster, other, speedMeasured) { it.exitSpeed },
-    )
-}
-
-/** Measured braking points when both groups have them, else inferred ones; never the two mixed. */
-private fun brakingChange(
-    faster: List<CornerLapObservation>,
-    other: List<CornerLapObservation>,
-    measuredBy: (method: String) -> Boolean,
-): FocusChange? {
-    for (provenance in listOf("measured", "inferred")) {
-        fun points(o: List<CornerLapObservation>) = o.filter { it.brakingProvenance == provenance }
-            .mapNotNull { it.brakingPointMeters }.filter { it.isFinite() }
-        val f = points(faster)
-        val o = points(other)
-        // A median of one pass is no median: each group needs two at least.
-        if (f.size < MinimumSupportingLaps || o.size < MinimumSupportingLaps) continue
-        val measured = measuredBy(provenance)
-        val change = FocusChange(FocusMetric.BrakingPoint, median(o), median(f), "m", measured, f.size, o.size)
-        return change.takeIf { abs(it.delta) >= FocusChangeBrakingMeters }
-    }
-    return null
-}
-
-private fun speedChange(
-    metric: FocusMetric,
-    faster: List<CornerLapObservation>,
-    other: List<CornerLapObservation>,
-    measured: Boolean,
-    value: (CornerLapObservation) -> Double?,
-): FocusChange? {
-    val all = faster + other
-    val unit = all.firstOrNull()?.speedUnit.orEmpty()
-    val f = faster.mapNotNull(value).filter { it.isFinite() }
-    val o = other.mapNotNull(value).filter { it.isFinite() }
-    // Speeds in different units are not one difference; each group needs two passes at least.
-    val comparable = all.all { sameSpeedUnit(it.speedUnit, unit) } &&
-        f.size >= MinimumSupportingLaps && o.size >= MinimumSupportingLaps
-    val change = if (comparable) FocusChange(metric, median(o), median(f), unit, measured, f.size, o.size) else null
-    return change?.takeIf { abs(it.delta) >= FocusChangeSpeedFraction * abs(it.other) && it.delta != 0.0 }
-}
-
-private fun median(values: List<Double>): Double {
-    val s = values.sorted()
-    val mid = s.size / 2
-    return if (s.size % 2 == 1) s[mid] else (s[mid - 1] + s[mid]) / 2
+    if (timed.size < ConsistentLaps) return null
+    val times = timed.map { it.second }.sorted()
+    val level = Confidence.lowest(timed.map { analysis.confidence.lap(segmentId, it.first).level })
+    return max(0.0, median(times) - times[MinimumSupportingLaps - 1]) to level
 }
