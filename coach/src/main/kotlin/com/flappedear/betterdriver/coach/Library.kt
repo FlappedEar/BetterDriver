@@ -19,20 +19,16 @@ fun SessionData.savedTrackId(): String? = TrackEvent.savedTrackId(events)
 
 private const val MicrosPerMilli = 1_000L
 
-/** No drive lasts longer than this: 3 hours. */
-private const val MaxDriveMillis = 3L * 60 * 60 * 1_000
-
 /**
- * When [s] ended: from its length, or for a session not yet recovered (no length), when its files
- * were last written, but at most [MaxDriveMillis] after its start, since a session copied in
- * (import, restore) has the copy's file times.
+ * When [s] ended: from its length, or for a session not yet recovered (no length), from its last
+ * sample. Never from its file times: a session copied in (import, restore) has the copy's times.
  */
-private fun endedUtcMillis(s: SessionSummary): Long {
+private fun endedUtcMillis(s: SessionSummary, store: SessionStore): Long {
     val start = s.info.startUtcMillis
     val length = s.durationMicros
-    if (length != null) return start + length / MicrosPerMilli
-    val written = s.dir.listFiles()?.maxOfOrNull { it.lastModified() } ?: start
-    return written.coerceIn(start, start + MaxDriveMillis)
+        ?: runCatching { store.read(s.dir).sampleSets.lastOrNull()?.tMicros }.getOrNull()
+        ?: 0L
+    return start + length / MicrosPerMilli
 }
 
 /** The session's fixes, in time order. */
@@ -77,7 +73,7 @@ class CoachLibrary(
      */
     fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
         val ids = reference.sessions.toSet()
-        val ended = sessions.list().filter { it.id in ids }.maxOfOrNull(::endedUtcMillis)
+        val ended = sessions.list().filter { it.id in ids }.maxOfOrNull { endedUtcMillis(it, sessions) }
         return ended != null && nowUtcMillis - ended in 0..SameDayMillis
     }
 

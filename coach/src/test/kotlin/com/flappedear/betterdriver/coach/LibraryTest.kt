@@ -107,29 +107,31 @@ class LibraryTest {
     }
 
     @Test
-    fun `a session not yet recovered ended when its files were last written`() {
+    fun `a session not yet recovered ended at its last sample`() {
         val store = SessionStore(File(tmp, "sessions"))
         val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
         val now = System.currentTimeMillis()
-        val hour = 60 * 60 * 1_000L
-        // Started 13 hours ago and never stopped cleanly: no length is known.
-        val id = record(store, track, List(2) { SimCircuit.Pace() }, now - 13 * hour)
+        val fixes = sim.drive(List(2) { SimCircuit.Pace() }).fixes
+        val driveMillis = fixes.last().tMicros / 1_000
+        // Never stopped cleanly: no length is known. Started more than 12 hours ago, but its last
+        // sample is less than 12 hours ago.
+        val id = record(store, track, fixes, now - 12 * 60 * 60 * 1_000L - driveMillis / 2)
         val ref = assertNotNull(library.reference(track))
         assertTrue(File(store.dir(id), SessionFiles.FINISHED).delete())
         assertNull(store.list().single { it.id == id }.durationMicros)
-        assertTrue(library.drivenSameDay(ref, now + 5 * 60 * 1_000L))
+        assertTrue(library.drivenSameDay(ref, now))
     }
 
     @Test
-    fun `an old session copied in without its length does not count as the same day`() {
+    fun `a short session copied in without its length counts from its samples, not its file times`() {
         val store = SessionStore(File(tmp, "sessions"))
         val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }
         val now = System.currentTimeMillis()
-        // Driven a week ago and imported now: its files are new, its start is not.
-        val id = record(store, track, List(2) { SimCircuit.Pace() }, now - 7 * 24 * 60 * 60 * 1_000L)
+        // Driven 14 hours ago for a few minutes and imported now: its files are new, its samples are not.
+        val id = record(store, track, List(2) { SimCircuit.Pace() }, now - 14 * 60 * 60 * 1_000L)
         val ref = assertNotNull(library.reference(track))
         assertTrue(File(store.dir(id), SessionFiles.FINISHED).delete())
-        assertFalse(library.drivenSameDay(ref, now + 5 * 60 * 1_000L))
+        assertFalse(library.drivenSameDay(ref, now))
     }
 
     @Test
