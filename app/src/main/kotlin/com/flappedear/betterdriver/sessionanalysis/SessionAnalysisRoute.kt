@@ -35,6 +35,7 @@ import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
@@ -164,6 +165,15 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
             null -> AnalysisState.Loading
             is Load.Failed -> l.state
             is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared, progress) }
+        }
+    }
+    // What to work on next (FBBD-20) is kept for the track's next session's coach once analysed.
+    LaunchedEffect(load) {
+        val l = load as? Load.Done ?: return@LaunchedEffect
+        val loaded = l.loaded
+        withContext(Dispatchers.Default) {
+            val store = sessionFocusStore(context)
+            keepSessionFocus(store, loaded.track.id, id, loaded.startUtcMillis, loaded.analysis, l.coachCandidates)
         }
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }

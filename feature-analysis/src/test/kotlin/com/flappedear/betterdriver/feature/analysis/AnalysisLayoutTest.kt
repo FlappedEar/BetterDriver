@@ -4,10 +4,13 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
@@ -50,6 +53,21 @@ abstract class AnalysisLayoutTest(private val device: String) {
             problems += compose.layoutProblems().map { "${t.title}: $it" }
         }
         check(problems.isEmpty()) { "session analysis on $device (FBBD-40):\n" + problems.joinToString("\n") }
+    }
+
+    /**
+     * What to work on next (FBBD-20) is the first thing on the summary, above the best lap: the
+     * primary focus, and its secondary ones.
+     */
+    @Test
+    fun nextSessionComesFirst() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        compose.waitForIdle()
+        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode().boundsInRoot
+        val best = compose.onAllNodes(hasText("BEST LAP"))[0].fetchSemanticsNode().boundsInRoot
+        check(next.bottom <= best.top) { "next session at $next, best lap at $best on $device" }
+        compose.onNodeWithTag(PrimaryFocusTag).assertIsDisplayed().assert(hasText("Corners 2–3"))
     }
 
     /** Rotating the device recreates the activity: the open tab stays open. */

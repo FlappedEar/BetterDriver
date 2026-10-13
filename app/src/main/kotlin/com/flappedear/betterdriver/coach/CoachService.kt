@@ -96,7 +96,11 @@ class CoachService : Service() {
         val picks = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
             ?.let { coachPicks(this).get(it.id) }.orEmpty()
         if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
-        a.coach = CoachSession(a.settings, track, reference, picks, sameDay)
+        // What the last analysed session at the track recommends working on (FBBD-20), primary first.
+        val focus = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
+            ?.let { sessionFocusStore(this).latest(it.id, exclude = a.id) }
+        focus?.let { f -> DebugLog.i(Tag, "session focus from ${f.sessionId}: ${f.targets.joinToString { it.name }}") }
+        a.coach = CoachSession(a.settings, track, reference, picks, sameDay, focus?.picks().orEmpty())
         updateStatus(a, a.coach?.status ?: CoachStatus.None)
     }
 

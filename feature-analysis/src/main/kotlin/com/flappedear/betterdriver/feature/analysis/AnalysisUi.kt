@@ -7,7 +7,8 @@ import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.confidence.bestGapConfidence
 import com.flappedear.betterdriver.analysis.confidence.lossConfidence
 import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
-import com.flappedear.betterdriver.analysis.focus.sessionFocus
+import com.flappedear.betterdriver.analysis.focus.FocusRole
+import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.map.GgTrace
@@ -91,9 +92,11 @@ data class LossRow(
 }
 
 /**
- * One area to look at before the next session: the measured [observation], kept apart from the
- * [hypothesis] of what may be worth comparing. [compareIndex] is the lap of the pair to compare
- * with the fastest, or null when both are the fastest.
+ * One corner to work on next session (FBBD-20): the [primary] one or a secondary one. [timeSeconds]
+ * is what a typical pass there leaves against what the driver has done on two laps; [what] says how
+ * the faster passes differed (braking point, minimum speed, exit speed), empty when nothing stood out.
+ * The measured [observation] is kept apart from the [hypothesis] of what may be worth comparing.
+ * [compareIndex] is the lap of the pair to compare with the fastest, or null when both are the fastest.
  */
 data class FocusRow(
     val kind: String,
@@ -106,7 +109,13 @@ data class FocusRow(
     val cornerId: String? = null,
     /** How far the observation can be trusted (FBBD-177); below High it is worded without numbers. */
     val confidence: ConfidenceUi = ConfidenceUi.High,
-)
+    val primary: Boolean = false,
+    val timeSeconds: Double? = null,
+    val what: String = "",
+) {
+    /** The time available as shown: no number below High confidence; null when unknown. */
+    fun timeText(format: (Double) -> String): String? = timeSeconds?.let { timeText(it, confidence, format) }
+}
 
 /**
  * A corner or straight left out of the focus areas (FBBD-177): what it showed rests on too little
@@ -162,7 +171,7 @@ data class AnalysisUi(
     val losses: List<LossRow> = emptyList(),
     /** Braking, speeds and pickup of each corner on the fastest and the compared lap. */
     val corners: List<CornerDetail> = emptyList(),
-    /** Up to three areas to look at before the next session. */
+    /** What to work on next session (FBBD-20): the primary corner first, then at most two secondary ones. */
     val focus: List<FocusRow> = emptyList(),
     /** Corners and straights not among [focus] because their evidence is too weak (FBBD-177). */
     val withheld: List<WithheldRow> = emptyList(),
@@ -323,21 +332,23 @@ private fun kindLabel(kind: FocusAreaKind) = when (kind) {
     FocusAreaKind.MinimumSpeedSpread -> "Minimum speed spread"
 }
 
-/** The session's focus areas ([focus]) and what was left out of them for weak evidence. */
+/** What to work on next session ([focus], the primary first) and what was left out for weak evidence. */
 class NextSession(val focus: List<FocusRow>, val withheld: List<WithheldRow>)
 
 /**
- * The session's focus areas, each with its confidence (FBBD-177), and the corners left out of them.
- * The Compare tab sets one lap against the fastest, so an area's pair opens as whichever of its laps
- * is not the fastest (the first, when neither is).
+ * What to work on next session (FBBD-20): one primary corner and at most two secondary ones, each
+ * with its confidence (FBBD-177), its time available and how its faster passes differed, and the
+ * corners left out for weak evidence. The Compare tab sets one lap against the fastest, so a focus's
+ * pair opens as whichever of its laps is not the fastest (the first, when neither is).
  */
 fun nextSession(analysis: SessionAnalysis): NextSession {
     val laps = analysis.laps.timedLaps
     val fastest = analysis.laps.fastestLapIndex?.let { laps[it].number }
     val indexByNumber = laps.withIndex().associate { it.value.number to it.index }
     val corners = cornerIds(analysis)
-    val found = sessionFocus(analysis)
-    val focus = found.areas.map { (area, confidence) ->
+    val plan = nextSessionPlan(analysis)
+    val focus = plan.focuses.map { f ->
+        val area = f.area
         val number = listOf(area.lap, area.against).filterIsInstance<Int>().firstOrNull { it != fastest }
         FocusRow(
             kind = kindLabel(area.kind),
@@ -347,10 +358,13 @@ fun nextSession(analysis: SessionAnalysis): NextSession {
             compareIndex = number?.let(indexByNumber::get),
             compareNumber = number,
             cornerId = area.segmentId.takeIf(corners::contains),
-            confidence = confidence.ui(),
+            confidence = f.confidence.ui(),
+            primary = f.role == FocusRole.Primary,
+            timeSeconds = f.timeAvailableSeconds,
+            what = f.what,
         )
     }
-    return NextSession(focus, found.withheld.map { WithheldRow(it.name, it.confidence.why) })
+    return NextSession(focus, plan.withheld.map { WithheldRow(it.name, it.confidence.why) })
 }
 
 /**

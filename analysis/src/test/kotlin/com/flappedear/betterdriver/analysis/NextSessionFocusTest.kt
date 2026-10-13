@@ -1,0 +1,230 @@
+@file:Suppress("MagicNumber")
+
+package com.flappedear.betterdriver.analysis
+
+import com.flappedear.betterdriver.analysis.confidence.ClaimCodes
+import com.flappedear.betterdriver.analysis.corners.BrakingMetrics
+import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
+import com.flappedear.betterdriver.analysis.corners.CornerLapObservation
+import com.flappedear.betterdriver.analysis.corners.CornerSpeeds
+import com.flappedear.betterdriver.analysis.corners.ExitMetrics
+import com.flappedear.betterdriver.analysis.focus.FocusChange
+import com.flappedear.betterdriver.analysis.focus.FocusMetric
+import com.flappedear.betterdriver.analysis.focus.FocusRole
+import com.flappedear.betterdriver.analysis.focus.MaxSecondaryFocus
+import com.flappedear.betterdriver.analysis.focus.changeText
+import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.laps.LapSession
+import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
+import com.flappedear.betterdriver.analysis.laps.TimedLap
+import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
+import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
+import com.flappedear.betterdriver.analysis.segments.SectorTime
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
+import com.flappedear.betterdriver.analysis.segments.TrackSegment
+import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
+import com.flappedear.betterdriver.analysis.segments.segmentLine
+import com.flappedear.betterdriver.coach.CoachSettings
+import com.flappedear.betterdriver.coach.CueEngine
+import com.flappedear.betterdriver.coach.FocusTarget
+import com.flappedear.betterdriver.coach.SessionFocusRecord
+import com.flappedear.betterdriver.coach.SessionLaps
+import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.buildReference
+import com.flappedear.betterdriver.coach.coachFixes
+import com.flappedear.betterdriver.coach.tracedLaps
+import com.flappedear.betterdriver.recorder.Confidence
+import org.junit.jupiter.api.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/**
+ * What to work on next session (FBBD-20): one primary corner and at most two secondary ones, chosen
+ * from the confidence-gated focus areas (FBBD-177), each with its time available and what the faster
+ * passes did differently; and the focus handed to the next session's coach at the track.
+ */
+class NextSessionFocusTest {
+    /**
+     * Six laps through six corners, built by hand. Lap 2 is the fastest lap; in each corner laps 1
+     * and 3 are faster than it, so what the best of each shows is seen on two laps, except in c6,
+     * where only lap 1 was faster: an improvement seen on one lap only.
+     */
+    private val times = mapOf(
+        "c1" to listOf(10.10, 10.50, 10.12, 10.45, 10.48, 10.50),
+        "c2" to listOf(8.00, 8.20, 8.02, 8.18, 8.20, 8.22),
+        "c3" to listOf(6.05, 6.17, 6.06, 6.15, 6.16, 6.17),
+        "c4" to listOf(5.00, 5.11, 5.01, 5.10, 5.11, 5.12),
+        "c5" to listOf(4.00, 4.06, 4.01, 4.05, 4.06, 4.06),
+        "c6" to listOf(3.50, 3.80, 3.79, 3.80, 3.81, 3.80),
+    )
+
+    /** In c1 the two fastest passes (laps 1 and 3) brake 8 m later and keep 4 km/h more minimum speed. */
+    private fun c1(lap: Int): CornerLapObservation {
+        val fast = lap == 1 || lap == 3
+        val braking = if (fast) 128.0 else listOf(120.0, 121.0, 119.0, 120.0)[listOf(2, 4, 5, 6).indexOf(lap)]
+        val minimum = if (fast) 74.0 else listOf(70.0, 71.0, 70.0, 69.0)[listOf(2, 4, 5, 6).indexOf(lap)]
+        return CornerLapObservation(
+            lapReference = lap,
+            brakingPointMeters = braking,
+            brakingProvenance = "measured",
+            minimumSpeed = minimum,
+            exitSpeed = 100.0,
+            speedUnit = "km/h",
+        )
+    }
+
+    private fun handBuilt(drop: Set<String> = emptySet()): SessionAnalysis {
+        val ids = times.keys.filter { it !in drop }
+        val laps = (1..6).map { n -> TimedLap(n, n * 100.0, n * 100.0 + 80.0 + (if (n == 2) 0.0 else 0.5), 80.0) }
+        val segments = ids.mapIndexed { i, id ->
+            TrackSegment(id, "Corner ${i + 1}", TrackSegmentType.Corner, i * 100.0, i * 100.0 + 50.0)
+        }
+        val sectorTimes = (1..6).map { n ->
+            LapSectorTimes(
+                n,
+                sectors = segments.map {
+                    val seconds = times.getValue(it.id)[n - 1]
+                    SectorTime(it.id, it.name, it.type, it.startProgressMeters, it.endProgressMeters, seconds = seconds)
+                },
+            )
+        }
+        val rows = segments.map { s ->
+            val t = times[s.id]!!
+            val best = t.min()
+            TheoreticalBestRow(
+                s.id, s.name, s.type, s.startProgressMeters, s.endProgressMeters, best, t.indexOf(best) + 1,
+                actualSeconds = t[1], lossSeconds = t[1] - best,
+            )
+        }
+        val metrics = (1..6).map { n -> CornerLapMetrics(n, CornerSpeeds(), BrakingMetrics(), ExitMetrics(), c1(n)) }
+        return SessionAnalysis(
+            LapSession(LapSessionStatus.Available, timedLaps = laps, fastestLapIndex = 1),
+            axisLapNumber = 2,
+            segments = ApprovedSegments(segments, "t"),
+            lapTimes = sectorTimes,
+            summary = TheoreticalBestSummary(rows, rows.sortedByDescending { it.lossSeconds }),
+            cornerMetrics = if ("c1" in ids) mapOf("c1" to metrics) else emptyMap(),
+        )
+    }
+
+    @Test
+    fun `one primary focus, at most two secondary ones, and a corner seen on one lap is never one`() {
+        val analysis = handBuilt()
+        val plan = nextSessionPlan(analysis)
+        val primary = assertNotNull(plan.primary)
+        assertEquals("c1", primary.segmentId)
+        assertEquals(FocusRole.Primary, primary.role)
+        assertEquals(Confidence.HIGH, primary.confidence.level)
+        assertEquals(0.40, primary.timeAvailableSeconds!!, 1e-9)
+        // Never every loss: c3, c4 and c5 leave time too, but two secondary focuses at most.
+        assertEquals(MaxSecondaryFocus, plan.secondary.size)
+        assertEquals(listOf("c2", "c3"), plan.secondary.map { it.segmentId })
+        assertTrue(plan.secondary.all { it.role == FocusRole.Secondary })
+        // c6 rests on one lap: Low confidence, left out and named as such.
+        assertTrue(plan.focuses.none { it.segmentId == "c6" })
+        val withheld = plan.withheld.single { it.segmentId == "c6" }
+        assertEquals(Confidence.LOW, withheld.confidence.level)
+        assertTrue(withheld.confidence.has(ClaimCodes.ONE_LAP), withheld.confidence.why)
+        assertNull(plan.identityRevision)
+    }
+
+    @Test
+    fun `each focus says what the faster passes did differently`() {
+        val primary = assertNotNull(nextSessionPlan(handBuilt()).primary)
+        assertEquals(2, primary.fasterLaps)
+        assertEquals(4, primary.otherLaps)
+        assertEquals(listOf(FocusMetric.BrakingPoint, FocusMetric.MinimumSpeed), primary.changes.map { it.metric })
+        assertEquals(8.0, primary.changes[0].delta, 1e-9)
+        assertEquals(4.0, primary.changes[1].delta, 1e-9)
+        assertEquals(
+            "Your 2 fastest passes braked 8 m later and carried 4 km/h more minimum speed than your other 4.",
+            primary.what,
+        )
+    }
+
+    @Test
+    fun `below High confidence what to change is said without numbers, and at Low not at all`() {
+        val changes = listOf(
+            FocusChange(FocusMetric.BrakingPoint, 120.0, 112.0, "m"),
+            FocusChange(FocusMetric.MinimumSpeed, 70.0, 74.0, "km/h"),
+            FocusChange(FocusMetric.ExitSpeed, 100.0, 104.0, "km/h"),
+        )
+        assertEquals(
+            "Your 3 fastest passes braked 8 m earlier, carried 4 km/h more minimum speed and left the corner " +
+                "4 km/h faster than your other 5.",
+            changeText(changes, 3, 5, Confidence.HIGH),
+        )
+        val medium = changeText(changes, 3, 5, Confidence.MEDIUM)
+        assertEquals(
+            "Your fastest passes braked earlier, carried more minimum speed and left the corner faster " +
+                "than your others.",
+            medium,
+        )
+        assertFalse(Regex("\\d").containsMatchIn(medium), medium)
+        assertEquals("", changeText(changes, 3, 5, Confidence.LOW))
+    }
+
+    @Test
+    fun `with fewer corners worth it there are fewer focuses, and with none there is no plan`() {
+        // Without c2 and c3, c4 is the only other corner within a quarter of the primary's time.
+        val plan = nextSessionPlan(handBuilt(drop = setOf("c2", "c3")))
+        assertEquals("c1", plan.primary?.segmentId)
+        assertEquals(listOf("c4"), plan.secondary.map { it.segmentId })
+        // Only the corner seen on one lap: nothing to work on, and it is named as left out.
+        val none = nextSessionPlan(handBuilt(drop = setOf("c1", "c2", "c3", "c4", "c5")))
+        assertNull(none.primary)
+        assertTrue(none.focuses.isEmpty())
+        assertEquals(listOf("c6"), none.withheld.map { it.segmentId })
+    }
+
+    @Test
+    fun `the focus of an analysed session is handed to the next session's coach at the track`() {
+        val sim = SimTrack.rectangle()
+        val first = sim.session(laps = 5, sessionId = "first")
+        val analysis = analyzeSession(telemetrySessionOf(first, sim.track()))
+        val plan = nextSessionPlan(analysis)
+        val primary = assertNotNull(plan.primary, "no focus from ${analysis.laps.timedLaps.size} laps")
+        assertTrue(plan.secondary.size <= MaxSecondaryFocus)
+        val identity = assertNotNull(analysis.identity)
+        assertEquals(identity.number, plan.identityRevision)
+        // Kept as the app keeps it: each focus under its CornerId, with its line on the fastest lap.
+        val axis = assertNotNull(analysis.axis)
+        val segments = assertNotNull(analysis.segments).segments.associateBy { it.id }
+        val record = SessionFocusRecord(
+            trackId = sim.id,
+            sessionId = "first",
+            sessionStartUtcMillis = 0,
+            targets = plan.focuses.map { f ->
+                val line = segmentLine(axis, segments.getValue(f.segmentId))
+                FocusTarget(
+                    id = FocusTarget.idOf("first", f.segmentId),
+                    role = f.role.code,
+                    segmentId = f.segmentId,
+                    cornerId = f.segmentId,
+                    identityRevision = plan.identityRevision,
+                    name = f.name,
+                    kind = f.area.kind.code,
+                    confidence = f.confidence.level.name,
+                    timeAvailableSeconds = f.timeAvailableSeconds,
+                    lats = line.map { it.latitudeDegrees },
+                    lons = line.map { it.longitudeDegrees },
+                )
+            },
+        )
+        // The next session's coach, at the track with its corner identity and the first session as reference.
+        val track = sim.track().copy(identity = identity)
+        val reference = assertNotNull(
+            buildReference(track, listOf(SessionLaps("first", tracedLaps(track, first.coachFixes())))),
+        )
+        val engine = CueEngine(track, CoachSettings(Verbosity.Focus), reference, focus = record.picks())
+        val primaryCorners = reference.corners.filter { it.cornerId == primary.segmentId }.map { it.number }
+        assertTrue(primaryCorners.isNotEmpty(), "no braking corner in ${primary.name}")
+        // The coach works on the primary focus's corners first.
+        assertEquals(primaryCorners, engine.focusCorners.take(primaryCorners.size))
+    }
+}

@@ -75,9 +75,10 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
 
 /**
  * Per-corner state of one session (FBBD-97): each corner's target (the fastest pass so far), its last
- * pass, recent losses against the target, and the lap it was last cued on. [picked] are the corners
- * the driver picked in the lap analysis (FBBD-148). [stoppedBefore] has, for each corner the lap that
- * set the corners came to from a stop, where it stopped (FBBD-202).
+ * pass, recent losses against the target, and the lap it was last cued on. [chosen] are the corners
+ * of the session focus (FBBD-20) and those the driver picked in the lap analysis (FBBD-148).
+ * [stoppedBefore] has, for each corner the lap that set the corners came to from a stop, where it
+ * stopped (FBBD-202).
  *
  * Cues aim at the [confirmed] target (FBBD-177): the second fastest pass, so what they ask for has
  * been done on two laps at least; a corner improved on one lap only gets no cue for it. Passes too
@@ -86,7 +87,7 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
 private class CornerBook(
     val map: CornerMap,
     initialTargets: List<CornerPass>,
-    val picked: Set<Int>,
+    val chosen: Chosen,
     private val stoppedBefore: List<Double?> = emptyList(),
 ) {
     private val n = map.corners.size
@@ -130,19 +131,23 @@ private class CornerBook(
         passes.forEach(::consider)
     }
 
+    val picked: Set<Int> get() = chosen.picked
+
     /**
-     * The corners with cues at [Verbosity.Focus], at most [FocusCorners]: the picked corners first (the
-     * ones losing the most, when more are picked), then the corners losing the most time against their
-     * targets over the last few passes.
+     * The corners with cues at [Verbosity.Focus], at most [FocusCorners]: the session focus's primary
+     * corner first (FBBD-20), then the picked corners (the ones losing the most, when more are picked),
+     * then the session focus's secondary corners in order, then the corners losing the most time
+     * against their targets over the last few passes.
      */
     fun focus(): Set<Int> {
         val loss = losses.map { it.takeIf { l -> l.isNotEmpty() }?.average() }
-        val chosen = picked.sortedByDescending { loss[it - 1] ?: Double.NEGATIVE_INFINITY }.take(FocusCorners)
+        val byLoss = chosen.picked.sortedByDescending { loss[it - 1] ?: Double.NEGATIVE_INFINITY }
+        val first = (chosen.primary + byLoss + chosen.secondary).distinct().take(FocusCorners)
         val losing = loss.indices
-            .filter { i -> (loss[i] ?: 0.0) >= MinLossMicros && i + 1 !in chosen }
+            .filter { i -> (loss[i] ?: 0.0) >= MinLossMicros && i + 1 !in first }
             .sortedByDescending { loss[it] }
             .map { it + 1 }
-        return (chosen + losing).take(FocusCorners).toSet()
+        return (first + losing).take(FocusCorners).toSet()
     }
 
     /** The first corner whose braking zone is still ahead. */
@@ -187,13 +192,19 @@ private class CornerBook(
 }
 
 /**
+ * The corners of a [CornerMap] the coach works on first, by number: those of the session focus
+ * (FBBD-20), [primary] and then [secondary] in order, and those the driver [picked] (FBBD-148).
+ */
+private class Chosen(val primary: List<Int>, val picked: Set<Int>, val secondary: List<Int>)
+
+/**
  * The first timed lap of a session without an earlier reference sets the corners, [identify]d on the
  * track's. Where that lap stopped (waiting past the line, a pit stop), the corner after the stop was
  * driven from a standstill: its braking zone on a lap at speed is not known yet (FBBD-202).
  */
 private fun cornersFrom(
     traced: TracedLap,
-    picked: (CornerMap) -> Set<Int>,
+    picked: (CornerMap) -> Chosen,
     identify: (CornerMap) -> CornerMap,
 ): CornerBook? {
     val trace = traced.trace
@@ -289,12 +300,15 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  * - **Corner numbers** are the track's (FBBD-172): each braking corner is said by the number of the
  *   track corner it is in ([identifyCorners]), as the lap analysis numbers it.
  * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by CornerId, or by
- *   position on a track without corner identities ([pickedCorners]). At [Verbosity.Focus] they take
- *   the focus places first; cue timing is unchanged: one cue per straight, for the corner that
- *   follows it.
+ *   position on a track without corner identities ([pickedCorners]).
+ * - **Session focus** ([focus], FBBD-20): the corners the last analysed session at the track
+ *   recommends working on, the primary first, matched like the picks. At [Verbosity.Focus] the
+ *   primary takes the first focus place, the picks the next, then the secondary ones; cue timing is
+ *   unchanged: one cue per straight, for the corner that follows it.
  *
  * Pure and single-threaded.
  */
+@Suppress("LongParameterList") // What the coach knows at the start of a session, one parameter each.
 class CueEngine(
     track: Track,
     private val settings: CoachSettings,
@@ -302,12 +316,20 @@ class CueEngine(
     latencyMicros: Long = DefaultLatencyMicros,
     private val picks: List<CornerPick> = emptyList(),
     sameDay: Boolean = false,
+    private val focus: List<CornerPick> = emptyList(),
 ) {
     private val laps = LapCollector(track)
     private val speech = SpeechTiming(settings, latencyMicros)
     private val inLap = InLap()
     private val identity = track.identity
-    private val picked: (CornerMap) -> Set<Int> = { pickedCorners(it, laps.frame, picks, identity) }
+    private val picked: (CornerMap) -> Chosen = { m ->
+        fun numbers(p: CornerPick) = pickedCorners(m, laps.frame, listOf(p), identity).sorted()
+        Chosen(
+            primary = focus.take(1).flatMap(::numbers),
+            picked = pickedCorners(m, laps.frame, picks, identity),
+            secondary = focus.drop(1).flatMap(::numbers),
+        )
+    }
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
         identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m)) }
     }
@@ -340,6 +362,9 @@ class CueEngine(
 
     /** The corners the driver picked, by number, once the corners are known. */
     val pickedCorners: Set<Int> get() = book?.picked.orEmpty()
+
+    /** The corners of the session focus (FBBD-20), by number, the primary's first, once the corners are known. */
+    val focusCorners: List<Int> get() = book?.chosen?.let { (it.primary + it.secondary).distinct() }.orEmpty()
 
     val phase: CoachPhase
         get() = when {

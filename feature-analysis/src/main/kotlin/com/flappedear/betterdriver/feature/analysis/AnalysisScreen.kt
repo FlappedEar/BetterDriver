@@ -140,9 +140,10 @@ private fun Ready(
             val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
             when (AnalysisTab.entries[tab]) {
                 AnalysisTab.Summary -> {
+                    // What to work on next comes first (FBBD-20): the answer the session is analysed for.
+                    Focus(ui, compare, layout, width)
                     Summary(ui, width, optimalVideo)
                     ui.progress?.let { Progress(it, width) }
-                    if (ui.focus.isNotEmpty() || ui.withheld.isNotEmpty()) Focus(ui, compare, onCoachPick, width)
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                     ui.gForces?.let { GForcesCard(it, width) }
                     ui.acceleration?.let { AccelerationCard(it, width) }

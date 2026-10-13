@@ -48,3 +48,6 @@ internal fun coachReferencesDir(context: Context) = File(coachDir(context), "ref
 
 /** The corners picked in the lap analysis for the coach, one file per track (FBBD-148). */
 internal fun coachPicks(context: Context) = CoachPicksStore(File(coachDir(context), "picks"))
+
+/** The next-session focus of each analysed session (FBBD-20), by track. */
+internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachDir(context), "focus"))

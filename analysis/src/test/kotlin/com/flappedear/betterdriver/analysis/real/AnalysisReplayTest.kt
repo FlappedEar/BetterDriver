@@ -7,11 +7,14 @@ import com.flappedear.betterdriver.analysis.VboFixture
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.data.TelemetryChannel
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
+import com.flappedear.betterdriver.analysis.focus.MaxSecondaryFocus
+import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
 import com.flappedear.betterdriver.analysis.optimal.optimalClipPlan
 import com.flappedear.betterdriver.analysis.optimal.optimalLap
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
+import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.VideoClip
@@ -77,6 +80,18 @@ class AnalysisReplayTest {
             assertTrue(area.lap in numbers && area.against in numbers, what)
             assertTrue(area.sampleCount >= 2, area.name)
         }
+
+        // What to work on next: one primary corner, at most two secondary ones, never a Low one,
+        // each with its time available.
+        val plan = nextSessionPlan(analysis)
+        assertNotNull(plan.primary, "no primary focus")
+        assertTrue(plan.secondary.size <= MaxSecondaryFocus, "secondary: ${plan.secondary.map { it.name }}")
+        for (f in plan.focuses) {
+            assertTrue(f.segmentId in corners, "${f.name}: a corner")
+            assertTrue(f.confidence.level != Confidence.LOW, "${f.name}: ${f.confidence.why}")
+            assertTrue((f.timeAvailableSeconds ?: 0.0) > 0.0, "${f.name}: time available")
+        }
+        println("next session: ${plan.focuses.map { "${it.role} ${it.name} ${it.timeAvailableSeconds} ${it.what}" }}")
     }
 
     /** [session] with every value stored as float32, as FlappedEar Telemetry's parser stores it. */
