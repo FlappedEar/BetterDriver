@@ -107,8 +107,8 @@ internal fun VideoModeDialog(
                 }
                 DimText(
                     if (item.model == EquipmentModel.PHONE_CAMERA) {
-                        "Only modes this phone supports. If the phone gets hot, video steps down from here; " +
-                            "data recording never stops."
+                        "Only modes this phone supports. If the phone gets hot, video drops resolution first and " +
+                            "keeps this frame rate as long as it can; data recording never stops."
                     } else {
                         "Set on the GoPro when the session starts. If it refuses, it records with its own setting."
                     },

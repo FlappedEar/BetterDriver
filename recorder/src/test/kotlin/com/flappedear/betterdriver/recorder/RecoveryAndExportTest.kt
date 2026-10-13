@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.vbo.VboDerivedChannel
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
@@ -219,5 +220,23 @@ class RecoveryAndExportTest {
         val p = VboValidator.validate(text)
         assertEquals("gnss_input", p.columnNames.last())
         assertTrue("Device gnss" in text)
+    }
+
+    @Test
+    fun `derived channels get their own columns, held like recorded ones, and keep their names`() {
+        val store = SessionStore(tmp)
+        val clash = ChannelDef(200, "latacc", "g", "test", 2)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + clash))
+        for (i in 0 until 6) rec.submit(SampleSet(i * 40_000L, gnss.fix(i.toLong()) + ChannelValue(clash.id, 9.0)))
+        rec.stop()
+        val derived = VboDerivedChannel("latacc", "g", 3, longArrayOf(50_000L, 120_000L), doubleArrayOf(0.25, -0.5))
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out, derived = listOf(derived))
+        val p = VboValidator.validate(out.toString(Charsets.UTF_8))
+        // The recorded channel steps aside: readers look for the derived column by its name.
+        assertEquals(listOf("latacc_200", "latacc"), p.columnNames.drop(7))
+        assertEquals(listOf("g", "g"), p.units)
+        // Before its first value the first value; then each held until the next.
+        assertEquals(listOf("0.250", "0.250", "0.250", "-0.500", "-0.500", "-0.500"), p.rows.map { it.last() })
     }
 }

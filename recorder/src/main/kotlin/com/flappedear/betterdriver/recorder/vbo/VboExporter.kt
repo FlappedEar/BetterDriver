@@ -22,6 +22,8 @@ private const val MicrosPerMilli = 1_000.0
  * With [VboVideo], each row also gets avifileindex and avisynctime, and the VBO gets an [avi] section (FBBD-25).
  * The data then starts at the first video's start: Circuit Tools plays video file 1 from the first
  * data row and ignores its avisynctime offset (FBBD-51, checked by Arek with sync kit variant E).
+ * [derived] channels, worked out from the recording rather than recorded, get columns of their own
+ * after the recorded ones (the car's G for FlappedEar Overlays, see [VboDerivedChannel]).
  * No text in the file names RaceBox: Circuit Tools treats a file that does as a RaceBox app export,
  * checks for a RaceBox checksum and closes it with "Checksum failed. It's not genuine RACEBOX VBO file" (FBBD-184).
  */
@@ -41,7 +43,12 @@ object VboExporter {
     /** What an export wrote (FBBD-14): [rows] data rows for the session's [fixes] GNSS fixes it covers. */
     data class Written(val rows: Int, val fixes: Int)
 
-    fun export(session: SessionData, out: OutputStream, video: VboVideo? = null): Written {
+    fun export(
+        session: SessionData,
+        out: OutputStream,
+        video: VboVideo? = null,
+        derived: List<VboDerivedChannel> = emptyList(),
+    ): Written {
         // Sources queue independently, so file order is not time order; sample-and-hold needs time order.
         // The sort is stable: sets with equal times keep their file order.
         val sets = session.sampleSets.sortedBy { it.tMicros }
@@ -54,26 +61,30 @@ object VboExporter {
             .filter { it.id !in GnssChannels.IDS && it.id in firstValue }
             .sortedBy { it.id }
 
+        val derivedHere = derived.filter { it.tMicros.isNotEmpty() }
         val writer = OutputStreamWriter(out, Charsets.UTF_8)
         VboWriter(writer).write(
             VboDocument(
                 created = Instant.ofEpochMilli(session.info.startUtcMillis),
-                columns = STANDARD.map { it.second } + extraColumns(extra) +
+                columns = STANDARD.map { it.second } + extraColumns(extra, derivedHere) +
+                    derivedHere.map { VboColumn(it.name, it.name, it.unit, VboWriter.decimal(it.decimals)) } +
                     listOfNotNull(video?.indexColumn, video?.syncColumn),
                 comments = comments(session, video),
                 gates = gates(session),
                 aviBaseName = video?.baseName,
                 aviExtension = video?.takeIf { it.extensionLine }?.extension,
-                rows = rows(session, sets, extra.map { it.id }, firstValue, video).onEach { rows++ },
+                rows = rows(session, sets, extra.map { it.id }, firstValue, derivedHere, video).onEach { rows++ },
             ),
         )
         writer.flush()
         return Written(rows, fixes)
     }
 
-    private fun extraColumns(extra: List<ChannelDef>): List<VboColumn> {
-        // Unique against standard header and column names, so a custom channel can never pose as a standard one.
-        val used = STANDARD.flatMap { listOf(it.second.columnName, it.second.headerName) }.toMutableSet()
+    private fun extraColumns(extra: List<ChannelDef>, derived: List<VboDerivedChannel>): List<VboColumn> {
+        // Unique against standard header and column names, so a custom channel can never pose as a standard one,
+        // and against the derived columns, which keep their names because readers look for them.
+        val used = (STANDARD.flatMap { listOf(it.second.columnName, it.second.headerName) } + derived.map { it.name })
+            .toMutableSet()
         return extra.map { c ->
             val base = neutral(c.name).replace(Regex("\\s+"), "_").ifEmpty { "ch${c.id}" }
             var name = base
@@ -115,15 +126,19 @@ object VboExporter {
         },
     )
 
+    @Suppress("LongParameterList") // Each is one part of a row.
     private fun rows(
         session: SessionData,
         sets: List<SampleSet>,
         extraIds: List<Int>,
         firstValue: Map<Int, Double>,
+        derived: List<VboDerivedChannel>,
         video: VboVideo?,
     ) = sequence {
-        val width = STANDARD.size + extraIds.size + if (video != null) 2 else 0
+        val width = STANDARD.size + extraIds.size + derived.size + if (video != null) 2 else 0
         val latest = HashMap(firstValue)
+        // Sample-and-hold like the recorded channels: the newest derived value at or before each fix.
+        val next = IntArray(derived.size)
         for (set in sets) {
             set.values.forEach { latest[it.channelId] = it.value }
             val beforeVideo = video?.startMicros?.let { set.tMicros < it } ?: false
@@ -134,6 +149,10 @@ object VboExporter {
                     row[TIME_INDEX] = session.info.startUtcMillis + set.tMicros / MicrosPerMilli
                 }
                 extraIds.forEachIndexed { i, id -> row[STANDARD.size + i] = latest[id] ?: 0.0 }
+                derived.forEachIndexed { i, d ->
+                    while (next[i] < d.tMicros.size && d.tMicros[next[i]] <= set.tMicros) next[i]++
+                    row[STANDARD.size + extraIds.size + i] = d.values[(next[i] - 1).coerceAtLeast(0)]
+                }
                 if (video != null) {
                     val (index, sync) = video.columnsAt(set.tMicros)
                     row[width - 2] = index
@@ -154,4 +173,22 @@ object VboExporter {
         set.values.any { it.channelId == GnssChannels.LAT.id } && set.values.any { it.channelId == GnssChannels.LON.id }
 
     private val TIME_INDEX = STANDARD.indexOfFirst { it.first == GnssChannels.UTC_MS }
+}
+
+/**
+ * A channel worked out from the recording, written as one VBO column [name] in [unit]: [values] at
+ * session times [tMicros] (ascending, the same clock as the sample sets). The exporter holds each
+ * value until the next, as it does for recorded channels; before the first, the first is used.
+ */
+class VboDerivedChannel(
+    val name: String,
+    val unit: String,
+    val decimals: Int,
+    val tMicros: LongArray,
+    val values: DoubleArray,
+) {
+    init {
+        require(tMicros.size == values.size) { "${tMicros.size} times for ${values.size} values" }
+        require(name.isNotBlank() && name.none { it.isWhitespace() }) { "bad column name '$name'" }
+    }
 }
