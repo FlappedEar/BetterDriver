@@ -31,10 +31,29 @@ Kotlin file comes from.
   delta at each end; every lap's losses against a reference lap, largest first; how repeatable
   each segment is (median and interquartile range, from three laps); and the theoretical best as
   the screens show it, with what the best lap leaves in each segment, largest first.
-- **Session analysis** (`analyzeSession`): all of the above for one session, with segments taken
-  from its fastest eligible lap. BetterDriver has no segment editor yet, so nothing is stored.
-  Without segments (a lap that cannot be split, or a line far from the other laps) the axis and
-  every lap's projection are still there for comparison.
+- **Session analysis** (`analyzeSession`): all of the above for one session. Segments are the
+  track's lasting corner identity (`identity`, FBBD-172) placed on the fastest eligible lap's axis,
+  or proposed on it when the track has none yet. The driver's corner corrections (rename, move,
+  split, merge, remove, retype, FBBD-179) are kept with the track in the app and reach analysis as
+  that identity. Without segments (a lap that cannot be split, or a line far from the other laps)
+  the axis and every lap's projection are still there for comparison.
+- **Corner identity** (`identity`, FBBD-172, FBBD-215): corner and segment ids that stay the same
+  across sessions and track revisions, and stay stable under float32 precision, noise, sample rate
+  and missing samples.
+- **Realistic optimal lap** (`optimal`, FBBD-178): the fastest chain of real laps whose segments
+  join compatibly (speed, line, direction and longitudinal acceleration at each joint), named
+  apart from the best actual lap and the raw theoretical best; also the clip plan for the
+  optimal-lap video (FBBD-163).
+- **Confidence** (`confidence`, FBBD-177): every pass, lap and conclusion graded High, Medium or
+  Low with its reasons; Low gives no advice, Medium gives advice without numbers.
+- **Corners and driving** (`corners`, `driving`, FBBD-175): braking point, minimum and exit speed,
+  throttle pickup, each pass's traces and video window, driving states (braking, coasting,
+  cornering, accelerating, full throttle) and coasting per corner.
+- **Focus and coaching history** (`focus`, `coaching`, FBBD-20, FBBD-180): one primary focus and
+  up to two secondary for the next session, and what came of each focus in later sessions.
+- **Progression** (`progression`, FBBD-181): laps and corners per session, track day or month at a
+  track, with trends.
+- **Maps and runs** (`map`, `runs`): lap map, G-G diagram and acceleration runs.
 - **Recorded sessions** (`recorded`, FBBD-102): a recorder session as analysis input, with the
   track's start/finish line as the start gate.
 - **Lap comparison** (`compare`, FBBD-102): two laps by distance on the session's axis, the time
