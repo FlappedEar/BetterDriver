@@ -106,57 +106,100 @@ abstract class CornerEditorTest(private val device: String) {
 
     private fun tap(text: String) = compose.onNodeWithText(text).performScrollTo().performClick()
 
+    /** Picks [id] in the list, to correct it. */
+    private fun pick(id: String) = compose.onNodeWithTag(SegmentRowTag + id).performScrollTo().performClick()
+
+    /** The bar's Done, back to the list; the bar does not scroll. */
+    private fun done() = compose.onNodeWithText("Done").performClick()
+
+    private fun assertLayoutClean() =
+        assertTrue("track editor on $device (FBBD-179):\n" + problems.joinToString("\n"), problems.isEmpty())
+
     @Test
-    fun everyCorrectionIsStoredAndShown() {
+    fun theCornersAreListedAndOneIsPickedToCorrect() {
         show()
         compose.onNodeWithText("Corners").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Found from your laps. Tap one here or on the map to correct it.").assertExists()
         check("corners")
-
-        // Corner 1: split, called a chicane, named, merged back with its new neighbour.
-        compose.onNodeWithTag(SegmentRowTag + "c1").performScrollTo().performClick()
+        pick("c1")
+        assertEquals("c1", state.segmentId)
         compose.onNodeWithText("Corner 1").assertIsDisplayed()
         check("corner_selected")
+        done()
+        assertNull(state.segmentId)
+        compose.onNodeWithTag(SegmentRowTag + "c1").assertExists()
+        assertLayoutClean()
+    }
+
+    @Test
+    fun aCornerIsSplitAndCalledAChicane() {
+        show()
+        pick("c1")
         tap("Split")
         assertEquals(SegmentEdit.Split::class, made.last()::class)
         assertEquals(listOf("s1", "c1", "c3", "s2", "c2"), state.identity!!.segments.map { it.id })
         tap("Chicane")
         assertEquals(SegmentEdit.ChangeType("c1", SegmentType.Chicane), made.last())
         compose.onNodeWithText("Chicane 1").assertIsDisplayed()
+        check("corner_split")
+        assertLayoutClean()
+    }
+
+    @Test
+    fun aCornerIsNamed() {
+        show()
+        pick("c1")
         tap("Rename")
         compose.onNode(hasSetTextAction()).performTextReplacement("Parabolica")
         compose.onNodeWithText("Save").performClick()
         assertEquals(SegmentEdit.Rename("c1", "Parabolica"), made.last())
         compose.onNodeWithText("Parabolica").assertIsDisplayed()
-        check("corner_corrected")
-        tap("Merge with next")
-        assertEquals(SegmentEdit.Merge("c1"), made.last())
-        assertEquals(listOf("s1", "c1", "s2", "c2"), state.identity!!.segments.map { it.id })
-
-        // Back to the list: the corrected corner is marked, and the second straight can go.
-        tap("Done")
+        check("corner_named")
+        done()
         compose.onNodeWithText("Corrected by you. Every session here is analysed with these.").assertExists()
         compose.onNodeWithText("Edited").assertExists()
         check("corners_corrected")
-        compose.onNodeWithTag(SegmentRowTag + "s2").performScrollTo().performClick()
+        assertLayoutClean()
+    }
+
+    @Test
+    fun cornersAreMergedAndStraightsRemovedDownToTwo() {
+        stored = OvalTrack.copy(identity = OvalIdentity.corrected(SegmentEdit.Split("c1", splitAt)))
+        show()
+        pick("c1")
+        tap("Merge with next")
+        assertEquals(SegmentEdit.Merge("c1"), made.last())
+        assertEquals(listOf("s1", "c1", "s2", "c2"), state.identity!!.segments.map { it.id })
+        done()
+        pick("s2")
         tap("Remove")
         assertEquals(SegmentEdit.Remove("s2"), made.last())
         // Two segments are the fewest a track has: nothing more can be removed or merged.
         assertEquals(2, state.identity!!.segments.size)
         assertNull(state.selectedSegment)
-        compose.onNodeWithTag(SegmentRowTag + "c1").performScrollTo().performClick()
+        pick("c1")
         compose.onNodeWithText("Remove").assertIsNotEnabled()
         compose.onNodeWithText("Merge with next").assertIsNotEnabled()
-        tap("Done")
+        check("corners_fewest")
+        done()
+        assertLayoutClean()
+    }
 
-        // Restore automatic, after the question: the corners as found from the laps again.
+    @Test
+    fun restoreAutomaticBringsBackTheCornersFoundFromTheLaps() {
+        stored = OvalTrack.copy(
+            identity = OvalIdentity.corrected(SegmentEdit.Split("c1", splitAt))!!
+                .corrected(SegmentEdit.Rename("c1", "Parabolica")),
+        )
+        show()
+        compose.onNodeWithText("Corrected by you. Every session here is analysed with these.").assertExists()
         tap("Restore automatic")
+        check("restore_question")
         compose.onNodeWithText("Restore").performClick()
         assertEquals(SegmentEdit.RestoreAutomatic, made.last())
         assertEquals(OvalIdentity.segments, state.identity!!.segments)
         compose.onNodeWithText("Found from your laps. Tap one here or on the map to correct it.").assertExists()
-
-        assertTrue("track editor on $device (FBBD-179):\n" + problems.joinToString("\n"), problems.isEmpty())
+        assertLayoutClean()
     }
 
     @Test
@@ -218,6 +261,9 @@ abstract class CornerEditorTest(private val device: String) {
         private val frame = LocalFrame(OvalCenter)
         private const val Radius = 100.0
         private const val Straight = 300.0
+
+        /** The middle of the first bend, where Split cuts it. */
+        val splitAt = Straight + PI * Radius / 2
 
         /** A 1.2 km oval: the bottom straight east, a bend, the top straight west, a bend; every 2 m. */
         private val path: List<Xy> = run {
