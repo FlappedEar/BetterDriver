@@ -150,16 +150,26 @@ class SessionFocusStore(private val dir: File) {
         return files.none { it.exists() }
     }
 
-    /** Saves [record] unless the same is saved already; returns whether it wrote. */
+    /**
+     * Saves [record] unless the same is saved already; returns whether it wrote. Throws [IOException]
+     * when the session's record at another track could not be deleted: the save failed, as that
+     * track's coach could still hand out the old focus. The next save tries the delete again.
+     */
     fun save(record: SessionFocusRecord): Boolean {
         val f = fileFor(record.trackId, record.sessionId)
         // One record per session: analysed again at another track, it leaves the old track (FBBD-20).
         val elsewhere = dir.listFiles { d -> d.isDirectory && d.name != record.trackId }.orEmpty()
             .map { File(it, f.name) }.filter { it.exists() }
         elsewhere.forEach { it.delete() }
-        if (read(f) == record) return elsewhere.isNotEmpty()
-        writeAtomically(f, json.encodeToString(SessionFocusRecord.serializer(), record))
-        return true
+        val wrote = if (read(f) == record) {
+            elsewhere.isNotEmpty()
+        } else {
+            writeAtomically(f, json.encodeToString(SessionFocusRecord.serializer(), record))
+            true
+        }
+        val left = elsewhere.filter { it.exists() }
+        if (left.isNotEmpty()) throw IOException("old focus records not deleted: ${left.joinToString { it.path }}")
+        return wrote
     }
 
     /** Deletes every record of [trackId], with its track (FBBD-157); returns whether none is left. */

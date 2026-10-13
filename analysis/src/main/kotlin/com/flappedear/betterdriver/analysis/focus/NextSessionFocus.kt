@@ -126,6 +126,8 @@ fun nextSessionPlan(analysis: SessionAnalysis, lapLabel: (Any?) -> String = { "l
     val found = sessionFocus(analysis, lapLabel, maximum = Int.MAX_VALUE)
     val corners = analysis.segments?.segments.orEmpty()
         .filter { it.type == TrackSegmentType.Corner }.map { it.id }.toSet()
+    // A straight is never in this corner plan, whatever its evidence, so it is not "left out".
+    val withheld = found.withheld.filter { it.segmentId in corners }
     val candidates = found.areas.filter { it.area.segmentId in corners }.map { graded ->
         val level = graded.confidence.level
         val own = secondsOf(graded.area)
@@ -143,7 +145,7 @@ fun nextSessionPlan(analysis: SessionAnalysis, lapLabel: (Any?) -> String = { "l
     )
     val revision = analysis.identity?.number?.takeIf { analysis.identified }
     val first = candidates.firstOrNull()
-        ?: return NextSessionPlan(withheld = found.withheld, identityRevision = revision)
+        ?: return NextSessionPlan(withheld = withheld, identityRevision = revision)
     val primarySeconds = first.seconds ?: 0.0
     val secondary = candidates.drop(1).filter { c ->
         val s = c.seconds
@@ -156,7 +158,7 @@ fun nextSessionPlan(analysis: SessionAnalysis, lapLabel: (Any?) -> String = { "l
     return NextSessionPlan(
         primary = focusOf(analysis, first, FocusRole.Primary),
         secondary = secondary.map { focusOf(analysis, it, FocusRole.Secondary) },
-        withheld = found.withheld,
+        withheld = withheld,
         identityRevision = revision,
     )
 }

@@ -73,10 +73,11 @@ class TelemetryChannel(
     /**
      * The value at [time]. Null outside the channel's range and on missing samples; linear reading
      * needs two adjacent finite samples. Between two samples farther apart than [gapThreshold]
-     * there is no value in any mode, so a loss of signal is never bridged.
+     * (at least [minimumGapSeconds]) there is no value in any mode, so a loss of signal is never
+     * bridged.
      */
     @Suppress("ReturnCount", "CyclomaticComplexMethod", "ComplexCondition")
-    fun valueAt(time: Double, mode: Interpolation = Interpolation.Linear): Double? {
+    fun valueAt(time: Double, mode: Interpolation = Interpolation.Linear, minimumGapSeconds: Double = 0.0): Double? {
         if (timestamps.isEmpty() || !time.isFinite()) return null
         if (time < timestamps.first() || time > timestamps.last()) return null
         val next = lowerBound(timestamps, time)
@@ -84,7 +85,7 @@ class TelemetryChannel(
         if (timestamps[next] == time) return finiteAt(next)
         if (next == 0) return null
         val previous = next - 1
-        val gap = gapThreshold()
+        val gap = gapThreshold(minimumGapSeconds)
         if (gap > 0.0 && timestamps[next] - timestamps[previous] > gap) return null
         return when (mode) {
             Interpolation.Previous -> finiteAt(previous)
@@ -171,8 +172,12 @@ class TelemetrySession(
     /** Where the values of [name] (a channel or an alias) come from; null without one, or when not known. */
     fun provenanceOf(name: String): Provenance? = channel(name)?.provenance
 
-    fun valueAt(name: String, time: Double, mode: Interpolation = Interpolation.Linear): Double? =
-        channel(name)?.valueAt(time, mode)
+    fun valueAt(
+        name: String,
+        time: Double,
+        mode: Interpolation = Interpolation.Linear,
+        minimumGapSeconds: Double = 0.0,
+    ): Double? = channel(name)?.valueAt(time, mode, minimumGapSeconds)
 
     /**
      * Actual samples of [name] between [rangeStart] and [rangeEnd] (either order), split at every

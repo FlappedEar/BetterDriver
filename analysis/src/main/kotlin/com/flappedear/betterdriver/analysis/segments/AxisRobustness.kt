@@ -81,7 +81,8 @@ private const val KernelSigmas = 3.0
  * the path, out to the first one more than three sigmas from it in a straight line; times kept.
  * Straight-line distance, not distance along the path: a slow car's fixes, closer together than
  * their noise, zigzag, and their path is several times longer than the road. On a [closed] lap the
- * path wraps from its end back to its start; on a run it does not. [trace] itself when [sigmaMeters]
+ * path wraps from its end back to its start; on a run it does not, and its first and last points
+ * (the gate crossings) stay where they are. [trace] itself when [sigmaMeters]
  * is not positive.
  */
 fun smoothedLapTrace(trace: LapTrace, sigmaMeters: Double, closed: Boolean): LapTrace {
@@ -93,6 +94,9 @@ fun smoothedLapTrace(trace: LapTrace, sigmaMeters: Double, closed: Boolean): Lap
     val steps = if (closed) (n - 1) / 2 else n - 1
     val smoothed = List(n) { i ->
         val p = points[i]
+        // A run's ends are its start and finish gate crossings: kept where they are, or a one-sided
+        // average would pull both inside the gates and shorten the run's axis.
+        if (!closed && (i == 0 || i == n - 1)) return@List p
         var east = p.eastMeters
         var north = p.northMeters
         var total = 1.0

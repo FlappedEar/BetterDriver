@@ -501,8 +501,10 @@ fun buildLapTraces(session: TelemetrySession, laps: List<TimedLap>, origin: GeoC
     val longitude = session.channel(Aliases.LONGITUDE) ?: return emptyList()
 
     fun appendInterpolated(points: MutableList<LapTracePoint>, time: Double) {
-        val lat = session.valueAt(Aliases.LATITUDE, time) ?: return
-        val lon = session.valueAt(Aliases.LONGITUDE, time, Interpolation.Longitude) ?: return
+        // The same floor as lap detection (FBBD-215): a lap it keeps across a few missed fixes at a
+        // gate still starts and ends on the gate.
+        val lat = session.valueAt(Aliases.LATITUDE, time, minimumGapSeconds = MinimumGpsGapSeconds) ?: return
+        val lon = session.valueAt(Aliases.LONGITUDE, time, Interpolation.Longitude, MinimumGpsGapSeconds) ?: return
         val c = GeoCoordinate(lat, lon)
         if (!isValidCoordinate(c)) return
         val p = projectCoordinate(c, origin)

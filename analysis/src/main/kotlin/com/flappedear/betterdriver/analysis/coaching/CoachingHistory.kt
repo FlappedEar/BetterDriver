@@ -170,12 +170,13 @@ fun coachingHistory(sessionId: String, records: List<SessionCoachingRecord>): Se
 /** What came of the focus that session [at] of [sorted] worked on. */
 private fun attemptsIn(sorted: List<SessionCoachingRecord>, at: Int): List<FocusAttempt> {
     val s = sorted[at]
-    val earlier = sorted.subList(0, at)
     val from = s.coachedFrom
+    // The coach's event names the session it worked from: found wherever the clock put it (a phone
+    // clock set back sorts it after this one). Without the coach, the latest before it.
     val source = if (from != null) {
-        earlier.lastOrNull { it.sessionId == from }
+        sorted.firstOrNull { it.sessionId == from && it.sessionId != s.sessionId }
     } else {
-        earlier.lastOrNull { it.focus.isNotEmpty() }
+        sorted.subList(0, at).lastOrNull { it.focus.isNotEmpty() }
     } ?: return emptyList()
     return source.focus.sortedBy { !it.primary }.map { attempt(it, source, s) }
 }
