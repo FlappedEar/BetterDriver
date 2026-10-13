@@ -162,7 +162,7 @@ class DrivingStatesTest {
     }
 
     @Test
-    fun `a brake pressure in bar is no pedal: the acceleration stands in`() {
+    fun `a brake pressure in bar is no pedal, the acceleration stands in`() {
         val pressure = channel("brake", "bar") { 50.0 }
         val longitudinal = channel("longacc", "g") { if (it < 20) -0.6 else 0.2 }
         val states = drivingStates(session(pressure, longitudinal), trace, 200.0, null)
