@@ -70,9 +70,12 @@ class GpsGapFloorTest {
     @Test
     fun `a lap whose gates are crossed in a third of a second without fixes still starts and ends on them`() {
         val sets = sim.samples(laps = 5, stepSeconds = 0.04)
-        val lap3 = deriveSourceLapSession(telemetrySessionOf(data(sets), sim.track())).timedLaps.single { it.number == 3 }
+        val lap3 = deriveSourceLapSession(telemetrySessionOf(data(sets), sim.track())).timedLaps
+            .single { it.number == 3 }
         fun hole(t: Double) = ((t - 0.15) * 1e6).toLong().let { it until it + 300_000 }
-        val kept = sets.filterNot { it.tMicros in hole(lap3.startTelemetryTime) || it.tMicros in hole(lap3.endTelemetryTime) }
+        val kept = sets.filterNot {
+            it.tMicros in hole(lap3.startTelemetryTime) || it.tMicros in hole(lap3.endTelemetryTime)
+        }
         val session = telemetrySessionOf(data(kept), sim.track())
         val holed = deriveSourceLapSession(session).timedLaps.single { it.number == 3 }
         assertEquals(LapReferenceIssue.None, holed.referenceIssue)
