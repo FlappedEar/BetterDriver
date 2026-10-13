@@ -59,7 +59,7 @@ class ImportSmokeTest {
         app.waitForText("at ${SmokeFixtures.CircuitName}", substring = true).assertIsDisplayed()
 
         app.openSession(SmokeFixtures.ImportedVbo)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.openTab("Laps")
         app.waitForText("Lap 2")
         app.back()
@@ -98,7 +98,7 @@ class ImportSmokeTest {
         }
         app.openSessions()
         app.openSession(SmokeFixtures.ImportedGpx)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.back()
 
         app.openTab("Settings")

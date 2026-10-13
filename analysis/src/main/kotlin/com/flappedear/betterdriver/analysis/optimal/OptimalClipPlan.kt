@@ -74,11 +74,17 @@ class OptimalClipPlan(val lap: OptimalLap, val cuts: List<OptimalCut>, val parts
         val from = "${if (runs) "RUN" else "LAP"} ${part.lapNumber}"
         val name = part.name.uppercase()
         return OptimalOverlayText(
-            captions = listOf("OPTIMAL · $from · $name", "$from · $name", from),
+            captions = listOf("${captionOf(lap.kind)} · $from · $name", "$from · $name", from),
             theoreticalMicros = cut.theoreticalMicrosAt(sessionMicros),
             deltaSeconds = deltas[cut.partIndex],
         )
     }
+}
+
+/** The overlay's name for a composite lap: never "optimal" alone (FBBD-178). */
+fun captionOf(kind: OptimalKind): String = when (kind) {
+    OptimalKind.RealisticOptimal -> "REALISTIC OPTIMAL"
+    OptimalKind.RawTheoreticalBest -> "RAW THEORETICAL"
 }
 
 /**

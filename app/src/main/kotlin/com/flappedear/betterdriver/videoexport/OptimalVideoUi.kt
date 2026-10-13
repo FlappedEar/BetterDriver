@@ -1,26 +1,53 @@
 package com.flappedear.betterdriver.videoexport
 
 import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
+import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapResult
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapUnavailable
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import kotlin.math.roundToLong
 
-/** The part of a video export that is the optimal lap (FBBD-163): the theoretical best, filmed. */
-const val OptimalLap: VideoPart = -1
+/**
+ * The part of a video export that is the realistic optimal lap (FBBD-178), filmed: the composite
+ * video's default (FBBD-163).
+ */
+const val RealisticOptimalLap: VideoPart = -1
 
-/** How much of one part of the optimal lap the cameras have. */
+/** The part of a video export that is the raw theoretical best, filmed (FBBD-163). */
+const val RawTheoreticalLap: VideoPart = -2
+
+/** The video part that films [kind]. */
+fun videoPartOf(kind: OptimalKind): VideoPart = when (kind) {
+    OptimalKind.RealisticOptimal -> RealisticOptimalLap
+    OptimalKind.RawTheoreticalBest -> RawTheoreticalLap
+}
+
+/** The composite lap [part] films, or null for the whole video or a lap. */
+fun optimalKindOf(part: VideoPart): OptimalKind? = when (part) {
+    RealisticOptimalLap -> OptimalKind.RealisticOptimal
+    RawTheoreticalLap -> OptimalKind.RawTheoreticalBest
+    else -> null
+}
+
+/** The name the screens give [kind] (FBBD-178): never "optimal" alone, never one name for both. */
+fun kindName(kind: OptimalKind): String = when (kind) {
+    OptimalKind.RealisticOptimal -> "Realistic optimal"
+    OptimalKind.RawTheoreticalBest -> "Raw theoretical best"
+}
+
+/** How much of one part of a composite lap the cameras have. */
 enum class PartOnVideo { Whole, Partly, None }
 
-/** One part of the optimal lap as the sheet lists it: "Corner 3", from lap [lapNumber], [millis] long. */
+/** One part of a composite lap as the sheet lists it: "Corner 3", from lap [lapNumber], [millis] long. */
 data class OptimalPartRow(val name: String, val lapNumber: Int, val millis: Long, val video: PartOnVideo)
 
 /**
- * The optimal lap's video as the picker and the lap analysis offer it (FBBD-163): the theoretical
- * best ([totalMillis]) and its [parts], from [laps]. [unavailable] says why it cannot be made; null
- * when it can (some part is on video).
+ * A composite lap's video ([kind]) as the picker and the lap analysis offer it (FBBD-163,
+ * FBBD-178): its time ([totalMillis]) and its [parts], from [laps]. [unavailable] says why it
+ * cannot be made; null when it can (some part is on video).
  */
 data class OptimalOption(
+    val kind: OptimalKind,
     val totalMillis: Long?,
     val parts: List<OptimalPartRow>,
     val laps: List<Int>,
@@ -36,10 +63,10 @@ data class OptimalOption(
 }
 
 /**
- * What can be offered for the optimal lap: [result] is the session's optimal lap (null when the
- * session has no laps at a saved track), [plan] its video (null when the session has none).
+ * What can be offered for composite lap [kind]: [result] is the session's lap of that kind (null
+ * when the session has no laps at a saved track), [plan] its video (null when the session has none).
  */
-fun optimalOption(result: OptimalLapResult?, plan: OptimalClipPlan?): OptimalOption {
+fun optimalOption(kind: OptimalKind, result: OptimalLapResult?, plan: OptimalClipPlan?): OptimalOption {
     val lap = result?.lap
     val parts = plan?.parts?.map { p ->
         val video = when {
@@ -49,28 +76,37 @@ fun optimalOption(result: OptimalLapResult?, plan: OptimalClipPlan?): OptimalOpt
         }
         OptimalPartRow(p.part.name, p.part.lapNumber, p.partMicros / MicrosPerMilli, video)
     } ?: lap?.parts?.map { OptimalPartRow(it.name, it.lapNumber, millis(it.seconds), PartOnVideo.None) }.orEmpty()
+    val no = "No ${kindName(kind).lowercase()}"
     val why = when {
-        result == null -> "No theoretical best: the session has no counted laps at a saved track."
-        result.why == OptimalLapUnavailable.NoSegments ->
-            "No theoretical best: the corners could not be found on the best lap."
-        lap == null -> "No theoretical best: a corner has no fully timed pass on any counted lap."
+        result == null -> "$no: the session has no counted laps at a saved track."
+        result.why == OptimalLapUnavailable.NoSegments -> "$no: the corners could not be found on the best lap."
+        result.why == OptimalLapUnavailable.NoCompatibleChain ->
+            "$no: no counted laps join compatibly through every corner."
+        lap == null -> "$no: a corner has no fully timed pass on any counted lap."
         plan == null -> "This session has no video."
-        !plan.onVideo -> "No part of the theoretical best is on video."
+        !plan.onVideo -> "No part of the ${kindName(kind).lowercase()} is on video."
         else -> null
     }
-    return OptimalOption(lap?.totalSeconds?.let(::millis), parts, lap?.laps.orEmpty(), why)
+    return OptimalOption(kind, lap?.totalSeconds?.let(::millis), parts, lap?.laps.orEmpty(), why)
+}
+
+/** What the composite lap of [kind] is made of, in a line. */
+fun kindDescription(kind: OptimalKind, laps: List<Int>): String = when (kind) {
+    OptimalKind.RealisticOptimal -> if (laps.size == 1) {
+        "No compatible combination beats ${lapsText(laps)}"
+    } else {
+        "Compatible corners and straights from ${lapsText(laps)}"
+    }
+    OptimalKind.RawTheoreticalBest -> "Fastest of each corner from ${lapsText(laps)}, joined whatever the joint"
 }
 
 /**
- * The picker's line: "Optimal lap · 1:41.20" over where it comes from and what is missing, or why
- * it cannot be made.
+ * The picker's line: "Realistic optimal · 1:41.20" over where it comes from and what is missing,
+ * or why it cannot be made.
  */
 fun optimalOptionText(o: OptimalOption): Pair<String, String> {
-    val name = "Optimal lap" + (o.totalMillis?.let { " · ${formatLapTime(it)}" } ?: "")
-    val note = o.unavailable ?: listOfNotNull(
-        "Best of each corner from ${lapsText(o.laps)}",
-        missingText(o),
-    ).joinToString(" · ")
+    val name = kindName(o.kind) + (o.totalMillis?.let { " · ${formatLapTime(it)}" } ?: "")
+    val note = o.unavailable ?: listOfNotNull(kindDescription(o.kind, o.laps), missingText(o)).joinToString(" · ")
     return name to note
 }
 

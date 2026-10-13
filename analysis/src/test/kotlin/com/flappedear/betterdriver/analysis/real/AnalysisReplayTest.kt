@@ -8,8 +8,10 @@ import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.data.TelemetryChannel
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.focus.sessionFocusAreas
+import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.optimalClipPlan
 import com.flappedear.betterdriver.analysis.optimal.optimalLap
+import com.flappedear.betterdriver.analysis.optimal.sessionRange
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.store.SessionData
@@ -132,7 +134,7 @@ class AnalysisReplayTest {
     fun `the optimal lap's video plays its parts in track order and ends at the theoretical best (FBBD-163)`() {
         val data = silesia()
         val analysis = analyzeSession(telemetrySessionOf(data, track))
-        val lap = assertNotNull(optimalLap(analysis).lap)
+        val lap = assertNotNull(optimalLap(analysis, OptimalKind.RawTheoreticalBest).lap)
         val total = analysis.theoreticalBest!!.totalSeconds!!
         assertEquals(total, lap.totalSeconds, 1e-9)
         assertEquals(total, lap.parts.sumOf { it.seconds }, 1e-6)
@@ -164,5 +166,34 @@ class AnalysisReplayTest {
         assertEquals(others, some.missing)
         val filmed = lap.parts.filter { it.lapNumber == fastest.number }.sumOf { it.seconds }
         assertEquals(filmed, some.totalMicros / 1e6, 0.001 * lap.parts.size)
+    }
+
+    @Test
+    fun `the composite video plays the realistic optimal, each joint within a frame of the data (FBBD-178)`() {
+        val data = silesia()
+        val analysis = analyzeSession(telemetrySessionOf(data, track))
+        val realistic = assertNotNull(analysis.realisticOptimal)
+        val lap = assertNotNull(optimalLap(analysis).lap)
+        assertEquals(OptimalKind.RealisticOptimal, lap.kind)
+        assertEquals(realistic.totalSeconds, lap.totalSeconds)
+        val raw = assertNotNull(optimalLap(analysis, OptimalKind.RawTheoreticalBest).lap)
+        assertTrue(raw.totalSeconds < lap.totalSeconds, "the raw theoretical best stays available, and is faster")
+
+        val origin = data.sampleSets.first().tMicros
+        val end = data.sampleSets.last().tMicros
+        val plan = optimalClipPlan(lap, listOf(VideoClip("phone", "whole.mp4", origin, end)), { end - origin }, origin)
+        assertTrue(plan.missing.isEmpty() && plan.partial.isEmpty())
+        // Every part starts and ends on the video where its lap crossed the segment's boundaries.
+        val frame = 1_000_000L / 30
+        for ((i, part) in lap.parts.withIndex()) {
+            val cuts = plan.cuts.filter { it.partIndex == i }
+            val range = part.sessionRange(origin)
+            assertTrue(kotlin.math.abs(cuts.first().cut.sessionStartMicros - range.first) <= frame, part.name)
+            val last = cuts.last().cut
+            assertTrue(kotlin.math.abs(last.sessionStartMicros + last.durationMicros - range.last) <= frame, part.name)
+        }
+        val first = plan.cuts.first()
+        val caption = plan.overlayAt(first, first.partStartMicros).captions.first()
+        assertTrue(caption.startsWith("REALISTIC OPTIMAL · LAP "), caption)
     }
 }

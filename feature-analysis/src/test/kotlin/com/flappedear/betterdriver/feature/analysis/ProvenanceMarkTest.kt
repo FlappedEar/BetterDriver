@@ -104,6 +104,15 @@ class ProvenanceMarkTest {
         assertEquals("≈79500", theoreticalText(ui) { it.toString() })
         assertEquals("≈-0.5", gainText(ui) { it.toString() })
         assertEquals("–", theoreticalText(ui.copy(theoreticalMillis = null)) { it.toString() })
+        // The realistic optimal is put together too (FBBD-178): marked the same way, and named apart.
+        val realistic = ui.copy(realisticMillis = 80_000L, realisticGainSeconds = 0.2)
+        assertEquals("≈80000", realisticText(realistic) { it.toString() })
+        assertEquals("≈-0.2", realisticGainText(realistic) { it.toString() })
+        assertEquals("–", realisticText(ui) { it.toString() })
+        assertEquals(
+            3,
+            setOf(BestActualLapLabel, RealisticOptimalLabel, RawTheoreticalBestLabel).size,
+        )
         assertEquals(Provenance.CALCULATED, TheoreticalProvenance)
         assertEquals(Provenance.CALCULATED, DeltaProvenance)
     }

@@ -18,6 +18,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
 import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
+import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -52,10 +53,11 @@ class AnalysisSmokeTest {
     fun everyAnalysisTabOfACircuitSession() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        // The summary: best lap, theoretical best and where time goes.
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        app.waitForText("THEORETICAL").assertIsDisplayed()
-        // The theoretical best is calculated, never shown as measured: marked, with the legend (FBBD-174).
+        // The summary: best actual lap, realistic optimal, raw theoretical best (FBBD-178) and where time goes.
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("REALISTIC OPTIMAL").assertIsDisplayed()
+        app.waitForText("RAW THEORETICAL BEST").assertIsDisplayed()
+        // The composite lap times are calculated, never shown as measured: marked, with the legend (FBBD-174).
         // A lap time is drawn glyph by glyph (NumberText) and read as one content description.
         val theoretical = hasContentDescription(NotMeasuredMark, substring = true) and
             hasContentDescription(":", substring = true)
@@ -86,7 +88,7 @@ class AnalysisSmokeTest {
         app.waitForText("TIME DELTA", substring = true)
 
         app.openTab("Corners")
-        app.waitForText("THEORETICAL BEST BY CORNER").assertIsDisplayed()
+        app.waitForText("RAW THEORETICAL BEST BY CORNER").assertIsDisplayed()
         app.waitForText("Corner 1", substring = true)
         // No brake pedal is recorded: braking points are inferred from the accelerometer, so they are
         // marked in the corner details, and each such corner says what the mark means. A corner card
@@ -105,7 +107,7 @@ class AnalysisSmokeTest {
     fun cornerLapsWithVideoAndCompare() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
         app.openTab("Corners")
         app.waitForText("Every lap ›").performScrollTo().performClick()
 
@@ -143,31 +145,36 @@ class AnalysisSmokeTest {
         // Then to the analysis as it was left.
         app.back()
         // The analysis is read again after the lap review, so this can take a while.
-        app.waitForText("THEORETICAL BEST BY CORNER", timeoutMs = LoadTimeoutMs)
+        app.waitForText("RAW THEORETICAL BEST BY CORNER", timeoutMs = LoadTimeoutMs)
     }
 
     @Test
     fun optimalLapVideoPlanner() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
-        // The session's phone video covers every part of the theoretical best, so it can be made.
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        // The session's phone video covers every part of the realistic optimal, so it can be made.
         app.waitForText("Every part on video", substring = true, timeoutMs = LoadTimeoutMs).performScrollTo()
-        app.waitFor(hasText("Optimal lap video") and hasClickAction() and isEnabled()).performScrollTo().performClick()
+        app.waitFor(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled())
+            .performScrollTo()
+            .performClick()
 
-        // The planner: each part with its lap; Cancel closes it without making the video.
-        app.waitForText("The theoretical best", substring = true, timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        // The planner: the realistic optimal and the raw theoretical best, each part with its lap; Cancel
+        // closes it without making the video.
+        app.waitForText("Composite lap video", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("Realistic optimal · ", substring = true).assertIsDisplayed()
+        app.waitForText("Raw theoretical best · ", substring = true).assertIsDisplayed()
         app.waitFor(hasText("Export") and hasClickAction()).assertIsEnabled()
         app.waitForText("Cancel").performClick()
-        app.waitUntilGone("The theoretical best", substring = true)
-        check(app.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) { "an optimal lap video started" }
+        app.waitUntilGone("Composite lap video")
+        check(app.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) { "a composite lap video started" }
     }
 
     @Test
     fun coachPicksToggle() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
         // A corner's flag in Where time goes: pick it for the coach, then unpick it.
         val pick = hasContentDescription("Coach ", substring = true) and
             hasContentDescription("next time", substring = true)
@@ -197,7 +204,7 @@ class AnalysisSmokeTest {
     fun pointToPointSessionWithAccelerationRuns() {
         app.openSessions()
         app.openSession(SmokeFixtures.HillCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         // Standing starts up the hill: 0–100 km/h and more, the best first and the others on a tap.
         app.waitForText("ACCELERATION").performScrollTo().assertIsDisplayed()
         app.waitForText("0–100 km/h").performScrollTo().assertIsDisplayed()
