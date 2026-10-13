@@ -3,6 +3,8 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
+import com.flappedear.betterdriver.analysis.driving.DrivingState
+import com.flappedear.betterdriver.analysis.driving.DrivingStateRun
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.map.GgPoint
 import com.flappedear.betterdriver.analysis.map.GgSource
@@ -77,6 +79,7 @@ internal val PreviewUi = AnalysisUi(
                 CornerMetricRow("Min speed", CornerMeasure.Speed, 63.9, 62.4, 1.8),
                 CornerMetricRow("Exit speed", CornerMeasure.Speed, 67.0, 66.1, 1.5),
                 CornerMetricRow("Throttle", CornerMeasure.Meters, 31.0, 38.5, 5.2, Provenance.INFERRED),
+                CornerMetricRow(CoastingLabel, CornerMeasure.Seconds, 0.12, 0.41, 0.18, Provenance.INFERRED),
             ),
             speedUnit = "km/h",
             lineWithinGps = false,
@@ -90,6 +93,7 @@ internal val PreviewUi = AnalysisUi(
         earlierBestSeconds = 81.62,
         earlierBestLabel = "11 Oct 2026, 10:05",
         lapSpreadSeconds = 0.42,
+        lapMedianSeconds = 81.74,
         previousLabel = "11 Oct 2026, 11:40",
         previousBestSeconds = 81.62,
         previousSpreadSeconds = 0.71,
@@ -159,8 +163,30 @@ internal val PreviewUi = AnalysisUi(
             CornerBand("Corners 2–3", 311.0, 370.0),
             CornerBand("Corner 4", 900.0, 1010.0),
         ),
+        referenceStates = previewStates(0.0),
+        otherStates = previewStates(18.0),
+        referenceCoastingSeconds = 1.32,
+        otherCoastingSeconds = 2.05,
+        statesProvenance = Provenance.INFERRED,
     ),
 )
+
+/** What the car does along the made-up lap: each corner braked into, coasted, cornered and driven out of. */
+private fun previewStates(late: Double): List<DrivingStateRun> = buildList {
+    var at = 0.0
+    fun add(state: DrivingState, to: Double) {
+        add(DrivingStateRun(state, at, to))
+        at = to
+    }
+    for ((start, end) in listOf(224.0 to 285.0, 311.0 to 370.0, 900.0 to 1010.0)) {
+        if (start - 70.0 > at) add(DrivingState.FullThrottle, start - 70.0)
+        add(DrivingState.Braking, start + 5.0 + late / 3)
+        add(DrivingState.Coasting, start + 15.0 + late)
+        add(DrivingState.Cornering, end - 15.0)
+        add(DrivingState.Accelerating, end + 10.0)
+    }
+    add(DrivingState.FullThrottle, PreviewLength)
+}
 
 /** A made-up lap on an oval for the Map tab's previews: 400 by 250 m, anticlockwise. */
 private fun previewOval(steps: Int = 360): List<MapPoint> = (0..steps).map {

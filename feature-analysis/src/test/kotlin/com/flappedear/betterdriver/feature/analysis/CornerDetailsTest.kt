@@ -1,6 +1,12 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
+import com.flappedear.betterdriver.analysis.driving.DrivingState
+import com.flappedear.betterdriver.analysis.driving.DrivingStateInterval
+import com.flappedear.betterdriver.analysis.driving.LapDrivingStates
+import com.flappedear.betterdriver.recorder.Confidence
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.analysis.corners.BrakingMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerLapObservation
@@ -83,8 +89,59 @@ class CornerDetailsTest {
         assertTrue(rows.all { it.lap == null })
     }
 
+    /** A lap at 20 m/s round the 1000 m axis, coasting from [from] to [to] metres, cornering elsewhere. */
+    private fun states(lap: Int, from: Double, to: Double, provenance: String) = LapDrivingStates(
+        lap,
+        (0 until 100).map { k ->
+            val start = k * 10.0
+            val state = if (start >= from && start < to) DrivingState.Coasting else DrivingState.Cornering
+            DrivingStateInterval(start / 20.0, (start + 10.0) / 20.0, start, start + 10.0, state)
+        },
+        provenance,
+        lengthMeters = 1000.0,
+    )
+
+    /**
+     * Coasting through each corner (FBBD-175) on the best and the compared lap, by the corner's
+     * CornerId, across the start line; measured from the pedals it carries the less measured pedal's
+     * provenance, inferred from the acceleration it is marked and at most Medium.
+     */
+    @Test
+    fun `coasting in the corner is shown with where it comes from and how far it can be trusted`() {
+        val sources = AnalysisProvenance(brake = Provenance.MEASURED_CAN, throttle = Provenance.CALCULATED)
+        val measured = analysis.copy(
+            drivingStates = listOf(states(1, 950.0, 970.0, "measured"), states(2, 980.0, 1030.0, "measured")),
+            provenance = sources,
+        )
+        val row = cornerDetails(measured, 0, 1).single().rows.single { it.label == CoastingLabel }
+        assertEquals(CornerMeasure.Seconds, row.measure)
+        assertEquals(1.0, row.best!!, 1e-9)
+        // 980 m to 1000 m: the axis wraps at the start line, so the rest of that coast is not in it.
+        assertEquals(1.0, row.lap!!, 1e-9)
+        assertEquals(Provenance.CALCULATED, row.provenance)
+        assertTrue(row.marked)
+        assertEquals("≈1.00 s", marked(formatMeasure(row.best, row.measure, ""), row.provenance))
+
+        val allMeasured = measured.copy(provenance = sources.copy(throttle = Provenance.MEASURED_OBD))
+        val plain = cornerDetails(allMeasured, 0, 1).single().rows.single { it.label == CoastingLabel }
+        assertFalse(plain.marked)
+        assertEquals(Confidence.HIGH, plain.confidence!!.level)
+
+        val inferred = analysis.copy(drivingStates = listOf(states(1, 950.0, 970.0, "inferred")))
+        val guess = cornerDetails(inferred, 0, 1).single().rows.single { it.label == CoastingLabel }
+        assertEquals(Provenance.INFERRED, guess.provenance)
+        assertEquals(Confidence.MEDIUM, guess.confidence!!.level)
+        // No states for the compared lap: nothing for it.
+        assertNull(guess.lap)
+        // A session without driving states shows the row empty, unmarked.
+        val none = cornerDetails(analysis, 0, 1).single().rows.single { it.label == CoastingLabel }
+        assertNull(none.best)
+        assertFalse(none.marked)
+    }
+
     @Test
     fun `values are written in their measure`() {
+        assertEquals("0.47 s", formatMeasure(0.466, CornerMeasure.Seconds, ""))
         assertEquals("61 m", formatMeasure(60.6, CornerMeasure.Meters, ""))
         assertEquals("0.83 g", formatMeasure(0.826, CornerMeasure.G, ""))
         assertEquals("63.9 km/h", formatMeasure(63.89, CornerMeasure.Speed, "km/h"))

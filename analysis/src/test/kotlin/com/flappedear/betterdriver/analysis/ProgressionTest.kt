@@ -368,4 +368,64 @@ class ProgressionTest {
         assertEquals(listOf("c2"), steps[1].attempts.map { it.ask.cornerId })
         assertEquals(1, steps[1].held)
     }
+
+    /** The median of [values] as worked out by hand: the middle one, or the mean of the middle two. */
+    private fun referenceMedian(values: List<Double>): Double {
+        val sorted = values.sorted()
+        val m = sorted.size / 2
+        return if (sorted.size % 2 == 1) sorted[m] else (sorted[m - 1] + sorted[m]) / 2
+    }
+
+    /**
+     * Day progression (FBBD-175): a track day opened alone shows its sessions in the order they were
+     * driven, each with its best and typical lap and every corner's median time, against a reference
+     * worked out here from the records' own laps and passes (within 0.01 s), and every counted lap of
+     * the day in driving order with the way it went.
+     */
+    @Test
+    fun `a track day shows how lap and corner times went session by session and lap by lap`() {
+        val d = LocalDate.of(2026, 9, 5)
+        fun at(hour: Int) = d.atStartOfDay(utc).toInstant().toEpochMilli() + hour * 3_600_000L
+        fun c(vararg seconds: Double) =
+            listOf(corner("c1", *seconds.mapIndexed { i, s -> pass(i + 1, s) }.toTypedArray()))
+        val today = listOf(
+            record("m1", at(9), listOf(92.4, 91.8, 91.5, 150.0), corners = c(5.40, 5.31, 5.35)),
+            record("m2", at(11), listOf(91.2, 90.9, 91.0, 90.7), corners = c(5.22, 5.18, 5.25, 5.15)),
+            record("a1", at(14), listOf(90.6, 90.3, 90.5), corners = c(5.10, 5.12, 5.08)),
+            record("a2", at(16), listOf(90.8, 90.4, 90.9), corners = c(5.14, 5.09, 5.11)),
+        )
+        val other = record("x", at(9) + 3 * day, listOf(89.0, 89.1, 89.2))
+        val p = trackProgression(today + other, filter = ProgressionFilter(days = setOf(d)), zone = utc)
+        assertEquals(listOf("m1", "m2", "a1", "a2"), p.points.map { it.key })
+        for ((i, r) in today.withIndex()) {
+            val counted = r.laps.filter { it.counted }.map { it.seconds }
+            close(counted.min(), p.lap(ProgressionMetric.BestLap)!!.values[i]?.value, 0.01, "${r.sessionId} best")
+            val typical = p.lap(ProgressionMetric.MedianLap)!!.values[i]?.value
+            close(referenceMedian(counted), typical, 0.01, "${r.sessionId} median")
+            val corner = p.corners.single().of(ProgressionMetric.CornerTime)!!.values[i]?.value
+            close(referenceMedian(r.corners.single().passes.map { it.seconds }), corner, 0.01, r.sessionId)
+        }
+        // Quicker through the day by the session, and the corner with it.
+        assertEquals(true, p.lap(ProgressionMetric.MedianLap)!!.trend?.better)
+        assertEquals(true, p.corners.single().of(ProgressionMetric.CornerTime)!!.trend?.better)
+        // Every counted lap of the day in the order driven, never the lap that did not count.
+        assertEquals(
+            listOf("m1" to 1, "m1" to 2, "m1" to 3, "m2" to 1, "m2" to 2, "m2" to 3, "m2" to 4) +
+                listOf("a1" to 1, "a1" to 2, "a1" to 3, "a2" to 1, "a2" to 2, "a2" to 3),
+            p.lapsInOrder.map { it.sessionId to it.number },
+        )
+        assertEquals(91.8, p.lapsInOrder[1].seconds)
+        val trend = assertNotNull(p.lapsInOrderTrend)
+        assertEquals(13, trend.points)
+        assertEquals(-1, trend.direction)
+        assertTrue(trend.precise)
+        // The least-squares change from the first lap to the last, worked out here.
+        val ys = p.lapsInOrder.map { it.seconds }
+        val mx = (ys.size - 1) / 2.0
+        val my = ys.average()
+        val slope = ys.indices.sumOf { (it - mx) * (ys[it] - my) } / ys.indices.sumOf { (it - mx) * (it - mx) }
+        close(slope * (ys.size - 1), trend.change, 0.01, "change over the day")
+        // Two laps make no trend.
+        assertNull(trackProgression(listOf(record("s", at(9), listOf(90.0, 91.0))), zone = utc).lapsInOrderTrend)
+    }
 }

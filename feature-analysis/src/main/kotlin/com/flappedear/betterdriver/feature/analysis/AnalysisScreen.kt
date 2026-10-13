@@ -285,6 +285,8 @@ private fun Compare(ui: CompareUi, modifier: Modifier) {
             Dim("0 m", Modifier.weight(1f))
             Dim("${ui.lengthMeters.roundToInt()} m")
         }
+        // Where each lap brakes, coasts, corners and drives (FBBD-175), on the same distance scale.
+        if (ui.hasStates) DrivingStatesStrip(ui)
         ProvenanceLegend()
     }
 }

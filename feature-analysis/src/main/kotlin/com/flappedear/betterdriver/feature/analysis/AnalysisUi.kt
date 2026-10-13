@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.confidence.bestGapConfidence
 import com.flappedear.betterdriver.analysis.confidence.lossConfidence
+import com.flappedear.betterdriver.analysis.driving.DrivingStateRun
 import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
 import com.flappedear.betterdriver.analysis.focus.FocusRole
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
@@ -135,7 +136,9 @@ data class CornerBand(val name: String, val startMeters: Double, val endMeters: 
 
 /**
  * The two laps the charts compare. The time delta is worked out by distance ([DeltaProvenance]);
- * the speeds are the speed channel's, of [speedProvenance] (FBBD-174).
+ * the speeds are the speed channel's, of [speedProvenance] (FBBD-174). Under them, what each lap's
+ * car was doing along the lap (FBBD-175): braking, coasting, cornering, accelerating or flat out,
+ * and how long each lap coasted, of [statesProvenance]; empty without driving states.
  */
 data class CompareUi(
     val referenceNumber: Int,
@@ -146,7 +149,15 @@ data class CompareUi(
     val otherSpeed: List<List<ChartPoint>>,
     val corners: List<CornerBand>,
     val speedProvenance: Provenance? = null,
-)
+    val referenceStates: List<DrivingStateRun> = emptyList(),
+    val otherStates: List<DrivingStateRun> = emptyList(),
+    val referenceCoastingSeconds: Double? = null,
+    val otherCoastingSeconds: Double? = null,
+    val statesProvenance: Provenance? = null,
+) {
+    /** Whether both laps have driving states to draw. */
+    val hasStates: Boolean get() = referenceStates.isNotEmpty() && otherStates.isNotEmpty()
+}
 
 /** The theoretical best and the time to gain to it: put together from the best of each corner. */
 val TheoreticalProvenance = Provenance.CALCULATED
@@ -302,18 +313,7 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         corners = cornerDetails(analysis, fastestIndex, comparison?.otherIndex),
         focus = next.focus,
         withheld = next.withheld,
-        compare = comparison?.let {
-            CompareUi(
-                referenceNumber = laps[it.referenceIndex].number,
-                otherNumber = laps[it.otherIndex].number,
-                lengthMeters = it.lengthMeters,
-                delta = it.delta,
-                referenceSpeed = it.referenceSpeed,
-                otherSpeed = it.otherSpeed,
-                corners = corners,
-                speedProvenance = analysis.provenance.speed,
-            )
-        },
+        compare = comparison?.let { compareUi(analysis, it, corners) },
         sources = analysis.provenance,
         realisticMillis = realistic?.totalSeconds?.let(::millis),
         realisticGainSeconds = realistic?.let { fastest.durationSeconds - it.totalSeconds },

@@ -51,6 +51,25 @@ class SessionProgressTest {
         assertEquals(now, progress.lapSpreadSeconds!!, 1e-12)
         assertEquals(before, progress.previousSpreadSeconds!!, 1e-12)
         assertEquals(now - before, progress.spreadDeltaSeconds!!, 1e-12)
+        // The typical lap is the median of the counted laps, the slow lap does not drag it (FBBD-175).
+        assertEquals(81.5, progress.lapMedianSeconds!!, 1e-12)
+    }
+
+    /**
+     * Consistency by median and interquartile range (FBBD-175), as Telemetry's consistency.dart
+     * defines them: quartiles interpolated linearly between the ordered laps. Reference values worked
+     * out by hand for eight laps with a warm-up and a traffic lap; the mean and the standard deviation
+     * would both be dragged by those two, the median and the spread are not.
+     */
+    @Test
+    fun `consistency is the median and the interquartile range of the counted laps`() {
+        val times = listOf(95.0, 81.4, 81.0, 81.2, 81.6, 88.0, 81.1, 81.3)
+        val progress = summarizeProgress(laps(*times.toDoubleArray()), emptyList())
+        // Ordered: 81.0 81.1 81.2 81.3 81.4 81.6 88.0 95.0. Q1 at 1.75: 81.1 + 0.75 × 0.1 = 81.175;
+        // median at 3.5: 81.35; Q3 at 5.25: 81.6 + 0.25 × 6.4 = 83.2.
+        assertEquals(81.35, progress.lapMedianSeconds!!, 0.01)
+        assertEquals(83.2 - 81.175, progress.lapSpreadSeconds!!, 0.01)
+        assertNull(summarizeProgress(laps(81.0, 82.0), emptyList()).lapMedianSeconds)
     }
 
     @Test
