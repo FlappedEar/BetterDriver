@@ -7,6 +7,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
+import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.flappedear.betterdriver.feature.track.editor.SegmentRowTag
@@ -75,6 +76,8 @@ class CornerCorrectionSmokeTest {
         app.waitForText("Rename").performScrollTo().performClick()
         app.waitFor(hasSetTextAction()).performTextReplacement("Turn One")
         app.waitForText("Save").performScrollTo().performClick()
+        // As in ImportSmokeTest: a keyboard still up would take the first Back.
+        Espresso.closeSoftKeyboard()
         app.waitForText("Turn One")
         // Stored at once, without Save.
         app.waitNamed("the stored name") { circuit().identity?.segment(corner.id)?.name == "Turn One" }

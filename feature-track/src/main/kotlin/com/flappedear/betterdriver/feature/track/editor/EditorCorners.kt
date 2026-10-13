@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
@@ -27,8 +29,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -233,6 +237,12 @@ private fun middle(s: RevisionSegment, identity: TrackRevision): Double {
 private fun SegmentNameField(s: RevisionSegment, onDone: (String) -> Unit, onCancel: () -> Unit) {
     var name by rememberSaveable(s.id) { mutableStateOf(s.label.orEmpty()) }
     val valid = name.trim().length <= MaxSegmentLabelChars
+    // The keyboard goes with the field.
+    val focus = LocalFocusManager.current
+    val save = {
+        focus.clearFocus()
+        onDone(name)
+    }
     Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
         OutlinedTextField(
             value = name,
@@ -241,6 +251,8 @@ private fun SegmentNameField(s: RevisionSegment, onDone: (String) -> Unit, onCan
             placeholder = { Text(s.numberedName) },
             singleLine = true,
             isError = !valid,
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { if (valid) save() }),
             modifier = Modifier.fillMaxWidth(),
         )
         DimLine("Leave it empty for “${s.numberedName}”.", Modifier.padding(top = 6.dp))
@@ -248,8 +260,11 @@ private fun SegmentNameField(s: RevisionSegment, onDone: (String) -> Unit, onCan
             Modifier.fillMaxWidth().padding(top = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
         ) {
-            TextButton(onClick = onCancel) { Text("Cancel") }
-            Button(onClick = { onDone(name) }, enabled = valid) { Text("Save") }
+            TextButton(onClick = {
+                focus.clearFocus()
+                onCancel()
+            }) { Text("Cancel") }
+            Button(onClick = save, enabled = valid) { Text("Save") }
         }
     }
 }
