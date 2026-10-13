@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.faults
 
+import android.app.Activity
 import android.app.ActivityManager
 import android.app.NotificationManager
 import android.os.Process
@@ -120,6 +121,7 @@ class FaultTest {
         val id = session()
         d.openApp()
         d.waitForTrackScreen()
+        relaunchKeepsLiveState()
         val backAt = mutableListOf<Long>()
         try {
             repeat(Cycles) { cycle ->
@@ -205,6 +207,40 @@ class FaultTest {
         val finished = d.store.list().filter { it.state == SessionState.FINISHED }
         assertEquals("finished sessions", Cycles + 1, finished.size)
         d.checkNoAppErrors()
+    }
+
+    /**
+     * FBBD-209: the app opened again while it is on the track screen (a new task, as from the
+     * notification) still follows the recorder once the activity it replaced has stopped. Android
+     * stops that one when the new one goes idle, which the always-animating track screen never does,
+     * so up to 10 s later. Its stop used to unbind the new one from the recorder too: the screen kept
+     * the last state it got, GNSS "Ok", and never showed the banner (cycle 1 then timed out).
+     */
+    private fun relaunchKeepsLiveState() {
+        val replaced = resumedActivity()
+        d.openApp()
+        d.waitForTrackScreen()
+        d.waitFor(ReplacedStopTimeoutMs, "the replaced activity to stop") {
+            var stage: Stage? = null
+            d.instrumentation.runOnMainSync {
+                // Unknown once destroyed: the monitor forgets it.
+                stage = runCatching { ActivityLifecycleMonitorRegistry.getInstance().getLifecycleStageOf(replaced) }
+                    .getOrNull()
+            }
+            stage == null || stage == Stage.STOPPED || stage == Stage.DESTROYED
+        }
+        val seen = checkNotNull(d.recorder().live).elapsedMicros
+        d.waitForRecorder("the live state to update after the relaunch", LiveUpdateTimeoutMs) {
+            (it.live?.elapsedMicros ?: Long.MIN_VALUE) > seen
+        }
+    }
+
+    private fun resumedActivity(): Activity {
+        var activity: Activity? = null
+        d.instrumentation.runOnMainSync {
+            activity = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).singleOrNull()
+        }
+        return checkNotNull(activity) { "no resumed activity. ${d.screen()}" }
     }
 
     /** One drop and return; returns when Demo GNSS was switched back on, in wall-clock ms. */
@@ -391,6 +427,12 @@ class FaultTest {
         const val CarryOnTimeoutMs = 60_000L
         const val RecoverTimeoutMs = 15_000L
         const val StopTimeoutMs = 30_000L
+
+        /** Android stops a replaced activity at the latest 10 s after the new one resumed. */
+        const val ReplacedStopTimeoutMs = 30_000L
+
+        /** The recorder sends its state every 250 ms. */
+        const val LiveUpdateTimeoutMs = 2_000L
 
         /** Two seconds of Demo GNSS. */
         const val ShortSessionFixes = 50L

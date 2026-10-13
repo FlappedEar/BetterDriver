@@ -95,7 +95,7 @@ class AnalysisSmokeTest {
         // that opens Every lap is one clickable node, so its values are looked up unmerged.
         val inferred = hasText(NotMeasuredMark, substring = true) and hasText(" m", substring = true)
         app.waitNamed("a marked corner value") {
-            app.onAllNodes(inferred, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            app.exists(inferred, useUnmergedTree = true)
         }
         app.onAllNodes(inferred, useUnmergedTree = true)[0].performScrollTo().assertIsDisplayed()
         legend().performScrollTo().assertIsDisplayed()
@@ -137,7 +137,7 @@ class AnalysisSmokeTest {
             app.pumpUntilText("Compare laps")
             app.pumpBack()
             app.pumpUntil(LoadTimeoutMs, "the lap review to close") {
-                app.onAllNodesWithText("Compare laps").fetchSemanticsNodes().isEmpty()
+                !app.showsText("Compare laps")
             }
         }
         app.waitForText("TIME THROUGH THE CORNER", substring = true)
@@ -167,7 +167,7 @@ class AnalysisSmokeTest {
         app.waitFor(hasText("Export") and hasClickAction()).assertIsEnabled()
         app.waitForText("Cancel").performClick()
         app.waitUntilGone("Composite lap video")
-        check(app.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) { "a composite lap video started" }
+        check(!app.showsText("Cancel")) { "a composite lap video started" }
     }
 
     @Test
@@ -179,7 +179,7 @@ class AnalysisSmokeTest {
         val pick = hasContentDescription("Coach ", substring = true) and
             hasContentDescription("next time", substring = true)
         val picked = hasContentDescription("Coaching ", substring = true)
-        fun isPicked() = app.onAllNodes(picked).fetchSemanticsNodes().isNotEmpty()
+        fun isPicked() = app.exists(picked)
         // The analysis can still lay out again (the progress card arrives after it), and a tap during
         // that can miss the flag: it is tapped again only while nothing is picked after a while, so a
         // tap that landed is never undone.
@@ -190,10 +190,10 @@ class AnalysisSmokeTest {
         }
         app.waitFor(picked).performScrollTo().assertIsDisplayed()
         app.onAllNodes(picked)[0].performClick()
-        app.waitNamed("the pick to go", LoadTimeoutMs) { app.onAllNodes(picked).fetchSemanticsNodes().isEmpty() }
+        app.waitNamed("the pick to go", LoadTimeoutMs) { !app.exists(picked) }
 
         // The same pick from the focus card's chip, when the session has one.
-        if (app.onAllNodesWithText("Coach this next time").fetchSemanticsNodes().isNotEmpty()) {
+        if (app.showsText("Coach this next time")) {
             app.onAllNodesWithText("Coach this next time")[0].performScrollTo().performClick()
             app.waitForText("✓ Coaching this next time").performScrollTo().performClick()
             app.waitUntilGone("✓ Coaching this next time")
@@ -226,7 +226,7 @@ class AnalysisSmokeTest {
     private fun legend(): SemanticsNodeInteraction {
         val tag = hasTestTag(ProvenanceLegendTag)
         app.waitNamed("the provenance legend") {
-            app.onAllNodes(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            app.exists(tag, useUnmergedTree = true)
         }
         return app.onAllNodes(tag, useUnmergedTree = true)[0]
     }

@@ -4,7 +4,6 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -162,6 +161,6 @@ class ShellSmokeTest {
         app.waitForText("3 sessions", substring = true, timeoutMs = LoadTimeoutMs)
         app.waitForText("Cancel").performClick()
         app.waitUntilGone("Include sessions (without video)")
-        check(app.onAllNodesWithText("Backed up.").fetchSemanticsNodes().isEmpty())
+        check(!app.showsText("Backed up."))
     }
 }
