@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.confidence.segmentSeconds
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.analysis.focus.sessionFocus
+import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.wrapLengthMeters
 import com.flappedear.betterdriver.recorder.Confidence
@@ -16,7 +17,12 @@ import kotlinx.serialization.Serializable
 // ([coachingHistory]), so it always follows the records that are there: none is a stored verdict
 // that could go stale. The records hold no positions, only times, distances and speeds per corner.
 
-const val CoachingHistoryAlgorithm = "coaching-history-v1"
+/**
+ * v2 (FBBD-181) adds each lap's time, the throttle pickup of each pass and where an imported
+ * session came from, for the progression across sessions. A v1 record still reads; it is made
+ * again when its session is analysed again.
+ */
+const val CoachingHistoryAlgorithm = "coaching-history-v2"
 
 /**
  * One counted lap's pass through a corner, as kept for the history. [seconds] is the corner time;
@@ -24,7 +30,9 @@ const val CoachingHistoryAlgorithm = "coaching-history-v1"
  * but never counted. [brakingMeters] is where braking started, metres from the corner's start
  * (negative before it), found as [brakingProvenance] says (`measured` or `inferred`); placed by the
  * corner's start, which the corner identity puts at the same place in every session, so it compares
- * across sessions. Speeds are in the corner's [CornerRecord.speedUnit].
+ * across sessions. Speeds are in the corner's [CornerRecord.speedUnit]. [pickupMeters] is where the
+ * throttle was picked up, from the corner's start as the braking point, found as [pickupProvenance]
+ * says (FBBD-181).
  */
 @Serializable
 data class CornerPassRecord(
@@ -35,9 +43,12 @@ data class CornerPassRecord(
     val brakingProvenance: String = "",
     val minimumSpeed: Double? = null,
     val exitSpeed: Double? = null,
+    val pickupMeters: Double? = null,
+    val pickupProvenance: String = "",
 ) {
     init {
         require(seconds.isFinite() && seconds > 0) { "corner time not finite" }
+        require(pickupMeters?.isFinite() != false) { "pickup not finite" }
         require(Confidence.parse(confidence) != null) { "unknown confidence: $confidence" }
         require(brakingMeters?.isFinite() != false) { "braking point not finite" }
         require(minimumSpeed?.isFinite() != false && exitSpeed?.isFinite() != false) { "speed not finite" }
@@ -48,7 +59,8 @@ data class CornerPassRecord(
 
 /**
  * One corner of an analysed session. [speedMeasured] and [brakeMeasured]: whether the speed and the
- * brake channels were measured (FBBD-174), so a change in them may carry its number.
+ * brake channels were measured (FBBD-174), so a change in them may carry its number; [throttleMeasured]
+ * the same of the throttle, for the pickup (FBBD-181).
  * [focusRank] is its place among the session's top three focus areas (1 to 3), null when not among
  * them; [withheld] when its evidence was too weak to rank it at all (Low, FBBD-177). [cues] counts
  * the coach's corner cues there during the session.
@@ -60,6 +72,7 @@ data class CornerRecord(
     val speedUnit: String = "",
     val speedMeasured: Boolean = false,
     val brakeMeasured: Boolean = false,
+    val throttleMeasured: Boolean = false,
     val focusRank: Int? = null,
     val withheld: Boolean = false,
     val cues: Int = 0,
@@ -80,6 +93,18 @@ data class CornerRecord(
 data class AskedChange(val metric: String, val direction: Int) {
     init {
         require(direction == 1 || direction == -1) { "bad direction" }
+    }
+}
+
+/**
+ * One timed lap of a session (FBBD-181): its [number], its time in [seconds] from the start/finish
+ * line, and whether it [counted] (eligible for ranking and statistics, as the session's analysis
+ * counts it).
+ */
+@Serializable
+data class LapRecord(val number: Int, val seconds: Double, val counted: Boolean) {
+    init {
+        require(seconds.isFinite() && seconds > 0) { "lap time not finite" }
     }
 }
 
@@ -106,7 +131,9 @@ data class FocusAsk(
  * What one analysed session at a track holds for the coaching history (FBBD-180): its corners,
  * under the CornerIds of [identityRevision] of the track's corner identity, what it recommended
  * working on next ([focus]), and the session whose focus the coach worked on during it
- * ([coachedFrom], from the coach's own event; null when the coach did not).
+ * ([coachedFrom], from the coach's own event; null when the coach did not). [laps] are its timed
+ * laps and [origin] where it came from when it was imported from another app's file ("VBO
+ * lap-12.vbo"), null when recorded here (FBBD-181): both empty in records from before they were kept.
  */
 @Serializable
 data class SessionCoachingRecord(
@@ -120,6 +147,8 @@ data class SessionCoachingRecord(
     val coachedFrom: String? = null,
     val focus: List<FocusAsk> = emptyList(),
     val corners: List<CornerRecord> = emptyList(),
+    val laps: List<LapRecord> = emptyList(),
+    val origin: String? = null,
 ) {
     init {
         require(identityRevision >= 1) { "bad identity revision" }
@@ -143,15 +172,17 @@ data class CoachedSession(val focusFrom: String? = null, val cues: Map<String, I
 /**
  * The coaching history record of session [sessionId] at [trackId], started at [startUtcMillis],
  * from its [analysis]: every corner's counted passes and what it recommended next (its next-session
- * focus, FBBD-20). Null when the analysis's corners are not the track's (no
- * CornerIds to keep them under).
+ * focus, FBBD-20), with its laps and, for a session imported from another app's file, its [origin].
+ * Null when the analysis's corners are not the track's (no CornerIds to keep them under).
  */
+@Suppress("LongParameterList") // The session as the analysis screen has it.
 fun sessionCoachingRecord(
     analysis: SessionAnalysis,
     trackId: String,
     sessionId: String,
     startUtcMillis: Long,
     coached: CoachedSession = CoachedSession(),
+    origin: String? = null,
 ): SessionCoachingRecord? {
     val revision = analysis.identity?.number?.takeIf { analysis.identified } ?: return null
     val segments = analysis.segments?.segments.orEmpty().filter { it.type == TrackSegmentType.Corner }
@@ -160,25 +191,10 @@ fun sessionCoachingRecord(
     val length = analysis.axis?.let(::wrapLengthMeters) ?: 0.0
     val speedMeasured = analysis.provenance.speed?.measured == true
     val brakeMeasured = analysis.provenance.brake?.measured == true
+    val throttleMeasured = analysis.provenance.throttle?.measured == true
     val corners = segments.map { corner ->
         val metrics = analysis.cornerMetrics[corner.id].orEmpty()
-        val passes = analysis.laps.timedLaps.indices.filter { analysis.laps.timedLaps[it].referenceEligible }
-            .mapNotNull { i ->
-                val seconds = analysis.segmentSeconds(corner.id, i)?.takeIf { it.isFinite() && it > 0 }
-                    ?: return@mapNotNull null
-                val o = metrics.getOrNull(i)?.observation
-                val braking = o?.brakingPointMeters?.takeIf { it.isFinite() }
-                    ?.let { fromStart(it, corner.startProgressMeters, length) }
-                CornerPassRecord(
-                    lap = analysis.laps.timedLaps[i].number,
-                    seconds = seconds,
-                    confidence = analysis.confidence.lap(corner.id, i).level.name,
-                    brakingMeters = braking,
-                    brakingProvenance = if (braking == null) "" else o.brakingProvenance,
-                    minimumSpeed = o?.minimumSpeed?.takeIf { it.isFinite() },
-                    exitSpeed = o?.exitSpeed?.takeIf { it.isFinite() },
-                )
-            }
+        val passes = countedPasses(analysis, corner, length)
         val units = metrics.map { it.observation.speedUnit }.filter { it.isNotBlank() }.toSet()
         CornerRecord(
             cornerId = corner.id,
@@ -187,6 +203,7 @@ fun sessionCoachingRecord(
             speedUnit = units.singleOrNull().orEmpty(),
             speedMeasured = speedMeasured,
             brakeMeasured = brakeMeasured,
+            throttleMeasured = throttleMeasured,
             focusRank = ranked.indexOf(corner.id).takeIf { it >= 0 }?.plus(1),
             withheld = analysis.confidence.segment(corner.id).level == Confidence.LOW,
             cues = coached.cues[corner.id] ?: 0,
@@ -211,7 +228,36 @@ fun sessionCoachingRecord(
             )
         },
         corners = corners,
+        laps = analysis.laps.timedLaps.filter { it.durationSeconds.isFinite() && it.durationSeconds > 0 }
+            .map { LapRecord(it.number, it.durationSeconds, it.referenceEligible) },
+        origin = origin?.takeIf { it.isNotBlank() },
     )
+}
+
+/** Each counted lap's pass through [corner] of [analysis], on a lap of [length] metres (0 when not closed). */
+private fun countedPasses(analysis: SessionAnalysis, corner: TrackSegment, length: Double): List<CornerPassRecord> {
+    val metrics = analysis.cornerMetrics[corner.id].orEmpty()
+    return analysis.laps.timedLaps.indices.filter { analysis.laps.timedLaps[it].referenceEligible }
+        .mapNotNull { i ->
+            val seconds = analysis.segmentSeconds(corner.id, i)?.takeIf { it.isFinite() && it > 0 }
+                ?: return@mapNotNull null
+            val o = metrics.getOrNull(i)?.observation
+            val braking = o?.brakingPointMeters?.takeIf { it.isFinite() }
+                ?.let { fromStart(it, corner.startProgressMeters, length) }
+            val pickup = o?.pickupMeters?.takeIf { it.isFinite() }
+                ?.let { fromStart(it, corner.startProgressMeters, length) }
+            CornerPassRecord(
+                lap = analysis.laps.timedLaps[i].number,
+                seconds = seconds,
+                confidence = analysis.confidence.lap(corner.id, i).level.name,
+                brakingMeters = braking,
+                brakingProvenance = if (braking == null) "" else o.brakingProvenance,
+                minimumSpeed = o?.minimumSpeed?.takeIf { it.isFinite() },
+                exitSpeed = o?.exitSpeed?.takeIf { it.isFinite() },
+                pickupMeters = pickup,
+                pickupProvenance = if (pickup == null) "" else o.pickupProvenance,
+            )
+        }
 }
 
 /** [meters] along a lap of [length] (0 when not closed) from [start], the nearer way round a closed lap. */

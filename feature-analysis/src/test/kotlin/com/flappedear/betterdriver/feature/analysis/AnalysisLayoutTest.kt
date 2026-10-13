@@ -16,6 +16,7 @@ import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
@@ -92,6 +93,36 @@ abstract class AnalysisLayoutTest(private val device: String) {
             "next session at ${top(next)}..$nextBottom, best lap at ${top(best)}, history at ${top(history)} on $device"
         }
         compose.onNode(hasText("Learned") and hasAnyAncestor(hasTestTag(CoachingHistoryTag))).assertExists()
+    }
+
+    /**
+     * The way to the progression at the track (FBBD-181) sits in the card against earlier sessions,
+     * under the best lap, so the summary still opens on the next focus and the best lap.
+     */
+    @Test
+    fun progressionLinkUnderTheBestLap() {
+        var opened = false
+        compose.edgeToEdge()
+        compose.setContent {
+            AppScreen {
+                AnalysisScreen(
+                    AnalysisState.Ready(PreviewUi.copy(map = PreviewMap)),
+                    onCompare = {},
+                    layout = deviceLayout(),
+                    onProgression = { opened = true },
+                )
+            }
+        }
+        compose.waitForIdle()
+        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val link = compose.onNodeWithTag(ProgressionLinkTag).fetchSemanticsNode()
+        val nextBottom = next.positionInRoot.y + next.size.height
+        check(nextBottom <= best.positionInRoot.y && best.positionInRoot.y < link.positionInRoot.y) {
+            "next at ${next.positionInRoot.y}, best lap at ${best.positionInRoot.y}, link at ${link.positionInRoot.y}"
+        }
+        compose.onNodeWithTag(ProgressionLinkTag).performScrollTo().performClick()
+        check(opened) { "the progression did not open" }
     }
 
     /** The coach line shows only where the spoken coach will work on the focus first. */
