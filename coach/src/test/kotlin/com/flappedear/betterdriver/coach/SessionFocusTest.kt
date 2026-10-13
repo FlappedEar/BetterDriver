@@ -67,10 +67,11 @@ class SessionFocusTest {
     /** Braking early everywhere, by a different amount in each corner: corner 1 loses least. */
     private val earlyEverywhere = SimCircuit.Pace(earlierM = listOf(12.0, 18.0, 24.0, 30.0))
 
-    private fun <T> withDir(block: (File) -> T): T {
+    // Unit, never the block's value: JUnit skips a test method that returns one, silently.
+    private fun withDir(block: (File) -> Unit) {
         val dir = Files.createTempDirectory("focus").toFile()
         try {
-            return block(dir)
+            block(dir)
         } finally {
             dir.deleteRecursively()
         }
@@ -107,6 +108,28 @@ class SessionFocusTest {
             assertTrue(store.delete("sim"))
             assertTrue(store.history("sim").isEmpty())
         }
+
+    @Test
+    fun `a written record says its format and version, and one of a newer version reads as none`() = withDir { dir ->
+        val store = SessionFocusStore(dir)
+        val r = record("s1", 1_000, 0)
+        assertTrue(store.save(r))
+        val file = File(dir, "sim/s1.json")
+        val text = file.readText()
+        assertTrue("\"format\":\"${SessionFocusRecord.Format}\"" in text, text)
+        assertTrue("\"version\":${SessionFocusRecord.Version}" in text, text)
+        assertEquals(r, store.get("sim", "s1"))
+
+        // A file a newer app wrote, in a format this one does not know, is no record: never misread.
+        val newer = SessionFocusRecord.Version + 1
+        file.writeText(text.replace("\"version\":${SessionFocusRecord.Version}", "\"version\":$newer"))
+        assertNull(store.get("sim", "s1"))
+        assertTrue(store.history("sim").isEmpty())
+        assertNull(store.latest("sim"))
+        // Nor is one of another format.
+        file.writeText(text.replace(SessionFocusRecord.Format, "someone-elses-format"))
+        assertNull(store.get("sim", "s1"))
+    }
 
     @Test
     fun `a deleted session's focus is gone, and one whose session is gone is never the next session's`() =

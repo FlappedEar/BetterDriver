@@ -10,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
@@ -190,7 +191,8 @@ class Sessions private constructor(private val context: Context) {
                 val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
                 out.use {
                     when (format) {
-                        ExportFormat.Vbo -> logExport(id, data) { VboExporter.export(data, it) }
+                        ExportFormat.Vbo ->
+                            logExport(id, data) { VboExporter.export(data, it, derived = vboAccelerations(data)) }
                         ExportFormat.Csv -> CsvExporter.export(data, it, exportLaps(data, tracksDir(context)))
                         ExportFormat.Gpx -> GpxExporter.export(data, it, exportLaps(data, tracksDir(context)))
                     }
@@ -235,7 +237,7 @@ class Sessions private constructor(private val context: Context) {
                 var whole = false
                 try {
                     create(folder, VboMimeType, "BetterDriver-$id.vbo").use {
-                        logExport(id, data) { VboExporter.export(data, it, video) }
+                        logExport(id, data) { VboExporter.export(data, it, video, vboAccelerations(data)) }
                     }
                     video?.orderedClips?.forEachIndexed { i, clip ->
                         create(folder, Mp4MimeType, video.fileName(i)).use { out ->

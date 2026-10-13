@@ -118,7 +118,11 @@ data class SessionFocusRecord(
  * renamed into place; a file that cannot be read counts as none.
  */
 class SessionFocusStore(private val dir: File) {
-    private val json = Json { ignoreUnknownKeys = true }
+    // Defaults written too, so every file says its format and version and a newer one is never misread.
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+    }
 
     fun get(trackId: String, sessionId: String): SessionFocusRecord? =
         read(fileFor(trackId, sessionId))?.takeIf { it.trackId == trackId && it.sessionId == sessionId }
