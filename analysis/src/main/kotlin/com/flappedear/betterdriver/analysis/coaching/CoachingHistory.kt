@@ -156,9 +156,13 @@ fun coachingHistory(sessionId: String, records: List<SessionCoachingRecord>): Se
     val attempts = attemptsIn(sorted, at)
     val worked = attempts.map { it.ask.cornerId }.toSet()
     // The latest improvement at each other corner before this session, checked in it.
+    // Both the attempt and the session it worked from come before this one: with the clock set back, a
+    // coached session can sort before its source, and its attempt is then not this session's past.
+    val before = sorted.subList(0, at).map { it.sessionId }.toSet()
     val latest = LinkedHashMap<String, FocusAttempt>()
     for (i in 0 until at) {
-        attemptsIn(sorted, i).filter { it.verdict == FocusVerdict.Improved }.forEach { latest[it.ask.cornerId] = it }
+        attemptsIn(sorted, i).filter { it.verdict == FocusVerdict.Improved && it.source.sessionId in before }
+            .forEach { latest[it.ask.cornerId] = it }
     }
     val checks = latest.values.filter { it.ask.cornerId !in worked }.mapNotNull { check(it, s) }
         .sortedWith(
@@ -170,12 +174,13 @@ fun coachingHistory(sessionId: String, records: List<SessionCoachingRecord>): Se
 /** What came of the focus that session [at] of [sorted] worked on. */
 private fun attemptsIn(sorted: List<SessionCoachingRecord>, at: Int): List<FocusAttempt> {
     val s = sorted[at]
-    val earlier = sorted.subList(0, at)
     val from = s.coachedFrom
+    // The coach's event names the session it worked from: found wherever the clock put it (a phone
+    // clock set back sorts it after this one). Without the coach, the latest before it.
     val source = if (from != null) {
-        earlier.lastOrNull { it.sessionId == from }
+        sorted.firstOrNull { it.sessionId == from && it.sessionId != s.sessionId }
     } else {
-        earlier.lastOrNull { it.focus.isNotEmpty() }
+        sorted.subList(0, at).lastOrNull { it.focus.isNotEmpty() }
     } ?: return emptyList()
     return source.focus.sortedBy { !it.primary }.map { attempt(it, source, s) }
 }

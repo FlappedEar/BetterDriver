@@ -187,7 +187,11 @@ fun sessionCoachingRecord(
     val revision = analysis.identity?.number?.takeIf { analysis.identified } ?: return null
     val segments = analysis.segments?.segments.orEmpty().filter { it.type == TrackSegmentType.Corner }
     // The session's top three focus areas, as the summary ranks them (FBBD-177).
-    val ranked = sessionFocus(analysis).areas.map { it.area.segmentId }.distinct()
+    val found = sessionFocus(analysis)
+    val ranked = found.areas.map { it.area.segmentId }.distinct()
+    // Left out for its evidence: the corner as a whole, or the claim that would have ranked it
+    // (a gap seen on one lap only), even when the corner's own grade is High.
+    val withheld = found.withheld.map { it.segmentId }.toSet()
     val length = analysis.axis?.let(::wrapLengthMeters) ?: 0.0
     val speedMeasured = analysis.provenance.speed?.measured == true
     val brakeMeasured = analysis.provenance.brake?.measured == true
@@ -205,7 +209,7 @@ fun sessionCoachingRecord(
             brakeMeasured = brakeMeasured,
             throttleMeasured = throttleMeasured,
             focusRank = ranked.indexOf(corner.id).takeIf { it >= 0 }?.plus(1),
-            withheld = analysis.confidence.segment(corner.id).level == Confidence.LOW,
+            withheld = corner.id in withheld || analysis.confidence.segment(corner.id).level == Confidence.LOW,
             cues = coached.cues[corner.id] ?: 0,
             passes = passes,
         )
