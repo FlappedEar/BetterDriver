@@ -54,6 +54,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
@@ -89,11 +90,14 @@ private sealed interface Load {
     /**
      * [coachCandidates]: each corner (segment id) as a pick for the coach (FBBD-148), on the fastest lap.
      * [lapVideo]: the session's video and the lap review's laps, for every lap through a corner (FBBD-153).
+     * [epoch]: the app data's restore epoch (FBBD-156) taken before the session was read, so what is
+     * derived from it is never written into data restored since.
      */
     data class Done(
         val loaded: Loaded,
         val coachCandidates: Map<String, CornerPick>,
         val lapVideo: LapVideo? = null,
+        val epoch: Long = 0L,
     ) : Load
 
     /** No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151). */
@@ -141,7 +145,9 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     val picks = trackId?.let { allPicks[it] }
     LaunchedEffect(id) {
         load = withContext(Dispatchers.Default) {
-            loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            val epoch = AppDataGate.epoch
+            val read = loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            if (read is Load.Done) read.copy(epoch = epoch) else read
         }
     }
     // The session's validation report (FBBD-183): read, or made the first time the session is opened.
@@ -173,7 +179,8 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
         val loaded = l.loaded
         withContext(Dispatchers.Default) {
             val store = sessionFocusStore(context)
-            keepSessionFocus(store, loaded.track.id, id, loaded.startUtcMillis, loaded.analysis, l.coachCandidates)
+            val at = loaded.startUtcMillis
+            keepSessionFocus(store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates)
         }
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }

@@ -10,15 +10,20 @@ import kotlin.math.roundToInt
  * [changes] in words: "Your 2 fastest passes braked 8 m later and carried 4 km/h more minimum
  * speed than your other 4." Numbers only at High confidence ([level]), and only for a change from
  * measured values ([FocusChange.measured]): an inferred braking point or a calculated speed is said
- * without its number. Nothing when there is no difference worth a change.
+ * without its number. The pass counts are those the changes rest on ([FocusChange.fasterCount],
+ * [FocusChange.otherCount]; [faster] and [other], the group sizes, where not known); when the
+ * changes rest on different counts, none is said. Nothing when there is no difference worth a change.
  */
 fun changeText(changes: List<FocusChange>, faster: Int, other: Int, level: Confidence): String {
     if (changes.isEmpty() || level == Confidence.LOW) return ""
     val precise = level == Confidence.HIGH
     val parts = changes.map { phrase(it, precise) }
     val joined = if (parts.size == 1) parts[0] else parts.dropLast(1).joinToString(", ") + " and " + parts.last()
-    val passes = if (precise) "Your $faster fastest passes" else "Your fastest passes"
-    val others = if (precise) "your other $other" else "your others"
+    val counts = changes.map { c ->
+        Pair(c.fasterCount.takeIf { it > 0 } ?: faster, c.otherCount.takeIf { it > 0 } ?: other)
+    }.distinct().singleOrNull()
+    val passes = if (precise && counts != null) "Your ${counts.first} fastest passes" else "Your fastest passes"
+    val others = if (precise && counts != null) "your other ${counts.second}" else "your others"
     return "$passes $joined than $others."
 }
 

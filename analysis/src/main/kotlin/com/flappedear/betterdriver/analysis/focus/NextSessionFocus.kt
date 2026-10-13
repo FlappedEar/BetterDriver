@@ -53,6 +53,8 @@ enum class FocusMetric(val code: String) {
  * so a positive [delta] brakes later; a speed is in [unit], so a positive [delta] is faster.
  * [measured] is false for a braking point inferred from the speed (no brake signal) and for speeds
  * not measured (calculated from positions); such a change is said without its number.
+ * [fasterCount] and [otherCount] are how many passes of each group had a value for [metric]
+ * ([MinimumSupportingLaps] each at least); 0 when not known.
  */
 data class FocusChange(
     val metric: FocusMetric,
@@ -60,6 +62,8 @@ data class FocusChange(
     val faster: Double,
     val unit: String,
     val measured: Boolean = true,
+    val fasterCount: Int = 0,
+    val otherCount: Int = 0,
 ) {
     val delta: Double get() = faster - other
 }
@@ -217,8 +221,10 @@ private fun brakingChange(faster: List<CornerLapObservation>, other: List<Corner
             .mapNotNull { it.brakingPointMeters }.filter { it.isFinite() }
         val f = points(faster)
         val o = points(other)
-        if (f.size < MinimumSupportingLaps || o.isEmpty()) continue
-        val change = FocusChange(FocusMetric.BrakingPoint, median(o), median(f), "m", provenance == "measured")
+        // A median of one pass is no median: each group needs two at least.
+        if (f.size < MinimumSupportingLaps || o.size < MinimumSupportingLaps) continue
+        val measured = provenance == "measured"
+        val change = FocusChange(FocusMetric.BrakingPoint, median(o), median(f), "m", measured, f.size, o.size)
         return change.takeIf { abs(it.delta) >= FocusChangeBrakingMeters }
     }
     return null
@@ -235,9 +241,10 @@ private fun speedChange(
     val unit = all.firstOrNull()?.speedUnit.orEmpty()
     val f = faster.mapNotNull(value).filter { it.isFinite() }
     val o = other.mapNotNull(value).filter { it.isFinite() }
-    // Speeds in different units are not one difference.
-    val comparable = all.all { sameSpeedUnit(it.speedUnit, unit) } && f.size >= MinimumSupportingLaps && o.isNotEmpty()
-    val change = if (comparable) FocusChange(metric, median(o), median(f), unit, measured) else null
+    // Speeds in different units are not one difference; each group needs two passes at least.
+    val comparable = all.all { sameSpeedUnit(it.speedUnit, unit) } &&
+        f.size >= MinimumSupportingLaps && o.size >= MinimumSupportingLaps
+    val change = if (comparable) FocusChange(metric, median(o), median(f), unit, measured, f.size, o.size) else null
     return change?.takeIf { abs(it.delta) >= FocusChangeSpeedFraction * abs(it.other) && it.delta != 0.0 }
 }
 

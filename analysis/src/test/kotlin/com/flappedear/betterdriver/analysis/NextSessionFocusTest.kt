@@ -176,6 +176,34 @@ class NextSessionFocusTest {
         )
     }
 
+    /** [handBuilt] with no braking point on the slower laps in [missing]. */
+    private fun withoutBraking(missing: Set<Int>): SessionAnalysis = handBuilt().let { a ->
+        a.copy(
+            cornerMetrics = a.cornerMetrics.mapValues { (_, laps) ->
+                laps.map { m ->
+                    val none = m.observation.copy(brakingPointMeters = null)
+                    if (m.lapReference in missing) m.copy(observation = none) else m
+                }
+            },
+        )
+    }
+
+    @Test
+    fun `each change rests on two passes of each group at least, and says how many it rests on`() {
+        // Three of the four slower laps have no braking point: one is no median, so no braking change.
+        val one = assertNotNull(nextSessionPlan(withoutBraking(setOf(4, 5, 6))).primary)
+        assertEquals(listOf(FocusMetric.MinimumSpeed), one.changes.map { it.metric })
+        assertEquals("Your 2 fastest passes carried 4 km/h more minimum speed than your other 4.", one.what)
+
+        // Two left: the braking change rests on 2 and 2, the speed on 2 and 4, so no count is said.
+        val two = assertNotNull(nextSessionPlan(withoutBraking(setOf(5, 6))).primary)
+        assertEquals(listOf(2 to 2, 2 to 4), two.changes.map { it.fasterCount to it.otherCount })
+        assertEquals(
+            "Your fastest passes braked 8 m later and carried 4 km/h more minimum speed than your others.",
+            two.what,
+        )
+    }
+
     @Test
     fun `below High confidence what to change is said without numbers, and at Low not at all`() {
         val changes = listOf(

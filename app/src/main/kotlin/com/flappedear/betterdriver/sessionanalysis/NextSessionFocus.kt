@@ -16,20 +16,21 @@ import java.io.IOException
 /**
  * Keeps what session [sessionId] at [trackId] recommends working on next (FBBD-20), from its
  * [analysis], for the coach of the next session at the track and for the coaching history.
- * [corners] are the coach picks of the analysis's corners. Written only when it changed; a failure
- * is logged, never shown.
+ * [corners] are the coach picks of the analysis's corners. [epoch] is the app data's restore epoch
+ * taken before the session was read. Written only when it changed; a failure is logged, never shown.
  */
 @Suppress("LongParameterList") // The analysed session, as the analysis screen has it.
 internal fun keepSessionFocus(
     store: SessionFocusStore,
+    epoch: Long,
     trackId: String,
     sessionId: String,
     startUtcMillis: Long,
     analysis: SessionAnalysis,
     corners: Map<String, CornerPick>,
 ) {
-    // Made before or during a restore, the record is not written: the restored data wins (FBBD-156).
-    val epoch = AppDataGate.epoch
+    // Read from the session before or during a restore ([epoch] taken before it was read), the
+    // record is not written: the restored data wins (FBBD-156).
     val record = focusRecord(trackId, sessionId, startUtcMillis, nextSessionPlan(analysis), corners)
     try {
         var wrote = false
