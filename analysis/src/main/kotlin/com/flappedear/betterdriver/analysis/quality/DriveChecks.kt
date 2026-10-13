@@ -67,7 +67,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
     val seconds = s.seconds.sortedBy { it.tMicros }
     val events = s.events.sortedBy { it.tMicros }
     val sets = seconds.map(::sampleSet)
-    val end = endMicros(s)
+    val end = s.inferredEndMicros()
     val data = SessionData(
         s.id, SessionInfo(s.startUtcMillis ?: 0L, devices = listOfNotNull(s.source)), SessionState.FINISHED,
         emptyMap(), sets, events, Record.End(end, s.stopReason ?: "unknown"), truncatedBytes = 0, skippedBytes = 0,
@@ -94,15 +94,8 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
     return QualityReport(QualityFormat, s.id, "LOGGED", s.startUtcMillis ?: 0L, withSoak(sections, end))
 }
 
-/**
- * When [s] ended on the session clock: its logged end, or for a recording without a stop line (the
- * process ended) its last GNSS second or event.
- */
-private fun endMicros(s: LoggedSession): Long =
-    s.endMicros ?: maxOf(s.seconds.maxOfOrNull { it.tMicros } ?: 0L, s.events.maxOfOrNull { it.tMicros } ?: 0L)
-
-/** When [s] ended on the phone's wall clock, as [endMicros] gives it. */
-private fun endUtcMillis(s: LoggedSession): Long = (s.startUtcMillis ?: 0L) + endMicros(s) / MicrosPerMilli
+/** When [s] ended on the phone's wall clock, as [LoggedSession.inferredEndMicros] gives it. */
+private fun endUtcMillis(s: LoggedSession): Long = (s.startUtcMillis ?: 0L) + s.inferredEndMicros() / MicrosPerMilli
 
 /** One sample per logged second: its first sample's time, the receiver time, the mean fix and speed. */
 private fun sampleSet(g: GnssSecond) = SampleSet(
