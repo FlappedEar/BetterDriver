@@ -124,11 +124,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (::recorder.isInitialized) recorder.bind()
+        if (::recorder.isInitialized) recorder.bind(this)
     }
 
     override fun onStop() {
-        if (::recorder.isInitialized) recorder.unbind()
+        if (::recorder.isInitialized) recorder.unbind(this)
         super.onStop()
     }
 
