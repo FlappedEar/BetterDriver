@@ -11,23 +11,31 @@ class ThermalPolicyTest {
     private fun ladder(size: VideoSize, fps: Int) = ladderFrom(VideoMode(size, fps)).map { it.label }
 
     @Test
-    fun ladderTriesThirtyAtEachSizeBeforeTheNextSize() {
-        assertEquals(
-            listOf("4K · 60", "4K · 30", "1080p · 60", "1080p · 30", "720p · 60", "720p · 30"),
-            ladder(VideoSize.UHD, 60),
-        )
+    fun ladderKeepsTheFrameRateAndDropsSizeFirst() {
+        // Arek 2026-10-13: frame rate before quality when the phone overheats.
+        assertEquals(listOf("4K · 60", "1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.UHD, 60))
     }
 
     @Test
     fun ladderStartsAtTheChosenModeAndNeverGoesAbove() {
-        assertEquals(listOf("1080p · 60", "1080p · 30", "720p · 60", "720p · 30"), ladder(VideoSize.FHD, 60))
+        assertEquals(listOf("1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.FHD, 60))
         assertEquals(listOf("4K · 30", "1080p · 30", "720p · 30"), ladder(VideoSize.UHD, 30))
+        assertEquals(listOf("720p · 60", "720p · 30"), ladder(VideoSize.HD, 60))
         assertEquals(listOf("720p · 30"), ladder(VideoSize.HD, 30))
     }
 
     @Test
+    fun theFrameRateOnlyDropsAtTheLastStep() {
+        for (start in listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)) {
+            val steps = ladderFrom(VideoMode(start, 60))
+            assertEquals(listOf(60), steps.dropLast(1).map { it.fps }.distinct())
+            assertEquals(VideoMode(VideoSize.HD, 30), steps.last())
+        }
+    }
+
+    @Test
     fun aGoProOnlySizeStartsThePhoneAt1080p() {
-        assertEquals(listOf("1080p · 60", "1080p · 30", "720p · 60", "720p · 30"), ladder(VideoSize.QHD, 60))
+        assertEquals(listOf("1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.QHD, 60))
     }
 
     @Test
