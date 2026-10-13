@@ -55,6 +55,8 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
     private var lastSeekNanos = 0L
     private var speed = 1f
     private var exact = true
+    /** It played and has not been sent to its exact frame since it stopped (FBBD-214). */
+    private var stopping = false
 
     init {
         player.addListener(object : Player.Listener {
@@ -94,7 +96,15 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
             lastSeekNanos = nowNanos
         }
         precise(!scrubbing)
-        val step = followStep(player.currentPosition, target.mediaMillis, rate, playing)
+        if (playing) {
+            stopping = false
+        } else if (player.playWhenReady) {
+            // Stopping now. The pause goes first, so the exact seek below is the player's last word.
+            stopping = true
+            lastSeekMillis = null
+            player.playWhenReady = false
+        }
+        val step = followStep(player.currentPosition, target.mediaMillis, rate, playing, stopping)
         val gap = if (playing) PlayingSeekGapNanos else ScrubSeekGapNanos
         // Wanted before this frame's seek, so the frame after a seek still runs and sees it land.
         val pending = seekPending(step, lastSeekMillis)
@@ -103,6 +113,7 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
                 player.seekTo(ms)
                 lastSeekMillis = ms
                 lastSeekNanos = nowNanos
+                stopping = false
             }
         }
         if (step.speed != speed) {
