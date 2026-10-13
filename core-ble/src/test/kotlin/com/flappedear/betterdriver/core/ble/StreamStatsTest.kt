@@ -21,7 +21,11 @@ class StreamStatsTest {
         }
         assertEquals(1_500, sent)
         // 65 seconds, each missing two messages.
-        assertEquals("1500 messages in 0 notifications, 130 missing (65 on a whole second), 0 other frames", line)
+        assertEquals(
+            "1500 messages in 0 notifications, 130 missing (65 on a whole second), " +
+                "up to 0 ms behind, 0 other frames",
+            line,
+        )
     }
 
     @Test
@@ -32,7 +36,11 @@ class StreamStatsTest {
             stats.add(i * 40L)
             line = stats.line()
         }
-        assertEquals("1500 messages in 0 notifications, 0 missing (0 on a whole second), 0 other frames", line)
+        assertEquals(
+            "1500 messages in 0 notifications, 0 missing (0 on a whole second), " +
+                "up to 0 ms behind, 0 other frames",
+            line,
+        )
         stats.add(60_040L)
         assertNull(stats.line())
     }
@@ -52,7 +60,11 @@ class StreamStatsTest {
             line = stats.line()
         }
         // 1500 messages over about 151.5 s, each 10 s missing one: 15 missing, none on a whole second.
-        assertEquals("1500 messages in 0 notifications, 15 missing (0 on a whole second), 0 other frames", line)
+        assertEquals(
+            "1500 messages in 0 notifications, 15 missing (0 on a whole second), " +
+                "up to 0 ms behind, 0 other frames",
+            line,
+        )
     }
 
     @Test
@@ -68,7 +80,7 @@ class StreamStatsTest {
             line = stats.line()
         }
         assertEquals(
-            "1500 messages in 3 notifications, 0 missing (0 on a whole second), " +
+            "1500 messages in 3 notifications, 0 missing (0 on a whole second), up to 0 ms behind, " +
                 "3 other frames (ff 01 76 B ×2, ff 26 4 B ×1)",
             line,
         )
@@ -76,7 +88,11 @@ class StreamStatsTest {
             stats.add(60_000L + i * 40L)
             line = stats.line()
         }
-        assertEquals("1500 messages in 0 notifications, 0 missing (0 on a whole second), 0 other frames", line)
+        assertEquals(
+            "1500 messages in 0 notifications, 0 missing (0 on a whole second), " +
+                "up to 0 ms behind, 0 other frames",
+            line,
+        )
     }
 
     @Test
@@ -92,7 +108,7 @@ class StreamStatsTest {
         stats.add(60_000L)
         stats.add(60_040L)
         assertEquals(
-            "1501 messages in 1500 notifications, 0 missing (0 on a whole second), 0 other frames",
+            "1501 messages in 1500 notifications, 0 missing (0 on a whole second), up to 0 ms behind, 0 other frames",
             stats.line(),
         )
         assertNull(stats.line())

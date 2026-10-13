@@ -7,7 +7,7 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import java.io.File
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Properties
 import java.util.UUID
@@ -79,7 +79,11 @@ private fun isSessionDir(root: File, id: String, target: File): Boolean =
     id.isNotEmpty() && !id.startsWith(".") && target.parentFile == root && target.isDirectory
 
 /** Session directories under [root], one per recording. */
-class SessionStore(val root: File) {
+class SessionStore(
+    val root: File,
+    /** The time zone session ids are named in: the phone's own, read at each new session (FBBD-217). */
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
+) {
 
     init {
         root.mkdirs()
@@ -92,10 +96,14 @@ class SessionStore(val root: File) {
      * Creates the directory and writes the metadata before any sample is recorded (FBBD-70).
      * [beforeMeta] runs on the new directory first; the recorder takes the session lock there, so the
      * session is never listed (and never mistaken for an interrupted one) before it is locked.
+     *
+     * The id starts with the start's date and time as the phone showed it (local time), so folders
+     * and file names read like the clock in the car. Nothing reads the time back from an id: the
+     * start instant is in the metadata, and the list is ordered by it.
      */
     fun createSession(info: SessionInfo, beforeMeta: (File) -> Unit = {}): Pair<String, File> {
         val stamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss")
-            .withZone(ZoneOffset.UTC)
+            .withZone(zone())
             .format(Instant.ofEpochMilli(info.startUtcMillis))
         val id = "$stamp-${UUID.randomUUID().toString().take(IdSuffixChars)}"
         val dir = File(root, id)

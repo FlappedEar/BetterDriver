@@ -16,6 +16,8 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.StringWriter
+import java.time.ZoneId
+import java.time.ZoneOffset
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -27,6 +29,7 @@ class CsvGpxExportTest {
     lateinit var tmp: File
 
     private val start = 1_760_173_343_000L // 2025-10-11T09:02:23Z
+    private val winter = 1_768_467_600_000L // 2026-01-15T09:00:00Z
     private val obd = ChannelDef(100, "rpm, engine", "1/min", "obd", 0)
 
     private fun fix(t: Long, lat: Double, lon: Double, speed: Double = 72.0, utc: Long? = null) = SampleSet(
@@ -42,10 +45,10 @@ class CsvGpxExportTest {
         ),
     )
 
-    private fun session(sets: List<SampleSet>, track: String = "Tor <Poznań> & \"Co\"") =
+    private fun session(sets: List<SampleSet>, track: String = "Tor <Poznań> & \"Co\"", startUtcMillis: Long = start) =
         SessionData(
             id = "20251011-090223-abcd1234",
-            info = SessionInfo(start, car = "Club car", track = track),
+            info = SessionInfo(startUtcMillis, car = "Club car", track = track),
             state = SessionState.FINISHED,
             channels = (GnssChannels.ALL + obd).associateBy { it.id },
             sampleSets = sets,
@@ -55,8 +58,8 @@ class CsvGpxExportTest {
             skippedBytes = 0,
         )
 
-    private fun csv(data: SessionData, laps: List<ExportLap> = emptyList()) =
-        StringWriter().also { CsvExporter.write(data, it, laps) }.toString().split("\r\n").dropLast(1)
+    private fun csv(data: SessionData, laps: List<ExportLap> = emptyList(), zone: ZoneId = ZoneOffset.UTC) =
+        StringWriter().also { CsvExporter.write(data, it, laps, zone) }.toString().split("\r\n").dropLast(1)
 
     private fun gpx(data: SessionData, laps: List<ExportLap> = emptyList()): Element {
         val out = ByteArrayOutputStream()
@@ -84,15 +87,25 @@ class CsvGpxExportTest {
             ),
         )
         assertEquals(
-            "time (UTC),elapsed (s),gnss_lat (deg),gnss_lon (deg),gnss_speed (km/h),gnss_heading (deg)," +
+            "time,elapsed (s),gnss_lat (deg),gnss_lon (deg),gnss_speed (km/h),gnss_heading (deg)," +
                 "gnss_alt (m),gnss_sats,\"rpm, engine (1/min)\"",
             rows[0],
         )
         assertEquals(4, rows.size)
-        assertEquals("2025-10-11T09:02:23.000Z,0.000,52.00000000,16.60000000,72.000,-90.00,81.50,12,", rows[1])
+        assertEquals("2025-10-11T09:02:23.000+00:00,0.000,52.00000000,16.60000000,72.000,-90.00,81.50,12,", rows[1])
         // A set holds only its own values: the rest of the row is empty, not repeated.
-        assertEquals("2025-10-11T09:02:23.020Z,0.020,,,,,,,3456", rows[2])
-        assertTrue(rows[3].startsWith("2025-10-11T09:02:23.040Z,0.040,52.10000000,"))
+        assertEquals("2025-10-11T09:02:23.020+00:00,0.020,,,,,,,3456", rows[2])
+        assertTrue(rows[3].startsWith("2025-10-11T09:02:23.040+00:00,0.040,52.10000000,"))
+    }
+
+    /** Times read as the phone's clock showed them, with the offset that makes them one instant (FBBD-217). */
+    @Test
+    fun `csv times are in the phone's time zone with the offset`() {
+        val warsaw = ZoneId.of("Europe/Warsaw")
+        val rows = csv(session(listOf(fix(0, 52.0, 16.6))), zone = warsaw)
+        assertTrue(rows[1].startsWith("2025-10-11T11:02:23.000+02:00,0.000,"), rows[1])
+        val january = csv(session(listOf(fix(0, 52.0, 16.6)), startUtcMillis = winter), zone = warsaw)
+        assertTrue(january[1].startsWith("2026-01-15T10:00:00.000+01:00,0.000,"), january[1])
     }
 
     @Test
@@ -100,7 +113,7 @@ class CsvGpxExportTest {
         val sets = (0..5).map { fix(it * 1_000_000L, 52.0 + it * 0.001, 16.6) }
         val laps = listOf(ExportLap(1, 0, 2_500_000), ExportLap(2, 2_500_000, Long.MAX_VALUE))
         val rows = csv(session(sets), laps)
-        assertTrue(rows[0].startsWith("time (UTC),elapsed (s),lap,lap time (s),gnss_lat (deg)"))
+        assertTrue(rows[0].startsWith("time,elapsed (s),lap,lap time (s),gnss_lat (deg)"))
         assertEquals(listOf("1,0.000", "1,1.000", "1,2.000", "2,0.500", "2,1.500", "2,2.500"), rows.drop(1).map {
             it.split(',').subList(2, 4).joinToString(",")
         })
@@ -113,8 +126,8 @@ class CsvGpxExportTest {
             fix(1_000_000, 52.0, 16.6),
         )
         val rows = csv(session(sets), listOf(ExportLap(1, 1_000_000, 2_000_000)))
-        assertEquals("2025-10-11T09:02:23.000Z,0.000,,,,,,,,,", rows[1])
-        assertTrue(rows[2].startsWith("2025-10-11T09:02:24.000Z,1.000,1,0.000,"))
+        assertEquals("2025-10-11T09:02:23.000+00:00,0.000,,,,,,,,,", rows[1])
+        assertTrue(rows[2].startsWith("2025-10-11T09:02:24.000+00:00,1.000,1,0.000,"))
     }
 
     @Test

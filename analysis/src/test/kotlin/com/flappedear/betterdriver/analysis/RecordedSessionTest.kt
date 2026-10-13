@@ -77,8 +77,13 @@ class RecordedSessionTest {
      * Speeding up then braking in a straight line, with accel_x of sign [sign] (+1: forward positive)
      * reading [tilt] more from a tilted mount.
      */
-    private fun straightRun(sign: Double, tilt: Double = 0.0, dead: Boolean = false): SessionData {
-        val accelX = ChannelDef(110, "accel_x", "g", "racebox", 3)
+    private fun straightRun(
+        sign: Double,
+        tilt: Double = 0.0,
+        dead: Boolean = false,
+        axis: ChannelDef = ChannelDef(110, "accel_x", "g", "racebox", 3),
+    ): SessionData {
+        val accelX = axis
         var speed = 10.0
         val sets = (0 until 500).map { i ->
             val a = if (i < 250) 0.3 else -0.6 // g
@@ -108,6 +113,22 @@ class RecordedSessionTest {
             val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION))
             assertEquals(0.3, forward.values.first(), 0.01, "sign $sign, tilt $tilt")
             assertEquals(-0.6, forward.values.last(), 0.01, "sign $sign, tilt $tilt")
+        }
+    }
+
+    /**
+     * FBBD-218: a receiver turned by 90° (forward on Y) or standing on its side (forward on Z, which
+     * then reads gravity too) still gives the car's acceleration, turned round and levelled.
+     */
+    @Test
+    fun `whichever axis points forward is used`() {
+        val axes = listOf(ChannelDef(111, "accel_y", "g", "racebox", 3), ChannelDef(112, "accel_z", "g", "racebox", 3))
+        for (axis in axes) for (sign in listOf(1.0, -1.0)) {
+            val tilt = if (axis.name == "accel_z") 1.0 else 0.05
+            val session = telemetrySessionOf(straightRun(sign, tilt, axis = axis), null)
+            val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION), axis.name)
+            assertEquals(0.3, forward.values.first(), 0.01, "${axis.name} sign $sign")
+            assertEquals(-0.6, forward.values.last(), 0.01, "${axis.name} sign $sign")
         }
     }
 

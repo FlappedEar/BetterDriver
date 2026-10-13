@@ -9,7 +9,6 @@ import com.flappedear.betterdriver.core.ui.format.Minus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import java.time.Instant
 import java.time.ZoneId
-import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -51,7 +50,7 @@ const val DiagNotReported = "Not reported by the RaceBox: signal level per satel
 
 private const val KmhPerMps = 3.6
 private const val ExpectedHz = 25
-private val UtcTime: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneOffset.UTC)
+private val ClockTime: DateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss")
 private val TakenAt: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM, HH:mm", Locale.ENGLISH)
 
 /** How long the car must stand still for a calibration (FBBD-89): 5 s gives 125 samples at 25 Hz. */
@@ -87,7 +86,7 @@ object RaceBoxDiagnosticsUi {
         calibrationError: String? = null,
         zone: ZoneId = ZoneId.systemDefault(),
     ): List<DiagSection> = listOfNotNull(
-        s.latest?.let { gnss(it) },
+        s.latest?.let { gnss(it, zone) },
         stream(s),
         s.power?.let { power(it) },
         s.latest?.let { sensors(it, s) },
@@ -97,7 +96,8 @@ object RaceBoxDiagnosticsUi {
         device(s),
     )
 
-    private fun gnss(d: RaceBoxData) = DiagSection(
+    /** The receiver's time, shown on the phone's clock ([zone]), as every other time in the app (FBBD-217). */
+    private fun gnss(d: RaceBoxData, zone: ZoneId) = DiagSection(
         "GNSS",
         listOfNotNull(
             DiagRow("Fix", fixText(d) + if (d.fixOk) " · OK" else ""),
@@ -106,7 +106,7 @@ object RaceBoxDiagnosticsUi {
             DiagRow("Speed accuracy", "${num(d.speedAccMps * KmhPerMps, 2)} km/h"),
             DiagRow("Heading accuracy", "${num(d.headingAccDeg, 1)}°"),
             DiagRow("PDOP", num(d.pdop, 2)),
-            d.utcMillis?.let { DiagRow("UTC time", UtcTime.format(Instant.ofEpochMilli(it))) },
+            d.utcMillis?.let { DiagRow("GPS time", ClockTime.format(Instant.ofEpochMilli(it).atZone(zone))) },
         ),
     )
 

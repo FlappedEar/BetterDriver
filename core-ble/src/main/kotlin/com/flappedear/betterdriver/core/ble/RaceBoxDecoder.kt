@@ -53,16 +53,24 @@ private const val KmhPerMps = 3.6
  *
  * With a [calibration] (FBBD-89), acceleration and rotation are written levelled and with the gyro
  * offset removed.
+ *
+ * [onSlowLink] is told, with the reason, when the link carries fewer messages than the RaceBox sends
+ * (FBBD-218): the messages arrive ever later (a backlog over [SlowLinkBacklogMicros]) or one is
+ * missing. On Arek's 2026-10-13 drive the delay grew by about 275 ms over two minutes and then the
+ * whole-second message was lost every second: 24.3 Hz and 2.9 % dropped, with every message that
+ * did arrive in a notification of its own.
  */
 class RaceBoxDecoder(
     private val sink: SampleSink,
     private val isMicro: Boolean = true,
     private val calibration: ImuCalibration? = null,
+    private val onSlowLink: (String) -> Unit = {},
 ) {
     private val reader = UbxFrameReader()
     private var hadFix: Boolean? = null
     private val stats = StreamStats()
     private val clock = ReceiverClock()
+    private var missedSeen = 0L
 
     /** Data messages decoded since the link was created. */
     @Volatile
@@ -100,8 +108,17 @@ class RaceBoxDecoder(
         }
         // One notification can carry several messages; they are stamped together (ReceiverClock).
         if (decoded.isNotEmpty()) {
-            val stamps = clock.stamp(sink.nowMicros(), decoded.map { it.iTowMs })
+            val now = sink.nowMicros()
+            val stamps = clock.stamp(now, decoded.map { it.iTowMs })
             decoded.zip(stamps) { data, at -> sink.submit(SampleSet(at, values(data))) }
+            val backlog = clock.backlogMicros(now, decoded.last().iTowMs)
+            stats.backlog(backlog)
+            val missedBefore = missedSeen
+            missedSeen = stats.missedSoFar
+            when {
+                backlog > SlowLinkBacklogMicros -> onSlowLink("messages ${backlog / MicrosPerMilli} ms behind")
+                missedSeen > missedBefore -> onSlowLink("messages missing")
+            }
         }
         // After the whole notification, so its messages and the notification count stay in one line.
         stats.line()?.let {
@@ -147,6 +164,10 @@ class RaceBoxDecoder(
 
 private const val StatsEveryMessages = 1_500
 
+/** Messages this much later than the link's usual delay mean they queue in the RaceBox (FBBD-218). */
+internal const val SlowLinkBacklogMicros = 100_000L
+private const val MicrosPerMilli = 1_000L
+
 /** Recent steps whose median is the stream's usual step, as in [RaceBoxDiagnostics]. */
 private const val StepWindow = 25
 private const val MinSteps = 5
@@ -171,6 +192,16 @@ internal class StreamStats {
     private var missedOnSecond = 0L
     private var notifications = 0L
     private val others = sortedMapOf<String, Int>()
+    private var maxBacklog = 0L
+
+    /** Messages missing since the stream started, for the slow-link check. */
+    var missedSoFar = 0L
+        private set
+
+    /** The backlog of the newest message of a notification, in microseconds ([ReceiverClock.backlogMicros]). */
+    fun backlog(micros: Long) {
+        maxBacklog = maxOf(maxBacklog, micros)
+    }
 
     /** One BLE notification arrived. */
     fun notification() {
@@ -202,8 +233,9 @@ internal class StreamStats {
             "$otherCount other frames (" + others.entries.joinToString { "${it.key} ×${it.value}" } + ")"
         }
         val line = "$count messages in $notifications notifications, $missed missing " +
-            "($missedOnSecond on a whole second), $otherText"
+            "($missedOnSecond on a whole second), up to ${maxBacklog / MicrosPerMilli} ms behind, $otherText"
         count = 0
+        maxBacklog = 0
         missed = 0
         missedOnSecond = 0
         notifications = 0
@@ -226,6 +258,7 @@ internal class StreamStats {
         var t = previous + step
         while (t < iTowMs - step / 2) {
             missed++
+            missedSoFar++
             if (onWholeSecond(t, step)) missedOnSecond++
             t += step
         }

@@ -248,8 +248,9 @@ class PhoneCamera(
                         if (syncDue(now, lastSync)) {
                             lastSync = now
                             val media = e.recordingStats.recordedDurationNanos / NanosPerMicro
-                            sink.synced(name, now, media, frameMicros(now, lastFrameNanos, realtimeFrames))
-                            clips.synced(name, now, media)
+                            val frame = frameMicros(now, lastFrameNanos, realtimeFrames)
+                            sink.synced(name, now, media, frame)
+                            clips.synced(name, now, media, frame)
                         }
                     }
                     is VideoRecordEvent.Finalize -> {

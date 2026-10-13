@@ -5,6 +5,7 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.time.ZoneId
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -95,6 +96,8 @@ class LogFile(
     private val clock: () -> Long = System::currentTimeMillis,
     private val uptimeMicros: () -> Long = { System.nanoTime() / NanosPerMicro },
     background: Boolean = true,
+    /** The phone's time zone at each line, so a change of zone shows from the next line on. */
+    private val zone: () -> ZoneId = ZoneId::systemDefault,
 ) {
     private val queue = LinkedBlockingQueue<String>(MaxQueued)
     private val dropped = AtomicLong()
@@ -117,7 +120,7 @@ class LogFile(
         if (closed) return
         val line = LogLine(
             clock(), uptimeMicros(), process, pid, Thread.currentThread().name, levelChar(level), tag, session, message,
-        ).format()
+        ).format(zone())
         val text = if (error == null) line + "\n" else line + "\n" + stackTrace(error).trimEnd() + "\n"
         if (writer == null) {
             append(listOf(text))
@@ -167,7 +170,8 @@ class LogFile(
         val bytes = buildString {
             if (lost > 0) {
                 val text = "$lost lines dropped: the log was too far behind"
-                append(LogLine(clock(), uptimeMicros(), process, pid, "log-writer", 'W', Tag, null, text).format())
+                val line = LogLine(clock(), uptimeMicros(), process, pid, "log-writer", 'W', Tag, null, text)
+                append(line.format(zone()))
                 append('\n')
             }
             lines.forEach(::append)

@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxGnssConfig
 import com.flappedear.betterdriver.core.ble.RaceBoxPower
 import com.flappedear.betterdriver.core.ble.Vec3
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import java.time.ZoneId
 import java.time.ZoneOffset
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -45,10 +46,13 @@ class RaceBoxDiagnosticsUiTest {
 
     @Test
     fun `shows the reported values with real minus signs`() {
-        val s = RaceBoxDiagnosticsUi.sections(snapshot())
+        val s = RaceBoxDiagnosticsUi.sections(snapshot(), zone = ZoneOffset.UTC)
         assertEquals("3D · OK", s.value("GNSS", "Fix"))
         assertEquals("0.42 m · vert 0.81 m", s.value("GNSS", "Position accuracy"))
-        assertEquals("15:42:07", s.value("GNSS", "UTC time"))
+        assertEquals("15:42:07", s.value("GNSS", "GPS time"))
+        // On the phone's clock, not in UTC (FBBD-217).
+        val warsaw = RaceBoxDiagnosticsUi.sections(snapshot(), zone = ZoneId.of("Europe/Warsaw"))
+        assertEquals("17:42:07", warsaw.value("GNSS", "GPS time"))
         assertEquals("3 of 15 004", s.value("Data stream", "Missed messages"))
         assertEquals("−58 dBm", s.value("Data stream", "Signal"))
         assertEquals("12.1 V", s.value("Power", "Input voltage"))

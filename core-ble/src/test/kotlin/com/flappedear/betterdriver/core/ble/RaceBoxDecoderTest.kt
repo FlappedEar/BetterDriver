@@ -133,4 +133,37 @@ class RaceBoxDecoderTest {
         assertEquals(0.36, set.value(RaceBoxChannels.GYRO_Y)!!, 1e-9)
         assertEquals(0.974, set.value(RaceBoxChannels.ACCEL_Z)!!, 1e-9)
     }
+
+    private fun packetAt(iTowMs: Long) = RaceBoxTestData.packet { p ->
+        for (i in 0 until 4) p[i] = (iTowMs shr (8 * i)).toByte()
+    }
+
+    /**
+     * FBBD-218: when the link carries fewer messages than the RaceBox sends, they arrive ever later
+     * and then go missing. Either asks the link for a faster connection; a link keeping up does not.
+     */
+    @Test
+    fun `a link falling behind or losing messages asks for a faster link`() {
+        val sink = Sink()
+        val reasons = mutableListOf<String>()
+        val decoder = RaceBoxDecoder(sink) { reasons += it }
+        var tow = 100_000L
+        fun message(delayMicros: Long) {
+            sink.now = tow * 1_000 + delayMicros
+            decoder.feed(packetAt(tow))
+            tow += 40
+        }
+        repeat(100) { message(30_000) }
+        assertTrue(reasons.isEmpty())
+        // The delay grows by 2 ms a message: 100 ms behind after 50 messages.
+        for (i in 1..60) message(30_000L + i * 2_000L)
+        assertTrue(reasons.toString(), reasons.any { it.endsWith("ms behind") })
+        reasons.clear()
+        // Caught up again, then one message never comes.
+        repeat(20) { message(30_000) }
+        reasons.clear()
+        tow += 40
+        message(30_000)
+        assertEquals(listOf("messages missing"), reasons)
+    }
 }

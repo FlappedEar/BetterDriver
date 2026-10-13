@@ -8,7 +8,7 @@ import java.io.OutputStream
 import java.io.OutputStreamWriter
 import java.io.Writer
 import java.time.Instant
-import java.time.ZoneOffset
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
@@ -17,8 +17,9 @@ import java.util.Locale
  * and tools such as RaceChrono's CSV import: UTF-8, comma separated, '.' decimals, CRLF line ends
  * (RFC 4180), fields quoted only when they need it.
  *
- * One row per sample set, in time order. Columns: the time in UTC (ISO-8601, from the session start
- * plus the recorder's clock, so it never runs backwards), the seconds since the session started,
+ * One row per sample set, in time order. Columns: the time in the phone's time zone with its offset
+ * from UTC (ISO-8601, e.g. 2026-10-13T09:11:14.495+02:00, from the session start plus the recorder's
+ * clock, so it never runs backwards; FBBD-217), the seconds since the session started,
  * with [laps] the lap number and the time into that lap, then every channel that has a value, as
  * "name (unit)": the GNSS channels first, then the others by id. A cell is empty when the set has
  * no value for that channel; values are not repeated from earlier rows, so each row is what was
@@ -26,15 +27,27 @@ import java.util.Locale
  */
 object CsvExporter {
 
-    private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC)
+    private val TIME = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
+    private const val TimeColumn = "time"
 
-    fun export(session: SessionData, out: OutputStream, laps: List<ExportLap> = emptyList()) {
+    fun export(
+        session: SessionData,
+        out: OutputStream,
+        laps: List<ExportLap> = emptyList(),
+        zone: ZoneId = ZoneId.systemDefault(),
+    ) {
         val writer = BufferedWriter(OutputStreamWriter(out, Charsets.UTF_8), BufferChars)
-        write(session, writer, laps)
+        write(session, writer, laps, zone)
         writer.flush()
     }
 
-    fun write(session: SessionData, out: Writer, laps: List<ExportLap> = emptyList()) {
+    fun write(
+        session: SessionData,
+        out: Writer,
+        laps: List<ExportLap> = emptyList(),
+        zone: ZoneId = ZoneId.systemDefault(),
+    ) {
+        val time = TIME.withZone(zone)
         // Sources queue independently, so file order is not time order. The sort is stable.
         val sets = session.sampleSets.sortedBy { it.tMicros }
         val seen = HashSet<Int>()
@@ -43,7 +56,7 @@ object CsvExporter {
         val column = HashMap<Int, Int>()
         channels.forEachIndexed { i, c -> column[c.id] = i }
 
-        val header = mutableListOf("time (UTC)", "elapsed (s)")
+        val header = mutableListOf(TimeColumn, "elapsed (s)")
         if (laps.isNotEmpty()) header += listOf("lap", "lap time (s)")
         header += headerNames(channels)
         line(out, header.joinToString(",") { field(it) })
@@ -58,7 +71,7 @@ object CsvExporter {
                 if (v.value.isFinite()) cells[i] = decimal(v.value, channels[i].decimals)
             }
             sb.setLength(0)
-            sb.append(TIME.format(Instant.ofEpochMilli(session.info.startUtcMillis + set.tMicros / MicrosPerMilli)))
+            sb.append(time.format(Instant.ofEpochMilli(session.info.startUtcMillis + set.tMicros / MicrosPerMilli)))
             sb.append(',').append(seconds(set.tMicros))
             if (laps.isNotEmpty()) {
                 val lap = cursor.at(set.tMicros)
@@ -83,7 +96,7 @@ object CsvExporter {
 
     /** "gnss_speed (km/h)"; a name used twice gets its channel id, so every column can be told apart. */
     private fun headerNames(channels: List<ChannelDef>): List<String> {
-        val used = mutableSetOf("time (UTC)", "elapsed (s)", "lap", "lap time (s)")
+        val used = mutableSetOf(TimeColumn, "elapsed (s)", "lap", "lap time (s)")
         return channels.map { c ->
             val base = c.name.ifBlank { "ch${c.id}" }
             val withUnit = { name: String -> if (c.unit.isBlank()) name else "$name (${c.unit})" }
