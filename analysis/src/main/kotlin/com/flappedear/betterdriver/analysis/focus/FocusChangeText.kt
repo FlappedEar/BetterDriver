@@ -8,8 +8,9 @@ import kotlin.math.roundToInt
 
 /**
  * [changes] in words: "Your 2 fastest passes braked 8 m later and carried 4 km/h more minimum
- * speed than your other 4." Numbers only at High confidence ([level]); nothing when there is no
- * difference worth a change.
+ * speed than your other 4." Numbers only at High confidence ([level]), and only for a change from
+ * measured values ([FocusChange.measured]): an inferred braking point or a calculated speed is said
+ * without its number. Nothing when there is no difference worth a change.
  */
 fun changeText(changes: List<FocusChange>, faster: Int, other: Int, level: Confidence): String {
     if (changes.isEmpty() || level == Confidence.LOW) return ""
@@ -23,13 +24,10 @@ fun changeText(changes: List<FocusChange>, faster: Int, other: Int, level: Confi
 
 private fun phrase(c: FocusChange, precise: Boolean): String {
     val more = c.delta > 0
-    val amount = if (precise) amount(c) else ""
+    // An inferred braking point or a calculated speed carries no number (FBBD-177).
+    val amount = if (precise && c.measured) amount(c) else ""
     return when (c.metric) {
-        FocusMetric.BrakingPoint -> {
-            val way = if (more) "later" else "earlier"
-            val inferred = if (precise && !c.measured) " (from the speed)" else ""
-            "braked ${amount}$way$inferred"
-        }
+        FocusMetric.BrakingPoint -> "braked ${amount}${if (more) "later" else "earlier"}"
         FocusMetric.MinimumSpeed -> "carried ${amount}${if (more) "more" else "less"} minimum speed"
         FocusMetric.ExitSpeed -> "left the corner ${amount}${if (more) "faster" else "slower"}"
     }

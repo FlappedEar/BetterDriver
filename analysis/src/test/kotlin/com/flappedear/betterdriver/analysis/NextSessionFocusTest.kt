@@ -36,6 +36,7 @@ import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
 import com.flappedear.betterdriver.coach.tracedLaps
 import com.flappedear.betterdriver.recorder.Confidence
+import com.flappedear.betterdriver.recorder.Provenance
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -144,6 +145,34 @@ class NextSessionFocusTest {
         assertEquals(
             "Your 2 fastest passes braked 8 m later and carried 4 km/h more minimum speed than your other 4.",
             primary.what,
+        )
+    }
+
+    @Test
+    fun `an inferred braking point or a calculated speed is said without its number, even at High`() {
+        val analysis = handBuilt().let { a ->
+            a.copy(
+                cornerMetrics = a.cornerMetrics.mapValues { (_, laps) ->
+                    laps.map { it.copy(observation = it.observation.copy(brakingProvenance = "inferred")) }
+                },
+                provenance = AnalysisProvenance(speed = Provenance.CALCULATED),
+            )
+        }
+        val primary = assertNotNull(nextSessionPlan(analysis).primary)
+        assertEquals(Confidence.HIGH, primary.confidence.level)
+        assertEquals(listOf(false, false), primary.changes.map { it.measured })
+        assertEquals(
+            "Your 2 fastest passes braked later and carried more minimum speed than your other 4.",
+            primary.what,
+        )
+        // Measured and inferred in one sentence: only the measured one has its number.
+        val mixed = listOf(
+            FocusChange(FocusMetric.BrakingPoint, 120.0, 128.0, "m", measured = false),
+            FocusChange(FocusMetric.MinimumSpeed, 70.0, 74.0, "km/h"),
+        )
+        assertEquals(
+            "Your 2 fastest passes braked later and carried 4 km/h more minimum speed than your other 4.",
+            changeText(mixed, 2, 4, Confidence.HIGH),
         )
     }
 
