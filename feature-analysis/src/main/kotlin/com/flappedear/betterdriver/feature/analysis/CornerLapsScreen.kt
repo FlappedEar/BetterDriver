@@ -175,7 +175,8 @@ private fun LapList(
 ) {
     if (ui.rows.isEmpty()) return
     Card(modifier) {
-        TrackLabel("Time through the corner · brakes before it · minimum speed")
+        TrackLabel("Time through the corner")
+        Dim("Brakes: metres before the corner · Min: lowest speed in it")
         for (row in ui.rows) {
             PassRow(ui, row, row.lapIndex in ticked, row.lapIndex == shown, actions)
             if (inline != null && row.lapIndex == shown) {
