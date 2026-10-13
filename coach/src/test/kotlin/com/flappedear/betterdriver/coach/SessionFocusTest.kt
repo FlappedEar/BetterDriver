@@ -126,6 +126,27 @@ class SessionFocusTest {
         }
 
     @Test
+    fun `a record with a coordinate out of range or an unknown role reads as none, never failing the coach`() =
+        withDir { dir ->
+            val store = SessionFocusStore(dir)
+            val older = record("s1", 1_000, 0)
+            val newer = record("s2", 2_000, 1)
+            store.save(older)
+            store.save(newer)
+            val f = File(dir, "sim/s2.json")
+            val good = f.readText()
+            f.writeText(good.replaceFirst(Regex("\"lats\":\\[[-0-9.]+"), "\"lats\":[95.0"))
+            assertTrue(f.readText().contains("95.0"))
+            assertNull(store.get("sim", "s2"))
+            assertEquals(older, store.latest("sim"))
+            f.writeText(good.replace("\"role\":\"primary\"", "\"role\":\"boss\""))
+            assertTrue(f.readText().contains("boss"))
+            assertNull(store.get("sim", "s2"))
+            assertEquals(older, store.latest("sim"))
+            assertFailsWith<IllegalArgumentException> { target("s3", 0).copy(lons = listOf(1.0)) }
+        }
+
+    @Test
     fun `a record keeps each focus under its CornerId, primary first, with what to change`() = withDir { dir ->
         val store = SessionFocusStore(dir)
         val r = record("s1", 1, 1, 3).let { r ->

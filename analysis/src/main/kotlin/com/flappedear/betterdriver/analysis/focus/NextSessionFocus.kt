@@ -205,17 +205,23 @@ private fun cornerChanges(analysis: SessionAnalysis, segmentId: String, groups: 
     fun observations(laps: List<Int>) = laps.mapNotNull { metrics.getOrNull(it)?.observation }
     val faster = observations(groups.faster)
     val other = observations(groups.other)
-    // Speeds calculated from positions are not measured: their changes carry no number (FBBD-177).
+    // Each change is precise only when its own channel is measured (FBBD-174, FBBD-177): speeds
+    // calculated from positions, a braking point inferred from the speed or read from a brake
+    // channel of unknown or calculated origin carry no number.
     val speedMeasured = analysis.provenance.speed?.measured != false
     return listOfNotNull(
-        brakingChange(faster, other),
+        brakingChange(faster, other) { method -> analysis.provenance.braking(method)?.measured != false },
         speedChange(FocusMetric.MinimumSpeed, faster, other, speedMeasured) { it.minimumSpeed },
         speedChange(FocusMetric.ExitSpeed, faster, other, speedMeasured) { it.exitSpeed },
     )
 }
 
 /** Measured braking points when both groups have them, else inferred ones; never the two mixed. */
-private fun brakingChange(faster: List<CornerLapObservation>, other: List<CornerLapObservation>): FocusChange? {
+private fun brakingChange(
+    faster: List<CornerLapObservation>,
+    other: List<CornerLapObservation>,
+    measuredBy: (method: String) -> Boolean,
+): FocusChange? {
     for (provenance in listOf("measured", "inferred")) {
         fun points(o: List<CornerLapObservation>) = o.filter { it.brakingProvenance == provenance }
             .mapNotNull { it.brakingPointMeters }.filter { it.isFinite() }
@@ -223,7 +229,7 @@ private fun brakingChange(faster: List<CornerLapObservation>, other: List<Corner
         val o = points(other)
         // A median of one pass is no median: each group needs two at least.
         if (f.size < MinimumSupportingLaps || o.size < MinimumSupportingLaps) continue
-        val measured = provenance == "measured"
+        val measured = measuredBy(provenance)
         val change = FocusChange(FocusMetric.BrakingPoint, median(o), median(f), "m", measured, f.size, o.size)
         return change.takeIf { abs(it.delta) >= FocusChangeBrakingMeters }
     }

@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.coach
 
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -13,6 +14,7 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.RecorderProtocol
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
+import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.io.File
 
@@ -100,12 +102,8 @@ class CoachService : Service() {
         if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
         // What the last analysed session at the track recommends working on (FBBD-20), primary first.
         val focus = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
-            ?.let { t ->
-                // Never from a session deleted since (its record goes with it, but a failed delete may leave it).
-                sessionFocusStore(this).latest(t.id, exclude = a.id) { File(sessionsDir(this), it).isDirectory }
-            }
-        focus?.let { f -> DebugLog.i(Tag, "session focus from ${f.sessionId}: ${f.targets.joinToString { it.name }}") }
-        a.coach = CoachSession(a.settings, track, reference, picks, sameDay, focus?.picks().orEmpty())
+            ?.let { sessionFocusOf(this, it, a.id) }
+        a.coach = CoachSession(a.settings, track, reference, picks, sameDay, focus.orEmpty())
         updateStatus(a, a.coach?.status ?: CoachStatus.None)
     }
 
@@ -190,4 +188,21 @@ class CoachService : Service() {
     private companion object {
         const val Tag = "CoachService"
     }
+}
+
+/**
+ * The corners the last analysed session at [track] recommends working on (FBBD-20), primary first;
+ * none when it cannot be read. Never from session [current], nor from a session deleted since (its
+ * record goes with it, but a failed delete may leave it), and never the reason the coach does not start.
+ */
+private fun sessionFocusOf(context: Context, track: Track, current: String): List<CornerPick> = try {
+    val sessions = sessionsDir(context)
+    val f = sessionFocusStore(context).latest(track.id, exclude = current) { File(sessions, it).isDirectory }
+    f?.let { r ->
+        DebugLog.i("CoachService", "session focus from ${r.sessionId}: ${r.targets.joinToString { it.name }}")
+    }
+    f?.picks().orEmpty()
+} catch (e: IllegalArgumentException) {
+    DebugLog.w("CoachService", "session focus at ${track.id} not read", e)
+    emptyList()
 }

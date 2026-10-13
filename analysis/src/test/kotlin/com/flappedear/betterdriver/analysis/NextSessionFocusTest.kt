@@ -165,6 +165,15 @@ class NextSessionFocusTest {
             "Your 2 fastest passes braked later and carried more minimum speed than your other 4.",
             primary.what,
         )
+        // A braking point from a brake channel of unknown origin is no measurement either.
+        val unknownBrake = assertNotNull(
+            nextSessionPlan(handBuilt().copy(provenance = AnalysisProvenance(brake = Provenance.UNKNOWN))).primary,
+        )
+        assertEquals(listOf(false, true), unknownBrake.changes.map { it.measured })
+        assertEquals(
+            "Your 2 fastest passes braked later and carried 4 km/h more minimum speed than your other 4.",
+            unknownBrake.what,
+        )
         // Measured and inferred in one sentence: only the measured one has its number.
         val mixed = listOf(
             FocusChange(FocusMetric.BrakingPoint, 120.0, 128.0, "m", measured = false),

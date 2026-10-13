@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.geo.MaxLatitude
+import com.flappedear.betterdriver.timing.geo.MaxLongitude
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -53,10 +55,19 @@ data class FocusTarget(
     val lats: List<Double> = emptyList(),
     val lons: List<Double> = emptyList(),
 ) {
+    init {
+        // A damaged file must fail here, where it is read, never in the coach (as [CornerPick] does).
+        require(role == Primary || role == Secondary) { "unknown role: $role" }
+        require(lats.size == lons.size) { "a line needs as many longitudes as latitudes" }
+        require(lats.all { it.isFinite() && it in -MaxLatitude..MaxLatitude }) { "latitude out of range" }
+        require(lons.all { it.isFinite() && it in -MaxLongitude..MaxLongitude }) { "longitude out of range" }
+        require(timeAvailableSeconds?.isFinite() != false) { "time available not finite" }
+    }
+
     val primary: Boolean get() = role == Primary
 
     /** The corner as a coach pick, null without its line. */
-    fun pick(sessionId: String): CornerPick? = if (lats.isEmpty() || lats.size != lons.size) {
+    fun pick(sessionId: String): CornerPick? = if (lats.isEmpty()) {
         null
     } else {
         CornerPick(name, lats, lons, sessionId, cornerId, identityRevision)
