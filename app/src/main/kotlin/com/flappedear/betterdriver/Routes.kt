@@ -71,6 +71,11 @@ object Routes {
 
     fun trackEditor(id: String) = "tracks/$id"
 
+    /** Progression over every session at one track (FBBD-181). */
+    const val TrackProgressionPattern = "tracks/{id}/progression"
+
+    fun trackProgression(id: String) = "tracks/$id/progression"
+
     /** Settings opened on one tab, with a back button (from the first-run checklist). */
     const val SettingsTabPattern = "settings/{tab}"
     const val TabArg = "tab"

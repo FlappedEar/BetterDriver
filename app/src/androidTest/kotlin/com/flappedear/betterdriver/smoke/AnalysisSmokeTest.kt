@@ -16,6 +16,7 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
+import com.flappedear.betterdriver.feature.analysis.ProgressionLinkText
 import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
 import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
 import org.junit.Rule
@@ -27,7 +28,8 @@ import org.junit.runner.RunWith
  * Sessions and lap analysis on the emulator (FBBD-161): every analysis tab of a circuit session
  * with video, the map, Corners → Every lap → Corner laps (with its video and Compare), the coach
  * picks, the optimal lap video's planner (FBBD-163), a point-to-point session with its
- * acceleration runs, and the mark on every value that is not measured (FBBD-174).
+ * acceleration runs, the mark on every value that is not measured (FBBD-174), and the progression
+ * at a session's track (FBBD-181).
  */
 @RunWith(AndroidJUnit4::class)
 class AnalysisSmokeTest {
@@ -197,6 +199,25 @@ class AnalysisSmokeTest {
             app.clickAction(chipPicked)
             app.waitUntilGone("✓ Coaching this next time")
         }
+    }
+
+    /**
+     * The progression at the session's track (FBBD-181), from the card against earlier sessions:
+     * the laps, then the sessions it is made of; back returns to the analysis.
+     */
+    @Test
+    fun progressionAtTheTrack() {
+        app.openSessions()
+        app.openSession(SmokeFixtures.VideoCar)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        val link = hasText(ProgressionLinkText) and hasClickAction()
+        app.waitFor(link, timeoutMs = LoadTimeoutMs).performScrollTo()
+        app.clickAction(link)
+        app.waitForText("LAPS", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("Best lap").assertIsDisplayed()
+        app.waitForText("SESSIONS · UNTICK ONE TO LEAVE IT OUT").performScrollTo().assertIsDisplayed()
+        app.back()
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
     }
 
     @Test

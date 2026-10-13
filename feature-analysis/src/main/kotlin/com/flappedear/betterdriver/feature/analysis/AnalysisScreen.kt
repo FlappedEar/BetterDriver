@@ -67,6 +67,8 @@ import kotlin.math.roundToInt
  * next session at the track (FBBD-148). [topBar] is the app's bar with its back button. [layout] is the
  * size class of the space the screen has (FBBD-40): it sets the map and the G-G diagram side by side or not.
  * [optimalVideo], when given, goes under the theoretical best: the optimal lap's video (FBBD-163).
+ * [onProgression], when given, opens the progression over every session at the track (FBBD-181)
+ * from the card that sets this session against the earlier ones.
  */
 @Composable
 fun AnalysisScreen(
@@ -78,6 +80,7 @@ fun AnalysisScreen(
     layout: LayoutSize = LayoutSize.Phone,
     topBar: @Composable () -> Unit = {},
     optimalVideo: (@Composable () -> Unit)? = null,
+    onProgression: (() -> Unit)? = null,
 ) {
     Column(modifier.fillMaxSize()) {
         topBar()
@@ -91,7 +94,7 @@ fun AnalysisScreen(
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
                 }
             }
-            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, optimalVideo, layout)
+            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, optimalVideo, layout, onProgression)
         }
     }
 }
@@ -114,6 +117,7 @@ private fun Ready(
     onCoachPick: (String) -> Unit,
     optimalVideo: (@Composable () -> Unit)?,
     layout: LayoutSize,
+    onProgression: (() -> Unit)?,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
     // Picking a lap or a loss compares it, so the Compare tab opens.
@@ -147,7 +151,7 @@ private fun Ready(
                     // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
                     // so the next focus and the best lap both stay on the first screen of a phone on its side.
                     CoachingHistory(ui.coaching, width)
-                    ui.progress?.let { Progress(it, width) }
+                    ui.progress?.let { Progress(it, width, onProgression) }
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                     ui.gForces?.let { GForcesCard(it, width) }
                     ui.acceleration?.let { AccelerationCard(it, width) }

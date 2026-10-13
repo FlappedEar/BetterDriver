@@ -90,6 +90,8 @@ private class Loaded(
     val whole: WholeSession,
     /** What the coach did in the session, from its events: the focus it worked on and its cues (FBBD-180). */
     val coached: CoachedSession = CoachedSession(),
+    /** Where the session came from when imported from another app's file (FBBD-181); null when recorded here. */
+    val origin: String? = null,
 ) {
     val title: String get() = track.displayName
 }
@@ -194,9 +196,9 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
             keepSessionFocus(store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates)
             val history = coachingHistoryStore(context)
             val tracks = TrackStore(tracksDir(context))
-            keepCoachingHistory(history, l.epoch, loaded.track.id, id, at, loaded.analysis, loaded.coached) {
-                tracks.get(loaded.track.id) != null
-            }
+            keepCoachingHistory(
+                history, l.epoch, loaded.track.id, id, at, loaded.analysis, loaded.coached, loaded.origin,
+            ) { tracks.get(loaded.track.id) != null }
         }
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
@@ -215,6 +217,8 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
             layout = layout,
             topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
             optimalVideo = optimalVideoSlot(id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo),
+            // Progression over every session at the track (FBBD-181).
+            onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
         )
     }
 }
@@ -335,7 +339,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
     val coached = CoachedSession(CoachEvents.focusSource(data.events), CoachEvents.cuesByCorner(data.events))
     val whole = WholeSession(acceleration, gForces)
-    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, whole, coached)
+    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info))
     // No corners to pick where the coach does not run (point-to-point tracks, FBBD-155).
     val candidates = if (coaches(track)) coachCandidates(analysis, id) else emptyMap()
     return Load.Done(loaded, candidates, lapVideo(sessions, data, track))
