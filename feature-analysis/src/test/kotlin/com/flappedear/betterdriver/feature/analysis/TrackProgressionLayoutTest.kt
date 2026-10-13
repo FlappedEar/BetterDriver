@@ -54,6 +54,10 @@ abstract class TrackProgressionLayoutTest(private val device: String) {
         override fun toggle(sessionId: String) {
             chosen += "toggle $sessionId"
         }
+
+        override fun cornerPasses(sessionId: String, cornerId: String) {
+            chosen += "passes $sessionId $cornerId"
+        }
     }
 
     @Composable
@@ -88,6 +92,20 @@ abstract class TrackProgressionLayoutTest(private val device: String) {
         compose.saveScreenshot(device, "progression_corner_open")
         val problems = compose.layoutProblems()
         check(problems.isEmpty()) { "progression corner on $device:\n" + problems.joinToString("\n") }
+    }
+
+    /** An opened corner leads, in one tap, to its passes in the latest session that drove it (FBBD-93). */
+    @Test
+    fun anOpenedCornerOpensItsLatestPasses() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Progression() } }
+        compose.onAllNodes(hasText(LatestPassesText)).assertCountEquals(0)
+        compose.onNodeWithText("Corner 2").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithText(LatestPassesText).performScrollTo().performClick()
+        check(chosen == listOf("passes p3 c2")) { "chosen: $chosen" }
+        val problems = compose.layoutProblems()
+        check(problems.isEmpty()) { "progression corner passes on $device:\n" + problems.joinToString("\n") }
     }
 
     @Test

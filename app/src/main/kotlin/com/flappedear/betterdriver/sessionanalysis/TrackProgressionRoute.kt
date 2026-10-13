@@ -46,7 +46,14 @@ internal fun NavGraphBuilder.progressionDestination(nav: NavHostController, padd
         arguments = listOf(navArgument(Routes.TrackIdArg) { type = NavType.StringType }),
     ) { e ->
         val id = e.arguments?.getString(Routes.TrackIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { TrackProgressionRoute(id, onBack = { nav.popBackStack() }) }
+        Box(Modifier.padding(padding)) {
+            TrackProgressionRoute(
+                id,
+                onBack = { nav.popBackStack() },
+                // A corner's passes in the latest session that drove it (FBBD-93).
+                onCornerPasses = { session, corner -> nav.navigate(Routes.sessionAnalysis(session, corner)) },
+            )
+        }
     }
 }
 
@@ -57,7 +64,11 @@ internal fun NavGraphBuilder.progressionDestination(nav: NavHostController, padd
  * join as each is done, so imported sessions take part without being opened first.
  */
 @Composable
-internal fun TrackProgressionRoute(trackId: String, onBack: () -> Unit) {
+internal fun TrackProgressionRoute(
+    trackId: String,
+    onBack: () -> Unit,
+    onCornerPasses: (sessionId: String, cornerId: String) -> Unit = { _, _ -> },
+) {
     val context = LocalContext.current
     var title by remember(trackId) { mutableStateOf("") }
     var records by remember(trackId) { mutableStateOf<List<SessionCoachingRecord>?>(null) }
@@ -118,6 +129,10 @@ internal fun TrackProgressionRoute(trackId: String, onBack: () -> Unit) {
 
             override fun toggle(sessionId: String) {
                 setExcluded(sessionId)
+            }
+
+            override fun cornerPasses(sessionId: String, cornerId: String) {
+                onCornerPasses(sessionId, cornerId)
             }
 
             fun setGrouping(g: ProgressionGrouping) {

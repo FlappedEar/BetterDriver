@@ -65,10 +65,13 @@ private val WideFrom = 840.dp
 
 /**
  * Same corner across laps (FBBD-153, as Garmin Catalyst): every counted lap's pass through one
- * corner, fastest first, with its time through the corner, braking point and minimum speed. A lap
- * with video plays just its pass, one lap at a time: under its row on a phone, beside the list on a
- * tablet. Ticking two laps and Compare opens them in the lap review ([onCompare] gets their lap
- * indexes, the faster through the corner first). [ui] is null while it is read. [topBar] is the
+ * corner, fastest first, with its time through the corner, braking point and minimum speed (only
+ * where the pass is of High confidence, FBBD-177), the best actual lap's and the realistic
+ * optimal's passes marked. Over them, every pass's speed, brake and throttle traces over the
+ * corner (FBBD-93), the ticked two strong. A lap with video plays just its pass, one lap at a time:
+ * under its row on a phone, beside the list on a tablet. Ticking two laps and Compare opens them
+ * side by side in the lap review, its videos synced and cued to the corner ([onCompare] gets their
+ * lap indexes, the faster through the corner first). [ui] is null while it is read. [topBar] is the
  * app's bar with its back button.
  */
 @Composable
@@ -114,8 +117,15 @@ private fun ColumnScope.CornerLaps(ui: CornerLapsUi, onCompare: (Int, Int) -> Un
                     Header(ui)
                     LapList(ui, ticked, shown, actions, inline = null)
                 }
-                Column(Modifier.weight(PlayerShare).fillMaxHeight()) {
-                    PlayerPane(ui, ui.rows.firstOrNull { it.lapIndex == shown && it.video != null }, player)
+                Column(
+                    Modifier.weight(PlayerShare).fillMaxHeight().verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // Without video the traces have the column to themselves.
+                    if (ui.anyVideo) {
+                        PlayerPane(ui, ui.rows.firstOrNull { it.lapIndex == shown && it.video != null }, player)
+                    }
+                    ui.traces?.let { CornerTracesCard(ui, it, highlightedPasses(ui, ticked)) }
                 }
             }
         } else {
@@ -126,6 +136,7 @@ private fun ColumnScope.CornerLaps(ui: CornerLapsUi, onCompare: (Int, Int) -> Un
             ) {
                 val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
                 Header(ui, width)
+                ui.traces?.let { CornerTracesCard(ui, it, highlightedPasses(ui, ticked), width) }
                 LapList(ui, ticked, shown, actions, inline = player, modifier = width)
             }
         }
@@ -141,13 +152,14 @@ private fun Header(ui: CornerLapsUi, modifier: Modifier = Modifier) {
     Card(modifier) {
         Text(ui.name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         Dim(
-            when (ui.rows.size) {
-                0 -> "No counted lap went through this corner."
-                1 -> "1 counted lap through this corner."
+            when {
+                ui.notInSession -> NotInSessionText
+                ui.rows.isEmpty() -> "No counted lap went through this corner."
+                ui.rows.size == 1 -> "1 counted lap through this corner."
                 else -> "${ui.rows.size} counted laps, fastest through the corner first."
             },
         )
-        if (!ui.anyVideo && ui.rows.isNotEmpty()) Dim("No video of this corner in this session.")
+        if (!ui.anyVideo && ui.rows.isNotEmpty()) Dim(NoVideoText)
         if (ui.anyMarked) ProvenanceLegend()
     }
 }
@@ -199,7 +211,7 @@ private fun PassRow(ui: CornerLapsUi, row: CornerLapRow, ticked: Boolean, shown:
                 Spacer(Modifier.width(6.dp))
                 Dim("Lap ${row.lapNumber}", Modifier.width(LapWidth))
                 Text(
-                    row.seconds?.let { "${seconds(it)} s" } ?: "–",
+                    passSecondsText(row),
                     color = if (row.best) c.best else c.text,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.width(TimeWidth),
@@ -209,8 +221,8 @@ private fun PassRow(ui: CornerLapsUi, row: CornerLapRow, ticked: Boolean, shown:
                     row.deltaSeconds != null -> Text(formatDelta(row.deltaSeconds), color = c.loss)
                 }
             }
-            val min = minimumText(row, ui.speedUnit, ui.speedProvenance)
-            Dim("Brakes ${brakingText(row)} · Min $min", Modifier.padding(start = 14.dp))
+            Dim(passDetailText(ui, row), Modifier.padding(start = 14.dp))
+            if (row.confidence.doubtful) ConfidenceNote(row.confidence, Modifier.padding(start = 14.dp))
         }
         if (row.video == null) {
             Dim("No video")
@@ -235,7 +247,7 @@ private fun PlayerPane(ui: CornerLapsUi, row: CornerLapRow?, player: CornerPlaye
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Lap ${row.lapNumber}", fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
             Text(
-                row.seconds?.let { "${seconds(it)} s" } ?: "–",
+                passSecondsText(row),
                 color = if (row.best) TrackTheme.colors.best else TrackTheme.colors.text,
                 fontWeight = FontWeight.SemiBold,
             )
@@ -257,9 +269,7 @@ private fun CompareBar(ui: CornerLapsUi, ticked: List<Int>, onCompare: (Int, Int
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val text = pair?.let { (a, b) -> "Lap ${ui.row(a)?.lapNumber} against lap ${ui.row(b)?.lapNumber}" }
-            ?: "Tick two laps to compare"
-        Dim(text, Modifier.weight(1f))
+        Dim(compareText(ui, pair), Modifier.weight(1f))
         Button(onClick = { pair?.let { onCompare(it.first, it.second) } }, enabled = pair != null) {
             Text("Compare")
         }

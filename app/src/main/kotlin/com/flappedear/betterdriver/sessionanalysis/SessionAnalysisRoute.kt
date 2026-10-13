@@ -121,10 +121,20 @@ private class Proposal(val track: Track, val session: EditorSession)
 internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding: PaddingValues, layout: LayoutSize) {
     composable(
         Routes.SessionAnalysisPattern,
-        arguments = listOf(navArgument(Routes.SessionIdArg) { type = NavType.StringType }),
+        arguments = listOf(
+            navArgument(Routes.SessionIdArg) { type = NavType.StringType },
+            navArgument(Routes.CornerArg) {
+                type = NavType.StringType
+                nullable = true
+                defaultValue = null
+            },
+        ),
     ) { e ->
         val id = e.arguments?.getString(Routes.SessionIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { SessionAnalysisRoute(nav, id, layout, onBack = { nav.popBackStack() }) }
+        val corner = e.arguments?.getString(Routes.CornerArg)
+        Box(Modifier.padding(padding)) {
+            SessionAnalysisRoute(nav, id, layout, onBack = { nav.popBackStack() }, corner = corner)
+        }
     }
 }
 
@@ -134,11 +144,18 @@ internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding
  * without two crossings of it, says so. Its acceleration runs (FBBD-154) show either way.
  *
  * It fills its own screen, or the detail pane of Sessions on a tablet (FBBD-40); [layout] is the size
- * class of the space it has. [onBack] is its back button, none beside the session list.
+ * class of the space it has. [onBack] is its back button, none beside the session list. [corner]
+ * (a CornerId) opens it on that corner's passes, as the progression does (FBBD-93).
  */
 @Suppress("LongMethod") // Loads, analyses and follows the coach picks: one flow, one place.
 @Composable
-internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: LayoutSize, onBack: (() -> Unit)?) {
+internal fun SessionAnalysisRoute(
+    nav: NavHostController,
+    id: String,
+    layout: LayoutSize,
+    onBack: (() -> Unit)?,
+    corner: String? = null,
+) {
     val context = LocalContext.current
     var load by remember(id) { mutableStateOf<Load?>(null) }
     var compared by rememberSaveable(id) { mutableStateOf<Int?>(null) }
@@ -208,7 +225,8 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
         val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
         state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching)
     }
-    CornerLapsRoute(nav, id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo) {
+    val done = load as? Load.Done
+    CornerLapsRoute(nav, id, CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo), corner) {
         AnalysisScreen(
             state = state,
             onCompare = { compared = it },

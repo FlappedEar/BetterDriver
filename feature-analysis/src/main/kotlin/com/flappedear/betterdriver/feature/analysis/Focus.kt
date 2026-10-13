@@ -4,12 +4,14 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,7 +40,8 @@ const val CoachFocusFirstText = "The spoken coach works on these first next sess
  * differed; at most two secondary corners, small, beside it on a wide screen and under it on a
  * phone. Where the spoken coach will work on them first next session, it says so. Each shows its confidence
  * below High (FBBD-177), and the corners left out for weak evidence are named on one line. Tapping a
- * focus compares its lap with the fastest.
+ * focus compares its lap with the fastest; where the screen can show every pass through a corner
+ * ([LocalCornerLaps]), a corner's "Every pass" opens its passes, traces and video (FBBD-93).
  */
 @Composable
 internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, layout: LayoutSize, modifier: Modifier) {
@@ -103,9 +106,32 @@ private fun Primary(row: FocusRow, onCompare: (Int) -> Unit, modifier: Modifier)
         Text(row.what.ifEmpty { row.observation }, color = c.text, style = MaterialTheme.typography.bodyLarge)
         if (row.what.isNotEmpty()) Dim(row.observation)
         if (row.confidence.doubtful) ConfidenceNote(row.confidence)
-        row.compareNumber?.let { Dim("Tap to compare lap $it", color = c.cold) }
+        if (row.compareNumber != null || everyPass(row)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Dim(row.compareNumber?.let { "Tap to compare lap $it" }.orEmpty(), Modifier.weight(1f), color = c.cold)
+                EveryPass(row)
+            }
+        }
     }
 }
+
+/** Whether [row] offers every pass through its corner: a corner, where the screen can show them. */
+@Composable
+private fun everyPass(row: FocusRow): Boolean = LocalCornerLaps.current != null && !row.cornerId.isNullOrEmpty()
+
+/** "Every pass ›" on a focus corner: its passes, their traces and video (FBBD-93). Nothing for a straight. */
+@Composable
+private fun EveryPass(row: FocusRow) {
+    val open = LocalCornerLaps.current ?: return
+    val id = row.cornerId?.takeIf { it.isNotEmpty() } ?: return
+    TextButton(onClick = { open(id) }, modifier = Modifier.testTag(EveryPassTag)) { Text(EveryPassText) }
+}
+
+/** The way from a focus or coaching corner to every pass through it (FBBD-93). */
+const val EveryPassText = "Every pass ›"
+
+/** Test tag of [EveryPassText] on a focus. */
+const val EveryPassTag = "every-pass"
 
 /** A secondary focus: one line with its time, and what the faster passes did. */
 @Composable
@@ -121,6 +147,12 @@ private fun Secondary(row: FocusRow, onCompare: (Int) -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(row.name, Modifier.weight(1f), color = c.text, fontWeight = FontWeight.SemiBold)
             row.timeText(::focusSeconds)?.let { Text(it, color = if (row.timeDoubtful) c.textDim else c.gain) }
+        }
+        if (everyPass(row)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Spacer(Modifier.weight(1f))
+                EveryPass(row)
+            }
         }
         Dim(row.what.ifEmpty { row.observation })
         if (row.confidence.doubtful) ConfidenceNote(row.confidence)

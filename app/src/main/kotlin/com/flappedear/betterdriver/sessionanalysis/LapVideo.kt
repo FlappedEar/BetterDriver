@@ -3,9 +3,10 @@ package com.flappedear.betterdriver.sessionanalysis
 import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.corners.cornerClip
-import com.flappedear.betterdriver.analysis.corners.cornerPasses
+import com.flappedear.betterdriver.analysis.corners.cornerTraces
 import com.flappedear.betterdriver.analysis.corners.sameLap
 import com.flappedear.betterdriver.analysis.corners.sessionMicros
+import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.CornerVideoUi
 import com.flappedear.betterdriver.feature.analysis.cornerLapsUi
@@ -27,6 +28,9 @@ import com.flappedear.betterdriver.timing.track.Track
  */
 internal class LapVideo(val video: SessionVideo?, val originMicros: Long, val reviewStarts: Map<Int, Long>)
 
+/** What a corner's passes are read from: the session's analysis, its telemetry (for the traces) and its video. */
+internal class CornerSource(val analysis: SessionAnalysis?, val session: TelemetrySession?, val lapVideo: LapVideo?)
+
 /** [data]'s [LapVideo] at [track]; null when it cannot be read, which only leaves the video out. */
 // Must never fail the analysis.
 @Suppress("TooGenericExceptionCaught")
@@ -42,15 +46,21 @@ internal fun lapVideo(store: SessionStore, data: SessionData, track: Track): Lap
     null
 }
 
-/** Every counted lap through corner [cornerId] of [analysis], each with its pass on video where there is one. */
-internal fun cornerLaps(analysis: SessionAnalysis, cornerId: String, lapVideo: LapVideo?): CornerLapsUi {
-    val name = analysis.segments?.segments?.firstOrNull { it.id == cornerId }?.name ?: "Corner"
+/**
+ * Every counted lap through corner [cornerId] of [analysis], each with its pass on video where there
+ * is one, and every pass's traces read from [session] (FBBD-93) when it is there.
+ */
+internal fun cornerLaps(
+    analysis: SessionAnalysis,
+    session: TelemetrySession?,
+    cornerId: String,
+    lapVideo: LapVideo?,
+): CornerLapsUi {
     val video = lapVideo?.video
     val timeline = video?.let { VideoTimeline(it.clips) }
     return cornerLapsUi(
+        analysis,
         cornerId,
-        name,
-        cornerPasses(analysis, cornerId),
         video = { pass ->
             if (lapVideo == null || video == null || timeline == null) {
                 null
@@ -61,7 +71,7 @@ internal fun cornerLaps(analysis: SessionAnalysis, cornerId: String, lapVideo: L
             }
         },
         reviewable = { reviewLap(analysis, lapVideo, it.lapIndex) != null },
-        speedProvenance = analysis.provenance.speed,
+        traces = { laps -> session?.let { cornerTraces(analysis, it, cornerId, laps) } },
     )
 }
 

@@ -62,7 +62,17 @@ data class MetricRow(
 )
 
 /** One corner: its time at each point, and the other metrics under it. */
-data class CornerRow(val cornerId: String, val name: String, val time: MetricRow, val details: List<MetricRow>)
+data class CornerRow(
+    val cornerId: String,
+    val name: String,
+    val time: MetricRow,
+    val details: List<MetricRow>,
+    /**
+     * The latest session taking part whose corners are the progression's revision and that drove
+     * this corner: where its passes, traces and video open (FBBD-93); null when none.
+     */
+    val sessionId: String? = null,
+)
 
 /**
  * One point of the progression in the list: a session, a track day or a month. [best] its best
@@ -137,9 +147,24 @@ fun progressionScreenUi(
     val listed = trackProgression(records, choice.grouping, base, zone, mapping)
     val counted = listed.points.flatMap { it.sessionIds }.filter { it !in choice.excluded }.toSet()
     val shown = trackProgression(records, choice.grouping, base.copy(sessionIds = counted), zone, mapping)
-    return progressionUi(
+    val ui = progressionUi(
         title, shown, listed, coachingProgression(shown, records), choice.excluded, choice.period, choice.day, zone,
     )
+    return ui.copy(corners = ui.corners.map { it.copy(sessionId = latestSessionWith(records, shown, it.cornerId)) })
+}
+
+/**
+ * The latest session of [progression] (of [records]) that drove corner [cornerId] in the revision
+ * the progression shows its corners in: a CornerId of another revision is another corner (FBBD-172),
+ * so a session of another revision never opens for it. Null when none.
+ */
+fun latestSessionWith(records: List<SessionCoachingRecord>, progression: TrackProgression, cornerId: String): String? {
+    val revision = progression.revision ?: return null
+    val taking = progression.points.flatMap { it.sessionIds }.toSet()
+    return records
+        .filter { it.sessionId in taking && it.identityRevision == revision && it.corner(cornerId) != null }
+        .maxByOrNull { it.sessionStartUtcMillis }
+        ?.sessionId
 }
 
 /**

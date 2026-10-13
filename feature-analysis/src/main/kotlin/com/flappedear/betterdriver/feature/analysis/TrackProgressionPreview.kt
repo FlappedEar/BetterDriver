@@ -73,7 +73,7 @@ fun previewProgressionUi(grouping: ProgressionGrouping = ProgressionGrouping.Ses
     val zone = ZoneOffset.UTC
     val records = PreviewProgressionRecords
     val p = trackProgression(records, grouping, ProgressionFilter(), zone)
-    return progressionUi(
+    val ui = progressionUi(
         "Sim Raceway",
         p,
         p,
@@ -83,4 +83,5 @@ fun previewProgressionUi(grouping: ProgressionGrouping = ProgressionGrouping.Ses
         null,
         zone,
     )
+    return ui.copy(corners = ui.corners.map { it.copy(sessionId = latestSessionWith(records, p, it.cornerId)) })
 }
