@@ -67,6 +67,8 @@ enum class Provenance(val measured: Boolean) {
                 else -> MEASURED_GNSS_RECEIVER
             }
             "heart_rate" -> MEASURED_SENSOR
+            // The phone's own accelerometer (FBBD-218).
+            "phone" -> if (isMotion(name)) MEASURED_ACCELEROMETER else MEASURED_SENSOR
             "obd" -> MEASURED_OBD
             "can" -> MEASURED_CAN
             // An import's acceleration: VBOX and RaceChrono files usually work it out from GPS speed.

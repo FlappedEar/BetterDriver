@@ -194,10 +194,10 @@ private fun GgCard(ui: MapUi, cursor: MapPoint?, modifier: Modifier) {
 
 /** Where a G-G diagram's readings come from, and how to read it. */
 internal fun ggSourceNote(source: GgSource) = when (source) {
-    GgSource.Accelerometer -> "From the receiver's accelerometer, its mounting and tilt corrected against GPS. " +
-        "Left turns on the left; rings every 0.5 g."
-    GgSource.Gps -> "Worked out from GPS speed and heading, smoothed: no accelerometer, or its readings " +
-        "did not match the GPS. Left turns on the left; rings every 0.5 g."
+    GgSource.Accelerometer -> "From the RaceBox's accelerometer, or the phone's when the RaceBox's did not match " +
+        "the GPS, its mounting and tilt corrected against GPS. Left turns on the left; rings every 0.5 g."
+    GgSource.Gps -> "Worked out from GPS speed and heading, smoothed: neither the RaceBox's nor the phone's " +
+        "accelerometer matched the GPS. Left turns on the left; rings every 0.5 g."
 }
 
 @Composable

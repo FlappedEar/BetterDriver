@@ -132,6 +132,54 @@ class RecordedSessionTest {
         }
     }
 
+    /**
+     * [run] plus the phone's accelerometer, 13 ms after each receiver sample, lying across the car
+     * (forward on its -Y) and tipped back 60° in its holder, so its Z reads part of the braking too.
+     */
+    private fun withPhone(run: SessionData): SessionData {
+        val phone = listOf("phone_accel_x", "phone_accel_y", "phone_accel_z")
+            .mapIndexed { k, name -> ChannelDef(700 + k, name, "g", "phone", 3) }
+        val tip = PI / 3
+        val sets = run.sampleSets.zipWithNext { a, b ->
+            val g = (b.values.first { it.channelId == GnssChannels.SPEED_KMH.id }.value -
+                a.values.first { it.channelId == GnssChannels.SPEED_KMH.id }.value) / 3.6 / 9.80665 / 0.04
+            SampleSet(
+                a.tMicros + 13_000,
+                listOf(
+                    ChannelValue(700, 0.02),
+                    ChannelValue(701, -g * cos(tip)),
+                    ChannelValue(702, g * sin(tip) + cos(tip)),
+                ),
+            )
+        }
+        val channels = run.info.channels + phone
+        return run.copy(
+            info = run.info.copy(channels = channels),
+            channels = channels.associateBy { it.id },
+            sampleSets = run.sampleSets + sets,
+        )
+    }
+
+    /** FBBD-218: Arek's RaceBox readings did not match GPS on his drive; the phone's accelerometer then gives G. */
+    @Test
+    fun `the phone's accelerometer is used when the receiver's does not agree with GPS`() {
+        val session = telemetrySessionOf(withPhone(straightRun(1.0, dead = true)), null)
+        val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION))
+        assertEquals(0.013, forward.timestamps.first(), 1e-9, "read at the phone's times")
+        assertEquals(0.3, forward.values[10], 0.02)
+        assertEquals(-0.6, forward.values[forward.sampleCount - 10], 0.02)
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf(Aliases.LONGITUDINAL_ACCELERATION))
+        assertEquals(GgSource.Gps, assertNotNull(sessionGg(session)).source, "no cornering to fit left on")
+    }
+
+    @Test
+    fun `the receiver's accelerometer wins over the phone's when both agree`() {
+        val session = telemetrySessionOf(withPhone(straightRun(-1.0, tilt = 0.05)), null)
+        val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION))
+        assertEquals(0.0, forward.timestamps.first(), 1e-9, "read at the RaceBox's times")
+        assertEquals(0.3, forward.values.first(), 0.01)
+    }
+
     @Test
     fun `an accelerometer column of zeros is left out, so GPS is used`() {
         val session = telemetrySessionOf(straightRun(1.0, dead = true), null)
