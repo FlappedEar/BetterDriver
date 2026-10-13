@@ -137,6 +137,8 @@ data class LapDrivingStates(
     /**
      * Over [fromMeters]..[toMeters] along the axis; a range with [toMeters] before [fromMeters]
      * crosses the start line. A stretch partly inside counts by the share of its metres inside.
+     * Where two pieces of the lap's projection overlap (a piece after a GPS gap may start a little
+     * behind where the one before ended), those metres count once.
      */
     fun totals(fromMeters: Double, toMeters: Double): DrivingStateTotals {
         val ranges = if (toMeters >= fromMeters) {
@@ -147,15 +149,20 @@ data class LapDrivingStates(
         val seconds = mutableMapOf<DrivingState, Double>()
         val meters = mutableMapOf<DrivingState, Double>()
         var covered = 0.0
+        val ordered = intervals.sortedBy { it.startMeters }
         for ((from, to) in ranges) {
-            for (i in intervals) {
+            // Metres of the range before this are counted already.
+            var reached = from
+            for (i in ordered) {
                 val span = i.endMeters - i.startMeters
-                val inside = min(to, i.endMeters) - max(from, i.startMeters)
+                val start = max(reached, i.startMeters)
+                val inside = min(to, i.endMeters) - start
                 if (!(span > 0.0) || !(inside > 0.0)) continue
                 val share = inside / span
                 seconds.merge(i.state, (i.endTime - i.startTime) * share, Double::plus)
                 meters.merge(i.state, inside, Double::plus)
                 covered += inside
+                reached = start + inside
             }
         }
         return DrivingStateTotals(seconds, meters, covered, ranges.sumOf { (a, b) -> b - a })
@@ -180,11 +187,24 @@ private class Readers(
     val metresPerSecond: Double?,
 )
 
-private fun readers(session: TelemetrySession, t: DrivingStateThresholds): Readers {
+/**
+ * Whether the car is braking at a time, from the recorded brake the session's checks trust; null
+ * without one. A brake in another unit than a pedal's (a pressure in bar or psi) is not read against
+ * a pedal threshold.
+ */
+@Suppress("ReturnCount")
+private fun brakeReader(session: TelemetrySession, t: DrivingStateThresholds): ((Double) -> Boolean?)? {
     val quality = brakingSourceQuality(session)
-    val brakeChannel = if (quality.brakeUsable) session.channels[quality.brakeName] else null
+    if (!quality.brakeUsable) return null
+    val unit = declaredChannelUnit(session, quality.brakeName).trim()
+    if (unit.isNotEmpty() && unit != "%") return null
+    val c = session.channels[quality.brakeName] ?: return null
     val brakeOn = if (quality.brakeScale == PedalScale.Fraction) t.brakeOnPercent / Percent else t.brakeOnPercent
-    val brake = brakeChannel?.let { c -> { time: Double -> c.valueAt(time)?.let { it >= brakeOn } } }
+    return { time: Double -> c.valueAt(time)?.let { it >= brakeOn } }
+}
+
+private fun readers(session: TelemetrySession, t: DrivingStateThresholds): Readers {
+    val brake = brakeReader(session, t)
     val throttleName = session.aliases[Aliases.THROTTLE].orEmpty()
     val throttleChannel = session.channels[throttleName]
     val throttleUnit = if (throttleChannel == null) "" else declaredChannelUnit(session, throttleName).trim()

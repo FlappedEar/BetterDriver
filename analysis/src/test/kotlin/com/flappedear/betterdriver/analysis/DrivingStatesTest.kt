@@ -162,6 +162,32 @@ class DrivingStatesTest {
     }
 
     @Test
+    fun `a brake pressure in bar is no pedal, the acceleration stands in`() {
+        val pressure = channel("brake", "bar") { 50.0 }
+        val longitudinal = channel("longacc", "g") { if (it < 20) -0.6 else 0.2 }
+        val states = drivingStates(session(pressure, longitudinal), trace, 200.0, null)
+        assertEquals(BrakingProvenanceInferred, states.provenance)
+        assertEquals(2.0, states.totals().seconds(DrivingState.Braking), 1e-9)
+        assertEquals(8.0, states.totals().seconds(DrivingState.Accelerating), 1e-9)
+    }
+
+    @Test
+    fun `metres two pieces of the projection both cover count once`() {
+        // A GPS gap at 5 s; the next piece locks on again 20 m behind where the first ended.
+        val first = ProgressSegment(MutableList(51) { ProjectedSample(times[it], 20.0 * times[it], true) })
+        val second = ProgressSegment(
+            MutableList(46) { k -> ProjectedSample(times[k + 55], 80.0 + 120.0 * k / 45, true) },
+        )
+        val states = drivingStates(session(brake, throttle, lateral), listOf(first, second), 200.0, null)
+        val totals = states.totals()
+        assertEquals(200.0, totals.coveredMeters, 1e-9)
+        assertEquals(1.0, totals.coverage, 1e-12)
+        assertEquals(200.0, DrivingState.entries.sumOf { totals.meters(it) }, 1e-9)
+        // A range wholly inside the overlap is covered once, not twice.
+        assertEquals(1.0, states.totals(85.0, 95.0).coverage, 1e-12)
+    }
+
+    @Test
     fun `coasting through a corner is read by its CornerId, null where the lap has too little of it`() {
         val states = drivingStates(session(brake, throttle, lateral), trace, 200.0, null)
         val lap = TimedLap(1, 0.0, 10.0, 10.0)

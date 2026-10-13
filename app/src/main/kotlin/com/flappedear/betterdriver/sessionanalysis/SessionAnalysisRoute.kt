@@ -226,7 +226,8 @@ internal fun SessionAnalysisRoute(
         state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching)
     }
     val done = load as? Load.Done
-    CornerLapsRoute(nav, id, CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo), corner) {
+    val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)
+    CornerLapsRoute(nav, id, source, corner) {
         AnalysisScreen(
             state = state,
             onCompare = { compared = it },
