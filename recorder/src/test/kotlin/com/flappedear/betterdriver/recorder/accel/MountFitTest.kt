@@ -76,6 +76,19 @@ class MountFitTest {
         assertNull(fit.left?.takeIf { it.usable })
     }
 
+    /**
+     * A receiver that sends only its X axis (an RC2 line with the Y and Z fields empty) on a track
+     * where braking and cornering come together: the one axis must not be both forward and left.
+     */
+    @Test
+    fun `a one-axis accelerometer gives one direction, not the same reading twice`() {
+        val trailBraking = DoubleArray(n) { i -> 0.9 * forward[i] + 0.1 * sin(i * 0.05) }
+        val axes = readings(0.0, 0.0, forward, trailBraking).take(1)
+        val fit = assertNotNull(fitMount(axes, forward, trailBraking))
+        assertRecovers(fit.forward, axes, forward, "forward")
+        assertNull(fit.left)
+    }
+
     @Test
     fun `too few readings give no fit`() {
         val few = forward.copyOf(10)

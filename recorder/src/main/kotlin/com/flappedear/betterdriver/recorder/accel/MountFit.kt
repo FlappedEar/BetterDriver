@@ -32,9 +32,10 @@ private const val MinDeterminant = 1e-12
  *
  * The two directions are found together, as the orthonormal pair that best maps the readings onto
  * GPS (orthogonal Procrustes: R = (M Mᵀ)^-½ M, M the 2 × axes cross-covariance), so braking while
- * turning does not leak cornering into forward. When GPS shows too little of one of the two (a
- * straight line), each direction is the one its readings co-vary with GPS along. Each direction then
- * gets its sign, the bias of the mount's tilt and its agreement with GPS from [fitAxis].
+ * turning does not leak cornering into forward. When they cannot both be found (GPS shows too
+ * little of one, as on a straight line, or the accelerometer has one axis), only the one the
+ * readings follow better is ([oneDirection]). Each direction then gets its sign, the bias of the
+ * mount's tilt and its agreement with GPS from [fitAxis].
  */
 @Suppress("ReturnCount")
 fun fitMount(axes: List<DoubleArray>, forward: DoubleArray, left: DoubleArray): MountFit? {
@@ -53,7 +54,8 @@ fun fitMount(axes: List<DoubleArray>, forward: DoubleArray, left: DoubleArray): 
         m[0][a] += (forward[i] - meanF) * d
         m[1][a] += (left[i] - meanL) * d
     }
-    val directions = procrustes(m) ?: arrayOf(unit(m[0]), unit(m[1]))
+    val directions = procrustes(m)
+        ?: oneDirection(m, rows.sumOf { sq(forward[it] - meanF) }, rows.sumOf { sq(left[it] - meanL) })
     fun along(w: DoubleArray?, gps: DoubleArray): AxisDirection? {
         w ?: return null
         val projected = DoubleArray(forward.size) { i -> w.indices.sumOf { a -> w[a] * axes[a][i] } }
@@ -61,6 +63,25 @@ fun fitMount(axes: List<DoubleArray>, forward: DoubleArray, left: DoubleArray): 
     }
     return MountFit(along(directions[0], forward), along(directions[1], left))
 }
+
+/**
+ * When the two directions cannot both be found (GPS shows one too little, or the readings move the
+ * same way for both, as a one-axis accelerometer does): only the direction whose GPS acceleration
+ * the readings explain better (covariance² over the GPS variance: squared correlation times the
+ * readings' spread), the other left unavailable, so one reading never comes out as both forward
+ * and left.
+ */
+private fun oneDirection(m: Array<DoubleArray>, forwardVariance: Double, leftVariance: Double): Array<DoubleArray?> {
+    fun explained(row: Int, gpsVariance: Double) =
+        if (gpsVariance > 0.0) m[row].dot(m[row]) / gpsVariance else 0.0
+    return if (explained(0, forwardVariance) >= explained(1, leftVariance)) {
+        arrayOf(unit(m[0]), null)
+    } else {
+        arrayOf(null, unit(m[1]))
+    }
+}
+
+private fun sq(x: Double) = x * x
 
 /** (M Mᵀ)^-½ M for a 2 × k [m], whose rows are then orthonormal; null when M Mᵀ is near singular. */
 private fun procrustes(m: Array<DoubleArray>): Array<DoubleArray?>? {
