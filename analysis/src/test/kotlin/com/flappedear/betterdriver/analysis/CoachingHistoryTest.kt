@@ -238,6 +238,12 @@ class CoachingHistoryTest {
         assertEquals(FocusVerdict.Improved, attempt.verdict)
         // Without the coach's word, only a session before it can be the one it worked on.
         assertTrue(coachingHistory("s1", listOf(s0, earlierClock.copy(coachedFrom = null))).empty)
+        // That attempt is not in the past of its source, nor of a session the clock put between them:
+        // neither checks whether its gain held.
+        val between = later("s2", 700, listOf(10.22, 10.30, 10.26, 10.29, 10.28, 10.45), brakingAfter)
+        val records = listOf(s0, earlierClock, between)
+        assertTrue(coachingHistory("s0", records).checks.isEmpty())
+        assertTrue(coachingHistory("s2", records).checks.isEmpty())
     }
 
     @Test
