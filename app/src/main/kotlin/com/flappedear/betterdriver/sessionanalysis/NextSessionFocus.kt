@@ -28,10 +28,12 @@ internal fun keepSessionFocus(
     analysis: SessionAnalysis,
     corners: Map<String, CornerPick>,
 ) {
+    // Made before or during a restore, the record is not written: the restored data wins (FBBD-156).
+    val epoch = AppDataGate.epoch
     val record = focusRecord(trackId, sessionId, startUtcMillis, nextSessionPlan(analysis), corners)
     try {
-        // Never across a restore (FBBD-156).
-        val wrote = AppDataGate.write { store.save(record) }
+        var wrote = false
+        AppDataGate.writeIfCurrent(epoch) { wrote = store.save(record) }
         if (wrote) DebugLog.i(Tag, "session focus of $sessionId: ${record.targets.joinToString { it.name }}")
     } catch (e: IOException) {
         DebugLog.w(Tag, "session focus of $sessionId not saved", e)

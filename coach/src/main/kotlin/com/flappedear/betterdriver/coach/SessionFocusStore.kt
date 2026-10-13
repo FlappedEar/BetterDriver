@@ -117,10 +117,19 @@ class SessionFocusStore(private val dir: File) {
     /**
      * The focus the next session at [trackId] works on: that of the latest session with one, not
      * [exclude] (the session being driven). A later session with nothing clear enough to work on
-     * leaves the earlier focus standing: it does not show the earlier one was dealt with.
+     * leaves the earlier focus standing: it does not show the earlier one was dealt with. A record
+     * whose session is gone ([kept] false) is never used, even if deleting it failed.
      */
-    fun latest(trackId: String, exclude: String? = null): SessionFocusRecord? =
-        history(trackId).lastOrNull { it.sessionId != exclude && it.targets.isNotEmpty() }
+    fun latest(trackId: String, exclude: String? = null, kept: (String) -> Boolean = { true }): SessionFocusRecord? =
+        history(trackId).lastOrNull { r -> r.sessionId != exclude && r.targets.isNotEmpty() && kept(r.sessionId) }
+
+    /** Deletes session [sessionId]'s record at every track, with the session; returns whether none is left. */
+    fun deleteSession(sessionId: String): Boolean {
+        val name = checkedSessionId(sessionId) + Suffix
+        val files = dir.listFiles { f -> f.isDirectory }.orEmpty().map { File(it, name) }
+        files.forEach { it.delete() }
+        return files.none { it.exists() }
+    }
 
     /** Saves [record] unless the same is saved already; returns whether it wrote. */
     fun save(record: SessionFocusRecord): Boolean {

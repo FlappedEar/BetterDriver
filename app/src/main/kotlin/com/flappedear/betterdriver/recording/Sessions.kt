@@ -13,6 +13,7 @@ import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CoachedSessions
 import com.flappedear.betterdriver.coach.coachDir
+import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.export.CsvExporter
 import com.flappedear.betterdriver.recorder.export.ExportLap
@@ -151,7 +152,10 @@ class Sessions private constructor(private val context: Context) {
         deletes[id] = DeleteState.Running
         io.execute {
             val result = try {
-                store.delete(id)
+                store.delete(id).also { r ->
+                    // Its next-session focus goes with it, so the coach never works from it (FBBD-20).
+                    if (r == DeleteResult.DELETED || r == DeleteResult.NOT_FOUND) forgetFocus(context, id)
+                }
             } catch (e: SecurityException) {
                 DebugLog.w(Tag, "delete failed", e)
                 DeleteResult.FAILED
@@ -404,3 +408,12 @@ private fun discard(resolver: ContentResolver, folder: Uri) {
 
 /** The file name offered when exporting. */
 fun exportFileName(session: SessionSummary, format: ExportFormat) = "BetterDriver-${session.id}.${format.extension}"
+
+/** Deletes session [id]'s next-session focus (FBBD-20) with the session, so the coach never works from it. */
+private fun forgetFocus(context: Context, id: String) {
+    try {
+        if (!sessionFocusStore(context).deleteSession(id)) DebugLog.w("Sessions", "session focus of $id not deleted")
+    } catch (e: IllegalArgumentException) {
+        DebugLog.w("Sessions", "session focus of $id not deleted", e)
+    }
+}

@@ -11,8 +11,10 @@ import android.os.Messenger
 import android.os.RemoteException
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.RecorderProtocol
+import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.timing.track.TrackStore
+import java.io.File
 
 private const val NanosPerMicro = 1_000L
 
@@ -98,7 +100,10 @@ class CoachService : Service() {
         if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
         // What the last analysed session at the track recommends working on (FBBD-20), primary first.
         val focus = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
-            ?.let { sessionFocusStore(this).latest(it.id, exclude = a.id) }
+            ?.let { t ->
+                // Never from a session deleted since (its record goes with it, but a failed delete may leave it).
+                sessionFocusStore(this).latest(t.id, exclude = a.id) { File(sessionsDir(this), it).isDirectory }
+            }
         focus?.let { f -> DebugLog.i(Tag, "session focus from ${f.sessionId}: ${f.targets.joinToString { it.name }}") }
         a.coach = CoachSession(a.settings, track, reference, picks, sameDay, focus?.picks().orEmpty())
         updateStatus(a, a.coach?.status ?: CoachStatus.None)

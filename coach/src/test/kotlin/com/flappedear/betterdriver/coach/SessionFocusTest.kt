@@ -109,6 +109,23 @@ class SessionFocusTest {
         }
 
     @Test
+    fun `a deleted session's focus is gone, and one whose session is gone is never the next session's`() =
+        withDir { dir ->
+            val store = SessionFocusStore(dir)
+            val older = record("s1", 1_000, 0)
+            val newer = record("s2", 2_000, 1)
+            store.save(older)
+            store.save(newer)
+            // Its session gone but its record left behind (a failed delete): skipped.
+            assertEquals(older, store.latest("sim") { it != "s2" })
+            // Deleting the session deletes its record, at whatever track.
+            assertTrue(store.deleteSession("s2"))
+            assertEquals(listOf(older), store.history("sim"))
+            assertEquals(older, store.latest("sim"))
+            assertTrue(store.deleteSession("never-recorded"))
+        }
+
+    @Test
     fun `a record keeps each focus under its CornerId, primary first, with what to change`() = withDir { dir ->
         val store = SessionFocusStore(dir)
         val r = record("s1", 1, 1, 3).let { r ->
