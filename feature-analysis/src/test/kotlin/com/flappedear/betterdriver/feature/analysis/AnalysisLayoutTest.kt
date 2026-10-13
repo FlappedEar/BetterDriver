@@ -125,6 +125,39 @@ abstract class AnalysisLayoutTest(private val device: String) {
         check(opened) { "the progression did not open" }
     }
 
+    /**
+     * Consistency on the summary is the typical (median) lap and the spread of the middle half
+     * (FBBD-175), in the card against earlier sessions, under the next focus and the best lap.
+     */
+    @Test
+    fun typicalLapAndSpreadUnderTheBestLap() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        compose.waitForIdle()
+        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val typical = compose.onNodeWithTag(TypicalLapTag).assert(hasText("Typical lap 1:21.74")).fetchSemanticsNode()
+        check(best.positionInRoot.y < typical.positionInRoot.y) { "typical lap above the best lap on $device" }
+        compose.onAllNodes(hasText("Lap spread 0.42 s")).assertCountEquals(1)
+    }
+
+    /**
+     * The Compare tab shows what each lap's car was doing along the lap and how long each coasted
+     * (FBBD-175), marked as inferred; the Corners tab shows each corner's coasting, marked too.
+     */
+    @Test
+    fun drivingStatesOnCompareAndCoastingOnCorners() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        tab(AnalysisTab.Compare).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(DrivingStatesTag).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Coasting: lap 2 ≈1.32 s · lap 3 ≈2.05 s")).performScrollTo().assertIsDisplayed()
+        tab(AnalysisTab.Corners).performClick()
+        compose.waitForIdle()
+        compose.onAllNodes(hasText(CoastingLabel))[0].performScrollTo().assertIsDisplayed()
+        compose.onAllNodes(hasText("≈0.12 s"))[0].assertExists()
+    }
+
     /** The coach line shows only where the spoken coach will work on the focus first. */
     @Test
     fun coachLineOnlyWhereTheCoachWorksOnTheFocus() {

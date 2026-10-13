@@ -1,7 +1,13 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
+import com.flappedear.betterdriver.analysis.compare.LapComparison
+import com.flappedear.betterdriver.analysis.driving.DrivingState
+import com.flappedear.betterdriver.analysis.driving.DrivingStateInterval
+import com.flappedear.betterdriver.analysis.driving.LapDrivingStates
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
@@ -71,6 +77,43 @@ class AnalysisUiTest {
         assertEquals(listOf(1, 3), ui.realisticLaps)
         val noRaw = analysisUi("t", analysis.copy(realisticOptimal = realistic), null)!!
         assertNull(noRaw.realisticMillis)
+    }
+
+    /**
+     * The compared laps carry what each car was doing along the lap and how long each coasted
+     * (FBBD-175), marked as inferred when no pedal was recorded.
+     */
+    @Test
+    fun `the compared laps show their driving states and coasting`() {
+        fun states(coastFrom: Double, provenance: String) = LapDrivingStates(
+            null,
+            listOf(
+                DrivingStateInterval(0.0, 2.0, 0.0, 100.0, DrivingState.Braking),
+                DrivingStateInterval(2.0, 3.5, 100.0, 150.0, DrivingState.Cornering),
+                DrivingStateInterval(3.5, 4.0, 150.0, coastFrom, DrivingState.Cornering),
+                DrivingStateInterval(4.0, 5.0, coastFrom, 200.0, DrivingState.Coasting),
+            ),
+            provenance,
+            lengthMeters = 200.0,
+        )
+        val comparison = LapComparison(1, 0, 200.0, emptyList(), emptyList(), emptyList())
+        val measured = analysis.copy(
+            drivingStates = listOf(states(180.0, "measured"), states(170.0, "measured")),
+            provenance = AnalysisProvenance(brake = Provenance.MEASURED_CAN, throttle = Provenance.MEASURED_CAN),
+        )
+        val compare = analysisUi("t", measured, comparison)!!.compare!!
+        assertEquals(listOf(DrivingState.Braking, DrivingState.Cornering, DrivingState.Coasting),
+            compare.referenceStates.map { it.state })
+        assertEquals(170.0, compare.referenceStates.last().startMeters, 1e-9)
+        assertEquals(1.0, compare.referenceCoastingSeconds!!, 1e-9)
+        assertEquals(1.0, compare.otherCoastingSeconds!!, 1e-9)
+        assertEquals(Provenance.MEASURED_CAN, compare.statesProvenance)
+        assertEquals(true, compare.hasStates)
+        val inferred = analysisUi("t", analysis.copy(drivingStates = listOf(states(180.0, "inferred"))), comparison)!!
+        assertEquals(Provenance.INFERRED, inferred.compare!!.statesProvenance)
+        // Lap 2 has no states here: nothing is drawn for the pair.
+        assertEquals(false, inferred.compare!!.hasStates)
+        assertNull(inferred.compare!!.referenceCoastingSeconds)
     }
 
     @Test

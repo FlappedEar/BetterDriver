@@ -157,11 +157,16 @@ data class CornerProgression(
     fun of(metric: ProgressionMetric): MetricSeries? = series.firstOrNull { it.metric == metric }
 }
 
+/** One counted lap in driving order across a progression: its session, its number and its time. */
+data class OrderedLap(val sessionId: String, val number: Int, val seconds: Double)
+
 /**
  * The progression at one track: its [points] (oldest first) grouped by [grouping], the lap
  * metrics at each ([laps]), each corner of [revision] ([corners], in track order), and the
  * sessions left out of the corners because their corners are another revision's that cannot be
- * mapped onto it ([otherRevisionSessions]).
+ * mapped onto it ([otherRevisionSessions]). [lapsInOrder] is every counted lap of every point, in
+ * the order they were driven (FBBD-175): across one track day, how the lap times went from the
+ * first lap of the morning to the last.
  */
 data class TrackProgression(
     val trackId: String,
@@ -171,10 +176,18 @@ data class TrackProgression(
     val revision: Int?,
     val corners: List<CornerProgression>,
     val otherRevisionSessions: List<String> = emptyList(),
+    val lapsInOrder: List<OrderedLap> = emptyList(),
 ) {
     val empty: Boolean get() = points.isEmpty()
 
     fun lap(metric: ProgressionMetric): MetricSeries? = laps.firstOrNull { it.metric == metric }
+
+    /**
+     * Which way the lap times went over [lapsInOrder], lap by lap, as a typical lap's trend is
+     * judged (steady within [SteadyLapSeconds]); null below [MinimumTrendPoints] laps.
+     */
+    val lapsInOrderTrend: Trend?
+        get() = trendOf(ProgressionMetric.MedianLap, lapsInOrder.map { MetricValue(it.seconds, 1, unit = "s") })
 }
 
 /**
@@ -203,14 +216,18 @@ fun trackProgression(
             countedLaps = g.sumOf { r -> r.laps.count { it.counted } },
         )
     }
-    val latest = groups.lastOrNull()?.last()
-        ?: return TrackProgression(trackId, grouping, points, lapSeries(groups), null, emptyList())
+    val ordered = groups.flatten().flatMap { r ->
+        r.laps.filter { it.counted }.sortedBy { it.number }.map { OrderedLap(r.sessionId, it.number, it.seconds) }
+    }
+    val latest = groups.lastOrNull()?.last() ?: return TrackProgression(
+        trackId, grouping, points, lapSeries(groups), null, emptyList(), lapsInOrder = ordered,
+    )
     val revision = latest.identityRevision
     val corners = latest.corners.map { c ->
         cornerProgression(c, groups.map { g -> g.mapNotNull { r -> mapped(r, c.cornerId, revision, mapping) } })
     }
     val other = groups.flatten().filter { r -> !mapsOnto(r, latest, mapping) }.map { it.sessionId }
-    return TrackProgression(trackId, grouping, points, lapSeries(groups), revision, corners, other)
+    return TrackProgression(trackId, grouping, points, lapSeries(groups), revision, corners, other, ordered)
 }
 
 private fun keyOf(r: SessionCoachingRecord, grouping: ProgressionGrouping, zone: ZoneId): String = when (grouping) {

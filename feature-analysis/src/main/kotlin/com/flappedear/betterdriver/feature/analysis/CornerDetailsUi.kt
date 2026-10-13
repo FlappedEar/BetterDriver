@@ -3,14 +3,18 @@ package com.flappedear.betterdriver.feature.analysis
 import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.confidence.measureConfidence
+import com.flappedear.betterdriver.analysis.corners.BrakingProvenanceMeasured
 import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerVariability
+import com.flappedear.betterdriver.analysis.driving.Coasting
+import com.flappedear.betterdriver.analysis.driving.cornerCoasting
+import com.flappedear.betterdriver.analysis.driving.cornerCoastingConsistency
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
 import com.flappedear.betterdriver.recorder.Provenance
 import java.util.Locale
 
 /** What a corner detail measures, which decides how it is written. */
-enum class CornerMeasure { Meters, Speed, G }
+enum class CornerMeasure { Meters, Speed, G, Seconds }
 
 /** One measure of one corner on the best lap and the compared lap, and its spread over the counted laps. */
 data class CornerMetricRow(
@@ -65,15 +69,16 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
         val best = laps.getOrNull(bestIndex) ?: return@mapNotNull null
         val other = otherIndex?.let(laps::getOrNull)
         val variability = analysis.variability[segment.id]
+        val measured = rows(
+            Lap(segment.startProgressMeters, analysis.axis?.lengthMeters ?: 0.0),
+            best,
+            other,
+            variability,
+            analysis.provenance,
+        ) + coastingRow(analysis, segment.id, bestIndex, otherIndex?.takeIf { other != null })
         CornerDetail(
             name = segment.name,
-            rows = rows(
-                Lap(segment.startProgressMeters, analysis.axis?.lengthMeters ?: 0.0),
-                best,
-                other,
-                variability,
-                analysis.provenance,
-            ).map { row ->
+            rows = measured.map { row ->
                 // How far a braking point or a minimum speed of each lap can be trusted (FBBD-177).
                 fun graded(index: Int?) = index?.takeIf { row.label in GradedRows }
                     ?.let { analysis.measureConfidence(segment.id, it, row.provenance).ui() }
@@ -89,8 +94,37 @@ fun cornerDetails(analysis: SessionAnalysis, bestIndex: Int, otherIndex: Int?): 
     }
 }
 
+/** The label of the coasting row (FBBD-175). */
+const val CoastingLabel = "Coasting"
+
 /** The rows whose values are graded (FBBD-177): what a coach would advise from. */
-private val GradedRows = setOf("Brakes", "Min speed")
+private val GradedRows = setOf("Brakes", "Min speed", CoastingLabel)
+
+/**
+ * Time off both pedals in the corner (FBBD-175) on the best and the compared lap, with its spread
+ * over the counted laps: measured when both pedals were read from their channels (then as measured
+ * as the less measured of the two), else inferred from the acceleration and marked so.
+ */
+private fun coastingRow(analysis: SessionAnalysis, id: String, bestIndex: Int, otherIndex: Int?): CornerMetricRow {
+    val best = analysis.cornerCoasting(id, bestIndex)
+    val other = otherIndex?.let { analysis.cornerCoasting(id, it) }
+    return CornerMetricRow(
+        CoastingLabel,
+        CornerMeasure.Seconds,
+        best?.seconds,
+        other?.seconds,
+        analysis.cornerCoastingConsistency(id).takeIf { it.available }?.interquartileRange,
+        coastingProvenance(best ?: other, analysis.provenance),
+    )
+}
+
+/** Where a coasting time comes from: inferred, or the less measured of the two pedals. */
+internal fun coastingProvenance(coasting: Coasting?, sources: AnalysisProvenance): Provenance? = when {
+    coasting == null -> null
+    coasting.provenance != BrakingProvenanceMeasured -> Provenance.INFERRED
+    else -> listOf(sources.brake, sources.throttle).firstOrNull { it.notMeasured }
+        ?: sources.brake ?: sources.throttle
+}
 
 /** Where a corner starts on the lap ([entry]) and the lap's [length], metres. */
 private class Lap(val entry: Double, val length: Double)
@@ -159,6 +193,7 @@ internal fun formatMeasure(value: Double?, measure: CornerMeasure, speedUnit: St
     value == null -> Missing
     measure == CornerMeasure.Meters -> String.format(Locale.ROOT, "%.0f m", value)
     measure == CornerMeasure.G -> String.format(Locale.ROOT, "%.2f g", value)
+    measure == CornerMeasure.Seconds -> String.format(Locale.ROOT, "%.2f s", value)
     speedUnit.isEmpty() -> String.format(Locale.ROOT, "%.1f", value)
     else -> String.format(Locale.ROOT, "%.1f %s", value, speedUnit)
 }

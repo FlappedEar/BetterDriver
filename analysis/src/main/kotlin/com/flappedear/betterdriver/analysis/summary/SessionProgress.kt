@@ -29,6 +29,11 @@ data class SessionProgress(
     val earlierBestLabel: String? = null,
     /** The interquartile range of this session's counted lap times; null below three laps. */
     val lapSpreadSeconds: Double? = null,
+    /**
+     * The median of this session's counted lap times, its typical lap (FBBD-175): with
+     * [lapSpreadSeconds], how consistent the session was, never swayed by one slow lap; null below three.
+     */
+    val lapMedianSeconds: Double? = null,
     /** The newest earlier session with a counted lap: its name, best lap and lap spread. */
     val previousLabel: String? = null,
     val previousBestSeconds: Double? = null,
@@ -58,9 +63,10 @@ data class SessionProgress(
 
 private fun LapSession.best(): Double? = fastestLapIndex?.let { timedLaps[it].durationSeconds }
 
-private fun LapSession.spread(): Double? =
-    summarizeConsistency(timedLaps.filter { it.referenceEligible }.map { it.durationSeconds })
-        .takeIf { it.available }?.interquartileRange
+private fun LapSession.consistency() =
+    summarizeConsistency(timedLaps.filter { it.referenceEligible }.map { it.durationSeconds }).takeIf { it.available }
+
+private fun LapSession.spread(): Double? = consistency()?.interquartileRange
 
 /** [current] against [earlier], newest first. */
 fun summarizeProgress(current: LapSession, earlier: List<EarlierSession>): SessionProgress {
@@ -74,6 +80,7 @@ fun summarizeProgress(current: LapSession, earlier: List<EarlierSession>): Sessi
         earlierBestSeconds = quickest?.laps?.best(),
         earlierBestLabel = quickest?.label,
         lapSpreadSeconds = current.spread(),
+        lapMedianSeconds = current.consistency()?.median,
         previousLabel = previous?.label,
         previousBestSeconds = previous?.laps?.best(),
         previousSpreadSeconds = previous?.laps?.spread(),

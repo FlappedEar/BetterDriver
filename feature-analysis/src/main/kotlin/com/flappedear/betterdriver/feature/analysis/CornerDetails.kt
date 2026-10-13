@@ -21,7 +21,8 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
  * counted laps (interquartile range). Every value that is not measured (inferred with no pedal
  * channel, or read from a calculated channel) is marked ≈, and the card says what ≈ means
  * (FBBD-174). The braking point and the minimum speed carry their confidence (FBBD-177); a value
- * of Low confidence is not shown. Where the screen can show every lap through a corner
+ * of Low confidence is not shown. Coasting is the time off both pedals in the corner (FBBD-175),
+ * marked ≈ when inferred from the acceleration. Where the screen can show every lap through a corner
  * ([LocalCornerLaps], FBBD-153), tapping a corner opens it.
  */
 @Composable
@@ -65,7 +66,7 @@ internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
             RowConfidence(corner)
             // What came of working on this corner (FBBD-180), as the summary says it.
             ui.coaching.filter { it.cornerId == corner.id }.forEach { Dim("Coaching · ${it.status.label}: ${it.text}") }
-            Dim("Brakes: metres before the corner. Throttle: metres after its start.")
+            Dim("Brakes: metres before the corner. Throttle: metres after its start. Coasting: off both pedals.")
             if (corner.rows.any { it.marked }) ProvenanceLegend()
             corner.lineSpreadMeters?.let {
                 val line = formatMeasure(it, CornerMeasure.Meters, "")

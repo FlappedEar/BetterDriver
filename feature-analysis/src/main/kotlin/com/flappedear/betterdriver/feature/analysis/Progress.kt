@@ -24,11 +24,15 @@ private const val MillisPerSecond = 1000.0
 const val ProgressionLinkTag = "progression-link"
 const val ProgressionLinkText = "Progress over every session here"
 
+/** The typical (median) lap on the session summary (FBBD-175), for tests. */
+const val TypicalLapTag = "typical-lap"
+
 /**
  * Session summary (FBBD-122, FBBD-123, UI-70): this session's best lap against the best of every
- * earlier session at the track, how repeatable its laps were against the session before, and the
- * corners and straights whose typical time moved most since then. [onProgression], when given, opens
- * the progression over every session at the track (FBBD-181).
+ * earlier session at the track, how consistent its laps were (the typical, median, lap and the spread
+ * of the middle half, FBBD-175) against the session before, and the corners and straights whose
+ * typical time moved most since then. [onProgression], when given, opens the progression over every
+ * session at the track (FBBD-181).
  */
 @Composable
 internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgression: (() -> Unit)? = null) {
@@ -55,6 +59,14 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
                 Dim("Was ${formatLapTime((earlierBest * MillisPerSecond).roundToLong())}, ${progress.earlierBestLabel}")
             }
         }
+        // How consistent the session was (FBBD-175): its typical (median) lap and the spread around it.
+        progress.lapMedianSeconds?.let {
+            Text(
+                "Typical lap ${formatLapTime((it * MillisPerSecond).roundToLong())}",
+                Modifier.testTag(TypicalLapTag),
+                color = c.text,
+            )
+        }
         progress.lapSpreadSeconds?.let { spread ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Lap spread ${seconds(spread)} s", Modifier.weight(1f), color = c.text)
@@ -68,7 +80,10 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
             progress.previousLabel?.takeIf { progress.spreadDeltaSeconds != null }?.let { Dim("Against $it") }
         }
         Changes(progress)
-        Dim("${progress.eligibleLapCount} counted laps. Spread: the middle half of your lap times.")
+        Dim(
+            "${progress.eligibleLapCount} counted laps. Typical: the median lap. " +
+                "Spread: the middle half of your lap times.",
+        )
         onProgression?.let { open ->
             TextButton(onClick = open, modifier = Modifier.testTag(ProgressionLinkTag)) {
                 Text(ProgressionLinkText)

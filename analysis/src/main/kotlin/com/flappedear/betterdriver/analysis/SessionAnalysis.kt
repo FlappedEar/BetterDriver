@@ -7,6 +7,8 @@ import com.flappedear.betterdriver.analysis.corners.CornerVariability
 import com.flappedear.betterdriver.analysis.corners.measureCornerLap
 import com.flappedear.betterdriver.analysis.corners.summarizeCornerVariability
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
+import com.flappedear.betterdriver.analysis.driving.LapDrivingStates
+import com.flappedear.betterdriver.analysis.driving.drivingStates
 import com.flappedear.betterdriver.analysis.identity.identifySegments
 import com.flappedear.betterdriver.analysis.identity.identityRevisionTag
 import com.flappedear.betterdriver.analysis.laps.LapSession
@@ -102,6 +104,11 @@ data class SessionAnalysis(
     val realisticOptimal: RealisticOptimalLap? = null,
     /** How [axis] was built, segmented and read (FBBD-215); another session is timed on it the same way. */
     val robustness: AxisRobustness = AxisRobustness.App,
+    /**
+     * Every timed lap's driving states along [axis] (FBBD-175), in [LapSession.timedLaps] order:
+     * braking, coasting, cornering, accelerating or full throttle; empty without an axis.
+     */
+    val drivingStates: List<LapDrivingStates> = emptyList(),
 ) {
     /** Whether [segments] are [identity]'s corners and straights, under its ids (FBBD-172). */
     val identified: Boolean
@@ -153,10 +160,15 @@ private fun analyzeLaps(
     }
     val timed = timePopulation(laps, fastest.number, segments ?: NoSegments, population, robustness)
         ?: return SessionAnalysis(laps, fastest.number, review, consensus, robustness = robustness)
+    // The line's curvature, smoothed over a car's length and more, tells how hard a lap turns.
+    val line = computeTrackFeatures(timed.axis, DrivingStatesSmoothingMeters)
+    val states = laps.timedLaps.mapIndexed { i, lap ->
+        drivingStates(session, timed.traces[i], timed.axis.lengthMeters, line, lap.number)
+    }
     if (segments == null) {
         return SessionAnalysis(
             laps, fastest.number, review, consensus,
-            axis = timed.axis, traces = timed.traces, robustness = robustness,
+            axis = timed.axis, traces = timed.traces, robustness = robustness, drivingStates = states,
         )
     }
     val eligible = laps.timedLaps.indices.filter { laps.timedLaps[it].referenceEligible }
@@ -191,7 +203,11 @@ private fun analyzeLaps(
             session, timed.axis, segments, laps.timedLaps, timed.times, timed.traces, fastestIndex,
         ),
         robustness = robustness,
+        drivingStates = states,
     )
 }
+
+/** Metres either side the line's curvature is smoothed over for the driving states' turning. */
+private const val DrivingStatesSmoothingMeters = 20.0
 
 private val NoSegments = ApprovedSegments(emptyList(), "")

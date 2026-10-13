@@ -97,6 +97,11 @@ data class ProgressionUi(
     val notes: List<String> = emptyList(),
     /** Sessions at the track still being analysed for it, shown while they are. */
     val adding: Int = 0,
+    /**
+     * With one track day open ([day]), every counted lap of it in the order driven (FBBD-175): how
+     * the lap times went from the first lap of the day to the last. Null for every other view.
+     */
+    val dayLaps: MetricRow? = null,
 ) {
     val empty: Boolean get() = points.isEmpty()
 }
@@ -187,7 +192,26 @@ fun progressionUi(
             .map { (step, p) -> coachingRow(step, label(p, progression.grouping, zone)) }.reversed(),
         coachingSummary = coachingSummary(coaching),
         notes = notes,
+        dayLaps = day?.let { dayLapsRow(progression) },
     )
+}
+
+/** The label of [ProgressionUi.dayLaps]. */
+const val DayLapsLabel = "Every lap of the day, in order"
+
+/** Every counted lap of [progression] in driving order, with the way the lap times went over them. */
+internal fun dayLapsRow(progression: TrackProgression): MetricRow? {
+    val laps = progression.lapsInOrder
+    if (laps.isEmpty()) return null
+    val t = progression.lapsInOrderTrend
+    val over = t?.let { " over ${plural(it.points, "lap")}" }.orEmpty()
+    val (text, tone) = when {
+        t == null -> "Too few laps for a trend" to TrendTone.Unknown
+        t.direction == 0 -> "Steady$over" to TrendTone.Steady
+        t.better == true -> "${seconds(abs(t.change))} s quicker$over" to TrendTone.Better
+        else -> "${seconds(abs(t.change))} s slower$over" to TrendTone.Worse
+    }
+    return MetricRow(DayLapsLabel, lapTime(laps.last().seconds), text, tone, laps.map { it.seconds }, invert = true)
 }
 
 private fun summary(listed: TrackProgression, shown: TrackProgression, excluded: Set<String>): String {

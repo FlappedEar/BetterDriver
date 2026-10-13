@@ -178,6 +178,11 @@ private fun Laps(ui: ProgressionUi, modifier: Modifier) {
             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             Metric(row)
         }
+        // One track day open: how its lap times went, lap by lap (FBBD-175).
+        ui.dayLaps?.let {
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Metric(it)
+        }
     }
 }
 

@@ -143,4 +143,30 @@ class TrackProgressionUiTest {
         // Only the two sessions still counted: a trend needs a third.
         assertEquals("Too few sessions for a trend", left.laps[0].trend)
     }
+
+    /**
+     * A track day opened alone (FBBD-175) shows its sessions' lap and corner times and, under the
+     * laps, every counted lap of the day in the order driven: on 5 Sep each session fades by 0.15 s
+     * a lap, and the second starts 0.6 s quicker, so over the ten laps the least-squares line falls
+     * 0.49 s. No other view has the row.
+     */
+    @Test
+    fun aTrackDayShowsEveryLapOfTheDayInOrder() {
+        val zone = ZoneOffset.UTC
+        val today = LocalDate.of(2026, 10, 20)
+        val day = progressionScreenUi(
+            "x", PreviewProgressionRecords, ProgressionChoice(day = LocalDate.of(2026, 9, 5)), today, zone,
+        )
+        assertEquals(2, day.laps[0].values.size)
+        assertEquals(4, day.corners.size)
+        val laps = day.dayLaps!!
+        assertEquals(DayLapsLabel, laps.label)
+        assertEquals(10, laps.values.size)
+        assertEquals(92.55, laps.values.first()!!, 1e-9)
+        assertEquals("1:32.55", laps.latest)
+        assertEquals("0.49 s quicker over 10 laps", laps.trend)
+        assertEquals(TrendTone.Better, laps.tone)
+        assertTrue(laps.invert)
+        assertNull(progressionScreenUi("x", PreviewProgressionRecords, ProgressionChoice(), today, zone).dayLaps)
+    }
 }
