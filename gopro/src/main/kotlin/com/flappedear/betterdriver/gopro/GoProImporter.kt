@@ -177,8 +177,17 @@ class GoProImporter(
     }
 }
 
-/** The session time of its last sample set; sample sets are not guaranteed to be in time order. */
-internal fun sessionEndUs(session: SessionData): Long = session.sampleSets.maxOfOrNull { it.tMicros } ?: 0L
+/**
+ * When the session ended on its own clock: the latest of its sample sets, events and end record.
+ * A session whose GNSS never delivered a sample (indoors, receiver not connected) still has events
+ * and an end record, so its end is not 0 (FBBD-201: a 20 s session with no samples rejected its
+ * GoPro clip as recorded outside it).
+ */
+internal fun sessionEndUs(session: SessionData): Long = maxOf(
+    session.sampleSets.maxOfOrNull { it.tMicros } ?: 0L,
+    session.events.maxOfOrNull { it.tMicros } ?: 0L,
+    session.end?.tMicros ?: 0L,
+)
 
 /**
  * [clip] moved by no more than its alignment uncertainty to overlap a session that runs from 0 to

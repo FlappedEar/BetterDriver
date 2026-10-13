@@ -10,7 +10,6 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isDialog
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performTextReplacement
@@ -90,8 +89,7 @@ class ImportSmokeTest {
         repeat(BackSteps) {
             val home = runCatching {
                 app.waitNamed("the Sessions list or Drive", SettleMs) {
-                    app.onAllNodesWithText("Compare laps").fetchSemanticsNodes().isNotEmpty() ||
-                        app.onAllNodesWithText("START").fetchSemanticsNodes().isNotEmpty()
+                    app.showsText("Compare laps") || app.showsText("START")
                 }
             }.isSuccess
             if (!home) app.back()
