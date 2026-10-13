@@ -33,12 +33,12 @@ internal fun TimeGoes(ui: AnalysisUi, onCompare: (Int) -> Unit, onCoachPick: (St
     Card(modifier) {
         TrackLabel("Where time goes")
         if (ui.gains.isNotEmpty()) {
-            Dim("Best lap ${ui.bestLapNumber} against the best of each corner")
+            Dim(timeGoesHeading(ui))
             ui.gains.forEachIndexed { i, gain ->
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(gain.name, Modifier.weight(1f))
-                        Dim(gain.bestLapNumber?.let { "best lap $it" } ?: "", Modifier.width(80.dp))
+                        Dim(setOnText(gain), Modifier.width(80.dp))
                         Loss(gain.lossText(::formatDelta), gain.confidence)
                         val flag = gain.cornerId.takeIf { i in firstRows.gains }
                         CoachFlag(ui, flag, gain.name, onCoachPick, firstRows.any)
@@ -89,3 +89,16 @@ private fun Loss(text: String, confidence: ConfidenceUi) {
 private fun Why(confidence: ConfidenceUi) {
     ConfidenceNote(confidence)
 }
+
+/**
+ * Over the gains: the best actual lap (FBBD-178's name) against the best of each corner, each row
+ * then naming the lap that set that best, as the raw theoretical best by corner does.
+ */
+internal fun timeGoesHeading(ui: AnalysisUi): String =
+    "$BestActualLapLabel ${ui.bestLapNumber} against the best of each corner"
+
+/**
+ * The lap that set the best through [gain]'s corner: "lap 5", as under each time of the raw
+ * theoretical best by corner. Never "best lap 5", which reads as the best actual lap.
+ */
+internal fun setOnText(gain: GainRow): String = gain.bestLapNumber?.let { "lap $it" }.orEmpty()

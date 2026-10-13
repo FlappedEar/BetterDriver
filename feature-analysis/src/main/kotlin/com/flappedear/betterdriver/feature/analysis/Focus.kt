@@ -127,8 +127,14 @@ private fun EveryPass(row: FocusRow) {
     TextButton(onClick = { open(id) }, modifier = Modifier.testTag(EveryPassTag)) { Text(EveryPassText) }
 }
 
-/** The way from a focus or coaching corner to every pass through it (FBBD-93). */
+/**
+ * The way from a focus, coaching or Corners-tab corner to every pass through it (FBBD-93): one
+ * name wherever it is offered, and the title of the screen it opens ([EveryPassTitle]).
+ */
 const val EveryPassText = "Every pass ›"
+
+/** The title of the screen [EveryPassText] opens. */
+const val EveryPassTitle = "Every pass"
 
 /** Test tag of [EveryPassText] on a focus. */
 const val EveryPassTag = "every-pass"

@@ -103,13 +103,13 @@ class CornerLapsUiTest {
         )
         assertTrue(marked.row(0)!!.bestLap)
         assertTrue(marked.row(1)!!.optimal)
-        assertEquals("Brakes ≈40 m · Min 80 km/h · Best lap", passDetailText(marked, marked.row(0)!!))
-        assertEquals("Brakes 40 m · Min 80 km/h · In the optimal lap", passDetailText(marked, marked.row(1)!!))
-        assertEquals("Lap 1 · best lap", passName(marked.row(0)!!))
+        assertEquals("Brakes ≈40 m · Min 80 km/h · Best actual lap", passDetailText(marked, marked.row(0)!!))
+        assertEquals("Brakes 40 m · Min 80 km/h · In the realistic optimal", passDetailText(marked, marked.row(1)!!))
+        assertEquals("Lap 1 · best actual lap", passName(marked.row(0)!!))
         assertEquals("Lap 2 · fastest here", passName(marked.row(1)!!))
         // A speed in no known unit is no number.
         val noUnit = marked.copy(speedUnit = "")
-        assertEquals("Brakes 40 m · Min – · In the optimal lap", passDetailText(noUnit, marked.row(1)!!))
+        assertEquals("Brakes 40 m · Min – · In the realistic optimal", passDetailText(noUnit, marked.row(1)!!))
     }
 
     @Test

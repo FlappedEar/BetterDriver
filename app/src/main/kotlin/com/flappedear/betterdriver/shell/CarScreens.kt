@@ -58,7 +58,7 @@ internal fun CarCards(cars: List<CarProfile>, chosenId: String?, onOpen: (CarPro
 }
 
 /**
- * Adding or editing a car (UI-35): name and notes. [car] is null when adding. Car data (OBD)
+ * Adding or editing a car (UI-35): name and notes. [car] is null when adding. Car data (OBD-II)
  * attaches here in Phase 5. [chosen] is true for the next session's car.
  */
 @Suppress("LongParameterList") // One callback per action on the screen.
@@ -92,7 +92,7 @@ fun CarScreen(
                 label = { Text("Notes") },
                 modifier = Modifier.fillMaxWidth(),
             )
-            ShellCard { ListRow("Car data (OBD)", "Later", divider = false) }
+            ShellCard { ListRow("Car data (OBD-II)", "Later", divider = false) }
             DimText("The name goes into each session and its VBO export.")
             Button(onClick = { onSave(name, notes) }, enabled = name.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
                 Text("Save")

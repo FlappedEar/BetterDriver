@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalLapResult
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapUnavailable
 import com.flappedear.betterdriver.analysis.optimal.OptimalPart
 import com.flappedear.betterdriver.analysis.optimal.optimalClipPlan
+import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse

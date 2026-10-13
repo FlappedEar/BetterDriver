@@ -52,7 +52,7 @@ abstract class CornerLapsLayoutTest(private val device: String) {
         // The Medium pass shows no numbers, and says why.
         compose.onNodeWithText("Medium confidence · a GPS gap in this corner").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Brakes – · Min –").assertExists()
-        compose.onNodeWithText("Brakes 66 m · Min 81 km/h · Best lap").assertExists()
+        compose.onNodeWithText("Brakes 66 m · Min 81 km/h · Best actual lap").assertExists()
         compose.saveScreenshot(device, "corner_laps")
         val problems = compose.layoutProblems()
         check(problems.isEmpty()) { "corner laps on $device (FBBD-93):\n" + problems.joinToString("\n") }

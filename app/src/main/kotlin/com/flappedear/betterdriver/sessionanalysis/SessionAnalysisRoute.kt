@@ -69,7 +69,6 @@ import com.flappedear.betterdriver.timing.track.proposeTrack
 import com.flappedear.betterdriver.tracks.Tracks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.util.Locale
 
 /**
  * The cards of a session that need no laps: its acceleration runs (FBBD-154) and its G-forces, each
@@ -175,7 +174,9 @@ internal fun SessionAnalysisRoute(
     LaunchedEffect(id) {
         load = withContext(Dispatchers.Default) {
             val epoch = AppDataGate.epoch
-            val read = loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            val read = analysedOr<Load>(id, { Load.Failed(it) }) {
+                loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            }
             if (read is Load.Done) read.copy(epoch = epoch) else read
         }
     }
@@ -199,7 +200,9 @@ internal fun SessionAnalysisRoute(
         analysed = when (val l = load) {
             null -> AnalysisState.Loading
             is Load.Failed -> l.state
-            is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared, progress) }
+            is Load.Done -> withContext(Dispatchers.Default) {
+                analysedOr<AnalysisState>(id, { it }) { readyState(l.loaded, compared, progress) }
+            }
         }
     }
     // What to work on next (FBBD-20) is kept for the track's next session's coach once analysed, and
@@ -392,7 +395,7 @@ private fun proposal(data: SessionData, saved: List<Track>, circuits: CircuitLis
     val label = sessionLabel(data.info.startUtcMillis)
     val fallback = data.info.track.ifBlank { "Track of $label" }.take(Track.MaxNameChars)
     val track = proposeTrack(loop, saved, circuits, fallback)
-    val km = String.format(Locale.getDefault(), "%.2f", loop.lengthMeters / MetersPerKm)
+    val km = kmText(loop.lengthMeters)
     val at = if (track.name == fallback) "" else " at ${track.displayName}"
     val laps = if (loop.laps == 1) "1 lap" else "${loop.laps} laps"
     return Load.Failed(
@@ -405,5 +408,3 @@ private fun proposal(data: SessionData, saved: List<Track>, circuits: CircuitLis
         Proposal(track, EditorSession(label, fixes)),
     )
 }
-
-private const val MetersPerKm = 1_000.0

@@ -22,8 +22,8 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
  * channel, or read from a calculated channel) is marked ≈, and the card says what ≈ means
  * (FBBD-174). The braking point and the minimum speed carry their confidence (FBBD-177); a value
  * of Low confidence is not shown. Coasting is the time off both pedals in the corner (FBBD-175),
- * marked ≈ when inferred from the acceleration. Where the screen can show every lap through a corner
- * ([LocalCornerLaps], FBBD-153), tapping a corner opens it.
+ * marked ≈ when inferred from the acceleration. Where the screen can show every pass through a corner
+ * ([LocalCornerLaps], FBBD-153), tapping a corner or its [EveryPassText] opens it, as from the focus.
  */
 @Composable
 internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
@@ -41,7 +41,7 @@ internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
         Card(modifier.then(tap)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 TrackLabel(corner.name, Modifier.weight(1f))
-                if (open != null) TextButton(onClick = open) { Text("Every lap ›") }
+                if (open != null) TextButton(onClick = open) { Text(EveryPassText) }
             }
             Row {
                 Dim("", Modifier.weight(1f))

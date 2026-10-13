@@ -31,7 +31,11 @@ const val NoVideoText = "No video of this corner in this session; the traces sho
 internal fun passDetailText(ui: CornerLapsUi, row: CornerLapRow): String {
     // A speed in no known unit is no number to act on.
     val min = if (ui.speedUnit.isEmpty()) Missing else minimumText(row, ui.speedUnit, ui.speedProvenance)
-    val tags = listOfNotNull(if (row.bestLap) "Best lap" else null, if (row.optimal) "In the optimal lap" else null)
+    // The lap names of the summary (FBBD-178): never "optimal" alone, never "best lap" for the best actual lap.
+    val tags = listOfNotNull(
+        if (row.bestLap) BestActualLapLabel else null,
+        if (row.optimal) "In the ${RealisticOptimalLabel.lowercase()}" else null,
+    )
     return (listOf("Brakes ${gated(brakingText(row), row)}", "Min ${gated(min, row)}") + tags).joinToString(" · ")
 }
 
@@ -61,11 +65,11 @@ internal fun speedLabel(ui: CornerLapsUi, traces: CornerTraces): String {
 /** "120 m": how much of the approach the traces show. */
 internal fun approachText(traces: CornerTraces) = String.format(Locale.ROOT, "%.0f m", traces.entryMeters)
 
-/** "Lap 7", with what stands out about the pass: "Lap 7 · fastest here". */
+/** "Lap 7", with what stands out about the pass: "Lap 7 · fastest here", "Lap 3 · best actual lap". */
 internal fun passName(row: CornerLapRow): String {
     val what = listOfNotNull(
         if (row.best) "fastest here" else null,
-        if (row.bestLap && !row.best) "best lap" else null,
+        if (row.bestLap && !row.best) BestActualLapLabel.lowercase() else null,
     )
     return (listOf("Lap ${row.lapNumber}") + what).joinToString(" · ")
 }

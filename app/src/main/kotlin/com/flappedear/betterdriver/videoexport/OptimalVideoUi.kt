@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapResult
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapUnavailable
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.feature.analysis.lapsText
 import kotlin.math.roundToLong
 
 /**
@@ -105,13 +106,6 @@ fun missingText(o: OptimalOption): String? = listOfNotNull(
     o.missing.takeIf { it.isNotEmpty() }?.let { "No video, skipped: ${partsText(it)}" },
     o.partly.takeIf { it.isNotEmpty() }?.let { "Partly on video: ${partsText(it)}" },
 ).joinToString(" · ").ifEmpty { null }
-
-/** "lap 4", "laps 2 and 4", "laps 2, 4 and 7". */
-internal fun lapsText(laps: List<Int>): String = when (laps.size) {
-    0 -> "no lap"
-    1 -> "lap ${laps[0]}"
-    else -> "laps ${laps.dropLast(1).joinToString(", ")} and ${laps.last()}"
-}
 
 /** "Corner 3 (lap 5), Straight 2 (lap 6)": a segment over the line, which is two parts, named once. */
 private fun partsText(parts: List<OptimalPartRow>) =
