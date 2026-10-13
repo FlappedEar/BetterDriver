@@ -187,14 +187,24 @@ private class Readers(
     val metresPerSecond: Double?,
 )
 
-private fun readers(session: TelemetrySession, t: DrivingStateThresholds): Readers {
+/**
+ * Whether the car is braking at a time, from the recorded brake the session's checks trust; null
+ * without one. A brake in another unit than a pedal's (a pressure in bar or psi) is not read against
+ * a pedal threshold.
+ */
+@Suppress("ReturnCount")
+private fun brakeReader(session: TelemetrySession, t: DrivingStateThresholds): ((Double) -> Boolean?)? {
     val quality = brakingSourceQuality(session)
-    // A brake in another unit than a pedal's (a pressure in bar or psi) is not read against a pedal threshold.
-    val brakeUnit = if (quality.brakeName.isEmpty()) "" else declaredChannelUnit(session, quality.brakeName).trim()
-    val brakePedal = brakeUnit.isEmpty() || brakeUnit == "%"
-    val brakeChannel = if (quality.brakeUsable && brakePedal) session.channels[quality.brakeName] else null
+    if (!quality.brakeUsable) return null
+    val unit = declaredChannelUnit(session, quality.brakeName).trim()
+    if (unit.isNotEmpty() && unit != "%") return null
+    val c = session.channels[quality.brakeName] ?: return null
     val brakeOn = if (quality.brakeScale == PedalScale.Fraction) t.brakeOnPercent / Percent else t.brakeOnPercent
-    val brake = brakeChannel?.let { c -> { time: Double -> c.valueAt(time)?.let { it >= brakeOn } } }
+    return { time: Double -> c.valueAt(time)?.let { it >= brakeOn } }
+}
+
+private fun readers(session: TelemetrySession, t: DrivingStateThresholds): Readers {
+    val brake = brakeReader(session, t)
     val throttleName = session.aliases[Aliases.THROTTLE].orEmpty()
     val throttleChannel = session.channels[throttleName]
     val throttleUnit = if (throttleChannel == null) "" else declaredChannelUnit(session, throttleName).trim()
