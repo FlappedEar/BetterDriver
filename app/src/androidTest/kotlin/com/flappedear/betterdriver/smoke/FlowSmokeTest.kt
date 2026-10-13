@@ -165,7 +165,7 @@ class FlowSmokeTest {
         app.openTab("Sessions")
         app.waitForText(SmokeFixtures.VideoCar, substring = true)
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
     }
 
     /** Opens the Export menu of the newest session, the one with video. */

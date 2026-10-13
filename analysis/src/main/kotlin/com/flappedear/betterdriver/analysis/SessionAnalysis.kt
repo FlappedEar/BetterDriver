@@ -11,6 +11,8 @@ import com.flappedear.betterdriver.analysis.identity.identifySegments
 import com.flappedear.betterdriver.analysis.identity.identityRevisionTag
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
+import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalLap
+import com.flappedear.betterdriver.analysis.optimal.realisticOptimal
 import com.flappedear.betterdriver.analysis.progress.ProgressAxis
 import com.flappedear.betterdriver.analysis.progress.ProgressSegment
 import com.flappedear.betterdriver.analysis.progress.computeTrackFeatures
@@ -92,6 +94,12 @@ data class SessionAnalysis(
      * segment on each lap, and what applies to the whole session.
      */
     val confidence: SessionConfidence = SessionConfidence(),
+    /**
+     * The realistic optimal lap (FBBD-178): the fastest lap the eligible laps can be combined into
+     * where neighbouring segments join compatibly, never the raw theoretical best's independent
+     * minima. Null without segments or when no chain covers every segment.
+     */
+    val realisticOptimal: RealisticOptimalLap? = null,
     /** How [axis] was built, segmented and read (FBBD-215); another session is timed on it the same way. */
     val robustness: AxisRobustness = AxisRobustness.App,
 ) {
@@ -179,6 +187,9 @@ private fun analyzeLaps(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
         publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
         identity = identified?.identity,
+        realisticOptimal = realisticOptimal(
+            session, timed.axis, segments, laps.timedLaps, timed.times, timed.traces, fastestIndex,
+        ),
         robustness = robustness,
     )
 }

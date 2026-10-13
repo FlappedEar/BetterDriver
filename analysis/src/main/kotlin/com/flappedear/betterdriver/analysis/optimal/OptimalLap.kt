@@ -6,9 +6,19 @@ import com.flappedear.betterdriver.analysis.laps.TimedLap
 import com.flappedear.betterdriver.analysis.segments.SectorTime
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 
-// The theoretical best lap as a film (FBBD-163): each corner and straight of the theoretical best,
-// taken from the lap that drove it fastest, in track order from the line, so the parts played back
-// to back are one lap at the theoretical best's pace.
+// A composite lap as a film (FBBD-163, FBBD-178): each corner and straight taken from the lap the
+// composite chose for it, in track order from the line, so the parts played back to back are one
+// lap at the composite's pace. The composite is the realistic optimal (only compatible neighbours
+// joined) or the raw theoretical best (each segment's fastest time, whatever its neighbours).
+
+/** Which composite lap an [OptimalLap] is (FBBD-178); the two are never called by one name. */
+enum class OptimalKind {
+    /** The fastest lap the driver has shown they can combine: compatible joints only. */
+    RealisticOptimal,
+
+    /** The sum of each segment's fastest time, which no lap may be able to drive. */
+    RawTheoreticalBest,
+}
 
 /**
  * One stretch of the theoretical best lap: segment [segmentId] ([name]) as lap [lapNumber] drove
@@ -32,11 +42,15 @@ data class OptimalPart(
 }
 
 /**
- * The theoretical best of a session as [parts] in track order, [totalSeconds] long (the
- * theoretical best's total), from the eligible laps; [fastestLapNumber] is the lap it is measured
- * against.
+ * A composite lap ([kind]) of a session as [parts] in track order, [totalSeconds] long, from the
+ * eligible laps; [fastestLapNumber] is the lap it is measured against.
  */
-data class OptimalLap(val parts: List<OptimalPart>, val totalSeconds: Double, val fastestLapNumber: Int?) {
+data class OptimalLap(
+    val parts: List<OptimalPart>,
+    val totalSeconds: Double,
+    val fastestLapNumber: Int?,
+    val kind: OptimalKind = OptimalKind.RawTheoreticalBest,
+) {
     /** The laps the parts come from, in lap order. */
     val laps: List<Int> get() = parts.map { it.lapNumber }.distinct().sorted()
 }
@@ -48,32 +62,36 @@ enum class OptimalLapUnavailable {
 
     /** A corner or straight has no fully timed pass on any counted lap. */
     IncompleteCoverage,
+
+    /** No chain of counted laps joins compatibly through every corner and straight (realistic optimal only). */
+    NoCompatibleChain,
 }
 
 /**
- * The theoretical best of [analysis] as parts of its laps, or why there is none. Each segment's
- * part runs from its start to its end crossing on the lap that won it (the times sector timing
- * measured it with), so the parts add up to the theoretical best's total.
+ * The composite lap [kind] of [analysis] as parts of its laps, or why there is none. Each
+ * segment's part runs from its start to its end crossing on the lap the composite chose for it
+ * (the times sector timing measured it with), so the parts add up to the composite's sectors.
  */
 @Suppress("ReturnCount")
-fun optimalLap(analysis: SessionAnalysis): OptimalLapResult {
+fun optimalLap(analysis: SessionAnalysis, kind: OptimalKind = OptimalKind.RealisticOptimal): OptimalLapResult {
     val best = analysis.theoreticalBest
     if (analysis.segments == null || best == null || !best.valid) {
         return OptimalLapResult(why = OptimalLapUnavailable.NoSegments)
     }
-    val total = best.totalSeconds ?: return OptimalLapResult(why = OptimalLapUnavailable.IncompleteCoverage)
+    if (best.totalSeconds == null) return OptimalLapResult(why = OptimalLapUnavailable.IncompleteCoverage)
+    val (choices, total) = choicesOf(analysis, kind)
+        ?: return OptimalLapResult(why = OptimalLapUnavailable.NoCompatibleChain)
     val laps = analysis.laps.timedLaps
     val fastestIndex = analysis.laps.fastestLapIndex
     val fastest = fastestIndex?.let { laps.getOrNull(it) }
     val stretches = ArrayList<Stretch>()
-    for (sector in best.sectors) {
-        val lapNumber = sector.sourceLapReference as? Int
+    for ((segmentId, lapNumber) in choices) {
         val index = laps.indexOfFirst { it.number == lapNumber }
-        val timing = analysis.lapTimes.getOrNull(index)?.sector(sector.segmentId)
+        val timing = analysis.lapTimes.getOrNull(index)?.sector(segmentId)
         if (lapNumber == null || index < 0 || timing == null) {
             return OptimalLapResult(why = OptimalLapUnavailable.IncompleteCoverage)
         }
-        val reference = fastestIndex?.let { analysis.lapTimes.getOrNull(it)?.sector(sector.segmentId) }
+        val reference = fastestIndex?.let { analysis.lapTimes.getOrNull(it)?.sector(segmentId) }
         stretches += stretchesOf(timing, laps[index], reference, fastest)
             ?: return OptimalLapResult(why = OptimalLapUnavailable.IncompleteCoverage)
     }
@@ -81,7 +99,36 @@ fun optimalLap(analysis: SessionAnalysis): OptimalLapResult {
     val parts = stretches.sortedBy { it.fromMeters }.map { s ->
         s.part.copy(offsetSeconds = offset).also { offset += it.seconds }
     }
-    return OptimalLapResult(OptimalLap(parts, total, fastest?.number))
+    return OptimalLapResult(OptimalLap(parts, total, fastest?.number, kind))
+}
+
+/**
+ * The lap each segment of composite [kind] comes from (by segment id; null when none won it) and
+ * its total; null when [analysis] has no realistic optimal.
+ */
+private fun choicesOf(analysis: SessionAnalysis, kind: OptimalKind): Pair<List<Pair<String, Int?>>, Double>? =
+    when (kind) {
+        OptimalKind.RawTheoreticalBest -> analysis.theoreticalBest?.let { best ->
+            best.sectors.map { it.segmentId to it.sourceLapReference as? Int } to (best.totalSeconds ?: 0.0)
+        }
+        OptimalKind.RealisticOptimal -> analysis.realisticOptimal?.let { r ->
+            r.sectors.map { it.segmentId to it.lapNumber } to r.totalSeconds
+        }
+    }
+
+/**
+ * The three lap times of [analysis] (FBBD-178): best actual lap, realistic optimal and raw
+ * theoretical best; null when it has no eligible lap.
+ */
+fun lapBenchmarks(analysis: SessionAnalysis): LapBenchmarks? {
+    val fastest = analysis.laps.fastestLapIndex?.let { analysis.laps.timedLaps.getOrNull(it) } ?: return null
+    val raw = analysis.theoreticalBest?.takeIf { it.valid }?.totalSeconds
+    return LapBenchmarks(
+        bestActualSeconds = fastest.durationSeconds,
+        bestActualLapNumber = fastest.number,
+        realisticOptimalSeconds = analysis.realisticOptimal?.totalSeconds?.takeIf { raw != null },
+        rawTheoreticalSeconds = raw,
+    )
 }
 
 /** [lap], or [why] there is none. */

@@ -79,7 +79,7 @@ class RecordingSmokeTest {
         val session = SmokeData.sessions().single { it.id !in before }
         app.openSessions()
         app.openSession(sessionTitle(session))
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.openTab("Laps")
         app.waitForText("Lap 2")
     }
