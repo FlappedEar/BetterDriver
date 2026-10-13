@@ -43,6 +43,8 @@ class MainActivity : ComponentActivity() {
         // thread on purpose, so StrictMode is told not to report it (FBBD-41).
         if (!DebugGuards.allowDisk { Backups.finishPending(this) }) {
             setContent { BetterDriverTheme(darkTheme = true) { RestoreUnfinished(onRetry = ::recreate) } }
+            // This is the process's first screen too: its cold start is timed like any other (FBBD-41).
+            StartupLog.onScreenCreated(this, restored = savedInstanceState != null)
             return
         }
         // Recovers interrupted sessions the first time the app starts in this process (FBBD-71).

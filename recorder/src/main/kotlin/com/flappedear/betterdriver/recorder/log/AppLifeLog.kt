@@ -6,7 +6,8 @@ package com.flappedear.betterdriver.recorder.log
  * - [STARTUP] "cold ms=<process start to the first frame>": a cold start of the app's screen.
  * - [EXIT] "check sdk=<API level> new=<count>" each time Android's record of how the app's processes
  *   ended was read (at the app's start and when a recording ends), or "check sdk=<API level>
- *   unavailable" before Android 11, which keeps no such record.
+ *   unavailable" before Android 11, which keeps no such record, or "check sdk=<API level> failed" when
+ *   Android refused the read.
  * - [EXIT] "exit utc_ms=<when it ended> pid=<pid> process=<name> reason=<ANR, CRASH, ...>
  *   importance=<when it ended> desc=<Android's description>", one per process end not logged before.
  */
@@ -24,9 +25,15 @@ object AppLifeLog {
     /** The [EXIT] message of a read of Android's exit record on API [sdk]: [new] ends, null when it keeps none. */
     fun check(sdk: Int, new: Int?) = if (new == null) "check sdk=$sdk unavailable" else "check sdk=$sdk new=$new"
 
-    /** Whether an [EXIT] "check" [message] read the record (true), could not (false), or is not a check (null). */
+    /** The [EXIT] message of a read of Android's exit record on API [sdk] that Android refused. */
+    fun checkFailed(sdk: Int) = "check sdk=$sdk failed"
+
+    /**
+     * Whether an [EXIT] "check" [message] read the record (true), could not (false: none kept, or the
+     * read failed), or is not a check (null). Only a read that counted the new ends is a read.
+     */
     fun parseCheck(message: String): Boolean? =
-        if (message.startsWith("check ")) !message.endsWith(" unavailable") else null
+        if (message.startsWith("check ")) CheckLog.fields(message)["new"]?.toIntOrNull() != null else null
 
     /** The [EXIT] message of one process end. */
     fun exit(e: ProcessExit) = buildString {

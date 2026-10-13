@@ -83,10 +83,15 @@ object StartupLog {
         val since = prefs.getLong(KeyLoggedUntil, 0L)
         val exits = try {
             context.getSystemService(ActivityManager::class.java)
-                ?.getHistoricalProcessExitReasons(context.packageName, 0, 0).orEmpty()
+                ?.getHistoricalProcessExitReasons(context.packageName, 0, 0)
         } catch (e: SecurityException) {
             DebugLog.w(AppLifeLog.EXIT, "exit reasons not readable", e)
-            emptyList()
+            null
+        }
+        if (exits == null) {
+            // Not a read of no ends: the drive checks must not grade ANRs from it.
+            DebugLog.i(AppLifeLog.EXIT, AppLifeLog.checkFailed(Build.VERSION.SDK_INT))
+            return
         }
         val new = exits.filter { it.timestamp > since }.sortedBy { it.timestamp }
         DebugLog.i(AppLifeLog.EXIT, AppLifeLog.check(Build.VERSION.SDK_INT, new.size))

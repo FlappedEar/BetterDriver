@@ -275,6 +275,57 @@ class DriveChecksTest {
     }
 
     @Test
+    fun `an ANR that ended an unfinished recording is that recording's`() {
+        // No stop line: the recorder stopped answering 2 minutes in and Android ended it a little later.
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        event(2 * minute, "racebox_connected", "E7:D2:76:DC:ED:23")
+        val anr = exit(2 * minute + 6_000_000, ProcessExit.ANR)
+        // Read at the next start of the app, which was cold.
+        app(9 * minute, AppLifeLog.STARTUP, AppLifeLog.coldStart(900))
+        app(9 * minute, AppLifeLog.EXIT, AppLifeLog.check(34, 1))
+        app(9 * minute, AppLifeLog.EXIT, anr)
+        recording("20261012-113607-0badf00d", 20 * minute)
+        app(25 * minute + 1_000_000, AppLifeLog.EXIT, AppLifeLog.check(34, 0))
+        val (first, next) = driveChecks(lines.toList())
+        assertEquals(Verdict.FAIL, first.metric("app.anr").verdict, first.metric("app.anr").how)
+        assertEquals(1.0, first.metric("app.anr").value)
+        assertEquals(Verdict.PASS, next.metric("app.anr").verdict, next.metric("app.anr").how)
+        // The start after the unfinished recording led to the next drive only.
+        assertEquals(Verdict.NOT_MEASURED, first.metric("app.cold_start").verdict, first.metric("app.cold_start").how)
+        assertEquals(900.0, next.metric("app.cold_start").value)
+    }
+
+    @Test
+    fun `a cold start during an unfinished recording is not graded again for the next`() {
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        app(minute, AppLifeLog.STARTUP, AppLifeLog.coldStart(2_000))
+        event(3 * minute, "racebox_connected", "E7:D2:76:DC:ED:23")
+        recording("20261012-113607-0badf00d", 20 * minute)
+        val (first, next) = driveChecks(lines.toList())
+        assertEquals(2_000.0, first.metric("app.cold_start").value)
+        assertEquals(Verdict.NOT_MEASURED, next.metric("app.cold_start").verdict, next.metric("app.cold_start").how)
+    }
+
+    @Test
+    fun `an exit record that could not be read measures no ANRs`() {
+        recording(id, 0)
+        app(6 * minute, AppLifeLog.EXIT, "check sdk=34 failed")
+        val r = driveChecks(lines.toList()).single()
+        assertEquals(Verdict.NOT_MEASURED, r.metric("app.anr").verdict)
+        assertTrue("could not be read" in r.metric("app.anr").how, r.metric("app.anr").how)
+    }
+
+    @Test
+    fun `the ANR check counts only the ANRs that ended a process`() {
+        recording(id, 0)
+        app(6 * minute, AppLifeLog.EXIT, AppLifeLog.check(34, 0))
+        val m = driveChecks(lines.toList()).single().metric("app.anr")
+        assertEquals("ANR process deaths", m.label)
+        assertTrue("process" in m.criterion.orEmpty(), m.criterion)
+        assertTrue("recovered" in m.how, m.how)
+    }
+
+    @Test
     fun `without the app's lines cold start and ANRs are not measured, and say why`() {
         recording(id, 0)
         val none = driveChecks(lines.toList()).single()

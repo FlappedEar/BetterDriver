@@ -28,6 +28,13 @@ class LoggedSession(val id: String) {
 
     /** Session time of a wall-clock time, when the start is known. */
     fun sessionMicros(utcMillis: Long): Long? = startUtcMillis?.let { (utcMillis - it) * MicrosPerMilli }
+
+    /**
+     * When it ended on the session clock: its logged end, or for a recording without a stop line (its
+     * process ended) its last GNSS second or event.
+     */
+    fun inferredEndMicros(): Long =
+        endMicros ?: maxOf(seconds.maxOfOrNull { it.tMicros } ?: 0L, events.maxOfOrNull { it.tMicros } ?: 0L)
 }
 
 /**

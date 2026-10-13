@@ -20,6 +20,9 @@ class AppLifeLogTest {
         assertEquals("check sdk=29 unavailable", AppLifeLog.check(29, null))
         assertEquals(true, AppLifeLog.parseCheck(AppLifeLog.check(34, 0)))
         assertEquals(false, AppLifeLog.parseCheck(AppLifeLog.check(29, null)))
+        // Android 11+ that refused the read: no read, not a read of nothing.
+        assertEquals("check sdk=34 failed", AppLifeLog.checkFailed(34))
+        assertEquals(false, AppLifeLog.parseCheck(AppLifeLog.checkFailed(34)))
         assertNull(AppLifeLog.parseCheck("exit utc_ms=1 pid=2 process=x reason=ANR importance=100 desc="))
     }
 
