@@ -37,8 +37,11 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
+import com.flappedear.betterdriver.timing.track.TrackRevision
+import com.flappedear.betterdriver.timing.track.corrected
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.detectTrack
 import com.flappedear.betterdriver.update.HttpNetwork
@@ -70,14 +73,23 @@ data class Here(val position: GeoPoint, val detection: TrackDetection, val atNan
 /**
  * A track opened in the editor, with the sessions recorded there. [stored] is the track as saved,
  * or null for one proposed from a session and not saved yet; [proposed] says the lines are a
- * proposal to check (FBBD-151).
+ * proposal to check (FBBD-151). [epoch] is the app data's restore epoch (FBBD-156) taken before the
+ * track was read, so a correction of its corners is never written into data restored since.
  */
 data class EditorData(
     val track: Track,
     val sessions: List<EditorSession>,
     val stored: Track? = track,
     val proposed: Boolean = false,
+    val epoch: Long = 0L,
 )
+
+/**
+ * What came of a correction of a track's corners (FBBD-179): the track as stored now ([track], null
+ * when it is gone), whether the correction is in it ([applied]), and the restore epoch to make the
+ * next one with ([epoch]).
+ */
+data class CornerCorrection(val track: Track?, val applied: Boolean, val epoch: Long)
 
 /** A track proposed from session [sessionId] (FBBD-151), opened in the editor before it is saved. */
 private class Draft(val track: Track, val sessionId: String, val session: EditorSession)
@@ -179,13 +191,17 @@ class Tracks private constructor(private val context: Context) {
      * Stores [track] (new or edited) and hands back the stored copy; [onFailed] when it could not be
      * written. With [still], the track stored now is checked first, under the same hold as the write
      * (FBBD-156): if [still] says it is no longer the one the caller decided on (a restore or another
-     * write replaced it), nothing is stored and [onChanged] runs on the main thread instead.
+     * write replaced it), nothing is stored and [onChanged] runs on the main thread instead. With
+     * [adoptIdentity], the track's corner identity with the driver's corrections replaces the one here
+     * (a track received from the other device, FBBD-179).
      */
+    @Suppress("LongParameterList") // The track, how it is kept, and what to do after.
     fun save(
         track: Track,
         onFailed: () -> Unit = {},
         still: (Track?) -> Boolean = { true },
         onChanged: () -> Unit = {},
+        adoptIdentity: Boolean = false,
         onSaved: (Track) -> Unit,
     ) = io.execute {
         var changed = false
@@ -193,7 +209,7 @@ class Tracks private constructor(private val context: Context) {
             // Waits for a restore (FBBD-156).
             AppDataGate.write {
                 if (still(store.get(track.id))) {
-                    store.save(track)
+                    store.save(track, adoptIdentity = adoptIdentity)
                 } else {
                     changed = true
                     null
@@ -248,6 +264,34 @@ class Tracks private constructor(private val context: Context) {
     }
 
     /**
+     * Stores the driver's correction [edit] of track [id]'s corners (FBBD-179), made to [expected], the
+     * corners the editor shows. Nothing is written when a restore ran since [epoch] (the restored track
+     * wins) or the corners changed meanwhile (an analysis made the next revision); [onDone] then gets
+     * the track as it is now, to show. Every session at the track is analysed with what is stored.
+     */
+    fun correct(
+        id: String,
+        expected: TrackRevision,
+        edit: SegmentEdit,
+        epoch: Long,
+        onDone: (CornerCorrection) -> Unit,
+    ) = io.execute {
+        var stored: Track? = null
+        try {
+            AppDataGate.writeIfCurrent(epoch) { stored = store.correctIdentity(id, expected, edit) }
+        } catch (e: IOException) {
+            DebugLog.w(Tag, "correcting the corners of $id failed", e)
+        }
+        // Read after the epoch, so the next correction is made to what was read.
+        val now = AppDataGate.epoch
+        val track = store.get(id)
+        val applied = stored != null && track?.identity == expected.corrected(edit)
+        if (applied) DebugLog.i(Tag, "corners of $id corrected: $edit")
+        publish()
+        main.post { onDone(CornerCorrection(track, applied, now)) }
+    }
+
+    /**
      * Keeps [track], proposed from session [sessionId] driven as [session] (FBBD-151), for the editor
      * to open by its id; nothing is stored until the editor saves it. Call before navigating there.
      */
@@ -260,13 +304,14 @@ class Tracks private constructor(private val context: Context) {
      * track opens with its lines unsaved and its own session first, so its lap is the one shown.
      */
     fun openEditor(id: String, onReady: (EditorData?) -> Unit) = io.execute {
+        val epoch = AppDataGate.epoch
         val proposed = draft?.takeIf { it.track.id == id }
         val data = if (proposed != null) {
             val others = sessionsAt(proposed.track, skip = proposed.sessionId)
             val sessions = (listOf(proposed.session) + others).take(MaxEditorSessions)
-            EditorData(proposed.track, sessions, stored = store.get(id), proposed = true)
+            EditorData(proposed.track, sessions, stored = store.get(id), proposed = true, epoch = epoch)
         } else {
-            store.get(id)?.let { EditorData(it, sessionsAt(it)) }
+            store.get(id)?.let { EditorData(it, sessionsAt(it), epoch = epoch) }
         }
         main.post { onReady(data) }
     }

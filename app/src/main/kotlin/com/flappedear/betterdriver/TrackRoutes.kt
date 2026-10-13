@@ -12,6 +12,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -29,6 +30,7 @@ import com.flappedear.betterdriver.shell.ShellIcons
 import com.flappedear.betterdriver.shell.TracksScreen
 import com.flappedear.betterdriver.sharing.rememberTrackShare
 import com.flappedear.betterdriver.sharing.rememberTrackTransfer
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
@@ -93,6 +95,7 @@ internal fun TrackEditorRoute(nav: NavHostController, tracks: Tracks, id: String
     val back: () -> Unit = {
         when {
             state.selected != null -> state.cancel()
+            state.segmentId != null -> state.selectSegment(null)
             state.changed -> leaving = true
             else -> nav.popBackStack()
         }
@@ -119,7 +122,11 @@ private fun decodeOrNull(text: String): Track? = try {
     null
 }
 
-/** The editor with Save and Share; [onDelete] is offered only for a saved track (FBBD-157). */
+/**
+ * The editor with Save and Share; [onDelete] is offered only for a saved track (FBBD-157). The
+ * track's corners are corrected only once it is saved (FBBD-179): each correction is stored as it
+ * is made, under the restore epoch the editor read the track at.
+ */
 @Composable
 private fun EditorScreen(
     state: TrackEditorState,
@@ -130,6 +137,18 @@ private fun EditorScreen(
     onDelete: () -> Unit,
 ) {
     val share = rememberTrackShare(id)
+    var epoch by remember(loaded) { mutableLongStateOf(loaded.epoch) }
+    val correct: (SegmentEdit) -> Unit = { edit ->
+        val expected = state.identity
+        if (expected == null) {
+            state.correctionStored(null, applied = false)
+        } else {
+            tracks.correct(id, expected, edit, epoch) { result ->
+                epoch = result.epoch
+                state.correctionStored(result.track, result.applied)
+            }
+        }
+    }
     TrackEditorScreen(
         state = state,
         sessions = loaded.sessions,
@@ -140,9 +159,11 @@ private fun EditorScreen(
             tracks.save(sent) { stored -> state.saved(sent, stored) }
         },
         onBack = back,
-        onShare = { share(state.track) },
+        // With its corners as corrected here (FBBD-179).
+        onShare = { share(state.shared) },
         // Only a track that is stored: a new one proposed from a session has nothing to delete until saved.
         onDelete = if (loaded.stored != null || !state.proposed) onDelete else null,
+        onCorrect = correct.takeIf { loaded.stored != null && !state.proposed },
     )
 }
 

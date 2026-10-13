@@ -29,6 +29,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import com.flappedear.betterdriver.timing.edit.lineRefs
 import com.flappedear.betterdriver.timing.live.LapBook
 import com.flappedear.betterdriver.timing.live.timeSession
 import com.flappedear.betterdriver.timing.map.TileSources
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -69,6 +71,10 @@ private const val FitMarginPx = 48f
  * track to the other device (FBBD-80, UI-56 option B); it is off while there are unsaved changes,
  * so what is sent is what is shown. [onDelete], when given, asks to delete the track (FBBD-157);
  * the caller confirms first.
+ *
+ * Under the lines are the track's corners and straights (FBBD-179). [onCorrect], when given, stores
+ * a correction the moment it is made (the caller reports back to [TrackEditorState.correctionStored]);
+ * without it they are only shown.
  */
 @Composable
 fun TrackEditorScreen(
@@ -81,6 +87,7 @@ fun TrackEditorScreen(
     modifier: Modifier = Modifier,
     onShare: (() -> Unit)? = null,
     onDelete: (() -> Unit)? = null,
+    onCorrect: ((SegmentEdit) -> Unit)? = null,
 ) {
     var books by remember { mutableStateOf<List<LapBook>>(emptyList()) }
     LaunchedEffect(state.track, sessions) {
@@ -92,8 +99,13 @@ fun TrackEditorScreen(
         delay(RetimeDelayMs) // Dragging a line end changes the track many times a second.
         books = withContext(Dispatchers.Default) { sessions.map { timeSession(track, it.fixes.asSequence()) } }
     }
-    val back: () -> Unit = if (state.selected != null) state::cancel else onBack
-    val map: @Composable (Modifier) -> Unit = { m -> MapPane(state, tiles, m) }
+    val back: () -> Unit = when {
+        state.selected != null -> state::cancel
+        state.segmentId != null -> ({ state.selectSegment(null) })
+        else -> onBack
+    }
+    SideEffect { state.correctable = onCorrect != null }
+    val map: @Composable (Modifier) -> Unit = { m -> MapPane(state, tiles, m, onCorrect) }
     BoxWithConstraints(modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
         if (maxWidth >= TabletWidth) {
             Row(Modifier.fillMaxSize()) {
@@ -104,7 +116,7 @@ fun TrackEditorScreen(
                         Modifier.weight(1f).verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        if (state.selected != null) PlacingControls(state) else LineList(state)
+                        Panel(state, onCorrect)
                         SessionLaps(sessions.firstOrNull()?.title, books.firstOrNull(), state.track)
                     }
                 }
@@ -117,10 +129,8 @@ fun TrackEditorScreen(
                     Modifier.fillMaxWidth().heightIn(max = 320.dp).verticalScroll(rememberScrollState())
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                 ) {
-                    if (state.selected != null) {
-                        PlacingControls(state)
-                    } else {
-                        LineList(state)
+                    Panel(state, onCorrect)
+                    if (state.selected == null && state.segmentId == null) {
                         RetimeNote(sessions.size, books.sumOf { b -> b.laps.size }, state.track.pointToPoint)
                     }
                 }
@@ -129,9 +139,30 @@ fun TrackEditorScreen(
     }
 }
 
+/**
+ * What the panel shows: the line being placed, the corner being corrected (FBBD-179), or the lines
+ * and the corners.
+ */
+@Composable
+private fun ColumnScope.Panel(state: TrackEditorState, onCorrect: ((SegmentEdit) -> Unit)?) {
+    when {
+        state.selected != null -> PlacingControls(state)
+        state.segmentId != null && onCorrect != null -> SegmentControls(state, onCorrect)
+        else -> {
+            LineList(state)
+            CornerList(state, onCorrect)
+        }
+    }
+}
+
 /** The map, fitted to the recorded lap (or the start/finish line) when it first gets its size. */
 @Composable
-private fun MapPane(state: TrackEditorState, tiles: TileLoader, modifier: Modifier) {
+private fun MapPane(
+    state: TrackEditorState,
+    tiles: TileLoader,
+    modifier: Modifier,
+    onCorrect: ((SegmentEdit) -> Unit)?,
+) {
     val source = remember(state.track.center) { TileSources.forPlace(state.track.center) }
     val camera = remember { MapCamera(state.track.center, zoom = 16.0) }
     var fitted by remember { mutableStateOf(false) }
@@ -145,7 +176,7 @@ private fun MapPane(state: TrackEditorState, tiles: TileLoader, modifier: Modifi
             }
         },
     ) {
-        EditorMap(state, camera, source, tiles, Modifier.fillMaxSize())
+        EditorMap(state, camera, source, tiles, Modifier.fillMaxSize(), onCorrect)
         if (state.selected != null) PlacingHint(state, Modifier.align(Alignment.TopCenter))
     }
 }
@@ -165,7 +196,7 @@ private fun EditorBar(
             Icon(backIcon, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
-            state.selected?.label(state.track.pointToPoint) ?: state.track.displayName,
+            state.selected?.label(state.track.pointToPoint) ?: state.selectedSegment?.name ?: state.track.displayName,
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -173,6 +204,8 @@ private fun EditorBar(
         )
         if (state.selected != null) {
             Button(onClick = state::done, enabled = state.selectedLine != null) { Text("Done") }
+        } else if (state.segmentId != null) {
+            Button(onClick = { state.selectSegment(null) }, enabled = !state.correcting) { Text("Done") }
         } else {
             if (onDelete != null) {
                 TextButton(onClick = onDelete) { Text("Delete", color = TrackTheme.colors.loss) }

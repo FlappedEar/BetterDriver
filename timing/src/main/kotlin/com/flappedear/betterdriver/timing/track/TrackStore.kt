@@ -15,6 +15,7 @@ import java.nio.file.StandardCopyOption
  *
  * Not thread-safe; the app keeps one instance and calls it off the main thread.
  */
+@Suppress("TooManyFunctions") // One entry point per thing kept: tracks, their corners and their corrections.
 class TrackStore(private val dir: File) {
 
     /** Every readable track, by name. Unreadable files are moved aside and reported in [setAside]. */
@@ -33,14 +34,19 @@ class TrackStore(private val dir: File) {
      * and [nowUtcMillis] as its update time; it is returned. The stored corner identity (FBBD-172) is
      * kept: only [updateIdentity] changes it, so an editor or an import holding an older one, or none,
      * never renames the corners here. A new track keeps the identity it comes with.
+     *
+     * With [adoptIdentity], for a track received from the other device with the driver's corner
+     * corrections (FBBD-179), its identity replaces the one here as the next revision after it
+     * ([adoptedOver]).
      */
-    fun save(track: Track, nowUtcMillis: Long = System.currentTimeMillis()): Track {
+    fun save(track: Track, nowUtcMillis: Long = System.currentTimeMillis(), adoptIdentity: Boolean = false): Track {
         dir.mkdirs()
         val previous = get(track.id)
+        val received = track.identity?.takeIf { adoptIdentity }
         val stored = track.copy(
             revision = maxOf(track.revision, (previous?.revision ?: 0) + 1),
             updatedUtcMillis = nowUtcMillis,
-            identity = previous?.identity ?: track.identity,
+            identity = received?.adoptedOver(previous?.identity) ?: previous?.identity ?: track.identity,
         )
         writeAtomically(fileFor(track.id), TrackJson.encode(stored))
         return stored
@@ -55,6 +61,27 @@ class TrackStore(private val dir: File) {
         val current = get(id)
         if (current == null || current.identity != expected || current.identity == identity) return current
         val stored = current.copy(identity = identity)
+        writeAtomically(fileFor(id), TrackJson.encode(stored))
+        return stored
+    }
+
+    /**
+     * Applies the driver's correction [edit] to the corner identity of track [id] (FBBD-179) when the
+     * stored one is still [expected], so a correction is never made to corners the driver did not see.
+     * The update time becomes [nowUtcMillis], so a backup merge keeps the corrected track; the lines and
+     * [Track.revision] stay. Returns the track as stored afterwards (unchanged when the identity moved
+     * on, or the edit does not apply to it), null if there is none.
+     */
+    fun correctIdentity(
+        id: String,
+        expected: TrackRevision,
+        edit: SegmentEdit,
+        nowUtcMillis: Long = System.currentTimeMillis(),
+    ): Track? {
+        val current = get(id)
+        val made = current?.identity?.takeIf { it == expected }?.corrected(edit)
+        if (current == null || made == null || made == current.identity) return current
+        val stored = current.copy(identity = made, updatedUtcMillis = maxOf(nowUtcMillis, current.updatedUtcMillis))
         writeAtomically(fileFor(id), TrackJson.encode(stored))
         return stored
     }
