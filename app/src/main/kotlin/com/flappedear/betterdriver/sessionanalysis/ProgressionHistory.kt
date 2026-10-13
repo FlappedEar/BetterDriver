@@ -10,13 +10,14 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.Collections
 
-/** At most this many sessions are analysed for the progression each time it opens, newest first. */
+/** At most this many of the track's sessions are analysed for the progression each time it opens, newest first. */
 internal const val MaxProgressionAdds = 20
 
-/** Of at most this many sessions, at any track, newest first. */
+/** Of at most this many of the track's sessions, newest first; sessions at other tracks are not counted. */
 internal const val MaxProgressionScan = 120
 
 /** Sessions already tried for a track since the app started ("track/session"), so none is analysed twice in vain. */
@@ -30,36 +31,61 @@ internal fun readHistory(store: CoachingHistoryStore, trackId: String): List<Ses
     emptyList()
 }
 
+/** Whether session [sessionId] was tried for the progression at track [trackId] since the app started. */
+internal fun triedAt(trackId: String, sessionId: String): Boolean = "$trackId/$sessionId" in tried
+
 /**
- * Which of [candidates] (session ids, newest first) to analyse for the progression: those whose
- * record is missing or older than this app's ([current] says whether one is current), not tried
- * already ([tried]), at most [max].
+ * Goes through [candidates] (session ids, newest first) for the progression (FBBD-181), analysing
+ * with [add] those whose record is missing or older than this app's ([current] says whether one is
+ * current), not tried already ([tried]). [add] says whether the session was this track's: only the
+ * track's sessions count towards the limits, so sessions at other tracks never use them up. It stops
+ * after [maxScan] of the track's sessions (a current record says one is) or [maxAdds] added.
+ * [left] hears, before each [add], how many more may be added at most. Returns how many were added.
  */
-internal fun sessionsToAdd(
+@Suppress("LongParameterList") // What to go through, how, and its limits.
+internal suspend fun addNewest(
     candidates: List<String>,
     current: (String) -> Boolean,
     tried: (String) -> Boolean,
-    max: Int = MaxProgressionAdds,
-): List<String> = candidates.asSequence().filter { !tried(it) && !current(it) }.take(max).toList()
+    add: suspend (String) -> Boolean,
+    left: (Int) -> Unit = {},
+    maxScan: Int = MaxProgressionScan,
+    maxAdds: Int = MaxProgressionAdds,
+): Int {
+    val pending = candidates.count { !current(it) && !tried(it) }
+    var passed = 0
+    var seen = 0
+    var added = 0
+    for (id in candidates) {
+        if (seen >= maxScan || added >= maxAdds) break
+        if (current(id)) {
+            seen++
+        } else if (!tried(id)) {
+            left(minOf(pending - passed, maxAdds - added))
+            passed++
+            if (add(id)) {
+                seen++
+                added++
+            }
+        }
+    }
+    left(0)
+    return added
+}
 
 /**
- * The sessions to analyse for the progression at track [trackId] (FBBD-181), newest first: those
- * with no current record in the coaching [history], not tried already, at most [MaxProgressionAdds].
- * Which of them are this track's is known only once each is read ([addToHistory]).
+ * The sessions to go through for the progression at track [trackId] (FBBD-181), newest first: every
+ * one not recording, with the ids of those whose record in the coaching [history] is current. Which
+ * of the others are this track's is known only once each is read ([addToHistory]).
  */
-internal fun sessionsToAdd(
+internal fun progressionCandidates(
     sessions: SessionStore,
     history: CoachingHistoryStore,
     trackId: String,
-): List<SessionSummary> {
-    val kept = readHistory(history, trackId).associateBy { it.sessionId }
-    val summaries = sessions.list().filter { it.state != SessionState.RECORDING }.take(MaxProgressionScan)
-    val todo = sessionsToAdd(
-        summaries.map { it.id },
-        current = { kept[it]?.algorithm == CoachingHistoryAlgorithm },
-        tried = { "$trackId/$it" in tried },
-    ).toSet()
-    return summaries.filter { it.id in todo }
+): Pair<List<SessionSummary>, Set<String>> {
+    val current = readHistory(history, trackId).filter { it.algorithm == CoachingHistoryAlgorithm }
+        .map { it.sessionId }.toSet()
+    return sessions.list().filter { it.state != SessionState.RECORDING } to current
 }
 
 /**
@@ -75,14 +101,31 @@ internal fun addToHistory(
     stores: ProgressionStores,
     trackId: String,
     epoch: Long,
-): Boolean {
-    tried += "$trackId/${summary.id}"
-    return try {
+): Boolean = tryOnce("$trackId/${summary.id}", tried, epoch, { AppDataGate.epoch }) {
+    try {
         analyseInto(summary, stores, trackId, epoch)
     } catch (e: Exception) {
         DebugLog.w(Tag, "session ${summary.id} not added to the progression", e)
         false
     }
+}
+
+/**
+ * Runs [attempt] once for [key], kept in [tried] so it is not run again in vain, unless a backup
+ * restore started since the restore [epoch] it was run against ([epochNow] differs, or a restore ran
+ * then): its record was then not written (FBBD-156), and the session is tried again next time.
+ */
+internal fun <T> tryOnce(
+    key: String,
+    tried: MutableSet<String>,
+    epoch: Long,
+    epochNow: () -> Long,
+    attempt: () -> T,
+): T {
+    tried += key
+    val result = attempt()
+    if (epoch % 2 != 0L || epochNow() != epoch) tried -= key
+    return result
 }
 
 /** Where the progression reads sessions and tracks and keeps the coaching history. */

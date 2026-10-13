@@ -170,4 +170,28 @@ class CornerCorrectionTransferTest {
         assertEquals(TrackMatch.SAME, TrackTransfer.match(plain, tablet.get(read.id)))
         assertEquals(identity, tablet.save(plain, adoptIdentity = TrackTransfer.carriesCorrections(plain)).identity)
     }
+
+    @Test
+    fun `a boundary moved on the other device is a different track, and taking it moves it here`() {
+        // Both devices have the same track and corners: the tablet's came from the phone.
+        val phone = TrackStore(File(tmp, "phone"))
+        phone.save(track, nowUtcMillis = 1_000)
+        phone.updateIdentity(track.id, null, identity())
+        val tablet = TrackStore(File(tmp, "tablet"))
+        tablet.save(assertNotNull(phone.get(track.id)), nowUtcMillis = 1_000)
+
+        // On the phone the driver moves where the first bend starts, 20 m earlier: nothing else changes.
+        val before = assertNotNull(phone.get(track.id)?.identity)
+        val c1 = assertNotNull(before.segment("c1"))
+        val edit = SegmentEdit.MoveBoundary("c1", c1.startMeters - 20.0)
+        val moved = assertNotNull(phone.correctIdentity(track.id, before, edit, nowUtcMillis = 2_000))
+        assertEquals(names(moved), names(tablet.get(track.id)))
+        val read = TrackTransfer.read(TrackJson.encode(moved).toByteArray().inputStream())
+        assertEquals(TrackMatch.DIFFERENT, TrackTransfer.match(read, tablet.get(track.id)))
+
+        // Taken there, the boundary moves there too, and the same file is then the same track.
+        val kept = assertNotNull(tablet.save(read, adoptIdentity = TrackTransfer.carriesCorrections(read)).identity)
+        assertEquals(moved.identity?.segment("c1")?.startMeters, kept.segment("c1")?.startMeters)
+        assertEquals(TrackMatch.SAME, TrackTransfer.match(read, tablet.get(track.id)))
+    }
 }

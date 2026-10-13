@@ -256,12 +256,12 @@ data class TrackRevision(
             s.id to ids[i]
         }.toMap()
         val made = build(number + 1, frame, line, shapes, ids, previous, nextCorner, nextStraight)
-        // A corner or straight that keeps its id keeps the driver's name for it (FBBD-179).
-        return made.copy(
-            segments = made.segments.map { s ->
-                segment(s.id)?.takeIf { it.kind == s.kind }?.let { s.copy(label = it.label, chicane = it.chicane) } ?: s
-            },
-        ).following(this)
+        // A corner or straight that keeps its id keeps the driver's name for it (FBBD-179); the new
+        // segments as detected are kept beside them, so a name carried over is still a correction.
+        val carried = made.segments.map { s ->
+            segment(s.id)?.takeIf { it.kind == s.kind }?.let { s.copy(label = it.label, chicane = it.chicane) } ?: s
+        }
+        return made.copy(segments = carried, detected = made.segments.takeIf { it != carried }).following(this)
     }
 
     companion object {

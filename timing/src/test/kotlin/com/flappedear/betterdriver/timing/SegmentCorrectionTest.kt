@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.timing
 
 import com.flappedear.betterdriver.timing.geo.Xy
+import com.flappedear.betterdriver.timing.track.RevisionLink
 import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.SegmentKind
 import com.flappedear.betterdriver.timing.track.SegmentShape
@@ -11,8 +12,10 @@ import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackRevision
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.adoptedOver
+import com.flappedear.betterdriver.timing.track.cornerIdIn
 import com.flappedear.betterdriver.timing.track.corrected
 import com.flappedear.betterdriver.timing.track.edited
+import org.junit.jupiter.api.Timeout
 import java.nio.file.Files
 import kotlin.math.PI
 import kotlin.math.cos
@@ -271,7 +274,37 @@ class SegmentCorrectionTest {
         assertEquals(corrected.number + 1, revised.number)
         assertEquals("Parabolica", revised.segment("c3")?.name)
         assertEquals(SegmentType.Chicane, revised.segment("c1")?.type)
-        assertNull(revised.detected)
+        // Still the driver's: marked corrected, so it can be restored to the new revision as detected.
+        assertTrue(revised.corrected)
+        assertTrue(revised.edited("c3"))
+        assertTrue(revised.edited("c1"))
+        val automatic = revised.apply(SegmentEdit.RestoreAutomatic)
+        assertEquals(revised.number, automatic.number)
+        assertEquals("Corner 1", automatic.segment("c1")?.name)
+        assertFalse(automatic.corrected)
+
+        // A layout change of corners the driver never named or retyped is no correction.
+        assertFalse(detected.revised(circuit.frame, bumped, newShapes, along).corrected)
+    }
+
+    @Test
+    @Timeout(value = 10, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    fun `a lineage link that does not move on, from a damaged track file, is never followed`() {
+        val damaged = detected.copy(
+            number = 3,
+            lineage = listOf(RevisionLink(1, 1, mapOf("c1" to "c1")), RevisionLink(3, 3, mapOf("c1" to "c1"))),
+        )
+        assertNull(damaged.cornerIdIn(1, "c1", 3))
+        assertNull(damaged.cornerIdIn(3, "c1", 1))
+        val back = damaged.copy(lineage = listOf(RevisionLink(2, 1, mapOf("c1" to "c1"))))
+        assertNull(back.cornerIdIn(1, "c1", 3))
+        assertNull(back.cornerIdIn(2, "c1", 1))
+        // A sound lineage is still followed both ways.
+        val sound = damaged.copy(
+            lineage = listOf(RevisionLink(1, 2, mapOf("c1" to "c4")), RevisionLink(2, 3, mapOf("c4" to "c5"))),
+        )
+        assertEquals("c5", sound.cornerIdIn(1, "c1", 3))
+        assertEquals("c1", sound.cornerIdIn(3, "c5", 1))
     }
 
     @Test
