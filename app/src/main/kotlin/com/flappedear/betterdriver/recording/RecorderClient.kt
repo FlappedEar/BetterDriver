@@ -63,6 +63,9 @@ class RecorderClient private constructor(private val context: Context) {
     private var service: Messenger? = null
     private var bound = false
 
+    /** The started screens that follow the live state; bound while any does (FBBD-209). */
+    private val holders = BindHolders()
+
     private val incoming = Messenger(
         Handler(Looper.getMainLooper()) { msg ->
             val isState = msg.what == RecorderProtocol.MSG_STATE
@@ -127,13 +130,21 @@ class RecorderClient private constructor(private val context: Context) {
         }
     }
 
-    fun bind() {
+    /**
+     * [holder] (an activity, from its onStart) follows the live state. A new activity starts before
+     * the one it replaces stops, so the binding stays while any holder is left: the old one's
+     * [unbind] must not cut off the new one, whose track screen would then freeze on the last state
+     * it got and never show a GNSS loss (FBBD-209).
+     */
+    fun bind(holder: Any) {
+        holders.add(holder)
         if (bound) return
         bound = context.bindService(Intent(context, RecorderService::class.java), connection, Context.BIND_AUTO_CREATE)
     }
 
-    fun unbind() {
-        if (!bound) return
+    /** [holder] (from its onStop) no longer follows the live state; unbound once no holder is left. */
+    fun unbind(holder: Any) {
+        if (!holders.remove(holder) || !bound) return
         service?.let { send(it, RecorderProtocol.MSG_UNREGISTER) }
         context.unbindService(connection)
         service = null
@@ -227,5 +238,23 @@ class RecorderClient private constructor(private val context: Context) {
         } catch (_: RemoteException) {
             // The recorder process is gone; onServiceDisconnected follows.
         }
+    }
+}
+
+/**
+ * Who wants [RecorderClient] bound: each started activity, from its onStart to its onStop. Main
+ * thread only. [remove] says when the last one has gone, so the binding is let go only then.
+ */
+internal class BindHolders {
+    private val holders = mutableListOf<Any>()
+
+    fun add(holder: Any) {
+        if (holders.none { it === holder }) holders += holder
+    }
+
+    /** Removes [holder]; true when no holder is left, so the binding can go. */
+    fun remove(holder: Any): Boolean {
+        holders.removeAll { it === holder }
+        return holders.isEmpty()
     }
 }

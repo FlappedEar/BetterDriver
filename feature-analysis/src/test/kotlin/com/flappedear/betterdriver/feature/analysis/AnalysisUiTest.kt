@@ -6,11 +6,15 @@ import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.laps.TimedLap
+import com.flappedear.betterdriver.analysis.optimal.JointThresholds
+import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalLap
+import com.flappedear.betterdriver.analysis.optimal.RealisticSector
 import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
 import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
-import com.flappedear.betterdriver.analysis.segments.SectorTime
 import com.flappedear.betterdriver.analysis.segments.RankedTimeLoss
+import com.flappedear.betterdriver.analysis.segments.SectorTime
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestLap
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
 import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
@@ -47,6 +51,27 @@ class AnalysisUiTest {
             }
             LapSectorTimes(i + 1, sectors = sectors)
         }
+
+    @Test
+    fun `the realistic optimal is shown apart from the raw theoretical best, never without it (FBBD-178)`() {
+        val realistic = RealisticOptimalLap(
+            listOf(RealisticSector("a", "Corner 1", 1, 40.0), RealisticSector("b", "Corner 2", 3, 40.5)),
+            joints = emptyList(),
+            totalSeconds = 80.5,
+            thresholds = JointThresholds(),
+        )
+        val withBoth = analysis.copy(
+            theoreticalBest = TheoreticalBestLap(totalSeconds = 80.0, valid = true),
+            realisticOptimal = realistic,
+        )
+        val ui = analysisUi("t", withBoth, null)!!
+        assertEquals(80_000L, ui.theoreticalMillis)
+        assertEquals(80_500L, ui.realisticMillis)
+        assertEquals(0.7, ui.realisticGainSeconds!!, 1e-9)
+        assertEquals(listOf(1, 3), ui.realisticLaps)
+        val noRaw = analysisUi("t", analysis.copy(realisticOptimal = realistic), null)!!
+        assertNull(noRaw.realisticMillis)
+    }
 
     @Test
     fun `laps are listed with their delta to the fastest and why a lap is not counted`() {

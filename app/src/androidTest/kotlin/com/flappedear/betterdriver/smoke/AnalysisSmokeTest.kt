@@ -10,7 +10,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isToggleable
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -18,6 +17,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
 import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
+import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule
@@ -52,10 +52,11 @@ class AnalysisSmokeTest {
     fun everyAnalysisTabOfACircuitSession() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        // The summary: best lap, theoretical best and where time goes.
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        app.waitForText("THEORETICAL").assertIsDisplayed()
-        // The theoretical best is calculated, never shown as measured: marked, with the legend (FBBD-174).
+        // The summary: best actual lap, realistic optimal, raw theoretical best (FBBD-178) and where time goes.
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("REALISTIC OPTIMAL").assertIsDisplayed()
+        app.waitForText("RAW THEORETICAL BEST").assertIsDisplayed()
+        // The composite lap times are calculated, never shown as measured: marked, with the legend (FBBD-174).
         // A lap time is drawn glyph by glyph (NumberText) and read as one content description.
         val theoretical = hasContentDescription(NotMeasuredMark, substring = true) and
             hasContentDescription(":", substring = true)
@@ -86,14 +87,14 @@ class AnalysisSmokeTest {
         app.waitForText("TIME DELTA", substring = true)
 
         app.openTab("Corners")
-        app.waitForText("THEORETICAL BEST BY CORNER").assertIsDisplayed()
+        app.waitForText("RAW THEORETICAL BEST BY CORNER").assertIsDisplayed()
         app.waitForText("Corner 1", substring = true)
         // No brake pedal is recorded: braking points are inferred from the accelerometer, so they are
         // marked in the corner details, and each such corner says what the mark means. A corner card
         // that opens Every lap is one clickable node, so its values are looked up unmerged.
         val inferred = hasText(NotMeasuredMark, substring = true) and hasText(" m", substring = true)
         app.waitNamed("a marked corner value") {
-            app.onAllNodes(inferred, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            app.exists(inferred, useUnmergedTree = true)
         }
         app.onAllNodes(inferred, useUnmergedTree = true)[0].performScrollTo().assertIsDisplayed()
         legend().performScrollTo().assertIsDisplayed()
@@ -105,7 +106,7 @@ class AnalysisSmokeTest {
     fun cornerLapsWithVideoAndCompare() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
         app.openTab("Corners")
         app.waitForText("Every lap ›").performScrollTo().performClick()
 
@@ -135,7 +136,7 @@ class AnalysisSmokeTest {
             app.pumpUntilText("Compare laps")
             app.pumpBack()
             app.pumpUntil(LoadTimeoutMs, "the lap review to close") {
-                app.onAllNodesWithText("Compare laps").fetchSemanticsNodes().isEmpty()
+                !app.showsText("Compare laps")
             }
         }
         app.waitForText("TIME THROUGH THE CORNER", substring = true)
@@ -143,52 +144,57 @@ class AnalysisSmokeTest {
         // Then to the analysis as it was left.
         app.back()
         // The analysis is read again after the lap review, so this can take a while.
-        app.waitForText("THEORETICAL BEST BY CORNER", timeoutMs = LoadTimeoutMs)
+        app.waitForText("RAW THEORETICAL BEST BY CORNER", timeoutMs = LoadTimeoutMs)
     }
 
     @Test
     fun optimalLapVideoPlanner() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
-        // The session's phone video covers every part of the theoretical best, so it can be made.
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        // The session's phone video covers every part of the realistic optimal, so it can be made.
         app.waitForText("Every part on video", substring = true, timeoutMs = LoadTimeoutMs).performScrollTo()
-        app.waitFor(hasText("Optimal lap video") and hasClickAction() and isEnabled()).performScrollTo().performClick()
+        app.waitFor(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled())
+            .performScrollTo()
+            .performClick()
 
-        // The planner: each part with its lap; Cancel closes it without making the video.
-        app.waitForText("The theoretical best", substring = true, timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        // The planner: the realistic optimal and the raw theoretical best, each part with its lap; Cancel
+        // closes it without making the video.
+        app.waitForText("Composite lap video", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("Realistic optimal · ", substring = true).assertIsDisplayed()
+        app.waitForText("Raw theoretical best · ", substring = true).assertIsDisplayed()
         app.waitFor(hasText("Export") and hasClickAction()).assertIsEnabled()
         app.waitForText("Cancel").performClick()
-        app.waitUntilGone("The theoretical best", substring = true)
-        check(app.onAllNodesWithText("Cancel").fetchSemanticsNodes().isEmpty()) { "an optimal lap video started" }
+        app.waitUntilGone("Composite lap video")
+        check(!app.showsText("Cancel")) { "a composite lap video started" }
     }
 
     @Test
     fun coachPicksToggle() {
         app.openSessions()
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
         // A corner's flag in Where time goes: pick it for the coach, then unpick it.
         val pick = hasContentDescription("Coach ", substring = true) and
             hasContentDescription("next time", substring = true)
         val picked = hasContentDescription("Coaching ", substring = true)
-        fun isPicked() = app.onAllNodes(picked).fetchSemanticsNodes().isNotEmpty()
-        // The analysis can still lay out again (the progress card arrives after it), and a tap during
-        // that can miss the flag: it is tapped again only while nothing is picked after a while, so a
-        // tap that landed is never undone.
-        for (attempt in 1..PickTries) {
-            app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().performClick()
-            val landed = runCatching { app.waitNamed("a corner picked", PickWaitMs) { isPicked() } }.isSuccess
-            if (landed || attempt == PickTries) break
-        }
+        // The analysis can still lay out again after it shows (the progress and data quality cards
+        // arrive from background loads), which moves the flag under a tap aimed at it: each flag and
+        // chip is clicked through its click action, once (FBBD-208).
+        app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
+        app.clickAction(pick)
         app.waitFor(picked).performScrollTo().assertIsDisplayed()
-        app.onAllNodes(picked)[0].performClick()
-        app.waitNamed("the pick to go", LoadTimeoutMs) { app.onAllNodes(picked).fetchSemanticsNodes().isEmpty() }
+        app.clickAction(picked)
+        app.waitNamed("the pick to go", LoadTimeoutMs) { !app.exists(picked) }
 
         // The same pick from the focus card's chip, when the session has one.
-        if (app.onAllNodesWithText("Coach this next time").fetchSemanticsNodes().isNotEmpty()) {
-            app.onAllNodesWithText("Coach this next time")[0].performScrollTo().performClick()
-            app.waitForText("✓ Coaching this next time").performScrollTo().performClick()
+        val chip = hasText("Coach this next time") and hasClickAction()
+        if (app.exists(chip)) {
+            app.waitFor(chip).performScrollTo().assertIsDisplayed()
+            app.clickAction(chip)
+            val chipPicked = hasText("✓ Coaching this next time") and hasClickAction()
+            app.waitFor(chipPicked).performScrollTo().assertIsDisplayed()
+            app.clickAction(chipPicked)
             app.waitUntilGone("✓ Coaching this next time")
         }
     }
@@ -197,7 +203,7 @@ class AnalysisSmokeTest {
     fun pointToPointSessionWithAccelerationRuns() {
         app.openSessions()
         app.openSession(SmokeFixtures.HillCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         // Standing starts up the hill: 0–100 km/h and more, the best first and the others on a tap.
         app.waitForText("ACCELERATION").performScrollTo().assertIsDisplayed()
         app.waitForText("0–100 km/h").performScrollTo().assertIsDisplayed()
@@ -219,16 +225,12 @@ class AnalysisSmokeTest {
     private fun legend(): SemanticsNodeInteraction {
         val tag = hasTestTag(ProvenanceLegendTag)
         app.waitNamed("the provenance legend") {
-            app.onAllNodes(tag, useUnmergedTree = true).fetchSemanticsNodes().isNotEmpty()
+            app.exists(tag, useUnmergedTree = true)
         }
         return app.onAllNodes(tag, useUnmergedTree = true)[0]
     }
 
     private companion object {
         const val PlayMs = 2_000L
-        const val PickTries = 3
-
-        /** A pick shows within milliseconds; this long without one means the tap missed. */
-        const val PickWaitMs = 10_000L
     }
 }

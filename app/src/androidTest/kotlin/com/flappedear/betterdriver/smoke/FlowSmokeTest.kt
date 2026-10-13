@@ -9,7 +9,6 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.test.espresso.intent.Intents
@@ -96,7 +95,7 @@ class FlowSmokeTest {
     /** The lap picker is showing, with both slots empty and Compare off. */
     private fun expectPickerWithNothingPicked() {
         app.waitFor(hasText("Compare") and hasClickAction(), LoadTimeoutMs).assertIsNotEnabled()
-        assertEquals(2, app.onAllNodesWithText("Tap a lap").fetchSemanticsNodes().size)
+        assertEquals(2, app.countNodes(hasText("Tap a lap")))
     }
 
     private fun pickLaps2And3() {
@@ -119,7 +118,7 @@ class FlowSmokeTest {
         app.waitForText("CSV").performClick()
         intended(allOf(hasAction(Intent.ACTION_CREATE_DOCUMENT), hasType("text/csv")))
         app.waitForIdle()
-        check(app.onAllNodesWithText("Exporting…").fetchSemanticsNodes().isEmpty()) { "a cancelled export ran" }
+        check(!app.showsText("Exporting…")) { "a cancelled export ran" }
 
         // GPX: saved to a file in the cache, one track segment per lap.
         val gpx = File(cache, "smoke.gpx").apply { delete() }
@@ -166,7 +165,7 @@ class FlowSmokeTest {
         app.openTab("Sessions")
         app.waitForText(SmokeFixtures.VideoCar, substring = true)
         app.openSession(SmokeFixtures.VideoCar)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
     }
 
     /** Opens the Export menu of the newest session, the one with video. */

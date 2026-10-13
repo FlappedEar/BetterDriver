@@ -36,6 +36,9 @@ internal val PreviewUi = AnalysisUi(
     bestLapMillis = 81_240,
     theoreticalMillis = 80_610,
     gainSeconds = 0.63,
+    realisticMillis = 80_900,
+    realisticGainSeconds = 0.34,
+    realisticLaps = listOf(2, 3),
     sectors = listOf(
         SectorRow(
             "Corner 1", corner = true, bestSeconds = 3.39, bestLapNumber = 2,

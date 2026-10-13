@@ -1,8 +1,11 @@
 package com.flappedear.betterdriver.faults
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
@@ -57,11 +60,32 @@ class AppDriver {
      * once it runs, and the script's `am start` can leave the launcher in front.
      */
     fun openApp() {
+        val before = resumed()
         val intent = Intent(app, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         app.startActivity(intent)
+        // The app's window can still be the activity being replaced, whose views a tap would reach
+        // while it goes (PermissionTest tapped Settings there and then found no "App"), so this waits
+        // for the new one to be resumed and laid out.
+        waitFor(LoadTimeoutMs, "the app's new screen") {
+            var shown = false
+            instrumentation.runOnMainSync {
+                shown = resumedNow().any { a -> before.none { it === a } && a.window.decorView.isLaidOut }
+            }
+            shown
+        }
         device.wait(Until.hasObject(By.pkg(app.packageName).depth(0)), LoadTimeoutMs)
     }
+
+    private fun resumed(): List<Activity> {
+        var list = emptyList<Activity>()
+        instrumentation.runOnMainSync { list = resumedNow() }
+        return list
+    }
+
+    /** Main thread. */
+    private fun resumedNow(): List<Activity> =
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList()
 
     /** Taps the first view showing [text], waiting for it. */
     fun tap(text: String, timeoutMs: Long = LoadTimeoutMs) {
@@ -82,6 +106,9 @@ class AppDriver {
             device.hasObject(By.text("GNSS"))
         check(shown) { "no track screen. ${screen()}" }
         waitForRecorder("live GNSS") { it.live?.gnss == GnssState.Ok }
+        // The state is the recorder's now, not the last one a lost binding left behind (FBBD-209).
+        val seen = checkNotNull(recorder().live).elapsedMicros
+        waitForRecorder("the live state to update") { (it.live?.elapsedMicros ?: Long.MIN_VALUE) > seen }
         device.findObject(By.text("Got it"))?.click()
     }
 
@@ -131,7 +158,8 @@ class AppDriver {
         val state = recorder()
         val texts = device.findObjects(By.textContains("")).mapNotNull { it.text }.take(MaxTexts)
         return "Front: ${device.currentPackageName}; texts: $texts; recording=${state.recording}, " +
-            "live=${state.live?.let { "${it.sessionId} ${it.gnss}" }}, error=${state.error}"
+            "live=${state.live?.let { "${it.sessionId} ${it.gnss} at ${it.elapsedMicros / MicrosPerSecond} s" }}, " +
+            "connected=${state.connected}, error=${state.error}"
     }
 
     /** Small key-value files the phases hand on to the next phase. */
@@ -147,6 +175,7 @@ class AppDriver {
         const val LoadTimeoutMs = 30_000L
         const val PollMs = 100L
         const val MaxTexts = 30
+        const val MicrosPerSecond = 1_000_000L
 
         /** UiAutomator injects a swipe step about every 5 ms: 800 steps hold for about 4 s, past the 3 s. */
         const val HoldSteps = 800

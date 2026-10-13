@@ -4,8 +4,8 @@ import android.app.Activity
 import android.app.Instrumentation.ActivityResult
 import android.content.Intent
 import android.media.MediaExtractor
-import android.media.MediaMetadataRetriever
 import android.media.MediaFormat
+import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
@@ -24,7 +24,7 @@ import com.flappedear.betterdriver.review.indexedClips
 import com.flappedear.betterdriver.review.sessionVideo
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.replayLaps
-import com.flappedear.betterdriver.videoexport.OptimalLap
+import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
 import com.flappedear.betterdriver.videoexport.VideoExportEnd
 import com.flappedear.betterdriver.videoexport.VideoExports
 import com.flappedear.betterdriver.videoexport.fileDurations
@@ -39,12 +39,13 @@ import java.io.File
 import kotlin.math.abs
 
 /**
- * The optimal lap's video rendered on the emulator (FBBD-163), from [ReviewFixtures]' session A,
- * whose frame-numbered phone video covers both timed laps: Optimal lap video › Export, the file
+ * The composite lap video rendered on the emulator (FBBD-163), from [ReviewFixtures]' session A,
+ * whose frame-numbered phone video covers both timed laps: Realistic optimal video › Export (the
+ * realistic optimal, the default, FBBD-178), the file
  * picker answered with a file in the cache, then the MP4 is read back.
  *
  * - The file exists and has a video track.
- * - Its length is the theoretical best within 1 frame per cut (and 1 for the last frame).
+ * - Its length is the realistic optimal within 1 frame per cut (and 1 for the last frame).
  * - Every sampled frame is the source frame its cut should show (within 2 frames: the sample's own
  *   frame and the source's), and the source frames run through the lap in track order.
  */
@@ -79,8 +80,8 @@ class OptimalLapRenderTest {
 
         app.openSessions()
         app.openSession(ReviewFixtures.SyncCarA)
-        app.waitForText("BEST LAP", timeoutMs = LoadTimeoutMs)
-        app.waitFor(hasText("Optimal lap video") and hasClickAction() and isEnabled(), LoadTimeoutMs)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        app.waitFor(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled(), LoadTimeoutMs)
             .performScrollTo()
             .performClick()
         app.waitFor(hasText("Export") and hasClickAction() and isEnabled(), LoadTimeoutMs).performClick()
@@ -107,17 +108,18 @@ class OptimalLapRenderTest {
         val video = checkNotNull(sessionVideo(dir, VideoTimeline.from(data.events, indexedClips(dir))))
         val analysis = analyzeSession(telemetrySessionOf(data, track), identity = track.identity)
         val origin = data.sampleSets.minOf { it.tMicros }
-        val plan = checkNotNull(optimalVideo(analysis, video, origin, fileDurations(video)).plan) {
-            "the session has no optimal lap on video"
+        // The sheet's default: the realistic optimal (FBBD-178).
+        val plan = checkNotNull(optimalVideo(analysis, video, origin, fileDurations(video)).realistic.plan) {
+            "the session has no realistic optimal on video"
         }
         check(plan.cuts.isNotEmpty()) { "the optimal lap has no cut on video" }
 
-        // Its length: the theoretical best, within a frame per cut and one for the last frame.
+        // Its length: the realistic optimal, within a frame per cut and one for the last frame.
         val theoretical = Math.round(plan.lap.totalSeconds * MicrosPerSecond)
         val length = videoTrackMicros(file)
         val allowed = (plan.cuts.size + 1) * FrameMicros
         check(abs(length - theoretical) <= allowed) {
-            "the optimal lap video lasts $length µs, the theoretical best is $theoretical µs " +
+            "the optimal lap video lasts $length µs, the realistic optimal is $theoretical µs " +
                 "(${plan.cuts.size} cuts, allowed ± $allowed µs)"
         }
 

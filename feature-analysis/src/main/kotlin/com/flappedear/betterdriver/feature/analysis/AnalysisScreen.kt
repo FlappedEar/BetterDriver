@@ -42,6 +42,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
@@ -167,37 +168,73 @@ private fun Ready(
 private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composable () -> Unit)? = null) {
     val c = TrackTheme.colors
     Card(modifier) {
+        // The three lap times, never one name for two of them (FBBD-178): the best actual lap and the
+        // realistic optimal side by side, the raw theoretical best under them, smaller.
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Figure("Best lap", formatLapTime(ui.bestLapMillis), "Lap ${ui.bestLapNumber}", c.best, Modifier.weight(1f))
             Figure(
-                "Theoretical",
-                theoreticalText(ui, ::formatLapTime),
-                "Best of each corner",
-                c.text,
+                BestActualLapLabel,
+                formatLapTime(ui.bestLapMillis),
+                "Lap ${ui.bestLapNumber}",
+                c.best,
                 Modifier.weight(1f),
             )
             Figure(
-                "To gain",
-                gainText(ui, ::formatDelta),
-                "s",
-                if (ui.gainSeconds != null && !ui.gainConfidence.doubtful) c.gain else c.textDim,
-                Modifier.weight(0.8f),
+                RealisticOptimalLabel,
+                realisticText(ui, ::formatLapTime),
+                realisticDetail(ui),
+                if (ui.realisticGainSeconds != null && !ui.gainConfidence.doubtful) c.gain else c.text,
+                Modifier.weight(1f),
             )
         }
-        if (ui.gainSeconds != null) ConfidenceNote(ui.gainConfidence, about = "To gain")
+        Figure(
+            RawTheoreticalBestLabel,
+            theoreticalText(ui, ::formatLapTime),
+            if (ui.gainSeconds == null) {
+                "Best of each corner, never driven as one lap"
+            } else {
+                "${gainText(ui, ::formatDelta)} s · best of each corner, never driven as one lap"
+            },
+            c.textDim,
+            Modifier.fillMaxWidth(),
+            size = RawTheoreticalSize,
+        )
+        if (ui.gainSeconds != null) ConfidenceNote(ui.gainConfidence, about = "Time to gain")
         if (ui.theoreticalMillis != null) ProvenanceLegend()
         optimalVideo?.invoke()
     }
 }
 
+/** Under the realistic optimal: the time to gain to it and the laps it combines. */
+private fun realisticDetail(ui: AnalysisUi): String {
+    val laps = ui.realisticLaps
+    val from = when {
+        laps.isEmpty() -> "compatible joints only"
+        laps == listOf(ui.bestLapNumber) -> "no better combination"
+        else -> "laps ${laps.joinToString(", ")}"
+    }
+    return if (ui.realisticGainSeconds == null) from else "${realisticGainText(ui, ::formatDelta)} s · $from"
+}
+
 @Composable
-private fun Figure(label: String, value: String, detail: String, color: Color, modifier: Modifier) {
+private fun Figure(
+    label: String,
+    value: String,
+    detail: String,
+    color: Color,
+    modifier: Modifier,
+    size: Dp = FigureSize,
+) {
     Column(modifier) {
         TrackLabel(label)
-        NumberText(value, size = 26.dp, color = color, weight = FontWeight.SemiBold)
+        NumberText(value, size = size, color = color, weight = FontWeight.SemiBold)
         Dim(detail)
     }
 }
+
+private val FigureSize = 26.dp
+
+/** The raw theoretical best is a reference, not a target: smaller than the two lap times above it. */
+private val RawTheoreticalSize = 20.dp
 
 @Composable
 private fun Compare(ui: CompareUi, modifier: Modifier) {
@@ -327,7 +364,7 @@ private fun Laps(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
 private fun Sectors(ui: AnalysisUi, modifier: Modifier) {
     val c = TrackTheme.colors
     Card(modifier) {
-        TrackLabel("Theoretical best by corner")
+        TrackLabel("Raw theoretical best by corner")
         ui.sectorsNote?.let { Dim(it) }
         if (ui.sectors.isEmpty()) return@Card
         Row {

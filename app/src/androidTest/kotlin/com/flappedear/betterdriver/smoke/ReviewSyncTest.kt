@@ -171,6 +171,7 @@ class ReviewSyncTest {
         val startNanos = System.nanoTime()
         val start = SystemClock.uptimeMillis()
         chart.performTouchInput { click(Offset((fraction * width).toFloat(), centerY)) }
+        settleAtFrameRate()
         val what = "a tap at ${(fraction * Percent).toInt()} % of the lap"
         val polled = players.waitInSync(cursor, what, start, SeekTimeoutMs)
         val shown = LapReviewProbe.cursorMicros
@@ -180,6 +181,32 @@ class ReviewSyncTest {
         val released = (0 until Lanes).map { LapReviewProbe.lastReleaseNanos(it) }
         if (released.all { it == 0L }) return polled
         return released.maxOf { (it - startNanos).coerceAtLeast(0L) } / NanosPerMilli
+    }
+
+    /**
+     * Runs display frames at the display's pace, nothing in between, until the review asks for none
+     * (it stops its frame loop once both players are on their frames, FBBD-169), for at most
+     * [SeekTimeoutMs].
+     *
+     * A seek takes the review several display frames: the tap's down seeks to a key frame, its
+     * lift seeks to the exact frame once the frame clock says the last seek is far enough back, and
+     * the frame after the seek watches it land. On a device those come every 16 ms. With the
+     * manual clock they come only when the test runs them, and [Players.waitInSync] runs one per
+     * pair of picture copies, tens of ms each on the emulator. That put the test's own pace into the
+     * timed seek (FBBD-208: 303 ms against the 300 ms limit, the others 85–265 ms), so the timed
+     * seek runs its frames here first and the picture copies only check where the players ended up.
+     */
+    private fun settleAtFrameRate() {
+        val end = SystemClock.uptimeMillis() + SeekTimeoutMs
+        var last = LapReviewProbe.frames
+        var quiet = 0
+        while (quiet < QuietFrames && SystemClock.uptimeMillis() < end) {
+            app.mainClock.advanceTimeByFrame()
+            Thread.sleep(FrameMs)
+            val now = LapReviewProbe.frames
+            if (now == last) quiet++ else quiet = 0
+            last = now
+        }
     }
 
     /**
@@ -250,6 +277,9 @@ class ReviewSyncTest {
         const val CursorToleranceMicros = 1_000L
         const val FrameMs = 16L
         const val SettleFrames = 10
+
+        /** Display frames the review ran none in: it has stopped its frame loop. */
+        const val QuietFrames = 3
         const val Percent = 100
         const val MicrosPerMilli = 1_000L
         const val NanosPerMilli = 1_000_000L

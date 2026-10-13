@@ -24,11 +24,12 @@ import androidx.media3.transformer.ExportResult
 import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.feature.review.SessionVideo
-import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -155,7 +156,7 @@ class VideoExports private constructor(private val context: Context) {
     ) {
         private val durations = HashMap<String, Long?>()
 
-        /** The optimal lap and its video (FBBD-163), analysed when first asked for. */
+        /** The composite laps and their video (FBBD-163, FBBD-178), analysed when first asked for. */
         val optimal: OptimalVideo by lazy { analyseOptimal() }
 
         // A session the analysis cannot handle only leaves the optimal lap out.
@@ -166,7 +167,7 @@ class VideoExports private constructor(private val context: Context) {
             optimalVideo(analysis, video, sets.firstOrNull()?.tMicros ?: 0L, ::durationOf)
         } catch (e: Exception) {
             DebugLog.w(Tag, "analysing ${data.id} for its optimal lap failed", e)
-            OptimalVideo(null, null)
+            OptimalVideo.None
         }
 
         /**
@@ -186,8 +187,14 @@ class VideoExports private constructor(private val context: Context) {
             }
         }
 
-        fun cuts(part: VideoPart): List<VideoCut> =
-            if (part == OptimalLap) optimal.plan?.cuts?.map { it.cut }.orEmpty() else recordedCuts(part)
+        /** The plan of composite lap [part]; null for the whole video or a lap. */
+        fun optimalPlan(part: VideoPart): OptimalClipPlan? = optimalKindOf(part)?.let { optimal.of(it).plan }
+
+        fun cuts(part: VideoPart): List<VideoCut> = if (optimalKindOf(part) != null) {
+            optimalPlan(part)?.cuts?.map { it.cut }.orEmpty()
+        } else {
+            recordedCuts(part)
+        }
 
         private fun recordedCuts(part: VideoPart): List<VideoCut> {
             val range = if (part == WholeVideo) {
@@ -205,7 +212,9 @@ class VideoExports private constructor(private val context: Context) {
                 LapOption(n, t.lap.kind, t.lap.timeMillis, best = n == best, onVideo = cuts(n).isNotEmpty())
             }
             val pointToPoint = laps?.track?.pointToPoint == true
-            return VideoExportOptions(cuts(WholeVideo).totalMicros(), lapOptions, pointToPoint, optimal.option)
+            return VideoExportOptions(
+                cuts(WholeVideo).totalMicros(), lapOptions, pointToPoint, optimal.realistic.option, optimal.raw.option,
+            )
         }
     }
 
@@ -242,8 +251,8 @@ class VideoExports private constructor(private val context: Context) {
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
             val data = OverlayData(prepared.sets, prepared.laps, accelOf(prepared.data))
             val painter = OverlayPainter(OverlayFonts.load(context), data.outline, data.pointToPoint)
-            // The optimal lap's cuts are its plan's, in the same order (Prepared.cuts).
-            val optimal = if (part == OptimalLap) prepared.optimal.plan else null
+            // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
+            val optimal = prepared.optimalPlan(part)
             val items = cuts.mapIndexed { i, cut ->
                 val clipping = MediaItem.ClippingConfiguration.Builder()
                     .setStartPositionUs(cut.fromMicros)
