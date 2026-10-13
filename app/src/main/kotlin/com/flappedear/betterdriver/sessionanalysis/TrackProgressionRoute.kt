@@ -97,14 +97,21 @@ internal fun TrackProgressionRoute(
         // Sessions with no record yet join one by one, as each is analysed (FBBD-181), written
         // against the restore epoch taken before any of them is read (FBBD-156).
         val epoch = AppDataGate.epoch
-        val todo = withContext(Dispatchers.IO) { sessionsToAdd(stores.sessions, history, trackId) }
-        adding = todo.size
-        for (summary in todo) {
-            val added = withContext(Dispatchers.Default) { addToHistory(summary, stores, trackId, epoch) }
-            if (added) records = withContext(Dispatchers.IO) { readHistory(history, trackId) }
-            adding -= 1
-        }
-        adding = 0
+        // Only the track's own sessions count towards the limits (other tracks' are skipped on reading).
+        val (summaries, current) =
+            withContext(Dispatchers.IO) { progressionCandidates(stores.sessions, history, trackId) }
+        val byId = summaries.associateBy { it.id }
+        addNewest(
+            summaries.map { it.id },
+            current = { it in current },
+            tried = { triedAt(trackId, it) },
+            add = { id ->
+                val added = withContext(Dispatchers.Default) { addToHistory(byId.getValue(id), stores, trackId, epoch) }
+                if (added == AddResult.Added) records =withContext(Dispatchers.IO) { readHistory(history, trackId) }
+                added
+            },
+            left = { adding = it },
+        )
     }
     LaunchedEffect(records, grouping, period, day, excluded, adding, title, mapping) {
         val kept = records ?: return@LaunchedEffect

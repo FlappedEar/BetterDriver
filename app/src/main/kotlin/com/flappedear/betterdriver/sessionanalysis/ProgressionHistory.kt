@@ -10,13 +10,14 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.Collections
 
-/** At most this many sessions are analysed for the progression each time it opens, newest first. */
+/** At most this many of the track's sessions are analysed for the progression each time it opens, newest first. */
 internal const val MaxProgressionAdds = 20
 
-/** Of at most this many sessions, at any track, newest first. */
+/** Of at most this many of the track's sessions, newest first; sessions at other tracks are not counted. */
 internal const val MaxProgressionScan = 120
 
 /** Sessions already tried for a track since the app started ("track/session"), so none is analysed twice in vain. */
@@ -30,36 +31,62 @@ internal fun readHistory(store: CoachingHistoryStore, trackId: String): List<Ses
     emptyList()
 }
 
+/** Whether session [sessionId] was tried for the progression at track [trackId] since the app started. */
+internal fun triedAt(trackId: String, sessionId: String): Boolean = "$trackId/$sessionId" in tried
+
 /**
- * Which of [candidates] (session ids, newest first) to analyse for the progression: those whose
- * record is missing or older than this app's ([current] says whether one is current), not tried
- * already ([tried]), at most [max].
+ * Goes through [candidates] (session ids, newest first) for the progression (FBBD-181), analysing
+ * with [add] those whose record is missing or older than this app's ([current] says whether one is
+ * current), not tried already ([tried]). [add] says what came of each: only sessions at other tracks
+ * ([AddResult.Elsewhere]) leave the limits as they are, so they never use them up, while a session
+ * that could not be read or analysed counts as tried. It stops after [maxScan] of the track's sessions
+ * (a current record says one is) or [maxAdds] tried. [left] hears, before each [add], how many more may
+ * be tried at most. Returns how many were tried.
  */
-internal fun sessionsToAdd(
+@Suppress("LongParameterList") // What to go through, how, and its limits.
+internal suspend fun addNewest(
     candidates: List<String>,
     current: (String) -> Boolean,
     tried: (String) -> Boolean,
-    max: Int = MaxProgressionAdds,
-): List<String> = candidates.asSequence().filter { !tried(it) && !current(it) }.take(max).toList()
+    add: suspend (String) -> AddResult,
+    left: (Int) -> Unit = {},
+    maxScan: Int = MaxProgressionScan,
+    maxAdds: Int = MaxProgressionAdds,
+): Int {
+    val pending = candidates.count { !current(it) && !tried(it) }
+    var passed = 0
+    var seen = 0
+    var added = 0
+    for (id in candidates) {
+        if (seen >= maxScan || added >= maxAdds) break
+        if (current(id)) {
+            seen++
+        } else if (!tried(id)) {
+            left(minOf(pending - passed, maxAdds - added))
+            passed++
+            if (add(id) != AddResult.Elsewhere) {
+                seen++
+                added++
+            }
+        }
+    }
+    left(0)
+    return added
+}
 
 /**
- * The sessions to analyse for the progression at track [trackId] (FBBD-181), newest first: those
- * with no current record in the coaching [history], not tried already, at most [MaxProgressionAdds].
- * Which of them are this track's is known only once each is read ([addToHistory]).
+ * The sessions to go through for the progression at track [trackId] (FBBD-181), newest first: every
+ * one not recording, with the ids of those whose record in the coaching [history] is current. Which
+ * of the others are this track's is known only once each is read ([addToHistory]).
  */
-internal fun sessionsToAdd(
+internal fun progressionCandidates(
     sessions: SessionStore,
     history: CoachingHistoryStore,
     trackId: String,
-): List<SessionSummary> {
-    val kept = readHistory(history, trackId).associateBy { it.sessionId }
-    val summaries = sessions.list().filter { it.state != SessionState.RECORDING }.take(MaxProgressionScan)
-    val todo = sessionsToAdd(
-        summaries.map { it.id },
-        current = { kept[it]?.algorithm == CoachingHistoryAlgorithm },
-        tried = { "$trackId/$it" in tried },
-    ).toSet()
-    return summaries.filter { it.id in todo }
+): Pair<List<SessionSummary>, Set<String>> {
+    val current = readHistory(history, trackId).filter { it.algorithm == CoachingHistoryAlgorithm }
+        .map { it.sessionId }.toSet()
+    return sessions.list().filter { it.state != SessionState.RECORDING } to current
 }
 
 /**
@@ -67,7 +94,7 @@ internal fun sessionsToAdd(
  * as opening its analysis would, against the restore [epoch] taken before it was read: the
  * progression then counts every session recorded or imported there, not only those opened since.
  * A session of another track is skipped after reading its events only; one that cannot be read or
- * analysed is left out and logged. Returns whether it was analysed.
+ * analysed is left out and logged.
  */
 @Suppress("TooGenericExceptionCaught") // A damaged session never stops the others.
 internal fun addToHistory(
@@ -75,14 +102,43 @@ internal fun addToHistory(
     stores: ProgressionStores,
     trackId: String,
     epoch: Long,
-): Boolean {
-    tried += "$trackId/${summary.id}"
-    return try {
+): AddResult = tryOnce("$trackId/${summary.id}", tried, epoch, { AppDataGate.epoch }) {
+    try {
         analyseInto(summary, stores, trackId, epoch)
     } catch (e: Exception) {
         DebugLog.w(Tag, "session ${summary.id} not added to the progression", e)
-        false
+        AddResult.Failed
     }
+}
+
+/** What came of a session tried for the progression ([addToHistory]). */
+internal enum class AddResult {
+    /** Analysed at the track, its record kept. */
+    Added,
+
+    /** Not read or not analysed: it may be the track's, so it counts as tried. */
+    Failed,
+
+    /** Another track's session, or one at no track: it leaves the limits as they are. */
+    Elsewhere,
+}
+
+/**
+ * Runs [attempt] once for [key], kept in [tried] so it is not run again in vain, unless a backup
+ * restore started since the restore [epoch] it was run against ([epochNow] differs, or a restore ran
+ * then): its record was then not written (FBBD-156), and the session is tried again next time.
+ */
+internal fun <T> tryOnce(
+    key: String,
+    tried: MutableSet<String>,
+    epoch: Long,
+    epochNow: () -> Long,
+    attempt: () -> T,
+): T {
+    tried += key
+    val result = attempt()
+    if (epoch % 2 != 0L || epochNow() != epoch) tried -= key
+    return result
 }
 
 /** Where the progression reads sessions and tracks and keeps the coaching history. */
@@ -93,11 +149,11 @@ internal class ProgressionStores(
 )
 
 @Suppress("ReturnCount") // Another track's session, or none of a track at all: nothing to analyse.
-private fun analyseInto(summary: SessionSummary, stores: ProgressionStores, trackId: String, epoch: Long): Boolean {
+private fun analyseInto(summary: SessionSummary, stores: ProgressionStores, trackId: String, epoch: Long): AddResult {
     val named = savedTrackId(stores.sessions.read(summary.dir, samples = false).events)
-    if (named != null && named != trackId) return false
+    if (named != null && named != trackId) return AddResult.Elsewhere
     val data = stores.sessions.read(summary.dir)
-    val track = trackFor(data, stores.tracks.all())?.takeIf { it.id == trackId } ?: return false
+    val track = trackFor(data, stores.tracks.all())?.takeIf { it.id == trackId } ?: return AddResult.Elsewhere
     val start = data.info.startUtcMillis
     val analysis = analyzeAtTrack(stores.tracks, track, telemetrySessionOf(data, track), start)
     val events = data.events
@@ -105,7 +161,7 @@ private fun analyseInto(summary: SessionSummary, stores: ProgressionStores, trac
     keepCoachingHistory(stores.history, epoch, trackId, data.id, start, analysis, coached, originOf(data.info)) {
         stores.tracks.get(trackId) != null
     }
-    return true
+    return AddResult.Added
 }
 
 private const val Tag = "Progression"

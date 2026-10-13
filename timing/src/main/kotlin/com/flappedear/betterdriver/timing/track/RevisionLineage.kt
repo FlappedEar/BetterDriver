@@ -41,14 +41,18 @@ fun TrackRevision.cornerIdIn(fromRevision: Int, id: String, toRevision: Int): St
     return cur
 }
 
-/** One step of the lineage from revision [at] towards [toRevision]: the revision reached and [id] there. */
+/**
+ * One step of the lineage from revision [at] towards [toRevision]: the revision reached and [id] there.
+ * Only a step that moves on counts: a link of a damaged track file from a revision to itself or back
+ * is never taken, so the way always ends.
+ */
 @Suppress("ReturnCount") // No step, forwards or backwards.
 private fun TrackRevision.stepFrom(at: Int, id: String, toRevision: Int): Pair<Int, String?>? {
     if (at < toRevision) {
-        val step = lineage.lastOrNull { it.from == at && it.to <= toRevision } ?: return null
+        val step = lineage.lastOrNull { it.from == at && it.to > at && it.to <= toRevision } ?: return null
         return step.to to step.ids[id]
     }
-    val step = lineage.lastOrNull { it.to == at && it.from >= toRevision } ?: return null
+    val step = lineage.lastOrNull { it.to == at && it.from < at && it.from >= toRevision } ?: return null
     val back = step.ids.filterValues { it == id }.keys
     return step.from to (if (id in back) id else back.singleOrNull())
 }
