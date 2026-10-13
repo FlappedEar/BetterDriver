@@ -7,7 +7,6 @@ import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
 import com.flappedear.betterdriver.analysis.segments.PopulationLap
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.summarizeConsistency
-import com.flappedear.betterdriver.analysis.segments.AxisRobustness
 import com.flappedear.betterdriver.analysis.segments.timeOnAxis
 
 // The segment part of FlappedEar Telemetry day/session_summary.dart (Apache 2.0): each corner and
@@ -61,7 +60,7 @@ fun segmentChanges(analysis: SessionAnalysis, previous: PreviousLaps): List<Segm
         PopulationLap(previous.session, it.startTelemetryTime, it.endTelemetryTime, it.number)
     }
     // On the axis this session was timed on, each lap read the same way (FBBD-215).
-    val before = timeOnAxis(axis, segments, population, AxisRobustness.App).times
+    val before = timeOnAxis(axis, segments, population, analysis.robustness).times
     val now = analysis.laps.timedLaps.indices
         .filter { analysis.laps.timedLaps[it].referenceEligible }
         .mapNotNull { analysis.lapTimes.getOrNull(it) }

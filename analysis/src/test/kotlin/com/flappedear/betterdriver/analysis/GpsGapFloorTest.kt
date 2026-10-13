@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 
 /**
  * A few missed fixes are not a loss of GPS (FBBD-215): a 25 Hz receiver that skips the odd fix and
@@ -43,6 +44,25 @@ class GpsGapFloorTest {
     fun `three missed fixes in a row at 25 Hz keep the lap`() {
         val issues = laps(from = 20.0, seconds = 0.12).toMap()
         assertEquals(LapReferenceIssue.None, issues[3])
+    }
+
+    @Test
+    fun `a third of a second without fixes keeps every sector time`() {
+        val sets = sim.samples(laps = 5, stepSeconds = 0.04)
+        val full = analyzeSession(telemetrySessionOf(data(sets), sim.track()))
+        val lap3 = full.laps.timedLaps.single { it.number == 3 }
+        // Every segment boundary of lap 3, crossed in a 0.3 s hole.
+        for (segment in full.segments!!.segments) {
+            val crossing = full.traces[full.laps.timedLaps.indexOf(lap3)].flatMap { it.samples }
+                .first { it.progressMeters >= segment.startProgressMeters }.telemetryTime
+            val start = ((crossing - 0.15) * 1e6).toLong()
+            val kept = sets.filterNot { it.tMicros in start until start + 300_000 }
+            val holed = analyzeSession(telemetrySessionOf(data(kept), sim.track()))
+            val times = holed.lapTimes[holed.laps.timedLaps.indexOfFirst { it.number == 3 }]
+            for (s in full.segments!!.segments) {
+                assertNotNull(times.sector(s.id)?.seconds, "${s.id} with fixes missing round ${segment.id}'s start")
+            }
+        }
     }
 
     @Test

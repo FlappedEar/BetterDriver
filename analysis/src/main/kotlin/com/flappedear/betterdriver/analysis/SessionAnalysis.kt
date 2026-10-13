@@ -92,6 +92,8 @@ data class SessionAnalysis(
      * segment on each lap, and what applies to the whole session.
      */
     val confidence: SessionConfidence = SessionConfidence(),
+    /** How [axis] was built, segmented and read (FBBD-215); another session is timed on it the same way. */
+    val robustness: AxisRobustness = AxisRobustness.App,
 ) {
     /** Whether [segments] are [identity]'s corners and straights, under its ids (FBBD-172). */
     val identified: Boolean
@@ -124,7 +126,7 @@ private fun analyzeLaps(
     identity: TrackRevision?,
     robustness: AxisRobustness,
 ): SessionAnalysis {
-    val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps)
+    val fastestIndex = laps.fastestLapIndex ?: return SessionAnalysis(laps, robustness = robustness)
     val fastest = laps.timedLaps[fastestIndex]
     val review = computeSegmentReview(
         session, laps, fastest.number, fastest.startTelemetryTime, fastest.endTelemetryTime,
@@ -142,9 +144,12 @@ private fun analyzeLaps(
         PopulationLap(session, it.startTelemetryTime, it.endTelemetryTime, it.number)
     }
     val timed = timePopulation(laps, fastest.number, segments ?: NoSegments, population, robustness)
-        ?: return SessionAnalysis(laps, fastest.number, review, consensus)
+        ?: return SessionAnalysis(laps, fastest.number, review, consensus, robustness = robustness)
     if (segments == null) {
-        return SessionAnalysis(laps, fastest.number, review, consensus, axis = timed.axis, traces = timed.traces)
+        return SessionAnalysis(
+            laps, fastest.number, review, consensus,
+            axis = timed.axis, traces = timed.traces, robustness = robustness,
+        )
     }
     val eligible = laps.timedLaps.indices.filter { laps.timedLaps[it].referenceEligible }
     val eligibleTimes = eligible.map { timed.times[it] }
@@ -174,6 +179,7 @@ private fun analyzeLaps(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
         publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
         identity = identified?.identity,
+        robustness = robustness,
     )
 }
 

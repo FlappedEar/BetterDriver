@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.segments.AxisRobustness
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.summary.PreviousLaps
 import com.flappedear.betterdriver.analysis.summary.SegmentChange
@@ -12,9 +13,16 @@ import kotlin.test.assertTrue
 
 class SegmentChangesTest {
     @Test
-    fun `the session before is timed through this session's segments`() {
+    fun `the session before is timed through this session's segments`() =
+        sameLapsNoChange(AxisRobustness.App)
+
+    @Test
+    fun `the session before is read as this one was, Telemetry's way too`() =
+        sameLapsNoChange(AxisRobustness.Telemetry)
+
+    private fun sameLapsNoChange(robustness: AxisRobustness) {
         val session = VboFixture.read("segments_mixed.vbo")
-        val analysis = analyzeSession(session)
+        val analysis = analyzeSession(session, robustness = robustness)
         // The same laps as the session before: every segment is timed in both, with no change.
         val changes = segmentChanges(analysis, PreviousLaps(session, analysis.laps))
         assertEquals(analysis.segments!!.segments.map { it.id }, changes.map { it.segmentId })

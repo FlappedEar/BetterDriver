@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.analysis.geo.lround
 import com.flappedear.betterdriver.analysis.geo.projectCoordinate
 import com.flappedear.betterdriver.analysis.laps.LapDetectionOptions
 import com.flappedear.betterdriver.analysis.laps.LapTrace
+import com.flappedear.betterdriver.analysis.laps.MinimumGpsGapSeconds
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -615,7 +616,8 @@ fun projectSample(
 /**
  * Projects every valid latitude/longitude sample of [session] in [startTime]..[endTime] onto
  * [axis], in time order. A GPS gap or a stretch [projectSample] cannot lock onto ends the current
- * segment instead of bridging it. Progress is unwrapped within the lap: a fix just after the lap's
+ * segment instead of bridging it; as in lap detection, a step up to [MinimumGpsGapSeconds] is not
+ * a gap. Progress is unwrapped within the lap: a fix just after the lap's
  * timed start that projects just before progress 0 is a small negative value, and fixes past the
  * finish continue beyond the axis length. Progress never falls within a segment. On an open axis
  * nothing is unwrapped: progress is where the fix is along the run.
@@ -634,7 +636,8 @@ fun projectLapTrace(
 ): List<ProgressSegment> {
     val result = mutableListOf<ProgressSegment>()
     if (!axis.valid) return result
-    val latitudeSegments = session.sampledSegments(Aliases.LATITUDE, startTime, endTime, 4000)
+    // The GPS gap lap detection uses (FBBD-215): a lap it keeps is not split at a few missed fixes.
+    val latitudeSegments = session.sampledSegments(Aliases.LATITUDE, startTime, endTime, 4000, MinimumGpsGapSeconds)
     val length = axis.lengthMeters
     val allowance = min(SegmentStartBackwardMeters, length / 4)
 
