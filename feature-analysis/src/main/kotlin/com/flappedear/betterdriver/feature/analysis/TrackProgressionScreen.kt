@@ -27,6 +27,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -73,7 +74,13 @@ interface ProgressionActions {
 
     /** Leaves session [sessionId] out of the progression, or counts it again. */
     fun toggle(sessionId: String) {}
+
+    /** Opens every pass through corner [cornerId] in session [sessionId]: their traces and video (FBBD-93). */
+    fun cornerPasses(sessionId: String, cornerId: String) {}
 }
+
+/** On an opened corner of the progression: its passes in the latest session that drove it (FBBD-93). */
+const val LatestPassesText = "Every pass, latest session ›"
 
 /**
  * Progression at one track (FBBD-181): the laps, then each corner by its CornerId, then what came
@@ -124,7 +131,7 @@ private fun Ready(ui: ProgressionUi, actions: ProgressionActions) {
             return@Column
         }
         Laps(ui, width)
-        if (ui.corners.isNotEmpty()) Corners(ui, width)
+        if (ui.corners.isNotEmpty()) Corners(ui, actions, width)
         if (ui.coaching.isNotEmpty()) Coaching(ui, width)
         Points(ui, actions, width)
     }
@@ -187,18 +194,18 @@ private fun Laps(ui: ProgressionUi, modifier: Modifier) {
 }
 
 @Composable
-private fun Corners(ui: ProgressionUi, modifier: Modifier) {
+private fun Corners(ui: ProgressionUi, actions: ProgressionActions, modifier: Modifier) {
     Card(modifier.testTag(ProgressionCornersTag)) {
         TrackLabel("Corners · tap one for more")
         ui.corners.forEachIndexed { i, corner ->
             if (i > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Corner(corner)
+            Corner(corner, actions)
         }
     }
 }
 
 @Composable
-private fun Corner(corner: CornerRow) {
+private fun Corner(corner: CornerRow, actions: ProgressionActions) {
     var open by rememberSaveable(corner.cornerId) { mutableStateOf(false) }
     Column(
         Modifier
@@ -211,6 +218,9 @@ private fun Corner(corner: CornerRow) {
         if (open) {
             corner.details.forEach { Metric(it, small = true) }
             if (corner.details.isEmpty()) Dim("Nothing else measured here.")
+            corner.sessionId?.let { session ->
+                TextButton(onClick = { actions.cornerPasses(session, corner.cornerId) }) { Text(LatestPassesText) }
+            }
         }
     }
 }

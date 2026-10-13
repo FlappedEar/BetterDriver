@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.smoke
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -15,7 +16,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.flappedear.betterdriver.feature.analysis.CornerTracesTag
+import com.flappedear.betterdriver.feature.analysis.EveryPassText
+import com.flappedear.betterdriver.feature.analysis.LatestPassesText
 import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
+import com.flappedear.betterdriver.feature.analysis.ProgressionCornersTag
 import com.flappedear.betterdriver.feature.analysis.ProgressionLinkText
 import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
 import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
@@ -112,9 +117,11 @@ class AnalysisSmokeTest {
         app.openTab("Corners")
         app.waitForText("Every lap ›").performScrollTo().performClick()
 
-        // Corner laps: every counted lap through the corner, fastest first, each with its video.
+        // Corner laps: every counted lap through the corner, fastest first, each with its video, and
+        // every pass's traces over the corner (FBBD-93).
         app.waitForText("Every lap")
         app.waitForText("fastest through the corner first", substring = true, timeoutMs = LoadTimeoutMs)
+        app.waitFor(hasTestTag(CornerTracesTag)).performScrollTo().assertIsDisplayed()
         app.waitForText("TIME THROUGH THE CORNER", substring = true)
         app.waitForText("Play").performScrollTo().performClick()
         app.waitForText("Again").assertIsDisplayed()
@@ -218,6 +225,44 @@ class AnalysisSmokeTest {
         app.waitForText("SESSIONS · UNTICK ONE TO LEAVE IT OUT").performScrollTo().assertIsDisplayed()
         app.back()
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+    }
+
+    /**
+     * One tap from a corner of the progression to its passes in the latest session that drove it
+     * (FBBD-93): the session's analysis opens on that corner, with its traces, and back returns to
+     * the progression. And from the next-session focus, when the session has a focus corner.
+     */
+    @Test
+    fun progressionAndFocusOpenACornersPasses() {
+        app.openSessions()
+        app.openSession(SmokeFixtures.VideoCar)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        val everyPass = hasText(EveryPassText) and hasClickAction()
+        if (app.exists(everyPass)) {
+            app.waitFor(everyPass).performScrollTo()
+            app.clickAction(everyPass)
+            app.waitForText("Every lap")
+            app.waitFor(hasTestTag(CornerTracesTag), timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
+            app.back()
+            app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        }
+
+        val link = hasText(ProgressionLinkText) and hasClickAction()
+        app.waitFor(link, timeoutMs = LoadTimeoutMs).performScrollTo()
+        app.clickAction(link)
+        app.waitForText("CORNERS · TAP ONE FOR MORE", timeoutMs = LoadTimeoutMs).performScrollTo()
+        val corner = hasText("Corner", substring = true) and hasClickAction() and
+            hasAnyAncestor(hasTestTag(ProgressionCornersTag))
+        app.waitFor(corner).performScrollTo()
+        app.clickAction(corner)
+        val passes = hasText(LatestPassesText) and hasClickAction()
+        app.waitFor(passes).performScrollTo()
+        app.clickAction(passes)
+        app.waitForText("Every lap", timeoutMs = LoadTimeoutMs)
+        app.waitFor(hasTestTag(CornerTracesTag), timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
+        // Opened from the progression: back goes back there.
+        app.back()
+        app.waitForText("CORNERS · TAP ONE FOR MORE", timeoutMs = LoadTimeoutMs)
     }
 
     @Test

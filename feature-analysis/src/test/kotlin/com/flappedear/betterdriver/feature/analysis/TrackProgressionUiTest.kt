@@ -20,6 +20,26 @@ class TrackProgressionUiTest {
 
     private fun corner(name: String) = ui.corners.single { it.name == name }
 
+    /** A corner opens its passes in the latest session that drove it, in the revision shown (FBBD-93). */
+    @Test
+    fun aCornerOpensItsPassesInTheLatestSessionThatDroveIt() {
+        assertEquals(listOf("p3", "p3", "p3", "p3"), ui.corners.map { it.sessionId })
+        val records = PreviewProgressionRecords
+        val zone = ZoneOffset.UTC
+        // With the latest left out, the one before it.
+        val earlier = trackProgression(
+            records, ProgressionGrouping.Session, ProgressionFilter(sessionIds = setOf("p0", "p1", "p2")), zone,
+        )
+        assertEquals("p2", latestSessionWith(records, earlier, "c2"))
+        assertNull(latestSessionWith(records, earlier, "c-unknown"))
+        // A session of another revision never opens for the corner: its CornerIds are other corners.
+        val changed = records.map { if (it.sessionId == "p3") it.copy(identityRevision = 2) else it }
+        val shown = trackProgression(changed, ProgressionGrouping.Session, ProgressionFilter(), zone)
+        assertEquals("p3", latestSessionWith(changed, shown, "c2"))
+        val old = shown.copy(revision = 1)
+        assertEquals("p2", latestSessionWith(changed, old, "c2"))
+    }
+
     @Test
     fun lapsShowTheLatestValueAndTheirTrendWithItsSize() {
         assertEquals(

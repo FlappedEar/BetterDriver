@@ -52,10 +52,14 @@ object Routes {
         "review?a=${Uri.encode(a)}&b=${Uri.encode(b)}" + (at?.let { "&at=$it" } ?: "")
 
     /** Lap analysis of one saved session (FBBD-102). */
-    const val SessionAnalysisPattern = "sessions/{id}/analysis"
+    const val SessionAnalysisPattern = "sessions/{id}/analysis?corner={corner}"
     const val SessionIdArg = "id"
 
-    fun sessionAnalysis(id: String) = "sessions/$id/analysis"
+    /** Opened on one corner's passes (FBBD-93), as from the progression: its CornerId. */
+    const val CornerArg = "corner"
+
+    fun sessionAnalysis(id: String, corner: String? = null) =
+        "sessions/$id/analysis" + (corner?.let { "?corner=${Uri.encode(it)}" } ?: "")
 
     /** The cue review of one session (FBBD-99). */
     const val CueReviewPattern = "sessions/{id}/cues"

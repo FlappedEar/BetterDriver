@@ -67,7 +67,7 @@ fun cornerPasses(analysis: SessionAnalysis, segmentId: String): List<CornerPass>
 }
 
 /** The next lap starts this close to a lap's end when the drive went on through the line. */
-private const val ContiguousLapSeconds = 0.5
+internal const val ContiguousLapSeconds = 0.5
 
 /**
  * The exit and time of a pass through a corner over the start/finish line, entered on lap [i]
