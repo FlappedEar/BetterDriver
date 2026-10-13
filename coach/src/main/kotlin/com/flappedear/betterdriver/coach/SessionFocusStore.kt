@@ -145,7 +145,11 @@ class SessionFocusStore(private val dir: File) {
     /** Saves [record] unless the same is saved already; returns whether it wrote. */
     fun save(record: SessionFocusRecord): Boolean {
         val f = fileFor(record.trackId, record.sessionId)
-        if (read(f) == record) return false
+        // One record per session: analysed again at another track, it leaves the old track (FBBD-20).
+        val elsewhere = dir.listFiles { d -> d.isDirectory && d.name != record.trackId }.orEmpty()
+            .map { File(it, f.name) }.filter { it.exists() }
+        elsewhere.forEach { it.delete() }
+        if (read(f) == record) return elsewhere.isNotEmpty()
         writeAtomically(f, json.encodeToString(SessionFocusRecord.serializer(), record))
         return true
     }

@@ -147,6 +147,21 @@ class SessionFocusTest {
         }
 
     @Test
+    fun `a session analysed again at another track keeps one record, at the new track`() = withDir { dir ->
+        val store = SessionFocusStore(dir)
+        val older = record("s1", 1_000, 0)
+        val moved = record("s2", 2_000, 1)
+        store.save(older)
+        store.save(moved)
+        assertEquals(moved, store.latest("sim"))
+        assertTrue(store.save(moved.copy(trackId = "other")))
+        assertEquals(older, store.latest("sim"))
+        assertEquals(listOf(older), store.history("sim"))
+        assertEquals("other", store.latest("other")?.trackId)
+        assertTrue(!File(dir, "sim/s2.json").exists())
+    }
+
+    @Test
     fun `a record keeps each focus under its CornerId, primary first, with what to change`() = withDir { dir ->
         val store = SessionFocusStore(dir)
         val r = record("s1", 1, 1, 3).let { r ->
