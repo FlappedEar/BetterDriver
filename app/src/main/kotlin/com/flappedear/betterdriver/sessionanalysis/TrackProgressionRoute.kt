@@ -20,6 +20,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
+import com.flappedear.betterdriver.analysis.progression.CornerMapping
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.feature.analysis.ProgressionActions
@@ -68,12 +69,16 @@ internal fun TrackProgressionRoute(trackId: String, onBack: () -> Unit) {
     var day by rememberSaveable(trackId) { mutableStateOf<String?>(null) }
     var excluded by rememberSaveable(trackId) { mutableStateOf("") }
     var state by remember(trackId) { mutableStateOf<ProgressionState>(ProgressionState.Loading) }
+    // Which corner of an older revision of the track's corners is which (FBBD-179).
+    var mapping by remember(trackId) { mutableStateOf(CornerMapping.SameRevisionOnly) }
     LaunchedEffect(trackId) {
         // Made off the main thread: making the stores reads the disk (FBBD-41).
         val stores = withContext(Dispatchers.IO) {
             val tracks = TrackStore(tracksDir(context))
             val history = coachingHistoryStore(context)
-            title = tracks.get(trackId)?.displayName.orEmpty()
+            val track = tracks.get(trackId)
+            title = track?.displayName.orEmpty()
+            mapping = CornerMapping.of(track?.identity)
             records = readHistory(history, trackId)
             ProgressionStores(SessionStore(sessionsDir(context)), tracks, history)
         }
@@ -90,7 +95,7 @@ internal fun TrackProgressionRoute(trackId: String, onBack: () -> Unit) {
         }
         adding = 0
     }
-    LaunchedEffect(records, grouping, period, day, excluded, adding, title) {
+    LaunchedEffect(records, grouping, period, day, excluded, adding, title, mapping) {
         val kept = records ?: return@LaunchedEffect
         val choice = ProgressionChoice(
             grouping, period, day?.let(LocalDate::parse), excluded.lines().filter { it.isNotBlank() }.toSet(),
@@ -98,7 +103,7 @@ internal fun TrackProgressionRoute(trackId: String, onBack: () -> Unit) {
         state = withContext(Dispatchers.Default) {
             val zone = ZoneId.systemDefault()
             ProgressionState.Ready(
-                progressionScreenUi(title, kept, choice, LocalDate.now(zone), zone).copy(adding = adding),
+                progressionScreenUi(title, kept, choice, LocalDate.now(zone), zone, mapping).copy(adding = adding),
             )
         }
     }

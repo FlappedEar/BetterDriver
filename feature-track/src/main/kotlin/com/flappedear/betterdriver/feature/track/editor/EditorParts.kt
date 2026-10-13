@@ -34,6 +34,12 @@ internal object EditorColors {
     val Line = Color(0xFFF2F5F7)
     val Pit = Color(0xFFC9D3DA)
     val Halo = Color(0xFF0B0F12)
+
+    /** The track's corners on the map and in the list (FBBD-179). */
+    val Corner = Color(0xFFF2B84B)
+
+    /** Its straights: faint, so the corners stand out. */
+    val Straight = Color(0x99C9D3DA)
 }
 
 @Composable

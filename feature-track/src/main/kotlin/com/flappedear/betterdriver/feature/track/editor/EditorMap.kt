@@ -11,7 +11,6 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
@@ -21,6 +20,7 @@ import com.flappedear.betterdriver.timing.edit.line
 import com.flappedear.betterdriver.timing.edit.lineRefs
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.map.TileSource
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.TrackLine
 
 /** Path points closer than this on screen are skipped when drawing the lap, in pixels. */
@@ -44,19 +44,31 @@ internal fun EditorMap(
     source: TileSource,
     tiles: TileLoader,
     modifier: Modifier = Modifier,
+    onCorrect: ((SegmentEdit) -> Unit)? = null,
 ) {
     val text = rememberTextMeasurer()
     val selectedLine = state.selectedLine
+    // The track's corners and straights (FBBD-179), while no line is being placed.
+    val corners = rememberIdentityLayer(state, correctable = onCorrect != null)
+    val ends = corners?.ends.orEmpty()
     TileMap(
         camera = camera,
         source = source,
         tiles = tiles,
         modifier = modifier,
-        handles = selectedLine?.let { listOf(it.left, it.right) }.orEmpty(),
+        handles = selectedLine?.let { listOf(it.left, it.right) } ?: ends.map { it.second },
         onTap = state::onTap,
-        onHandleDrag = { i, to -> state.moveEnd(left = i == 0, to = to) },
+        onHandleDrag = { i, to ->
+            if (state.selected != null) {
+                state.moveEnd(left = i == 0, to = to)
+            } else {
+                ends.getOrNull(i)?.let { state.dragBoundary(it.first, to) }
+            }
+        },
+        onHandleDragEnd = { if (state.selected == null) state.endDrag()?.let { onCorrect?.invoke(it) } },
     ) { project ->
         state.path?.let { drawLap(it.points, project, highlight = state.selected != null) }
+        corners?.let { drawIdentity(it, project, text) }
         val track = state.track
         for (ref in track.lineRefs()) {
             val line = track.line(ref) ?: continue
@@ -134,7 +146,7 @@ private fun DrawScope.drawTimingLine(
             drawCircle(EditorColors.Accent, 6.dp.toPx(), end, style = Stroke(2.dp.toPx()))
         }
     }
-    drawText(
+    drawLabel(
         text,
         label,
         topLeft = a + Offset(8.dp.toPx(), -18.dp.toPx()),
