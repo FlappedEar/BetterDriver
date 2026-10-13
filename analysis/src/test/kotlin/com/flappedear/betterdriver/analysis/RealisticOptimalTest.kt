@@ -12,6 +12,8 @@ import com.flappedear.betterdriver.analysis.optimal.optimalLap
 import com.flappedear.betterdriver.analysis.optimal.realisticOptimal
 import com.flappedear.betterdriver.analysis.real.RealCorpus
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
+import com.flappedear.betterdriver.analysis.segments.computeLapSectorTimes
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import org.junit.jupiter.api.DynamicTest
 import org.junit.jupiter.api.TestFactory
@@ -73,16 +75,13 @@ class RealisticOptimalTest {
         val benchmarks = lapBenchmarks(analysis) ?: return // no counted lap: nothing to combine
         val raw = benchmarks.rawTheoreticalSeconds ?: return // no segments or incomplete coverage
         val realistic = assertNotNull(analysis.realisticOptimal, "$name: a realistic optimal with a theoretical best")
-        val t = realistic.thresholds
-        for (j in realistic.crossLapJoints) {
-            val what = "$name ${j.fromSegmentId}->${j.toSegmentId} lap ${j.fromLap}->${j.toLap}"
-            assertTrue(assertNotNull(j.speedDifferenceKmh, what) <= t.speedKmh, "$what speed ${j.speedDifferenceKmh}")
-            assertTrue(assertNotNull(j.lateralDifferenceMeters, what) <= t.lateralMeters, "$what line")
-            assertTrue(assertNotNull(j.headingDifferenceRadians, what) <= t.headingRadians, "$what direction")
-            assertTrue(assertNotNull(j.accelerationDifferenceG, what) <= t.accelerationG, "$what acceleration")
-            val pedals = setOf(j.from!!.pedals, j.to!!.pedals)
-            assertTrue(pedals != setOf(PedalState.Braking, PedalState.Accelerating), "$what braking into throttle")
+        // On a circuit the lap runs on over the line: the joints go round the loop, the last segment
+        // leading into the first (a point-to-point run has no such joint).
+        if (assertNotNull(analysis.axis).closed && assertNotNull(analysis.segments).segments.size > 1) {
+            assertEquals(analysis.segments!!.segments.size, realistic.joints.size, "$name: round the loop")
+            assertEquals(realistic.joints.first().fromSegmentId, realistic.joints.last().toSegmentId, name)
         }
+        checkJoints(name, realistic)
         assertTrue(realistic.totalSeconds >= raw - 1e-9, "$name: realistic ${realistic.totalSeconds} < raw $raw")
         assertTrue(
             realistic.totalSeconds <= benchmarks.bestActualSeconds + 1e-9,
@@ -95,6 +94,60 @@ class RealisticOptimalTest {
         val chosen = realistic.sectors.associate { it.segmentId to it.lapNumber }
         assertTrue(film.parts.all { chosen[it.segmentId] == it.lapNumber }, name)
         assertEquals(realistic.sectors.sumOf { it.seconds }, film.parts.sumOf { it.seconds }, 1e-6, name)
+    }
+
+    /** Every joint of [realistic] between two laps is within its thresholds. */
+    private fun checkJoints(name: String, realistic: RealisticOptimalLap) {
+        val t = realistic.thresholds
+        for (j in realistic.crossLapJoints) {
+            val what = "$name ${j.fromSegmentId}->${j.toSegmentId} lap ${j.fromLap}->${j.toLap}"
+            assertTrue(assertNotNull(j.speedDifferenceKmh, what) <= t.speedKmh, "$what speed ${j.speedDifferenceKmh}")
+            assertTrue(assertNotNull(j.lateralDifferenceMeters, what) <= t.lateralMeters, "$what line")
+            assertTrue(assertNotNull(j.headingDifferenceRadians, what) <= t.headingRadians, "$what direction")
+            assertTrue(assertNotNull(j.accelerationDifferenceG, what) <= t.accelerationG, "$what acceleration")
+            val pedals = setOf(j.from!!.pedals, j.to!!.pedals)
+            assertTrue(pedals != setOf(PedalState.Braking, PedalState.Accelerating), "$what braking into throttle")
+        }
+    }
+
+    @Test
+    fun `with a boundary exactly on the line, the last segment must still lead compatibly into the first`() {
+        val session = silesia()
+        val analysis = analyzeSession(session)
+        val axis = assertNotNull(analysis.axis)
+        val segments = assertNotNull(analysis.segments)
+        // Silesia's last straight runs over the line; cut it there, so two segments meet at the line.
+        val wrap = segments.segments.single { it.endProgressMeters < it.startProgressMeters }
+        val cut = ApprovedSegments(
+            segments.segments.flatMap { s ->
+                if (s !== wrap) {
+                    listOf(s)
+                } else {
+                    listOf(
+                        s.copy(id = "${s.id}-after", startProgressMeters = 0.0),
+                        s.copy(id = "${s.id}-before", endProgressMeters = axis.lengthMeters),
+                    )
+                }
+            },
+            segments.revision,
+        )
+        val laps = analysis.laps.timedLaps
+        val times = laps.mapIndexed { i, lap ->
+            computeLapSectorTimes(
+                cut, axis.lengthMeters, analysis.traces[i], lap.startTelemetryTime, lap.endTelemetryTime, lap.number,
+            )
+        }
+        val realistic = assertNotNull(
+            realisticOptimal(session, axis, cut, laps, times, analysis.traces, analysis.laps.fastestLapIndex),
+        )
+        assertEquals(cut.segments.size, realistic.joints.size, "a joint between every pair, round the loop")
+        val line = realistic.joints.last()
+        assertEquals("${wrap.id}-before", line.fromSegmentId)
+        assertEquals("${wrap.id}-after", line.toSegmentId)
+        assertEquals(axis.lengthMeters, line.progressMeters)
+        checkJoints("silesia cut at the line", realistic)
+        val best = laps[analysis.laps.fastestLapIndex!!].durationSeconds
+        assertTrue(realistic.totalSeconds <= best + 1e-9 && realistic.laps.size > 1, "${realistic.totalSeconds}")
     }
 
     @Test

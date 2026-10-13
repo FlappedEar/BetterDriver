@@ -194,10 +194,8 @@ fun realisticOptimal(
         .map { Candidate(laps[it], lapTimes[it], traces[it]) }
     if (approved.segments.isEmpty() || !axis.valid || candidates.isEmpty()) return null
     val search = Search(JointProbe(session, axis), candidates, thresholds)
-    val order = approved.segments.sortedBy { it.startProgressMeters }
-    val wrap = order.firstOrNull { it.endProgressMeters < it.startProgressMeters }
-    val chain = order.filter { it !== wrap }
-    val found = search.best(chain, wrap) ?: return null
+    val loop = Loop(approved, axis.closed)
+    val found = search.best(loop.rest, loop.closing) ?: return null
     val bySegment = found.picks.associateBy { it.sector.segmentId }
 
     // Never slower than the best actual lap: when its own time beats every combination, it is the answer.
@@ -211,9 +209,29 @@ fun realisticOptimal(
         val p = pickOf(s)
         RealisticSector(s.id, s.name, p.candidate.lap.number, p.seconds)
     }
-    val inTrackOrder = if (wrap != null) listOf(wrap) + chain + wrap else chain
-    val joints = inTrackOrder.zipWithNext().map { (a, b) -> search.joint(pickOf(a), pickOf(b)) }
+    val joints = loop.inTrackOrder.zipWithNext().map { (a, b) -> search.joint(pickOf(a), pickOf(b)) }
     return RealisticOptimalLap(sectors, joints, alone?.lap?.durationSeconds ?: found.seconds, thresholds)
+}
+
+/**
+ * The segments of [approved] in the order the search takes them. On a circuit ([closed]) the lap
+ * runs on over the line, so the last segment must also lead into the first: a segment over the line
+ * closes the loop itself; otherwise the first segment closes it. Either way the [closing] segment's
+ * lap is fixed for each run of the search over the [rest]. A point-to-point run has no such joint.
+ */
+private class Loop(approved: ApprovedSegments, closed: Boolean) {
+    private val order = approved.segments.sortedBy { it.startProgressMeters }
+    private val wrap = order.firstOrNull { it.endProgressMeters < it.startProgressMeters }
+    private val chain = order.filter { it !== wrap }
+    val closing: TrackSegment? = wrap ?: chain.firstOrNull()?.takeIf { closed && chain.size > 1 }
+    val rest: List<TrackSegment> = chain.filter { it !== closing }
+
+    /** Every segment in track order, with the one that closes the loop again where it does. */
+    val inTrackOrder: List<TrackSegment> = when {
+        wrap != null -> listOf(wrap) + chain + wrap
+        closing != null -> chain + closing
+        else -> chain
+    }
 }
 
 /** The search over [candidates], measuring each lap at the joints once with [probe]. */
@@ -255,9 +273,10 @@ private class Search(
         candidates.mapNotNull { c -> c.times.sector(s.id)?.takeIf { it.seconds != null }?.let { Pick(c, it) } }
 
     /**
-     * The fastest compatible chain through [chain] (in track order) and [wrap], the segment over
-     * the line, which one lap drives at both ends of the lap: the search is run once for each lap
-     * that can drive it. Null when nothing gets through.
+     * The fastest compatible chain through [chain] (in track order) and [wrap], the segment that
+     * closes the loop (over the line, or the first after it), which must follow the last of
+     * [chain] and lead into its first: the search is run once for each lap that can drive it.
+     * Null when nothing gets through.
      */
     @Suppress("ReturnCount")
     fun best(chain: List<TrackSegment>, wrap: TrackSegment?): Chain? {
@@ -329,10 +348,25 @@ private class JointProbe(private val session: TelemetrySession, private val axis
         } else {
             null
         }
+        val lateral = lateralAt(time, progress)
+        val heading = headingAt(trace, progress, lateral)
+        return JointState(time, speedAt(trace, time), lateral, heading, acceleration)
+    }
+
+    /**
+     * The drift across the track around [progress], where the lap is [lateral] off the line: over
+     * the window either side, or on one side only at the line, where the lap's trace ends.
+     */
+    private fun headingAt(trace: List<ProgressSegment>, progress: Double, lateral: Double?): Double? {
         val behind = offsetAt(trace, progress - TrajectoryWindowMeters)
         val ahead = offsetAt(trace, progress + TrajectoryWindowMeters)
-        val heading = if (behind != null && ahead != null) (ahead - behind) / (2 * TrajectoryWindowMeters) else null
-        return JointState(time, speedAt(trace, time), lateralAt(time, progress), heading, acceleration)
+        return when {
+            behind != null && ahead != null -> (ahead - behind) / (2 * TrajectoryWindowMeters)
+            lateral == null -> null
+            behind != null -> (lateral - behind) / TrajectoryWindowMeters
+            ahead != null -> (ahead - lateral) / TrajectoryWindowMeters
+            else -> null
+        }
     }
 
     /** Speed in km/h: the speed channel, else from progress along the axis. */
