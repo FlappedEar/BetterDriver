@@ -2,6 +2,9 @@ package com.flappedear.betterdriver.sessionanalysis
 
 import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.sessionanalysis.AddResult.Added
+import com.flappedear.betterdriver.sessionanalysis.AddResult.Elsewhere
+import com.flappedear.betterdriver.sessionanalysis.AddResult.Failed
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,7 +19,7 @@ class ProgressionHistoryTest {
         candidates: List<String>,
         current: Set<String> = emptySet(),
         tried: Set<String> = emptySet(),
-        atTrack: (String) -> Boolean = { true },
+        result: (String) -> AddResult = { AddResult.Added },
     ): Pair<List<String>, Int> {
         val analysed = mutableListOf<String>()
         val added = runBlocking {
@@ -26,7 +29,7 @@ class ProgressionHistoryTest {
                 tried = { it in tried },
                 add = { id ->
                     analysed += id
-                    atTrack(id)
+                    result(id)
                 },
             )
         }
@@ -48,7 +51,7 @@ class ProgressionHistoryTest {
         // 130 newer sessions at another track, then 25 at this one: twenty of this track's are added.
         val other = (1..130).map { "o$it" }
         val here = (1..25).map { "t$it" }
-        val (analysed, added) = goThrough(other + here, atTrack = { it.startsWith("t") })
+        val (analysed, added) = goThrough(other + here, result = { if (it.startsWith("t")) Added else Elsewhere })
         assertEquals(MaxProgressionAdds, added)
         assertEquals(here.take(MaxProgressionAdds), analysed.filter { it.startsWith("t") })
 
@@ -66,10 +69,19 @@ class ProgressionHistoryTest {
     }
 
     @Test
+    fun `sessions that cannot be read or analysed count towards the limits`() {
+        // 200 damaged sessions: one opening tries twenty, not all of them.
+        val damaged = (1..200).map { "d$it" }
+        val (analysed, tried) = goThrough(damaged, result = { Failed })
+        assertEquals(damaged.take(MaxProgressionAdds), analysed)
+        assertEquals(MaxProgressionAdds, tried)
+    }
+
+    @Test
     fun `how many more may be added is told before each, and none at the end`() {
         val heard = mutableListOf<Int>()
         runBlocking {
-            addNewest(listOf("a", "b", "c"), { it == "b" }, { false }, { true }, left = { heard += it })
+            addNewest(listOf("a", "b", "c"), { it == "b" }, { false }, { Added }, left = { heard += it })
         }
         assertEquals(listOf(2, 1, 0), heard)
     }

@@ -107,7 +107,7 @@ internal fun TrackProgressionRoute(
             tried = { triedAt(trackId, it) },
             add = { id ->
                 val added = withContext(Dispatchers.Default) { addToHistory(byId.getValue(id), stores, trackId, epoch) }
-                if (added) records = withContext(Dispatchers.IO) { readHistory(history, trackId) }
+                if (added == AddResult.Added) records =withContext(Dispatchers.IO) { readHistory(history, trackId) }
                 added
             },
             left = { adding = it },
