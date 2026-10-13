@@ -31,6 +31,9 @@ enum class SegmentKind {
  * [number] is what the driver reads ("Corner 3"); corners with no straight between them are one
  * segment numbered [number] to [lastNumber] ("Corners 3–4"). [startMeters] and [endMeters] are along
  * the revision's centreline; the last segment of a closed track may wrap ([endMeters] < [startMeters]).
+ *
+ * [label] is the driver's own name for it and [chicane] marks a corner the driver calls a chicane
+ * (FBBD-179); neither changes how it is timed.
  */
 @Serializable
 data class RevisionSegment(
@@ -40,20 +43,40 @@ data class RevisionSegment(
     val lastNumber: Int = number,
     val startMeters: Double,
     val endMeters: Double,
+    val label: String? = null,
+    val chicane: Boolean = false,
 ) {
     init {
         require(id.isNotBlank() && id.length <= MaxSegmentIdChars) { "bad segment id" }
         require(number >= 1 && lastNumber >= number) { "bad segment numbers" }
         require(startMeters.isFinite() && endMeters.isFinite()) { "bad segment range" }
+        require(label == null || label.isNotBlank() && label.length <= MaxSegmentLabelChars) { "bad segment label" }
+        require(!chicane || kind == SegmentKind.Corner) { "only a corner is a chicane" }
     }
 
-    /** "Corner 3", "Corners 3–4" or "Straight 2". */
-    val name: String
+    /** The driver's [label], else the [numberedName]. */
+    val name: String get() = label ?: numberedName
+
+    /** "Corner 3", "Corners 3–4", "Chicane 5", "Chicane 5–6" or "Straight 2". */
+    val numberedName: String
         get() = when {
             kind == SegmentKind.Straight -> "Straight $number"
+            chicane && lastNumber > number -> "Chicane $number–$lastNumber"
+            chicane -> "Chicane $number"
             lastNumber > number -> "Corners $number–$lastNumber"
             else -> "Corner $number"
         }
+
+    /** What the driver sees it as: a corner, a chicane or a straight. */
+    val type: SegmentType
+        get() = when {
+            kind == SegmentKind.Straight -> SegmentType.Straight
+            chicane -> SegmentType.Chicane
+            else -> SegmentType.Corner
+        }
+
+    /** How many corners it holds: 0 for a straight. */
+    val cornerCount: Int get() = if (kind == SegmentKind.Corner) lastNumber - number + 1 else 0
 }
 
 /**
@@ -78,6 +101,7 @@ data class TrackRevision(
     val nextCornerId: Int = segments.count { it.kind == SegmentKind.Corner } + 1,
     val nextStraightId: Int = segments.count { it.kind == SegmentKind.Straight } + 1,
     val madeFromUtcMillis: Long? = null,
+    val detected: List<RevisionSegment>? = null,
 ) {
     init {
         require(number >= 1) { "revisions start at 1" }
@@ -85,6 +109,43 @@ data class TrackRevision(
         require(lats.all { it.isFinite() && it in -MaxLatitude..MaxLatitude }) { "latitude out of range" }
         require(lons.all { it.isFinite() && it in -MaxLongitude..MaxLongitude }) { "longitude out of range" }
         require(segments.size >= 2 && segments.map { it.id }.toSet().size == segments.size) { "bad segments" }
+        require(detected == null || detected.size >= 2 && detected.map { it.id }.toSet().size == detected.size) {
+            "bad detected segments"
+        }
+    }
+
+    /** The driver corrected the detected corners and straights (FBBD-179); [detected] keeps those. */
+    val corrected: Boolean get() = detected != null
+
+    /** The point [meters] along the centreline. */
+    fun pointAt(meters: Double): GeoPoint {
+        val frame = LocalFrame(start)
+        return frame.toGeo(Centreline(this, frame).pointAt(meters))
+    }
+
+    /** Metres along the centreline nearest [p], whichever way it runs there; null further than [maxMeters]. */
+    fun metersNear(p: GeoPoint, maxMeters: Double = Double.MAX_VALUE): Double? {
+        val frame = LocalFrame(start)
+        return Centreline(this, frame).locate(frame.toXy(p), null, maxMeters)
+    }
+
+    /**
+     * The centreline from [fromMeters] to [toMeters] in driving order (across the line on a closed
+     * track when [toMeters] is before [fromMeters]): both ends and every stored point between, to draw.
+     */
+    fun path(fromMeters: Double, toMeters: Double): List<GeoPoint> {
+        val frame = LocalFrame(start)
+        val line = Centreline(this, frame)
+        val length = line.lengthMeters
+        val from = if (closed) fromMeters.mod(length) else fromMeters.coerceIn(0.0, length)
+        val to = if (closed) toMeters.mod(length) else toMeters.coerceIn(0.0, length)
+        val inside = if (from <= to) {
+            line.points.indices.filter { line.along[it] > from && line.along[it] < to }
+        } else {
+            line.points.indices.filter { line.along[it] > from } + line.points.indices.filter { line.along[it] < to }
+        }
+        val points = listOf(line.pointAt(from)) + inside.map { line.points[it] } + line.pointAt(to)
+        return points.map(frame::toGeo)
     }
 
     /** Length of the centreline, closed back to its start on a closed track. */
@@ -192,7 +253,13 @@ data class TrackRevision(
             val i = shapes.indices.firstOrNull { s in inShape[it] } ?: return@mapNotNull null
             s.id to ids[i]
         }.toMap()
-        return build(number + 1, frame, line, shapes, ids, previous, nextCorner, nextStraight)
+        val made = build(number + 1, frame, line, shapes, ids, previous, nextCorner, nextStraight)
+        // A corner or straight that keeps its id keeps the driver's name for it (FBBD-179).
+        return made.copy(
+            segments = made.segments.map { s ->
+                segment(s.id)?.takeIf { it.kind == s.kind }?.let { s.copy(label = it.label, chicane = it.chicane) } ?: s
+            },
+        )
     }
 
     companion object {
@@ -272,6 +339,9 @@ const val RevisionChangeRunMeters = 30.0
 const val CentrelineStepMeters = 5.0
 
 private const val MaxSegmentIdChars = 32
+
+/** The longest name the driver can give a corner or straight (FBBD-179). */
+const val MaxSegmentLabelChars = 40
 
 /** Positions are kept to seven decimals of a degree: about a centimetre. */
 private const val GeoScale = 1e7

@@ -196,6 +196,8 @@ class Imports private constructor(private val context: Context) {
                 onFailed = { failed(name) },
                 still = { it == here },
                 onChanged = { io.execute { guarded { addTrack(track, done, failed) } } },
+                // The driver's corner corrections come with it (FBBD-179).
+                adoptIdentity = TrackTransfer.carriesCorrections(track),
             ) { done(message) }
         }
         when (TrackTransfer.match(track, here)) {
@@ -203,7 +205,8 @@ class Imports private constructor(private val context: Context) {
             TrackMatch.SAME -> done("Track $name is already here.")
             TrackMatch.DIFFERENT -> ask(
                 "Track differs",
-                "$name on this device has other lines. Keep the one here, or replace it with the one received?",
+                "$name on this device has other lines or corners. Keep the one here, or replace it with the one " +
+                    "received?",
                 onAnswer = { replace -> if (replace) save("Replaced track $name.") else done("Kept track $name.") },
                 onCancel = { done("Kept track $name.") },
             )

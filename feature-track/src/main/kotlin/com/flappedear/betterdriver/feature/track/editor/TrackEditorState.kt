@@ -11,9 +11,13 @@ import com.flappedear.betterdriver.timing.edit.sectorsInLapOrder
 import com.flappedear.betterdriver.timing.edit.withLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
+import com.flappedear.betterdriver.timing.track.MinCorrectedSegmentMeters
+import com.flappedear.betterdriver.timing.track.RevisionSegment
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
+import com.flappedear.betterdriver.timing.track.corrected
 
 /** How a tap places the selected line (UI-24). The editor opens with [FromLap] when there is a lap. */
 enum class PlaceMethod { FromLap, TwoTaps }
@@ -28,6 +32,11 @@ data class EditorSession(val title: String, val fixes: List<Fix>)
  *
  * [stored] is the track as saved, if it is; a track proposed [fromSession] (FBBD-151) opens with
  * lines that are not saved yet, so it starts changed and leaving asks first.
+ *
+ * The track's corners and straights ([identity], FBBD-179) are corrected here too: pick one
+ * ([selectSegment], or a tap on the map), then rename, retype, split, merge or remove it, or drag its
+ * ends along the track ([dragBoundary], [endDrag]). A correction is not part of [track]: the caller
+ * stores each one as it is made ([correctionStored]), so it never waits for Save.
  */
 @Stable
 @Suppress("TooManyFunctions") // One function per editor action.
@@ -70,10 +79,138 @@ class TrackEditorState(
     /** The selected line's current position, or null if it is not placed yet. */
     val selectedLine: TrackLine? get() = selected?.let { track.line(it) }
 
+    /** The track's corners and straights as stored (FBBD-172, FBBD-179); null before any analysis there. */
+    var identity by mutableStateOf(stored?.identity ?: initial.identity)
+        private set
+
+    /** The centreline's length, for the corrections' arithmetic. */
+    private var identityLength = identity?.lengthMeters ?: 0.0
+
+    /** The corner or straight being corrected, by id, or null. */
+    var segmentId by mutableStateOf<String?>(null)
+        private set
+
+    /** The corner or straight being corrected. */
+    val selectedSegment: RevisionSegment? get() = segmentId?.let { identity?.segment(it) }
+
+    /** While an end of [selectedSegment] is dragged: which ([SegmentEnd]) and where, in metres along the track. */
+    var dragged by mutableStateOf<Pair<SegmentEnd, Double>?>(null)
+        private set
+
+    /** A correction is being stored; nothing else is offered until it is. */
+    var correcting by mutableStateOf(false)
+        private set
+
+    /** What the last correction left to say: why it was not kept. */
+    var correctionNote by mutableStateOf<String?>(null)
+        private set
+
+    /** The track as stored with its corners as corrected here, for sharing (FBBD-179). */
+    val shared: Track get() = track.copy(identity = identity)
+
     fun select(ref: LineRef) {
         beforePlacing = track
         selected = ref
         firstTap = null
+        segmentId = null
+    }
+
+    /** Whether corrections can be stored (the track is saved); set by the screen. */
+    internal var correctable = true
+
+    /** Picks the corner or straight [id] to correct (none with null); not while a line is placed. */
+    fun selectSegment(id: String?) {
+        if (selected != null || id != null && !correctable) return
+        segmentId = id?.takeIf { identity?.segment(it) != null }
+        dragged = null
+        correctionNote = null
+    }
+
+    /** [edit] if it applies to the corners as shown, null if not (so its button is off). */
+    fun ifApplies(edit: SegmentEdit): SegmentEdit? =
+        edit.takeIf { !correcting && identity?.corrected(edit).let { it != null && it != identity } }
+
+    /**
+     * The edit to store, marking a correction under way: the caller stores it and reports back with
+     * [correctionStored]. Null when it does not apply.
+     */
+    fun startCorrection(edit: SegmentEdit): SegmentEdit? = ifApplies(edit)?.also {
+        correcting = true
+        correctionNote = null
+    }
+
+    /**
+     * After the caller stored a correction: [stored] is the track as stored now (null if it is gone),
+     * [applied] whether the correction is in it. When it is not (the corners changed meanwhile, as
+     * after an analysis or a restore), the corners shown become the stored ones and the driver is told.
+     */
+    fun correctionStored(stored: Track?, applied: Boolean) {
+        correcting = false
+        dragged = null
+        identity = stored?.identity
+        identityLength = identity?.lengthMeters ?: 0.0
+        if (selectedSegment == null) segmentId = null
+        correctionNote = if (applied) null else "The corners changed meanwhile. They are shown as they are now."
+    }
+
+    /** The two ends of [selectedSegment] that can be dragged, with where each is. */
+    fun segmentEnds(): List<Pair<SegmentEnd, GeoPoint>> {
+        val r = identity
+        val s = selectedSegment
+        if (r == null || s == null) return emptyList()
+        val i = r.segments.indexOf(s)
+        val ends = listOfNotNull(
+            SegmentEnd.Start.takeIf { r.closed || i > 0 },
+            SegmentEnd.End.takeIf { r.closed || i < r.segments.size - 1 },
+        )
+        return ends.map { end ->
+            val stored = if (end == SegmentEnd.Start) s.startMeters else s.endMeters
+            end to r.pointAt(dragged?.takeIf { it.first == end }?.second ?: stored)
+        }
+    }
+
+    /** Drags [end] of [selectedSegment] to the point of the track nearest [to], never past its neighbours. */
+    fun dragBoundary(end: SegmentEnd, to: GeoPoint) {
+        val r = identity
+        val s = selectedSegment
+        val m = r?.takeIf { !correcting }?.metersNear(to)
+        if (r == null || s == null || m == null) return
+        val i = r.segments.indexOf(s)
+        val n = r.segments.size
+        // The boundary moves between the start of the segment before it and the end of the one after it.
+        val (from, until) = if (end == SegmentEnd.Start) {
+            r.segments[(i - 1 + n) % n].startMeters to s.endMeters
+        } else {
+            s.startMeters to r.segments[(i + 1) % n].endMeters
+        }
+        dragged = end to clampAlong(from, m, until, r.closed)
+    }
+
+    /** The move of the dragged end, once let go; null when it did not move. */
+    fun endDrag(): SegmentEdit? {
+        val d = dragged
+        val r = identity
+        val s = selectedSegment
+        if (d == null || r == null || s == null) return null
+        val (end, at) = d
+        val i = r.segments.indexOf(s)
+        val id = if (end == SegmentEnd.Start) s.id else r.segments[(i + 1) % r.segments.size].id
+        val edit = startCorrection(SegmentEdit.MoveBoundary(id, at))
+        if (edit == null) dragged = null
+        return edit
+    }
+
+    /** [m] kept at least [MinCorrectedSegmentMeters] after [from] and before [until], in driving order. */
+    private fun clampAlong(from: Double, m: Double, until: Double, closed: Boolean): Double {
+        val length = identityLength
+        fun span(a: Double, b: Double) = if (closed) (b - a).mod(length) else b - a
+        val whole = span(from, until)
+        var head = span(from, m)
+        // Outside the two segments on a loop: to the nearer of their ends.
+        if (closed && head > whole) head = if (head - whole < length - head) whole else 0.0
+        val most = maxOf(MinCorrectedSegmentMeters, whole - MinCorrectedSegmentMeters)
+        val kept = head.coerceIn(MinCorrectedSegmentMeters, most)
+        return if (closed) (from + kept).mod(length) else from + kept
     }
 
     /** Starts placing a new sector line, after the existing ones. */
@@ -82,7 +219,7 @@ class TrackEditorState(
     val canAddSector: Boolean get() = track.sectorLines.size < Track.MaxSectorLines
 
     fun onTap(at: GeoPoint) {
-        val ref = selected ?: return
+        val ref = selected ?: return selectSegmentAt(at)
         when (method) {
             PlaceMethod.FromLap -> path?.lineAt(at)?.let { track = track.withLine(ref, it) }
             PlaceMethod.TwoTaps -> {
@@ -96,6 +233,12 @@ class TrackEditorState(
                 }
             }
         }
+    }
+
+    /** Picks the corner or straight at [at] on the map, if it is that close to the track; else none. */
+    private fun selectSegmentAt(at: GeoPoint) {
+        val r = identity ?: return
+        selectSegment(r.metersNear(at, SegmentTapMeters)?.let { r.segmentAt(it).id })
     }
 
     /** Moves one end of the selected line: [left] is the end on the driver's left. */
@@ -154,6 +297,8 @@ class TrackEditorState(
         if (track == sent) track = stored
         saved = stored
         proposed = false
+        identity = stored.identity
+        identityLength = identity?.lengthMeters ?: 0.0
     }
 
     private fun close() {
@@ -162,6 +307,12 @@ class TrackEditorState(
         beforePlacing = null
     }
 }
+
+/** One end of the corner or straight being corrected. */
+enum class SegmentEnd { Start, End }
+
+/** A tap this close to the track picks the corner or straight there, in metres. */
+private const val SegmentTapMeters = 30.0
 
 /** The editor's name for a line (UI-23); a point-to-point track's start/finish line is its start. */
 fun LineRef.label(pointToPoint: Boolean = false): String = when (this) {

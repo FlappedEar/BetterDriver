@@ -32,11 +32,24 @@ object TrackTransfer {
 
     /**
      * Revision, update time and corner identity (FBBD-172, made from laps on each device) are left
-     * out: a track copied back and forth is still the same track.
+     * out: a track copied back and forth is still the same track. The driver's corner corrections
+     * (FBBD-179) count when [incoming] has them: they are the driver's, not made from laps, so a
+     * track whose corners were corrected on the other device is not the one here until this one has
+     * the same corners, chicanes and names.
      */
-    private fun sameContent(a: Track, b: Track) =
-        a.copy(revision = 1, updatedUtcMillis = 0, identity = null) ==
-            b.copy(revision = 1, updatedUtcMillis = 0, identity = null)
+    private fun sameContent(incoming: Track, here: Track) =
+        incoming.copy(revision = 1, updatedUtcMillis = 0, identity = null) ==
+            here.copy(revision = 1, updatedUtcMillis = 0, identity = null) &&
+            (incoming.identity?.corrected != true || corners(incoming) == corners(here))
+
+    /** What the driver reads of each corner and straight, in lap order: comparable across devices. */
+    private fun corners(t: Track): List<String>? = t.identity?.segments?.map { "${it.type} ${it.name}" }
+
+    /**
+     * Whether keeping [incoming] in place of [here] should take its corner identity too ([TrackStore.save]
+     * with adoptIdentity): it carries the driver's corrections (FBBD-179).
+     */
+    fun carriesCorrections(incoming: Track): Boolean = incoming.identity?.corrected == true
 
     /** File name offered when sending [track]: its name in plain characters, then the extension. */
     fun fileName(track: Track): String {
