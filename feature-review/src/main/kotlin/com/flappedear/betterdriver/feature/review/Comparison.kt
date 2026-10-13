@@ -73,11 +73,22 @@ data class FollowStep(val seekMillis: Long?, val speed: Float)
  * Playing, small drift is taken out by playing slightly faster or slower, so the picture never
  * jumps; only drift beyond [MaxDriftMillis] (after a stall or a clip change) seeks.
  * [rate] is how fast the target moves against real time.
+ *
+ * [justStopped]: the player played until now. Its position is where it was while playing, and it
+ * plays on until the pause reaches its playback thread, so however close that position is it says
+ * nothing about the frame it stops on: it seeks to the target's exact frame (FBBD-214).
  */
-fun followStep(positionMillis: Long, targetMillis: Long, rate: Double, playing: Boolean): FollowStep {
+fun followStep(
+    positionMillis: Long,
+    targetMillis: Long,
+    rate: Double,
+    playing: Boolean,
+    justStopped: Boolean = false,
+): FollowStep {
     val err = positionMillis - targetMillis
     val base = rate.coerceIn(MinSpeed, MaxSpeed)
     return when {
+        !playing && justStopped -> FollowStep(targetMillis, base.toFloat())
         !playing -> FollowStep(if (abs(err) > PausedToleranceMillis) targetMillis else null, base.toFloat())
         abs(err) > MaxDriftMillis -> FollowStep(targetMillis, base.toFloat())
         abs(err) <= DeadbandMillis -> FollowStep(null, base.toFloat())

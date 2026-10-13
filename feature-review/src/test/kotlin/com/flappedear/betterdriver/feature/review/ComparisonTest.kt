@@ -89,6 +89,17 @@ class ComparisonTest {
     }
 
     @Test
+    fun aPlayerThatJustStoppedSeeksItsExactFrame() {
+        // FBBD-214: 10 ms from the target while it played, but it plays on until the pause lands.
+        assertEquals(FollowStep(1_000, 1f), followStep(990, 1_000, 1.0, playing = false, justStopped = true))
+        assertEquals(FollowStep(1_000, 1f), followStep(1_000, 1_000, 1.0, playing = false, justStopped = true))
+        // Once sent there it stays put.
+        assertEquals(FollowStep(null, 1f), followStep(1_000, 1_000, 1.0, playing = false))
+        // Playing again, it does not seek for that.
+        assertEquals(FollowStep(null, 1f), followStep(1_000, 1_000, 1.0, playing = true, justStopped = true))
+    }
+
+    @Test
     fun clockStopsAtTheEndOfTheLap() {
         assertEquals(1_500_000L, advance(1_000_000, 1_000_000_000, 0.5, 20_000_000))
         assertEquals(20_000_000L, advance(19_900_000, 1_000_000_000, 1.0, 20_000_000))
