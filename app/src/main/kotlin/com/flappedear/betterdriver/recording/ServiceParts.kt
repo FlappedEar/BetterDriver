@@ -24,7 +24,14 @@ import com.flappedear.betterdriver.recorder.RecordingVideoSink
 import com.flappedear.betterdriver.recorder.log.CheckLog
 
 private val CoachEventKinds =
-    setOf(CoachEvents.CUE, CoachEvents.RESULT, CoachEvents.PROBLEM, CoachEvents.VOICE, CoachEvents.VOICE_END)
+    setOf(
+        CoachEvents.CUE,
+        CoachEvents.RESULT,
+        CoachEvents.PROBLEM,
+        CoachEvents.VOICE,
+        CoachEvents.VOICE_END,
+        CoachEvents.FOCUS,
+    )
 private const val MaxCoachEventChars = 1_000
 
 /** The low-importance channel for the recorder and camera notifications. */

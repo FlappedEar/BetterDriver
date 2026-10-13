@@ -125,6 +125,26 @@ internal val PreviewUi = AnalysisUi(
             what = "Your 2 fastest passes left the corner 3 km/h faster than your other 3.",
         ),
     ),
+    coaching = listOf(
+        CoachingRow(
+            "Corner 4",
+            CoachingStatus.Improved,
+            "You worked on Corner 4 with the coach in this session (5 cues there). The braking point moved " +
+                "8 m later and the median corner time improved by 0.18 s; 3 of 4 counted passes were faster " +
+                "than before. This is no longer a top-three loss.",
+            doubtful = false,
+            cornerId = "s5",
+        ),
+        CoachingRow(
+            "Corner 1",
+            CoachingStatus.Learned,
+            "Corner 1, worked on 4 Oct: the gain held. The median corner time is 0.12 s better than before " +
+                "the focus and the minimum speed 3 km/h higher.",
+            doubtful = false,
+            cornerId = "s1",
+            attempt = false,
+        ),
+    ),
     coachPickable = setOf("s2", "s5"),
     coachPicked = setOf("s5"),
     compare = CompareUi(

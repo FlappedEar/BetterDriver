@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.coach
 
 import android.content.Context
+import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import java.io.File
 
 /**
@@ -51,3 +52,9 @@ internal fun coachPicks(context: Context) = CoachPicksStore(File(coachDir(contex
 
 /** The next-session focus of each analysed session (FBBD-20), by track. */
 internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachDir(context), "focus"))
+
+/**
+ * The coaching history (FBBD-180): per track and analysed session, what was driven through each
+ * corner and what it recommended next. With the coach's files, so a backup carries it.
+ */
+internal fun coachingHistoryStore(context: Context) = CoachingHistoryStore(File(coachDir(context), "history"))

@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.RecorderEvent
 import java.util.Locale
 
 /**
@@ -28,6 +29,32 @@ object CoachEvents {
 
     /** A cue's sound ended (FBBD-47); text from [voiceEndText]. */
     const val VOICE_END = EventKinds.COACH_VOICE_END
+
+    /**
+     * The coach works first on the next-session focus of an earlier session (FBBD-20); text from
+     * [focusText]. The coaching history (FBBD-180) reads from it which recommendation the session
+     * worked on.
+     */
+    const val FOCUS = "coach_focus"
+
+    /** The text of a [FOCUS] event: the session the focus came from, and its corners' CornerIds, the primary first. */
+    fun focusText(sessionId: String, cornerIds: List<String>) =
+        "source=$sessionId corners=${cornerIds.joinToString(",")}"
+
+    /**
+     * The session whose focus the coach worked on in a session with [events]: the last [FOCUS]
+     * event's, as a restarted coach logs it again; null when the coach worked on none.
+     */
+    fun focusSource(events: List<RecorderEvent>): String? = events.filter { it.kind == FOCUS }
+        .maxByOrNull { it.tMicros }?.let { split(it.text).first["source"] }?.takeIf { it.isNotBlank() }
+
+    /** How many corner cues were said at each CornerId in a session with [events]; cues without one are left out. */
+    fun cuesByCorner(events: List<RecorderEvent>): Map<String, Int> = events.asSequence()
+        .filter { it.kind == CUE }
+        .mapNotNull { parseCue(it.tMicros, it.text) }
+        .filter { it.kind == CueKind.Corner }
+        .mapNotNull { it.cornerId }
+        .groupingBy { it }.eachCount()
 
     fun cueText(cue: Cue): String = buildString {
         append("seq=").append(cue.seq)

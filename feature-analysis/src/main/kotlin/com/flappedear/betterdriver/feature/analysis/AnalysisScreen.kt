@@ -143,6 +143,8 @@ private fun Ready(
                 AnalysisTab.Summary -> {
                     // What to work on next comes first (FBBD-20): the answer the session is analysed for.
                     Focus(ui, compare, layout, width)
+                    // Beside it, what came of the last focus (FBBD-180): the loop closed.
+                    CoachingHistory(ui.coaching, width)
                     Summary(ui, width, optimalVideo)
                     ui.progress?.let { Progress(it, width) }
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
