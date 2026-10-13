@@ -9,8 +9,12 @@ import com.flappedear.betterdriver.coach.FocusChangeRecord
 import com.flappedear.betterdriver.coach.FocusTarget
 import com.flappedear.betterdriver.coach.SessionFocusRecord
 import com.flappedear.betterdriver.coach.SessionFocusStore
+import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.sharing.AppDataGate
+import com.flappedear.betterdriver.timing.track.Track
 import java.io.IOException
 
 /**
@@ -83,3 +87,14 @@ internal fun focusRecord(
         )
     },
 )
+
+/**
+ * [this] saying whether the spoken coach will work on the next-session focus first (FBBD-20): only
+ * at a [track] it coaches ([coaches]) and at [Verbosity.Focus]; Off and LapTimes say nothing about corners,
+ * and Full speaks about every corner.
+ */
+internal fun AnalysisState.withCoachFocus(track: Track?, verbosity: Verbosity): AnalysisState {
+    if (this !is AnalysisState.Ready) return this
+    val first = track != null && coaches(track) && verbosity == Verbosity.Focus
+    return AnalysisState.Ready(ui.copy(coachFocusFirst = first))
+}

@@ -12,21 +12,27 @@ import com.flappedear.betterdriver.analysis.corners.CornerLapMetrics
 import com.flappedear.betterdriver.analysis.corners.CornerLapObservation
 import com.flappedear.betterdriver.analysis.corners.CornerSpeeds
 import com.flappedear.betterdriver.analysis.corners.ExitMetrics
+import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
 import com.flappedear.betterdriver.analysis.focus.FocusChange
 import com.flappedear.betterdriver.analysis.focus.FocusMetric
 import com.flappedear.betterdriver.analysis.focus.FocusRole
 import com.flappedear.betterdriver.analysis.focus.MaxSecondaryFocus
 import com.flappedear.betterdriver.analysis.focus.changeText
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.focus.sessionFocus
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.laps.TimedLap
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.ApprovedSegments
 import com.flappedear.betterdriver.analysis.segments.LapSectorTimes
+import com.flappedear.betterdriver.analysis.segments.RankedTimeLoss
 import com.flappedear.betterdriver.analysis.segments.SectorTime
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestRow
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
+import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
+import com.flappedear.betterdriver.analysis.segments.TimeLossRole
+import com.flappedear.betterdriver.analysis.segments.TimeLossWindow
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.segmentLine
@@ -41,12 +47,12 @@ import com.flappedear.betterdriver.coach.coachFixes
 import com.flappedear.betterdriver.coach.tracedLaps
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
-import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import org.junit.jupiter.api.Test
 
 /**
  * What to work on next session (FBBD-20): one primary corner and at most two secondary ones, chosen
@@ -242,11 +248,15 @@ class NextSessionFocusTest {
         assertEquals("", changeText(changes, 3, 5, Confidence.LOW))
     }
 
-    /** [analysis] with lap [index] (0-based) graded Medium through c1 only, the rest of c1 High. */
-    private fun mediumLap(index: Int, analysis: SessionAnalysis = handBuilt()): SessionAnalysis = analysis.let { a ->
+    /** [analysis] with lap [index] (0-based) graded Medium through [corner] only, the rest of it High. */
+    private fun mediumLap(
+        index: Int,
+        analysis: SessionAnalysis = handBuilt(),
+        corner: String = "c1",
+    ): SessionAnalysis = analysis.let { a ->
         val medium = Graded.of(ConfidenceReason("gps_accuracy", Confidence.MEDIUM, "lap ${index + 1}: weak positions"))
         val laps = (0 until 6).map { if (it == index) medium else Graded.High }
-        a.copy(confidence = SessionConfidence(segments = mapOf("c1" to SegmentConfidence("c1", laps = laps))))
+        a.copy(confidence = SessionConfidence(segments = mapOf(corner to SegmentConfidence(corner, laps = laps))))
     }
 
     @Test
@@ -277,6 +287,37 @@ class NextSessionFocusTest {
         assertEquals(0.43, c1.timeAvailableSeconds!!, 1e-9)
         assertEquals(Confidence.MEDIUM, c1.timeConfidence)
         assertEquals(Confidence.HIGH, assertNotNull(nextSessionPlan(typical).primary).timeConfidence)
+    }
+
+    /** [handBuilt] where laps 4 to 6 each lost time through c4 against lap 2, as the loss ranking found. */
+    private fun repeatedLoss(drop: Set<String> = emptySet()): SessionAnalysis = handBuilt(drop).let { a ->
+        val window = TimeLossWindow(
+            "c4", "Corner 4", TrackSegmentType.Corner, TimeLossRole.entries.first(),
+            startProgressMeters = 300.0, endProgressMeters = 350.0,
+        )
+        val losses = listOf(4 to 0.30, 5 to 0.35, 6 to 0.40).map { (lap, loss) ->
+            RankedTimeLoss(lap, lap * 100.0, window, loss, 1.0, 1.0)
+        }
+        a.copy(losses = TimeLossRanking(referenceLap = 2, losses = losses, comparedLapCount = 5, valid = true))
+    }
+
+    @Test
+    fun `a repeated loss is graded by every lap behind its median`() {
+        val high = sessionFocus(repeatedLoss()).areas.single { it.area.kind == FocusAreaKind.RepeatedLoss }
+        assertEquals("c4", high.area.segmentId)
+        assertEquals(5, high.area.lap)
+        assertEquals(Confidence.HIGH, high.confidence.level)
+        // Lap 6 is neither the typical lap (5) nor the reference (2), but the median rests on it.
+        val medium = sessionFocus(mediumLap(5, repeatedLoss(), "c4")).areas
+            .single { it.area.kind == FocusAreaKind.RepeatedLoss }
+        assertEquals(Confidence.MEDIUM, medium.confidence.level, medium.confidence.why)
+        assertFalse(Regex("\\d+\\.\\d+ s").containsMatchIn(medium.area.observation), medium.area.observation)
+        // Its time available, the median loss, is no longer said as a number either (without c2 and
+        // c3, which as High would come first, c4 is a secondary focus).
+        val plan = nextSessionPlan(mediumLap(5, repeatedLoss(drop = setOf("c2", "c3")), "c4"))
+        val c4 = plan.focuses.single { it.segmentId == "c4" }
+        assertEquals(0.35, c4.timeAvailableSeconds!!, 1e-9)
+        assertEquals(Confidence.MEDIUM, c4.timeConfidence)
     }
 
     @Test

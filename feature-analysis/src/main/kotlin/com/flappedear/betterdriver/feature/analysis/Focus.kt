@@ -29,11 +29,14 @@ const val NextSessionTag = "next-session"
 /** Its primary focus, for tests. */
 const val PrimaryFocusTag = "next-session-primary"
 
+/** Said under the focus only where the spoken coach will work on it first ([AnalysisUi.coachFocusFirst]). */
+const val CoachFocusFirstText = "The spoken coach works on these first next session at this track."
+
 /**
  * Next session (FBBD-20): the answer to "what should I work on next?", first on the summary. One
  * primary corner, large, with the time a typical pass leaves there and how the faster passes
  * differed; at most two secondary corners, small, beside it on a wide screen and under it on a
- * phone. The spoken coach works on them first next session at the track. Each shows its confidence
+ * phone. Where the spoken coach will work on them first next session, it says so. Each shows its confidence
  * below High (FBBD-177), and the corners left out for weak evidence are named on one line. Tapping a
  * focus compares its lap with the fastest.
  */
@@ -64,7 +67,7 @@ internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, layout: LayoutSize,
         if (ui.withheld.isNotEmpty()) {
             Dim("Left out, too little evidence: ${ui.withheld.joinToString { it.name }}")
         }
-        if (primary != null) Dim("The spoken coach works on these first next session at this track.")
+        if (primary != null && ui.coachFocusFirst) Dim(CoachFocusFirstText)
     }
 }
 

@@ -33,6 +33,7 @@ import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.coach.CoachPicksRepo
+import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.sessionFocusStore
@@ -140,6 +141,7 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
     val coachPicks = remember { CoachPicksRepo.get(context) }
+    val verbosity = remember { CoachPrefs.get(context) }.settings.verbosity
     val allPicks by coachPicks.picks.collectAsState()
     val trackId = (load as? Load.Done)?.loaded?.track?.id
     val picks = trackId?.let { allPicks[it] }
@@ -185,10 +187,10 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
     // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
-    LaunchedEffect(analysed, picks, quality) {
+    LaunchedEffect(analysed, picks, quality, verbosity) {
         val l = load as? Load.Done
         val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
-        state = picked.withQuality(quality)
+        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity)
     }
     CornerLapsRoute(nav, id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo) {
         AnalysisScreen(

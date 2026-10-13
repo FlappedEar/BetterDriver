@@ -190,6 +190,11 @@ data class AnalysisUi(
     val coachPickable: Set<String> = emptySet(),
     /** Of [coachPickable], the corners picked at this track, in this session or another. */
     val coachPicked: Set<String> = emptySet(),
+    /**
+     * Whether the spoken coach will work on the next-session focus first at this track (FBBD-20): the
+     * coach runs there (not point to point) and speaks about three corners only (verbosity Focus).
+     */
+    val coachFocusFirst: Boolean = false,
     /** The session's acceleration runs; null when it has none. */
     val acceleration: AccelerationUi? = null,
     /** The session's data quality (FBBD-183); null while it is worked out, or when it cannot be. */

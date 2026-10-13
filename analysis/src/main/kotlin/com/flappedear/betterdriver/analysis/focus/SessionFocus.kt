@@ -102,8 +102,8 @@ fun sessionFocus(
     }
     // Each round withholds at least one more area, so it ends.
     while (true) {
-        val graded = selectFocusAreas(gate.usableInputs(inputs, withheld.keys), maximum)
-            .map { GradedFocusArea(it, gate.grade(it)) }
+        val usable = gate.usableInputs(inputs, withheld.keys)
+        val graded = selectFocusAreas(usable, maximum).map { GradedFocusArea(it, gate.grade(it, usable)) }
         val low = graded.filter { it.confidence.level == Confidence.LOW }
         if (low.isEmpty()) {
             val shown = graded.map { it.area.segmentId }.toSet()
@@ -161,9 +161,14 @@ private class FocusGate(private val analysis: SessionAnalysis) {
         )
     }
 
-    fun grade(area: FocusArea): Graded {
+    /**
+     * How far [area], found in [inputs], can be trusted: below the lowest of every lap its number rests
+     * on (the two compared, every loss behind a median, every lap behind a spread), and what applies
+     * to its kind.
+     */
+    fun grade(area: FocusArea, inputs: FocusInputs): Graded {
         val id = area.segmentId
-        val examples = listOf(area.lap, area.against).mapNotNull(::index).distinct()
+        val examples = (listOf(area.lap, area.against) + lapsBehind(area, inputs)).mapNotNull(::index).distinct()
             .fold(Graded.High) { g, i -> g + analysis.confidence.lapOnly(id, i) }
         return examples + when (area.kind) {
             FocusAreaKind.SectorGap -> gap(id, area.value, area.against)
@@ -172,6 +177,21 @@ private class FocusGate(private val analysis: SessionAnalysis) {
             FocusAreaKind.BrakingSpread -> analysis.spreadConfidence(id, analysis.provenance.brake)
             FocusAreaKind.MinimumSpeedSpread -> analysis.spreadConfidence(id, analysis.provenance.speed)
         }
+    }
+}
+
+/** The laps [area]'s value was worked out from in [inputs], as [repeatedLossAreas] and [variabilityAreas] pick them. */
+private fun lapsBehind(area: FocusArea, inputs: FocusInputs): List<Any?> {
+    val id = area.segmentId
+    val observations = inputs.corners.firstOrNull { it.segmentId == id }?.observations.orEmpty()
+    return when (area.kind) {
+        FocusAreaKind.SectorGap -> emptyList()
+        FocusAreaKind.RepeatedLoss -> inputs.losses
+            .filter { it.segmentId == id && it.lossSeconds.isFinite() && it.lossSeconds >= FocusMinimumLossSeconds }
+            .map { it.lap }
+        FocusAreaKind.BrakingSpread -> observations
+            .filter { it.brakingPointMeters != null && it.brakingProvenance == "measured" }.map { it.lapReference }
+        FocusAreaKind.MinimumSpeedSpread -> observations.filter { it.minimumSpeed != null }.map { it.lapReference }
     }
 }
 

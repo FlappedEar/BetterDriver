@@ -5,6 +5,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasText
@@ -70,6 +71,21 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.onNodeWithTag(PrimaryFocusTag).assertIsDisplayed().assert(hasText("Corners 2–3"))
     }
 
+    /** The coach line shows only where the spoken coach will work on the focus first. */
+    @Test
+    fun coachLineOnlyWhereTheCoachWorksOnTheFocus() {
+        compose.setContent { AppScreen { Analysis() } }
+        compose.waitForIdle()
+        compose.onAllNodes(hasText(CoachFocusFirstText)).assertCountEquals(0)
+    }
+
+    @Test
+    fun coachLineWhereTheCoachWorksOnTheFocus() {
+        compose.setContent { AppScreen { Analysis(coachFocusFirst = true) } }
+        compose.waitForIdle()
+        compose.onAllNodes(hasText(CoachFocusFirstText)).assertCountEquals(1)
+    }
+
     /** Rotating the device recreates the activity: the open tab stays open. */
     @Test
     fun openTabSurvivesRotation() {
@@ -90,9 +106,9 @@ abstract class AnalysisLayoutTest(private val device: String) {
 }
 
 @Composable
-private fun Analysis() {
+private fun Analysis(coachFocusFirst: Boolean = false) {
     AnalysisScreen(
-        AnalysisState.Ready(PreviewUi.copy(map = PreviewMap)),
+        AnalysisState.Ready(PreviewUi.copy(map = PreviewMap, coachFocusFirst = coachFocusFirst)),
         onCompare = {},
         layout = deviceLayout(),
     )
