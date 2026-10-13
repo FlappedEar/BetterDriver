@@ -28,8 +28,16 @@ import com.flappedear.betterdriver.timing.track.Track
  */
 internal class LapVideo(val video: SessionVideo?, val originMicros: Long, val reviewStarts: Map<Int, Long>)
 
-/** What a corner's passes are read from: the session's analysis, its telemetry (for the traces) and its video. */
-internal class CornerSource(val analysis: SessionAnalysis?, val session: TelemetrySession?, val lapVideo: LapVideo?)
+/**
+ * What a corner's passes are read from: the session's analysis, its telemetry (for the traces) and
+ * its video; [failed] when the session's analysis could not be made.
+ */
+internal class CornerSource(
+    val analysis: SessionAnalysis?,
+    val session: TelemetrySession?,
+    val lapVideo: LapVideo?,
+    val failed: Boolean = false,
+)
 
 /** [data]'s [LapVideo] at [track]; null when it cannot be read, which only leaves the video out. */
 // Must never fail the analysis.

@@ -24,6 +24,8 @@ import kotlinx.coroutines.withContext
  * the main thread; back returns to [content] with its state (tab, scroll) as it was left. Compare
  * opens the lap review of session [sessionId] on the two laps ticked, side by side at the corner.
  * [initialCorner] opens on that corner, as from the progression; back from it then goes back there.
+ * When the session's analysis could not be made ([CornerSource.failed]) there is no corner to show:
+ * [content] says why the analysis is unavailable.
  */
 @Composable
 internal fun CornerLapsRoute(
@@ -50,8 +52,9 @@ internal fun CornerLapsRoute(
     fun back() {
         if (fromOutside) nav.popBackStack() else corner = null
     }
-    BackHandler(enabled = corner != null) { back() }
-    val open = corner
+    // A failed load never gives a corner's screen: the analysis's own unavailable state shows instead.
+    val open = corner.takeUnless { source.failed }
+    BackHandler(enabled = open != null) { back() }
     if (open == null) {
         states.SaveableStateProvider(AnalysisKey) { ProvideCornerLaps({ corner = it }, content) }
     } else {

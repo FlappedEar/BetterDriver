@@ -43,9 +43,14 @@ internal fun compareText(ui: CornerLapsUi, pair: Pair<Int, Int>?): String {
     return "Lap ${a?.lapNumber} against lap ${b?.lapNumber}$how"
 }
 
-/** "Speed · 62–118 km/h" for a measured speed in a known unit; just "Speed" (≈ when not measured) otherwise. */
-internal fun speedLabel(traces: CornerTraces): String {
-    val values = traces.passes.flatMap { p -> p.speed.flatten().map { it.value } }
+/**
+ * "Speed · 62–118 km/h" for a measured speed in a known unit; just "Speed" (≈ when not measured)
+ * otherwise. The range is of the passes of [ui] at High confidence only (FBBD-177): a doubtful pass
+ * is drawn as a shape, its numbers shown nowhere.
+ */
+internal fun speedLabel(ui: CornerLapsUi, traces: CornerTraces): String {
+    val trusted = traces.passes.filter { ui.row(it.lapIndex)?.confidence?.doubtful == false }
+    val values = trusted.flatMap { p -> p.speed.flatten().map { it.value } }
     return if (!speedNumbersShown(traces) || values.isEmpty()) {
         marked("Speed", traces.speedProvenance)
     } else {

@@ -33,7 +33,8 @@ data class PassTrace(
  * The traces of a corner's passes. Distances are metres from the start of the window, which runs
  * from [CornerTraceLeadMeters] before the corner entry ([entryMeters]) to [CornerTraceTailMeters]
  * after its exit ([exitMeters]), [lengthMeters] in all. A corner over the start/finish line is one
- * stretch: its part after the line is read on the next lap. [speedUnit] and the provenances say
+ * stretch: its part after the line is read on the next lap, and an approach that begins before the
+ * line is read on the previous lap. [speedUnit] and the provenances say
  * what the values are; a channel the session does not have has no runs.
  */
 data class CornerTraces(
@@ -71,14 +72,15 @@ fun cornerTraces(
     // On one unwrapped scale: the next lap's progress runs on from [length].
     val wraps = corner.endProgressMeters < corner.startProgressMeters
     val end = if (wraps) corner.endProgressMeters + length else corner.endProgressMeters
-    val from = (corner.startProgressMeters - CornerTraceLeadMeters).coerceAtLeast(0.0)
+    // On a loop the approach may begin before the line, on the previous lap (progress below 0 here);
+    // a point-to-point run starts at its start.
+    val lead = corner.startProgressMeters - CornerTraceLeadMeters
+    val from = if (axis.closed) lead else lead.coerceAtLeast(0.0)
     // On a loop the window may run on over the line into the next lap; a point-to-point run ends at its finish.
     val limit = if (axis.closed) end + CornerTraceTailMeters else minOf(end + CornerTraceTailMeters, length)
     val laps = analysis.laps.timedLaps
     val passes = lapIndices.filter { it in laps.indices && it in analysis.traces.indices }.map { i ->
-        val next = (i + 1).takeIf { axis.closed && follows(analysis, i) && it in analysis.traces.indices }
-        val runs = window(analysis.traces[i], 0.0, from, limit) +
-            (next?.let { window(analysis.traces[it], length, from, limit) }.orEmpty())
+        val runs = passRuns(analysis, i, from, limit)
         PassTrace(
             i,
             channelRuns(session, Aliases.SPEED, runs, from),
@@ -96,6 +98,23 @@ fun cornerTraces(
         brakeProvenance = analysis.provenance.brake,
         throttleProvenance = analysis.provenance.throttle,
     )
+}
+
+/**
+ * Lap [i]'s samples within [from, limit] on its unwrapped scale. On a loop a window past the line
+ * runs on into the next lap, and one that begins before the line (a negative [from]) is read on the
+ * previous lap up to the line, when that lap runs on into this one without a break.
+ */
+private fun passRuns(analysis: SessionAnalysis, i: Int, from: Double, limit: Double): List<List<At>> {
+    val axis = analysis.axis ?: return emptyList()
+    val length = axis.lengthMeters
+    val traces = analysis.traces
+    val next = (i + 1).takeIf { axis.closed && follows(analysis, i) && it in traces.indices }
+    val previous = (i - 1).takeIf { axis.closed && from < 0.0 && it in traces.indices && follows(analysis, it) }
+    val before = previous?.let { window(traces[it], -length, from, 0.0) }.orEmpty()
+    val own = window(traces[i], 0.0, if (previous != null) 0.0 else from, limit)
+    val after = next?.let { window(traces[it], length, from, limit) }.orEmpty()
+    return before + own + after
 }
 
 /** A sample of a pass: when, and where on the unwrapped scale. */
