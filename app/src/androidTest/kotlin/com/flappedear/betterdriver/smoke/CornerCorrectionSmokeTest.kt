@@ -72,9 +72,9 @@ class CornerCorrectionSmokeTest {
         app.waitFor(hasText(SmokeFixtures.CircuitName) and hasClickAction()).performClick()
         app.waitForText("Kind", timeoutMs = LoadTimeoutMs)
         app.waitFor(hasTestTag(SegmentRowTag + corner.id)).performScrollTo().performClick()
-        app.waitForText("Rename").performClick()
+        app.waitForText("Rename").performScrollTo().performClick()
         app.waitFor(hasSetTextAction()).performTextReplacement("Turn One")
-        app.waitForText("Save").performClick()
+        app.waitForText("Save").performScrollTo().performClick()
         app.waitForText("Turn One")
         // Stored at once, without Save.
         app.waitNamed("the stored name") { circuit().identity?.segment(corner.id)?.name == "Turn One" }

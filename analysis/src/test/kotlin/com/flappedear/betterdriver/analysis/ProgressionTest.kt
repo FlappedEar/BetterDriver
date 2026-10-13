@@ -32,6 +32,10 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
+import com.flappedear.betterdriver.timing.track.SegmentEdit
+import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.cornerIdIn
+import com.flappedear.betterdriver.timing.track.corrected
 import java.io.File
 import java.time.LocalDate
 import java.time.ZoneOffset
@@ -287,6 +291,47 @@ class ProgressionTest {
         assertEquals(listOf(null, 6.0, 4.25), times)
         assertEquals(listOf("r1a"), mapped.otherRevisionSessions)
     }
+
+    @Test
+    fun `corrected corners are followed across the revisions the corrections made (FBBD-179)`() {
+        // The track's corners as found (revision 1); the driver names the first (still revision 1),
+        // splits the second (revision 2), then moves where the first starts (revision 3).
+        val found = assertNotNull(analyses.first().identity)
+        val c1 = found.corners[0]
+        val c2 = found.corners[1]
+        val named = assertNotNull(found.corrected(SegmentEdit.Rename(c1.id, "Hairpin")))
+        val split = assertNotNull(named.corrected(SegmentEdit.Split(c2.id, (c2.startMeters + c2.endMeters) / 2)))
+        val moved = assertNotNull(split.corrected(SegmentEdit.MoveBoundary(c1.id, c1.startMeters + 5.0)))
+        assertEquals(listOf(1, 2, 3), listOf(named.number, split.number, moved.number))
+        val added = split.corners.single { it.id !in found.corners.map { c -> c.id } }.id
+        val rs = listOf(
+            record("a", 1_000, listOf(80.0), revision = 1, corners = listOf(c(c1.id, 6.0), c(c2.id, 7.0))),
+            record(
+                "b", 2_000, listOf(79.0), revision = 2,
+                corners = listOf(c(c1.id, 5.5), c(c2.id, 6.5), c(added, 3.0)),
+            ),
+            record("c", 3_000, listOf(78.0), revision = 3, corners = listOf(c(c1.id, 5.0), c(c2.id, 6.0))),
+        )
+
+        // Without the mapping, only the latest revision's session counts for the corners.
+        assertEquals(listOf("a", "b"), trackProgression(rs, zone = utc).otherRevisionSessions)
+
+        // With the track's own: the named corner and the one split keep their history across all three.
+        val p = trackProgression(rs, zone = utc, mapping = CornerMapping.of(moved))
+        assertEquals(3, p.revision)
+        assertEquals(emptyList(), p.otherRevisionSessions)
+        fun times(id: String) =
+            p.corners.single { it.cornerId == id }.of(ProgressionMetric.CornerTime)!!.values.map { it?.value }
+        assertEquals(listOf(6.0, 5.5, 5.0), times(c1.id))
+        assertEquals(listOf(7.0, 6.5, 6.0), times(c2.id))
+        // Stored and read back, the track's corners still say which is which.
+        val back = TrackJson.decode(TrackJson.encode(sim.track().copy(identity = moved))).identity
+        assertEquals(c1.id, back?.cornerIdIn(1, c1.id, 3))
+        assertEquals(c2.id, back?.cornerIdIn(3, c2.id, 1))
+        assertNull(back?.cornerIdIn(2, added, 1))
+    }
+
+    private fun c(id: String, seconds: Double) = corner(id, pass(1, seconds), pass(2, seconds))
 
     @Test
     fun `Low passes never count, and a value is precise only from High passes of measured channels`() {

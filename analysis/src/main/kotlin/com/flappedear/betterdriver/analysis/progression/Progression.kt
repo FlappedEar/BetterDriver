@@ -5,6 +5,8 @@ import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.confidence.MinimumSupportingLaps
 import com.flappedear.betterdriver.analysis.focus.median
 import com.flappedear.betterdriver.analysis.segments.summarizeConsistency
+import com.flappedear.betterdriver.timing.track.TrackRevision
+import com.flappedear.betterdriver.timing.track.cornerIdIn
 import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
@@ -66,6 +68,14 @@ fun interface CornerMapping {
 
     companion object {
         val SameRevisionOnly = CornerMapping { from, id, to -> id.takeIf { from == to } }
+
+        /**
+         * The steps between revisions of the track's corners as [identity] (the one stored at the track)
+         * keeps them (FBBD-179): a corner the driver renamed, or left alone while correcting others,
+         * is itself in every revision; without an identity, [SameRevisionOnly].
+         */
+        fun of(identity: TrackRevision?): CornerMapping =
+            identity?.let { r -> CornerMapping { from, id, to -> r.cornerIdIn(from, id, to) } } ?: SameRevisionOnly
     }
 }
 

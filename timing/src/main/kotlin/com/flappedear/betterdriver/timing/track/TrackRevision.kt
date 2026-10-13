@@ -88,7 +88,8 @@ data class RevisionSegment(
  * that is not there is a corner or straight that is gone. [nextCornerId] and [nextStraightId] number
  * new ids, so an id is never used for two places. [madeFromUtcMillis] is when the session whose lap
  * made it started, so a session recorded before it (on the layout before) does not replace it; null
- * for revisions kept before it was.
+ * for revisions kept before it was. [lineage] keeps each step from one revision to the next as stored
+ * at this track ([following]), so a corner can be followed across several ([cornerIdIn]).
  */
 @Serializable
 data class TrackRevision(
@@ -102,6 +103,7 @@ data class TrackRevision(
     val nextStraightId: Int = segments.count { it.kind == SegmentKind.Straight } + 1,
     val madeFromUtcMillis: Long? = null,
     val detected: List<RevisionSegment>? = null,
+    val lineage: List<RevisionLink> = emptyList(),
 ) {
     init {
         require(number >= 1) { "revisions start at 1" }
@@ -259,7 +261,7 @@ data class TrackRevision(
             segments = made.segments.map { s ->
                 segment(s.id)?.takeIf { it.kind == s.kind }?.let { s.copy(label = it.label, chicane = it.chicane) } ?: s
             },
-        )
+        ).following(this)
     }
 
     companion object {

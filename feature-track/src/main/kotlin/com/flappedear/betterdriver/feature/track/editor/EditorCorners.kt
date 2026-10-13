@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -146,7 +147,9 @@ private fun RestoreButton(state: TrackEditorState, onCorrect: (SegmentEdit) -> U
 internal fun SegmentControls(state: TrackEditorState, onCorrect: (SegmentEdit) -> Unit) {
     val s = state.selectedSegment ?: return
     val identity = state.identity ?: return
-    fun correct(edit: SegmentEdit) = state.startCorrection(edit)?.let(onCorrect)
+    fun correct(edit: SegmentEdit) {
+        state.startCorrection(edit)?.let(onCorrect)
+    }
     Row(
         Modifier.fillMaxWidth().padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -162,12 +165,36 @@ internal fun SegmentControls(state: TrackEditorState, onCorrect: (SegmentEdit) -
             )
         }
     }
+    var naming by rememberSaveable(s.id) { mutableStateOf(false) }
+    if (naming) {
+        // Named in place, under what it is: no window over the map.
+        SegmentNameField(
+            s,
+            onDone = { name ->
+                naming = false
+                correct(SegmentEdit.Rename(s.id, name))
+            },
+            onCancel = { naming = false },
+        )
+    } else {
+        SegmentActions(state, s, identity, onRename = { naming = true }, correct = ::correct)
+    }
+}
+
+/** Rename, split, merge with the next one and remove [s], each on only when it applies. */
+@Composable
+private fun SegmentActions(
+    state: TrackEditorState,
+    s: RevisionSegment,
+    identity: TrackRevision,
+    onRename: () -> Unit,
+    correct: (SegmentEdit) -> Unit,
+) {
     val split = SegmentEdit.Split(s.id, middle(s, identity))
     val merge = SegmentEdit.Merge(s.id)
     val remove = SegmentEdit.Remove(s.id)
-    var naming by rememberSaveable(s.id) { mutableStateOf(false) }
     Row(Modifier.padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = { naming = true }, enabled = !state.correcting) { Text("Rename") }
+        OutlinedButton(onClick = onRename, enabled = !state.correcting) { Text("Rename") }
         OutlinedButton(onClick = { correct(split) }, enabled = state.ifApplies(split) != null) { Text("Split") }
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -185,16 +212,6 @@ internal fun SegmentControls(state: TrackEditorState, onCorrect: (SegmentEdit) -
         Modifier.padding(top = 6.dp),
     )
     state.correctionNote?.let { DimLine(it, Modifier.padding(top = 6.dp)) }
-    if (naming) {
-        SegmentNameDialog(
-            s,
-            onDone = { name ->
-                naming = false
-                correct(SegmentEdit.Rename(s.id, name))
-            },
-            onCancel = { naming = false },
-        )
-    }
 }
 
 private val SegmentType.label: String
@@ -211,26 +228,28 @@ private fun middle(s: RevisionSegment, identity: TrackRevision): Double {
     return s.startMeters + span / 2
 }
 
+/** The driver's own name for [s]; empty for its number ("Corner 3"). */
 @Composable
-private fun SegmentNameDialog(s: RevisionSegment, onDone: (String) -> Unit, onCancel: () -> Unit) {
-    var name by rememberSaveable { mutableStateOf(s.label.orEmpty()) }
+private fun SegmentNameField(s: RevisionSegment, onDone: (String) -> Unit, onCancel: () -> Unit) {
+    var name by rememberSaveable(s.id) { mutableStateOf(s.label.orEmpty()) }
     val valid = name.trim().length <= MaxSegmentLabelChars
-    AlertDialog(
-        onDismissRequest = onCancel,
-        title = { Text("Name ${s.numberedName}") },
-        text = {
-            Column {
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Name") },
-                    placeholder = { Text(s.numberedName) },
-                    singleLine = true,
-                )
-                DimLine("Leave it empty for “${s.numberedName}”.", Modifier.padding(top = 6.dp))
-            }
-        },
-        confirmButton = { TextButton(onClick = { onDone(name) }, enabled = valid) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } },
-    )
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        OutlinedTextField(
+            value = name,
+            onValueChange = { name = it },
+            label = { Text("Name") },
+            placeholder = { Text(s.numberedName) },
+            singleLine = true,
+            isError = !valid,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        DimLine("Leave it empty for “${s.numberedName}”.", Modifier.padding(top = 6.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(top = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+        ) {
+            TextButton(onClick = onCancel) { Text("Cancel") }
+            Button(onClick = { onDone(name) }, enabled = valid) { Text("Save") }
+        }
+    }
 }

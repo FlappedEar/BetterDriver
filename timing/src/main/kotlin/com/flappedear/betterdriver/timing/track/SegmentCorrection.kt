@@ -58,7 +58,7 @@ fun TrackRevision.corrected(edit: SegmentEdit): TrackRevision? = when (edit) {
     is SegmentEdit.Remove -> removed(edit.id)
     is SegmentEdit.ChangeType -> retyped(edit.id, edit.type)
     SegmentEdit.RestoreAutomatic -> automatic()
-}
+}?.following(this)
 
 /** Whether segment [id] is not as detected: renamed, retyped, moved, or made by a correction. */
 fun TrackRevision.edited(id: String): Boolean {
@@ -281,7 +281,7 @@ fun TrackRevision.adoptedOver(here: TrackRevision?): TrackRevision {
         nextStraightId = nextStraight,
         madeFromUtcMillis = listOfNotNull(madeFromUtcMillis, here.madeFromUtcMillis).maxOrNull(),
         detected = detected?.let(::renamed),
-    )
+    ).following(here)
 }
 
 /** The corrected revision of [parts]: renumbered in lap order, the next revision when [mapping] is given. */
