@@ -115,7 +115,7 @@ private fun DrawScope.drawSelected(
 /** A corner's number ("3", or "3–4" for a chain) next to its middle at [at]. */
 private fun DrawScope.drawNumber(s: RevisionSegment, at: Offset, selected: Boolean, text: TextMeasurer) {
     val label = if (s.lastNumber > s.number) "${s.number}–${s.lastNumber}" else "${s.number}"
-    drawText(
+    drawLabel(
         text,
         label,
         topLeft = at + Offset(6.dp.toPx(), -16.dp.toPx()),
@@ -126,6 +126,20 @@ private fun DrawScope.drawNumber(s: RevisionSegment, at: Offset, selected: Boole
             shadow = Shadow(EditorColors.Halo, blurRadius = 4f),
         ),
     )
+}
+
+/**
+ * [label] at [topLeft], measured on its own: drawing text by a [TextMeasurer] straight away fits it
+ * in the space left right of and below [topLeft], which is negative, and throws, for a label past
+ * the map's edge. A label wholly outside the map is not drawn.
+ */
+internal fun DrawScope.drawLabel(text: TextMeasurer, label: String, topLeft: Offset, style: TextStyle) {
+    if (topLeft.x >= size.width || topLeft.y >= size.height) return
+    val measured = text.measure(label, style, softWrap = false, maxLines = 1)
+    val right = topLeft.x + measured.size.width
+    val bottom = topLeft.y + measured.size.height
+    if (right <= 0f || bottom <= 0f) return
+    drawText(measured, topLeft = topLeft)
 }
 
 private fun DrawScope.drawGeoPath(points: List<GeoPoint>, project: (GeoPoint) -> Offset, color: Color, width: Float) {
