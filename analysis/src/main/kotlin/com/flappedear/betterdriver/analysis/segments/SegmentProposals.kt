@@ -59,6 +59,13 @@ data class SegmentProposalOptions(
      * single corners; the boundary between them is then uncertain.
      */
     val splitCornerChains: Boolean = false,
+    /**
+     * A turning run carries on while |curvature| stays at or above this share of
+     * [cornerCurvaturePerMeter] (FBBD-215): a corner whose curvature dips to the threshold on the
+     * way out is not split or cut short by the noise of the dip, and its end is where it
+     * straightens. 1 (Telemetry's) has no hysteresis.
+     */
+    val exitCurvatureShare: Double = 1.0,
 )
 
 /** One end of a proposal: [toleranceMeters] is the smoothing radius plus the axis spacing. */
@@ -145,6 +152,29 @@ private fun linearRuns(labels: IntArray): List<Run> {
     return if (runs.size < 2) emptyList() else runs
 }
 
+/**
+ * Grows every turning run of [labels] over its neighbours whose |[curvature]| (the same way) is at
+ * least [exit], forwards and backwards, round the loop when [closed].
+ */
+private fun extendTurns(labels: IntArray, curvature: List<Double>, exit: Double, closed: Boolean) {
+    val n = labels.size
+    fun turning(i: Int, from: Int): Boolean {
+        val sign = labels[from]
+        return labels[i] == 0 && sign != 0 && abs(curvature[i]) >= exit && (curvature[i] > 0.0) == (sign > 0)
+    }
+    // Twice round a loop, so a run reaching across the start grows on both sides of it.
+    val passes = if (closed) 2 * n else n
+    for (k in 1 until passes) {
+        val i = k % n
+        if (closed || k < n) if (turning(i, (i - 1 + n) % n)) labels[i] = labels[(i - 1 + n) % n]
+    }
+    for (k in passes - 2 downTo 0) {
+        val i = k % n
+        val next = (i + 1) % n
+        if ((closed || i + 1 < n) && turning(i, next)) labels[i] = labels[next]
+    }
+}
+
 private fun circularDistance(a: Double, b: Double, length: Double): Double {
     val direct = abs(a - b)
     return min(direct, length - direct)
@@ -167,7 +197,9 @@ private fun validOptions(options: SegmentProposalOptions): Boolean {
         positive(options.minimumCornerTurnRadians) &&
         positive(options.connectedStraightMeters) &&
         positive(options.certainStraightMeters) &&
-        options.certainStraightMeters >= options.connectedStraightMeters
+        options.certainStraightMeters >= options.connectedStraightMeters &&
+        positive(options.exitCurvatureShare) &&
+        options.exitCurvatureShare <= 1.0
 }
 
 /**
@@ -216,6 +248,10 @@ fun proposeTrackSegments(
         val curvature = samples[i].curvaturePerMeter
         if (!curvature.isFinite()) return invalid
         if (abs(curvature) >= options.cornerCurvaturePerMeter) labels[i] = if (curvature > 0.0) 1 else -1
+    }
+    if (options.exitCurvatureShare < 1.0) {
+        val exit = options.cornerCurvaturePerMeter * options.exitCurvatureShare
+        extendTurns(labels, samples.map { it.curvaturePerMeter }, exit, axis.closed)
     }
     fun turnOf(run: Run): Double {
         var turn = 0.0

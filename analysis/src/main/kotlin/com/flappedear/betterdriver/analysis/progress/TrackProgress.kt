@@ -107,6 +107,9 @@ private const val OwnSpeedMargin = 1.5
 private const val OwnSpeedFloorMetersPerSecond = 40.0
 private const val MinimumHeadingMovementMeters = 0.5
 
+/** How far back [projectLapTrace] looks for a fix its movement baseline away. */
+private const val MovementBaselineSeconds = 1.0
+
 /** The shortest point-to-point axis: as short as the shortest run lap detection accepts. */
 private val MinimumRunAxisMeters = LapDetectionOptions().minimumRunDistanceMeters
 private const val StandingSeconds = 0.5
@@ -616,12 +619,18 @@ fun projectSample(
  * timed start that projects just before progress 0 is a small negative value, and fixes past the
  * finish continue beyond the axis length. Progress never falls within a segment. On an open axis
  * nothing is unwrapped: progress is where the fix is along the run.
+ *
+ * The direction a fix is checked against the axis by is its movement from the fix before, as in
+ * Telemetry; with [movementBaselineMeters] (FBBD-215) it is from the latest fix within the second
+ * before that is at least that far back, when there is one, so the noise of two single fixes a
+ * metre apart in a slow corner cannot turn the car round and refuse the fix.
  */
 fun projectLapTrace(
     axis: ProgressAxis,
     session: TelemetrySession,
     startTime: Double,
     endTime: Double,
+    movementBaselineMeters: Double = 0.0,
 ): List<ProgressSegment> {
     val result = mutableListOf<ProgressSegment>()
     if (!axis.valid) return result
@@ -635,6 +644,8 @@ fun projectLapTrace(
     var current = ProgressSegment()
     var context = ProjectionContext()
     var (previousLocal, previousTime) = fixBefore(session, startTime, axis.origin)
+    // Fixes of the last second, for the movement over [movementBaselineMeters].
+    val recentFixes = ArrayDeque<Pair<Double, MetricPoint>>()
     val recentProgress = ArrayDeque<Pair<Double, Double>>()
     var lastProgress: Double? = null
     var lastProgressTime: Double? = null
@@ -651,6 +662,7 @@ fun projectLapTrace(
         if (!keepMovement) {
             previousLocal = null
             previousTime = null
+            recentFixes.clear()
         }
     }
 
@@ -708,10 +720,24 @@ fun projectLapTrace(
                 speed = moved / (time - lastTime)
                 if (!context.hasLock && moved < MinimumHeadingMovementMeters && standing(recentProgress, time)) {
                     movement = 0.0 to 0.0
+                } else if (movementBaselineMeters > 0.0) {
+                    recentFixes.lastOrNull { (at, p) ->
+                        time - at <= MovementBaselineSeconds &&
+                            hypot(local.eastMeters - p.eastMeters, local.northMeters - p.northMeters) >=
+                            movementBaselineMeters
+                    }?.let { (_, p) ->
+                        movement = (local.eastMeters - p.eastMeters) to (local.northMeters - p.northMeters)
+                    }
                 }
             }
             previousLocal = local
             previousTime = time
+            if (movementBaselineMeters > 0.0) {
+                while (recentFixes.isNotEmpty() && time - recentFixes.first().first > MovementBaselineSeconds) {
+                    recentFixes.removeFirst()
+                }
+                recentFixes.addLast(time to local)
+            }
 
             val projected = projectSample(axis, local, time, speed, movement, context)
             if (!projected.valid) {
