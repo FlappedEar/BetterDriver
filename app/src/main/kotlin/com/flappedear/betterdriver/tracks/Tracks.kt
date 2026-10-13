@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.coach.CoachReferenceStore
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.coachPicks
 import com.flappedear.betterdriver.coach.coachReferencesDir
+import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.feature.track.editor.TileLoader
@@ -214,8 +215,8 @@ class Tracks private constructor(private val context: Context) {
     }
 
     /**
-     * Deletes the track with its coach reference, picked corners (FBBD-157) and session focus
-     * records (FBBD-20); sessions recorded
+     * Deletes the track with its coach reference, picked corners (FBBD-157), session focus
+     * records (FBBD-20) and coaching history (FBBD-180); sessions recorded
      * there stay, with the track name they were recorded under. The coach files go first, so a track
      * re-created with the same id never picks up stale ones. [onDone] gets false when any is left.
      */
@@ -223,6 +224,7 @@ class Tracks private constructor(private val context: Context) {
         val references = CoachReferenceStore(coachReferencesDir(context))
         val picks = coachPicks(context)
         val focus = sessionFocusStore(context)
+        val history = coachingHistoryStore(context)
         // Waits for a restore (FBBD-156), so the delete is not lost in its swap.
         val gone = AppDataGate.write {
             references.delete(id)
@@ -232,7 +234,8 @@ class Tracks private constructor(private val context: Context) {
                 DebugLog.w(Tag, "deleting coach picks for $id failed", e)
             }
             val focusGone = focus.delete(id)
-            val coachGone = references.get(id) == null && picks.get(id).isEmpty() && focusGone
+            val historyGone = history.delete(id)
+            val coachGone = references.get(id) == null && picks.get(id).isEmpty() && focusGone && historyGone
             if (coachGone) store.delete(id)
             coachGone && store.get(id) == null
         }

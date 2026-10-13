@@ -205,6 +205,11 @@ data class AnalysisUi(
      * coach runs there (not point to point) and speaks about three corners only (verbosity Focus).
      */
     val coachFocusFirst: Boolean = false,
+    /**
+     * The coaching history (FBBD-180): what came of the focus this session worked on, and whether
+     * earlier gains held in it; empty when the history has nothing for it.
+     */
+    val coaching: List<CoachingRow> = emptyList(),
     /** The session's acceleration runs; null when it has none. */
     val acceleration: AccelerationUi? = null,
     /** The session's data quality (FBBD-183); null while it is worked out, or when it cannot be. */

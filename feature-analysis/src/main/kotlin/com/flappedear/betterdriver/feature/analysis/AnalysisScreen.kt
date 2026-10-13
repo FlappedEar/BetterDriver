@@ -144,6 +144,9 @@ private fun Ready(
                     // What to work on next comes first (FBBD-20): the answer the session is analysed for.
                     Focus(ui, compare, layout, width)
                     Summary(ui, width, optimalVideo)
+                    // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
+                    // so the next focus and the best lap both stay on the first screen of a phone on its side.
+                    CoachingHistory(ui.coaching, width)
                     ui.progress?.let { Progress(it, width) }
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                     ui.gForces?.let { GForcesCard(it, width) }

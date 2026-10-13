@@ -63,6 +63,8 @@ internal fun CornerDetails(ui: AnalysisUi, modifier: Modifier) {
                 }
             }
             RowConfidence(corner)
+            // What came of working on this corner (FBBD-180), as the summary says it.
+            ui.coaching.filter { it.cornerId == corner.id }.forEach { Dim("Coaching · ${it.status.label}: ${it.text}") }
             Dim("Brakes: metres before the corner. Throttle: metres after its start.")
             if (corner.rows.any { it.marked }) ProvenanceLegend()
             corner.lineSpreadMeters?.let {

@@ -20,6 +20,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.SessionAnalysis
+import com.flappedear.betterdriver.analysis.coaching.CoachedSession
+import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
@@ -32,10 +34,12 @@ import com.flappedear.betterdriver.analysis.segments.segmentLine
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
+import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
@@ -74,6 +78,7 @@ import java.util.Locale
 private class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?)
 
 /** A session read and analysed once; comparing another lap reuses it. */
+@Suppress("LongParameterList") // What one read of the session gives.
 private class Loaded(
     val session: TelemetrySession,
     val analysis: SessionAnalysis,
@@ -83,6 +88,8 @@ private class Loaded(
     val tracks: List<Track>,
     /** What the session shows with or without laps: its acceleration runs and G-forces. */
     val whole: WholeSession,
+    /** What the coach did in the session, from its events: the focus it worked on and its cues (FBBD-180). */
+    val coached: CoachedSession = CoachedSession(),
 ) {
     val title: String get() = track.displayName
 }
@@ -137,6 +144,7 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     var analysed by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
     var state by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
     var quality by remember(id) { mutableStateOf<QualityUi?>(null) }
+    var coaching by remember(id) { mutableStateOf(SessionCoaching()) }
     // Made off the main thread when first used: making it reads the disk (FBBD-41).
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
@@ -175,22 +183,28 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
             is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared, progress) }
         }
     }
-    // What to work on next (FBBD-20) is kept for the track's next session's coach once analysed.
+    // What to work on next (FBBD-20) is kept for the track's next session's coach once analysed, and
+    // what was driven for the coaching history (FBBD-180), which says what came of the last focus.
     LaunchedEffect(load) {
         val l = load as? Load.Done ?: return@LaunchedEffect
         val loaded = l.loaded
-        withContext(Dispatchers.Default) {
+        coaching = withContext(Dispatchers.Default) {
             val store = sessionFocusStore(context)
             val at = loaded.startUtcMillis
             keepSessionFocus(store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates)
+            val history = coachingHistoryStore(context)
+            val tracks = TrackStore(tracksDir(context))
+            keepCoachingHistory(history, l.epoch, loaded.track.id, id, at, loaded.analysis, loaded.coached) {
+                tracks.get(loaded.track.id) != null
+            }
         }
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
     // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
-    LaunchedEffect(analysed, picks, quality, verbosity) {
+    LaunchedEffect(analysed, picks, quality, verbosity, coaching) {
         val l = load as? Load.Done
         val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
-        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity)
+        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching)
     }
     CornerLapsRoute(nav, id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo) {
         AnalysisScreen(
@@ -318,7 +332,10 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         }
         return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces))
     }
-    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, WholeSession(acceleration, gForces))
+    // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
+    val coached = CoachedSession(CoachEvents.focusSource(data.events), CoachEvents.cuesByCorner(data.events))
+    val whole = WholeSession(acceleration, gForces)
+    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, whole, coached)
     // No corners to pick where the coach does not run (point-to-point tracks, FBBD-155).
     val candidates = if (coaches(track)) coachCandidates(analysis, id) else emptyMap()
     return Load.Done(loaded, candidates, lapVideo(sessions, data, track))
