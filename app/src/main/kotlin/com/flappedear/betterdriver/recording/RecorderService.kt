@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.core.ble.nmea.RcChannels
+import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
@@ -308,6 +309,8 @@ class RecorderService : Service() {
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
         DebugLog.session = null
         logQuality(this, control, recording.id)
+        // How the app's processes ended during the drive, read after it, so its ANRs are known (FBBD-41).
+        control.execute { StartupLog.logExits(this) }
         if (reason != UserStop) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
