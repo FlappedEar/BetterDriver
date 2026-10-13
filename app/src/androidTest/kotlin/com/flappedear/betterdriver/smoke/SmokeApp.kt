@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.view.inspector.WindowInspector
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.test.ComposeTimeoutException
@@ -137,6 +138,28 @@ fun SmokeRule.countNodes(matcher: SemanticsMatcher, useUnmergedTree: Boolean = f
         }
     }
     return n
+}
+
+/**
+ * Clicks the first node matching [matcher] through its click action, as TalkBack does, found and
+ * clicked in one go on the main thread ([countNodes]).
+ *
+ * For a control on a screen that is still laid out by loads finishing in the background, which
+ * the Compose test rule does not wait for: performClick() taps where the node was when it was
+ * looked up, and a card that arrived above it in between moves it, so the tap lands elsewhere
+ * (FBBD-208: AnalysisSmokeTest's coach flag, whose pick never went in 90 s).
+ */
+fun SmokeRule.clickAction(matcher: SemanticsMatcher, useUnmergedTree: Boolean = false) {
+    waitForIdle()
+    var clicked: Boolean? = null
+    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+        val node = composeRoots()
+            .flatMap { it.semanticsOwner.getAllSemanticsNodes(mergingEnabled = !useUnmergedTree) }
+            .firstOrNull(matcher::matches)
+        clicked = node?.let { it.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke() == true }
+    }
+    checkNotNull(clicked) { "no node matches ${matcher.description}" }
+    check(clicked == true) { "${matcher.description} did not take a click" }
 }
 
 /** Whether a node matches [matcher] now, matched on the main thread ([countNodes]). */

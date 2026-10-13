@@ -10,7 +10,6 @@ import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isToggleable
-import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -172,23 +171,23 @@ class AnalysisSmokeTest {
         val pick = hasContentDescription("Coach ", substring = true) and
             hasContentDescription("next time", substring = true)
         val picked = hasContentDescription("Coaching ", substring = true)
-        fun isPicked() = app.exists(picked)
-        // The analysis can still lay out again (the progress card arrives after it), and a tap during
-        // that can miss the flag: it is tapped again only while nothing is picked after a while, so a
-        // tap that landed is never undone.
-        for (attempt in 1..PickTries) {
-            app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().performClick()
-            val landed = runCatching { app.waitNamed("a corner picked", PickWaitMs) { isPicked() } }.isSuccess
-            if (landed || attempt == PickTries) break
-        }
+        // The analysis can still lay out again after it shows (the progress and data quality cards
+        // arrive from background loads), which moves the flag under a tap aimed at it: each flag and
+        // chip is clicked through its click action, once (FBBD-208).
+        app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
+        app.clickAction(pick)
         app.waitFor(picked).performScrollTo().assertIsDisplayed()
-        app.onAllNodes(picked)[0].performClick()
+        app.clickAction(picked)
         app.waitNamed("the pick to go", LoadTimeoutMs) { !app.exists(picked) }
 
         // The same pick from the focus card's chip, when the session has one.
-        if (app.showsText("Coach this next time")) {
-            app.onAllNodesWithText("Coach this next time")[0].performScrollTo().performClick()
-            app.waitForText("✓ Coaching this next time").performScrollTo().performClick()
+        val chip = hasText("Coach this next time") and hasClickAction()
+        if (app.exists(chip)) {
+            app.waitFor(chip).performScrollTo().assertIsDisplayed()
+            app.clickAction(chip)
+            val chipPicked = hasText("✓ Coaching this next time") and hasClickAction()
+            app.waitFor(chipPicked).performScrollTo().assertIsDisplayed()
+            app.clickAction(chipPicked)
             app.waitUntilGone("✓ Coaching this next time")
         }
     }
@@ -226,9 +225,5 @@ class AnalysisSmokeTest {
 
     private companion object {
         const val PlayMs = 2_000L
-        const val PickTries = 3
-
-        /** A pick shows within milliseconds; this long without one means the tap missed. */
-        const val PickWaitMs = 10_000L
     }
 }
