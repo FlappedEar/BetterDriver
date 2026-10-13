@@ -6,9 +6,11 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.log.AppLifeLog
 import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.LogLine
+import com.flappedear.betterdriver.recorder.log.ProcessExit
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -226,5 +228,67 @@ class DriveChecksTest {
         val r = driveChecks(log).single()
         assertEquals(Verdict.NOT_MEASURED, r.metric("soak.gnss_rate").verdict)
         assertTrue("5 min" in r.metric("soak.gnss_rate").how)
+    }
+
+    /** A line of the app outside any recording, [tMicros] from the first recording's start. */
+    private fun app(tMicros: Long, tag: String, message: String) = line(tMicros, tag, message, "main", session = null)
+
+    private fun exit(tMicros: Long, reason: String, pid: Int = 4711) =
+        AppLifeLog.exit(ProcessExit(start + tMicros / 1_000, pid, "com.flappedear.betterdriver", reason, 100, "x y"))
+
+    /** A 5-minute recording [at] after the first one's start, with session id [sid]. */
+    private fun recording(sid: String, at: Long) {
+        line(at, CheckLog.SESSION, "start utc_ms=${start + at / 1_000} source=RaceBox_Micro", session = sid)
+        line(at + 5 * minute, CheckLog.SESSION, "stop t_us=${5 * minute} reason=user", session = sid)
+    }
+
+    @Test
+    fun `cold start and ANRs are graded from the app's lines around each recording`() {
+        val second = "20261012-113607-0badf00d"
+        app(-60_000_000, AppLifeLog.STARTUP, AppLifeLog.coldStart(2_100))
+        app(-59_000_000, AppLifeLog.EXIT, AppLifeLog.check(34, 0))
+        recording(id, 0)
+        // During the first: the UI process stopped answering and Android ended it; a crash is no ANR.
+        val anr = exit(2 * minute, ProcessExit.ANR)
+        val crash = exit(3 * minute, "CRASH", pid = 4712)
+        // Read when the recording ended, by the recorder, and again at the next start, by the UI.
+        app(5 * minute + 1_000_000, AppLifeLog.EXIT, AppLifeLog.check(34, 2))
+        app(5 * minute + 1_000_000, AppLifeLog.EXIT, anr)
+        app(5 * minute + 1_000_000, AppLifeLog.EXIT, crash)
+        app(10 * minute, AppLifeLog.STARTUP, AppLifeLog.coldStart(820))
+        app(10 * minute, AppLifeLog.EXIT, anr)
+        recording(second, 20 * minute)
+        app(25 * minute + 1_000_000, AppLifeLog.EXIT, AppLifeLog.check(34, 0))
+        val (first, next) = driveChecks(lines.shuffled(java.util.Random(2)))
+        fun QualityReport.check(id: String, verdict: Verdict, value: Double) {
+            val m = this.metric(id)
+            assertEquals(verdict, m.verdict, "$sessionId $id: ${m.value} ${m.how}")
+            assertEquals(value, m.value)
+            assertEquals(listOf("FBBD-41"), m.keys)
+        }
+        // The slow start led to the first drive; the second only counts the start after the first ended.
+        first.check("app.cold_start", Verdict.FAIL, 2_100.0)
+        next.check("app.cold_start", Verdict.PASS, 820.0)
+        // The ANR read twice is one, and it was in the first drive only.
+        first.check("app.anr", Verdict.FAIL, 1.0)
+        next.check("app.anr", Verdict.PASS, 0.0)
+    }
+
+    @Test
+    fun `without the app's lines cold start and ANRs are not measured, and say why`() {
+        recording(id, 0)
+        val none = driveChecks(lines.toList()).single()
+        assertEquals(Verdict.NOT_MEASURED, none.metric("app.cold_start").verdict)
+        assertEquals(Verdict.NOT_MEASURED, none.metric("app.anr").verdict)
+        assertTrue("no read after this recording" in none.metric("app.anr").how)
+        // Android 10 keeps no record of how processes ended.
+        app(6 * minute, AppLifeLog.EXIT, AppLifeLog.check(29, null))
+        val old = driveChecks(lines.toList()).single()
+        assertTrue("before 11" in old.metric("app.anr").how, old.metric("app.anr").how)
+        // A read during the drive does not cover its end.
+        lines.clear()
+        recording(id, 0)
+        app(minute, AppLifeLog.EXIT, AppLifeLog.check(34, 0))
+        assertEquals(Verdict.NOT_MEASURED, driveChecks(lines.toList()).single().metric("app.anr").verdict)
     }
 }

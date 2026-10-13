@@ -14,6 +14,7 @@ import androidx.core.content.IntentCompat
 import androidx.core.os.BundleCompat
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.debug.DebugGuards
+import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.UiChecks
@@ -89,6 +90,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        // The first frame of a cold start goes in the drive's log (FBBD-41).
+        StartupLog.onScreenCreated(this, restored = savedInstanceState != null)
     }
 
     override fun onNewIntent(intent: Intent) {

@@ -18,8 +18,18 @@ import java.util.zip.ZipFile
 // the same sections and values as the one the app stores next to the session, each marked PASS,
 // FAIL or NOT_MEASURED with the FBBD issues it checks.
 
-/** The reports of every recording in [lines], in the order they started. */
-fun driveChecks(lines: List<LogLine>): List<QualityReport> = DriveLog.sessions(lines).map(::driveChecks)
+/**
+ * The reports of every recording in [lines], in the order they started. The app's cold starts and
+ * ANRs (FBBD-41) belong to no recording: each report grades the cold starts logged since the
+ * recording before it ended, and the ANRs while it ran.
+ */
+fun driveChecks(lines: List<LogLine>): List<QualityReport> {
+    val life = AppLife.of(lines)
+    var since: Long? = null
+    return DriveLog.sessions(lines).map { s ->
+        driveChecks(s, life, since).also { since = maxOf(since ?: Long.MIN_VALUE, endUtcMillis(s)) }
+    }
+}
 
 /**
  * The reports of every recording in a shared log: a zip as Share log makes it, a single log file, or
@@ -42,8 +52,11 @@ fun readLog(file: File): List<LogLine> = when {
 /** "recorder.1.log" was written by the recorder process. */
 private fun processOf(name: String) = name.substringAfterLast('/').substringBefore('.')
 
-/** The report of one recording from the log. */
-fun driveChecks(s: LoggedSession): QualityReport {
+/** The report of one recording from the log alone, without the app's starts and process ends around it. */
+fun driveChecks(s: LoggedSession): QualityReport = driveChecks(s, AppLife(emptyList(), emptyList(), emptyList()), null)
+
+/** The report of one recording; [life] and [sinceUtc] as [driveChecks] of the whole log gives them. */
+private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?): QualityReport {
     val seconds = s.seconds.sortedBy { it.tMicros }
     val events = s.events.sortedBy { it.tMicros }
     val sets = seconds.map(::sampleSet)
@@ -66,9 +79,14 @@ fun driveChecks(s: LoggedSession): QualityReport {
         thermalSection(events, end),
         screenSection(events, logOutages(seconds, end), end),
         exportSection(events, end),
+        startupSection(life, sinceUtc, s.startUtcMillis ?: 0L, endUtcMillis(s, end)),
     )
     return QualityReport(QualityFormat, s.id, "LOGGED", s.startUtcMillis ?: 0L, withSoak(sections, end))
 }
+
+/** When [s] ended on the phone's wall clock: its start plus [endMicros], its logged end when not given. */
+private fun endUtcMillis(s: LoggedSession, endMicros: Long? = s.endMicros): Long =
+    (s.startUtcMillis ?: 0L) + (endMicros ?: 0L) / MicrosPerMilli
 
 /** One sample per logged second: its first sample's time, the receiver time, the mean fix and speed. */
 private fun sampleSet(g: GnssSecond) = SampleSet(
