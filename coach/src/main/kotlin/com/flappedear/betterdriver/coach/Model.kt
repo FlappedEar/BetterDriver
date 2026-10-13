@@ -176,7 +176,8 @@ data class Cue(
 /**
  * The pass right after a corner cue (FBBD-28): [improved] says whether the driver moved the way the
  * cue asked; [gainMicros] is the time gained across the corner window against [Cue.before]
- * (positive is faster).
+ * (positive is faster). [confidence] is how far [after] itself can be trusted (FBBD-177): the
+ * review gives the change in numbers only when it and the cue are both High.
  */
 data class CueResult(
     val tMicros: Long,
@@ -184,6 +185,7 @@ data class CueResult(
     val after: CornerPass,
     val improved: Boolean,
     val gainMicros: Long,
+    val confidence: Confidence,
 )
 
 /** What the track screen's cue indicator shows (FBBD-98). */

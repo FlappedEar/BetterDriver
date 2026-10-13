@@ -107,6 +107,7 @@ object CoachEvents {
         append(" improved=").append(r.improved)
         append(" gain_us=").append(r.gainMicros)
         append(" after=").append(passText(r.after))
+        append(" conf=").append(r.confidence.name)
     }
 
     /** A cue read back from its event; null if the text is not one. */
@@ -133,8 +134,17 @@ object CoachEvents {
         )
     }.getOrNull()
 
-    /** A result read back: the cue's [seq], the pass after it, whether it improved and the gain. */
-    data class Result(val seq: Int, val after: CornerPass, val improved: Boolean, val gainMicros: Long)
+    /**
+     * A result read back: the cue's [seq], the pass after it, whether it improved, the gain, and how
+     * far the pass after it can be trusted ([confidence], FBBD-177).
+     */
+    data class Result(
+        val seq: Int,
+        val after: CornerPass,
+        val improved: Boolean,
+        val gainMicros: Long,
+        val confidence: Confidence,
+    )
 
     fun parseResult(text: String): Result? = runCatching {
         val (f, _) = split(text)
@@ -145,6 +155,8 @@ object CoachEvents {
             after = after,
             improved = f.getValue("improved").toBooleanStrict(),
             gainMicros = f.getValue("gain_us").toLong(),
+            // A result logged before FBBD-177 has no grade: not known to be High, so no numbers for it.
+            confidence = Confidence.parse(f["conf"]) ?: Confidence.MEDIUM,
         )
     }.getOrNull()
 

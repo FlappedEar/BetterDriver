@@ -83,18 +83,22 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
 
 /**
  * What a corner cue led to, in words for the review: the change it asked for, how far from the best
- * pass that left the driver, and the corner time. Null for a lap-time cue or before the next pass.
+ * pass that left the driver, and the corner time. Numbers (metres, km/h, seconds) only when the cue
+ * and the pass after it are both High confidence (FBBD-177); otherwise the same sentence without
+ * them. Null for a lap-time cue or before the next pass.
  */
 fun ReviewedCue.outcome(): String? {
     val r = result
     val before = cue.before
     if (r == null || before == null) return null
+    val precise = cue.confidence.precise && r.confidence.precise
     val target = cue.target
     val change = when (cue.advice) {
-        is Advice.CarrySpeed -> speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh })
-        else -> brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt })
+        is Advice.CarrySpeed ->
+            speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh }, precise)
+        else -> brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt }, precise)
     }
-    return "$change · ${timeChange(r.gainMicros)}"
+    return "$change · ${timeChange(r.gainMicros, precise)}"
 }
 
 /**
@@ -111,44 +115,50 @@ private const val NearMeters = 2
 private const val NearKmh = 1
 private const val MicrosPerSecond = 1_000_000.0
 
-/** "Braked 9 m later, 4 m short of best"; [toBest] is how much later the best pass braked. */
-private fun brakeChange(moved: Double, toBest: Double?): String {
+/**
+ * "Braked 9 m later, 4 m short of best", or without [precise] "Braked later, short of best"; [toBest]
+ * is how much later the best pass braked.
+ */
+private fun brakeChange(moved: Double, toBest: Double?, precise: Boolean): String {
     val m = moved.roundToInt()
     val first = when {
         abs(m) < NearMeters -> "Braked at the same point"
-        m > 0 -> "Braked $m m later"
-        else -> "Braked ${-m} m earlier"
+        m > 0 -> "Braked ${amount(m, "m", precise)}later"
+        else -> "Braked ${amount(-m, "m", precise)}earlier"
     }
     val gap = toBest?.roundToInt() ?: return first
     val second = when {
         abs(gap) < NearMeters -> "at the best point"
-        gap > 0 -> "$gap m short of best"
-        else -> "${-gap} m past best"
+        gap > 0 -> "${amount(gap, "m", precise)}short of best"
+        else -> "${amount(-gap, "m", precise)}past best"
     }
     return "$first, $second"
 }
 
-/** "Minimum speed 3 km/h higher, 2 km/h under best". */
-private fun speedChange(moved: Double, toBest: Double?): String {
+/** "Minimum speed 3 km/h higher, 2 km/h under best", or without [precise] "Minimum speed higher, under best". */
+private fun speedChange(moved: Double, toBest: Double?, precise: Boolean): String {
     val v = moved.roundToInt()
     val first = when {
         abs(v) < NearKmh -> "Same minimum speed"
-        v > 0 -> "Minimum speed $v km/h higher"
-        else -> "Minimum speed ${-v} km/h lower"
+        v > 0 -> "Minimum speed ${amount(v, "km/h", precise)}higher"
+        else -> "Minimum speed ${amount(-v, "km/h", precise)}lower"
     }
     val gap = toBest?.roundToInt() ?: return first
     val second = when {
         abs(gap) < NearKmh -> "at best"
-        gap > 0 -> "$gap km/h under best"
-        else -> "${-gap} km/h over best"
+        gap > 0 -> "${amount(gap, "km/h", precise)}under best"
+        else -> "${amount(-gap, "km/h", precise)}over best"
     }
     return "$first, $second"
 }
 
-/** "0.12 s gained" or "0.05 s lost" across the corner. */
-private fun timeChange(gainMicros: Long): String {
-    val s = String.format(Locale.ROOT, "%.2f s", abs(gainMicros) / MicrosPerSecond)
+/** "0.12 s gained" or "0.05 s lost" across the corner; without [precise] "time gained" or "time lost". */
+private fun timeChange(gainMicros: Long, precise: Boolean): String {
+    val s = if (precise) String.format(Locale.ROOT, "%.2f s", abs(gainMicros) / MicrosPerSecond) else "time"
     return if (gainMicros >= 0) "$s gained" else "$s lost"
 }
+
+/** "9 m " with [precise], nothing without: the sentence reads the same either way. */
+private fun amount(n: Int, unit: String, precise: Boolean) = if (precise) "$n $unit " else ""
 
 private fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
