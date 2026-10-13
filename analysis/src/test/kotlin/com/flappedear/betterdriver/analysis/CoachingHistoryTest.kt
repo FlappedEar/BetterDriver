@@ -4,6 +4,7 @@ package com.flappedear.betterdriver.analysis
 
 import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
+import com.flappedear.betterdriver.analysis.coaching.FocusAsk
 import com.flappedear.betterdriver.analysis.coaching.FocusAttempt
 import com.flappedear.betterdriver.analysis.coaching.FocusVerdict
 import com.flappedear.betterdriver.analysis.coaching.Persistence
@@ -222,6 +223,35 @@ class CoachingHistoryTest {
         assertFalse(attempt.coached)
         assertEquals(0, attempt.cues)
         assertTrue(attemptText(attempt).startsWith("Corner 1 was this session's focus. The braking point"))
+    }
+
+    @Test
+    fun `the session the coach worked from is found even when the clock put it later`() {
+        // The phone clock was set back: s1 starts "before" s0, whose focus its coach loaded.
+        val earlierClock = record(
+            session(after, brakingAfter, minimumAfter), "s1", 500,
+            CoachedSession(focusFrom = "s0", cues = mapOf("c1" to 5)),
+        )
+        val attempt = coachingHistory("s1", listOf(s0, earlierClock)).c1()
+        assertEquals("s0", attempt.source.sessionId)
+        assertTrue(attempt.coached)
+        assertEquals(FocusVerdict.Improved, attempt.verdict)
+        // Without the coach's word, only a session before it can be the one it worked on.
+        assertTrue(coachingHistory("s1", listOf(s0, earlierClock.copy(coachedFrom = null))).empty)
+    }
+
+    @Test
+    fun `a corner left out for its claim, not its passes, is withheld in the record`() {
+        // c4's gap rests on lap 1 alone: the gap is withheld though every lap there is High.
+        val oneLap = before + ("c4" to listOf(4.70, 5.11, 5.10, 5.10, 5.11, 5.12))
+        val s = record(session(oneLap, brakingAfter, minimumAfter), "s1", 2_000, CoachedSession(focusFrom = "s0"))
+        val c4 = assertNotNull(s.corner("c4"))
+        assertNull(c4.focusRank)
+        assertTrue(c4.withheld)
+        // So a focus on c4 from before says nothing about it being a top-three loss now.
+        val asked = s0.copy(focus = listOf(FocusAsk("c4", "Corner 4", "primary", "HIGH")))
+        val attempt = coachingHistory("s1", listOf(asked, s)).attempts.single()
+        assertNull(attempt.topThree)
     }
 
     @Test

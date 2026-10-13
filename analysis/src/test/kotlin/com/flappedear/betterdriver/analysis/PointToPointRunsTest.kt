@@ -11,6 +11,9 @@ import com.flappedear.betterdriver.analysis.laps.LapTracePoint
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.progress.buildProgressAxis
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.segments.AxisRobustness
+import com.flappedear.betterdriver.analysis.segments.buildRobustAxis
+import com.flappedear.betterdriver.analysis.segments.smoothedLapTrace
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -172,5 +175,18 @@ class PointToPointRunsTest {
         assertTrue(sprint.valid)
         assertEquals(25.0, sprint.lengthMeters, 1e-6)
         assertFalse(buildProgressAxis(straight(15.0), origin, gate, closed = false).valid)
+    }
+
+    @Test
+    fun `the app's smoothed run still runs from gate to gate`() {
+        val origin = GeoCoordinate(centerLat, centerLon)
+        val gate = TimingGate(TimingGateType.Start, "start", origin, origin)
+        val sprint = LapTrace(1, 0.0, 5.0, List(31) { LapTracePoint(it / 6.0, it * 25.0 / 30, 0.0) })
+        val smoothed = smoothedLapTrace(sprint, AxisRobustness.App.traceSmoothingMeters, closed = false)
+        assertEquals(sprint.points.first(), smoothed.points.first())
+        assertEquals(sprint.points.last(), smoothed.points.last())
+        val axis = buildRobustAxis(sprint, origin, gate, closed = false, AxisRobustness.App)
+        assertTrue(axis.valid)
+        assertEquals(25.0, axis.lengthMeters, 1e-6)
     }
 }

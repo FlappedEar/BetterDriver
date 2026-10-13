@@ -2,7 +2,9 @@
 
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
+import com.flappedear.betterdriver.analysis.laps.buildLapTraces
 import com.flappedear.betterdriver.analysis.laps.MinimumGpsGapSeconds
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
@@ -63,6 +65,21 @@ class GpsGapFloorTest {
                 assertNotNull(times.sector(s.id)?.seconds, "${s.id} with fixes missing round ${segment.id}'s start")
             }
         }
+    }
+
+    @Test
+    fun `a lap whose gates are crossed in a third of a second without fixes still starts and ends on them`() {
+        val sets = sim.samples(laps = 5, stepSeconds = 0.04)
+        val lap3 = deriveSourceLapSession(telemetrySessionOf(data(sets), sim.track())).timedLaps.single { it.number == 3 }
+        fun hole(t: Double) = ((t - 0.15) * 1e6).toLong().let { it until it + 300_000 }
+        val kept = sets.filterNot { it.tMicros in hole(lap3.startTelemetryTime) || it.tMicros in hole(lap3.endTelemetryTime) }
+        val session = telemetrySessionOf(data(kept), sim.track())
+        val holed = deriveSourceLapSession(session).timedLaps.single { it.number == 3 }
+        assertEquals(LapReferenceIssue.None, holed.referenceIssue)
+        // The trace's ends are the gate crossings, interpolated across the hole as lap detection read it.
+        val trace = buildLapTraces(session, listOf(holed), GeoCoordinate(sim.origin.lat, sim.origin.lon)).single()
+        assertEquals(holed.startTelemetryTime, trace.points.first().telemetryTime, 1e-9)
+        assertEquals(holed.endTelemetryTime,trace.points.last().telemetryTime, 1e-9)
     }
 
     @Test

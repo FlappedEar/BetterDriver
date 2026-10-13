@@ -92,11 +92,13 @@ class NextSessionFocusTest {
     private fun handBuilt(
         drop: Set<String> = emptySet(),
         times: Map<String, List<Double>> = this.times,
+        straights: Set<String> = emptySet(),
     ): SessionAnalysis {
         val ids = times.keys.filter { it !in drop }
         val laps = (1..6).map { n -> TimedLap(n, n * 100.0, n * 100.0 + 80.0 + (if (n == 2) 0.0 else 0.5), 80.0) }
         val segments = ids.mapIndexed { i, id ->
-            TrackSegment(id, "Corner ${i + 1}", TrackSegmentType.Corner, i * 100.0, i * 100.0 + 50.0)
+            val type = if (id in straights) TrackSegmentType.Straight else TrackSegmentType.Corner
+            TrackSegment(id, "Corner ${i + 1}", type, i * 100.0, i * 100.0 + 50.0)
         }
         val sectorTimes = (1..6).map { n ->
             LapSectorTimes(
@@ -145,6 +147,17 @@ class NextSessionFocusTest {
         assertEquals(Confidence.LOW, withheld.confidence.level)
         assertTrue(withheld.confidence.has(ClaimCodes.ONE_LAP), withheld.confidence.why)
         assertNull(plan.identityRevision)
+    }
+
+    @Test
+    fun `a straight with weak evidence is not named as left out of the corner plan`() {
+        val analysis = handBuilt(straights = setOf("c6"))
+        // The focus areas still withhold it for its one-lap evidence...
+        assertTrue(sessionFocus(analysis, { "lap $it" }, maximum = Int.MAX_VALUE).withheld.any { it.segmentId == "c6" })
+        // ...but a straight is never in this plan, whatever its evidence, so the plan does not list it.
+        val plan = nextSessionPlan(analysis)
+        assertTrue(plan.withheld.none { it.segmentId == "c6" }, plan.withheld.toString())
+        assertEquals("c1", plan.primary?.segmentId)
     }
 
     @Test

@@ -185,6 +185,19 @@ class SessionFocusTest {
     }
 
     @Test
+    fun `a save that cannot delete the session's record at its old track fails`() = withDir { dir ->
+        val store = SessionFocusStore(dir)
+        val moved = record("s2", 2_000, 1)
+        // Something at the old track's record path that File.delete cannot remove.
+        File(dir, "sim/s2.json/stuck").apply { parentFile.mkdirs() }.writeText("x")
+        assertFailsWith<java.io.IOException> { store.save(moved.copy(trackId = "other")) }
+        // The new track's record is written all the same, and the next save tries the delete again.
+        assertEquals("other", store.latest("other")?.trackId)
+        File(dir, "sim/s2.json").deleteRecursively()
+        assertTrue(!store.save(moved.copy(trackId = "other")))
+    }
+
+    @Test
     fun `a record keeps each focus under its CornerId, primary first, with what to change`() = withDir { dir ->
         val store = SessionFocusStore(dir)
         val r = record("s1", 1, 1, 3).let { r ->
