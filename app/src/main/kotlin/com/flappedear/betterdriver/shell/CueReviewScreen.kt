@@ -113,7 +113,10 @@ private fun CueReviewPreview() {
     val review = CueReview(
         listOf(
             ReviewedCue(Cue(4, 0, 4, CueKind.LapTime, "1 32 point 4"), null),
-            ReviewedCue(corner, CoachEvents.Result(5, after, improved = true, gainMicros = 180_000, confidence = Confidence.HIGH)),
+            ReviewedCue(
+                corner,
+                CoachEvents.Result(5, after, improved = true, gainMicros = 180_000, confidence = Confidence.HIGH),
+            ),
         ),
         problems = 0,
     )
