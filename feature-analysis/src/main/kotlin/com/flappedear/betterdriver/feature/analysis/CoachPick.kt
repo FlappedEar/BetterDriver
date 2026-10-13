@@ -2,10 +2,8 @@ package com.flappedear.betterdriver.feature.analysis
 
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconToggleButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,24 +14,9 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 
 /**
- * "Coach this next time" (FBBD-148): picks [cornerId] for the spoken coach's next session at the
- * track, or unpicks it. Nothing when the corner cannot be picked (not a corner, or its line is not
- * known yet).
- */
-@Composable
-internal fun CoachPick(ui: AnalysisUi, cornerId: String?, onCoachPick: (String) -> Unit) {
-    if (cornerId == null || cornerId !in ui.coachPickable) return
-    val picked = cornerId in ui.coachPicked
-    FilterChip(
-        selected = picked,
-        onClick = { onCoachPick(cornerId) },
-        label = { Text(if (picked) "✓ Coaching this next time" else "Coach this next time") },
-    )
-}
-
-/**
- * The same as a flag at the end of a row, where a chip does not fit beside the numbers: filled when
- * [cornerId] is picked. [slot] keeps the column when the row has no corner to pick, so the rows line up.
+ * "Coach this next time" (FBBD-148) as a flag at the end of a row: picks [cornerId] for the spoken
+ * coach's next session at the track, or unpicks it; filled when [cornerId] is picked. [slot] keeps
+ * the column when the row has no corner to pick, so the rows line up.
  */
 @Composable
 internal fun CoachFlag(ui: AnalysisUi, cornerId: String?, name: String, onCoachPick: (String) -> Unit, slot: Boolean) {

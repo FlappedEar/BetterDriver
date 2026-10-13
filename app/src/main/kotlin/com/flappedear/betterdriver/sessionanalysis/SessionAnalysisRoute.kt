@@ -33,8 +33,10 @@ import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.coach.CoachPicksRepo
+import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
@@ -53,6 +55,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
+import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
@@ -88,11 +91,14 @@ private sealed interface Load {
     /**
      * [coachCandidates]: each corner (segment id) as a pick for the coach (FBBD-148), on the fastest lap.
      * [lapVideo]: the session's video and the lap review's laps, for every lap through a corner (FBBD-153).
+     * [epoch]: the app data's restore epoch (FBBD-156) taken before the session was read, so what is
+     * derived from it is never written into data restored since.
      */
     data class Done(
         val loaded: Loaded,
         val coachCandidates: Map<String, CornerPick>,
         val lapVideo: LapVideo? = null,
+        val epoch: Long = 0L,
     ) : Load
 
     /** No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151). */
@@ -135,12 +141,15 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
     val coachPicks = remember { CoachPicksRepo.get(context) }
+    val verbosity = remember { CoachPrefs.get(context) }.settings.verbosity
     val allPicks by coachPicks.picks.collectAsState()
     val trackId = (load as? Load.Done)?.loaded?.track?.id
     val picks = trackId?.let { allPicks[it] }
     LaunchedEffect(id) {
         load = withContext(Dispatchers.Default) {
-            loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            val epoch = AppDataGate.epoch
+            val read = loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
+            if (read is Load.Done) read.copy(epoch = epoch) else read
         }
     }
     // The session's validation report (FBBD-183): read, or made the first time the session is opened.
@@ -166,12 +175,22 @@ internal fun SessionAnalysisRoute(nav: NavHostController, id: String, layout: La
             is Load.Done -> withContext(Dispatchers.Default) { readyState(l.loaded, compared, progress) }
         }
     }
+    // What to work on next (FBBD-20) is kept for the track's next session's coach once analysed.
+    LaunchedEffect(load) {
+        val l = load as? Load.Done ?: return@LaunchedEffect
+        val loaded = l.loaded
+        withContext(Dispatchers.Default) {
+            val store = sessionFocusStore(context)
+            val at = loaded.startUtcMillis
+            keepSessionFocus(store, l.epoch, loaded.track.id, id, at, loaded.analysis, l.coachCandidates)
+        }
+    }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
     // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
-    LaunchedEffect(analysed, picks, quality) {
+    LaunchedEffect(analysed, picks, quality, verbosity) {
         val l = load as? Load.Done
         val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
-        state = picked.withQuality(quality)
+        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity)
     }
     CornerLapsRoute(nav, id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo) {
         AnalysisScreen(

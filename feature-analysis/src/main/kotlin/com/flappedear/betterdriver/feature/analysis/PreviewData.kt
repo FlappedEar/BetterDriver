@@ -108,6 +108,9 @@ internal val PreviewUi = AnalysisUi(
             0,
             1,
             "s2",
+            primary = true,
+            timeSeconds = 0.21,
+            what = "Your 2 fastest passes braked 8 m later and carried 4 km/h more minimum speed than your other 3.",
         ),
         FocusRow(
             "Repeated loss",
@@ -118,6 +121,8 @@ internal val PreviewUi = AnalysisUi(
             2,
             3,
             "s5",
+            timeSeconds = 0.19,
+            what = "Your 2 fastest passes left the corner 3 km/h faster than your other 3.",
         ),
     ),
     coachPickable = setOf("s2", "s5"),

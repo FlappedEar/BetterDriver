@@ -32,7 +32,8 @@ const val MaxCueAgeMicros = 400_000L
  * [onFix]'s `say` plays a phrase and returns false if the voice refused it. A dropped or refused cue
  * is logged as a problem, never as a cue, and no result is measured against it. [picks] are the
  * corners the driver picked for this track in the lap analysis (FBBD-148). [sameDay]: the reference
- * has a session driven earlier the same day, so the coach only warms up (FBBD-190).
+ * has a session driven earlier the same day, so the coach only warms up (FBBD-190). [focus] is the
+ * session focus the last analysed session at the track recommends, the primary first (FBBD-20).
  */
 class CoachSession(
     settings: CoachSettings,
@@ -40,9 +41,10 @@ class CoachSession(
     reference: CoachReference?,
     picks: List<CornerPick> = emptyList(),
     sameDay: Boolean = false,
+    focus: List<CornerPick> = emptyList(),
 ) {
     private val engine = track?.takeIf { coaches(it) && settings.verbosity != Verbosity.Off }
-        ?.let { CueEngine(it, settings, reference, picks = picks, sameDay = sameDay) }
+        ?.let { CueEngine(it, settings, reference, picks = picks, sameDay = sameDay, focus = focus) }
 
     private var lastCue: Cue? = null
 
