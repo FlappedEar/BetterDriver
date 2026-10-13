@@ -34,8 +34,8 @@ private const val MinDeterminant = 1e-12
  * GPS (orthogonal Procrustes: R = (M Mᵀ)^-½ M, M the 2 × axes cross-covariance), so braking while
  * turning does not leak cornering into forward. When they cannot both be found (GPS shows too
  * little of one, as on a straight line, or the accelerometer has one axis), only the one the
- * readings follow better is ([oneDirection]). Each direction then gets its sign, the bias of the mount's tilt and its agreement
- * with GPS from [fitAxis].
+ * readings follow better is ([oneDirection]). Each direction then gets its sign, the bias of the
+ * mount's tilt and its agreement with GPS from [fitAxis].
  */
 @Suppress("ReturnCount")
 fun fitMount(axes: List<DoubleArray>, forward: DoubleArray, left: DoubleArray): MountFit? {
