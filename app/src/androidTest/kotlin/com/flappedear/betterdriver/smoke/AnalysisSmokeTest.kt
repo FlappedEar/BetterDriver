@@ -69,9 +69,11 @@ class AnalysisSmokeTest {
             hasContentDescription(":", substring = true)
         app.waitFor(theoretical).assertIsDisplayed()
         legend().performScrollTo().assertIsDisplayed()
-        app.waitForText("WHERE TIME GOES").performScrollTo().assertIsDisplayed()
+        // The summary lays out again as its background cards (coaching history, progress) arrive, so
+        // each card is scrolled to until it is shown (FBBD-208).
+        app.scrollUntilShown(hasText("WHERE TIME GOES"))
         // The whole session's G-forces, with their peaks.
-        app.waitForText("G-FORCES · WHOLE SESSION").performScrollTo().assertIsDisplayed()
+        app.scrollUntilShown(hasText("G-FORCES · WHOLE SESSION"))
         app.waitForText("Peaks: braking", substring = true)
 
         app.openTab("Compare")
