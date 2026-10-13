@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.feature.analysis
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
@@ -73,17 +74,22 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.onNodeWithTag(PrimaryFocusTag).assertIsDisplayed().assert(hasText("Corners 2–3"))
     }
 
-    /** What came of the last focus (FBBD-180) sits right under the next one, above the best lap. */
+    /**
+     * What came of the last focus (FBBD-180) follows the lap times, so the next focus and the best
+     * lap stay first. Measured unclipped: on a phone on its side the history is below the fold.
+     */
     @Test
-    fun coachingHistoryBesideTheFocus() {
+    fun coachingHistoryAfterTheLapTimes() {
         compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
         compose.waitForIdle()
-        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode().boundsInRoot
-        val history = compose.onNodeWithTag(CoachingHistoryTag).fetchSemanticsNode().boundsInRoot
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode().boundsInRoot
-        check(next.bottom <= history.top && history.bottom <= best.top) {
-            "next session at $next, coaching history at $history, best lap at $best on $device"
+        fun top(node: SemanticsNode) = node.positionInRoot.y
+        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val history = compose.onNodeWithTag(CoachingHistoryTag).fetchSemanticsNode()
+        val nextBottom = top(next) + next.size.height
+        check(nextBottom <= top(best) && top(best) < top(history)) {
+            "next session at ${top(next)}..$nextBottom, best lap at ${top(best)}, history at ${top(history)} on $device"
         }
         compose.onNode(hasText("Learned") and hasAnyAncestor(hasTestTag(CoachingHistoryTag))).assertExists()
     }
