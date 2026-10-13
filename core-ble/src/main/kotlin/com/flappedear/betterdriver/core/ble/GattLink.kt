@@ -48,6 +48,7 @@ private const val Tag = "Link"
  * resulting SecurityException is treated like any other failure and retried.
  */
 @SuppressLint("MissingPermission")
+@Suppress("TooManyFunctions") // One function per link step, one callback per GATT event.
 class GattLink(
     context: Context,
     private val address: String,
