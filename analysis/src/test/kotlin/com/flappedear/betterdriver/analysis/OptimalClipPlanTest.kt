@@ -4,6 +4,10 @@ import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
 import com.flappedear.betterdriver.analysis.laps.TimedLap
+import com.flappedear.betterdriver.analysis.optimal.JointThresholds
+import com.flappedear.betterdriver.analysis.optimal.OptimalKind
+import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalLap
+import com.flappedear.betterdriver.analysis.optimal.RealisticSector
 import com.flappedear.betterdriver.analysis.optimal.OptimalLap
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapUnavailable
 import com.flappedear.betterdriver.analysis.optimal.optimalClipPlan
@@ -89,7 +93,7 @@ class OptimalClipPlanTest {
 
     private fun lengthOf(c: VideoClip): Long? = c.endMicros?.let { it - c.startMicros }
 
-    private fun optimal(): OptimalLap = assertNotNull(optimalLap(analysis).lap)
+    private fun optimal(): OptimalLap = assertNotNull(optimalLap(analysis, OptimalKind.RawTheoreticalBest).lap)
 
     @Test
     fun `each segment comes from the lap that won it, in track order, adding up to the theoretical best`() {
@@ -183,7 +187,7 @@ class OptimalClipPlanTest {
         val plan = optimalClipPlan(optimal(), listOf(clip("a.mp4", 0.0, 200.0)), ::lengthOf, origin)
         val first = plan.cuts[0]
         val start = plan.overlayAt(first, first.partStartMicros + 3_000_000L)
-        assertEquals(listOf("OPTIMAL · LAP 2 · STRAIGHT 1", "LAP 2 · STRAIGHT 1", "LAP 2"), start.captions)
+        assertEquals(listOf("RAW THEORETICAL · LAP 2 · STRAIGHT 1", "LAP 2 · STRAIGHT 1", "LAP 2"), start.captions)
         assertEquals(3_000_000L, start.theoreticalMicros)
         assertEquals(0.0, start.deltaSeconds)
         // In Corner 1: Straight 1 gained 1 s on the fastest lap.
@@ -235,7 +239,7 @@ class OptimalClipPlanTest {
                 valid = true,
             ),
         )
-        val lap = assertNotNull(optimalLap(a).lap)
+        val lap = assertNotNull(optimalLap(a, OptimalKind.RawTheoreticalBest).lap)
         assertEquals(listOf("Corner 1", "Straight 1", "Corner 1"), lap.parts.map { it.name })
         assertEquals(listOf(2, 1, 2), lap.parts.map { it.lapNumber })
         assertEquals(listOf(70.0, 14.0, 125.0), lap.parts.map { it.startTime })
@@ -248,10 +252,35 @@ class OptimalClipPlanTest {
     }
 
     @Test
+    fun `the realistic optimal is filmed from the laps it chose, and says what it is`() {
+        val realistic = RealisticOptimalLap(
+            listOf(
+                RealisticSector("s0", "Straight 1", 1, 20.0),
+                RealisticSector("s1", "Corner 1", 1, 22.0),
+                RealisticSector("s2", "Straight 2", 1, 18.0),
+            ),
+            joints = emptyList(),
+            totalSeconds = 60.0,
+            thresholds = JointThresholds(),
+        )
+        val lap = assertNotNull(optimalLap(analysis.copy(realisticOptimal = realistic)).lap)
+        assertEquals(OptimalKind.RealisticOptimal, lap.kind)
+        assertEquals(listOf(1, 1, 1), lap.parts.map { it.lapNumber })
+        assertEquals(60.0, lap.totalSeconds)
+        val plan = optimalClipPlan(lap, listOf(clip("a.mp4", 0.0, 200.0)), ::lengthOf, origin)
+        val first = plan.cuts[0]
+        val caption = plan.overlayAt(first, first.partStartMicros).captions[0]
+        assertEquals("REALISTIC OPTIMAL · LAP 1 · STRAIGHT 1", caption)
+    }
+
+    @Test
     fun `no optimal lap without segments or with a segment no lap timed`() {
-        assertEquals(OptimalLapUnavailable.NoSegments, optimalLap(analysis.copy(segments = null)).why)
+        val raw = OptimalKind.RawTheoreticalBest
+        assertEquals(OptimalLapUnavailable.NoSegments, optimalLap(analysis.copy(segments = null), raw).why)
         val incomplete = analysis.copy(theoreticalBest = analysis.theoreticalBest?.copy(totalSeconds = null))
-        assertEquals(OptimalLapUnavailable.IncompleteCoverage, optimalLap(incomplete).why)
-        assertNull(optimalLap(incomplete).lap)
+        assertEquals(OptimalLapUnavailable.IncompleteCoverage, optimalLap(incomplete, raw).why)
+        assertNull(optimalLap(incomplete, raw).lap)
+        // Without a realistic optimal (no chain joins), only the raw theoretical best can be filmed.
+        assertEquals(OptimalLapUnavailable.NoCompatibleChain, optimalLap(analysis).why)
     }
 }

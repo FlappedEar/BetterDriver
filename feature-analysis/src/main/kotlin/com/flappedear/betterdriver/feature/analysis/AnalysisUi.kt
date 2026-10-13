@@ -144,8 +144,9 @@ data class AnalysisUi(
     val laps: List<LapRow>,
     val bestLapNumber: Int,
     val bestLapMillis: Long,
+    /** The raw theoretical best (FBBD-178): each segment's fastest time, added up. */
     val theoreticalMillis: Long?,
-    /** Fastest lap minus theoretical best, seconds. */
+    /** Fastest lap minus raw theoretical best, seconds. */
     val gainSeconds: Double?,
     /**
      * How far [gainSeconds] can be trusted (FBBD-177): the weakest of the corners and straights it
@@ -172,6 +173,15 @@ data class AnalysisUi(
     val map: MapUi? = null,
     /** Corners (segment ids) that can be picked for the coach's next session (FBBD-148); none while read. */
     val coachPickable: Set<String> = emptySet(),
+    /**
+     * The realistic optimal (FBBD-178): the fastest lap the counted laps combine into where
+     * neighbouring segments join compatibly; null without a raw theoretical best.
+     */
+    val realisticMillis: Long? = null,
+    /** Fastest lap minus realistic optimal, seconds; shown at [gainConfidence] like [gainSeconds]. */
+    val realisticGainSeconds: Double? = null,
+    /** The laps the realistic optimal is made of. */
+    val realisticLaps: List<Int> = emptyList(),
     /** Of [coachPickable], the corners picked at this track, in this session or another. */
     val coachPicked: Set<String> = emptySet(),
     /** The session's acceleration runs; null when it has none. */
@@ -238,11 +248,13 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         )
     }
     val total = best?.totalSeconds
+    // Shown only beside the raw theoretical best it can never beat.
+    val realistic = analysis.realisticOptimal?.takeIf { total != null }
     val sectorsNote = when {
         analysis.segments == null && analysis.consensus.disagrees ->
             "No corners: the best lap's GPS line is far from the other laps somewhere."
         analysis.segments == null -> "No corners: this lap could not be split into corners and straights."
-        total == null -> "No theoretical best: a sector has no fully covered time on any counted lap."
+        total == null -> "No raw theoretical best: a sector has no fully covered time on any counted lap."
         else -> null
     }
     val corners = analysis.segments?.segments.orEmpty()
@@ -277,6 +289,9 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
             )
         },
         sources = analysis.provenance,
+        realisticMillis = realistic?.totalSeconds?.let(::millis),
+        realisticGainSeconds = realistic?.let { fastest.durationSeconds - it.totalSeconds },
+        realisticLaps = realistic?.laps.orEmpty(),
     )
 }
 
