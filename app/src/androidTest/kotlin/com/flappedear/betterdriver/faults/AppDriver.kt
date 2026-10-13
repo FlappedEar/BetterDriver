@@ -1,8 +1,11 @@
 package com.flappedear.betterdriver.faults
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import androidx.test.platform.app.InstrumentationRegistry
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry
+import androidx.test.runner.lifecycle.Stage
 import androidx.test.uiautomator.By
 import androidx.test.uiautomator.Configurator
 import androidx.test.uiautomator.UiDevice
@@ -57,11 +60,32 @@ class AppDriver {
      * once it runs, and the script's `am start` can leave the launcher in front.
      */
     fun openApp() {
+        val before = resumed()
         val intent = Intent(app, MainActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
         app.startActivity(intent)
+        // The app's window can still be the activity being replaced, whose views a tap would reach
+        // while it goes (PermissionTest tapped Settings there and then found no "App"), so this waits
+        // for the new one to be resumed and laid out.
+        waitFor(LoadTimeoutMs, "the app's new screen") {
+            var shown = false
+            instrumentation.runOnMainSync {
+                shown = resumedNow().any { a -> before.none { it === a } && a.window.decorView.isLaidOut }
+            }
+            shown
+        }
         device.wait(Until.hasObject(By.pkg(app.packageName).depth(0)), LoadTimeoutMs)
     }
+
+    private fun resumed(): List<Activity> {
+        var list = emptyList<Activity>()
+        instrumentation.runOnMainSync { list = resumedNow() }
+        return list
+    }
+
+    /** Main thread. */
+    private fun resumedNow(): List<Activity> =
+        ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList()
 
     /** Taps the first view showing [text], waiting for it. */
     fun tap(text: String, timeoutMs: Long = LoadTimeoutMs) {
