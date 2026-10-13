@@ -46,6 +46,7 @@ import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.SessionAnalysisRoute
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
+import com.flappedear.betterdriver.sessionanalysis.progressionDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.AboutScreen
 import com.flappedear.betterdriver.shell.AppNavigation
@@ -156,6 +157,7 @@ private fun AppNavHost(
         }
         reviewDestination(nav, padding, layout)
         analysisDestination(nav, padding, layout)
+        progressionDestination(nav, padding)
         cueReview(nav, padding, layout)
         composable(Routes.Settings) {
             Box(Modifier.padding(padding)) {

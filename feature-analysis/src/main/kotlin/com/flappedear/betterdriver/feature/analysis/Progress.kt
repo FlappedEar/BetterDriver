@@ -2,9 +2,11 @@ package com.flappedear.betterdriver.feature.analysis
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.quicker
@@ -18,13 +20,18 @@ import kotlin.math.roundToLong
 
 private const val MillisPerSecond = 1000.0
 
+/** The link from a session's summary to the progression at its track (FBBD-181), for tests. */
+const val ProgressionLinkTag = "progression-link"
+const val ProgressionLinkText = "Progress over every session here"
+
 /**
  * Session summary (FBBD-122, FBBD-123, UI-70): this session's best lap against the best of every
  * earlier session at the track, how repeatable its laps were against the session before, and the
- * corners and straights whose typical time moved most since then.
+ * corners and straights whose typical time moved most since then. [onProgression], when given, opens
+ * the progression over every session at the track (FBBD-181).
  */
 @Composable
-internal fun Progress(progress: SessionProgress, modifier: Modifier) {
+internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgression: (() -> Unit)? = null) {
     val c = TrackTheme.colors
     Card(modifier) {
         TrackLabel("Against earlier sessions here")
@@ -62,6 +69,11 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier) {
         }
         Changes(progress)
         Dim("${progress.eligibleLapCount} counted laps. Spread: the middle half of your lap times.")
+        onProgression?.let { open ->
+            TextButton(onClick = open, modifier = Modifier.testTag(ProgressionLinkTag)) {
+                Text(ProgressionLinkText)
+            }
+        }
     }
 }
 

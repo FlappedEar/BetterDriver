@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.analysis.coaching.coachingHistory
 import com.flappedear.betterdriver.analysis.coaching.sessionCoachingRecord
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.coachingRows
+import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.sharing.AppDataGate
 import java.io.IOException
@@ -19,7 +20,8 @@ import java.time.ZoneId
  * [epoch] is the app data's restore epoch taken before the session was read: read before or during
  * a restore, the record is not written and the restored history wins (FBBD-156). Returns what the
  * session shows of the history: the record as just worked out, with the track's others as kept.
- * [trackKept] says whether the track is still saved when the record is written.
+ * [trackKept] says whether the track is still saved when the record is written. [origin] is where
+ * an imported session came from (FBBD-181), kept with the record so the progression can say so.
  * A failure is logged, never shown; nothing is shown for a session whose corners are not the track's.
  */
 @Suppress("LongParameterList") // The analysed session, as the analysis screen has it.
@@ -31,10 +33,11 @@ internal fun keepCoachingHistory(
     startUtcMillis: Long,
     analysis: SessionAnalysis,
     coached: CoachedSession,
+    origin: String? = null,
     trackKept: () -> Boolean = { true },
 ): SessionCoaching {
     val record = try {
-        sessionCoachingRecord(analysis, trackId, sessionId, startUtcMillis, coached)
+        sessionCoachingRecord(analysis, trackId, sessionId, startUtcMillis, coached, origin)
     } catch (e: IllegalArgumentException) {
         DebugLog.w(Tag, "coaching history of $sessionId not made", e)
         null
@@ -59,6 +62,9 @@ internal fun keepCoachingHistory(
 }
 
 private const val Tag = "CoachingHistory"
+
+/** Where a session imported from another app's file came from (FBBD-164): "VBO lap-12.vbo"; null when recorded here. */
+internal fun originOf(info: SessionInfo): String? = info.imported?.let { "${it.format} ${it.fileName}".trim() }
 
 /** [this] with what came of the last focus and whether earlier gains held (FBBD-180), in the phone's time zone. */
 internal fun AnalysisState.withCoaching(coaching: SessionCoaching): AnalysisState {
