@@ -66,7 +66,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.setContent { AppScreen { Analysis() } }
         compose.waitForIdle()
         val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode().boundsInRoot
-        val best = compose.onAllNodes(hasText("BEST LAP"))[0].fetchSemanticsNode().boundsInRoot
+        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode().boundsInRoot
         check(next.bottom <= best.top) { "next session at $next, best lap at $best on $device" }
         compose.onNodeWithTag(PrimaryFocusTag).assertIsDisplayed().assert(hasText("Corners 2–3"))
     }
