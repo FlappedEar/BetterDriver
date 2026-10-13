@@ -1,6 +1,9 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.recorder.store.Frames
+import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -23,12 +26,25 @@ private const val MicrosPerMilli = 1_000L
  * When [s] ended: from its length, or for a session not yet recovered (no length), from its last
  * sample. Never from its file times: a session copied in (import, restore) has the copy's times.
  */
-private fun endedUtcMillis(s: SessionSummary, store: SessionStore): Long {
-    val start = s.info.startUtcMillis
-    val length = s.durationMicros
-        ?: runCatching { store.read(s.dir).sampleSets.lastOrNull()?.tMicros }.getOrNull()
-        ?: 0L
-    return start + length / MicrosPerMilli
+private fun endedUtcMillis(s: SessionSummary): Long {
+    val length = s.durationMicros ?: lastSampleMicros(s.dir) ?: 0L
+    return s.info.startUtcMillis + length / MicrosPerMilli
+}
+
+/** The time of the last sample in [dir]'s chunks, scanned one chunk at a time so no samples are kept. */
+@Suppress("TooGenericExceptionCaught") // A damaged session counts as ending at its start.
+private fun lastSampleMicros(dir: File): Long? = try {
+    var last: Long? = null
+    for (c in SessionFiles.chunks(dir)) {
+        Frames.scan(c.readBytes()) { rec ->
+            if (rec is Record.Samples) last = maxOf(last ?: Long.MIN_VALUE, rec.set.tMicros)
+        }
+    }
+    last
+} catch (_: IOException) {
+    null
+} catch (_: RuntimeException) {
+    null
 }
 
 /** The session's fixes, in time order. */
@@ -73,7 +89,7 @@ class CoachLibrary(
      */
     fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
         val ids = reference.sessions.toSet()
-        val ended = sessions.list().filter { it.id in ids }.maxOfOrNull { endedUtcMillis(it, sessions) }
+        val ended = sessions.list().filter { it.id in ids }.maxOfOrNull(::endedUtcMillis)
         return ended != null && nowUtcMillis - ended in 0..SameDayMillis
     }
 
