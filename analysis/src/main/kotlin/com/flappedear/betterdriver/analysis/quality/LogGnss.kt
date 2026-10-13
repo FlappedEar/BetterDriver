@@ -9,7 +9,9 @@ import kotlin.math.sqrt
 // the same values as the session's own report, worked out from the recorder's line per second of
 // GNSS ([GnssSecond]) instead of every sample.
 
-private const val MinRateHz = 24.5
+// Arek (2026-10-13): above 24 Hz is good, below 20 Hz would worry him. Missing messages are
+// judged on their own by the dropped-samples check.
+private const val MinRateHz = 24.0
 private const val MaxDroppedPercent = 0.5
 private const val MaxReconnectMicros = 5_000_000L
 private const val MaxStationaryStdMeters = 0.5
@@ -18,7 +20,7 @@ private const val StationarySeconds = 60
 private const val P1 = 0.01
 private const val MetersPerDegree = 111_195.0
 
-private const val RateCriterion = ">= 24.5 Hz over the session (FBBD-8, FBBD-46)"
+private const val RateCriterion = ">= 24 Hz over the session (FBBD-8, FBBD-46)"
 private const val DroppedCriterion = "<= 0.5 % of expected, link drops left out (FBBD-8, FBBD-46)"
 private const val GapCriterion = "<= 200 ms, link drops left out (FBBD-8, FBBD-46)"
 private const val ReconnectCriterion = "data back within 5 s, same session (FBBD-8, FBBD-43)"
