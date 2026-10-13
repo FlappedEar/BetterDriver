@@ -17,6 +17,7 @@ import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
@@ -24,6 +25,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.rules.ActivityScenarioRule
@@ -219,6 +221,19 @@ fun SmokeRule.waitForText(
 /** Waits until a node matching [matcher] exists and returns the first. */
 fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
     waitNamed(matcher.description, timeoutMs) { exists(matcher) }
+    return onAllNodes(matcher)[0]
+}
+
+/**
+ * Scrolls the first node matching [matcher] into view and waits until it is shown. A screen whose cards
+ * arrive from background loads can lay out again just after a scroll and push the node off screen, so
+ * the scroll is repeated until the node is displayed.
+ */
+fun SmokeRule.scrollUntilShown(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
+    waitFor(matcher, timeoutMs)
+    waitNamed("${matcher.description} on screen", timeoutMs) {
+        runCatching { onAllNodes(matcher)[0].performScrollTo().assertIsDisplayed() }.isSuccess
+    }
     return onAllNodes(matcher)[0]
 }
 

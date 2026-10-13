@@ -190,19 +190,19 @@ class AnalysisSmokeTest {
         // The analysis can still lay out again after it shows (the progress and data quality cards
         // arrive from background loads), which moves the flag under a tap aimed at it: each flag and
         // chip is clicked through its click action, once (FBBD-208).
-        app.waitFor(pick, timeoutMs = LoadTimeoutMs).performScrollTo().assertIsDisplayed()
+        app.scrollUntilShown(pick, timeoutMs = LoadTimeoutMs)
         app.clickAction(pick)
-        app.waitFor(picked).performScrollTo().assertIsDisplayed()
+        app.scrollUntilShown(picked)
         app.clickAction(picked)
         app.waitNamed("the pick to go", LoadTimeoutMs) { !app.exists(picked) }
 
         // The same pick from the focus card's chip, when the session has one.
         val chip = hasText("Coach this next time") and hasClickAction()
         if (app.exists(chip)) {
-            app.waitFor(chip).performScrollTo().assertIsDisplayed()
+            app.scrollUntilShown(chip)
             app.clickAction(chip)
             val chipPicked = hasText("✓ Coaching this next time") and hasClickAction()
-            app.waitFor(chipPicked).performScrollTo().assertIsDisplayed()
+            app.scrollUntilShown(chipPicked)
             app.clickAction(chipPicked)
             app.waitUntilGone("✓ Coaching this next time")
         }
