@@ -8,7 +8,9 @@ import kotlin.math.roundToLong
 // The GNSS part of the session validation report (FBBD-183), against FBBD-8 and FBBD-46: sample
 // rate, dropped samples and gaps. Reconnects and the position noise while parked have files of their own.
 
-private const val MinRateHz = 24.5
+// Arek (2026-10-13): above 24 Hz is good, below 20 Hz would worry him. Missing messages are
+// judged on their own by the dropped-samples check.
+private const val MinRateHz = 24.0
 private const val MaxDroppedPercent = 0.5
 internal const val MaxGapMicros = 200_000L
 private const val P1 = 0.01
@@ -91,7 +93,7 @@ internal fun gnssSection(samples: GnssSamples, events: List<RecorderEvent>, endM
     return QualitySection("GNSS", metrics, notes.sortedBy { it.tMicros })
 }
 
-private const val RateCriterion = ">= 24.5 Hz over the session (FBBD-8)"
+private const val RateCriterion = ">= 24 Hz over the session (FBBD-8)"
 
 /** Samples a second while the link was up: intervals across a logged drop are left out. */
 private fun rate(s: GnssSamples, acrossDrop: BooleanArray): QualityMetric {

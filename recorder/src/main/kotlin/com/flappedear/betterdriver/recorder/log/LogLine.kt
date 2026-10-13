@@ -1,18 +1,21 @@
 package com.flappedear.betterdriver.recorder.log
 
-import java.text.ParseException
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
-import java.util.TimeZone
+import java.time.Instant
+import java.time.OffsetDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
+import java.time.format.DateTimeParseException
 
 /**
- * One line of the app's continuous log (FBBD-183): when it was written in UTC ([utcMillis]) and on
- * the phone's boot clock ([uptimeMicros], which never jumps), which process ([process], [pid]) and
+ * One line of the app's continuous log (FBBD-183): when it was written ([utcMillis], an instant) and
+ * on the phone's boot clock ([uptimeMicros], which never jumps), which process ([process], [pid]) and
  * thread wrote it, its level and tag, the recording it belongs to ([session], null outside one) and
- * the message. The log is plain text, one line each:
+ * the message. The log is plain text, one line each, its time in the phone's own time zone with the
+ * offset from UTC, so the time reads as the phone showed it and still names one instant (FBBD-217):
  *
- * `2026-10-12T10:36:08.593Z 4711.204518 recorder 2646 main I Recording [20261012-103607-3713ff1a]: message`
+ * `2026-10-12T12:36:08.593+02:00 4711.204518 recorder 2646 main I Recording [20261012-123607-3713ff1a]: message`
+ *
+ * Lines of builds before that end in `Z` (UTC) and are read the same way.
  *
  * A stack trace follows its line on lines of its own, which [parse] does not read as lines.
  */
@@ -27,8 +30,8 @@ data class LogLine(
     val session: String?,
     val message: String,
 ) {
-    fun format(): String = buildString {
-        append(utcText(utcMillis)).append(' ')
+    fun format(zone: ZoneId = ZoneId.systemDefault()): String = buildString {
+        append(timeText(utcMillis, zone)).append(' ')
         append(uptimeMicros?.let(::uptimeText) ?: "-").append(' ')
         append(process).append(' ').append(pid).append(' ').append(thread.replace(' ', '_')).append(' ')
         append(level).append(' ').append(tag).append(" [").append(session ?: NoSession).append("]: ")
@@ -40,27 +43,26 @@ data class LogLine(
         private const val MicrosPerSecond = 1_000_000L
         private const val MicroDigits = 6
 
-        private const val Utc = """(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z)"""
+        private const val Stamp = """(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}(?:Z|[+-]\d\d:\d\d))"""
         private val Current =
-            Regex("""^$Utc (\d+\.\d{6}|-) (\S+) (\d+) (\S+) ([DIWE]) (.*?) \[([^\]]*)]: (.*)$""")
+            Regex("""^$Stamp (\d+\.\d{6}|-) (\S+) (\d+) (\S+) ([DIWE]) (.*?) \[([^\]]*)]: (.*)$""")
 
         /** The per-process files of builds before the continuous log: no boot clock, process or session. */
-        private val Legacy = Regex("""^$Utc (\d+) (\S+) ([DIWE]) (.*?): (.*)$""")
+        private val Legacy = Regex("""^$Stamp (\d+) (\S+) ([DIWE]) (.*?): (.*)$""")
 
-        private val utcFormat = ThreadLocal.withInitial {
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.ROOT).apply {
-                timeZone = TimeZone.getTimeZone("UTC")
-            }
-        }
+        /** Always three fraction digits and an offset, `+00:00` for UTC itself (never `Z`). */
+        private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
 
-        fun utcText(millis: Long): String = utcFormat.get().format(Date(millis))
+        /** [millis] as the log writes it: local time in [zone] with its offset from UTC. */
+        fun timeText(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
+            timeFormat.format(Instant.ofEpochMilli(millis).atZone(zone))
 
         private fun uptimeText(micros: Long) =
             "${micros / MicrosPerSecond}.${(micros % MicrosPerSecond).toString().padStart(MicroDigits, '0')}"
 
         private fun utc(text: String): Long? = try {
-            utcFormat.get().parse(text)?.time
-        } catch (_: ParseException) {
+            OffsetDateTime.parse(text, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant().toEpochMilli()
+        } catch (_: DateTimeParseException) {
             null
         }
 

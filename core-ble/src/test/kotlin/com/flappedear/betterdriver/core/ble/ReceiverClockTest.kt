@@ -30,7 +30,7 @@ class ReceiverClockTest {
 
     @Test
     fun `a stamp is never after the arrival and never before the previous one`() {
-        val clock = ReceiverClock(windowMessages = 5)
+        val clock = ReceiverClock()
         var last = Long.MIN_VALUE
         var drift = 0L
         for (i in 0 until 500) {
@@ -42,6 +42,47 @@ class ReceiverClockTest {
             assertTrue(t <= arrival)
             assertTrue(t > last)
             last = t
+        }
+    }
+
+    /**
+     * Arek's 2026-10-13 drive (FBBD-218): the link carried about 24 messages a second, so they queued
+     * in the RaceBox and the delay grew by about 275 ms over two minutes, then stayed. The stamps stay
+     * at the receiver's time plus the link's real latency; the backlog is reported, not stamped in.
+     */
+    @Test
+    fun `a backlog building up in the link does not delay the stamps`() {
+        val clock = ReceiverClock()
+        val latency = 30_000L
+        var backlog = 0L
+        var worstLate = 0L
+        var lastBacklog = 0L
+        for (i in 0 until 30_000) { // 20 min at 25 Hz
+            val tow = 3_000_000L + i * 40
+            if (i in 3_000 until 6_000) backlog = minOf(275_000L, backlog + 92) // 2 min to 275 ms
+            val arrival = tow * 1_000 + latency + backlog + delays[i % delays.size] - 30_000
+            val t = clock.stamp(arrival, tow)
+            worstLate = maxOf(worstLate, t - (tow * 1_000 + latency))
+            lastBacklog = clock.backlogMicros(arrival, tow)
+        }
+        // Rising 100 ppm over the 16 min after the backlog built up is at most 96 ms, not 275 ms.
+        assertTrue("stamps up to $worstLate µs late", worstLate < 100_000)
+        assertTrue("backlog $lastBacklog µs", lastBacklog > 175_000)
+    }
+
+    @Test
+    fun `follows a phone clock drifting by 50 ppm either way`() {
+        for (ppm in listOf(-50L, 50L)) {
+            val clock = ReceiverClock()
+            var worst = 0L
+            for (i in 0 until 45_000) { // 30 min
+                val tow = 4_000_000L + i * 40
+                val drift = i * 40L * ppm / 1_000 // µs
+                val real = tow * 1_000 + drift + 30_000
+                val t = clock.stamp(real + delays[i % delays.size] - 30_000, tow)
+                if (i > 250) worst = maxOf(worst, kotlin.math.abs(t - real))
+            }
+            assertTrue("$ppm ppm: stamps off by up to $worst µs", worst < 1_000)
         }
     }
 

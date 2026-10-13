@@ -11,7 +11,7 @@ private const val SoakMicros = 30 * 60 * 1_000_000L
 
 /** What a soak checks: the report's own value for it, and what FBBD-46 asks. */
 private val SoakParts = listOf(
-    Triple("soak.gnss_rate", "gnss.rate", "GNSS rate >= 24.5 Hz"),
+    Triple("soak.gnss_rate", "gnss.rate", "GNSS rate >= 24 Hz"),
     Triple("soak.gnss_dropped", "gnss.dropped", "GNSS dropped samples <= 0.5 %"),
     Triple("soak.gnss_gap", "gnss.max_gap", "GNSS longest gap <= 200 ms, reconnects left out"),
     Triple(

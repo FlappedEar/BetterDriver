@@ -88,7 +88,9 @@ private const val StartCriterion = "start sync error <= 1 frame (33 ms at 30 fps
 /**
  * The start sync error of each file: the offset the video is placed with ([own], from the camera's
  * start and sync reports or its alignment) against the one its first minute of frames or GPS says.
- * The worst file counts.
+ * The worst file counts. Phone files are placed by their frame times too since FBBD-218 (before, by
+ * the reports alone, which put them 50 to 94 ms late on Arek's 2026-10-13 drive); a phone file's
+ * error then shows its frame times jumping within the file, not the reports' delay.
  */
 internal fun startSyncError(camera: String, own: List<VideoClip>, events: List<RecorderEvent>): QualityMetric {
     val id = "video.$camera.sync_error"

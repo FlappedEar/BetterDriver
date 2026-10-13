@@ -61,6 +61,7 @@ class ProvenanceTest {
             Triple("lns", "lns_compass_heading", Provenance.MEASURED_GNSS_RECEIVER),
             Triple("lns", "lns_total_distance", Provenance.CALCULATED),
             Triple("heart_rate", "heart_rate", Provenance.MEASURED_SENSOR),
+            Triple("phone", "phone_accel_x", Provenance.MEASURED_ACCELEROMETER),
             Triple("obd", "rpm", Provenance.MEASURED_OBD),
             Triple("can", "brake_pressure", Provenance.MEASURED_CAN),
             Triple("import", "accel_x", Provenance.CALCULATED),

@@ -30,7 +30,7 @@ class RaceBoxSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = RaceBoxDecoder(sink, isMicro, calibration)
+        val decoder = RaceBoxDecoder(sink, isMicro, calibration) { reason -> link?.requestFastLink(reason) }
         decoder.defineChannels()
         sink.event(RaceBoxEvents.IMU_CALIBRATION, calibration?.encode() ?: "none")
         var wasStreaming = false

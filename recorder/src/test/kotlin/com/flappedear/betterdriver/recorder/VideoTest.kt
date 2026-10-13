@@ -40,6 +40,19 @@ class VideoTest {
         assertEquals(9_000_000, clip.endMicros)
     }
 
+    /** FBBD-218: the camera's frame times are closer than the reports' own times, so they place the clip. */
+    @Test
+    fun `clip start uses the frame times when the syncs carry them`() {
+        val events = listOf(
+            ev(1_050_000, EventKinds.VIDEO_START, "phone_0001.mp4"),
+            ev(2_090_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", " media_us=1000000 frame_us=2020000"),
+            ev(3_080_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", " media_us=2000000 frame_us=3030000"),
+            // A frame time after the report itself is not trusted.
+            ev(4_070_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", " media_us=3000000 frame_us=4090000"),
+        )
+        assertEquals(1_020_000L, VideoTimeline.from(events).clips.single().startMicros)
+    }
+
     @Test
     fun `a clip with no stop ends at its last sync, and one with nothing but a start runs on`() {
         val events = listOf(

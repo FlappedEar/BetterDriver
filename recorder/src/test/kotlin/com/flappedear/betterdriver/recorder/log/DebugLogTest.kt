@@ -2,6 +2,8 @@ package com.flappedear.betterdriver.recorder.log
 
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import java.time.ZoneId
+import java.time.ZoneOffset
 import kotlin.concurrent.thread
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -15,19 +17,37 @@ class DebugLogTest {
 
     private val logFile get() = File(dir, "betterdriver.log")
 
-    private fun log(process: String = "main", background: Boolean = false) =
-        LogFile(logFile, process, pid = 7, clock = { 0L }, uptimeMicros = { 4_711_204_518L }, background = background)
+    private fun log(process: String = "main", background: Boolean = false, zone: ZoneId = ZoneOffset.UTC) = LogFile(
+        logFile, process, pid = 7, clock = { 0L }, uptimeMicros = { 4_711_204_518L }, background = background,
+        zone = { zone },
+    )
 
     @Test
     fun writesOneLineWithBothClocksProcessAndSession() {
         log("recorder").write(DebugLog.INFO, "Camera", "4K · 60 started", null, "s1")
         val text = logFile.readText()
-        val prefix = "1970-01-01T00:00:00.000Z 4711.204518 recorder 7 "
+        val prefix = "1970-01-01T00:00:00.000+00:00 4711.204518 recorder 7 "
         assertTrue(text.startsWith(prefix), text)
         assertTrue(text.endsWith(" I Camera [s1]: 4K · 60 started\n"), text)
         val line = assertNotNull(LogLine.parse(text.trimEnd()))
         val thread = Thread.currentThread().name.replace(' ', '_')
         assertEquals(LogLine(0L, 4_711_204_518L, "recorder", 7, thread, 'I', "Camera", "s1", "4K · 60 started"), line)
+    }
+
+    /** Arek reads the log in his own time (FBBD-217): local time with its offset, still one instant. */
+    @Test
+    fun timeIsThePhonesLocalTimeWithItsOffset() {
+        log(zone = ZoneId.of("Europe/Warsaw")).write(DebugLog.INFO, "App", "start", null, null)
+        val text = logFile.readText()
+        assertTrue(text.startsWith("1970-01-01T01:00:00.000+01:00 "), text)
+        assertEquals(0L, assertNotNull(LogLine.parse(text.trimEnd())).utcMillis)
+        // Summer time: the offset follows the date, and the instant is the same either way.
+        val summer = 1_791_875_474_495L // 2026-10-13T07:11:14.495Z
+        assertEquals("2026-10-13T09:11:14.495+02:00", LogLine.timeText(summer, ZoneId.of("Europe/Warsaw")))
+        assertEquals("2026-10-13T07:11:14.495+00:00", LogLine.timeText(summer, ZoneOffset.UTC))
+        val west = LogLine(summer, null, "main", 1, "t", 'I', "T", null, "m").format(ZoneId.of("America/New_York"))
+        assertTrue(west.startsWith("2026-10-13T03:11:14.495-04:00 "), west)
+        assertEquals(summer, assertNotNull(LogLine.parse(west)).utcMillis)
     }
 
     @Test
@@ -42,6 +62,7 @@ class DebugLogTest {
     fun readsTheFilesOfOlderBuilds() {
         val text = "2026-10-12T10:56:54.251Z 13207 main W Thermal: status=light headroom=0.9 at 4K · 60"
         val line = assertNotNull(LogLine.parse(text, "camera"))
+        assertEquals(1_791_802_614_251L, line.utcMillis)
         assertEquals("camera", line.process)
         assertEquals("Thermal", line.tag)
         assertNull(line.uptimeMicros)

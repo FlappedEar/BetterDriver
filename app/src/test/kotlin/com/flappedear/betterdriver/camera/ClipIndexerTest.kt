@@ -54,6 +54,25 @@ class ClipIndexerTest {
         assertEquals(3_050_000L, awaitClip(index) { it.durationUs == 3_050_000L }.durationUs)
     }
 
+    /**
+     * FBBD-218: a report that also says when the newest frame was captured places the clip by the
+     * frame, which is closer than the report's own time; a report without one still counts.
+     */
+    @Test
+    fun frameTimesPlaceTheClipCloserThanTheReports() {
+        val session = tmp.newFolder("s2")
+        val index = VideoIndex(session)
+        val clips = ClipIndexer(index)
+        val file = "phone_0001.mp4"
+        clips.started(file, 1_000_000)
+        clips.synced(file, 2_090_000, 1_000_000, frameMicros = 2_020_000)
+        assertEquals(1_020_000L, awaitClip(index) { it.sessionOffsetUs == 1_020_000L }.sessionOffsetUs)
+        // A later report with no frame time and a later estimate changes nothing.
+        clips.synced(file, 3_080_000, 2_000_000)
+        clips.finished(file, 2_000_000)
+        assertEquals(1_020_000L, awaitClip(index) { it.durationUs == 2_000_000L }.sessionOffsetUs)
+    }
+
     private fun awaitClip(index: VideoIndex, done: (VideoClip) -> Boolean): VideoClip {
         val until = System.currentTimeMillis() + WaitMillis
         while (System.currentTimeMillis() < until) {

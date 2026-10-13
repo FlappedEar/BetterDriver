@@ -174,8 +174,9 @@ class DriveChecksTest {
         check("gnss.reconnect", Verdict.PASS, 2.0, 0.05)
         check("gnss.stationary", Verdict.PASS)
         assertEquals(listOf("FBBD-8", "FBBD-46"), r.metric("gnss.rate").keys)
-        // Video (FBBD-21): the frame times say each file starts 15 ms before it is placed; its clock runs slow.
-        check("video.phone.sync_error", Verdict.PASS, 15.0, 0.1)
+        // Video (FBBD-21): each file is placed by its frame times, which are 15 ms closer than the reports
+        // (FBBD-218; placed by the reports alone it was 15 ms off); its clock runs slow.
+        check("video.phone.sync_error", Verdict.PASS, 0.0, 0.1)
         check("video.phone.drift_10", Verdict.PASS, 3.5, 0.2)
         check("video.phone.drift_20", Verdict.PASS)
         check("video.phone.drift_30", Verdict.PASS)

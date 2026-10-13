@@ -16,7 +16,6 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -49,8 +48,8 @@ object DebugLogShare {
         val out = outDir(context)
         out.deleteRecursively()
         out.mkdirs()
-        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).apply { timeZone = TimeZone.getTimeZone("UTC") }
-            .format(Date())
+        // The phone's own time, as on its clock (FBBD-217).
+        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.ROOT).format(Date())
         val zip = File(out, "BetterDriver-log-$stamp.zip")
         ZipOutputStream(zip.outputStream().buffered()).use { z ->
             z.putNextEntry(ZipEntry("device.txt"))

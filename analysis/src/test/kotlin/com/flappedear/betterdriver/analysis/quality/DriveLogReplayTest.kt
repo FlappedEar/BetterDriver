@@ -37,8 +37,9 @@ class DriveLogReplayTest {
         val dropped = r.metric("gnss.dropped")
         assertEquals(Verdict.FAIL, dropped.verdict)
         assertEquals(3.92, dropped.value!!, 0.01)
-        assertEquals(Verdict.FAIL, r.metric("gnss.rate").verdict)
-        assertEquals(24.0, r.metric("gnss.rate").value!!, 0.2)
+        // Just over 24 Hz, enough for Arek (2026-10-13); the missing messages fail on their own above.
+        assertEquals(Verdict.PASS, r.metric("gnss.rate").verdict)
+        assertEquals(24.02, r.metric("gnss.rate").value!!, 0.05)
         // Thermal status reached "light" only; the camera stepped down from 4K 60 to 4K 30 once, logged.
         assertEquals(1.0, r.metric("thermal.max").value)
         assertEquals(Verdict.PASS, r.metric("thermal.status").verdict)

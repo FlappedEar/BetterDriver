@@ -14,6 +14,8 @@ import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.SystemClock
+import com.flappedear.betterdriver.recorder.log.DebugLog
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -24,6 +26,14 @@ private const val RequestedMtu = 517
 private const val WatchdogMs = 1_000L
 private const val SilenceTimeoutMs = 3_000L
 private const val SetupTimeoutMs = 10_000L
+
+/** A fast link is asked for again at most this often while the data says the link is too slow. */
+private const val FastLinkEveryMs = 30_000L
+
+/** Connection intervals are counted in units of 1.25 ms; supervision timeouts in units of 10 ms. */
+private const val IntervalUnitMs = 1.25
+private const val TimeoutUnitMs = 10
+private const val Tag = "Link"
 
 /**
  * Keeps a BLE link to one device (FBBD-43; generalised from the RaceBox link for the RaceChrono
@@ -38,6 +48,7 @@ private const val SetupTimeoutMs = 10_000L
  * resulting SecurityException is treated like any other failure and retried.
  */
 @SuppressLint("MissingPermission")
+@Suppress("TooManyFunctions") // One function per link step, one callback per GATT event.
 class GattLink(
     context: Context,
     private val address: String,
@@ -70,6 +81,7 @@ class GattLink(
 
     private val received = AtomicInteger()
     private val gattProbe = probe?.let(::GattProbe)
+    private var lastFastLinkAt = 0L
 
     fun start() {
         handler.post {
@@ -108,6 +120,45 @@ class GattLink(
                 // The next connection attempt reports it.
             }
         }
+    }
+
+    /**
+     * Asks Android again for the shortest connection interval and the 2 Mbit/s radio (FBBD-218), at
+     * most every 30 s; [reason] goes to the debug log. For a device whose data shows the link carries
+     * fewer messages than it sends: the RaceBox then queues them, and drops one when its queue is full.
+     */
+    fun requestFastLink(reason: String) {
+        handler.post {
+            val g = gatt ?: return@post
+            val now = SystemClock.elapsedRealtime()
+            if (!subscribed || now - lastFastLinkAt < FastLinkEveryMs) return@post
+            fastLink(g, now, reason)
+        }
+    }
+
+    /**
+     * High connection priority (an interval of 11.25 to 15 ms) and the LE 2M PHY. Asked for when
+     * connected and again once streaming, as a request made while the MTU exchange is still running
+     * can be dropped, and Android can relax the interval later on.
+     */
+    private fun fastLink(g: BluetoothGatt, now: Long, reason: String) {
+        lastFastLinkAt = now
+        val priority = try {
+            g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        } catch (_: SecurityException) {
+            false
+        }
+        try {
+            g.setPreferredPhy(
+                BluetoothDevice.PHY_LE_2M_MASK,
+                BluetoothDevice.PHY_LE_2M_MASK,
+                BluetoothDevice.PHY_OPTION_NO_PREFERRED,
+            )
+        } catch (_: SecurityException) {
+            // Reported by the next connection attempt.
+        }
+        val answer = if (priority) "requested" else "refused"
+        DebugLog.i(Tag, "$address fast link asked for ($reason): high priority $answer, 2M PHY requested")
     }
 
     private fun connect() {
@@ -198,7 +249,9 @@ class GattLink(
                 readChallenge(g, profile.service, handshake)?.let(::retry)
             } else {
                 subscribed = true
-                gattProbe?.start(g, SystemClock.elapsedRealtime())
+                val now = SystemClock.elapsedRealtime()
+                fastLink(g, now, "streaming")
+                gattProbe?.start(g, now)
             }
             return
         }
@@ -236,6 +289,7 @@ class GattLink(
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            DebugLog.i(Tag, "$address MTU $mtu, status $status")
             handler.post {
                 if (g == gatt && status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
                 if (g == gatt && !g.discoverServices()) retry("discoverServices failed")
@@ -307,6 +361,7 @@ class GattLink(
                         // Answered: the device starts streaming. Then the diagnostics reads, if any.
                         handshaking = false
                         subscribed = true
+                        fastLink(g, now, "streaming")
                         gattProbe?.start(g, now)
                     }
                 }
@@ -323,6 +378,25 @@ class GattLink(
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
             if (ch.uuid in profile.notify) data(ch.uuid, value)
+        }
+
+        override fun onPhyUpdate(g: BluetoothGatt, txPhy: Int, rxPhy: Int, status: Int) {
+            DebugLog.i(Tag, "$address PHY tx $txPhy rx $rxPhy (2 = 2M), status $status")
+        }
+
+        /**
+         * Not in the public SDK but called by Android (since 8.0) whenever the connection's interval
+         * changes; defining it is enough to receive it. Logged so a drive's log shows whether the
+         * interval was relaxed while the data fell behind (FBBD-218).
+         */
+        @Suppress("unused", "UNUSED_PARAMETER")
+        fun onConnectionUpdated(g: BluetoothGatt, interval: Int, latency: Int, timeout: Int, status: Int) {
+            val ms = interval * IntervalUnitMs
+            DebugLog.i(
+                Tag,
+                "$address connection interval ${"%.2f".format(Locale.ROOT, ms)} ms, " +
+                    "latency $latency, timeout ${timeout * TimeoutUnitMs} ms, status $status",
+            )
         }
 
         @Deprecated("Called instead of the overload above before Android 13")

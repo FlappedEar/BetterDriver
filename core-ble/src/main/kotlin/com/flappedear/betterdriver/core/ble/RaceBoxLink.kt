@@ -26,6 +26,9 @@ class RaceBoxLink(
 
     fun start() = link.start()
 
+    /** See [GattLink.requestFastLink]. */
+    fun requestFastLink(reason: String) = link.requestFastLink(reason)
+
     /** Disconnects and ends the link's thread. The link cannot be started again. */
     fun stop() = link.stop()
 }

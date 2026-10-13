@@ -27,7 +27,11 @@ data class VideoPosition(val clip: VideoClip, val index: Int, val mediaMicros: L
  * A clip's start is the earliest estimate of when its media time 0 happened. Each sync says
  * "at session time t the file held m of media"; the sync arrives after the media it reports, so
  * t - m can only be late, never early, and the smallest t - m over all syncs is the best estimate.
- * With no syncs, the video_start time is used.
+ * A phone sync also says when the camera's newest frame was captured (f, from its sensor
+ * timestamp): that frame is at least as new as the media reported, so f - m is late too, and
+ * closer; the smallest of both is used. On Arek's 2026-10-13 drive f - m was 50 to 94 ms earlier
+ * than t - m in each file, which the data quality card showed as an 88 ms start sync error
+ * (FBBD-218). With no syncs, the video_start time is used.
  */
 class VideoTimeline(clips: List<VideoClip>) {
 
@@ -88,7 +92,8 @@ class VideoTimeline(clips: List<VideoClip>) {
                 EventKinds.VIDEO_START -> start = minOf(start ?: e.tMicros, e.tMicros)
                 EventKinds.VIDEO_STOP -> stop = e.tMicros
                 else -> fields[VideoEventText.MEDIA_US]?.toLongOrNull()?.let { media ->
-                    syncStart = minOf(syncStart ?: Long.MAX_VALUE, e.tMicros - media)
+                    val frame = fields[VideoEventText.FRAME_US]?.toLongOrNull()?.takeIf { it <= e.tMicros }
+                    syncStart = minOf(syncStart ?: Long.MAX_VALUE, minOf(e.tMicros, frame ?: e.tMicros) - media)
                     lastSync = maxOf(lastSync ?: e.tMicros, e.tMicros)
                 }
             }
