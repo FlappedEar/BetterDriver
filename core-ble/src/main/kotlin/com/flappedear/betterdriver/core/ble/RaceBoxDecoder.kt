@@ -129,9 +129,9 @@ class RaceBoxDecoder(
     }
 
     /**
-     * Logs a change of fix; true for the first fix after messages without one since the link (re)connected. A fix that comes
-     * back later keeps the delay: the receiver's time stays GNSS time through a short loss, and a link
-     * with a backlog by then must not make that backlog the new delay.
+     * Logs a change of fix; true for the first fix after messages without one since the link (re)connected.
+     * A fix that comes back later keeps the delay: the receiver's time stays GNSS time through a short loss,
+     * and a link with a backlog by then must not make that backlog the new delay.
      */
     private fun noteFix(data: RaceBoxData): Boolean {
         if (data.hasFix == hadFix) return false
