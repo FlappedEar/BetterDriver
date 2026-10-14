@@ -67,9 +67,10 @@ class TrackContrastTest {
                 Triple("best lap on surface", c.best, c.surface),
                 Triple("cold tile on surface", c.cold, c.surface),
                 Triple("warning tile on surface", c.warning, c.surface),
-                Triple("sector gain", c.onGain, c.gain),
+                Triple("finished sector, gain (outlined on black)", c.gain, c.background),
+                Triple("finished sector, loss (outlined on black)", c.loss, c.background),
                 // The alert banner draws its title and detail in the same full colour.
-                Triple("sector loss, critical tile, GNSS lost banner", c.onLoss, c.loss),
+                Triple("critical tile, GNSS lost banner", c.onLoss, c.loss),
                 Triple("warning banner", c.onWarning, c.warning),
             )
             pairs.forEach { (pair, foreground, background) ->

@@ -20,6 +20,9 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
  * Sector strip (UI-05 option A: colour plus time). Finished sectors are
  * coloured against the best for that sector; the current one is outlined;
  * sectors not reached yet are dim. Set [showTimes] false for option B.
+ *
+ * A finished sector is a coloured outline with its name and time in the same colour on black,
+ * not a filled block: on the OLED phone screen a lit area draws power and heats the phone.
  */
 @Composable
 fun SectorStrip(
@@ -33,13 +36,12 @@ fun SectorStrip(
     Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         sectors.forEach { s ->
             val d = s.deltaSeconds
-            val (bg, fg) = when {
-                d == null -> c.background to c.textDim
-                isDeltaGain(d) -> c.gain to c.onGain
-                else -> c.loss to c.onLoss
+            val (edge, fg) = when {
+                d == null -> (if (s.current) c.textDim else c.line) to c.textDim
+                isDeltaGain(d) -> c.gain to c.gain
+                else -> c.loss to c.loss
             }
-            var m = Modifier.weight(1f).fillMaxHeight().background(bg, shape)
-            if (d == null) m = m.border(2.dp, if (s.current) c.textDim else c.line, shape)
+            val m = Modifier.weight(1f).fillMaxHeight().background(c.background, shape).border(2.dp, edge, shape)
             Column(m, verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
                 TrackLabel(s.name, color = fg)
                 if (showTimes) {
