@@ -119,7 +119,8 @@ class DriveLogReplayTest {
         assertEquals(Verdict.PASS, dropped.verdict, dropped.how)
         assertEquals(0.24, dropped.value!!, 0.1)
         assertTrue("whole-second" in dropped.how)
-        assertEquals(Verdict.FAIL, r.metric("gnss.rate").verdict)
+        // The rate counts that skip as sent too (2026-10-14 13:02 log); the 0.24 % lost passes on its own above.
+        assertEquals(Verdict.PASS, r.metric("gnss.rate").verdict, r.metric("gnss.rate").how)
         // Single missed fixes only: 80 ms gaps, one of 120 ms, no link drop.
         assertEquals(120.0, r.metric("gnss.max_gap").value)
         assertEquals(Verdict.PASS, r.metric("gnss.max_gap").verdict)
