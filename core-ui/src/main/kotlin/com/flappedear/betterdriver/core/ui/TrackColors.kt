@@ -16,6 +16,9 @@ import androidx.compose.ui.graphics.Color
  * sunlight (FBBD-65).
  * The `on*` colours are the text on a filled gain, loss or warning area.
  * TrackContrastTest checks every pair the components draw.
+ *
+ * The background is true black: the phone screen is OLED, where a black pixel is off and
+ * draws no power, so the screen adds as little heat as it can while the camera records.
  */
 @Immutable
 data class TrackColors(
@@ -36,7 +39,7 @@ data class TrackColors(
 
 /** UI-01 option A: green gain, red loss. */
 val TrackColorsGreenRed = TrackColors(
-    background = Color(0xFF07090B),
+    background = Color(0xFF000000),
     surface = Color(0xFF12171B),
     line = Color(0xFF232B31),
     text = Color(0xFFF2F5F7),

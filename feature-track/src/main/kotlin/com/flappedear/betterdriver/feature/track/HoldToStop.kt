@@ -81,7 +81,7 @@ private fun HoldRing(progress: Float, modifier: Modifier = Modifier) {
             val stroke = 14.dp.toPx()
             val inset = stroke / 2
             val arcSize = Size(size.width - stroke, size.height - stroke)
-            drawCircle(Color(0xEB07090B))
+            drawCircle(Color(0xEB000000))
             drawArc(
                 color = Color.White.copy(alpha = 0.18f),
                 startAngle = 0f,

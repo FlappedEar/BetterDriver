@@ -19,11 +19,14 @@ internal val LightScheme = lightColorScheme(
     onSurface = Color(0xFF14191D),
 )
 
-/** App screens outside the car (UI-17 option A: always dark), colours from the round 2 mockups. */
+/**
+ * App screens outside the car (UI-17 option A: always dark), colours from the round 2 mockups,
+ * on a true black background: on the OLED phone screen black pixels are off.
+ */
 internal val DarkScheme = darkColorScheme(
     primary = AccentDark,
     onPrimary = Color(0xFF06141A),
-    background = Color(0xFF0B0F12),
+    background = Color(0xFF000000),
     surface = Color(0xFF151B20),
     surfaceVariant = Color(0xFF1C242A),
     surfaceContainer = Color(0xFF151B20),
