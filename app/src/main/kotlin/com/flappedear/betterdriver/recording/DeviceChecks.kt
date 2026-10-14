@@ -68,7 +68,10 @@ internal class DeviceChecks(private val context: Context, private val recording:
 
     private fun reading(): String = "${battery()} ${thermal()}"
 
-    /** "battery_c=… battery_pct=… plugged=… current_ma=…", from the sticky battery broadcast (no receiver is registered). */
+    /**
+     * "battery_c=… battery_pct=… plugged=… current_ma=…", from the sticky battery broadcast (no
+     * receiver is registered).
+     */
     private fun battery(): String {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val tenths = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
