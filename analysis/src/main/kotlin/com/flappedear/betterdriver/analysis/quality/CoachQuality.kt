@@ -47,8 +47,15 @@ internal class Voiced(
     val outDelayMillis: Long? = null,
     val outDelaySource: String? = null,
 ) {
-    /** When the sound reached the driver's ear: its start plus the headset's own delay when known. */
-    val heardMicros: Long get() = tMicros + (outDelayMillis?.takeIf { route == "headset" } ?: 0L) * MicrosPerMilli
+    /**
+     * When the sound reached the driver's ear: its start plus the output's own delay when known. A delay
+     * measured at the session's start is of the output the cue played on, the phone speaker too; one
+     * from the tap test or set by hand is a headset's.
+     */
+    val heardMicros: Long get() {
+        val own = outDelayMillis?.takeIf { route == "headset" || outDelaySource == "measured" } ?: 0L
+        return tMicros + own * MicrosPerMilli
+    }
 }
 
 internal fun coachSection(events: List<RecorderEvent>, samples: GnssSamples): QualitySection {

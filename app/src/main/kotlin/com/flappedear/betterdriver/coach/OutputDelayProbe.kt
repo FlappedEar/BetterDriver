@@ -14,14 +14,16 @@ internal data class MeasuredDelay(val millis: Int, val output: String, val heads
 /**
  * Measures the audio output's own delay (FBBD-49) with nothing for the driver to do: plays a moment of
  * silence on the coach voice's path (same audio attributes, so the same output: the helmet headset, the
- * car or the phone speaker) and reads Android's audio clock while it plays ([OutputDelay]). Blocks for
+ * car or the phone speaker) and reads Android's audio clock while it plays ([OutputDelay]). [lowLatency]
+ * plays it on the low-latency path, as pre-rendered clips are (FBBD-48); off, as live text-to-speech
+ * is. Blocks for
  * up to [MaxMillis]; call it off the main thread. Null when Android gives no audio clock for the
  * output. Each measurement goes in the continuous log.
  */
 internal object OutputDelayProbe {
-    fun measure(context: Context): MeasuredDelay? {
+    fun measure(context: Context, lowLatency: Boolean = false): MeasuredDelay? {
         val audio = context.applicationContext.getSystemService(AudioManager::class.java)
-        val track = build() ?: return null
+        val track = build(lowLatency) ?: return null
         val readings = mutableListOf<Double>()
         try {
             track.play()
@@ -66,7 +68,7 @@ internal object OutputDelayProbe {
         }
     }
 
-    private fun build(): AudioTrack? = try {
+    private fun build(lowLatency: Boolean): AudioTrack? = try {
         val frames = SampleRate * SilenceMillis / MillisPerSecond
         val format = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
@@ -77,6 +79,7 @@ internal object OutputDelayProbe {
             .setAudioAttributes(AudioOut.Attributes)
             .setAudioFormat(format)
             .setTransferMode(AudioTrack.MODE_STATIC)
+            .apply { if (lowLatency) setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY) }
             .setBufferSizeInBytes(frames * 2)
             .build()
             .also { it.write(ShortArray(frames), 0, frames) }
