@@ -176,8 +176,8 @@ private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean):
     var missing = 0L
     var wholeSecond = 0L
     for (step in steps) {
-        val lost = lostIn(step, usual)
-        if (raceBox && isWholeSecondSkip(step, usual)) wholeSecond++ else missing += lost
+        val lost = maxOf(0L, (step.millis / usual).roundToLong() - 1)
+        if (raceBox && lost == 1L && isWholeSecondSkip(step, usual)) wholeSecond++ else missing += lost
     }
     val expected = received + missing + wholeSecond
     val percent = missing * Percent / expected
@@ -188,18 +188,16 @@ private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean):
     return judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
 }
 
-private fun lostIn(step: ReceiverStep, usual: Double) = maxOf(0L, (step.millis / usual).roundToLong() - 1)
-
 /** A single sample lost on a whole second between two fixes: the RaceBox's skip (FBBD-170). */
 private fun isWholeSecondSkip(step: ReceiverStep, usual: Double) =
-    step.fixBothSides && lostIn(step, usual) == 1L && onWholeSecond(step.fromUtc + step.millis / 2, usual)
+    step.fixBothSides && (step.millis / usual).roundToLong() == 2L &&
+        onWholeSecond(step.fromUtc + step.millis / 2, usual)
 
 /** How many of the RaceBox's whole-second messages are missing with a fix (FBBD-170); 0 for other receivers. */
 private fun wholeSecondSkips(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): Long {
-    if (!raceBox) return 0L
-    val steps = receiverSteps(s, acrossDrop)
-    val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)?.takeIf { it > 0 } ?: return 0L
-    return steps.count { isWholeSecondSkip(it, usual) }.toLong()
+    val steps = if (raceBox) receiverSteps(s, acrossDrop) else emptyList()
+    val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)?.takeIf { it > 0 }
+    return if (usual == null) 0L else steps.count { isWholeSecondSkip(it, usual) }.toLong()
 }
 
 /** Whether a fix time [utc] (ms) is within half a [step] of a whole second. */

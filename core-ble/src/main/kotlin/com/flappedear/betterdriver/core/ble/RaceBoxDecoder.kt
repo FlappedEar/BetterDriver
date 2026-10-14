@@ -98,14 +98,7 @@ class RaceBoxDecoder(
             }
             messages++
             stats.add(data.iTowMs)
-            if (data.hasFix != hadFix) {
-                if (hadFix != null || data.hasFix) {
-                    val kind = if (data.hasFix) RaceBoxEvents.FIX_ACQUIRED else RaceBoxEvents.FIX_LOST
-                    sink.event(kind, "sats=${data.satellites}")
-                }
-                fixAcquired = fixAcquired || hadFix == false && data.hasFix
-                hadFix = data.hasFix
-            }
+            if (noteFix(data)) fixAcquired = true
             decoded += data
         }
         // One notification can carry several messages; they are stamped together (ReceiverClock).
@@ -132,6 +125,18 @@ class RaceBoxDecoder(
             val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
             DebugLog.i("RaceBox", "$it, $reads")
         }
+    }
+
+    /** Logs a change of fix; true when the fix came after a message without one. */
+    private fun noteFix(data: RaceBoxData): Boolean {
+        if (data.hasFix == hadFix) return false
+        if (hadFix != null || data.hasFix) {
+            val kind = if (data.hasFix) RaceBoxEvents.FIX_ACQUIRED else RaceBoxEvents.FIX_LOST
+            sink.event(kind, "sats=${data.satellites}")
+        }
+        val acquired = hadFix == false && data.hasFix
+        hadFix = data.hasFix
+        return acquired
     }
 
     /** Drops a partial packet left from before a reconnect. */
