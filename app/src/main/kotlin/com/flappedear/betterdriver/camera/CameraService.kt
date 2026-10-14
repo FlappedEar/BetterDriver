@@ -104,6 +104,8 @@ class CameraService : LifecycleService() {
 
     private val giveUp = Runnable { if (camera == null) end() }
 
+    private val finishNow = Runnable { finish() }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         DebugLog.i(Tag, "command ${intent?.action}")
@@ -186,7 +188,11 @@ class CameraService : LifecycleService() {
             .also { it.start(RemoteSink(id, startNanos)) }
     }
 
-    /** Stops video, gives the camera a moment to finish its file, then ends the service. */
+    /**
+     * Stops video, gives the camera up to [FinishMs] to finish its file, then ends the service. The
+     * camera's last stop report ends it sooner ([lastFileEnded]), so a session started again right
+     * after loses no video while the old one waits out the grace time.
+     */
     private fun end() {
         if (ending) return
         ending = true
@@ -196,11 +202,19 @@ class CameraService : LifecycleService() {
             finish()
         } else {
             cam.stop()
-            main.postDelayed(::finish, FinishMs)
+            main.postDelayed(finishNow, FinishMs)
         }
     }
 
+    /** The ending session's file is finalized: finish now, after the camera has let go of its use case. */
+    private fun lastFileEnded(session: String) {
+        if (!ending || session != sessionId) return
+        main.removeCallbacks(finishNow)
+        main.post(finishNow)
+    }
+
     private fun finish() {
+        main.removeCallbacks(finishNow)
         DebugLog.session = null
         recorder?.let { send(it, Message.obtain(null, RecorderProtocol.MSG_UNREGISTER)) }
         if (bound) unbindService(connection)
@@ -248,8 +262,10 @@ class CameraService : LifecycleService() {
                 frameMicros?.let { putLong(RecorderProtocol.VIDEO_FRAME_US, it) }
             }
 
-        override fun stopped(file: String, atMicros: Long, reason: String) =
+        override fun stopped(file: String, atMicros: Long, reason: String) {
             report(RecorderProtocol.VIDEO_STOPPED, file, atMicros) { putString(RecorderProtocol.VIDEO_TEXT, reason) }
+            lastFileEnded(session)
+        }
 
         override fun status(text: String, ok: Boolean) = report(RecorderProtocol.VIDEO_STATUS, "", nowMicros()) {
             putString(RecorderProtocol.VIDEO_TEXT, text)

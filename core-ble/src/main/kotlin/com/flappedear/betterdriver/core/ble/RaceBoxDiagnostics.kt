@@ -169,9 +169,10 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
         val previous = lastItow
         lastItow = d.iTowMs
         if (previous == null) return
-        // iTOW wraps at the end of the GPS week; a step back resets the gap tracking.
+        // iTOW wraps at the end of the GPS week; a step back resets the gap tracking. A step over 5 s
+        // is the clock jumping to GPS time when the fix comes, not messages lost.
         val step = d.iTowMs - previous
-        if (step <= 0) return
+        if (step <= 0 || step > ClockJumpMs) return
         val usual = usualStep()
         if (usual != null && step > usual * 3 / 2) missed += (step + usual / 2) / usual - 1
         steps.addLast(step)

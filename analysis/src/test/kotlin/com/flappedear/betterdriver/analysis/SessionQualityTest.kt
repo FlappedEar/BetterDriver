@@ -83,8 +83,8 @@ class SessionQualityTest {
 
     @Test
     fun `missing samples are counted from the receiver's fix times, a long gap fails`() {
-        // Ten single samples missing (80 ms steps) and seven in a row (a 320 ms gap): 17 of 1501.
-        val singles = (1..10).map { it * 100 + 50 }.toSet()
+        // Ten single samples missing (80 ms steps, off the whole second) and seven in a row (a 320 ms gap): 17 of 1501.
+        val singles = (1..10).map { it * 100 + 51 }.toSet()
         val run = 1_000..1_006
         val sets = stream(0, 60_000_000).filterIndexed { i, _ -> i !in singles && i !in run }
         val r = sessionQuality(session(sets))
@@ -100,6 +100,19 @@ class SessionQualityTest {
         val gap = r.sections.first { it.title == "GNSS" }.notes.single()
         assertEquals(1_007 * 40_000L, gap.tMicros)
         assertEquals("gap 320 ms", gap.text)
+    }
+
+    @Test
+    fun `the RaceBox's single missing whole-second message is counted apart and does not fail`() {
+        // FBBD-170: with a fix the RaceBox sends 24 of its 25 messages, never the whole-second one.
+        val sets = stream(0, 60_000_000).filterIndexed { i, _ -> i == 0 || i % 25 != 0 }
+        val r = sessionQuality(session(sets))
+        assertEquals(0.0, r.value("gnss.dropped"))
+        assertEquals(Verdict.PASS, r.verdict("gnss.dropped"))
+        assertTrue("besides 59 single whole-second messages" in r.metric("gnss.dropped").how)
+        // Two in a row lost across a whole second are a real loss.
+        val pairs = stream(0, 60_000_000).filterIndexed { i, _ -> i == 0 || (i % 25 != 0 && i % 25 != 1) }
+        assertEquals(Verdict.FAIL, sessionQuality(session(pairs)).verdict("gnss.dropped"))
     }
 
     @Test
@@ -149,6 +162,25 @@ class SessionQualityTest {
         val r = sessionQuality(data)
         assertEquals(10.0, r.value("gnss.reconnect"))
         assertEquals(Verdict.FAIL, r.verdict("gnss.reconnect"))
+    }
+
+    @Test
+    fun `a drop while parked just before the driver stops is the drive ending, not a failed reconnect`() {
+        // The 2026-10-14 drive: parked, the link dropped 7 s before the stop and never came back.
+        val sets = stream(0, 20_000_000, kmh = 0.2)
+        val drop = RecorderEvent(21_000_000, "racebox_disconnected", "no data for 3877 ms")
+        val parked = session(sets, listOf(drop)).copy(end = Record.End(28_000_000, "user"))
+        val r = sessionQuality(parked)
+        assertEquals(1.0, r.value("gnss.link_drops"))
+        assertEquals(Verdict.NOT_MEASURED, r.verdict("gnss.reconnect"))
+        val note = r.sections.first { it.title == "GNSS" }.notes.single()
+        assertTrue("parked at the end of the session" in note.text)
+
+        // Still driving, or the recording ran on long after the drop: a failed reconnect.
+        val driving = session(stream(0, 20_000_000), listOf(drop)).copy(end = Record.End(28_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(driving).verdict("gnss.reconnect"))
+        val longAfter = parked.copy(end = Record.End(60_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(longAfter).verdict("gnss.reconnect"))
     }
 
     @Test

@@ -68,6 +68,24 @@ class StreamStatsTest {
     }
 
     @Test
+    fun theClockJumpingWhenTheFixComesIsNoMissingMessage() {
+        val stats = StreamStats()
+        var line: String? = null
+        // No fix: the time of week counts from a guess, then jumps 3.2 days ahead to GPS time.
+        for (i in 1..700) stats.add(i * 40L)
+        val gps = 275_896_000L
+        for (i in 0 until 800) {
+            stats.add(gps + i * 40L)
+            line = stats.line()
+        }
+        assertEquals(
+            "1500 messages in 0 notifications, 0 missing (0 on a whole second), " +
+                "up to 0 ms behind, 0 other frames",
+            line,
+        )
+    }
+
+    @Test
     fun countsNotificationsAndOtherFramesThenStartsOver() {
         val stats = StreamStats()
         repeat(3) { stats.notification() }

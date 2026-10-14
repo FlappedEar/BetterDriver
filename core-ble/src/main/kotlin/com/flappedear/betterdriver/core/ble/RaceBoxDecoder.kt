@@ -176,6 +176,13 @@ private const val MinSteps = 5
 private const val GapSteps = 1.5
 
 /**
+ * A step forward longer than this is the receiver's clock jumping, not messages lost: without a fix
+ * the RaceBox counts its time of week from a guess, and it jumps to GPS time once it has one. On the
+ * 2026-10-14 drive that one jump counted as 6897400 missing messages.
+ */
+internal const val ClockJumpMs = 5_000L
+
+/**
  * Message counts for the debug log (FBBD-147): after every [StatsEveryMessages] messages (a minute
  * at 25 Hz) it gives a line with the messages missing from the receiver's time of week, how many
  * of those fell on a whole second, the BLE notifications they came in, and every other frame read
@@ -244,13 +251,14 @@ internal class StreamStats {
     }
 
     /**
-     * A step back is the week wrapping or a reconnect: nothing to count. A step over 1.5 usual steps
+     * A step back is the week wrapping or a reconnect, a step over 5 s the clock jumping when the fix
+     * comes: nothing to count. A step over 1.5 usual steps
      * has messages missing; the usual step is the median of recent ones, so a RaceBox set below
      * 25 Hz for standalone recording is not counted as missing every other message.
      */
     private fun countGap(previous: Long, iTowMs: Long) {
         val gap = iTowMs - previous
-        if (gap <= 0) return
+        if (gap <= 0 || gap > ClockJumpMs) return
         val step = usualStep()
         steps.addLast(gap)
         if (steps.size > StepWindow) steps.removeFirst()
