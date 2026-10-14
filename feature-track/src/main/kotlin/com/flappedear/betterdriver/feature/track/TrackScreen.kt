@@ -64,7 +64,9 @@ data class TrackScreenState(
  * insets; it pads its own content. [state] holds the live values; it defaults
  * to [ExampleTrackState]. Holding a finger anywhere for 3 s stops the session
  * (UI-16 option A). [brightness] is the Settings choice: full brightness by default, so the
- * screen reads in sunlight (FBBD-63).
+ * screen reads in sunlight (FBBD-63). To keep the phone cooler while it records (FBBD-46) it asks
+ * for sustained performance and a 60 Hz display where the phone offers them, and tells [onReport]
+ * what it got, for the debug log.
  */
 @Composable
 fun TrackScreen(
@@ -72,11 +74,14 @@ fun TrackScreen(
     modifier: Modifier = Modifier,
     state: TrackScreenState = ExampleTrackState,
     brightness: TrackBrightness = TrackBrightness.Max,
+    onReport: (String) -> Unit = {},
 ) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
     KeepScreenOn(view)
     LockBrightness(activity, brightness)
+    SustainedPerformance(activity, onReport)
+    SlowerRefresh(activity, view, onReport)
     LockLandscape(activity)
     LightSystemBarIcons(activity, view)
     HideSystemBars(activity, view)

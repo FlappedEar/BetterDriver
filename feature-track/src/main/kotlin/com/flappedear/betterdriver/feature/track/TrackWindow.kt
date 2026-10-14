@@ -4,6 +4,8 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import android.os.PowerManager
+import android.view.Display
 import android.view.View
 import android.view.WindowManager
 import androidx.compose.runtime.Composable
@@ -68,6 +70,67 @@ internal fun LockLandscape(activity: Activity?) {
         }
     }
 }
+
+/**
+ * Asks Android to hold the CPU and GPU at a speed they can keep up without heating, on phones that
+ * support it, while the track screen is shown (FBBD-46). Peaks are lower, so the phone throttles and
+ * steps the video down later. Tells [onReport] what it did, for the debug log.
+ */
+@Composable
+internal fun SustainedPerformance(activity: Activity?, onReport: (String) -> Unit) {
+    DisposableEffect(activity) {
+        val window = activity?.window
+        val power = activity?.getSystemService(PowerManager::class.java)
+        val supported = power?.isSustainedPerformanceModeSupported == true
+        if (window != null && supported) window.setSustainedPerformanceMode(true)
+        onReport(if (supported) "sustained performance mode on" else "sustained performance mode not supported")
+        onDispose { if (window != null && supported) window.setSustainedPerformanceMode(false) }
+    }
+}
+
+/** One display mode: its id, size in pixels and refresh rate. */
+internal data class RefreshMode(val id: Int, val width: Int, val height: Int, val hz: Float)
+
+/**
+ * The slowest mode at [current]'s size that still refreshes at [MinTrackHz] or more, or null when
+ * none is slower than [current]. The track screen's data changes 25 times a second, so 60 Hz shows
+ * every change, and on a 90 or 120 Hz screen the slower mode draws fewer frames.
+ */
+internal fun slowerRefresh(modes: List<RefreshMode>, current: RefreshMode): RefreshMode? =
+    modes.filter { it.width == current.width && it.height == current.height && it.hz >= MinTrackHz - HzSlack }
+        .minByOrNull { it.hz }
+        ?.takeIf { it.hz < current.hz - HzSlack }
+
+/**
+ * Holds the window at a slower display refresh while the track screen is shown (FBBD-46), and gives
+ * back the window's own choice when it goes. Tells [onReport] what it did, for the debug log.
+ */
+@Composable
+internal fun SlowerRefresh(activity: Activity?, view: View, onReport: (String) -> Unit) {
+    DisposableEffect(activity, view) {
+        val window = activity?.window
+        val display = view.display
+        val current = display?.mode?.toRefreshMode()
+        val modes = display?.supportedModes.orEmpty().map { it.toRefreshMode() }
+        val slower = current?.let { slowerRefresh(modes, it) }
+        if (window == null || slower == null) {
+            onReport("display refresh kept at ${current?.hz ?: "unknown"} Hz")
+            return@DisposableEffect onDispose {}
+        }
+        val saved = window.attributes.preferredDisplayModeId
+        window.attributes = window.attributes.apply { preferredDisplayModeId = slower.id }
+        onReport("display refresh ${current.hz} Hz -> ${slower.hz} Hz")
+        onDispose { window.attributes = window.attributes.apply { preferredDisplayModeId = saved } }
+    }
+}
+
+private fun Display.Mode.toRefreshMode() = RefreshMode(modeId, physicalWidth, physicalHeight, refreshRate)
+
+/** The slowest refresh the track screen asks for. */
+internal const val MinTrackHz = 60f
+
+/** Refresh rates are reported as floats such as 59.94; this much counts as the same rate. */
+private const val HzSlack = 0.5f
 
 /** Light status and navigation bar icons on the dark track background. */
 @Composable
