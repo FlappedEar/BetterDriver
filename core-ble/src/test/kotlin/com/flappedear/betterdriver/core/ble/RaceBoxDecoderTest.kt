@@ -170,10 +170,10 @@ class RaceBoxDecoderTest {
     /**
      * Arek's 2026-10-14 drive: before the fix the RaceBox's time ran off GNSS time, so the delay it gave
      * rose by about 0.65 s; with the rise capped for a backlog (FBBD-218), every sample after the fix was
-     * stamped 0.65 s early against the video. The delay is taken afresh when the fix comes.
+     * stamped 0.65 s early against the video. The delay is taken afresh when the first fix comes.
      */
     @Test
-    fun `the delay is taken afresh when the fix comes`() {
+    fun `the delay is taken afresh when the first fix comes`() {
         val sink = Sink()
         val decoder = RaceBoxDecoder(sink)
         var tow = 100_000L
@@ -195,5 +195,9 @@ class RaceBoxDecoderTest {
         assertEquals(sink.now, last.tMicros)
         val stamps = sink.sets.map { it.tMicros }
         assertEquals(stamps, stamps.sorted())
+        // A fix lost and found again while the link has a 300 ms backlog keeps the delay it had.
+        repeat(25) { message(680_000, fix = false) }
+        repeat(50) { message(980_000, fix = true) }
+        assertTrue(sink.now - sink.sets.last().tMicros > 250_000)
     }
 }
