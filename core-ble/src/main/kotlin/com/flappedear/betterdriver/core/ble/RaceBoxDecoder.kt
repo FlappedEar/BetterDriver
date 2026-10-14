@@ -129,7 +129,7 @@ class RaceBoxDecoder(
     }
 
     /**
-     * Logs a change of fix; true for the link's first fix after messages without one. A fix that comes
+     * Logs a change of fix; true for the first fix after messages without one since the link (re)connected. A fix that comes
      * back later keeps the delay: the receiver's time stays GNSS time through a short loss, and a link
      * with a backlog by then must not make that backlog the new delay.
      */
@@ -150,6 +150,8 @@ class RaceBoxDecoder(
     fun reset() {
         reader.reset()
         clock.reset()
+        // The receiver may have been off, so its next fix after messages without one starts afresh too.
+        fixSeen = false
     }
 
     private fun values(d: RaceBoxData): List<ChannelValue> = buildList {

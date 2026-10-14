@@ -199,5 +199,10 @@ class RaceBoxDecoderTest {
         repeat(25) { message(680_000, fix = false) }
         repeat(50) { message(980_000, fix = true) }
         assertTrue(sink.now - sink.sets.last().tMicros > 250_000)
+        // After a reconnect the receiver may have been off: its next first fix is taken afresh again.
+        decoder.reset()
+        repeat(25) { message(980_000, fix = false) }
+        repeat(25) { message(1_500_000, fix = true) }
+        assertEquals(sink.now, sink.sets.last().tMicros)
     }
 }
