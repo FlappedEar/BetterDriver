@@ -97,6 +97,23 @@ class AccelFusionTest {
         }
     }
 
+    /** Codex on #175: a residual fitted at the unmatched clock takes a late sensor for a noisy one. */
+    @Test
+    fun `a late but steadier accelerometer is weighed at its matched clock against GPS`() {
+        val box = reading("accel_x", 0.05, seed = 1)
+        val late = reading("phone_accel_y", 0.02, lateSeconds = 0.15, seed = 2)
+        // Its residual from the fit at the unmatched clock: the 0.15 s offset reads as noise.
+        val asFitted = DirectionReading(late.name, late.times, late.values, 0.03)
+        val gpsTimes = DoubleArray(1_200) { it * 0.1 }
+        val gps = DirectionReading("GPS", gpsTimes, DoubleArray(gpsTimes.size) { car(gpsTimes[it]) }, Double.NaN)
+        val fused = assertNotNull(fuseDirection(listOf(box, asFitted), gps))
+        assertEquals("phone_accel_y", fused.shares.first().name, "the steadier one leads")
+        assertTrue(fused.shares.first().weight > 0.7, "weight ${fused.shares.first().weight}")
+        assertEquals(-0.15, fused.shares[1].lagSeconds, 0.011, "the RaceBox is early against the phone")
+        val unweighed = assertNotNull(fuseDirection(listOf(box, asFitted)))
+        assertEquals("accel_x", unweighed.shares.first().name, "without GPS the fitted residuals rank")
+    }
+
     @Test
     fun `where one accelerometer has a gap the other carries on`() {
         // The RaceBox's whole-second skip, and a lost link for 4 s.

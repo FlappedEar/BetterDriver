@@ -70,12 +70,24 @@ private const val LagCompareHalfWindowSeconds = 0.1
  * weighted by the inverse of its residual, so the steadier accelerometer counts for more; where one
  * has no reading (a RaceBox's whole-second skip, a gap in the link), the others carry on alone.
  *
+ * With [gps] (the same direction's acceleration from GPS, at its own times) each reading's residual
+ * is measured again against it at the lag where the reading agrees with GPS best ([lagFreeResidual]),
+ * so a sensor whose clock is off is not taken for a noisy one.
+ *
  * One reading is returned as it is. Null without a reading.
  */
 @Suppress("ReturnCount")
-fun fuseDirection(readings: List<DirectionReading>): FusedDirection? {
-    val usable = readings.filter { r -> r.times.size >= 2 && r.values.any { it.isFinite() } }
-    if (usable.isEmpty()) return null
+fun fuseDirection(readings: List<DirectionReading>, gps: DirectionReading? = null): FusedDirection? {
+    val withSamples = readings.filter { r -> r.times.size >= 2 && r.values.any { it.isFinite() } }
+    if (withSamples.isEmpty()) return null
+    val usable = if (gps == null || withSamples.size == 1) {
+        withSamples
+    } else {
+        withSamples.map { r ->
+            val residual = lagFreeResidual(r, gps)
+            if (residual.isFinite()) DirectionReading(r.name, r.times, r.values, residual) else r
+        }
+    }
     val ranked = usable.sortedBy { it.residual.takeIf { r -> r.isFinite() } ?: Double.MAX_VALUE }
     val best = ranked.first()
     if (ranked.size == 1) return FusedDirection(best.times, best.values, listOf(FusionShare(best.name, 1.0, 0.0)))
@@ -155,6 +167,35 @@ private fun bestLag(best: DirectionReading, other: DirectionReading): Pair<Doubl
         }
     }
     return bestLag to bestAgreement
+}
+
+/**
+ * The least mean square, over lags within [MaxFusionLagSeconds], of [reading] (averaged over
+ * [LagCompareHalfWindowSeconds]) less [gps] at [gps]'s times, each pair's mean difference (the
+ * mount's bias) taken off; NaN with fewer than [MinimumFitPairs] pairs at every lag.
+ */
+private fun lagFreeResidual(reading: DirectionReading, gps: DirectionReading): Double {
+    val steps = (MaxFusionLagSeconds / LagStepSeconds).roundToInt()
+    var least = Double.NaN
+    for (s in -steps..steps) {
+        val lag = s * LagStepSeconds
+        var n = 0
+        var sum = 0.0
+        var sumSq = 0.0
+        for (i in gps.times.indices) {
+            val g = gps.values[i]
+            val d = if (g.isFinite()) reading.meanAround(gps.times[i] + lag) - g else Double.NaN
+            if (!d.isFinite()) continue
+            n++
+            sum += d
+            sumSq += d * d
+        }
+        if (n < MinimumFitPairs) continue
+        val mean = sum / n
+        val residual = maxOf(0.0, sumSq / n - mean * mean)
+        if (least.isNaN() || residual < least) least = residual
+    }
+    return least
 }
 
 /** Correlation of the pairs where both are finite; NaN with fewer than [MinimumFitPairs] or no spread. */

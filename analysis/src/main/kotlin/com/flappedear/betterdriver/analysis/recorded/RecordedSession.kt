@@ -156,8 +156,9 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
     }
     val forward = fits.mapNotNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
     val left = fits.mapNotNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
-    val forwardFused = fused(forward, ForwardAcceleration)
-    val leftFused = fused(left, LeftAcceleration)
+    val gpsTimes = DoubleArray(gps.size) { gps[it].time }
+    val forwardFused = fused(forward, ForwardAcceleration, DirectionReading("GPS", gpsTimes, forwardG, Double.NaN))
+    val leftFused = fused(left, LeftAcceleration, DirectionReading("GPS", gpsTimes, leftG, Double.NaN))
     val receiverXy = forward.size == 1 && isReceiverAxis(forward.single(), 0) &&
         left.size == 1 && isReceiverAxis(left.single(), 1)
     if (gps.isNotEmpty() && !receiverXy) {
@@ -175,12 +176,14 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
 
 /**
  * The accelerometers [found] for one direction as one channel [name]: the one alone at its own
- * times, or several averaged ([fuseDirection]); with how it was made, for the debug log, e.g.
+ * times, or several averaged ([fuseDirection], weighed against [gps] with each one's clock
+ * matched); with how it was made, for the debug log, e.g.
  * "accel_x 0.64 + phone_accel_x 0.36 (+0.05 s)".
  */
 private fun fused(
     found: List<Pair<List<TelemetryChannel>, AxisDirection>>,
     name: String,
+    gps: DirectionReading,
 ): Pair<TelemetryChannel, String>? {
     val channels = found.map { (axes, d) -> corrected(axes, name, d) to d }
     if (channels.size <= 1) return channels.firstOrNull()?.let { (c, _) -> c to found.single().first.first().name }
@@ -188,7 +191,7 @@ private fun fused(
         DirectionReading(found[k].first.first().name, c.timestamps, c.values, d.fit.residual)
     }
     val base = channels.first().first
-    return fuseDirection(readings)?.let { result ->
+    return fuseDirection(readings, gps)?.let { result ->
         val how = result.shares.joinToString(" + ") { s ->
             val lag = if (s.lagSeconds != 0.0) " (${"%+.2f".format(Locale.ROOT, s.lagSeconds)} s)" else ""
             "${s.name} ${"%.2f".format(Locale.ROOT, s.weight)}$lag"
