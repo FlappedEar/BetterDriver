@@ -88,6 +88,7 @@ class RaceBoxDecoder(
     fun feed(bytes: ByteArray) {
         stats.notification()
         val decoded = mutableListOf<RaceBoxData>()
+        var fixAcquired = false
         reader.feed(bytes) { frame ->
             val isData = frame.messageClass == RaceBoxClass && frame.messageId == RaceBoxDataId
             val data = if (isData) RaceBoxData.parse(frame.payload) else null
@@ -102,12 +103,18 @@ class RaceBoxDecoder(
                     val kind = if (data.hasFix) RaceBoxEvents.FIX_ACQUIRED else RaceBoxEvents.FIX_LOST
                     sink.event(kind, "sats=${data.satellites}")
                 }
+                fixAcquired = fixAcquired || hadFix == false && data.hasFix
                 hadFix = data.hasFix
             }
             decoded += data
         }
         // One notification can carry several messages; they are stamped together (ReceiverClock).
         if (decoded.isNotEmpty()) {
+            // Without a fix the receiver's time is its own guess and may run off GNSS time: on Arek's
+            // 2026-10-14 drive the delay it gave rose by 0.5 s in the minute before the fix and then
+            // stayed, and the capped rise held every later sample 0.65 s early against the video.
+            // So the delay is taken afresh once the fix comes.
+            if (fixAcquired) clock.reset()
             val now = sink.nowMicros()
             val stamps = clock.stamp(now, decoded.map { it.iTowMs })
             decoded.zip(stamps) { data, at -> sink.submit(SampleSet(at, values(data))) }

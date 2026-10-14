@@ -117,6 +117,15 @@ class SessionQualityTest {
         assertEquals(Verdict.FAIL, from(pairs, "racebox").verdict("gnss.dropped"))
         // Any other receiver losing one sample a second loses real data.
         assertEquals(Verdict.FAIL, from(sets, "nmea").verdict("gnss.dropped"))
+        // Arek's 2026-10-14 13:02 log: two more lost off the whole second take the 24 received a second under
+        // 24 Hz. The skip counts as sent for the rate too; the two lost are the dropped check's to judge.
+        val twoLost = sets.filterIndexed { i, _ -> i != 300 && i != 700 }
+        val q = from(twoLost, "racebox")
+        assertEquals(Verdict.PASS, q.verdict("gnss.rate"), q.metric("gnss.rate").how)
+        assertEquals((1_438 + 59) / 59.96, q.value("gnss.rate")!!, 1e-6)
+        assertTrue("received: 23.98 Hz" in q.metric("gnss.rate").how)
+        assertEquals(Verdict.PASS, q.verdict("gnss.dropped"))
+        assertEquals(Verdict.FAIL, from(twoLost, "nmea").verdict("gnss.rate"))
     }
 
     @Test

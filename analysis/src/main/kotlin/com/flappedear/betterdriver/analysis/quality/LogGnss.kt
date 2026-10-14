@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.analysis.quality
 
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.log.GnssSecond
+import java.util.Locale
 import kotlin.math.cos
 import kotlin.math.sqrt
 
@@ -20,7 +21,8 @@ private const val StationarySeconds = 60
 private const val P1 = 0.01
 private const val MetersPerDegree = 111_195.0
 
-private const val RateCriterion = ">= 24 Hz over the session (FBBD-8, FBBD-46)"
+private const val RateCriterion =
+    ">= 24 Hz over the session, the RaceBox's whole-second skip left out (FBBD-8, FBBD-46, FBBD-170)"
 private const val DroppedCriterion =
     "<= 0.5 % of expected, link drops and the RaceBox's whole-second skip left out (FBBD-8, FBBD-46, FBBD-170)"
 private const val GapCriterion = "<= 200 ms, link drops left out (FBBD-8, FBBD-46)"
@@ -48,8 +50,10 @@ internal fun logGnssSection(
         .toSet()
     val whole = ((firstIndex + 1) until lastIndex).filter { k -> k !in drops }
     val counts = whole.map { (byIndex[it]?.samples ?: 0).toDouble() }
+    // As for a session: the RaceBox's whole-second skip with a fix (FBBD-170) counts as received.
+    val skips = if (raceBox) whole.sumOf { (byIndex[it]?.missingOnSecond ?: 0).toLong() } else 0L
     val metrics = buildList {
-        add(rate(counts))
+        add(rate(counts, skips))
         add(
             info(
                 "gnss.rate_p1", "Sample rate, 1st percentile", nearestRank(counts, P1), "Hz", Basis.MEASURED,
@@ -72,14 +76,22 @@ internal fun logGnssSection(
     return QualitySection("GNSS", metrics + clockDrift(lags, endMicros), notes)
 }
 
-private fun rate(counts: List<Double>): QualityMetric {
+private fun rate(counts: List<Double>, skips: Long): QualityMetric {
     if (counts.isEmpty()) {
         return notMeasured("gnss.rate", "Average sample rate", RateCriterion, "no whole second of GNSS")
     }
-    val hz = counts.sum() / counts.size
+    val received = counts.sum() / counts.size
+    val hz = (counts.sum() + skips) / counts.size
+    val counted = if (skips > 0) {
+        ", with the $skips whole-second messages the RaceBox does not send with a fix counted " +
+            "(received: ${"%.2f".format(Locale.ROOT, received)} Hz)"
+    } else {
+        ""
+    }
     return judged(
         "gnss.rate", "Average sample rate", hz, "Hz", hz >= MinRateHz, Basis.MEASURED, RateCriterion,
-        "samples received per whole second on the phone clock over ${counts.size} s, seconds with a link drop left out",
+        "samples received per whole second on the phone clock over ${counts.size} s, seconds with a link drop " +
+            "left out$counted",
     )
 }
 
