@@ -93,16 +93,16 @@ internal data class RefreshMode(val id: Int, val width: Int, val height: Int, va
 
 /**
  * The slowest mode at [current]'s size that still refreshes at [MinTrackHz] or more, or null when
- * none is slower than [current]. The track screen's data changes 25 times a second, so 60 Hz shows
- * every change, and on a 90 or 120 Hz screen the slower mode draws fewer frames.
+ * there is none. The track screen's data changes 25 times a second, so 60 Hz shows every change,
+ * and on a 90 or 120 Hz screen the slower mode draws fewer frames. It is asked for even when the
+ * screen already runs at that rate, so Android does not raise it later for a touch or an animation.
  */
-internal fun slowerRefresh(modes: List<RefreshMode>, current: RefreshMode): RefreshMode? =
+internal fun trackRefresh(modes: List<RefreshMode>, current: RefreshMode): RefreshMode? =
     modes.filter { it.width == current.width && it.height == current.height && it.hz >= MinTrackHz - HzSlack }
         .minByOrNull { it.hz }
-        ?.takeIf { it.hz < current.hz - HzSlack }
 
 /**
- * Holds the window at a slower display refresh while the track screen is shown (FBBD-46), and gives
+ * Asks for a slower display refresh while the track screen is shown (FBBD-46), and gives
  * back the window's own choice when it goes. Tells [onReport] what it did, for the debug log.
  */
 @Composable
@@ -112,14 +112,15 @@ internal fun SlowerRefresh(activity: Activity?, view: View, onReport: (String) -
         val display = view.display
         val current = display?.mode?.toRefreshMode()
         val modes = display?.supportedModes.orEmpty().map { it.toRefreshMode() }
-        val slower = current?.let { slowerRefresh(modes, it) }
-        if (window == null || slower == null) {
-            onReport("display refresh kept at ${current?.hz ?: "unknown"} Hz")
+        val wanted = current?.let { trackRefresh(modes, it) }
+        if (window == null || wanted == null) {
+            onReport("display refresh left to the phone at ${current?.hz ?: "unknown"} Hz")
             return@DisposableEffect onDispose {}
         }
         val saved = window.attributes.preferredDisplayModeId
-        window.attributes = window.attributes.apply { preferredDisplayModeId = slower.id }
-        onReport("display refresh ${current.hz} Hz -> ${slower.hz} Hz")
+        window.attributes = window.attributes.apply { preferredDisplayModeId = wanted.id }
+        // A preference Android may ignore: the log says what was asked, not what the screen runs at.
+        onReport("display refresh ${wanted.hz} Hz requested (was ${current.hz} Hz)")
         onDispose { window.attributes = window.attributes.apply { preferredDisplayModeId = saved } }
     }
 }

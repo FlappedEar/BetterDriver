@@ -96,7 +96,7 @@ internal class DeviceChecks(private val context: Context, private val recording:
     private fun current(): String {
         val micro = context.getSystemService(BatteryManager::class.java)
             ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) ?: Int.MIN_VALUE
-        return if (micro == Int.MIN_VALUE || micro == 0) NA else (micro / MicroPerMilli).toString()
+        return if (micro == Int.MIN_VALUE) NA else (micro / MicroPerMilli).toString()
     }
 
     /** "thermal=… headroom=…": Android's thermal status (Android 10+) and its 30 s forecast (Android 11+). */
