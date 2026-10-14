@@ -52,9 +52,14 @@ sealed interface ThermalAction {
  * - CRITICAL or worse: video stops; data recording carries on.
  * - Already at the last step and still hot: video stops.
  * - Cool (status LIGHT or less and headroom below [coolHeadroom], or unknown) for [recoverMicros]
- *   since both the last change and the last warm reading: one step back up. A step that gets hot
- *   again after being stepped up to is not tried again this session, so quality cannot keep
- *   swinging between two steps.
+ *   since both the last change and the last warm reading: one step back up. Each time a step gets
+ *   hot again after being stepped up to, the wait before the next step up doubles, so quality
+ *   does not swing between two steps but still goes back up once the phone has really cooled.
+ *
+ * Arek's drive of 2026-10-14 at 10 °C: 1080p · 60 stepped down at a forecast of 0.90 with status
+ * only "light", and 720p · 60 then sat at 0.75 to 0.87, under the old 0.7 needed to step back up,
+ * so the rest of both sessions stayed at 720p. Severe throttling starts at 1.0; MODERATE and SEVERE
+ * still step down as before.
  */
 class ThermalPolicy(
     private val steps: Int,
@@ -66,12 +71,15 @@ class ThermalPolicy(
     var current = 0
         private set
 
-    /** The best step this session may still step up to. */
+    /** The best step this session may still step up to: below any step that could not be bound. */
     var ceiling = 0
         private set
     private var lastChangeAt: Long? = null
     private var lastChangeUp = false
     private var lastWarmAt: Long? = null
+
+    /** The cool time a step up waits for; doubles each time a step up gets hot again. */
+    private var upWaitMicros = recoverMicros
 
     /**
      * Moves to [index] when the camera binds a step: the first one, a fallback after a bind failure,
@@ -106,16 +114,16 @@ class ThermalPolicy(
 
     /** Cool long enough to step up: since the last change, and since the last warm reading. */
     private fun recovered(nowMicros: Long, sinceChange: Long?): Boolean =
-        sinceChange != null && sinceChange >= recoverMicros &&
-            lastWarmAt.let { it == null || nowMicros - it >= recoverMicros }
+        sinceChange != null && sinceChange >= upWaitMicros &&
+            lastWarmAt.let { it == null || nowMicros - it >= upWaitMicros }
 
     private fun stepDown(nowMicros: Long, urgent: Boolean, sinceChange: Long?): ThermalAction = when {
         // The interval only spaces step-downs: hot at the last step stops video at once.
         current >= steps - 1 -> ThermalAction.StopVideo
         !urgent && sinceChange != null && sinceChange < settleMicros -> ThermalAction.Keep
         else -> {
-            // Hot again after stepping up: that step is too much for this drive.
-            if (lastChangeUp) ceiling = current + 1
+            // Hot again after stepping up: wait longer before trying that step again.
+            if (lastChangeUp) upWaitMicros *= 2
             current++
             change(nowMicros, up = false)
             ThermalAction.StepDown(current)
@@ -129,8 +137,8 @@ class ThermalPolicy(
 
     private companion object {
         const val DefaultSettleMicros = 180_000_000L
-        const val DefaultRecoverMicros = 300_000_000L
-        const val DefaultHeadroomLimit = 0.9f
-        const val DefaultCoolHeadroom = 0.7f
+        const val DefaultRecoverMicros = 180_000_000L
+        const val DefaultHeadroomLimit = 0.95f
+        const val DefaultCoolHeadroom = 0.8f
     }
 }
