@@ -22,8 +22,31 @@ internal data class MeasuredDelay(val millis: Int, val output: String, val heads
 internal object OutputDelayProbe {
     fun measure(lowLatency: Boolean = false): MeasuredDelay? {
         val track = build(lowLatency) ?: return null
+        val sampled = try {
+            sample(track)
+        } finally {
+            stopAndRelease(track)
+        }
+        val routed = sampled.routed
+        // Rerouted meanwhile (a headset connected or gone): the readings may be of either output.
+        val readings = if (sampled.rerouted || routed == null) emptyList() else sampled.readings
+        val output = AudioOutputs.typeOf(routed)
+        val millis = OutputDelay.of(readings)
+        DebugLog.i(
+            Tag,
+            "output delay ${millis?.let { "$it ms" } ?: "not reported"} on $output" +
+                (routed?.productName?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
+        )
+        val headset = routed?.productName?.toString()?.takeIf { output != "speaker" }
+        return millis?.let { MeasuredDelay(it, output, headset) }
+    }
+
+    /** What one playback gave: its [readings], the device it was [routed] to, and whether that changed. */
+    private class Sampled(val readings: List<Double>, val routed: AudioDeviceInfo?, val rerouted: Boolean)
+
+    /** Plays [track] and reads the delay until there are enough readings or the time is up. */
+    private fun sample(track: AudioTrack): Sampled {
         val readings = mutableListOf<Double>()
-        // The device the track actually plays on; a change while measuring voids the readings.
         var routed: AudioDeviceInfo? = null
         var rerouted = false
         try {
@@ -44,25 +67,17 @@ internal object OutputDelayProbe {
             DebugLog.w(Tag, "output delay not measured", e)
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
-        } finally {
-            try {
-                track.stop()
-            } catch (_: IllegalStateException) {
-                // Never started.
-            }
-            track.release()
         }
-        // Rerouted meanwhile (a headset connected or gone): the readings may be of either output.
-        if (rerouted || routed == null) readings.clear()
-        val output = AudioOutputs.typeOf(routed)
-        val millis = OutputDelay.of(readings)
-        DebugLog.i(
-            Tag,
-            "output delay ${millis?.let { "$it ms" } ?: "not reported"} on $output" +
-                (routed?.productName?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
-        )
-        val headset = routed?.productName?.toString()?.takeIf { output != "speaker" }
-        return millis?.let { MeasuredDelay(it, output, headset) }
+        return Sampled(readings, routed, rerouted)
+    }
+
+    private fun stopAndRelease(track: AudioTrack) {
+        try {
+            track.stop()
+        } catch (_: IllegalStateException) {
+            // Never started.
+        }
+        track.release()
     }
 
     /** One reading of the delay, or null while the output gives no timestamp or has not started. */
