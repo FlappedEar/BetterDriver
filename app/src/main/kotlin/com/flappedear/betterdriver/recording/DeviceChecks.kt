@@ -68,7 +68,10 @@ internal class DeviceChecks(private val context: Context, private val recording:
 
     private fun reading(): String = "${battery()} ${thermal()}"
 
-    /** "battery_c=… battery_pct=… plugged=…", from the sticky battery broadcast (no receiver is registered). */
+    /**
+     * "battery_c=… battery_pct=… plugged=… current_ma=…", from the sticky battery broadcast (no
+     * receiver is registered).
+     */
     private fun battery(): String {
         val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
         val tenths = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
@@ -82,7 +85,18 @@ internal class DeviceChecks(private val context: Context, private val recording:
             BatteryManager.BATTERY_PLUGGED_WIRELESS -> "wireless"
             else -> "none"
         }
-        return "battery_c=$celsius battery_pct=$percent plugged=$plugged"
+        return "battery_c=$celsius battery_pct=$percent plugged=$plugged current_ma=${current()}"
+    }
+
+    /**
+     * The battery current in mA as the phone reports it, n/a where it reports none. Charging a low
+     * battery heats the phone: on the 2026-10-14 drive plugging in raised the heat forecast from
+     * 0.63 to 0.77 in a minute (FBBD-46), so the log keeps how hard it charged.
+     */
+    private fun current(): String {
+        val micro = context.getSystemService(BatteryManager::class.java)
+            ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CURRENT_NOW) ?: Int.MIN_VALUE
+        return if (micro == Int.MIN_VALUE) NA else (micro / MicroPerMilli).toString()
     }
 
     /** "thermal=… headroom=…": Android's thermal status (Android 10+) and its 30 s forecast (Android 11+). */
@@ -105,5 +119,6 @@ internal class DeviceChecks(private val context: Context, private val recording:
         const val HeadroomForecastSeconds = 30
         const val Tenths = 10.0
         const val Percent = 100
+        const val MicroPerMilli = 1_000
     }
 }

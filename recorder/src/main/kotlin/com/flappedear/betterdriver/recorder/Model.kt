@@ -174,8 +174,8 @@ object EventKinds {
 
     /**
      * The phone's health every 30 s while recording (FBBD-46, FBBD-183). Text "battery_c=<battery
-     * temperature, °C> battery_pct=<charge> plugged=<ac|usb|wireless|none> thermal=<Android thermal
-     * status> headroom=<forecast or n/a>".
+     * temperature, °C> battery_pct=<charge> plugged=<ac|usb|wireless|none> current_ma=<battery current
+     * as the phone reports it, or n/a> thermal=<Android thermal status> headroom=<forecast or n/a>".
      */
     const val DEVICE = "device"
 

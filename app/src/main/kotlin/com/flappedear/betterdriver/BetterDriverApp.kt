@@ -36,6 +36,7 @@ import com.flappedear.betterdriver.debug.DebugLogRows
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.GnssSound
 import com.flappedear.betterdriver.recording.SensorRef
 import com.flappedear.betterdriver.recording.gnssRefOf
@@ -280,6 +281,7 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
         GnssSound(recorder.state.live?.gnss, enabled = prefs.gnssSound)
         TrackScreen(
             brightness = prefs.trackBrightness,
+            onReport = { DebugLog.i("TrackScreen", it) },
             state = liveTrackState(recorder.state, repo.forSession().active().tiles),
             onStop = {
                 recorder.stop()
