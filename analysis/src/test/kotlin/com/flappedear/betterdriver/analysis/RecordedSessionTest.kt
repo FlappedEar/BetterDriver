@@ -196,6 +196,12 @@ class RecordedSessionTest {
         assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf(Aliases.LONGITUDINAL_ACCELERATION))
         val peak = forward.values.filter { it.isFinite() }.maxOf { abs(it) }
         assertEquals(0.4, peak, 0.05, "turned the right way and levelled")
+        // Codex on #175: and moved onto the session's clock, so the throttle is where the car did it:
+        // within the 50 ms the mount's clock is matched to (0.1 g at the steepest), not 0.3 s late.
+        for (t in listOf(5.0, 9.1, 13.3, 17.0)) {
+            val at = assertNotNull(forward.valueAt(t), "at $t s")
+            assertEquals(0.4 * sin(2 * PI * t / 1.2), at, 0.1, "at $t s")
+        }
     }
 
     @Test

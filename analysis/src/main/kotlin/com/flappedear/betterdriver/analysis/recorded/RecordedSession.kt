@@ -150,12 +150,16 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
     val gps = sessionGpsG(session, AccelerometerFitStepSeconds).orEmpty()
     val forwardG = DoubleArray(gps.size) { gps[it].longitudinalG }
     val leftG = DoubleArray(gps.size) { gps[it].lateralG }
-    val fits = units.map { axes -> axes to alignedMount(axes, gps.map { it.time }, forwardG, leftG) }
+    val aligned = units.map { axes -> axes to alignedMount(axes, gps.map { it.time }, forwardG, leftG) }
+    val fits = aligned.map { (axes, a) -> axes to a.first }
+    // How late each accelerometer's clock reads against GPS, by its first channel's name.
+    val lateness = aligned.associate { (axes, a) -> axes.first().name to a.second }
     val forward = fits.mapNotNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
     val left = fits.mapNotNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
     val gpsTimes = DoubleArray(gps.size) { gps[it].time }
-    val forwardFused = fused(forward, ForwardAcceleration, DirectionReading("GPS", gpsTimes, forwardG, Double.NaN))
-    val leftFused = fused(left, LeftAcceleration, DirectionReading("GPS", gpsTimes, leftG, Double.NaN))
+    val forwardGps = DirectionReading("GPS", gpsTimes, forwardG, Double.NaN)
+    val forwardFused = fused(forward, ForwardAcceleration, forwardGps, lateness)
+    val leftFused = fused(left, LeftAcceleration, DirectionReading("GPS", gpsTimes, leftG, Double.NaN), lateness)
     val receiverXy = forward.size == 1 && isReceiverAxis(forward.single(), 0) &&
         left.size == 1 && isReceiverAxis(left.single(), 1)
     if (gps.isNotEmpty() && !receiverXy) {
@@ -174,15 +178,16 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
 /**
  * How [axes] sit in the car ([fitMount]) against GPS's [forwardG] and [leftG] at [times], with the
  * accelerometer read up to [MaxMountLagSeconds] later or earlier: the lag where both directions
- * agree with GPS best. A phone stamped apart from the receiver then is not taken for one mounted
- * across the car, or left out, before [fuseDirection] matches the clocks finely.
+ * agree with GPS best, and that lag (seconds the accelerometer's stamps are late). A phone stamped
+ * apart from the receiver then is not taken for one mounted across the car, or left out, before
+ * [fuseDirection] matches the clocks finely.
  */
 private fun alignedMount(
     axes: List<TelemetryChannel>,
     times: List<Double>,
     forwardG: DoubleArray,
     leftG: DoubleArray,
-): MountFit? {
+): Pair<MountFit?, Double> {
     val steps = (MaxMountLagSeconds / MountLagStepSeconds).roundToInt()
     // Lag 0 first, so a tie keeps the clock as recorded.
     val lags = (listOf(0) + (1..steps).flatMap { listOf(it, -it) }).map { it * MountLagStepSeconds }
@@ -192,12 +197,18 @@ private fun alignedMount(
                 smoothedAt(channel, times[i] + lag, AccelerometerSmoothingSeconds) ?: Double.NaN
             }
         }
-        fitMount(readings, forwardG, leftG)
-    }.maxByOrNull { fit ->
+        fitMount(readings, forwardG, leftG) to lag
+    }.maxBy { (fit, _) ->
         fun agreement(d: AxisDirection?) = d?.fit?.correlation?.let(::abs) ?: 0.0
         if (fit == null) -1.0 else agreement(fit.forward) + agreement(fit.left)
     }
 }
+
+/**
+ * The receivers' accelerometers share one clock with their own GNSS, so a lag against GPS-derived
+ * G is that G's own; only the phone's is a clock of its own to be moved onto the session's.
+ */
+private fun ownClock(name: String) = name in PhoneAccelerometer
 
 /** As far as [fuseDirection] matches clocks. */
 private const val MaxMountLagSeconds = 0.3
@@ -209,15 +220,28 @@ private const val MountLagStepSeconds = 0.05
  * The accelerometers [found] for one direction as one channel [name]: the one alone at its own
  * times, or several averaged ([fuseDirection], weighed against [gps] with each one's clock
  * matched); with how it was made, for the debug log, e.g.
- * "accel_x 0.64 + phone_accel_x 0.36 (+0.05 s)".
+ * "accel_x 0.64 + phone_accel_x 0.36 (+0.05 s)". When the clock kept is the phone's (no receiver's
+ * accelerometer agrees), it is moved by its [lateness] against GPS onto the session's clock.
  */
 private fun fused(
     found: List<Pair<List<TelemetryChannel>, AxisDirection>>,
     name: String,
     gps: DirectionReading,
+    lateness: Map<String, Double>,
 ): Pair<TelemetryChannel, String>? {
     val channels = found.map { (axes, d) -> corrected(axes, name, d) to d }
-    if (channels.size <= 1) return channels.firstOrNull()?.let { (c, _) -> c to found.single().first.first().name }
+    fun onSessionClock(c: TelemetryChannel, kept: String): TelemetryChannel {
+        val late = if (ownClock(kept)) lateness[kept] ?: 0.0 else 0.0
+        if (late == 0.0) return c
+        val times = DoubleArray(c.sampleCount) { c.timestamps[it] - late }
+        return TelemetryChannel(c.name, times, c.values, c.unit, c.provenance)
+    }
+    if (channels.size <= 1) {
+        return channels.firstOrNull()?.let { (c, _) ->
+            val unit = found.single().first.first().name
+            onSessionClock(c, unit) to unit
+        }
+    }
     val readings = channels.mapIndexed { k, (c, d) ->
         DirectionReading(found[k].first.first().name, c.timestamps, c.values, d.fit.residual)
     }
@@ -227,8 +251,12 @@ private fun fused(
             val lag = if (s.lagSeconds != 0.0) " (${"%+.2f".format(Locale.ROOT, s.lagSeconds)} s)" else ""
             "${s.name} ${"%.2f".format(Locale.ROOT, s.weight)}$lag"
         } + result.left.joinToString("") { ", $it left out" }
+        // The clock kept: the first reading's when averaged in, else the best one's (lag 0 either way).
+        val kept = readings.map { it.name }.firstOrNull { n ->
+            result.shares.any { it.name == n && it.lagSeconds == 0.0 }
+        } ?: readings.first().name
         // Still accelerometer readings, turned to the car, levelled and averaged.
-        TelemetryChannel(name, result.times, result.values, base.unit, base.provenance) to how
+        onSessionClock(TelemetryChannel(name, result.times, result.values, base.unit, base.provenance), kept) to how
     }
 }
 
