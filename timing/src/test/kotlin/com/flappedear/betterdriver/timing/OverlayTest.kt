@@ -8,10 +8,10 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
-import com.flappedear.betterdriver.timing.overlay.AccelChannels
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
 import com.flappedear.betterdriver.timing.overlay.MapFit
+import com.flappedear.betterdriver.timing.overlay.MeasuredG
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayLayout
 import com.flappedear.betterdriver.timing.overlay.TimeSeries
@@ -151,23 +151,22 @@ class OverlayTest {
         assertEquals(drive.fixes.size, data.outline.size)
     }
 
+    /** FBBD-226: the overlay draws the accelerometers' G as the analysis corrects them, else GNSS's. */
     @Test
-    fun `an accelerometer is fitted to the GNSS G, turned round and its tilt taken off, a dead axis left out`() {
+    fun `measured G is drawn where it is given, the GNSS G elsewhere`() {
         val drive = circuit.drive(listOf(1.0))
-        val plain = OverlayData(session(drive), null)
+        val sets = session(drive)
+        val plain = OverlayData(sets, null)
         val gnss = drive.fixes.associate { it.tMicros to plain.at(it.tMicros).g }
-        val accel = AccelChannels(forward = 110, right = 111)
-        // Y mounted the other way and tilted; X a dead column of zeros, as in a VBO without an accelerometer.
-        val sets = session(drive) { t ->
-            listOfNotNull(ChannelValue(110, 0.0), gnss[t]?.let { ChannelValue(111, -it.lateral + 0.15) })
-        }
-        val data = OverlayData(sets, null, accel)
+        // A steady 0.4 g to the right, sampled at 25 Hz: smoothing leaves it as it is.
+        val right = (0 until (drive.fixes.last().tMicros / 40_000L).toInt()).map { it * 40_000L to 0.4 }
+        val data = OverlayData(sets, null, MeasuredG(forward = null, right = right))
         val checked = drive.fixes.filter { gnss[it.tMicros] != null }
         assertTrue(checked.size > 100)
-        for (f in checked.filterIndexed { i, _ -> i % 25 == 0 }) {
+        for (f in checked.drop(10).dropLast(10).filterIndexed { i, _ -> i % 25 == 0 }) {
             val expected = assertNotNull(gnss[f.tMicros])
             val g = assertNotNull(data.at(f.tMicros).g)
-            assertEquals(expected.lateral, g.lateral, 0.05, "at ${f.tMicros}")
+            assertEquals(0.4, g.lateral, 1e-9, "at ${f.tMicros}")
             assertEquals(expected.longitudinal, g.longitudinal, 1e-9, "at ${f.tMicros}")
         }
     }

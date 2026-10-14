@@ -172,12 +172,16 @@ class RecordedSessionTest {
         assertEquals(GgSource.Gps, assertNotNull(sessionGg(session)).source, "no cornering to fit left on")
     }
 
+    /** FBBD-226: as in RaceChrono, a receiver's and the phone's accelerometers agreeing with GPS are averaged. */
     @Test
-    fun `the receiver's accelerometer wins over the phone's when both agree`() {
+    fun `the receiver's and the phone's accelerometers are averaged when both agree`() {
         val session = telemetrySessionOf(withPhone(straightRun(-1.0, tilt = 0.05)), null)
         val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION))
-        assertEquals(0.0, forward.timestamps.first(), 1e-9, "read at the RaceBox's times")
-        assertEquals(0.3, forward.values.first(), 0.01)
+        assertEquals(0.0, forward.timestamps.first(), 1e-9, "from the first reading of either")
+        assertEquals(0.04, forward.timestamps[1] - forward.timestamps[0], 1e-9, "at 25 Hz")
+        assertEquals(0.3, forward.values[10], 0.01)
+        assertEquals(-0.6, forward.values[forward.sampleCount - 10], 0.01)
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf(Aliases.LONGITUDINAL_ACCELERATION))
     }
 
     @Test

@@ -12,7 +12,9 @@ import com.flappedear.betterdriver.analysis.map.smoothedAt
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.accel.AxisDirection
 import com.flappedear.betterdriver.recorder.accel.AxisFit
+import com.flappedear.betterdriver.recorder.accel.DirectionReading
 import com.flappedear.betterdriver.recorder.accel.fitMount
+import com.flappedear.betterdriver.recorder.accel.fuseDirection
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.track.Track
@@ -129,13 +131,14 @@ private fun gate(type: TimingGateType, name: String, line: TrackLine) = TimingGa
 )
 
 /**
- * The car's acceleration as [ForwardAcceleration] and [LeftAcceleration], from the first accelerometer
- * of [AccelerometerAxes] that agrees with the acceleration GPS shows over the whole of [session]: the
- * receiver's, else the phone's own (FBBD-218). Its mount is found from GPS ([fitMount]): turned round,
- * turned by 90°, standing on its side or tilted, the tilt taken off. Forward and left may come from
- * different accelerometers. A direction no accelerometer agrees on ([AxisFit.usable]) is left out, so
- * the readers fall back to GPS. Unless the receiver's X and Y gave both, every accelerometer's
- * agreement goes to the debug log, so a drive's log shows why.
+ * The car's acceleration as [ForwardAcceleration] and [LeftAcceleration], from every accelerometer of
+ * [AccelerometerAxes] that agrees with the acceleration GPS shows over the whole of [session]: the
+ * receiver's and the phone's own (FBBD-218), averaged when both do (FBBD-226, [fuseDirection]), as
+ * RaceChrono does. Each mount is found from GPS ([fitMount]): turned round, turned by 90°, standing
+ * on its side or tilted, the tilt taken off. Forward and left may come from different
+ * accelerometers. A direction no accelerometer agrees on ([AxisFit.usable]) is left out, so the
+ * readers fall back to GPS. Unless the receiver's X and Y alone gave both, every accelerometer's
+ * agreement and share goes to the debug log, so a drive's log shows why.
  */
 private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryChannel> {
     val units = AccelerometerAxes
@@ -151,22 +154,48 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
         }
         axes to fitMount(readings, forwardG, leftG)
     }
-    val forward = fits.firstNotNullOfOrNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
-    val left = fits.firstNotNullOfOrNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
-    val receiverXy = forward?.let { isReceiverAxis(it, 0) } == true && left?.let { isReceiverAxis(it, 1) } == true
+    val forward = fits.mapNotNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
+    val left = fits.mapNotNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
+    val forwardFused = fused(forward, ForwardAcceleration)
+    val leftFused = fused(left, LeftAcceleration)
+    val receiverXy = forward.size == 1 && isReceiverAxis(forward.single(), 0) &&
+        left.size == 1 && isReceiverAxis(left.single(), 1)
     if (gps.isNotEmpty() && !receiverXy) {
         val each = fits.joinToString("; ") { (axes, fit) ->
             val names = axes.joinToString("/") { it.name }
             "$names forward ${describe(axes, fit?.forward)} left ${describe(axes, fit?.left)}"
         }
-        val forwardFrom = forward?.first?.first()?.name ?: "GPS"
-        val leftFrom = left?.first?.first()?.name ?: "GPS"
-        DebugLog.i("AccelFit", "$each: forward from $forwardFrom, left from $leftFrom")
+        DebugLog.i(
+            "AccelFit",
+            "$each: forward from ${forwardFused?.second ?: "GPS"}, left from ${leftFused?.second ?: "GPS"}",
+        )
     }
-    return listOfNotNull(
-        forward?.let { (axes, d) -> corrected(axes, ForwardAcceleration, d) },
-        left?.let { (axes, d) -> corrected(axes, LeftAcceleration, d) },
-    )
+    return listOfNotNull(forwardFused?.first, leftFused?.first)
+}
+
+/**
+ * The accelerometers [found] for one direction as one channel [name]: the one alone at its own
+ * times, or several averaged ([fuseDirection]); with how it was made, for the debug log, e.g.
+ * "accel_x 0.64 + phone_accel_x 0.36 (+0.05 s)".
+ */
+private fun fused(
+    found: List<Pair<List<TelemetryChannel>, AxisDirection>>,
+    name: String,
+): Pair<TelemetryChannel, String>? {
+    val channels = found.map { (axes, d) -> corrected(axes, name, d) to d }
+    if (channels.size <= 1) return channels.firstOrNull()?.let { (c, _) -> c to found.single().first.first().name }
+    val readings = channels.mapIndexed { k, (c, d) ->
+        DirectionReading(found[k].first.first().name, c.timestamps, c.values, d.fit.residual)
+    }
+    val base = channels.first().first
+    return fuseDirection(readings)?.let { result ->
+        val how = result.shares.joinToString(" + ") { s ->
+            val lag = if (s.lagSeconds != 0.0) " (${"%+.2f".format(Locale.ROOT, s.lagSeconds)} s)" else ""
+            "${s.name} ${"%.2f".format(Locale.ROOT, s.weight)}$lag"
+        } + result.left.joinToString("") { ", $it left out" }
+        // Still accelerometer readings, turned to the car, levelled and averaged.
+        TelemetryChannel(name, result.times, result.values, base.unit, base.provenance) to how
+    }
 }
 
 /** Whether [found] is the first accelerometer's axis [index] alone (X forward, Y left), as mounted by the book. */
