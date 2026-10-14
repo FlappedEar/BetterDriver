@@ -71,14 +71,28 @@ class ThermalPolicyTest {
     }
 
     @Test
-    fun aStepThatHeatsUpAgainIsNotTriedTwice() {
+    fun aStepThatHeatsUpAgainWaitsTwiceAsLongBeforeTheNextTry() {
         val p = ThermalPolicy(6, settleMicros = minute, recoverMicros = 5 * minute)
         p.onReading(0, Thermal.MODERATE, null)
         assertEquals(ThermalAction.StepUp(0), p.onReading(5 * minute, Thermal.NONE, null))
         assertEquals(ThermalAction.StepDown(1), p.onReading(6 * minute, Thermal.MODERATE, null))
-        assertEquals(1, p.ceiling)
-        assertEquals(ThermalAction.Keep, p.onReading(20 * minute, Thermal.NONE, null))
-        assertEquals(1, p.current)
+        assertEquals(0, p.ceiling)
+        // Ten cool minutes now, not five.
+        assertEquals(ThermalAction.Keep, p.onReading(11 * minute, Thermal.NONE, null))
+        assertEquals(ThermalAction.Keep, p.onReading(15 * minute, Thermal.NONE, null))
+        assertEquals(ThermalAction.StepUp(0), p.onReading(16 * minute, Thermal.NONE, null))
+    }
+
+    @Test
+    fun arekDriveOf14OctoberKeeps1080pAndStepsBackUp() {
+        // 2026-10-14 at 10 °C: the forecast reached 0.90 to 0.92 with status light; that no longer
+        // steps down. At 720p it sat at 0.75 to 0.77, which now counts as cool after three minutes.
+        val p = ThermalPolicy(3)
+        assertEquals(ThermalAction.Keep, p.onReading(0, Thermal.LIGHT, 0.915f))
+        assertEquals(ThermalAction.StepDown(1), p.onReading(minute, Thermal.LIGHT, 0.95f))
+        assertEquals(ThermalAction.Keep, p.onReading(2 * minute, Thermal.LIGHT, 0.77f))
+        assertEquals(ThermalAction.Keep, p.onReading(3 * minute, Thermal.LIGHT, 0.75f))
+        assertEquals(ThermalAction.StepUp(0), p.onReading(5 * minute, Thermal.LIGHT, 0.76f))
     }
 
     @Test
