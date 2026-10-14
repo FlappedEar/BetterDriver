@@ -12,13 +12,17 @@ import com.flappedear.betterdriver.analysis.map.smoothedAt
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.accel.AxisDirection
 import com.flappedear.betterdriver.recorder.accel.AxisFit
+import com.flappedear.betterdriver.recorder.accel.DirectionReading
+import com.flappedear.betterdriver.recorder.accel.MountFit
 import com.flappedear.betterdriver.recorder.accel.fitMount
+import com.flappedear.betterdriver.recorder.accel.fuseDirection
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackLine
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 private const val MicrosPerSecond = 1_000_000.0
 
@@ -129,13 +133,14 @@ private fun gate(type: TimingGateType, name: String, line: TrackLine) = TimingGa
 )
 
 /**
- * The car's acceleration as [ForwardAcceleration] and [LeftAcceleration], from the first accelerometer
- * of [AccelerometerAxes] that agrees with the acceleration GPS shows over the whole of [session]: the
- * receiver's, else the phone's own (FBBD-218). Its mount is found from GPS ([fitMount]): turned round,
- * turned by 90°, standing on its side or tilted, the tilt taken off. Forward and left may come from
- * different accelerometers. A direction no accelerometer agrees on ([AxisFit.usable]) is left out, so
- * the readers fall back to GPS. Unless the receiver's X and Y gave both, every accelerometer's
- * agreement goes to the debug log, so a drive's log shows why.
+ * The car's acceleration as [ForwardAcceleration] and [LeftAcceleration], from every accelerometer of
+ * [AccelerometerAxes] that agrees with the acceleration GPS shows over the whole of [session]: the
+ * receiver's and the phone's own (FBBD-218), averaged when both do (FBBD-226, [fuseDirection]), as
+ * RaceChrono does. Each mount is found from GPS ([fitMount]): turned round, turned by 90°, standing
+ * on its side or tilted, the tilt taken off. Forward and left may come from different
+ * accelerometers. A direction no accelerometer agrees on ([AxisFit.usable]) is left out, so the
+ * readers fall back to GPS. Unless the receiver's X and Y alone gave both, every accelerometer's
+ * agreement and share goes to the debug log, so a drive's log shows why.
  */
 private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryChannel> {
     val units = AccelerometerAxes
@@ -145,28 +150,114 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
     val gps = sessionGpsG(session, AccelerometerFitStepSeconds).orEmpty()
     val forwardG = DoubleArray(gps.size) { gps[it].longitudinalG }
     val leftG = DoubleArray(gps.size) { gps[it].lateralG }
-    val fits = units.map { axes ->
-        val readings = axes.map { channel ->
-            DoubleArray(gps.size) { smoothedAt(channel, gps[it].time, AccelerometerSmoothingSeconds) ?: Double.NaN }
-        }
-        axes to fitMount(readings, forwardG, leftG)
-    }
-    val forward = fits.firstNotNullOfOrNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
-    val left = fits.firstNotNullOfOrNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
-    val receiverXy = forward?.let { isReceiverAxis(it, 0) } == true && left?.let { isReceiverAxis(it, 1) } == true
+    val aligned = units.map { axes -> axes to alignedMount(axes, gps.map { it.time }, forwardG, leftG) }
+    val fits = aligned.map { (axes, a) -> axes to a.first }
+    // How late each accelerometer's clock reads against GPS, by its first channel's name.
+    val lateness = aligned.associate { (axes, a) -> axes.first().name to a.second }
+    val forward = fits.mapNotNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
+    val left = fits.mapNotNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
+    val gpsTimes = DoubleArray(gps.size) { gps[it].time }
+    val forwardGps = DirectionReading("GPS", gpsTimes, forwardG, Double.NaN)
+    val forwardFused = fused(forward, ForwardAcceleration, forwardGps, lateness)
+    val leftFused = fused(left, LeftAcceleration, DirectionReading("GPS", gpsTimes, leftG, Double.NaN), lateness)
+    val receiverXy = forward.size == 1 && isReceiverAxis(forward.single(), 0) &&
+        left.size == 1 && isReceiverAxis(left.single(), 1)
     if (gps.isNotEmpty() && !receiverXy) {
         val each = fits.joinToString("; ") { (axes, fit) ->
             val names = axes.joinToString("/") { it.name }
             "$names forward ${describe(axes, fit?.forward)} left ${describe(axes, fit?.left)}"
         }
-        val forwardFrom = forward?.first?.first()?.name ?: "GPS"
-        val leftFrom = left?.first?.first()?.name ?: "GPS"
-        DebugLog.i("AccelFit", "$each: forward from $forwardFrom, left from $leftFrom")
+        DebugLog.i(
+            "AccelFit",
+            "$each: forward from ${forwardFused?.second ?: "GPS"}, left from ${leftFused?.second ?: "GPS"}",
+        )
     }
-    return listOfNotNull(
-        forward?.let { (axes, d) -> corrected(axes, ForwardAcceleration, d) },
-        left?.let { (axes, d) -> corrected(axes, LeftAcceleration, d) },
-    )
+    return listOfNotNull(forwardFused?.first, leftFused?.first)
+}
+
+/**
+ * How [axes] sit in the car ([fitMount]) against GPS's [forwardG] and [leftG] at [times], with the
+ * accelerometer read up to [MaxMountLagSeconds] later or earlier: the lag where both directions
+ * agree with GPS best, and that lag (seconds the accelerometer's stamps are late). A phone stamped
+ * apart from the receiver then is not taken for one mounted across the car, or left out, before
+ * [fuseDirection] matches the clocks finely.
+ */
+private fun alignedMount(
+    axes: List<TelemetryChannel>,
+    times: List<Double>,
+    forwardG: DoubleArray,
+    leftG: DoubleArray,
+): Pair<MountFit?, Double> {
+    val steps = (MaxMountLagSeconds / MountLagStepSeconds).roundToInt()
+    // Lag 0 first, so a tie keeps the clock as recorded.
+    val lags = (listOf(0) + (1..steps).flatMap { listOf(it, -it) }).map { it * MountLagStepSeconds }
+    return lags.map { lag ->
+        val readings = axes.map { channel ->
+            DoubleArray(times.size) { i ->
+                smoothedAt(channel, times[i] + lag, AccelerometerSmoothingSeconds) ?: Double.NaN
+            }
+        }
+        fitMount(readings, forwardG, leftG) to lag
+    }.maxBy { (fit, _) ->
+        fun agreement(d: AxisDirection?) = d?.fit?.correlation?.let(::abs) ?: 0.0
+        if (fit == null) -1.0 else agreement(fit.forward) + agreement(fit.left)
+    }
+}
+
+/**
+ * The receivers' accelerometers share one clock with their own GNSS, so a lag against GPS-derived
+ * G is that G's own; only the phone's is a clock of its own to be moved onto the session's.
+ */
+private fun ownClock(name: String) = name in PhoneAccelerometer
+
+/** As far as [fuseDirection] matches clocks. */
+private const val MaxMountLagSeconds = 0.3
+
+/** Coarse: [fuseDirection] matches the clocks to 10 ms; the mount only needs them near. */
+private const val MountLagStepSeconds = 0.05
+
+/**
+ * The accelerometers [found] for one direction as one channel [name]: the one alone at its own
+ * times, or several averaged ([fuseDirection], weighed against [gps] with each one's clock
+ * matched); with how it was made, for the debug log, e.g.
+ * "accel_x 0.64 + phone_accel_x 0.36 (+0.05 s)". When the clock kept is the phone's (no receiver's
+ * accelerometer agrees), it is moved by its [lateness] against GPS onto the session's clock.
+ */
+private fun fused(
+    found: List<Pair<List<TelemetryChannel>, AxisDirection>>,
+    name: String,
+    gps: DirectionReading,
+    lateness: Map<String, Double>,
+): Pair<TelemetryChannel, String>? {
+    val channels = found.map { (axes, d) -> corrected(axes, name, d) to d }
+    fun onSessionClock(c: TelemetryChannel, kept: String): TelemetryChannel {
+        val late = if (ownClock(kept)) lateness[kept] ?: 0.0 else 0.0
+        if (late == 0.0) return c
+        val times = DoubleArray(c.sampleCount) { c.timestamps[it] - late }
+        return TelemetryChannel(c.name, times, c.values, c.unit, c.provenance)
+    }
+    if (channels.size <= 1) {
+        return channels.firstOrNull()?.let { (c, _) ->
+            val unit = found.single().first.first().name
+            onSessionClock(c, unit) to unit
+        }
+    }
+    val readings = channels.mapIndexed { k, (c, d) ->
+        DirectionReading(found[k].first.first().name, c.timestamps, c.values, d.fit.residual)
+    }
+    val base = channels.first().first
+    return fuseDirection(readings, gps)?.let { result ->
+        val how = result.shares.joinToString(" + ") { s ->
+            val lag = if (s.lagSeconds != 0.0) " (${"%+.2f".format(Locale.ROOT, s.lagSeconds)} s)" else ""
+            "${s.name} ${"%.2f".format(Locale.ROOT, s.weight)}$lag"
+        } + result.left.joinToString("") { ", $it left out" }
+        // The clock kept: the first reading's when averaged in, else the best one's (lag 0 either way).
+        val kept = readings.map { it.name }.firstOrNull { n ->
+            result.shares.any { it.name == n && it.lagSeconds == 0.0 }
+        } ?: readings.first().name
+        // Still accelerometer readings, turned to the car, levelled and averaged.
+        onSessionClock(TelemetryChannel(name, result.times, result.values, base.unit, base.provenance), kept) to how
+    }
 }
 
 /** Whether [found] is the first accelerometer's axis [index] alone (X forward, Y left), as mounted by the book. */

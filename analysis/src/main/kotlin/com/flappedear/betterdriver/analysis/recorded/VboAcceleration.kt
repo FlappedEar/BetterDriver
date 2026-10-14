@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.analysis.map.TimedG
 import com.flappedear.betterdriver.analysis.map.sessionGpsG
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.vbo.VboDerivedChannel
+import com.flappedear.betterdriver.timing.overlay.MeasuredG
 import kotlin.math.roundToLong
 
 /** The VBO column for the car's longitudinal G: + speeding up, - braking. FlappedEar Overlays reads it by this name. */
@@ -47,4 +48,22 @@ fun vboAccelerations(data: SessionData): List<VboDerivedChannel> {
         axis(VboLongitudinalG, Aliases.LONGITUDINAL_ACCELERATION) { it.longitudinalG },
         axis(VboLateralG, Aliases.LATERAL_ACCELERATION) { it.lateralG },
     )
+}
+
+/**
+ * The car's G from its accelerometers as the analysis corrects them (turned to the car, levelled,
+ * a receiver's and the phone's averaged: FBBD-226), for the video overlay, on [data]'s own clock
+ * (µs). A direction no accelerometer agrees on is null, and the overlay then takes it from GPS.
+ */
+fun measuredG(data: SessionData): MeasuredG? {
+    val origin = data.sampleSets.minOfOrNull { it.tMicros } ?: return null
+    val session = telemetrySessionOf(data, null)
+    fun samples(alias: String, sign: Double): List<Pair<Long, Double>>? {
+        val channel = accelerationAliasInG(session, alias)?.takeIf { it.supported }?.channel ?: return null
+        return (0 until channel.sampleCount).filter { channel.values[it].isFinite() }.map {
+            origin + (channel.timestamps[it] * MicrosPerSecond).roundToLong() to sign * channel.values[it]
+        }
+    }
+    // The analysis reads left positive; the overlay right.
+    return MeasuredG(samples(Aliases.LONGITUDINAL_ACCELERATION, 1.0), samples(Aliases.LATERAL_ACCELERATION, -1.0))
 }

@@ -7,9 +7,11 @@ import kotlin.math.sqrt
  * How one accelerometer axis relates to the same acceleration worked out from GPS: the axis reads
  * `sign * gps + bias`. [bias] is what a tilted mount adds from gravity (a RaceBox pitched back by 11°
  * reads -0.19 g standing still); [sign] is -1 for an axis that runs the other way (a receiver mounted
- * backwards, or a file with the opposite convention). [correlation] says how well the two agree.
+ * backwards, or a file with the opposite convention). [correlation] says how well the two agree;
+ * [residual] is the mean square of what is left between the corrected axis and GPS, in g², which
+ * [fuseDirection] weighs accelerometers by (NaN when not known).
  */
-data class AxisFit(val sign: Double, val bias: Double, val correlation: Double) {
+data class AxisFit(val sign: Double, val bias: Double, val correlation: Double, val residual: Double = Double.NaN) {
     /** The axis agrees with GPS well enough to be trusted over it. */
     val usable: Boolean get() = abs(correlation) >= MinimumAxisCorrelation
 
@@ -62,5 +64,7 @@ fun fitAxis(axis: DoubleArray, gps: DoubleArray): AxisFit? {
     }
     if (varA <= 0.0 || varG <= 0.0) return null
     val sign = if (cov < 0.0) -1.0 else 1.0
-    return AxisFit(sign, meanA - sign * meanG, cov / sqrt(varA * varG))
+    // (sign·(a - meanA) - (g - meanG))² summed over the pairs, per pair.
+    val residual = maxOf(0.0, (varA + varG - 2 * sign * cov) / n)
+    return AxisFit(sign, meanA - sign * meanG, cov / sqrt(varA * varG), residual)
 }

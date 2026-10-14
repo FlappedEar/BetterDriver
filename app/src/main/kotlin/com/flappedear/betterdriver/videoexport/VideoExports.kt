@@ -25,8 +25,8 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
+import com.flappedear.betterdriver.analysis.recorded.measuredG
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
-import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.feature.review.SessionVideo
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -41,7 +41,6 @@ import com.flappedear.betterdriver.review.indexedClips
 import com.flappedear.betterdriver.review.sessionVideo
 import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.sharing.TransferState
-import com.flappedear.betterdriver.timing.overlay.AccelChannels
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.VideoCut
 import com.flappedear.betterdriver.timing.overlay.totalMicros
@@ -249,7 +248,7 @@ class VideoExports private constructor(private val context: Context) {
         }
 
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
-            val data = OverlayData(prepared.sets, prepared.laps, accelOf(prepared.data))
+            val data = OverlayData(prepared.sets, prepared.laps, measuredG(prepared.data))
             val painter = OverlayPainter(OverlayFonts.load(context), data.outline, data.pointToPoint)
             // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
             val optimal = prepared.optimalPlan(part)
@@ -432,16 +431,4 @@ class VideoExports private constructor(private val context: Context) {
             instance ?: VideoExports(context.applicationContext).also { instance = it }
         }
     }
-}
-
-/**
- * The RaceBox accelerometer when the session recorded it: X forward, Y to the right (RaceBox
- * protocol). The overlay fits each axis to the GNSS path's G, so a backwards or tilted mount still
- * reads right. Other receivers' axes are not known, so their G comes from the GNSS path.
- */
-private fun accelOf(data: SessionData): AccelChannels? {
-    val x = RaceBoxChannels.ACCEL_X
-    val y = RaceBoxChannels.ACCEL_Y
-    val recorded = data.channels[x.id]?.name == x.name && data.channels[y.id]?.name == y.name
-    return if (recorded) AccelChannels(forward = x.id, right = y.id) else null
 }
