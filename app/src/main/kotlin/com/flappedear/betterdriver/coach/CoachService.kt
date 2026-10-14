@@ -37,7 +37,13 @@ class CoachService : Service() {
     private var voice: Voice? = null
 
     /** The recording being coached. Coach thread only. */
-    private class Active(val id: String, val startNanos: Long, val recorder: Messenger?, val settings: CoachSettings) {
+    private class Active(
+        val id: String,
+        val startNanos: Long,
+        val recorder: Messenger?,
+        val settings: CoachSettings,
+        val delay: SessionDelay,
+    ) {
         var coach: CoachSession? = null
         var status: CoachStatus = CoachStatus.None
 
@@ -78,12 +84,24 @@ class CoachService : Service() {
 
     private fun begin(data: Bundle, replyTo: Messenger?) {
         val id = data.getString(CoachProtocol.SESSION) ?: return
-        val settings = coachSettings(this).read()
+        val set = coachSettings(this).read()
         DebugLog.session = id
-        DebugLog.i(Tag, "coaching session $id: $settings")
+        // The headset's delay (FBBD-49) is measured now, on the output the cues will play on and on
+        // each path they take: live text-to-speech always (clips fall back to it), pre-rendered clips'
+        // low-latency path too when they are on. The delay set in the settings is used only when
+        // Android gives no audio clock.
+        val live = OutputDelayProbe.measure()
+        val clips = set.voice == VoiceMode.PreRendered
+        val clip = if (clips) OutputDelayProbe.measure(lowLatency = true) else null
+        val sessionDelay = SessionDelay(live, clip, set.audioDelayMillis)
+        // Cues are timed for the path most of them take: the set delay when it was not measured.
+        val path = if (clips) "clip" else "live"
+        val delay = sessionDelay.on(path, (if (clips) clip else live)?.output.orEmpty())
+        val settings = set.copy(audioDelayMillis = delay.millis)
+        DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source}")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice)
-        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings)
+        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, sessionDelay)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
@@ -137,7 +155,9 @@ class CoachService : Service() {
             }
             voice?.say(text, ended) { start ->
                 handler.post {
-                    val voiced = ask.voiceText(start, start.readyNanos?.let(::micros), a.settings.audioDelayMillis)
+                    val ready = start.readyNanos?.let(::micros)
+                    val used = a.delay.on(start.path, start.device)
+                    val voiced = ask.voiceText(start, ready, used.millis, used.source)
                     if (voiced != null && active === a) report(a, micros(start.nanoTime), CoachEvents.VOICE, voiced)
                 }
             } == true
@@ -154,9 +174,10 @@ class CoachService : Service() {
         var seq: Int? = null
 
         /** The event text of its sound starting, how it was said and where it went; null if never logged. */
-        fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int) = seq?.let {
+        fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int, outDelaySource: String) = seq?.let {
             CoachEvents.voiceText(
                 it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
+                outDelaySource,
             )
         }
     }
@@ -192,6 +213,21 @@ class CoachService : Service() {
 
     private companion object {
         const val Tag = "CoachService"
+    }
+}
+
+/**
+ * The audio delays measured at a session's start (FBBD-49): on the [live] text-to-speech path and, with
+ * pre-rendered clips on, the [clip] path; else the [setMillis] from the settings.
+ */
+private class SessionDelay(val live: MeasuredDelay?, val clip: MeasuredDelay?, val setMillis: Int) {
+    /**
+     * The delay of a cue said on [path] ("live" or "clip") to output [device]: the one measured on that
+     * path and output, else the set one (a headset connected or gone since was not measured).
+     */
+    fun on(path: String, device: String): AudioDelayUsed {
+        val m = (if (path == "clip") clip else live)?.takeIf { it.output == device }
+        return OutputDelay.effective(setMillis, m?.millis)
     }
 }
 

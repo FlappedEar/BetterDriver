@@ -2,14 +2,12 @@ package com.flappedear.betterdriver.coach
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.sin
 
 /**
- * Mono 16-bit audio (FBBD-48, FBBD-49): a cue clip text-to-speech rendered, phrases joined from clips,
- * and the delay test's click. [samples] play at [sampleRate] per second.
+ * Mono 16-bit audio (FBBD-48): a cue clip text-to-speech rendered, or phrases joined from clips.
+ * [samples] play at [sampleRate] per second.
  */
 class Pcm(val sampleRate: Int, val samples: ShortArray) {
     val durationMillis: Long get() = samples.size * MillisPerSecond / sampleRate
@@ -51,25 +49,7 @@ class Pcm(val sampleRate: Int, val samples: ShortArray) {
             return Pcm(rate, out)
         }
 
-        /**
-         * A short, sharp tone for the delay test (FBBD-49): [millis] of [hz] with a quick fade in and out
-         * so it does not crackle. Easy to hear over road noise and starts at once, unlike a word.
-         */
-        fun click(sampleRate: Int, millis: Int = ClickMillis, hz: Double = ClickHz): Pcm {
-            val n = (millis.toLong() * sampleRate / MillisPerSecond).toInt()
-            val fade = (n / ClickFadeParts).coerceAtLeast(1)
-            val samples = ShortArray(n) { i ->
-                val envelope = min(1.0, min(i, n - 1 - i).toDouble() / fade)
-                (sin(2 * PI * hz * i / sampleRate) * envelope * ClickAmplitude).toInt().toShort()
-            }
-            return Pcm(sampleRate, samples)
-        }
-
         private const val MillisPerSecond = 1_000L
-        private const val ClickMillis = 40
-        private const val ClickHz = 1_500.0
-        private const val ClickFadeParts = 8
-        private const val ClickAmplitude = 0.6 * Short.MAX_VALUE
     }
 }
 
