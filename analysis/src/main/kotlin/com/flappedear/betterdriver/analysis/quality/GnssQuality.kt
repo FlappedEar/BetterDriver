@@ -69,8 +69,16 @@ internal class GnssSamples(sets: List<SampleSet>) {
     }
 }
 
-/** The GNSS section: [samples] with the link drops logged in [events]; [endMicros] is the session's end. */
-internal fun gnssSection(samples: GnssSamples, events: List<RecorderEvent>, endMicros: Long): QualitySection {
+/**
+ * The GNSS section: [samples] with the link drops logged in [events]; [endMicros] is the session's end.
+ * [raceBox] says the receiver was a RaceBox, whose whole-second skip (FBBD-170) is counted apart.
+ */
+internal fun gnssSection(
+    samples: GnssSamples,
+    events: List<RecorderEvent>,
+    endMicros: Long,
+    raceBox: Boolean = false,
+): QualitySection {
     if (samples.size < 2) {
         val why = "fewer than two GNSS samples in this session"
         return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", RateCriterion, why)))
@@ -83,7 +91,7 @@ internal fun gnssSection(samples: GnssSamples, events: List<RecorderEvent>, endM
     val metrics = buildList {
         add(rate(samples, acrossDrop))
         add(p1Rate(samples, drops))
-        add(dropped(samples, acrossDrop))
+        add(dropped(samples, acrossDrop, raceBox))
         addAll(gapMetrics(gaps))
         addAll(reconnectMetrics(samples, drops, endMicros))
         add(stationaryNoise(samples))
@@ -131,36 +139,61 @@ private fun p1Rate(s: GnssSamples, drops: List<Reconnect>): QualityMetric {
     return info("gnss.rate_p1", "Sample rate, 1st percentile", nearestRank(kept, P1), "Hz", Basis.MEASURED, how)
 }
 
-private const val DroppedCriterion = "<= 0.5 % of expected, link drops left out (FBBD-8)"
+private const val DroppedCriterion =
+    "<= 0.5 % of expected, link drops and the RaceBox's whole-second skip left out (FBBD-8, FBBD-170)"
+
+private const val MillisPerSecond = 1_000L
 
 /**
- * Samples missing from the receiver's own fix times: each step longer than the usual one (the
- * median) hides round(step / usual) - 1 samples. Steps across a link drop are left out.
+ * Samples missing from the receiver's fix times. A single sample missing on a whole second is left
+ * out of the verdict and counted on its own: with a fix the RaceBox does not send its whole-second
+ * message (FBBD-170), on both units Arek has. The 2026-10-14 log proved it is the device, not the
+ * link: the same link carried all 25 messages a second whenever the fix was lost (1500 in 1500
+ * notifications, none missing). Arek accepts the 24 Hz that leaves ("> 24 sounds good", FBBD-218).
  */
-private fun dropped(s: GnssSamples, acrossDrop: BooleanArray): QualityMetric {
+private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): QualityMetric {
     val steps = receiverSteps(s, acrossDrop)
-    val usual = nearestRank(steps.map { it.toDouble() }, Median)
+    val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)
     if (usual == null || usual <= 0) {
         val why = "the receiver gave no fix times, so missing samples cannot be told from late ones"
         return notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why)
     }
     val received = s.utc.count { it != GnssSamples.NoUtc }
-    val missing = steps.sumOf { step -> maxOf(0L, (step / usual).roundToLong() - 1) }
-    val percent = missing * Percent / (received + missing)
-    val how = "$missing of ${received + missing} expected samples missing from the receiver's fix times " +
-        "(usual step ${usual.roundToLong()} ms)"
+    var missing = 0L
+    var wholeSecond = 0L
+    for (step in steps) {
+        val lost = maxOf(0L, (step.millis / usual).roundToLong() - 1)
+        val skip = raceBox && step.fixBothSides && lost == 1L && onWholeSecond(step.fromUtc + step.millis / 2, usual)
+        if (skip) wholeSecond++ else missing += lost
+    }
+    val expected = received + missing + wholeSecond
+    val percent = missing * Percent / expected
+    val how = "$missing of $expected expected samples missing from the receiver's fix times " +
+        "(usual step ${usual.roundToLong()} ms), besides $wholeSecond single whole-second messages the RaceBox " +
+        "does not send with a fix"
     val ok = percent <= MaxDroppedPercent
     return judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
 }
 
-/** Steps between consecutive fix times of the receiver, in ms; steps across a link drop and backwards left out. */
-private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<Long> {
-    val steps = mutableListOf<Long>()
+/** Whether a fix time [utc] (ms) is within half a [step] of a whole second. */
+private fun onWholeSecond(utc: Long, step: Double): Boolean {
+    val ms = Math.floorMod(utc, MillisPerSecond)
+    return ms < step / 2 || ms > MillisPerSecond - step / 2
+}
+
+/** A step between consecutive fix times, from [fromUtc], [millis] long; [fixBothSides] when both samples had a fix. */
+private class ReceiverStep(val fromUtc: Long, val millis: Long, val fixBothSides: Boolean)
+
+/** Steps between consecutive fix times of the receiver; steps across a link drop and backwards left out. */
+private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<ReceiverStep> {
+    val steps = mutableListOf<ReceiverStep>()
     var previous = -1
     var dropBetween = false
     for (i in 0 until s.size) {
         if (s.utc[i] != GnssSamples.NoUtc) {
-            if (previous >= 0 && !dropBetween && s.utc[i] > s.utc[previous]) steps += s.utc[i] - s.utc[previous]
+            if (previous >= 0 && !dropBetween && s.utc[i] > s.utc[previous]) {
+                steps += ReceiverStep(s.utc[previous], s.utc[i] - s.utc[previous], s.hasFix(previous) && s.hasFix(i))
+            }
             previous = i
             dropBetween = false
         }

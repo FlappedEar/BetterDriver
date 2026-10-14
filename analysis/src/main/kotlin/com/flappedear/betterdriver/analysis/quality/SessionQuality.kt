@@ -34,6 +34,9 @@ fun previousSession(data: SessionData): PreviousSession {
     return PreviousSession(data.id, data.info.startUtcMillis, s.t.lastOrNull(), lastUtc)
 }
 
+/** The recorder's source name of a RaceBox receiver (core-ble RaceBoxSource.name). */
+private const val RaceBoxSourceName = "racebox"
+
 /**
  * The validation report of a session (FBBD-183): the P0 pass criteria measured from what it
  * recorded, and where each channel came from with how far it can be trusted (FBBD-174). [track]
@@ -51,7 +54,7 @@ fun sessionQuality(
     val samples = GnssSamples(data.sampleSets)
     val lastEvent = data.events.maxOfOrNull { it.tMicros } ?: 0L
     val end = data.end?.tMicros ?: maxOf(samples.t.lastOrNull() ?: 0L, lastEvent)
-    val gnss = gnssSection(samples, data.events, end)
+    val gnss = gnssSection(samples, data.events, end, raceBox = RaceBoxSourceName in data.info.devices)
     val lags = (0 until samples.size).filter { samples.utc[it] != GnssSamples.NoUtc }.map {
         samples.t[it] to samples.t[it] - (samples.utc[it] - data.info.startUtcMillis) * MicrosPerMilli
     }

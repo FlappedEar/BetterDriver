@@ -21,12 +21,18 @@ private const val P1 = 0.01
 private const val MetersPerDegree = 111_195.0
 
 private const val RateCriterion = ">= 24 Hz over the session (FBBD-8, FBBD-46)"
-private const val DroppedCriterion = "<= 0.5 % of expected, link drops left out (FBBD-8, FBBD-46)"
+private const val DroppedCriterion =
+    "<= 0.5 % of expected, link drops and the RaceBox's whole-second skip left out (FBBD-8, FBBD-46, FBBD-170)"
 private const val GapCriterion = "<= 200 ms, link drops left out (FBBD-8, FBBD-46)"
 private const val ReconnectCriterion = "data back within 5 s, same session (FBBD-8, FBBD-43)"
 private const val StationaryCriterion = "2D standard deviation <= 0.5 m over 60 s parked (FBBD-8)"
 
-internal fun logGnssSection(seconds: List<GnssSecond>, events: List<RecorderEvent>, endMicros: Long): QualitySection {
+internal fun logGnssSection(
+    seconds: List<GnssSecond>,
+    events: List<RecorderEvent>,
+    endMicros: Long,
+    raceBox: Boolean = false,
+): QualitySection {
     if (seconds.size < 2) {
         val why = "fewer than two seconds of GNSS in the log for this session"
         return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", RateCriterion, why)))
@@ -50,7 +56,7 @@ internal fun logGnssSection(seconds: List<GnssSecond>, events: List<RecorderEven
                 "samples in each whole second, 1st percentile, seconds with a link drop left out",
             ),
         )
-        add(dropped(seconds))
+        add(dropped(seconds, raceBox))
         add(maxGap(seconds))
         add(
             info(
@@ -77,16 +83,20 @@ private fun rate(counts: List<Double>): QualityMetric {
     )
 }
 
-private fun dropped(seconds: List<GnssSecond>): QualityMetric {
+/** As for a session: a RaceBox's single whole-second skip with a fix (FBBD-170) is counted apart. */
+private fun dropped(seconds: List<GnssSecond>, raceBox: Boolean): QualityMetric {
     if (seconds.none { it.stepMillis != null }) {
         return notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, "the receiver gave no fix times")
     }
-    val missing = seconds.sumOf { it.missing.toLong() }
-    val received = seconds.sumOf { it.samples.toLong() }
-    val percent = missing * Percent / (received + missing)
+    val all = seconds.sumOf { it.missing.toLong() }
+    val wholeSecond = if (raceBox) seconds.sumOf { it.missingOnSecond.toLong() } else 0L
+    val missing = all - wholeSecond
+    val expected = seconds.sumOf { it.samples.toLong() } + all
+    val percent = missing * Percent / expected
     return judged(
         "gnss.dropped", "Dropped samples", percent, "%", percent <= MaxDroppedPercent, Basis.MEASURED, DroppedCriterion,
-        "$missing of ${received + missing} expected samples missing from the receiver's fix times",
+        "$missing of $expected expected samples missing from the receiver's fix times, besides $wholeSecond " +
+            "single whole-second messages the RaceBox does not send with a fix",
     )
 }
 
@@ -99,12 +109,23 @@ private fun maxGap(seconds: List<GnssSecond>): QualityMetric {
     )
 }
 
+private const val LogEndOfDriveMicros = 30_000_000L
+private const val LogParkedKmh = 1.0
+
 /** Each logged link drop, timed by the wait between fixes that ended in the first second after it. */
 private fun reconnects(secs: List<GnssSecond>, events: List<RecorderEvent>, endMicros: Long): List<QualityMetric> {
-    val drops = events.filter { it.kind in GnssDisconnectKinds }
-    val count = linkDrops(drops.size)
+    val all = events.filter { it.kind in GnssDisconnectKinds }
+    val count = linkDrops(all.size)
+    // As for a session (endOfDrive): no data after it, the end within 30 s, parked or no fix before it.
+    val drops = all.filterNot { d ->
+        val back = secs.any { it.afterDrop && it.tMicros >= d.tMicros }
+        val before = secs.lastOrNull { it.tMicros <= d.tMicros }
+        val kmh = before?.kmhMax
+        val parked = before == null || before.fixes == 0 || kmh != null && kmh < LogParkedKmh
+        !back && endMicros - d.tMicros <= LogEndOfDriveMicros && parked
+    }
     if (drops.isEmpty()) {
-        val why = "no link drop in this session"
+        val why = if (all.isEmpty()) "no link drop in this session" else EndOfDriveText
         return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, why))
     }
     val waits = drops.map { d ->

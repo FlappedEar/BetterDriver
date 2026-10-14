@@ -52,6 +52,17 @@ class LiveUiTest {
     }
 
     @Test
+    fun theFirstSecondOfFixesShowsTheReceiverRateNotAPartialCount() {
+        // 2026-10-14: 8 fixes in the first second after the fix came, the RaceBox sending 25 a second.
+        val first = live.copy(fixRateHz = 8, receiverRateHz = 25)
+        fun shown(l: LiveSnapshot) =
+            liveTrackState(RecorderState(connected = true, live = l), tiles).status.single().value
+        assertEquals("25 Hz · 14 sats", shown(first))
+        val unknown = live.copy(fixRateHz = 8, receiverRateHz = 0)
+        assertEquals("8 Hz · 14 sats", shown(unknown))
+    }
+
+    @Test
     fun tilesFollowTheSessionChoice() {
         val withG = RecorderState(connected = true, live = live.copy(gCombined = 1.123))
         val s = liveTrackState(withG, tiles)

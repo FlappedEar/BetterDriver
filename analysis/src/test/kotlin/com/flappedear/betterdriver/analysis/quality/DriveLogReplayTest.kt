@@ -114,9 +114,11 @@ class DriveLogReplayTest {
         println("Replay of $sessionId from its VBO: " + r.metrics.filter { it.id.startsWith("gnss.") }
             .joinToString("; ") { "${it.id}=${it.value?.let { v -> "%.2f".format(v) }} ${it.unit} ${it.verdict}" })
         val dropped = r.metric("gnss.dropped")
-        // Worked out from the receiver's fix times, the same share the RaceBox's own count gives.
-        assertEquals(Verdict.FAIL, dropped.verdict)
-        assertEquals(4.1, dropped.value!!, 0.3)
+        // Worked out from the receiver's fix times: of the 4.2 % the RaceBox's own count gives, all but
+        // 0.24 % is its single whole-second skip with a fix (FBBD-170), counted apart.
+        assertEquals(Verdict.PASS, dropped.verdict, dropped.how)
+        assertEquals(0.24, dropped.value!!, 0.1)
+        assertTrue("whole-second" in dropped.how)
         assertEquals(Verdict.FAIL, r.metric("gnss.rate").verdict)
         // Single missed fixes only: 80 ms gaps, one of 120 ms, no link drop.
         assertEquals(120.0, r.metric("gnss.max_gap").value)
