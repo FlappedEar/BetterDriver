@@ -109,7 +109,10 @@ class AccelFusionTest {
         val fused = assertNotNull(fuseDirection(listOf(box, asFitted), gps))
         assertEquals("phone_accel_y", fused.shares.first().name, "the steadier one leads")
         assertTrue(fused.shares.first().weight > 0.7, "weight ${fused.shares.first().weight}")
-        assertEquals(-0.15, fused.shares[1].lagSeconds, 0.011, "the RaceBox is early against the phone")
+        assertEquals(0.15, fused.shares.first().lagSeconds, 0.011, "the phone is late against the RaceBox")
+        assertEquals(0.0, fused.shares[1].lagSeconds, "the RaceBox's clock is kept")
+        // Codex on #175: the braking stays where the car did it, not 0.15 s late with the phone.
+        assertTrue(rms(fused) < 0.03, "${rms(fused)} g")
         val unweighed = assertNotNull(fuseDirection(listOf(box, asFitted)))
         assertEquals("accel_x", unweighed.shares.first().name, "without GPS the fitted residuals rank")
     }

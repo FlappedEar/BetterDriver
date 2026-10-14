@@ -17,7 +17,7 @@ class DirectionReading(val name: String, val times: DoubleArray, val values: Dou
     }
 }
 
-/** What one accelerometer gave [fuseDirection]: its share of the average and how far its clock was moved. */
+/** What one accelerometer gave [fuseDirection]: its share of the average and how late its clock is on the fused one. */
 class FusionShare(val name: String, val weight: Double, val lagSeconds: Double)
 
 /**
@@ -74,20 +74,18 @@ private const val LagCompareHalfWindowSeconds = 0.1
  * is measured again against it at the lag where the reading agrees with GPS best ([lagFreeResidual]),
  * so a sensor whose clock is off is not taken for a noisy one.
  *
+ * The fused reading keeps the first of [readings]' clock (when it is averaged in, else the best
+ * one's): list the receiver first, as its accelerometer and its GNSS share a clock, so a late
+ * phone leading the average does not make the car's braking late. [FusionShare.lagSeconds] is
+ * each reading's lag from that clock.
+ *
  * One reading is returned as it is. Null without a reading.
  */
 @Suppress("ReturnCount")
 fun fuseDirection(readings: List<DirectionReading>, gps: DirectionReading? = null): FusedDirection? {
     val withSamples = readings.filter { r -> r.times.size >= 2 && r.values.any { it.isFinite() } }
     if (withSamples.isEmpty()) return null
-    val usable = if (gps == null || withSamples.size == 1) {
-        withSamples
-    } else {
-        withSamples.map { r ->
-            val residual = lagFreeResidual(r, gps)
-            if (residual.isFinite()) DirectionReading(r.name, r.times, r.values, residual) else r
-        }
-    }
+    val usable = if (gps == null || withSamples.size == 1) withSamples else withSamples.map { weighedAgainst(it, gps) }
     val ranked = usable.sortedBy { it.residual.takeIf { r -> r.isFinite() } ?: Double.MAX_VALUE }
     val best = ranked.first()
     if (ranked.size == 1) return FusedDirection(best.times, best.values, listOf(FusionShare(best.name, 1.0, 0.0)))
@@ -102,9 +100,14 @@ fun fuseDirection(readings: List<DirectionReading>, gps: DirectionReading? = nul
     if (members.size == 1) {
         return FusedDirection(best.times, best.values, listOf(FusionShare(best.name, 1.0, 0.0)), left)
     }
+    // The first reading's clock is kept: the caller lists the receiver first, whose accelerometer
+    // and GNSS share one clock. Every lag is then from that clock.
+    val anchor = usable.first().takeIf { it in members } ?: best
+    val anchorLag = lags[anchor] ?: 0.0
+    fun lagOf(r: DirectionReading) = (lags[r] ?: 0.0) - anchorLag
     val weights = weightsOf(members)
-    val (times, values) = average(members, weights) { lags[it] ?: 0.0 }
-    val shares = members.mapIndexed { k, m -> FusionShare(m.name, weights[k], lags[m] ?: 0.0) }
+    val (times, values) = average(members, weights, ::lagOf)
+    val shares = members.mapIndexed { k, m -> FusionShare(m.name, weights[k], lagOf(m)) }
     return FusedDirection(times, values, shares, left)
 }
 
@@ -167,6 +170,12 @@ private fun bestLag(best: DirectionReading, other: DirectionReading): Pair<Doubl
         }
     }
     return bestLag to bestAgreement
+}
+
+/** [r] with its residual measured again against [gps] at its matched clock, when that can be done. */
+private fun weighedAgainst(r: DirectionReading, gps: DirectionReading): DirectionReading {
+    val residual = lagFreeResidual(r, gps)
+    return if (residual.isFinite()) DirectionReading(r.name, r.times, r.values, residual) else r
 }
 
 /**
