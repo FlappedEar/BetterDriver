@@ -19,6 +19,7 @@ import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.MeasuredDelay
 import com.flappedear.betterdriver.coach.OutputDelayProbe
+import com.flappedear.betterdriver.coach.VoiceMode
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.shell.CoachSettingsScreen
 import com.flappedear.betterdriver.shell.PickedCorners
@@ -57,7 +58,7 @@ internal fun NavGraphBuilder.coachSettings(nav: NavHostController, padding: Padd
                 onBack = { nav.popBackStack() },
                 picked = picked,
                 onClearPicked = picks::clear,
-                delayNow = rememberDelayNow(),
+                delayNow = rememberDelayNow(coach.settings.voice == VoiceMode.PreRendered),
             )
         }
     }
@@ -65,15 +66,16 @@ internal fun NavGraphBuilder.coachSettings(nav: NavHostController, padding: Padd
 
 /**
  * The line saying the headset's delay (FBBD-49), measured while the page is open and again every few
- * seconds, so connecting a headset shows its delay. Null until the first measurement.
+ * seconds, so connecting a headset shows its delay; on the low-latency path when cues are pre-rendered
+ * clips ([lowLatency]), as the coach times them. Null until the first measurement.
  */
 @Composable
-private fun rememberDelayNow(): String? {
+private fun rememberDelayNow(lowLatency: Boolean): String? {
     val context = LocalContext.current
     var line by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(context) {
+    LaunchedEffect(context, lowLatency) {
         while (true) {
-            line = withContext(Dispatchers.IO) { delayLine(OutputDelayProbe.measure(context)) }
+            line = withContext(Dispatchers.IO) { delayLine(OutputDelayProbe.measure(context, lowLatency)) }
             delay(DelayCheckMillis)
         }
     }
