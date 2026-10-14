@@ -143,7 +143,7 @@ class DriveChecksTest {
         event(0, EventKinds.VIDEO_IMPORT, outside, "main")
     }
 
-    /** A cue each minute at 30 s, said live 300 ms later, 1.2 s long, to a headset 80 ms slower. */
+    /** A cue each minute at 30 s, said live 300 ms later, 1.2 s long, to a headset measured 80 ms slower. */
     private fun coach() {
         for (k in 2..30) {
             val at = k * minute + 30_000_000
@@ -151,7 +151,7 @@ class DriveChecksTest {
             event(
                 at + 300_000, EventKinds.COACH_VOICE,
                 "seq=$k path=live asked_us=${at + 5_000} route=headset ready_us=${at + 105_000} " +
-                    "device=bt_a2dp focus=granted out_delay_ms=80",
+                    "device=bt_a2dp focus=granted out_delay_ms=80 out_delay_src=measured",
                 "coach",
             )
             event(at + 1_500_000, EventKinds.COACH_VOICE_END, "seq=$k end=done", "coach")
@@ -193,6 +193,7 @@ class DriveChecksTest {
         check("coach.delay_live", Verdict.PASS, 300.0)
         check("coach.tts", Verdict.PASS, 100.0)
         check("coach.total_live", Verdict.PASS, 380.0)
+        assertTrue("80 ms, measured by the app" in r.metric("coach.total_live").how)
         check("coach.overlap", Verdict.PASS, 0.0)
         check("coach.per_straight", Verdict.PASS, 0.0)
         check("coach.focus", Verdict.PASS, 100.0)

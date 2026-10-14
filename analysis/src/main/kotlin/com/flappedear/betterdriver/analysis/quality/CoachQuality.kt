@@ -30,7 +30,9 @@ internal class LoggedCue(val tMicros: Long, val seq: Int, val corner: String?, v
 /**
  * When a cue's sound started, how it was said and where it went. From FBBD-47 on also when the voice
  * was asked ([askedMicros]) and had its audio ready ([readyMicros]), the output [device], whether
- * audio focus was granted, and the headset's own delay from the tap test ([outDelayMillis], FBBD-49).
+ * audio focus was granted, and the headset's own delay ([outDelayMillis], FBBD-49): from the tap test in
+ * older sessions, then measured by the app at the session's start or set by hand ([outDelaySource],
+ * "measured" or "set").
  */
 @Suppress("LongParameterList") // Each is a field of the event.
 internal class Voiced(
@@ -43,6 +45,7 @@ internal class Voiced(
     val device: String? = null,
     val focus: String? = null,
     val outDelayMillis: Long? = null,
+    val outDelaySource: String? = null,
 ) {
     /** When the sound reached the driver's ear: its start plus the headset's own delay when known. */
     val heardMicros: Long get() = tMicros + (outDelayMillis?.takeIf { route == "headset" } ?: 0L) * MicrosPerMilli
@@ -93,6 +96,7 @@ private fun voiced(e: RecorderEvent): Voiced? {
     return Voiced(
         e.tMicros, seq, f["path"].orEmpty(), f["route"].orEmpty(), f["asked_us"]?.toLongOrNull(),
         f["ready_us"]?.toLongOrNull(), f["device"], f["focus"], f["out_delay_ms"]?.toLongOrNull(),
+        f["out_delay_src"],
     )
 }
 
@@ -157,7 +161,7 @@ private fun marginMetrics(margins: List<Margin>): List<QualityMetric> {
     val onTime = margins.count { it.micros >= MarginMicros } * Percent / margins.size
     val inZone = margins.count { it.meters <= 0 }
     val how = "distance to the braking zone the coach worked out when it triggered the cue, less the distance " +
-        "the GNSS speed says the car drove until the sound started, plus the headset's delay from the tap test " +
+        "the GNSS speed says the car drove until the sound started, plus the headset's delay " +
         "when there is one; ${margins.size} corner cue(s)"
     return listOf(
         judged(

@@ -37,7 +37,13 @@ class CoachService : Service() {
     private var voice: Voice? = null
 
     /** The recording being coached. Coach thread only. */
-    private class Active(val id: String, val startNanos: Long, val recorder: Messenger?, val settings: CoachSettings) {
+    private class Active(
+        val id: String,
+        val startNanos: Long,
+        val recorder: Messenger?,
+        val settings: CoachSettings,
+        val delaySource: String,
+    ) {
         var coach: CoachSession? = null
         var status: CoachStatus = CoachStatus.None
 
@@ -78,12 +84,16 @@ class CoachService : Service() {
 
     private fun begin(data: Bundle, replyTo: Messenger?) {
         val id = data.getString(CoachProtocol.SESSION) ?: return
-        val settings = coachSettings(this).read()
+        val set = coachSettings(this).read()
         DebugLog.session = id
-        DebugLog.i(Tag, "coaching session $id: $settings")
+        // The headset's delay (FBBD-49) is measured now, on the output the cues will play on; the
+        // delay set in the settings is used only when Android gives no audio clock for it.
+        val delay = OutputDelay.effective(set.audioDelayMillis, OutputDelayProbe.measure(this)?.millis)
+        val settings = set.copy(audioDelayMillis = delay.millis)
+        DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source}")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice)
-        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings)
+        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delay.source)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
@@ -137,7 +147,8 @@ class CoachService : Service() {
             }
             voice?.say(text, ended) { start ->
                 handler.post {
-                    val voiced = ask.voiceText(start, start.readyNanos?.let(::micros), a.settings.audioDelayMillis)
+                    val ready = start.readyNanos?.let(::micros)
+                    val voiced = ask.voiceText(start, ready, a.settings.audioDelayMillis, a.delaySource)
                     if (voiced != null && active === a) report(a, micros(start.nanoTime), CoachEvents.VOICE, voiced)
                 }
             } == true
@@ -154,9 +165,10 @@ class CoachService : Service() {
         var seq: Int? = null
 
         /** The event text of its sound starting, how it was said and where it went; null if never logged. */
-        fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int) = seq?.let {
+        fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int, outDelaySource: String) = seq?.let {
             CoachEvents.voiceText(
                 it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
+                outDelaySource,
             )
         }
     }

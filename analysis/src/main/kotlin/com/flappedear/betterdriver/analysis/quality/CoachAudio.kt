@@ -4,7 +4,8 @@ import com.flappedear.betterdriver.recorder.RecorderEvent
 
 // The coach's sound in the session validation report (FBBD-183), against FBBD-27, FBBD-47, FBBD-48
 // and FBBD-49: text-to-speech time, the total delay to the driver's ear with the headset's own delay
-// from the tap test, cues that overlap, cues per straight, audio focus and the share of pre-rendered clips.
+// (measured by the app at the session's start, or set by hand), cues that overlap, cues per straight,
+// audio focus and the share of pre-rendered clips.
 
 private const val P95 = 0.95
 private const val MaxTtsMicros = 150_000L
@@ -46,7 +47,7 @@ private fun tts(voiced: List<Voiced>): QualityMetric {
     )
 }
 
-/** Trigger to the driver's ear: the cue's delay to sound plus the headset's own delay from the tap test. */
+/** Trigger to the driver's ear: the cue's delay to sound plus the headset's own delay. */
 private fun total(played: List<Pair<LoggedCue, Voiced>>, path: String, limit: Long): QualityMetric {
     val name = if (path == "live") "live voice" else "pre-rendered"
     val id = "coach.total_$path"
@@ -55,17 +56,22 @@ private fun total(played: List<Pair<LoggedCue, Voiced>>, path: String, limit: Lo
     val own = played.filter { it.second.path == path }
     val delays = own.map { (c, v) -> (v.heardMicros - c.tMicros).toDouble() }
     val p95 = nearestRank(delays, P95)
-    val headsetMs = own.firstNotNullOfOrNull { it.second.outDelayMillis }
+    val headset = own.firstOrNull { it.second.outDelayMillis != null }?.second
+    val source = when (headset?.outDelaySource) {
+        "measured" -> "measured by the app at the session's start"
+        "set" -> "set by hand, as Android gave no delay"
+        else -> "from the tap test"
+    }
     return when {
         p95 == null -> notMeasured(id, label, criterion, "no cue said this way")
         own.any { it.second.route == "headset" && it.second.outDelayMillis == null } -> notMeasured(
             id, label, criterion,
-            "the headset's own delay is not known: run the tap test once (Settings › Coach › Headset delay)",
+            "the headset's own delay is not known: Android gave none at the session's start and none is set",
         )
         else -> judged(
             id, label, p95 / MicrosPerMilli, "ms", p95 <= limit, Basis.DERIVED, criterion,
-            "trigger to sound leaving the phone, plus the headset's delay from the tap test" +
-                (headsetMs?.let { " ($it ms)" }.orEmpty()) + "; ${delays.size} cue(s)",
+            "trigger to sound leaving the phone, plus the headset's delay" +
+                (headset?.let { " (${it.outDelayMillis} ms, $source)" }.orEmpty()) + "; ${delays.size} cue(s)",
         )
     }
 }

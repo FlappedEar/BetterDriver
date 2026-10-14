@@ -16,11 +16,12 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
  * active, so a Bluetooth helmet headset or the car gets it, else the phone speaker. Before each phrase
  * it asks for transient audio focus that lets music duck under it, and gives the focus back when the
  * phrase ends. If the focus is refused (a phone call, another app holding it) the phrase still plays,
- * and the refusal is logged. Also plays pre-rendered clips (FBBD-48) and the delay test's click
- * (FBBD-49) on the same path. Track callbacks run on [handler]'s thread.
+ * and the refusal is logged. Also plays pre-rendered clips (FBBD-48) on the same path. Track callbacks
+ * run on [handler]'s thread.
  */
 internal class AudioOut(context: Context, private val handler: Handler) {
     private val audio: AudioManager? = context.applicationContext.getSystemService(AudioManager::class.java)
+    private val outputs = AudioOutputs(audio)
     private val lock = Any()
 
     /** The phrase playing or queued; the focus is held until it ends. Guarded by [lock]. */
@@ -59,20 +60,13 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     }
 
     /**
-     * Plays [pcm] at once as phrase [id], stopping any clip still playing. [speaker] sends it to the phone
-     * speaker even with a headset connected, for the delay test's baseline. [onStart] gets the time
+     * Plays [pcm] at once as phrase [id], stopping any clip still playing. [onStart] gets the time
      * the first audio left, in [SystemClock.elapsedRealtimeNanos]; [onEnd] how it ended: "done",
      * "stopped" when another sound cut it off, or "error". Returns when play was asked for, in
-     * [SystemClock.uptimeMillis], or null if no track could be made or sent to the speaker.
+     * [SystemClock.uptimeMillis], or null if no track could be made.
      */
-    fun play(
-        pcm: Pcm,
-        id: String,
-        speaker: Boolean = false,
-        onEnd: (String) -> Unit = {},
-        onStart: (Long) -> Unit = {},
-    ): Long? {
-        val t = build(pcm)?.takeIf { !speaker || toSpeaker(it, audio, id) } ?: return null
+    fun play(pcm: Pcm, id: String, onEnd: (String) -> Unit = {}, onStart: (Long) -> Unit = {}): Long? {
+        val t = build(pcm) ?: return null
         t.setPlaybackPositionUpdateListener(
             object : AudioTrack.OnPlaybackPositionUpdateListener {
                 override fun onMarkerReached(track: AudioTrack) = finished(id, track, Done)
@@ -117,21 +111,10 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     }
 
     /** The type of output the sound goes to (FBBD-47): the headset's, else "speaker". */
-    fun output(): String {
-        val headset = audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
-        return when (headset?.type) {
-            null -> "speaker"
-            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
-            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt_sco"
-            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble"
-            AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
-            else -> "wired"
-        }
-    }
+    fun output(): String = outputs.output()
 
     /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
-    fun headset(): String? = audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        ?.firstOrNull { it.type in HeadsetTypes }?.productName?.toString()
+    fun headset(): String? = outputs.headset()
 
     fun shutdown() {
         stopClip()
@@ -195,8 +178,29 @@ internal class AudioOut(context: Context, private val handler: Handler) {
 
         /** How much of a clip plays before its start is logged; a few milliseconds. */
         private const val StartCheckMillis = 5
+    }
+}
 
-        private val HeadsetTypes = setOf(
+/** The audio outputs connected (FBBD-47), for the coach voice and the output delay (FBBD-49). */
+internal class AudioOutputs(private val audio: AudioManager?) {
+    /** The type of output the sound goes to: the headset's, else "speaker". */
+    fun output(): String = when (device()?.type) {
+        null -> "speaker"
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
+        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt_sco"
+        AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble"
+        AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
+        else -> "wired"
+    }
+
+    /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
+    fun headset(): String? = device()?.productName?.toString()
+
+    private fun device(): AudioDeviceInfo? =
+        audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
+
+    private companion object {
+        val HeadsetTypes = setOf(
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BLE_HEADSET,
@@ -206,21 +210,6 @@ internal class AudioOut(context: Context, private val handler: Handler) {
             AudioDeviceInfo.TYPE_USB_HEADSET,
         )
     }
-}
-
-/**
- * Sends [t] to the phone speaker; if that is refused it is released: a baseline click that would
- * play on the headset is no click.
- */
-private fun toSpeaker(t: AudioTrack, audio: AudioManager?, id: String): Boolean {
-    val speaker = audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)
-        ?.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
-    val routed = speaker?.let(t::setPreferredDevice) == true
-    if (!routed) {
-        DebugLog.w("AudioOut", "clip $id not routed to the speaker")
-        t.release()
-    }
-    return routed
 }
 
 /** Stops and frees [t]. */

@@ -162,7 +162,9 @@ object EventKinds {
      * A coach cue's sound started (FBBD-27, FBBD-183). Text "seq=<cue seq> path=<live|clip>
      * asked_us=<session time the voice was asked> route=<headset|speaker>", and from FBBD-47 on also
      * "ready_us=<session time its audio was ready> device=<output type> focus=<granted|refused>
-     * out_delay_ms=<headset delay from the tap test, or none>"; the event time is the start.
+     * out_delay_ms=<the output's own delay, or none>", and from FBBD-49's automatic measurement on
+     * "out_delay_src=<measured|set>": measured at the session's start, or set in the coach settings.
+     * The event time is the start.
      */
     const val COACH_VOICE = "coach_voice"
 

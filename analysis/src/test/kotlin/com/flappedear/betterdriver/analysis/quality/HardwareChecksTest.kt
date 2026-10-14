@@ -43,7 +43,7 @@ class HardwareChecksTest {
     private fun QualityReport.metric(id: String) = metrics.single { it.id == id }
 
     @Test
-    fun `cues that overlap, share a straight or lack the tap test are caught`() {
+    fun `cues that overlap, share a straight or lack the headset's delay are caught`() {
         val sets = stream(0, 60_000_000)
         fun cue(seq: Int, at: Long) = listOf(
             RecorderEvent(at, "coach_cue", "seq=$seq lap=1 kind=Corner corner=1 zone_m=300.0 text=Turn 1"),
@@ -61,7 +61,7 @@ class HardwareChecksTest {
         assertEquals(1.0, r.metric("coach.per_straight").value)
         assertEquals(Verdict.FAIL, r.metric("coach.per_straight").verdict)
         assertEquals(Verdict.NOT_MEASURED, r.metric("coach.total_clip").verdict)
-        assertTrue("tap test" in r.metric("coach.total_clip").how)
+        assertTrue("headset's own delay is not known" in r.metric("coach.total_clip").how)
         assertEquals(0.0, r.metric("coach.focus").value)
         assertEquals(100.0, r.metric("coach.clips").value)
     }

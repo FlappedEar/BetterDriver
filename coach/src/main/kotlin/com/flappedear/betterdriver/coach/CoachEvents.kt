@@ -77,7 +77,9 @@ object CoachEvents {
      * voice was asked for it ([askedMicros], session time) and where the sound went ([route],
      * "headset" or "speaker"). Then, when known (FBBD-47): when its first audio was ready
      * ([readyMicros], session time), the output [device] type, whether audio focus was granted
-     * ([focus]), and the headset's own delay from the tap test ([outDelayMillis], "none" when not run).
+     * ([focus]), and the output's own delay ([outDelayMillis], FBBD-49): with [outDelaySource]
+     * "measured" when it was measured at the session's start, even if 0; else the one set in the
+     * coach settings, "none" when that is 0.
      */
     @Suppress("LongParameterList")
     fun voiceText(
@@ -89,12 +91,15 @@ object CoachEvents {
         device: String? = null,
         focus: Boolean? = null,
         outDelayMillis: Int? = null,
+        outDelaySource: String? = null,
     ) = buildString {
         append("seq=$seq path=$path asked_us=$askedMicros route=$route")
         readyMicros?.let { append(" ready_us=").append(it) }
         device?.let { append(" device=").append(it) }
         focus?.let { append(" focus=").append(if (it) "granted" else "refused") }
-        append(" out_delay_ms=").append(outDelayMillis?.takeIf { it > 0 }?.toString() ?: "none")
+        val measured = outDelaySource == AudioDelayUsed.Measured
+        append(" out_delay_ms=").append(outDelayMillis?.takeIf { measured || it > 0 }?.toString() ?: "none")
+        outDelaySource?.let { append(" out_delay_src=").append(it) }
     }
 
     /** The text of a [VOICE_END] event: cue [seq]'s sound [end]ed: "done", "stopped" (cut off) or "error". */

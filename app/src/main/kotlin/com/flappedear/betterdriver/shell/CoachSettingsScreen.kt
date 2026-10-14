@@ -64,9 +64,10 @@ data class PickedCorners(val trackId: String, val trackName: String, val corners
 /**
  * Spoken coach settings (FBBD-98, UI-64 option B), a page of its own opened from Settings › App: how
  * much it says, the corners picked for it in the lap analysis at each track with a Clear for each
- * (FBBD-148; null while they are read), the audio delay of the headset (up to 2 s, so a cue still ends
- * before the braking zone), with "Measure" opening the headset delay test (FBBD-49), and how many laps
- * it learns before the first corner cue. Each change is saved at once. "Test voice" says a sample cue on
+ * (FBBD-148; null while they are read), the headset's audio delay as measured on this page
+ * ([delayNow], FBBD-49: the coach measures it itself at each session's start) and the delay used when it
+ * cannot be measured (up to 2 s, so a cue still ends before the braking zone), and how many laps it
+ * learns before the first corner cue. Each change is saved at once. "Test voice" says a sample cue on
  * the current audio output. Advanced: whether cues are said by live text-to-speech or from clips
  * rendered at coach start (FBBD-48).
  */
@@ -77,7 +78,7 @@ fun CoachSettingsScreen(
     onBack: () -> Unit,
     picked: List<PickedCorners>? = null,
     onClearPicked: (trackId: String) -> Unit = {},
-    onMeasureDelay: () -> Unit = {},
+    delayNow: String? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Spoken coach", onBack = onBack)
@@ -87,7 +88,7 @@ fun CoachSettingsScreen(
         ) {
             ShellCard { VerbosityPicker(current, onChange) }
             picked?.let { ShellCard { Picked(it, onClearPicked) } }
-            ShellCard { DelayAndLaps(current, onChange, onMeasureDelay) }
+            ShellCard { DelayAndLaps(current, onChange, delayNow) }
             ShellCard { TestVoice(current.voice) }
             SectionLabel("Advanced", Modifier.padding(start = 4.dp, top = 8.dp))
             ShellCard { VoicePicker(current, onChange) }
@@ -130,9 +131,15 @@ private fun VerbosityPicker(s: CoachSettings, onChange: (CoachSettings) -> Unit)
 
 /** The delay is saved when the slider is let go, not on every step of a drag. */
 @Composable
-private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, onMeasure: () -> Unit) {
+private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, delayNow: String?) {
+    Text("Headset delay", style = MaterialTheme.typography.bodyLarge)
+    DimText(delayNow ?: "Measuring…")
+    DimText(
+        "Measured on its own at the start of every session; cues are said that much earlier. " +
+            "Nothing to do but connect the headset.",
+    )
     var delayMs by remember(s.audioDelayMillis) { mutableIntStateOf(s.audioDelayMillis) }
-    Text("Audio delay ${seconds(delayMs)}", style = MaterialTheme.typography.bodyLarge)
+    Text("If it can't be measured ${seconds(delayMs)}", style = MaterialTheme.typography.bodyLarge)
     Slider(
         value = delayMs / MillisPerSecond,
         onValueChange = { v ->
@@ -143,10 +150,6 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, on
         valueRange = 0f..CoachSettings.MaxAudioDelayMillis / MillisPerSecond,
         steps = CoachSettings.MaxAudioDelayMillis / DelayStepMillis - 1,
     )
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        DimText("Bluetooth headsets lag. Cues are said this much earlier.", Modifier.weight(1f))
-        TextButton(onClick = onMeasure) { Text("Measure") }
-    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Learning laps", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
         TextButton(
@@ -204,6 +207,7 @@ private fun CoachSettingsScreenPreview() {
                 onChange = {},
                 onBack = {},
                 picked = listOf(PickedCorners("t1", "Tor Poznań", listOf("Corner 3", "Corners 5–6"))),
+                delayNow = "190 ms now, on Cardo PACKTALK",
             )
         }
     }

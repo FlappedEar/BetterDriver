@@ -122,11 +122,4 @@ class CueClipsTest {
         assertNull(Pcm.join(emptyList()))
     }
 
-    @Test
-    fun `the click is short, loud and fades in and out`() {
-        val c = Pcm.click(48_000)
-        assertEquals(40, c.durationMillis)
-        assertEquals(0, c.samples.first().toInt())
-        assertTrue(c.samples.maxOf { it.toInt() } > 15_000)
-    }
 }
