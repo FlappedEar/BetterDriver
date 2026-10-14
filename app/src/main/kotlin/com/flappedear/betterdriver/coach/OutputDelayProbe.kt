@@ -1,8 +1,7 @@
 package com.flappedear.betterdriver.coach
 
-import android.content.Context
+import android.media.AudioDeviceInfo
 import android.media.AudioFormat
-import android.media.AudioManager
 import android.media.AudioTimestamp
 import android.media.AudioTrack
 import android.os.SystemClock
@@ -16,17 +15,17 @@ internal data class MeasuredDelay(val millis: Int, val output: String, val heads
  * silence on the coach voice's path (same audio attributes, so the same output: the helmet headset, the
  * car or the phone speaker) and reads Android's audio clock while it plays ([OutputDelay]). [lowLatency]
  * plays it on the low-latency path, as pre-rendered clips are (FBBD-48); off, as live text-to-speech
- * is. Blocks for
- * up to [MaxMillis]; call it off the main thread. Null when Android gives no audio clock for the
- * output. Each measurement goes in the continuous log.
+ * is. The output is the device the track was routed to, as Android reports it while playing. Blocks
+ * for up to [MaxMillis]; call it off the main thread. Null when Android gives no audio clock for the
+ * output or the route changed while measuring. Each measurement goes in the continuous log.
  */
 internal object OutputDelayProbe {
-    fun measure(context: Context, lowLatency: Boolean = false): MeasuredDelay? {
-        val audio = context.applicationContext.getSystemService(AudioManager::class.java)
-        val out = AudioOutputs(audio)
-        val before = out.output()
+    fun measure(lowLatency: Boolean = false): MeasuredDelay? {
         val track = build(lowLatency) ?: return null
         val readings = mutableListOf<Double>()
+        // The device the track actually plays on; a change while measuring voids the readings.
+        var routed: AudioDeviceInfo? = null
+        var rerouted = false
         try {
             track.play()
             val started = SystemClock.uptimeMillis()
@@ -34,7 +33,12 @@ internal object OutputDelayProbe {
             while (SystemClock.uptimeMillis() - started < MaxMillis && readings.size < Readings) {
                 Thread.sleep(StepMillis)
                 // Early timestamps can come before the output (a Bluetooth link waking) has settled.
-                if (SystemClock.uptimeMillis() - started >= SettleMillis) reading(track, ts)?.let(readings::add)
+                if (SystemClock.uptimeMillis() - started < SettleMillis) continue
+                val was = routed
+                val now = track.routedDevice
+                if (was != null && now?.id != was.id) rerouted = true
+                routed = now ?: was
+                reading(track, ts)?.let(readings::add)
             }
         } catch (e: IllegalStateException) {
             DebugLog.w(Tag, "output delay not measured", e)
@@ -48,16 +52,17 @@ internal object OutputDelayProbe {
             }
             track.release()
         }
-        // A headset connected or gone meanwhile: the readings may be of either output, so none count.
-        val output = out.output()
-        if (output != before) readings.clear()
+        // Rerouted meanwhile (a headset connected or gone): the readings may be of either output.
+        if (rerouted || routed == null) readings.clear()
+        val output = AudioOutputs.typeOf(routed)
         val millis = OutputDelay.of(readings)
         DebugLog.i(
             Tag,
             "output delay ${millis?.let { "$it ms" } ?: "not reported"} on $output" +
-                (out.headset()?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
+                (routed?.productName?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
         )
-        return millis?.let { MeasuredDelay(it, output, out.headset()) }
+        val headset = routed?.productName?.toString()?.takeIf { output != "speaker" }
+        return millis?.let { MeasuredDelay(it, output, headset) }
     }
 
     /** One reading of the delay, or null while the output gives no timestamp or has not started. */

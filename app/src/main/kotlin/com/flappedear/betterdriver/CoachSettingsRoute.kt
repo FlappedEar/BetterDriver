@@ -75,7 +75,7 @@ private fun rememberDelayNow(lowLatency: Boolean): String? {
     var line by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(context, lowLatency) {
         while (true) {
-            line = withContext(Dispatchers.IO) { delayLine(OutputDelayProbe.measure(context, lowLatency)) }
+            line = withContext(Dispatchers.IO) { delayLine(OutputDelayProbe.measure(lowLatency)) }
             delay(DelayCheckMillis)
         }
     }

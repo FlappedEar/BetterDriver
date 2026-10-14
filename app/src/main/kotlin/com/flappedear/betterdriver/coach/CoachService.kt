@@ -90,9 +90,9 @@ class CoachService : Service() {
         // each path they take: live text-to-speech always (clips fall back to it), pre-rendered clips'
         // low-latency path too when they are on. The delay set in the settings is used only when
         // Android gives no audio clock.
-        val live = OutputDelayProbe.measure(this)
+        val live = OutputDelayProbe.measure()
         val clips = set.voice == VoiceMode.PreRendered
-        val clip = if (clips) OutputDelayProbe.measure(this, lowLatency = true) else null
+        val clip = if (clips) OutputDelayProbe.measure(lowLatency = true) else null
         val sessionDelay = SessionDelay(live, clip, set.audioDelayMillis)
         // Cues are timed for the path most of them take: the set delay when it was not measured.
         val path = if (clips) "clip" else "live"

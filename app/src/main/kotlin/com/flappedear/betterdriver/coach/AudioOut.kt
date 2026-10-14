@@ -184,14 +184,7 @@ internal class AudioOut(context: Context, private val handler: Handler) {
 /** The audio outputs connected (FBBD-47), for the coach voice and the output delay (FBBD-49). */
 internal class AudioOutputs(private val audio: AudioManager?) {
     /** The type of output the sound goes to: the headset's, else "speaker". */
-    fun output(): String = when (device()?.type) {
-        null -> "speaker"
-        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
-        AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt_sco"
-        AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble"
-        AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
-        else -> "wired"
-    }
+    fun output(): String = typeOf(device())
 
     /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
     fun headset(): String? = device()?.productName?.toString()
@@ -199,8 +192,18 @@ internal class AudioOutputs(private val audio: AudioManager?) {
     private fun device(): AudioDeviceInfo? =
         audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
 
-    private companion object {
-        val HeadsetTypes = setOf(
+    companion object {
+        /** A device's output type as the coach logs it: a headset's, else "speaker" (FBBD-47). */
+        fun typeOf(d: AudioDeviceInfo?): String = when (d?.type) {
+            AudioDeviceInfo.TYPE_BLUETOOTH_A2DP -> "bt_a2dp"
+            AudioDeviceInfo.TYPE_BLUETOOTH_SCO -> "bt_sco"
+            AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble"
+            AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
+            AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired"
+            else -> "speaker"
+        }
+
+        private val HeadsetTypes = setOf(
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
             AudioDeviceInfo.TYPE_BLUETOOTH_SCO,
             AudioDeviceInfo.TYPE_BLE_HEADSET,
