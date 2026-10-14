@@ -82,11 +82,12 @@ class RecordedSessionTest {
         tilt: Double = 0.0,
         dead: Boolean = false,
         axis: ChannelDef = ChannelDef(110, "accel_x", "g", "racebox", 3),
+        profile: (Int) -> Double = { i -> if (i < 250) 0.3 else -0.6 }, // g at each 25 Hz sample
     ): SessionData {
         val accelX = axis
         var speed = 10.0
         val sets = (0 until 500).map { i ->
-            val a = if (i < 250) 0.3 else -0.6 // g
+            val a = profile(i)
             speed += a * 9.80665 * 0.04
             SampleSet(
                 i * 40_000L,
@@ -136,7 +137,7 @@ class RecordedSessionTest {
      * [run] plus the phone's accelerometer, 13 ms after each receiver sample, lying across the car
      * (forward on its -Y) and tipped back 60° in its holder, so its Z reads part of the braking too.
      */
-    private fun withPhone(run: SessionData): SessionData {
+    private fun withPhone(run: SessionData, lateMicros: Long = 13_000): SessionData {
         val phone = listOf("phone_accel_x", "phone_accel_y", "phone_accel_z")
             .mapIndexed { k, name -> ChannelDef(700 + k, name, "g", "phone", 3) }
         val tip = PI / 3
@@ -144,7 +145,7 @@ class RecordedSessionTest {
             val g = (b.values.first { it.channelId == GnssChannels.SPEED_KMH.id }.value -
                 a.values.first { it.channelId == GnssChannels.SPEED_KMH.id }.value) / 3.6 / 9.80665 / 0.04
             SampleSet(
-                a.tMicros + 13_000,
+                a.tMicros + lateMicros,
                 listOf(
                     ChannelValue(700, 0.02),
                     ChannelValue(701, -g * cos(tip)),
@@ -182,6 +183,19 @@ class RecordedSessionTest {
         assertEquals(0.3, forward.values[10], 0.01)
         assertEquals(-0.6, forward.values[forward.sampleCount - 10], 0.01)
         assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf(Aliases.LONGITUDINAL_ACCELERATION))
+    }
+
+    /** Codex on #175: a phone stamped 0.3 s late on quick changes still has its mount found. */
+    @Test
+    fun `a late phone's mount is fitted at its matched clock`() {
+        // Pumping the throttle: a quarter period is 0.3 s, so unmatched the phone does not follow GPS at all.
+        val pumping = { i: Int -> 0.4 * sin(2 * PI * i * 0.04 / 1.2) }
+        val run = straightRun(1.0, dead = true, profile = pumping)
+        val session = telemetrySessionOf(withPhone(run, lateMicros = 300_000), null)
+        val forward = assertNotNull(session.channel(Aliases.LONGITUDINAL_ACCELERATION), "the phone gives G")
+        assertEquals(Provenance.MEASURED_ACCELEROMETER, session.provenanceOf(Aliases.LONGITUDINAL_ACCELERATION))
+        val peak = forward.values.filter { it.isFinite() }.maxOf { abs(it) }
+        assertEquals(0.4, peak, 0.05, "turned the right way and levelled")
     }
 
     @Test
