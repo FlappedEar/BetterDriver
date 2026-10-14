@@ -23,6 +23,8 @@ internal data class MeasuredDelay(val millis: Int, val output: String, val heads
 internal object OutputDelayProbe {
     fun measure(context: Context, lowLatency: Boolean = false): MeasuredDelay? {
         val audio = context.applicationContext.getSystemService(AudioManager::class.java)
+        val out = AudioOutputs(audio)
+        val before = out.output()
         val track = build(lowLatency) ?: return null
         val readings = mutableListOf<Double>()
         try {
@@ -46,14 +48,16 @@ internal object OutputDelayProbe {
             }
             track.release()
         }
-        val out = AudioOutputs(audio)
+        // A headset connected or gone meanwhile: the readings may be of either output, so none count.
+        val output = out.output()
+        if (output != before) readings.clear()
         val millis = OutputDelay.of(readings)
         DebugLog.i(
             Tag,
-            "output delay ${millis?.let { "$it ms" } ?: "not reported"} on ${out.output()}" +
+            "output delay ${millis?.let { "$it ms" } ?: "not reported"} on $output" +
                 (out.headset()?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
         )
-        return millis?.let { MeasuredDelay(it, out.output(), out.headset()) }
+        return millis?.let { MeasuredDelay(it, output, out.headset()) }
     }
 
     /** One reading of the delay, or null while the output gives no timestamp or has not started. */

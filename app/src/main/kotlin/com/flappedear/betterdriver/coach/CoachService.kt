@@ -91,10 +91,12 @@ class CoachService : Service() {
         // low-latency path too when they are on. The delay set in the settings is used only when
         // Android gives no audio clock.
         val live = OutputDelayProbe.measure(this)
-        val clip = if (set.voice == VoiceMode.PreRendered) OutputDelayProbe.measure(this, lowLatency = true) else null
+        val clips = set.voice == VoiceMode.PreRendered
+        val clip = if (clips) OutputDelayProbe.measure(this, lowLatency = true) else null
         val sessionDelay = SessionDelay(live, clip, set.audioDelayMillis)
-        // Cues are timed for the path most of them take.
-        val delay = sessionDelay.on(if (clip != null) "clip" else "live", (clip ?: live)?.output.orEmpty())
+        // Cues are timed for the path most of them take: the set delay when it was not measured.
+        val path = if (clips) "clip" else "live"
+        val delay = sessionDelay.on(path, (if (clips) clip else live)?.output.orEmpty())
         val settings = set.copy(audioDelayMillis = delay.millis)
         DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source}")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
