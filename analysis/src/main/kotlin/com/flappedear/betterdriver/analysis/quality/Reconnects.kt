@@ -50,6 +50,9 @@ private const val ReconnectCriterion = "data back within 5 s, same session (FBBD
 /** A drop this close to the end of the session, with no data after it, may be the drive ending. */
 private const val EndOfDriveMicros = 30_000_000L
 
+internal const val EndOfDriveText = "the drop came with the car parked and the recording stopped within 30 s, " +
+    "data not back: the drive ending, not a reconnect"
+
 /** Below this speed the car is parked (as for the position noise check). */
 private const val ParkedKmh = 1.0
 
@@ -69,15 +72,9 @@ internal fun reconnectMetrics(s: GnssSamples, all: List<Reconnect>, endMicros: L
         "gnss.link_drops", "Link drops", all.size.toDouble(), "", Basis.MEASURED,
         "link-drop events the GNSS source logged",
     )
-    if (all.isEmpty()) {
-        val none =
-            notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, "no link drop in this session")
-        return listOf(count, none)
-    }
     val drops = all.filterNot { endOfDrive(s, it, endMicros) }
     if (drops.isEmpty()) {
-        val why = "the drop came with the car parked and the recording stopped within 30 s, data not back: " +
-            "the drive ending, not a reconnect"
+        val why = if (all.isEmpty()) "no link drop in this session" else EndOfDriveText
         return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, why))
     }
     val longest = drops.maxOf { cost(s, it, endMicros) }

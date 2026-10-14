@@ -106,10 +106,6 @@ private const val LogParkedKmh = 1.0
 private fun reconnects(secs: List<GnssSecond>, events: List<RecorderEvent>, endMicros: Long): List<QualityMetric> {
     val all = events.filter { it.kind in GnssDisconnectKinds }
     val count = linkDrops(all.size)
-    if (all.isEmpty()) {
-        val why = "no link drop in this session"
-        return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, why))
-    }
     // As for a session (endOfDrive): no data after it, the end within 30 s, parked or no fix before it.
     val drops = all.filterNot { d ->
         val back = secs.any { it.afterDrop && it.tMicros >= d.tMicros }
@@ -118,8 +114,7 @@ private fun reconnects(secs: List<GnssSecond>, events: List<RecorderEvent>, endM
         !back && endMicros - d.tMicros <= LogEndOfDriveMicros && parked
     }
     if (drops.isEmpty()) {
-        val why = "the drop came with the car parked and the recording stopped within 30 s, data not back: " +
-            "the drive ending, not a reconnect"
+        val why = if (all.isEmpty()) "no link drop in this session" else EndOfDriveText
         return listOf(count, notMeasured("gnss.reconnect", "Longest reconnect", ReconnectCriterion, why))
     }
     val waits = drops.map { d ->
