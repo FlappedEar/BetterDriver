@@ -31,6 +31,13 @@ private const val NoValue = "–"
  * those slots show their empty state. The coach line is the coach's last cue (FBBD-98). [tiles] are the
  * tiles set in Settings (UI-38 A), already limited to what the session's receiver can fill.
  */
+/**
+ * The rate on the GNSS status: the receiver's, from the spacing of its recent fixes. Fixes counted in
+ * the last second read low for the first second of a session or of a fix (8 Hz on Arek's 2026-10-14
+ * drive while the RaceBox sent 25), which made him swap a working receiver.
+ */
+internal fun shownRateHz(live: LiveSnapshot): Int = if (live.receiverRateHz > 0) live.receiverRateHz else live.fixRateHz
+
 fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreenState {
     val live = state.live
     val gnss = if (live == null) {
@@ -39,7 +46,7 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         when (live.gnss) {
             GnssState.Waiting -> StatusItem("GNSS", "Waiting", ok = false)
             GnssState.Lost -> StatusItem("GNSS", "Lost", ok = false)
-            GnssState.Ok -> StatusItem("GNSS", "${live.fixRateHz} Hz · ${live.sats ?: NoValue} sats")
+            GnssState.Ok -> StatusItem("GNSS", "${shownRateHz(live)} Hz · ${live.sats ?: NoValue} sats")
         }
     }
     val timing = state.timing

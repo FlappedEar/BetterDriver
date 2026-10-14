@@ -47,6 +47,8 @@ data class GnssSecond(
     val kmhMin: Double?,
     val kmhMax: Double?,
     val firstFixMicros: Long? = null,
+    /** Of [missing], single samples lost on a whole second between two fixes: a RaceBox's skip (FBBD-170). */
+    val missingOnSecond: Int = 0,
 ) {
     /** The line's message: `key=value` pairs; a value not known is left out. */
     fun format(): String = listOf(
@@ -55,7 +57,7 @@ data class GnssSecond(
         "drop" to (1.takeIf { afterDrop }), "utc0" to utcFirst, "utc1" to utcLast, "lag_us" to lagMicros,
         "lat" to decimal(lat, Degrees), "lon" to decimal(lon, Degrees), "var_m2" to decimal(varianceM2, Variance),
         "kmh" to decimal(kmh, Speed), "kmh_min" to decimal(kmhMin, Speed), "kmh_max" to decimal(kmhMax, Speed),
-        "fix_us" to firstFixMicros,
+        "fix_us" to firstFixMicros, "miss_s" to missingOnSecond.takeIf { it > 0 },
     ).filter { it.second != null }.joinToString(" ") { (k, v) -> "$k=$v" }
 
     private fun decimal(value: Double?, format: String) = value?.let { String.format(Locale.ROOT, format, it) }
@@ -93,6 +95,7 @@ data class GnssSecond(
                 kmhMin = f["kmh_min"]?.toDoubleOrNull(),
                 kmhMax = f["kmh_max"]?.toDoubleOrNull(),
                 firstFixMicros = f["fix_us"]?.toLongOrNull(),
+                missingOnSecond = f["miss_s"]?.toIntOrNull() ?: 0,
             )
         }
     }
@@ -111,6 +114,7 @@ class GnssSecondLog(
     private var current: Builder? = null
     private var lastFixT: Long? = null
     private var lastUtc: Long? = null
+    private var lastUtcFix = false
     private var dropSinceLast = false
 
     /** How often each step length (to 10 ms) was seen, for the usual step. */
@@ -146,10 +150,11 @@ class GnssSecondLog(
         val drop = dropSinceLast
         dropSinceLast = false
         if (drop) b.afterDrop = true
-        value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop) }
         val lat = value(GnssChannels.LAT.id)
         val lon = value(GnssChannels.LON.id)
-        if (lat != null && lon != null && isFix(lat, lon)) {
+        val fix = lat != null && lon != null && isFix(lat, lon)
+        value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop, fix) }
+        if (fix && lat != null && lon != null) {
             b.fixes += Triple(lat, lon, value(GnssChannels.SPEED_KMH.id))
             lastFixT?.let { previous -> b.maxGap = maxOf(b.maxGap ?: 0L, set.tMicros - previous) }
             lastFixT = set.tMicros
@@ -160,29 +165,40 @@ class GnssSecondLog(
     /** Receivers without a fix can report 0, 0: that is no position. */
     private fun isFix(lat: Double, lon: Double) = lat != 0.0 || lon != 0.0
 
-    private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean) {
+    private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean, fix: Boolean) {
         val previousUtc = lastUtc
-        if (previousUtc != null && utc > previousUtc && !drop) step(b, utc - previousUtc)
+        if (previousUtc != null && utc > previousUtc && !drop) {
+            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix)
+        }
         lastUtc = utc
+        lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc
         b.utcLast = utc
         val lag = tMicros - (utc - startUtcMillis) * MicrosPerMilli
         b.lag = minOf(b.lag ?: lag, lag)
     }
 
-    private fun step(b: Builder, stepMillis: Long) {
+    private fun step(b: Builder, fromUtc: Long, stepMillis: Long, fixBothSides: Boolean) {
         val key = (stepMillis + StepRoundMillis / 2) / StepRoundMillis * StepRoundMillis
         stepCounts[key] = (stepCounts[key] ?: 0) + 1
         val usual = stepCounts.maxBy { it.value }.key.coerceAtLeast(1)
         b.usual = usual
-        b.missing += maxOf(0L, (stepMillis.toDouble() / usual).roundToLong() - 1).toInt()
+        val lost = maxOf(0L, (stepMillis.toDouble() / usual).roundToLong() - 1).toInt()
+        b.missing += lost
+        if (lost == 1 && fixBothSides && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
         if (stepMillis * MicrosPerMilli > LongGapMicros) b.longGaps++
         b.maxRxGap = maxOf(b.maxRxGap ?: 0L, stepMillis)
+    }
+
+    private fun onWholeSecond(utc: Long, step: Long): Boolean {
+        val ms = Math.floorMod(utc, MillisPerSecond)
+        return ms < step / 2 || ms > MillisPerSecond - step / 2
     }
 
     private class Builder(val second: Long, val tMicros: Long) {
         var samples = 0
         var missing = 0
+        var missingOnSecond = 0
         var usual: Long? = null
         var longGaps = 0
         var maxRxGap: Long? = null
@@ -212,6 +228,7 @@ class GnssSecondLog(
                 second, tMicros, samples, fixes.size, missing, usual, longGaps, maxRxGap, maxGap, afterDrop,
                 utcFirst, utcLast, lag, lat, lon, variance,
                 speeds.average().takeIf { speeds.isNotEmpty() }, speeds.minOrNull(), speeds.maxOrNull(), firstFix,
+                missingOnSecond,
             )
         }
     }
@@ -219,6 +236,7 @@ class GnssSecondLog(
     private companion object {
         const val MicrosPerSecond = 1_000_000L
         const val MicrosPerMilli = 1_000L
+        const val MillisPerSecond = 1_000L
         const val StepRoundMillis = 10L
         const val LongGapMicros = 200_000L
         const val MetersPerDegree = 111_195.0

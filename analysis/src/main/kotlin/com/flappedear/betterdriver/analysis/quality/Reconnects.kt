@@ -63,8 +63,9 @@ private const val ParkedKmh = 1.0
  */
 internal fun endOfDrive(s: GnssSamples, d: Reconnect, endMicros: Long): Boolean {
     if (d.after != null || endMicros - d.dropMicros > EndOfDriveMicros) return false
+    // A fix without a speed (GGA-only NMEA) does not show the car parked.
     val speed = s.speed[d.before]
-    return !s.hasFix(d.before) || !speed.isFinite() || speed < ParkedKmh
+    return !s.hasFix(d.before) || speed.isFinite() && speed < ParkedKmh
 }
 
 internal fun reconnectMetrics(s: GnssSamples, all: List<Reconnect>, endMicros: Long): List<QualityMetric> {

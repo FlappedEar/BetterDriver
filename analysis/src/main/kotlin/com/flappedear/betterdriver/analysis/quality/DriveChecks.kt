@@ -77,7 +77,11 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
     val last = seconds.lastOrNull()?.tMicros ?: end
     val clips = importedClips(events)
     val sections = listOfNotNull(
-        if (s.legacy) legacyGnssSection(s, end) else logGnssSection(seconds, events, end),
+        if (s.legacy) {
+            legacyGnssSection(s, end)
+        } else {
+            logGnssSection(seconds, events, end, raceBox = s.source?.startsWith("racebox", ignoreCase = true) == true)
+        },
         timingSection(data, null),
         recordingSection(data, samples, null),
         videoSection(events, clips, first, last),

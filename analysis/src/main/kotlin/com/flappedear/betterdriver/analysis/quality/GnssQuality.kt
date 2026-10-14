@@ -69,8 +69,16 @@ internal class GnssSamples(sets: List<SampleSet>) {
     }
 }
 
-/** The GNSS section: [samples] with the link drops logged in [events]; [endMicros] is the session's end. */
-internal fun gnssSection(samples: GnssSamples, events: List<RecorderEvent>, endMicros: Long): QualitySection {
+/**
+ * The GNSS section: [samples] with the link drops logged in [events]; [endMicros] is the session's end.
+ * [raceBox] says the receiver was a RaceBox, whose whole-second skip (FBBD-170) is counted apart.
+ */
+internal fun gnssSection(
+    samples: GnssSamples,
+    events: List<RecorderEvent>,
+    endMicros: Long,
+    raceBox: Boolean = false,
+): QualitySection {
     if (samples.size < 2) {
         val why = "fewer than two GNSS samples in this session"
         return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", RateCriterion, why)))
@@ -83,7 +91,7 @@ internal fun gnssSection(samples: GnssSamples, events: List<RecorderEvent>, endM
     val metrics = buildList {
         add(rate(samples, acrossDrop))
         add(p1Rate(samples, drops))
-        add(dropped(samples, acrossDrop))
+        add(dropped(samples, acrossDrop, raceBox))
         addAll(gapMetrics(gaps))
         addAll(reconnectMetrics(samples, drops, endMicros))
         add(stationaryNoise(samples))
@@ -143,9 +151,9 @@ private const val MillisPerSecond = 1_000L
  * link: the same link carried all 25 messages a second whenever the fix was lost (1500 in 1500
  * notifications, none missing). Arek accepts the 24 Hz that leaves ("> 24 sounds good", FBBD-218).
  */
-private fun dropped(s: GnssSamples, acrossDrop: BooleanArray): QualityMetric {
+private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): QualityMetric {
     val steps = receiverSteps(s, acrossDrop)
-    val usual = nearestRank(steps.map { it.second.toDouble() }, Median)
+    val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)
     if (usual == null || usual <= 0) {
         val why = "the receiver gave no fix times, so missing samples cannot be told from late ones"
         return notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why)
@@ -153,9 +161,10 @@ private fun dropped(s: GnssSamples, acrossDrop: BooleanArray): QualityMetric {
     val received = s.utc.count { it != GnssSamples.NoUtc }
     var missing = 0L
     var wholeSecond = 0L
-    for ((from, step) in steps) {
-        val lost = maxOf(0L, (step / usual).roundToLong() - 1)
-        if (lost == 1L && onWholeSecond(from + step / 2, usual)) wholeSecond++ else missing += lost
+    for (step in steps) {
+        val lost = maxOf(0L, (step.millis / usual).roundToLong() - 1)
+        val skip = raceBox && step.fixBothSides && lost == 1L && onWholeSecond(step.fromUtc + step.millis / 2, usual)
+        if (skip) wholeSecond++ else missing += lost
     }
     val expected = received + missing + wholeSecond
     val percent = missing * Percent / expected
@@ -172,18 +181,18 @@ private fun onWholeSecond(utc: Long, step: Double): Boolean {
     return ms < step / 2 || ms > MillisPerSecond - step / 2
 }
 
-/**
- * Steps between consecutive fix times of the receiver, in ms, each with the fix time it starts from;
- * steps across a link drop and backwards left out.
- */
-private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<Pair<Long, Long>> {
-    val steps = mutableListOf<Pair<Long, Long>>()
+/** A step between consecutive fix times, from [fromUtc], [millis] long; [fixBothSides] when both samples had a fix. */
+private class ReceiverStep(val fromUtc: Long, val millis: Long, val fixBothSides: Boolean)
+
+/** Steps between consecutive fix times of the receiver; steps across a link drop and backwards left out. */
+private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<ReceiverStep> {
+    val steps = mutableListOf<ReceiverStep>()
     var previous = -1
     var dropBetween = false
     for (i in 0 until s.size) {
         if (s.utc[i] != GnssSamples.NoUtc) {
             if (previous >= 0 && !dropBetween && s.utc[i] > s.utc[previous]) {
-                steps += s.utc[previous] to s.utc[i] - s.utc[previous]
+                steps += ReceiverStep(s.utc[previous], s.utc[i] - s.utc[previous], s.hasFix(previous) && s.hasFix(i))
             }
             previous = i
             dropBetween = false

@@ -106,13 +106,17 @@ class SessionQualityTest {
     fun `the RaceBox's single missing whole-second message is counted apart and does not fail`() {
         // FBBD-170: with a fix the RaceBox sends 24 of its 25 messages, never the whole-second one.
         val sets = stream(0, 60_000_000).filterIndexed { i, _ -> i == 0 || i % 25 != 0 }
-        val r = sessionQuality(session(sets))
+        fun from(kept: List<SampleSet>, device: String) =
+            sessionQuality(session(kept).copy(info = SessionInfo(start, devices = listOf(device))))
+        val r = from(sets, "racebox")
         assertEquals(0.0, r.value("gnss.dropped"))
         assertEquals(Verdict.PASS, r.verdict("gnss.dropped"))
         assertTrue("besides 59 single whole-second messages" in r.metric("gnss.dropped").how)
         // Two in a row lost across a whole second are a real loss.
         val pairs = stream(0, 60_000_000).filterIndexed { i, _ -> i == 0 || (i % 25 != 0 && i % 25 != 1) }
-        assertEquals(Verdict.FAIL, sessionQuality(session(pairs)).verdict("gnss.dropped"))
+        assertEquals(Verdict.FAIL, from(pairs, "racebox").verdict("gnss.dropped"))
+        // Any other receiver losing one sample a second loses real data.
+        assertEquals(Verdict.FAIL, from(sets, "nmea").verdict("gnss.dropped"))
     }
 
     @Test
@@ -181,6 +185,12 @@ class SessionQualityTest {
         assertEquals(Verdict.FAIL, sessionQuality(driving).verdict("gnss.reconnect"))
         val longAfter = parked.copy(end = Record.End(60_000_000, "user"))
         assertEquals(Verdict.FAIL, sessionQuality(longAfter).verdict("gnss.reconnect"))
+        // A fix with no speed (GGA-only NMEA) does not show the car parked.
+        val noSpeed = sets.map { set ->
+            set.copy(values = set.values.filter { it.channelId != GnssChannels.SPEED_KMH.id })
+        }
+        val unknown = session(noSpeed, listOf(drop)).copy(end = Record.End(28_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(unknown).verdict("gnss.reconnect"))
     }
 
     @Test
