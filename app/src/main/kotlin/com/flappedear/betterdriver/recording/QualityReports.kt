@@ -55,18 +55,27 @@ internal class QualityReports(private val store: SessionStore, private val track
         null
     }
 
-    /** The stored report, if this version wrote it for the session as it is now. */
+    /**
+     * The stored report, if this version wrote it for the session as it is now. The clip index counts
+     * against when the report was computed, not when its file was written: on Arek's 2026-10-15 13:04
+     * drive the report was computed at the stop, the camera wrote the file's last length into the index
+     * while it ran, and the report written after that kept the length from 11 s before the end (video
+     * coverage 97.8 %, FAIL, with no video missing).
+     */
     private fun stored(dir: File, state: SessionState): QualityReport? {
         val file = File(dir, FileName)
-        val index = File(VideoIndex(dir).videoDir, VideoIndex.IndexFileName)
-        if (!file.isFile || (index.isFile && index.lastModified() > file.lastModified())) return null
+        if (!file.isFile) return null
         val report = try {
             QualityReport.fromJson(file.readText())
         } catch (e: IOException) {
             DebugLog.w(Tag, "unreadable ${file.path}", e)
             null
         }
-        return report?.takeIf { it.sessionState == state.name }
+        val index = File(VideoIndex(dir).videoDir, VideoIndex.IndexFileName)
+        return report?.takeIf {
+            val computed = it.computedAtUtcMillis.takeIf { at -> at > 0 } ?: file.lastModified()
+            it.sessionState == state.name && !(index.isFile && index.lastModified() >= computed)
+        }
     }
 
     /** The session's local clips with how each was lined up; none when its index is unreadable. */

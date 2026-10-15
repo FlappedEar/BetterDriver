@@ -117,4 +117,30 @@ class ReceiverClockTest {
         assertEquals(listOf(604_799_990_000L, 604_800_050_000L), stamps)
         assertEquals(604_800_090_000L, clock.stamp(604_800_100_000, 40))
     }
+
+    /**
+     * Arek's 2026-10-15 13:04 drive (FBBD-218): after the first fix the receiver's time kept settling,
+     * so the delay rose about 0.17 s more in the next 23 s and then stayed. With the rise capped from
+     * the fix on, every later sample was stamped about 0.17 s early; settling follows it, and the cap
+     * holds a backlog off again afterwards.
+     */
+    @Test
+    fun `follows the receiver's time settling after a first fix, then caps a backlog again`() {
+        val clock = ReceiverClock()
+        clock.settle()
+        var real = 0L
+        var worstAfterSettle = 0L
+        for (i in 0 until 3_000) { // 2 min at 25 Hz
+            val tow = 5_000_000L + i * 40
+            val settle = minOf(i, 575) * 170_000L / 575 // 0.17 s over the first 23 s
+            real = tow * 1_000 + 30_000 + settle
+            val t = clock.stamp(real + delays[i % delays.size] - 30_000, tow)
+            if (i >= SettleMessages) worstAfterSettle = maxOf(worstAfterSettle, kotlin.math.abs(t - real))
+        }
+        assertTrue("stamps off by up to $worstAfterSettle µs after settling", worstAfterSettle < 1_000)
+        // Settled: a backlog of 275 ms building up now is held off by the cap.
+        val tow = 5_000_000L + 3_000 * 40
+        val t = clock.stamp(tow * 1_000 + 30_000 + 170_000 + 275_000, tow)
+        assertTrue("stamp ${t - real} µs after the last real time", t - (tow * 1_000 + 200_000) < 1_000)
+    }
 }

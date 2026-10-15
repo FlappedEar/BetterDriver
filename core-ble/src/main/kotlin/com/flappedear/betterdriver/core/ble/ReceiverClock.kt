@@ -20,6 +20,13 @@ private const val MaxOffsetDropMicros = 100_000L
 private const val MicrosPerMilli = 1_000L
 
 /**
+ * Messages after a first fix the delay follows the window freely, without the rise cap: 60 s at 25 Hz.
+ * The receiver keeps steering its time onto GNSS time after the fix; on Arek's 2026-10-15 13:04 drive the
+ * delay rose about 0.17 s more in the first 23 s after the fix and then stayed.
+ */
+internal const val SettleMessages = 1_500
+
+/**
  * Stamps RaceBox messages on the recorder's clock from the receiver's time of week (FBBD-182).
  * Stamping each message when its notification arrived put Bluetooth delivery jitter into every
  * sample: in Arek's 2026-10-12 drive the VBO's avisynctime moved 0 to 99 ms against GNSS time
@@ -50,6 +57,9 @@ internal class ReceiverClock(
     private var risenAt = 0L
     private var lastTowMs: Long? = null
     private var lastStamp = Long.MIN_VALUE
+
+    /** Messages left in which the delay follows the window without the rise cap ([settle]). */
+    private var settleLeft = 0
 
     fun stamp(arrivalMicros: Long, iTowMs: Long): Long = stamp(arrivalMicros, listOf(iTowMs)).single()
 
@@ -102,9 +112,24 @@ internal class ReceiverClock(
         while (window.isNotEmpty() && window.last().second >= offset) window.removeLast()
         window.addLast(count to offset)
         while (window.first().first <= count - windowMessages) window.removeFirst()
-        val rise = (arrivalMicros - risenAt).coerceAtLeast(0) * maxRiseMicrosPerSecond / MicrosPerSecond
-        risen = risen?.let { minOf(it + rise, offset) } ?: offset
+        if (settleLeft > 0) {
+            // Settling: the window's lowest is the delay, and the cap starts from it once settled.
+            settleLeft--
+            risen = window.first().second
+        } else {
+            val rise = (arrivalMicros - risenAt).coerceAtLeast(0) * maxRiseMicrosPerSecond / MicrosPerSecond
+            risen = risen?.let { minOf(it + rise, offset) } ?: offset
+        }
         risenAt = arrivalMicros
+    }
+
+    /**
+     * Lets the delay follow the window's lowest without the rise cap for the next [messages] messages:
+     * after a first fix, while the receiver's time still settles onto GNSS time. Capped, the delay taken
+     * at the fix held every later sample of the 2026-10-15 13:04 drive about 0.17 s early (FBBD-218).
+     */
+    fun settle(messages: Int = SettleMessages) {
+        settleLeft = messages
     }
 
     private fun clear() {
@@ -122,5 +147,6 @@ internal class ReceiverClock(
     fun reset() {
         clear()
         lastTowMs = null
+        settleLeft = 0
     }
 }
