@@ -107,8 +107,12 @@ class RaceBoxDecoder(
             // Without a fix the receiver's time is its own guess and may run off GNSS time: on Arek's
             // 2026-10-14 drive the delay it gave rose by 0.5 s in the minute before the fix and then
             // stayed, and the capped rise held every later sample 0.65 s early against the video.
-            // So the delay is taken afresh when the first fix comes.
-            if (fixAcquired) clock.reset()
+            // So the delay is taken afresh when the first fix comes, and follows the receiver's time
+            // freely while it settles after the fix (2026-10-15: 0.17 s more in the first 23 s).
+            if (fixAcquired) {
+                clock.reset()
+                clock.settle()
+            }
             val now = sink.nowMicros()
             val stamps = clock.stamp(now, decoded.map { it.iTowMs })
             decoded.zip(stamps) { data, at -> sink.submit(SampleSet(at, values(data))) }
