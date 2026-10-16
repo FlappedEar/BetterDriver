@@ -200,10 +200,15 @@ private suspend fun PointerInputScope.mapGestures(
     }
 }
 
+/** Coarser tiles tried, one level at a time, while a tile is still loading. */
+private const val FallbackLevels = 4
+
 private fun DrawScope.drawTiles(camera: MapCamera, source: TileSource, tiles: TileLoader) {
     // Reading the counter makes the map redraw whenever a tile arrives.
     if (tiles.loaded < 0) return
-    val z = floor(camera.zoom).toInt().coerceIn(0, source.maxZoom)
+    // A 512 px tile is used a level higher than a 256 px one: as sharp, in a quarter of the tiles.
+    val shift = ln(source.imagePx.toDouble() / TileSize) / Ln2
+    val z = floor(camera.zoom - shift).toInt().coerceIn(0, source.maxZoom)
     val scale = 2.0.pow(camera.zoom - z)
     val c = WebMercator.toPx(camera.center, z.toDouble())
     val n = 1 shl z
@@ -230,19 +235,37 @@ private fun DrawScope.drawTiles(camera: MapCamera, source: TileSource, tiles: Ti
                     dstSize = IntSize(tileSide, tileSide),
                     filterQuality = FilterQuality.Low,
                 )
-            } else if (z > 0) {
-                // The coarser tile, if already in memory, stands in until this one arrives.
-                val parent = tiles.peek(source, z - 1, wx / 2, ty / 2) ?: continue
-                val half = TileSize / 2
-                drawImage(
-                    parent,
-                    srcOffset = IntOffset((wx % 2) * half, (ty % 2) * half),
-                    srcSize = IntSize(half, half),
-                    dstOffset = dst,
-                    dstSize = IntSize(tileSide, tileSide),
-                    filterQuality = FilterQuality.Low,
-                )
+            } else {
+                drawFallback(source, tiles, z, wx, ty, dst, tileSide)
             }
         }
+    }
+}
+
+/** The part of the nearest coarser tile already in memory that covers tile ([x], [y]), until it arrives. */
+@Suppress("LongParameterList") // The tile, where it goes, and how big.
+private fun DrawScope.drawFallback(
+    source: TileSource,
+    tiles: TileLoader,
+    z: Int,
+    x: Int,
+    y: Int,
+    dst: IntOffset,
+    side: Int,
+) {
+    for (up in 1..min(FallbackLevels, z)) {
+        val parent = tiles.peek(source, z - up, x shr up, y shr up) ?: continue
+        val part = parent.width shr up
+        if (part < 1) return
+        val mask = (1 shl up) - 1
+        drawImage(
+            parent,
+            srcOffset = IntOffset((x and mask) * part, (y and mask) * part),
+            srcSize = IntSize(part, part),
+            dstOffset = dst,
+            dstSize = IntSize(side, side),
+            filterQuality = FilterQuality.Low,
+        )
+        return
     }
 }

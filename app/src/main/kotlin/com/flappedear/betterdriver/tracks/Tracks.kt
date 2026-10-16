@@ -119,6 +119,7 @@ class Tracks private constructor(private val context: Context) {
         TileLoader(
             File(context.filesDir, "tiles"),
             "BetterDriver/${BuildConfig.VERSION_NAME} (+https://github.com/FlappedEar/BetterDriver)",
+            File(context.filesDir, "maptiler.key"),
         )
     }
 

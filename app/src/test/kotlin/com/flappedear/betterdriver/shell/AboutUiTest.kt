@@ -19,7 +19,10 @@ class AboutUiTest {
     @Test
     fun `map tiles carry exactly the attribution the map shows`() {
         assertEquals(
-            listOf(TileSources.Orthophoto.attribution, TileSources.OpenStreetMap.attribution),
+            listOf(
+                TileSources.mapTiler("").attribution,
+                TileSources.OpenStreetMap.attribution,
+            ),
             section("Map tiles").map { it.detail },
         )
     }

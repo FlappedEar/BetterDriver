@@ -25,7 +25,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
-import kotlin.test.assertSame
 
 /** The track editor's geometry (FBBD-56): map projection, placing lines from a lap, line order. */
 class EditorTest {
@@ -65,12 +64,16 @@ class EditorTest {
     }
 
     @Test
-    fun `satellite in Poland, street map elsewhere`() {
-        assertSame(TileSources.Orthophoto, TileSources.forPlace(GeoPoint(52.4206, 16.8114))) // Tor Poznań
-        assertSame(TileSources.Orthophoto, TileSources.forPlace(GeoPoint(50.8136, 20.5378))) // Tor Kielce
-        assertSame(TileSources.OpenStreetMap, TileSources.forPlace(GeoPoint(50.7914, 12.6888))) // Sachsenring
-        val url = TileSources.Orthophoto.url(1, 1, 0)
-        assertEquals(true, url.contains("CRS=EPSG:3857&BBOX=0.000,0.000,20037508.343,20037508.343"), url)
+    fun `MapTiler's satellite map with a key, the street map without`() {
+        assertEquals(listOf(TileSources.OpenStreetMap), TileSources.available())
+        assertEquals(listOf(TileSources.OpenStreetMap), TileSources.available("  "))
+        val sources = TileSources.available(" key1 ")
+        assertEquals(listOf("maptiler-satellite", "osm"), sources.map { it.id })
+        assertEquals(
+            "https://api.maptiler.com/maps/satellite/256/17/70000/45000@2x.jpg?key=key1",
+            sources.first().url(17, 70_000, 45_000),
+        )
+        assertEquals(512, sources.first().imagePx)
     }
 
     @Test

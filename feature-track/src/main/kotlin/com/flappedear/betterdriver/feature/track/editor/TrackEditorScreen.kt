@@ -163,7 +163,10 @@ private fun MapPane(
     modifier: Modifier,
     onCorrect: ((SegmentEdit) -> Unit)?,
 ) {
-    val source = remember(state.track.center) { TileSources.forPlace(state.track.center) }
+    val sources = remember(tiles.mapTilerKey) { TileSources.available(tiles.mapTilerKey) }
+    // The best background unless another was picked; a new key brings its satellite map in first.
+    var picked by remember(tiles.mapTilerKey) { mutableStateOf<String?>(null) }
+    val source = sources.firstOrNull { it.id == picked } ?: sources.first()
     val camera = remember { MapCamera(state.track.center, zoom = 16.0) }
     var fitted by remember { mutableStateOf(false) }
     Box(
@@ -178,6 +181,14 @@ private fun MapPane(
     ) {
         EditorMap(state, camera, source, tiles, Modifier.fillMaxSize(), onCorrect)
         if (state.selected != null) PlacingHint(state, Modifier.align(Alignment.TopCenter))
+        // Above the attribution line at the map's foot.
+        MapPicker(
+            sources,
+            source,
+            tiles,
+            onPick = { picked = it.id },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 8.dp, bottom = 28.dp),
+        )
     }
 }
 
