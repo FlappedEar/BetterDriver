@@ -19,7 +19,9 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-private const val MemoryTiles = 160
+/** Decoded tiles kept in memory, in bytes: 160 tiles of 256 px, or 40 of 512 px. */
+private const val MemoryBytes = 40 * 1024 * 1024
+private const val BytesPerPixel = 4
 private const val Threads = 6
 private const val TimeoutMs = 15_000
 private const val RetryAfterMs = 30_000L
@@ -44,9 +46,14 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
 
     private data class Key(val source: String, val z: Int, val x: Int, val y: Int)
 
-    private val memory = LruCache<Key, ImageBitmap>(MemoryTiles)
+    private val memory = object : LruCache<Key, ImageBitmap>(MemoryBytes) {
+        override fun sizeOf(key: Key, value: ImageBitmap) = value.width * value.height * BytesPerPixel
+    }
     private val pending = ConcurrentHashMap.newKeySet<Key>()
     private val failedAt = HashMap<Key, Long>()
+
+    /** Goes up with each key change, so downloads made with the old key do not count as failures. Main thread. */
+    private var keyGeneration = 0
     private val io = Executors.newFixedThreadPool(Threads) { r -> Thread(r, "map-tiles").apply { isDaemon = true } }
     private val main = Handler(Looper.getMainLooper())
 
@@ -75,6 +82,10 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
     fun updateMapTilerKey(key: String) {
         val value = key.trim().takeIf { it.isNotEmpty() }
         mapTilerKey = value
+        // Tiles that failed or are loading with the old key are fetched again at once with the new one.
+        keyGeneration++
+        failedAt.clear()
+        pending.clear()
         val f = keyFile ?: return
         io.execute {
             try {
@@ -105,15 +116,18 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         val failed = failedAt[key]
         if (failed != null && SystemClock.elapsedRealtime() - failed < RetryAfterMs) return
         if (!pending.add(key)) return
+        val generation = keyGeneration
         io.execute {
             val image = readCached(key) ?: download(source, key)
             main.post {
-                pending.remove(key)
+                // After a key change the new request owns the entry: this one only adds a tile it got.
+                val current = generation == keyGeneration
+                if (current) pending.remove(key)
                 if (image != null) {
                     memory.put(key, image)
                     failedAt.remove(key)
                     loaded++
-                } else {
+                } else if (current) {
                     failedAt[key] = SystemClock.elapsedRealtime()
                     failures++
                 }
