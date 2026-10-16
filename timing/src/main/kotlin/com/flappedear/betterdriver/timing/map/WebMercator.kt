@@ -80,41 +80,50 @@ object WebMercator {
 
 /**
  * Where map tiles come from (UI-26). [url] gives the address of tile ([x], [y]) at zoom [z].
- * [attribution] must be shown on the map.
+ * [attribution] must be shown on the map. [imagePx] is the edge of the image a tile comes as: a
+ * 512 px tile is as sharp as four 256 px ones a zoom deeper, in a quarter of the requests.
  */
 class TileSource(
     val id: String,
     val name: String,
     val attribution: String,
     val maxZoom: Int,
+    val imagePx: Int = TileSize,
     private val template: (z: Int, x: Int, y: Int) -> String,
 ) {
     fun url(z: Int, x: Int, y: Int): String = template(z, x, y)
 }
 
 /**
- * The map backgrounds (UI-26 option A, satellite). Checked 2026-10-11 (FBBD-56):
+ * The map backgrounds (UI-26 option A, satellite; FBBD-230). Checked 2026-10-16:
+ * - MapTiler Satellite: sharp satellite imagery everywhere, served fast from a CDN as 512 px
+ *   (@2x) images. It needs Arek's MapTiler key, entered on the phone: the key is never in the
+ *   repository or the APK.
  * - Poland: GUGiK's orthophoto through the Geoportal WMS, free and keyless; its terms forbid only
  *   automated downloading and collecting of images, so tiles are kept only as they are viewed.
- * - Elsewhere: OpenStreetMap's street map, until a satellite source outside Poland is chosen.
+ *   Each request is drawn by the server, so tiles come as 512 px images: four times fewer requests.
+ * - OpenStreetMap's street map, everywhere, as the last resort.
  */
 object TileSources {
     private const val OrthophotoWms =
         "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution"
+    private const val OrthophotoPx = 512
+    private const val MapTilerSatellite = "https://api.maptiler.com/maps/satellite/256"
 
     /** The WMS's EPSG:3857 extent from its capabilities: imagery exists only inside it. */
     private val OrthophotoExtent = doubleArrayOf(1_572_152.37, 6_275_208.65, 2_687_896.25, 7_330_061.09)
 
     val Orthophoto = TileSource(
-        id = "gugik-orto",
-        name = "Orthophoto",
+        id = "gugik-orto-512",
+        name = "Orthophoto (GUGiK)",
         attribution = "Ortofotomapa © GUGiK · geoportal.gov.pl",
-        maxZoom = 20,
+        maxZoom = 19,
+        imagePx = OrthophotoPx,
     ) { z, x, y ->
         val b = WebMercator.tileBounds(z, x, y)
         val bbox = b.joinToString(",") { String.format(Locale.ROOT, "%.3f", it) }
         "$OrthophotoWms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=Raster&STYLES=&CRS=EPSG:3857" +
-            "&BBOX=$bbox&WIDTH=$TileSize&HEIGHT=$TileSize&FORMAT=image/jpeg"
+            "&BBOX=$bbox&WIDTH=$OrthophotoPx&HEIGHT=$OrthophotoPx&FORMAT=image/jpeg"
     }
 
     val OpenStreetMap = TileSource(
@@ -124,10 +133,29 @@ object TileSources {
         maxZoom = 19,
     ) { z, x, y -> "https://tile.openstreetmap.org/$z/$x/$y.png" }
 
-    /** The background for a track at [p]: satellite where it is available. */
-    fun forPlace(p: GeoPoint): TileSource {
+    /** MapTiler's satellite map with the key [key]. Cached tiles do not depend on the key. */
+    fun mapTiler(key: String): TileSource = TileSource(
+        id = "maptiler-satellite",
+        name = "Satellite (MapTiler)",
+        attribution = "© MapTiler © OpenStreetMap contributors",
+        maxZoom = 20,
+        imagePx = 2 * TileSize,
+    ) { z, x, y -> "$MapTilerSatellite/$z/$x/$y@2x.jpg?key=$key" }
+
+    /** Whether GUGiK's orthophoto covers [p]. */
+    fun inPoland(p: GeoPoint): Boolean {
         val m = WebMercator.toMeters(p)
         val e = OrthophotoExtent
-        return if (m.x in e[0]..e[2] && m.y in e[1]..e[3]) Orthophoto else OpenStreetMap
+        return m.x in e[0]..e[2] && m.y in e[1]..e[3]
     }
+
+    /**
+     * The backgrounds for a track at [p], best first: MapTiler's satellite when [mapTilerKey] is
+     * set, the orthophoto in Poland, then the street map.
+     */
+    fun forPlace(p: GeoPoint, mapTilerKey: String? = null): List<TileSource> = listOfNotNull(
+        mapTilerKey?.trim()?.takeIf { it.isNotEmpty() }?.let(::mapTiler),
+        Orthophoto.takeIf { inPoland(p) },
+        OpenStreetMap,
+    )
 }

@@ -84,6 +84,7 @@ fun aboutSections(): List<CreditSection> = listOf(
     CreditSection(
         "Map tiles",
         listOf(
+            tileCredit(TileSources.mapTiler(""), "MapTiler terms", "https://www.maptiler.com/copyright/"),
             tileCredit(TileSources.Orthophoto, "GUGiK terms of use", "https://www.geoportal.gov.pl"),
             tileCredit(TileSources.OpenStreetMap, "ODbL 1.0", "https://www.openstreetmap.org/copyright"),
         ),

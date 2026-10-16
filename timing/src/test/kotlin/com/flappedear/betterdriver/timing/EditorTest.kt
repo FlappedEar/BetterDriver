@@ -66,11 +66,29 @@ class EditorTest {
 
     @Test
     fun `satellite in Poland, street map elsewhere`() {
-        assertSame(TileSources.Orthophoto, TileSources.forPlace(GeoPoint(52.4206, 16.8114))) // Tor Poznań
-        assertSame(TileSources.Orthophoto, TileSources.forPlace(GeoPoint(50.8136, 20.5378))) // Tor Kielce
-        assertSame(TileSources.OpenStreetMap, TileSources.forPlace(GeoPoint(50.7914, 12.6888))) // Sachsenring
+        val poznan = GeoPoint(52.4206, 16.8114) // Tor Poznań
+        assertSame(TileSources.Orthophoto, TileSources.forPlace(poznan).first())
+        assertSame(TileSources.Orthophoto, TileSources.forPlace(GeoPoint(50.8136, 20.5378)).first()) // Tor Kielce
+        val sachsenring = GeoPoint(50.7914, 12.6888)
+        assertEquals(listOf(TileSources.OpenStreetMap), TileSources.forPlace(sachsenring))
         val url = TileSources.Orthophoto.url(1, 1, 0)
         assertEquals(true, url.contains("CRS=EPSG:3857&BBOX=0.000,0.000,20037508.343,20037508.343"), url)
+        assertEquals(true, url.contains("&WIDTH=512&HEIGHT=512&"), url)
+        assertEquals(512, TileSources.Orthophoto.imagePx)
+    }
+
+    @Test
+    fun `with a MapTiler key its satellite map comes first everywhere`() {
+        val poznan = TileSources.forPlace(GeoPoint(52.4206, 16.8114), mapTilerKey = " key1 ")
+        assertEquals(listOf("maptiler-satellite", "gugik-orto-512", "osm"), poznan.map { it.id })
+        assertEquals(
+            "https://api.maptiler.com/maps/satellite/256/17/70000/45000@2x.jpg?key=key1",
+            poznan.first().url(17, 70_000, 45_000),
+        )
+        assertEquals(512, poznan.first().imagePx)
+        val sachsenring = TileSources.forPlace(GeoPoint(50.7914, 12.6888), mapTilerKey = "key1")
+        assertEquals(listOf("maptiler-satellite", "osm"), sachsenring.map { it.id })
+        assertEquals(listOf("gugik-orto-512", "osm"), TileSources.forPlace(GeoPoint(52.42, 16.81), "  ").map { it.id })
     }
 
     @Test

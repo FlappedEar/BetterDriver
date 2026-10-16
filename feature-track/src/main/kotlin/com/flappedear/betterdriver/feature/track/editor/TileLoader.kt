@@ -7,6 +7,7 @@ import android.os.SystemClock
 import android.util.LruCache
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -19,7 +20,7 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
 private const val MemoryTiles = 160
-private const val Threads = 4
+private const val Threads = 6
 private const val TimeoutMs = 15_000
 private const val RetryAfterMs = 30_000L
 private const val MaxDownloadBytes = 4 * 1024 * 1024
@@ -35,8 +36,11 @@ private const val DiskLimitBytes = 300L * 1024 * 1024
  * [userAgent] identifies the app, as OpenStreetMap's tile policy requires.
  *
  * [get] is called while drawing; [loaded] goes up when a tile arrives, so maps that read it redraw.
+ *
+ * [keyFile] keeps the MapTiler key Arek enters on the map (FBBD-230): on the phone only, never in
+ * the repository or the APK.
  */
-class TileLoader(private val cacheDir: File, private val userAgent: String) {
+class TileLoader(private val cacheDir: File, private val userAgent: String, private val keyFile: File? = null) {
 
     private data class Key(val source: String, val z: Int, val x: Int, val y: Int)
 
@@ -53,8 +57,43 @@ class TileLoader(private val cacheDir: File, private val userAgent: String) {
     var failures by mutableIntStateOf(0)
         private set
 
+    /** The MapTiler key, or null until one is entered. Main thread. */
+    var mapTilerKey by mutableStateOf<String?>(null)
+        private set
+
     init {
-        io.execute(::trimDisk)
+        io.execute {
+            val key = readKey()
+            if (key != null) main.post { mapTilerKey = key }
+            // 256 px orthophoto tiles from before FBBD-230, no longer shown.
+            File(cacheDir, "gugik-orto").deleteRecursively()
+            trimDisk()
+        }
+    }
+
+    /** Keeps [key] for MapTiler's satellite map; a blank key removes it. Main thread. */
+    fun updateMapTilerKey(key: String) {
+        val value = key.trim().takeIf { it.isNotEmpty() }
+        mapTilerKey = value
+        val f = keyFile ?: return
+        io.execute {
+            try {
+                if (value == null) {
+                    f.delete()
+                } else {
+                    f.parentFile?.mkdirs()
+                    f.writeText(value)
+                }
+            } catch (_: IOException) {
+                // Kept for this run only; entered again after a restart.
+            }
+        }
+    }
+
+    private fun readKey(): String? = try {
+        keyFile?.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+    } catch (_: IOException) {
+        null
     }
 
     /** The tile if it is in memory; otherwise null, and it is loaded from disk or the network. Main thread. */
