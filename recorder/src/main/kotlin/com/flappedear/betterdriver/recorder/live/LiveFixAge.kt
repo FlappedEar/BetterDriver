@@ -44,7 +44,8 @@ class LiveFixAge(private val accelIds: Set<Int>, private val onChange: (FixAge) 
 
     private fun measure() {
         val age = gnssFixAge(sets.toList(), accelIds)
-        age.micros?.let { micros = it }
+        // On time clears an earlier age (the coach must stop allowing for it); unmeasured keeps it.
+        if (age.onTime) micros = 0L else age.micros?.let { micros = it }
         // The agreement figures change at every measurement; only a new age or reason is told.
         val outcome = age.micros?.toString() ?: age.text.substringBefore(" (")
         if (outcome != told) {

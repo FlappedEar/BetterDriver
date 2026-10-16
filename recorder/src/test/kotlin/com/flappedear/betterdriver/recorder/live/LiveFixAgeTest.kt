@@ -53,6 +53,16 @@ class LiveFixAgeTest {
     }
 
     @Test
+    fun aFixFoundOnTimeClearsAnEarlierAge() {
+        val age = LiveFixAge(setOf(accelX))
+        (0 until 25 * 200).forEach { age.add(set(it, 0.8)) }
+        assertTrue(age.micros > 0)
+        // The window holds the last 3 min: once it is all on time, the age is cleared.
+        (25 * 200 until 25 * 420).forEach { age.add(set(it, 0.0)) }
+        assertEquals(0L, age.micros)
+    }
+
+    @Test
     fun setsWithoutTheAccelerometerAreIgnored() {
         val age = LiveFixAge(setOf(accelX))
         (0 until 25 * 200).forEach { i ->

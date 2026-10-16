@@ -67,10 +67,10 @@ fun gnssFixAgeMicros(sets: List<SampleSet>, accelIds: Set<Int>): Long? = gnssFix
 
 /**
  * A fix-age estimate: [micros] as [gnssFixAgeMicros] gives it, and [text] for the debug log, which
- * says why there is none. On Arek's 2026-10-16 midday drive the RaceBox Micro logged no age at all
+ * says why there is none; [onTime] when the fix was measured as on time, not merely unmeasured. On Arek's 2026-10-16 midday drive the RaceBox Micro logged no age at all
  * over 9 min with a fix, so the log could not tell "on time" from "could not be told".
  */
-class FixAge(val micros: Long?, val text: String)
+class FixAge(val micros: Long?, val text: String, val onTime: Boolean = false)
 
 /** [gnssFixAgeMicros] with the reason for its answer. */
 @Suppress("ReturnCount")
@@ -110,7 +110,7 @@ private fun fixAgeOf(best: Lag): FixAge {
     val onTime = best.atZero.isFinite() && best.agreement - best.atZero < MinGain || micros < MinShiftMicros
     return when {
         best.agreement < MinAgreement -> FixAge(null, "not measured: accelerometer disagrees with GNSS ($fit)")
-        onTime -> FixAge(null, "0 ms, on time ($fit)")
+        onTime -> FixAge(null, "0 ms, on time ($fit)", onTime = true)
         else -> FixAge(micros, "${micros / MicrosPerMilli} ms ($fit)")
     }
 }
