@@ -15,8 +15,8 @@ import androidx.compose.runtime.setValue
 import com.flappedear.betterdriver.recording.ExportFormat
 
 /**
- * Export opens a short menu of formats (FBBD-150): VBO (with its video when the session has any)
- * for Circuit Tools, CSV with every channel for spreadsheets, GPX for maps. Choosing one asks
+ * Export opens a short menu of formats (FBBD-150): VBO for Circuit Tools and other VBO readers,
+ * plus VBO + video into a folder when the session has video (FBBD-25), CSV with every channel for spreadsheets, GPX for maps. Choosing one asks
  * where to save, as VBO export always did. A session with video also offers Video with data
  * ([dataVideo], FBBD-152): a lap or the whole video with the data drawn in, chosen in a picker.
  */
@@ -74,13 +74,13 @@ internal fun dataVideoDetail(recording: Boolean, busy: Boolean): String = when {
 /** One line of the Export menu. */
 internal data class ExportChoice(val format: ExportFormat, val label: String, val detail: String)
 
-/** The Export menu's lines, VBO first as the format most used. */
-internal fun exportChoices(video: Boolean) = listOf(
-    if (video) {
-        ExportChoice(ExportFormat.Vbo, "VBO + video", "Circuit Tools, into a new folder")
-    } else {
-        ExportChoice(ExportFormat.Vbo, "VBO", "Circuit Tools")
-    },
-    ExportChoice(ExportFormat.Csv, "CSV", "Every channel and lap, for spreadsheets"),
-    ExportChoice(ExportFormat.Gpx, "GPX", "GPS track by lap, for maps"),
-)
+/**
+ * The Export menu's lines, VBO first as the format most used. A session with video offers the plain
+ * VBO too, one file without video columns (FBBD-227): before, VBO + video was its only VBO line.
+ */
+internal fun exportChoices(video: Boolean) = buildList {
+    if (video) add(ExportChoice(ExportFormat.VboVideo, "VBO + video", "Circuit Tools, into a new folder"))
+    add(ExportChoice(ExportFormat.Vbo, "VBO", if (video) "Data only, one file" else "Circuit Tools"))
+    add(ExportChoice(ExportFormat.Csv, "CSV", "Every channel and lap, for spreadsheets"))
+    add(ExportChoice(ExportFormat.Gpx, "GPX", "GPS track by lap, for maps"))
+}
