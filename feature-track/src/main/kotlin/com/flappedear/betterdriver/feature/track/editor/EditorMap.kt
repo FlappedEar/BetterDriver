@@ -7,6 +7,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.TextMeasurer
@@ -93,12 +94,17 @@ private fun DrawScope.drawLap(points: List<GeoPoint>, project: (GeoPoint) -> Off
         }
         last = o
     }
-    drawPath(
-        path,
-        EditorColors.Accent.copy(alpha = if (highlight) 0.95f else 0.6f),
-        style = Stroke(width = (if (highlight) 2.5f else 1.6f) * density),
-    )
+    // Bright magenta on a dark halo, so the lap stands out on satellite imagery as well as on the street map.
+    val width = (if (highlight) LapSelectedWidthDp else LapWidthDp) * density
+    drawPath(path, EditorColors.Halo.copy(alpha = 0.8f), style = lapStroke(width + LapHaloDp * density))
+    drawPath(path, EditorColors.Lap, style = lapStroke(width))
 }
+
+private fun lapStroke(width: Float) = Stroke(width = width, cap = StrokeCap.Round, join = StrokeJoin.Round)
+
+private const val LapWidthDp = 3.5f
+private const val LapSelectedWidthDp = 4.5f
+private const val LapHaloDp = 3f
 
 @Suppress("LongParameterList") // The line, where it is drawn, and its label.
 private fun DrawScope.drawTimingLine(

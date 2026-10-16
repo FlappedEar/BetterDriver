@@ -35,6 +35,9 @@ internal object EditorColors {
     val Pit = Color(0xFFC9D3DA)
     val Halo = Color(0xFF0B0F12)
 
+    /** The recorded lap on the map: a colour no satellite photo or street map has. */
+    val Lap = Color(0xFFFF3DD8)
+
     /** The track's corners on the map and in the list (FBBD-179). */
     val Corner = Color(0xFFF2B84B)
 
