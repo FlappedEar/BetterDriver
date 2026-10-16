@@ -56,6 +56,9 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 enum class ExportFormat(val extension: String, val mimeType: String) {
     Vbo("vbo", "application/octet-stream"),
+
+    /** The VBO with its video files, into a new folder (FBBD-25); written by [Sessions.exportWithVideo]. */
+    VboVideo("vbo", "application/octet-stream"),
     Csv("csv", "text/csv"),
     Gpx("gpx", "application/gpx+xml"),
 }
@@ -191,7 +194,8 @@ class Sessions private constructor(private val context: Context) {
                 val out = context.contentResolver.openOutputStream(uri) ?: throw IOException("cannot open $uri")
                 out.use {
                     when (format) {
-                        ExportFormat.Vbo ->
+                        // VboVideo goes to a folder through exportWithVideo; a file here gets the plain VBO.
+                        ExportFormat.Vbo, ExportFormat.VboVideo ->
                             logExport(id, data) { VboExporter.export(data, it, derived = vboAccelerations(data)) }
                         ExportFormat.Csv -> CsvExporter.export(data, it, exportLaps(data, tracksDir(context)))
                         ExportFormat.Gpx -> GpxExporter.export(data, it, exportLaps(data, tracksDir(context)))

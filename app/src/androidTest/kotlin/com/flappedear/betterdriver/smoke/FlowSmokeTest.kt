@@ -106,13 +106,14 @@ class FlowSmokeTest {
     }
 
     @Test
-    fun exportMenuCsvGpxAndVideo() {
+    fun exportMenuCsvGpxVboAndVideo() {
         app.openSessions()
 
         // CSV: the save dialog opens; cancelled, nothing is written.
         intending(hasAction(Intent.ACTION_CREATE_DOCUMENT)).respondWith(ActivityResult(Activity.RESULT_CANCELED, null))
         openExportMenu()
         app.waitForText("VBO + video").assertIsDisplayed()
+        app.waitForText("VBO").assertIsDisplayed()
         app.waitForText("GPX").assertIsDisplayed()
         app.waitForText("Video with data").assertIsDisplayed()
         app.waitForText("CSV").performClick()
@@ -129,6 +130,17 @@ class FlowSmokeTest {
         app.waitForText("Saved", timeoutMs = LoadTimeoutMs)
         val text = gpx.readText()
         check("<gpx" in text && "<trkseg>" in text) { "not a GPX file: ${text.take(SnippetChars)}" }
+
+        // Plain VBO of a session with video (FBBD-227): one file, no video columns.
+        val vbo = File(cache, "smoke.vbo").apply { delete() }
+        intending(allOf(hasAction(Intent.ACTION_CREATE_DOCUMENT), hasType("application/octet-stream")))
+            .respondWith(picked(vbo))
+        openExportMenu()
+        app.waitForText("VBO").performClick()
+        // "Saved" still shows from the GPX export, so wait for this file and the end of its export.
+        app.waitNamed("the VBO file", LoadTimeoutMs) { vbo.length() > 0 && !app.showsText("Exporting…") }
+        val vboText = vbo.readText()
+        check("[data]" in vboText && "avifileindex" !in vboText) { "not a plain VBO: ${vboText.take(SnippetChars)}" }
 
         // Video with data: the sheet lists the whole session and its laps; Cancel closes it.
         openExportMenu()
