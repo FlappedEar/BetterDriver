@@ -79,24 +79,19 @@ fun gnssFixAgeMicros(sets: List<SampleSet>, accelIds: Set<Int>): Long? {
     val gps = DoubleArray(steps) { i ->
         if (i == 0 || i == steps - 1) Double.NaN else (v[i + 1] - v[i - 1]) / (2 * StepSeconds) / G
     }.smoothed()
-    var bestSteps = 0
-    var bestAgreement = Double.NaN
-    var agreementAtZero = Double.NaN
-    for (id in accelIds) {
+    val best = accelIds.mapNotNull { id ->
         val accel = resample(times, valuesOf(withBoth, id), start, steps).smoothed()
         val curve = DoubleArray(MaxLatencySteps + 1) { k -> abs(laggedCorrelation(gps, accel, k, moving)) }
-        val k = curve.indices.filter { curve[it].isFinite() }.maxByOrNull { curve[it] } ?: continue
-        if (bestAgreement.isNaN() || curve[k] > bestAgreement) {
-            bestAgreement = curve[k]
-            bestSteps = k
-            agreementAtZero = curve[0]
-        }
-    }
-    if (bestAgreement.isNaN() || bestAgreement < MinAgreement) return null
-    if (agreementAtZero.isFinite() && bestAgreement - agreementAtZero < MinGain) return null
-    val micros = (bestSteps * StepSeconds * MicrosPerSecond).roundToLong()
+        curve.indices.filter { curve[it].isFinite() }.maxByOrNull { curve[it] }?.let { k -> Lag(k, curve[k], curve[0]) }
+    }.maxByOrNull { it.agreement } ?: return null
+    if (best.agreement < MinAgreement) return null
+    if (best.atZero.isFinite() && best.agreement - best.atZero < MinGain) return null
+    val micros = (best.steps * StepSeconds * MicrosPerSecond).roundToLong()
     return micros.takeIf { it >= MinShiftMicros }
 }
+
+/** One axis's best wait in [steps], its agreement there, and its agreement at no wait. */
+private class Lag(val steps: Int, val agreement: Double, val atZero: Double)
 
 /**
  * This session with each receiver's GNSS values put back at the time of their fix ([gnssFixAgeMicros]
