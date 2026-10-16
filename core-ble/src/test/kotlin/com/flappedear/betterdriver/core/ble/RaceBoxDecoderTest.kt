@@ -184,6 +184,32 @@ class RaceBoxDecoderTest {
         assertTrue(reasons.isEmpty(), reasons.toString())
     }
 
+    /** The Micro skips the whole-second message without a fix too; a Mini sends it, so its loss counts. */
+    @Test
+    fun `without a fix only the Micro's whole-second skip is excused`() {
+        fun reasonsFor(isMicro: Boolean): List<String> {
+            val sink = Sink()
+            val reasons = mutableListOf<String>()
+            val decoder = RaceBoxDecoder(sink, isMicro = isMicro) { reasons += it }
+            var tow = 100_040L
+            repeat(25 * 20) {
+                if (tow % 1_000 != 0L) {
+                    sink.now = tow * 1_000 + 30_000
+                    decoder.feed(
+                        RaceBoxTestData.packet { p ->
+                            for (i in 0 until 4) p[i] = (tow shr (8 * i)).toByte()
+                            p[21] = 0x00
+                        },
+                    )
+                }
+                tow += 40
+            }
+            return reasons
+        }
+        assertTrue(reasonsFor(isMicro = true).isEmpty())
+        assertTrue(reasonsFor(isMicro = false).contains("messages missing"))
+    }
+
     /**
      * Arek's 2026-10-14 drive: before the fix the RaceBox's time ran off GNSS time, so the delay it gave
      * rose by about 0.65 s; with the rise capped for a backlog (FBBD-218), every sample after the fix was

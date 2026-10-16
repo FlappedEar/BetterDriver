@@ -69,7 +69,7 @@ class RaceBoxDecoder(
     private val reader = UbxFrameReader()
     private var hadFix: Boolean? = null
     private var fixSeen = false
-    private val stats = StreamStats()
+    private val stats = StreamStats(skipsWithoutFix = isMicro)
     private val clock = ReceiverClock()
     private var missedSeen = 0L
 
@@ -98,7 +98,7 @@ class RaceBoxDecoder(
                 return@feed
             }
             messages++
-            stats.add(data.iTowMs)
+            stats.add(data.iTowMs, data.hasFix)
             if (noteFix(data)) fixAcquired = true
             decoded += data
         }
@@ -215,8 +215,9 @@ internal const val ClockJumpMs = 5_000L
  * or skipped bytes (FBBD-170). The notification count and the other frames show whether those
  * seconds brought nothing at all or a frame the decoder did not take as data.
  */
-internal class StreamStats {
+internal class StreamStats(private val skipsWithoutFix: Boolean = true) {
     private var last: Long? = null
+    private var lastFix = false
     private val steps = ArrayDeque<Long>()
     private var count = 0
     private var missed = 0L
@@ -228,7 +229,8 @@ internal class StreamStats {
     /**
      * Messages missing since the stream started, for the slow-link check: a single whole-second
      * message is left out, as the RaceBox does not send it (FBBD-170). On the 2026-10-16 midday drive
-     * that skip asked for a fast link every 30 s on a link that lost nothing else.
+     * that skip asked for a fast link every 30 s on a link that lost nothing else. The Micro skips it
+     * without a fix too ([skipsWithoutFix]); a Mini sends it then, so a Mini's loss there is counted.
      */
     var missedSoFar = 0L
         private set
@@ -249,9 +251,10 @@ internal class StreamStats {
         others[key] = (others[key] ?: 0) + 1
     }
 
-    fun add(iTowMs: Long) {
-        last?.let { countGap(it, iTowMs) }
+    fun add(iTowMs: Long, fix: Boolean = true) {
+        last?.let { countGap(it, iTowMs, skipExpected = skipsWithoutFix || fix && lastFix) }
         last = iTowMs
+        lastFix = fix
         count++
     }
 
@@ -284,7 +287,7 @@ internal class StreamStats {
      * has messages missing; the usual step is the median of recent ones, so a RaceBox set below
      * 25 Hz for standalone recording is not counted as missing every other message.
      */
-    private fun countGap(previous: Long, iTowMs: Long) {
+    private fun countGap(previous: Long, iTowMs: Long, skipExpected: Boolean) {
         val gap = iTowMs - previous
         if (gap <= 0 || gap > ClockJumpMs) return
         val step = usualStep()
@@ -301,7 +304,7 @@ internal class StreamStats {
         }
         missed += lost
         missedOnSecond += onSecond
-        if (lost != 1 || onSecond != 1) missedSoFar += lost
+        if (!skipExpected || lost != 1 || onSecond != 1) missedSoFar += lost
     }
 
     /** Null for the first few steps of a stream, which are not checked. */
