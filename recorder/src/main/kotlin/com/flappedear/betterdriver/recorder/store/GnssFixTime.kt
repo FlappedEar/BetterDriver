@@ -98,14 +98,19 @@ fun gnssFixAge(sets: List<SampleSet>, accelIds: Set<Int>): FixAge {
         val accel = resample(times, valuesOf(withBoth, id), start, steps).smoothed()
         val curve = DoubleArray(MaxLatencySteps + 1) { k -> abs(laggedCorrelation(gps, accel, k, moving)) }
         curve.indices.filter { curve[it].isFinite() }.maxByOrNull { curve[it] }?.let { k -> Lag(k, curve[k], curve[0]) }
-    }.maxByOrNull { it.agreement } ?: return FixAge(null, "not measured: accelerometer and GNSS speed do not overlap")
+    }.maxByOrNull { it.agreement }
+    return best?.let(::fixAgeOf) ?: FixAge(null, "not measured: accelerometer and GNSS speed do not overlap")
+}
+
+/** The age the [best] wait gives, or why it is taken as none. */
+private fun fixAgeOf(best: Lag): FixAge {
     val micros = (best.steps * StepSeconds * MicrosPerSecond).roundToLong()
     val fit = "agreement ${"%.2f".format(Locale.ROOT, best.agreement)} at ${micros / MicrosPerMilli} ms, " +
         "${"%.2f".format(Locale.ROOT, best.atZero)} at 0 ms"
+    val onTime = best.atZero.isFinite() && best.agreement - best.atZero < MinGain || micros < MinShiftMicros
     return when {
         best.agreement < MinAgreement -> FixAge(null, "not measured: accelerometer disagrees with GNSS ($fit)")
-        best.atZero.isFinite() && best.agreement - best.atZero < MinGain -> FixAge(null, "0 ms, on time ($fit)")
-        micros < MinShiftMicros -> FixAge(null, "0 ms, on time ($fit)")
+        onTime -> FixAge(null, "0 ms, on time ($fit)")
         else -> FixAge(micros, "${micros / MicrosPerMilli} ms ($fit)")
     }
 }
@@ -125,10 +130,9 @@ private class Lag(val steps: Int, val agreement: Double, val atZero: Double)
  */
 fun SessionData.withGnssAtFixTime(): SessionData {
     val accelIds = channels.values.filter { it.name in AccelNames }.map { it.id }.toSet()
-    if (info.imported != null) return this
-    val fixAge = gnssFixAge(sampleSets, accelIds)
-    if (accelIds.isNotEmpty()) DebugLog.i("SessionStore", "$id: gnss fix age ${fixAge.text}")
-    val age = fixAge.micros ?: return this
+    val fixAge = if (info.imported == null) gnssFixAge(sampleSets, accelIds) else null
+    if (fixAge != null && accelIds.isNotEmpty()) DebugLog.i("SessionStore", "$id: gnss fix age ${fixAge.text}")
+    val age = fixAge?.micros ?: return this
     val gnssIds = channels.values
         .filter { it.id in GnssChannels.IDS || it.name.startsWith("gnss_") }
         .map { it.id }
