@@ -211,6 +211,7 @@ class SessionStore(
     /**
      * With [samples] false, the sample sets are left out: metadata, channels and events only. For
      * screens that only need events (cue counts, the track used), so an hour at 25 Hz is not held in memory.
+     * With them, a receiver's GNSS values are put back at the time of their fix ([withGnssAtFixTime]).
      */
     fun read(dir: File, samples: Boolean = true): SessionData {
         val props = SessionFiles.readProps(File(dir, SessionFiles.META))
@@ -235,6 +236,8 @@ class SessionStore(
             truncated += r.truncatedTailBytes
             skipped += r.skippedBytes
         }
-        return SessionData(dir.name, info, state(dir), channels, sets, events, end, truncated, skipped)
+        val data = SessionData(dir.name, info, state(dir), channels, sets, events, end, truncated, skipped)
+        // The GNSS fix a receiver sends with its acceleration is older than it (FBBD-229): put it back at its time.
+        return if (samples) data.withGnssAtFixTime() else data
     }
 }
