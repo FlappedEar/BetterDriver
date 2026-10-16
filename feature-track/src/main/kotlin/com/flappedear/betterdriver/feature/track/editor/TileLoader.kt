@@ -63,7 +63,7 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
 
     init {
         io.execute {
-            val key = readKey()
+            val key = readKey(keyFile)
             if (key != null) main.post { mapTilerKey = key }
             // 256 px orthophoto tiles from before FBBD-230, no longer shown.
             File(cacheDir, "gugik-orto").deleteRecursively()
@@ -88,12 +88,6 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
                 // Kept for this run only; entered again after a restart.
             }
         }
-    }
-
-    private fun readKey(): String? = try {
-        keyFile?.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
-    } catch (_: IOException) {
-        null
     }
 
     /** The tile if it is in memory; otherwise null, and it is loaded from disk or the network. Main thread. */
@@ -190,6 +184,13 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
     fun close() {
         io.shutdownNow()
     }
+}
+
+/** The key kept in [file], or null when there is none. */
+private fun readKey(file: File?): String? = try {
+    file?.takeIf { it.isFile }?.readText()?.trim()?.takeIf { it.isNotEmpty() }
+} catch (_: IOException) {
+    null
 }
 
 /** Reads up to [limit] bytes; InputStream.readNBytes needs API 33. */
