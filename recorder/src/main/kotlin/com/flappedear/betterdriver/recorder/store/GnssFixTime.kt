@@ -97,11 +97,13 @@ private class Lag(val steps: Int, val agreement: Double, val atZero: Double)
  * This session with each receiver's GNSS values put back at the time of their fix ([gnssFixAgeMicros]
  * earlier), its other values (acceleration, rotation, input voltage) left where they arrived. A set
  * then splits in two; the sets are kept in time order. GNSS values that would land before the
- * session's start are dropped. Unchanged when the age is not known.
+ * session's start are dropped. Unchanged when the age is not known, and for an imported session:
+ * another app's file may carry acceleration worked out from GPS or read from the phone, already
+ * timed against its fixes, so its sets say nothing about a receiver's fix age.
  */
 fun SessionData.withGnssAtFixTime(): SessionData {
     val accelIds = channels.values.filter { it.name in AccelNames }.map { it.id }.toSet()
-    val age = gnssFixAgeMicros(sampleSets, accelIds) ?: return this
+    val age = (if (info.imported == null) gnssFixAgeMicros(sampleSets, accelIds) else null) ?: return this
     val gnssIds = channels.values
         .filter { it.id in GnssChannels.IDS || it.name.startsWith("gnss_") }
         .map { it.id }

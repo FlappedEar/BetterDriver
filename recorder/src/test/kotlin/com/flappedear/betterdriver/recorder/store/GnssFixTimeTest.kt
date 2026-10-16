@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recorder.store
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import kotlin.math.PI
@@ -58,9 +59,9 @@ class GnssFixTimeTest {
             )
         }
 
-    private fun session(sets: List<SampleSet>) = SessionData(
+    private fun session(sets: List<SampleSet>, imported: ImportOrigin? = null) = SessionData(
         id = "20261016-063720-44b75e99",
-        info = SessionInfo(1_792_125_440_347L),
+        info = SessionInfo(1_792_125_440_347L, imported = imported),
         state = SessionState.FINISHED,
         channels = (GnssChannels.ALL + listOf(accelX, accelY, hAcc)).associateBy { it.id },
         sampleSets = sets,
@@ -89,6 +90,13 @@ class GnssFixTimeTest {
         assertNull(gnssFixAgeMicros(sets(0.8, accel = false), setOf(accelX.id, accelY.id)))
         assertNull(gnssFixAgeMicros(sets(0.8, seconds = 30), setOf(accelX.id, accelY.id)), "under a minute of driving")
         val data = session(sets(0.8, accel = false))
+        assertSame(data, data.withGnssAtFixTime())
+    }
+
+    /** Another app's acceleration may come from GPS or the phone: its timing is the file's own. */
+    @Test
+    fun anImportedSessionIsLeftAlone() {
+        val data = session(sets(0.8), ImportOrigin("RaceChrono CSV", "session.csv", "RaceChrono"))
         assertSame(data, data.withGnssAtFixTime())
     }
 
