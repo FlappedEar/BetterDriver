@@ -72,13 +72,15 @@ internal class GnssSamples(sets: List<SampleSet>) {
 
 /**
  * The GNSS section: [samples] with the link drops logged in [events]; [endMicros] is the session's end.
- * [raceBox] says the receiver was a RaceBox, whose whole-second skip (FBBD-170) is counted apart.
+ * [raceBox] says the receiver was a RaceBox, whose whole-second skip (FBBD-170) is counted apart;
+ * [skipsWithoutFix] that it was a Micro, which skips it without a fix too.
  */
 internal fun gnssSection(
     samples: GnssSamples,
     events: List<RecorderEvent>,
     endMicros: Long,
     raceBox: Boolean = false,
+    skipsWithoutFix: Boolean = false,
 ): QualitySection {
     if (samples.size < 2) {
         val why = "fewer than two GNSS samples in this session"
@@ -90,9 +92,9 @@ internal fun gnssSection(
     drops.forEach { acrossDrop[it.before] = it.after != null }
     val gaps = gaps(samples, acrossDrop)
     val metrics = buildList {
-        add(rate(samples, acrossDrop, wholeSecondSkips(samples, acrossDrop, raceBox)))
+        add(rate(samples, acrossDrop, wholeSecondSkips(samples, acrossDrop, raceBox, skipsWithoutFix)))
         add(p1Rate(samples, drops))
-        add(dropped(samples, acrossDrop, raceBox))
+        add(dropped(samples, acrossDrop, raceBox, skipsWithoutFix))
         addAll(gapMetrics(gaps))
         addAll(reconnectMetrics(samples, drops, endMicros))
         add(stationaryNoise(samples))
@@ -164,8 +166,16 @@ private const val MillisPerSecond = 1_000L
  * message (FBBD-170), on both units Arek has. The 2026-10-14 log proved it is the device, not the
  * link: the same link carried all 25 messages a second whenever the fix was lost (1500 in 1500
  * notifications, none missing). Arek accepts the 24 Hz that leaves ("> 24 sounds good", FBBD-218).
+ * The Micro skips it before its first fix too (2026-10-16 midday: 63 a minute, all on the whole
+ * second, through 2 min without a fix): with [skipsWithoutFix] the skip is left out either way.
+ * A Mini sends it without a fix, so a loss there stays a loss.
  */
-private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): QualityMetric {
+private fun dropped(
+    s: GnssSamples,
+    acrossDrop: BooleanArray,
+    raceBox: Boolean,
+    skipsWithoutFix: Boolean,
+): QualityMetric {
     val steps = receiverSteps(s, acrossDrop)
     val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)
     if (usual == null || usual <= 0) {
@@ -177,13 +187,13 @@ private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean):
     var wholeSecond = 0L
     for (step in steps) {
         val lost = maxOf(0L, (step.millis / usual).roundToLong() - 1)
-        if (raceBox && lost == 1L && isWholeSecondSkip(step, usual)) wholeSecond++ else missing += lost
+        if (raceBox && lost == 1L && isWholeSecondSkip(step, usual, skipsWithoutFix)) wholeSecond++ else missing += lost
     }
     val expected = received + missing + wholeSecond
     val percent = missing * Percent / expected
     val how = "$missing of $expected expected samples missing from the receiver's fix times " +
         "(usual step ${usual.roundToLong()} ms), besides $wholeSecond single whole-second messages the RaceBox " +
-        "does not send with a fix"
+        "does not send" + if (skipsWithoutFix) "" else " with a fix"
     val ok = percent <= MaxDroppedPercent
     return judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
 }
@@ -192,17 +202,22 @@ private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean):
  * A single sample lost on a whole second between two fixes: the RaceBox's skip (FBBD-170). Its middle
  * is within half a [usual] step of a whole second.
  */
-private fun isWholeSecondSkip(step: ReceiverStep, usual: Double): Boolean {
+private fun isWholeSecondSkip(step: ReceiverStep, usual: Double, skipsWithoutFix: Boolean): Boolean {
     val ms = Math.floorMod(step.fromUtc + step.millis / 2, MillisPerSecond)
     val onSecond = ms < usual / 2 || ms > MillisPerSecond - usual / 2
-    return step.fixBothSides && (step.millis / usual).roundToLong() == 2L && onSecond
+    return (step.fixBothSides || skipsWithoutFix) && (step.millis / usual).roundToLong() == 2L && onSecond
 }
 
 /** How many of the RaceBox's whole-second messages are missing with a fix (FBBD-170); 0 for other receivers. */
-private fun wholeSecondSkips(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): Long {
+private fun wholeSecondSkips(
+    s: GnssSamples,
+    acrossDrop: BooleanArray,
+    raceBox: Boolean,
+    skipsWithoutFix: Boolean,
+): Long {
     val steps = if (raceBox) receiverSteps(s, acrossDrop) else emptyList()
     val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)?.takeIf { it > 0 }
-    return if (usual == null) 0L else steps.count { isWholeSecondSkip(it, usual) }.toLong()
+    return if (usual == null) 0L else steps.count { isWholeSecondSkip(it, usual, skipsWithoutFix) }.toLong()
 }
 
 /** A step between consecutive fix times, from [fromUtc], [millis] long; [fixBothSides] when both samples had a fix. */

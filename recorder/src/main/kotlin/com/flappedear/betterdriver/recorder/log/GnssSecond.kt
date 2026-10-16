@@ -105,10 +105,13 @@ data class GnssSecond(
  * Writes a [GnssSecond] line to the continuous log for each second of [sessionId] that had GNSS
  * samples (FBBD-183). It runs on the recorder's listener thread and keeps only one second in memory.
  * [startUtcMillis] is the session's start on the phone's wall clock. [write] is the log (a test hook).
+ * [skipsWithoutFix]: the receiver is a RaceBox Micro, which skips its whole-second message without a
+ * fix too (2026-10-16 midday); a Mini sends it then, so for a Mini only a loss between fixes is the skip.
  */
 class GnssSecondLog(
     private val sessionId: String,
     private val startUtcMillis: Long,
+    private val skipsWithoutFix: Boolean = false,
     private val write: (String) -> Unit = { DebugLog.forSession(sessionId, CheckLog.GNSS, it) },
 ) : RecorderListener {
     private var current: Builder? = null
@@ -185,7 +188,8 @@ class GnssSecondLog(
         b.usual = usual
         val lost = maxOf(0L, (stepMillis.toDouble() / usual).roundToLong() - 1).toInt()
         b.missing += lost
-        if (lost == 1 && fixBothSides && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
+        val skip = lost == 1 && (fixBothSides || skipsWithoutFix)
+        if (skip && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
         if (stepMillis * MicrosPerMilli > LongGapMicros) b.longGaps++
         b.maxRxGap = maxOf(b.maxRxGap ?: 0L, stepMillis)
     }

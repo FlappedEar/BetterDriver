@@ -129,6 +129,31 @@ class SessionQualityTest {
     }
 
     @Test
+    fun `the RaceBox Micro's whole-second skip before its first fix does not fail either`() {
+        // 2026-10-16 midday: the Micro skipped the whole-second message through 2 min without a fix (0, 0),
+        // and those 118 counted as dropped: 0.76 %, a FAIL with no message really lost.
+        val position = setOf(GnssChannels.LAT.id, GnssChannels.LON.id)
+        val noFix = { s: SampleSet ->
+            SampleSet(s.tMicros, s.values.map { if (it.channelId in position) ChannelValue(it.channelId, 0.0) else it })
+        }
+        val sets = stream(0, 60_000_000).mapIndexedNotNull { i, s ->
+            when {
+                i != 0 && i % 25 == 0 -> null
+                s.tMicros < 30_000_000 -> noFix(s)
+                else -> s
+            }
+        }
+        val mini = session(sets).copy(info = SessionInfo(start, devices = listOf("racebox")))
+        // Only the Micro has an input voltage channel; a Mini sends the message without a fix, so it is lost.
+        val micro = mini.copy(channels = mapOf(120 to ChannelDef(120, "racebox_input", "V", "racebox", 1)))
+        val r = sessionQuality(micro)
+        assertEquals(0.0, r.value("gnss.dropped"))
+        assertTrue("besides 59 single whole-second messages" in r.metric("gnss.dropped").how)
+        // The 30 losses without a fix on both sides count: 30 of 1500, 2 %.
+        assertEquals(Verdict.FAIL, sessionQuality(mini).verdict("gnss.dropped"))
+    }
+
+    @Test
     fun `late arrivals with steady fix times are no drops, but gaps without fix times are timed on arrival`() {
         // The phone got samples in pairs (BLE batching): 0 and 80 ms apart, the receiver's times 40 ms apart.
         val batched = (0..1_500).map { i -> fix(t = (i / 2) * 80_000L, utc = start + i * 40L) }

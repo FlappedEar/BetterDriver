@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
+import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.nmea.RcChannels
 import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
@@ -93,10 +94,8 @@ private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
 
 /** How old the receiver's fixes are, so cues allow for it (FBBD-229); logged as it is measured. */
 private fun fixAgeFor(gnss: GnssRef): LiveFixAge? = accelIdsFor(gnss)?.let { (x, y) ->
-    LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age / MicrosPerMilli} ms") }
+    LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age.text}") }
 }
-
-private const val MicrosPerMilli = 1_000L
 
 private fun sensorsFrom(intent: Intent): List<SensorRef> =
     intent.getStringArrayExtra(RecorderProtocol.EXTRA_SENSORS).orEmpty().mapNotNull(SensorRef::decode)
@@ -399,7 +398,8 @@ class RecorderService : Service() {
             DebugLog.session = recording.id
             val start = recording.info.startUtcMillis
             recording.listeners.add(LoggingListener(recording.id, receiver, start, recording::nowMicros))
-            recording.listeners.add(GnssSecondLog(recording.id, start))
+            val micro = receiver.startsWith(RaceBoxGatt.MICRO_PREFIX)
+            recording.listeners.add(GnssSecondLog(recording.id, start, skipsWithoutFix = micro))
         }
 
         /**

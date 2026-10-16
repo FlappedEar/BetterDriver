@@ -184,7 +184,17 @@ class PhoneCamera(
                     power.addThermalStatusListener(executor, listener)
                 }
                 main.postDelayed(checker, CheckIntervalMs)
-                begin(0)
+                // A phone already hot starts at the step it would drop to at once. On 2026-10-16 a
+                // session started at 1080p with status moderate; the first check stopped that file
+                // before it held a frame (error 8) and started 720p a moment later.
+                when (val first = thermalAction()) {
+                    ThermalAction.StopVideo -> {
+                        endReason = "thermal"
+                        sink.status(stoppedText(endReason), ok = false)
+                    }
+                    is ThermalAction.StepDown -> begin(first.to)
+                    else -> begin(0)
+                }
             } catch (e: Exception) {
                 sink.status("Camera error", ok = false)
                 DebugLog.w(Tag, "camera provider failed", e)
