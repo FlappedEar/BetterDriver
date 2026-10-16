@@ -15,6 +15,9 @@ class DirectionReading(val name: String, val times: DoubleArray, val values: Dou
     init {
         require(times.size == values.size) { "$name has ${times.size} times and ${values.size} values" }
     }
+
+    /** Its means over windows, made once for the lag searches. */
+    internal val windows: WindowMeans by lazy { WindowMeans(times, values) }
 }
 
 /** What one accelerometer gave [fuseDirection]: its share of the average and how late its clock is on the fused one. */
@@ -156,13 +159,13 @@ private fun bestLag(best: DirectionReading, other: DirectionReading): Pair<Doubl
     if (to <= from) return 0.0 to Double.NaN
     val probes = ceil((to - from) / LagCompareStepSeconds).toInt() + 1
     val at = DoubleArray(probes) { from + it * LagCompareStepSeconds }
-    val reference = DoubleArray(probes) { best.meanAround(at[it]) }
+    val reference = best.windows.at(at, LagCompareHalfWindowSeconds)
     val steps = (MaxFusionLagSeconds / LagStepSeconds).roundToInt()
     var bestLag = 0.0
     var bestAgreement = Double.NEGATIVE_INFINITY
     for (s in -steps..steps) {
         val lag = s * LagStepSeconds
-        val c = correlation(reference, DoubleArray(probes) { other.meanAround(at[it] + lag) })
+        val c = correlation(reference, other.windows.at(at, LagCompareHalfWindowSeconds, lag))
         // A tie keeps the smaller lag.
         if (c > bestAgreement || (c == bestAgreement && abs(lag) < abs(bestLag))) {
             bestAgreement = c
@@ -188,12 +191,13 @@ private fun lagFreeResidual(reading: DirectionReading, gps: DirectionReading): D
     var least = Double.NaN
     for (s in -steps..steps) {
         val lag = s * LagStepSeconds
+        val means = reading.windows.at(gps.times, LagCompareHalfWindowSeconds, lag)
         var n = 0
         var sum = 0.0
         var sumSq = 0.0
         for (i in gps.times.indices) {
             val g = gps.values[i]
-            val d = if (g.isFinite()) reading.meanAround(gps.times[i] + lag) - g else Double.NaN
+            val d = if (g.isFinite()) means[i] - g else Double.NaN
             if (!d.isFinite()) continue
             n++
             sum += d
@@ -230,23 +234,6 @@ private fun correlation(a: DoubleArray, b: DoubleArray): Double {
         vb += (b[i] - mb) * (b[i] - mb)
     }
     return if (va > 0.0 && vb > 0.0) cov / sqrt(va * vb) else Double.NaN
-}
-
-/** The mean of the readings within [LagCompareHalfWindowSeconds] of [t]; NaN without one. */
-private fun DirectionReading.meanAround(t: Double): Double {
-    val from = t - LagCompareHalfWindowSeconds
-    var i = maxOf(0, indexAtOrBefore(from))
-    if (times[i] < from) i++
-    var sum = 0.0
-    var n = 0
-    while (i < times.size && times[i] <= t + LagCompareHalfWindowSeconds) {
-        if (values[i].isFinite()) {
-            sum += values[i]
-            n++
-        }
-        i++
-    }
-    return if (n > 0) sum / n else Double.NaN
 }
 
 /** Index of the last time not after [t], or -1 when all are after it. */

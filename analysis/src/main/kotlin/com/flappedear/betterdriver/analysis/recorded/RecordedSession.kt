@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.recorder.accel.AxisDirection
 import com.flappedear.betterdriver.recorder.accel.AxisFit
 import com.flappedear.betterdriver.recorder.accel.DirectionReading
 import com.flappedear.betterdriver.recorder.accel.MountFit
+import com.flappedear.betterdriver.recorder.accel.WindowMeans
 import com.flappedear.betterdriver.recorder.accel.fitMount
 import com.flappedear.betterdriver.recorder.accel.fuseDirection
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -150,13 +151,13 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
     val gps = sessionGpsG(session, AccelerometerFitStepSeconds).orEmpty()
     val forwardG = DoubleArray(gps.size) { gps[it].longitudinalG }
     val leftG = DoubleArray(gps.size) { gps[it].lateralG }
-    val aligned = units.map { axes -> axes to alignedMount(axes, gps.map { it.time }, forwardG, leftG) }
+    val gpsTimes = DoubleArray(gps.size) { gps[it].time }
+    val aligned = units.map { axes -> axes to alignedMount(axes, gpsTimes, forwardG, leftG) }
     val fits = aligned.map { (axes, a) -> axes to a.first }
     // How late each accelerometer's clock reads against GPS, by its first channel's name.
     val lateness = aligned.associate { (axes, a) -> axes.first().name to a.second }
     val forward = fits.mapNotNull { (axes, fit) -> fit?.forward?.takeIf { it.usable }?.let { axes to it } }
     val left = fits.mapNotNull { (axes, fit) -> fit?.left?.takeIf { it.usable }?.let { axes to it } }
-    val gpsTimes = DoubleArray(gps.size) { gps[it].time }
     val forwardGps = DirectionReading("GPS", gpsTimes, forwardG, Double.NaN)
     val forwardFused = fused(forward, ForwardAcceleration, forwardGps, lateness)
     val leftFused = fused(left, LeftAcceleration, DirectionReading("GPS", gpsTimes, leftG, Double.NaN), lateness)
@@ -184,17 +185,22 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
  */
 private fun alignedMount(
     axes: List<TelemetryChannel>,
-    times: List<Double>,
+    times: DoubleArray,
     forwardG: DoubleArray,
     leftG: DoubleArray,
 ): Pair<MountFit?, Double> {
     val steps = (MaxMountLagSeconds / MountLagStepSeconds).roundToInt()
     // Lag 0 first, so a tie keeps the clock as recorded.
     val lags = (listOf(0) + (1..steps).flatMap { listOf(it, -it) }).map { it * MountLagStepSeconds }
+    val windows = axes.map { WindowMeans(it.timestamps, it.values) }
     return lags.map { lag ->
-        val readings = axes.map { channel ->
+        val readings = axes.mapIndexed { k, channel ->
+            // As smoothedAt, in one sweep; an empty window falls back to it.
+            val means = windows[k].at(times, AccelerometerSmoothingSeconds, lag)
             DoubleArray(times.size) { i ->
-                smoothedAt(channel, times[i] + lag, AccelerometerSmoothingSeconds) ?: Double.NaN
+                means[i].takeIf { it.isFinite() }
+                    ?: smoothedAt(channel, times[i] + lag, AccelerometerSmoothingSeconds)
+                    ?: Double.NaN
             }
         }
         fitMount(readings, forwardG, leftG) to lag
@@ -289,10 +295,13 @@ private const val AccelerometerFitStepSeconds = 0.1
 private fun corrected(axes: List<TelemetryChannel>, name: String, d: AxisDirection): TelemetryChannel {
     val base = axes.first()
     val reading = DoubleArray(axes.size)
+    // Compared once per axis. Compared at every sample, the phone's 110 samples a second cost tens of
+    // billions of comparisons on a half-hour drive once 0.3.19 averaged the phone in.
+    val sameTimes = axes.map { it.timestamps.contentEquals(base.timestamps) }
     val values = DoubleArray(base.sampleCount) { i ->
         for (k in axes.indices) {
             val c = axes[k]
-            reading[k] = if (c.timestamps.contentEquals(base.timestamps)) {
+            reading[k] = if (sameTimes[k]) {
                 c.values[i]
             } else {
                 smoothedAt(c, base.timestamps[i], OtherAxisHalfWindowSeconds) ?: Double.NaN
