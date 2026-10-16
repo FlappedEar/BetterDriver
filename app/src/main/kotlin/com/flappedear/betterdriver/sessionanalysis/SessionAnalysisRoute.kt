@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.sessionanalysis
 
+import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
@@ -174,9 +175,13 @@ internal fun SessionAnalysisRoute(
     LaunchedEffect(id) {
         load = withContext(Dispatchers.Default) {
             val epoch = AppDataGate.epoch
+            val started = SystemClock.elapsedRealtime()
             val read = analysedOr<Load>(id, { Load.Failed(it) }) {
                 loadSession(store.value, TrackStore(tracksDir(context)), id, tracks.circuits)
             }
+            // How long the screen waited, so a drive log shows a slow analysis (0.3.19 and 0.3.20 were slow).
+            val outcome = if (read is Load.Done) "analysed" else "not analysed"
+            DebugLog.i("SessionAnalysis", "session $id $outcome in ${SystemClock.elapsedRealtime() - started} ms")
             if (read is Load.Done) read.copy(epoch = epoch) else read
         }
     }
