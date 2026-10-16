@@ -13,8 +13,8 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 
 /**
  * Export from a session card: asks where to save the VBO, CSV or GPX file, then [Sessions] writes it
- * in the background (FBBD-150). A VBO export of a session with video asks for a folder instead,
- * because the VBO and its video files must sit side by side (FBBD-25).
+ * in the background (FBBD-150). VBO + video asks for a folder instead, because the VBO and its
+ * video files must sit side by side (FBBD-25); plain VBO is one file, with or without video.
  */
 @Composable
 fun rememberSessionExport(sessions: Sessions): (SessionSummary, ExportFormat) -> Unit {
@@ -42,7 +42,8 @@ fun rememberSessionExport(sessions: Sessions): (SessionSummary, ExportFormat) ->
         exporting = s.id
         val name = exportFileName(s, format)
         when (format) {
-            ExportFormat.Vbo -> if (s.id in sessions.withVideo) pickFolder.launch(null) else pickVbo.launch(name)
+            ExportFormat.Vbo -> pickVbo.launch(name)
+            ExportFormat.VboVideo -> pickFolder.launch(null)
             ExportFormat.Csv -> pickCsv.launch(name)
             ExportFormat.Gpx -> pickGpx.launch(name)
         }

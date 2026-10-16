@@ -15,8 +15,11 @@ class ExportChoicesTest {
     }
 
     @Test
-    fun sessionWithVideoKeepsVboPlusVideo() {
-        assertEquals("VBO + video", exportChoices(video = true).first().label)
-        assertEquals(ExportFormat.Vbo, exportChoices(video = true).first().format)
+    fun sessionWithVideoOffersVboPlusVideoAndPlainVbo() {
+        assertEquals(listOf("VBO + video", "VBO", "CSV", "GPX"), exportChoices(video = true).map { it.label })
+        assertEquals(
+            listOf(ExportFormat.VboVideo, ExportFormat.Vbo, ExportFormat.Csv, ExportFormat.Gpx),
+            exportChoices(video = true).map { it.format },
+        )
     }
 }
