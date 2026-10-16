@@ -139,6 +139,7 @@ class CoachService : Service() {
             data.getDouble(CoachProtocol.LAT),
             data.getDouble(CoachProtocol.LON),
             speed.takeUnless { it.isNaN() },
+            data.getLong(CoachProtocol.FIX_AGE_US, 0L),
         )
         var asked: Asked? = null
         val out = coach.onFix(fix, a.now()) { text ->

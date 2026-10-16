@@ -229,6 +229,9 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
         private set
     var speakingUntil = Long.MIN_VALUE
 
+    /** How old the latest fix was when it arrived ([CoachFix.ageMicros]): the car is that much further on. */
+    var fixAgeMicros = 0L
+
     fun onSpeed(t: Long, kmh: Double) {
         this.kmh = kmh
         speeds.addLast(t to kmh)
@@ -252,12 +255,13 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
      * Time until the car reaches [zoneStart], or null when it is too slow to tell: the shorter of the
      * time at its current speed and the reference lap's time between the two points. Out of a corner
      * the car is still accelerating, so its current speed alone would say it arrives later than it does.
+     * [along] is where the fix was taken, [fixAgeMicros] ago, so that much less time is left.
      */
     fun timeTo(path: LapTrace, along: Double, zoneStart: Double): Long? {
         if (kmh < MinCueSpeedKmh) return null
         val atSpeed = (zoneStart - along) / (kmh / KmhPerMps) * MicrosPerSecond
         val byReference = path.timeAt(zoneStart) - path.timeAt(along)
-        return min(atSpeed, byReference).roundToLong()
+        return min(atSpeed, byReference).roundToLong() - fixAgeMicros
     }
 
     fun said(cue: Cue): Cue {
@@ -380,6 +384,7 @@ class CueEngine(
     fun update(fix: CoachFix): CoachUpdate {
         val events = laps.update(fix)
         speech.onSpeed(fix.tMicros, laps.speedKmh)
+        speech.fixAgeMicros = fix.ageMicros
         val results = mutableListOf<CueResult>()
         for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, fix.tMicros, results)
         val along = laps.position?.let { p -> cursor?.along(p) }

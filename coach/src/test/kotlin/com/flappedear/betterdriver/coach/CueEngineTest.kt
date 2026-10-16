@@ -141,6 +141,24 @@ class CueEngineTest {
         assertOutsideBrakingZones(drive, run.cues, paces, 2_000)
     }
 
+    /**
+     * FBBD-229: each fix arrives 0.8 s after it was taken, and says so. The cue still ends before the
+     * braking zone where the car really is when it is heard.
+     */
+    @Test
+    fun `cues allow for a fix that arrives late`() {
+        val slow3 = SimCircuit.Pace(kmh = listOf(0.0, 0.0, -7.0, 0.0))
+        val paces = listOf(slow3, slow3, slow3, slow3, slow3)
+        val drive = sim.drive(paces)
+        val age = 800_000L
+        val late = drive.fixes.map { it.copy(tMicros = it.tMicros + age, ageMicros = age) }
+        val engine = CueEngine(track, CoachSettings(Verbosity.Full, audioDelayMillis = 1_000), reference())
+        val cues = late.flatMap { engine.update(it).cues }
+        assertTrue(cues.any { it.kind == CueKind.Corner }, "cues $cues")
+        // Cue times are arrival times: the real clock, on which the drive says where the car is.
+        assertOutsideBrakingZones(drive, cues, paces, 1_000)
+    }
+
     @Test
     fun `without an earlier session it learns from this one and speaks lap times`() {
         val paces = List(5) { steady }

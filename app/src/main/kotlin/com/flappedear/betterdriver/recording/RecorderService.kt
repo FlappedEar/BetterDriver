@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
+import com.flappedear.betterdriver.recorder.live.LiveFixAge
 import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
@@ -89,6 +90,13 @@ private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
     GnssType.NMEA, GnssType.TCP -> RcChannels.ACCEL_X.id to RcChannels.ACCEL_Y.id
     else -> null
 }
+
+/** How old the receiver's fixes are, so cues allow for it (FBBD-229); logged as it is measured. */
+private fun fixAgeFor(gnss: GnssRef): LiveFixAge? = accelIdsFor(gnss)?.let { (x, y) ->
+    LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age / MicrosPerMilli} ms") }
+}
+
+private const val MicrosPerMilli = 1_000L
 
 private fun sensorsFrom(intent: Intent): List<SensorRef> =
     intent.getStringArrayExtra(RecorderProtocol.EXTRA_SENSORS).orEmpty().mapNotNull(SensorRef::decode)
@@ -256,7 +264,7 @@ class RecorderService : Service() {
             val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
                 null
             } else {
-                CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger)
+                CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
             }
             coach?.let(recording.listeners::add)
             // Covers stops the recorder makes itself (storage full, write error).
