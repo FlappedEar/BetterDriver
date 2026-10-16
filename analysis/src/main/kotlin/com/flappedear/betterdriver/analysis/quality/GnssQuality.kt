@@ -123,7 +123,7 @@ private fun rate(s: GnssSamples, acrossDrop: BooleanArray, skips: Long): Quality
     val received = intervals * MicrosPerSecond.toDouble() / span
     val hz = (intervals + skips) * MicrosPerSecond.toDouble() / span
     val counted = if (skips > 0) {
-        ", with the $skips whole-second messages the RaceBox does not send with a fix counted " +
+        ", with the $skips whole-second messages the RaceBox does not send counted " +
             "(received: ${"%.2f".format(Locale.ROOT, received)} Hz)"
     } else {
         ""
@@ -164,6 +164,8 @@ private const val MillisPerSecond = 1_000L
  * message (FBBD-170), on both units Arek has. The 2026-10-14 log proved it is the device, not the
  * link: the same link carried all 25 messages a second whenever the fix was lost (1500 in 1500
  * notifications, none missing). Arek accepts the 24 Hz that leaves ("> 24 sounds good", FBBD-218).
+ * The RaceBox Micro skips it before its first fix too (2026-10-16 midday: 63 a minute, all on the
+ * whole second, through 2 min without a fix), so the skip is left out with or without a fix.
  */
 private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): QualityMetric {
     val steps = receiverSteps(s, acrossDrop)
@@ -183,30 +185,30 @@ private fun dropped(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean):
     val percent = missing * Percent / expected
     val how = "$missing of $expected expected samples missing from the receiver's fix times " +
         "(usual step ${usual.roundToLong()} ms), besides $wholeSecond single whole-second messages the RaceBox " +
-        "does not send with a fix"
+        "does not send"
     val ok = percent <= MaxDroppedPercent
     return judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
 }
 
 /**
- * A single sample lost on a whole second between two fixes: the RaceBox's skip (FBBD-170). Its middle
- * is within half a [usual] step of a whole second.
+ * A single sample lost on a whole second: the RaceBox's skip (FBBD-170). Its middle is within half a
+ * [usual] step of a whole second.
  */
 private fun isWholeSecondSkip(step: ReceiverStep, usual: Double): Boolean {
     val ms = Math.floorMod(step.fromUtc + step.millis / 2, MillisPerSecond)
     val onSecond = ms < usual / 2 || ms > MillisPerSecond - usual / 2
-    return step.fixBothSides && (step.millis / usual).roundToLong() == 2L && onSecond
+    return (step.millis / usual).roundToLong() == 2L && onSecond
 }
 
-/** How many of the RaceBox's whole-second messages are missing with a fix (FBBD-170); 0 for other receivers. */
+/** How many of the RaceBox's whole-second messages are missing (FBBD-170); 0 for other receivers. */
 private fun wholeSecondSkips(s: GnssSamples, acrossDrop: BooleanArray, raceBox: Boolean): Long {
     val steps = if (raceBox) receiverSteps(s, acrossDrop) else emptyList()
     val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)?.takeIf { it > 0 }
     return if (usual == null) 0L else steps.count { isWholeSecondSkip(it, usual) }.toLong()
 }
 
-/** A step between consecutive fix times, from [fromUtc], [millis] long; [fixBothSides] when both samples had a fix. */
-private class ReceiverStep(val fromUtc: Long, val millis: Long, val fixBothSides: Boolean)
+/** A step between consecutive fix times, from [fromUtc], [millis] long. */
+private class ReceiverStep(val fromUtc: Long, val millis: Long)
 
 /** Steps between consecutive fix times of the receiver; steps across a link drop and backwards left out. */
 private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<ReceiverStep> {
@@ -216,7 +218,7 @@ private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<Receiv
     for (i in 0 until s.size) {
         if (s.utc[i] != GnssSamples.NoUtc) {
             if (previous >= 0 && !dropBetween && s.utc[i] > s.utc[previous]) {
-                steps += ReceiverStep(s.utc[previous], s.utc[i] - s.utc[previous], s.hasFix(previous) && s.hasFix(i))
+                steps += ReceiverStep(s.utc[previous], s.utc[i] - s.utc[previous])
             }
             previous = i
             dropBetween = false

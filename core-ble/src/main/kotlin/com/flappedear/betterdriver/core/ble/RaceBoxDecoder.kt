@@ -225,7 +225,11 @@ internal class StreamStats {
     private val others = sortedMapOf<String, Int>()
     private var maxBacklog = 0L
 
-    /** Messages missing since the stream started, for the slow-link check. */
+    /**
+     * Messages missing since the stream started, for the slow-link check: a single whole-second
+     * message is left out, as the RaceBox does not send it (FBBD-170). On the 2026-10-16 midday drive
+     * that skip asked for a fast link every 30 s on a link that lost nothing else.
+     */
     var missedSoFar = 0L
         private set
 
@@ -288,12 +292,16 @@ internal class StreamStats {
         if (steps.size > StepWindow) steps.removeFirst()
         if (step == null || gap <= step * GapSteps) return
         var t = previous + step
+        var lost = 0
+        var onSecond = 0
         while (t < iTowMs - step / 2) {
-            missed++
-            missedSoFar++
-            if (onWholeSecond(t, step)) missedOnSecond++
+            lost++
+            if (onWholeSecond(t, step)) onSecond++
             t += step
         }
+        missed += lost
+        missedOnSecond += onSecond
+        if (lost != 1 || onSecond != 1) missedSoFar += lost
     }
 
     /** Null for the first few steps of a stream, which are not checked. */

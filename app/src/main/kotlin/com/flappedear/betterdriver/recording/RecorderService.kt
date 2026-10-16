@@ -93,10 +93,8 @@ private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
 
 /** How old the receiver's fixes are, so cues allow for it (FBBD-229); logged as it is measured. */
 private fun fixAgeFor(gnss: GnssRef): LiveFixAge? = accelIdsFor(gnss)?.let { (x, y) ->
-    LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age / MicrosPerMilli} ms") }
+    LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age.text}") }
 }
-
-private const val MicrosPerMilli = 1_000L
 
 private fun sensorsFrom(intent: Intent): List<SensorRef> =
     intent.getStringArrayExtra(RecorderProtocol.EXTRA_SENSORS).orEmpty().mapNotNull(SensorRef::decode)

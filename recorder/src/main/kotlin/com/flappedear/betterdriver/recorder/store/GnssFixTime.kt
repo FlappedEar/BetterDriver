@@ -3,6 +3,8 @@ package com.flappedear.betterdriver.recorder.store
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.log.DebugLog
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
@@ -61,21 +63,34 @@ private const val MicrosPerSecond = 1_000_000.0
  * Found as the wait at which each accelerometer axis agrees best with the acceleration from GNSS
  * speed (both averaged over [SmoothHalfSteps] either side, only while moving), the best axis counting.
  */
+fun gnssFixAgeMicros(sets: List<SampleSet>, accelIds: Set<Int>): Long? = gnssFixAge(sets, accelIds).micros
+
+/**
+ * A fix-age estimate: [micros] as [gnssFixAgeMicros] gives it, and [text] for the debug log, which
+ * says why there is none. On Arek's 2026-10-16 midday drive the RaceBox Micro logged no age at all
+ * over 9 min with a fix, so the log could not tell "on time" from "could not be told".
+ */
+class FixAge(val micros: Long?, val text: String)
+
+/** [gnssFixAgeMicros] with the reason for its answer. */
 @Suppress("ReturnCount")
-fun gnssFixAgeMicros(sets: List<SampleSet>, accelIds: Set<Int>): Long? {
-    if (accelIds.isEmpty()) return null
+fun gnssFixAge(sets: List<SampleSet>, accelIds: Set<Int>): FixAge {
+    if (accelIds.isEmpty()) return FixAge(null, "not measured: no accelerometer with the fix")
     val speedId = GnssChannels.SPEED_KMH.id
     val withBoth = sets
         .filter { s -> s.values.any { it.channelId == speedId } && s.values.any { it.channelId in accelIds } }
         .sortedBy { it.tMicros }
-    if (withBoth.size < 2) return null
+    if (withBoth.size < 2) return FixAge(null, "not measured: no fixes with acceleration")
     val times = DoubleArray(withBoth.size) { withBoth[it].tMicros / MicrosPerSecond }
     val speed = valuesOf(withBoth, speedId).map { it / KmhPerMps }.toDoubleArray()
     val start = times.first()
     val steps = ((times.last() - start) / StepSeconds).toInt() + 1
     val v = resample(times, speed, start, steps)
     val moving = BooleanArray(steps) { v[it].isFinite() && v[it] * KmhPerMps >= MinMovingKmh }
-    if (moving.count { it } * StepSeconds < MinMovingSeconds) return null
+    val movingSeconds = moving.count { it } * StepSeconds
+    if (movingSeconds < MinMovingSeconds) {
+        return FixAge(null, "not measured: ${movingSeconds.roundToLong()} s over 15 km/h, 60 s needed")
+    }
     val gps = DoubleArray(steps) { i ->
         if (i == 0 || i == steps - 1) Double.NaN else (v[i + 1] - v[i - 1]) / (2 * StepSeconds) / G
     }.smoothed()
@@ -83,12 +98,19 @@ fun gnssFixAgeMicros(sets: List<SampleSet>, accelIds: Set<Int>): Long? {
         val accel = resample(times, valuesOf(withBoth, id), start, steps).smoothed()
         val curve = DoubleArray(MaxLatencySteps + 1) { k -> abs(laggedCorrelation(gps, accel, k, moving)) }
         curve.indices.filter { curve[it].isFinite() }.maxByOrNull { curve[it] }?.let { k -> Lag(k, curve[k], curve[0]) }
-    }.maxByOrNull { it.agreement } ?: return null
-    if (best.agreement < MinAgreement) return null
-    if (best.atZero.isFinite() && best.agreement - best.atZero < MinGain) return null
+    }.maxByOrNull { it.agreement } ?: return FixAge(null, "not measured: accelerometer and GNSS speed do not overlap")
     val micros = (best.steps * StepSeconds * MicrosPerSecond).roundToLong()
-    return micros.takeIf { it >= MinShiftMicros }
+    val fit = "agreement ${"%.2f".format(Locale.ROOT, best.agreement)} at ${micros / MicrosPerMilli} ms, " +
+        "${"%.2f".format(Locale.ROOT, best.atZero)} at 0 ms"
+    return when {
+        best.agreement < MinAgreement -> FixAge(null, "not measured: accelerometer disagrees with GNSS ($fit)")
+        best.atZero.isFinite() && best.agreement - best.atZero < MinGain -> FixAge(null, "0 ms, on time ($fit)")
+        micros < MinShiftMicros -> FixAge(null, "0 ms, on time ($fit)")
+        else -> FixAge(micros, "${micros / MicrosPerMilli} ms ($fit)")
+    }
 }
+
+private const val MicrosPerMilli = 1_000L
 
 /** One axis's best wait in [steps], its agreement there, and its agreement at no wait. */
 private class Lag(val steps: Int, val agreement: Double, val atZero: Double)
@@ -103,7 +125,10 @@ private class Lag(val steps: Int, val agreement: Double, val atZero: Double)
  */
 fun SessionData.withGnssAtFixTime(): SessionData {
     val accelIds = channels.values.filter { it.name in AccelNames }.map { it.id }.toSet()
-    val age = (if (info.imported == null) gnssFixAgeMicros(sampleSets, accelIds) else null) ?: return this
+    if (info.imported != null) return this
+    val fixAge = gnssFixAge(sampleSets, accelIds)
+    if (accelIds.isNotEmpty()) DebugLog.i("SessionStore", "$id: gnss fix age ${fixAge.text}")
+    val age = fixAge.micros ?: return this
     val gnssIds = channels.values
         .filter { it.id in GnssChannels.IDS || it.name.startsWith("gnss_") }
         .map { it.id }

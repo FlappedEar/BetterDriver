@@ -167,6 +167,23 @@ class RaceBoxDecoderTest {
         assertEquals(listOf("messages missing"), reasons)
     }
 
+    /** 2026-10-16 midday: the RaceBox's whole-second skip (FBBD-170) asked for a fast link every 30 s. */
+    @Test
+    fun `the whole-second skip alone does not ask for a faster link`() {
+        val sink = Sink()
+        val reasons = mutableListOf<String>()
+        val decoder = RaceBoxDecoder(sink) { reasons += it }
+        var tow = 100_040L
+        repeat(25 * 20) {
+            if (tow % 1_000 != 0L) {
+                sink.now = tow * 1_000 + 30_000
+                decoder.feed(packetAt(tow))
+            }
+            tow += 40
+        }
+        assertTrue(reasons.isEmpty(), reasons.toString())
+    }
+
     /**
      * Arek's 2026-10-14 drive: before the fix the RaceBox's time ran off GNSS time, so the delay it gave
      * rose by about 0.65 s; with the rise capped for a backlog (FBBD-218), every sample after the fix was

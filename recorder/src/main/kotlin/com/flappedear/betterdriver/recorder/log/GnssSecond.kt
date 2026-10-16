@@ -47,7 +47,7 @@ data class GnssSecond(
     val kmhMin: Double?,
     val kmhMax: Double?,
     val firstFixMicros: Long? = null,
-    /** Of [missing], single samples lost on a whole second between two fixes: a RaceBox's skip (FBBD-170). */
+    /** Of [missing], single samples lost on a whole second, with a fix or not yet: a RaceBox's skip (FBBD-170). */
     val missingOnSecond: Int = 0,
 ) {
     /** The line's message: `key=value` pairs; a value not known is left out. */
@@ -114,7 +114,6 @@ class GnssSecondLog(
     private var current: Builder? = null
     private var lastFixT: Long? = null
     private var lastUtc: Long? = null
-    private var lastUtcFix = false
     private var dropSinceLast = false
 
     /** How often each step length (to 10 ms) was seen, for the usual step. */
@@ -153,7 +152,7 @@ class GnssSecondLog(
         val lat = value(GnssChannels.LAT.id)
         val lon = value(GnssChannels.LON.id)
         val fix = lat != null && lon != null && isFix(lat, lon)
-        value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop, fix) }
+        value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop) }
         if (fix && lat != null && lon != null) {
             b.fixes += Triple(lat, lon, value(GnssChannels.SPEED_KMH.id))
             lastFixT?.let { previous -> b.maxGap = maxOf(b.maxGap ?: 0L, set.tMicros - previous) }
@@ -165,27 +164,28 @@ class GnssSecondLog(
     /** Receivers without a fix can report 0, 0: that is no position. */
     private fun isFix(lat: Double, lon: Double) = lat != 0.0 || lon != 0.0
 
-    private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean, fix: Boolean) {
+    private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean) {
         val previousUtc = lastUtc
-        if (previousUtc != null && utc > previousUtc && !drop) {
-            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix)
-        }
+        if (previousUtc != null && utc > previousUtc && !drop) step(b, previousUtc, utc - previousUtc)
         lastUtc = utc
-        lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc
         b.utcLast = utc
         val lag = tMicros - (utc - startUtcMillis) * MicrosPerMilli
         b.lag = minOf(b.lag ?: lag, lag)
     }
 
-    private fun step(b: Builder, fromUtc: Long, stepMillis: Long, fixBothSides: Boolean) {
+    /**
+     * The RaceBox Micro skips its whole-second message before its first fix as well (2026-10-16
+     * midday), so a single loss on the second is the skip with or without a fix.
+     */
+    private fun step(b: Builder, fromUtc: Long, stepMillis: Long) {
         val key = (stepMillis + StepRoundMillis / 2) / StepRoundMillis * StepRoundMillis
         stepCounts[key] = (stepCounts[key] ?: 0) + 1
         val usual = stepCounts.maxBy { it.value }.key.coerceAtLeast(1)
         b.usual = usual
         val lost = maxOf(0L, (stepMillis.toDouble() / usual).roundToLong() - 1).toInt()
         b.missing += lost
-        if (lost == 1 && fixBothSides && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
+        if (lost == 1 && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
         if (stepMillis * MicrosPerMilli > LongGapMicros) b.longGaps++
         b.maxRxGap = maxOf(b.maxRxGap ?: 0L, stepMillis)
     }

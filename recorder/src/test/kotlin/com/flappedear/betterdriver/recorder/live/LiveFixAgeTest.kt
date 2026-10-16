@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recorder.live
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.store.FixAge
 import kotlin.math.PI
 import kotlin.math.abs
 import kotlin.math.cos
@@ -31,13 +32,24 @@ class LiveFixAgeTest {
 
     @Test
     fun measuresTheAgeOnceThereIsAMinuteOfDrivingAndTellsEachNewValue() {
-        val told = mutableListOf<Long>()
+        val told = mutableListOf<FixAge>()
         val age = LiveFixAge(setOf(accelX)) { told += it }
         (0 until 25 * 50).forEach { age.add(set(it, 0.8)) }
         assertEquals(0L, age.micros, "under a minute: not known yet")
         (25 * 50 until 25 * 200).forEach { age.add(set(it, 0.8)) }
         assertTrue(abs(age.micros - 800_000) <= 40_000, "fix age ${age.micros} µs, expected 0.8 s")
-        assertEquals(listOf(age.micros), told.distinct())
+        assertTrue(told.first().text.startsWith("not measured: "), "the reason is told first: ${told.first().text}")
+        assertEquals(listOf(age.micros), told.mapNotNull { it.micros }.distinct())
+        assertTrue(told.last().text.startsWith("${age.micros / 1_000} ms (agreement "), told.last().text)
+    }
+
+    @Test
+    fun aFixOnTimeIsToldOnce() {
+        val told = mutableListOf<FixAge>()
+        val age = LiveFixAge(setOf(accelX)) { told += it }
+        (0 until 25 * 200).forEach { age.add(set(it, 0.0)) }
+        assertEquals(0L, age.micros)
+        assertEquals(1, told.count { it.text.startsWith("0 ms, on time") }, told.joinToString { it.text })
     }
 
     @Test
