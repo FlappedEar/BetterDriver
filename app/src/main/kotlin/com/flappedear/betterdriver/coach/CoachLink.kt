@@ -11,6 +11,7 @@ import android.os.Messenger
 import android.os.RemoteException
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.live.LiveFixAge
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.track.TrackDetection
@@ -21,7 +22,8 @@ import com.flappedear.betterdriver.timing.track.TrackDetection
  * reads what the recorder already has; a send to a coach that is gone is dropped. If the coach process
  * dies, Android restarts it (the binding asks for that) and it is told the session and track again.
  *
- * [reportTo] is the recorder's messenger, where the coach sends events and its line.
+ * [reportTo] is the recorder's messenger, where the coach sends events and its line. [fixAge] measures
+ * how old the receiver's fixes are when they arrive (FBBD-229); each fix is sent with it.
  */
 internal class CoachLink(
     private val context: Context,
@@ -29,6 +31,7 @@ internal class CoachLink(
     private val startNanos: Long,
     private val timing: SessionTiming,
     private val reportTo: Messenger,
+    private val fixAge: LiveFixAge? = null,
 ) : RecorderListener {
 
     @Volatile
@@ -80,6 +83,7 @@ internal class CoachLink(
     }
 
     override fun onSamples(set: SampleSet) {
+        fixAge?.add(set)
         val m = coach ?: return
         // The track is detected at the first position; until the coach knows it there is nothing to coach.
         if (trackSentTo !== m) sendTrack(m)
@@ -90,6 +94,7 @@ internal class CoachLink(
                 putDouble(CoachProtocol.LAT, fix.lat)
                 putDouble(CoachProtocol.LON, fix.lon)
                 putDouble(CoachProtocol.SPEED, fix.speedKmh ?: Double.NaN)
+                putLong(CoachProtocol.FIX_AGE_US, fixAge?.micros ?: 0L)
             }
         }
     }

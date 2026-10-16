@@ -4,8 +4,18 @@ import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.timing.live.Fix
 import kotlinx.serialization.Serializable
 
-/** One GNSS fix with the receiver's speed, on the session clock. [speedKmh] is null if the receiver gave none. */
-data class CoachFix(val tMicros: Long, val lat: Double, val lon: Double, val speedKmh: Double? = null) {
+/**
+ * One GNSS fix with the receiver's speed, on the session clock. [speedKmh] is null if the receiver gave none.
+ * [ageMicros]: how long before [tMicros] the fix was taken, when known (FBBD-229: a RaceBox fix arrives
+ * about 0.8 s after it was taken); by then the car is that much further on.
+ */
+data class CoachFix(
+    val tMicros: Long,
+    val lat: Double,
+    val lon: Double,
+    val speedKmh: Double? = null,
+    val ageMicros: Long = 0,
+) {
     fun toFix() = Fix(tMicros, lat, lon)
 }
 

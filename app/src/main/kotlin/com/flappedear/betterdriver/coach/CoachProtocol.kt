@@ -31,6 +31,9 @@ internal object CoachProtocol {
     /** Km/h, or NaN when the receiver gave none. */
     const val SPEED = "speed"
 
+    /** How long before [T_US] the fix was taken, in µs; 0 or absent when not known (FBBD-229). */
+    const val FIX_AGE_US = "fixAge"
+
     /** In a coach report: event time on the session clock, kind and text. */
     const val EVENT_KIND = "kind"
     const val EVENT_TEXT = "text"
