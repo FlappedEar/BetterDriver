@@ -181,7 +181,7 @@ class RaceBoxDecoderTest {
             }
             tow += 40
         }
-        assertTrue(reasons.isEmpty(), reasons.toString())
+        assertTrue(reasons.toString(), reasons.isEmpty())
     }
 
     /** The Micro skips the whole-second message without a fix too; a Mini sends it, so its loss counts. */
