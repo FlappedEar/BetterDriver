@@ -16,8 +16,8 @@ import com.flappedear.betterdriver.recording.ExportFormat
 
 /**
  * Export opens a short menu of formats (FBBD-150): VBO for Circuit Tools and other VBO readers,
- * plus VBO + video into a folder when the session has video (FBBD-25), CSV with every channel for spreadsheets, GPX for maps. Choosing one asks
- * where to save, as VBO export always did. A session with video also offers Video with data
+ * plus VBO + video into a folder when the session has video (FBBD-25), CSV with every channel for
+ * spreadsheets, GPX for maps. Choosing one asks where to save, as VBO export always did. A session with video also offers Video with data
  * ([dataVideo], FBBD-152): a lap or the whole video with the data drawn in, chosen in a picker.
  */
 @Composable
