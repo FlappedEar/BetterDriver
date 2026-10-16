@@ -1,9 +1,8 @@
-@file:Suppress("MagicNumber") // Projection formulas, degree ranges and the WMS extent.
+@file:Suppress("MagicNumber") // Projection formulas and degree ranges.
 
 package com.flappedear.betterdriver.timing.map
 
 import com.flappedear.betterdriver.timing.geo.GeoPoint
-import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.cos
@@ -99,32 +98,11 @@ class TileSource(
  * - MapTiler Satellite: sharp satellite imagery everywhere, served fast from a CDN as 512 px
  *   (@2x) images. It needs Arek's MapTiler key, entered on the phone: the key is never in the
  *   repository or the APK.
- * - Poland: GUGiK's orthophoto through the Geoportal WMS, free and keyless; its terms forbid only
- *   automated downloading and collecting of images, so tiles are kept only as they are viewed.
- *   Each request is drawn by the server, so tiles come as 512 px images: four times fewer requests.
- * - OpenStreetMap's street map, everywhere, as the last resort.
+ * - OpenStreetMap's street map, until a key is entered.
+ * GUGiK's orthophoto WMS was dropped: Arek found it far too slow (2026-10-16).
  */
 object TileSources {
-    private const val OrthophotoWms =
-        "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution"
-    private const val OrthophotoPx = 512
     private const val MapTilerSatellite = "https://api.maptiler.com/maps/satellite/256"
-
-    /** The WMS's EPSG:3857 extent from its capabilities: imagery exists only inside it. */
-    private val OrthophotoExtent = doubleArrayOf(1_572_152.37, 6_275_208.65, 2_687_896.25, 7_330_061.09)
-
-    val Orthophoto = TileSource(
-        id = "gugik-orto-512",
-        name = "Orthophoto (GUGiK)",
-        attribution = "Ortofotomapa © GUGiK · geoportal.gov.pl",
-        maxZoom = 19,
-        imagePx = OrthophotoPx,
-    ) { z, x, y ->
-        val b = WebMercator.tileBounds(z, x, y)
-        val bbox = b.joinToString(",") { String.format(Locale.ROOT, "%.3f", it) }
-        "$OrthophotoWms?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=Raster&STYLES=&CRS=EPSG:3857" +
-            "&BBOX=$bbox&WIDTH=$OrthophotoPx&HEIGHT=$OrthophotoPx&FORMAT=image/jpeg"
-    }
 
     val OpenStreetMap = TileSource(
         id = "osm",
@@ -142,20 +120,9 @@ object TileSources {
         imagePx = 2 * TileSize,
     ) { z, x, y -> "$MapTilerSatellite/$z/$x/$y@2x.jpg?key=$key" }
 
-    /** Whether GUGiK's orthophoto covers [p]. */
-    fun inPoland(p: GeoPoint): Boolean {
-        val m = WebMercator.toMeters(p)
-        val e = OrthophotoExtent
-        return m.x in e[0]..e[2] && m.y in e[1]..e[3]
-    }
-
-    /**
-     * The backgrounds for a track at [p], best first: MapTiler's satellite when [mapTilerKey] is
-     * set, the orthophoto in Poland, then the street map.
-     */
-    fun forPlace(p: GeoPoint, mapTilerKey: String? = null): List<TileSource> = listOfNotNull(
+    /** The backgrounds, best first: MapTiler's satellite when [mapTilerKey] is set, then the street map. */
+    fun available(mapTilerKey: String? = null): List<TileSource> = listOfNotNull(
         mapTilerKey?.trim()?.takeIf { it.isNotEmpty() }?.let(::mapTiler),
-        Orthophoto.takeIf { inPoland(p) },
         OpenStreetMap,
     )
 }

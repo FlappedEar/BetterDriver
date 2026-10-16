@@ -34,7 +34,7 @@ private const val DiskLimitBytes = 300L * 1024 * 1024
 /**
  * Map tiles for the track editor (UI-26). A tile is downloaded the first time it is shown and kept
  * in [cacheDir], so a track viewed once at home can be edited at the track without signal. Only
- * tiles that are viewed are fetched: the orthophoto's terms forbid bulk downloading (FBBD-56).
+ * tiles that are viewed are fetched, as the tile providers' policies ask.
  * [userAgent] identifies the app, as OpenStreetMap's tile policy requires.
  *
  * [get] is called while drawing; [loaded] goes up when a tile arrives, so maps that read it redraw.
@@ -72,7 +72,7 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         io.execute {
             val key = readKey(keyFile)
             if (key != null) main.post { mapTilerKey = key }
-            // 256 px orthophoto tiles from before FBBD-230, no longer shown.
+            // GUGiK orthophoto tiles from before FBBD-230, no longer shown.
             File(cacheDir, "gugik-orto").deleteRecursively()
             trimDisk()
         }

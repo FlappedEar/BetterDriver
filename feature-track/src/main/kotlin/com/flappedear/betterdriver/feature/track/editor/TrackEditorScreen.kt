@@ -163,9 +163,7 @@ private fun MapPane(
     modifier: Modifier,
     onCorrect: ((SegmentEdit) -> Unit)?,
 ) {
-    val sources = remember(state.track.center, tiles.mapTilerKey) {
-        TileSources.forPlace(state.track.center, tiles.mapTilerKey)
-    }
+    val sources = remember(tiles.mapTilerKey) { TileSources.available(tiles.mapTilerKey) }
     // The best background unless another was picked; a new key brings its satellite map in first.
     var picked by remember(tiles.mapTilerKey) { mutableStateOf<String?>(null) }
     val source = sources.firstOrNull { it.id == picked } ?: sources.first()

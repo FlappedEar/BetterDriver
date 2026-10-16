@@ -21,7 +21,6 @@ class AboutUiTest {
         assertEquals(
             listOf(
                 TileSources.mapTiler("").attribution,
-                TileSources.Orthophoto.attribution,
                 TileSources.OpenStreetMap.attribution,
             ),
             section("Map tiles").map { it.detail },
