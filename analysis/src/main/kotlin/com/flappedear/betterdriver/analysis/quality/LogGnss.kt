@@ -50,7 +50,7 @@ internal fun logGnssSection(
         .toSet()
     val whole = ((firstIndex + 1) until lastIndex).filter { k -> k !in drops }
     val counts = whole.map { (byIndex[it]?.samples ?: 0).toDouble() }
-    // As for a session: the RaceBox's whole-second skip (FBBD-170) counts as received.
+    // As for a session: the RaceBox's whole-second skip with a fix (FBBD-170) counts as received.
     val skips = if (raceBox) whole.sumOf { (byIndex[it]?.missingOnSecond ?: 0).toLong() } else 0L
     val metrics = buildList {
         add(rate(counts, skips))
@@ -83,7 +83,7 @@ private fun rate(counts: List<Double>, skips: Long): QualityMetric {
     val received = counts.sum() / counts.size
     val hz = (counts.sum() + skips) / counts.size
     val counted = if (skips > 0) {
-        ", with the $skips whole-second messages the RaceBox does not send counted " +
+        ", with the $skips whole-second messages the RaceBox does not send with a fix counted " +
             "(received: ${"%.2f".format(Locale.ROOT, received)} Hz)"
     } else {
         ""
@@ -95,7 +95,7 @@ private fun rate(counts: List<Double>, skips: Long): QualityMetric {
     )
 }
 
-/** As for a session: a RaceBox's single whole-second skip (FBBD-170) is counted apart. */
+/** As for a session: a RaceBox's single whole-second skip with a fix (FBBD-170) is counted apart. */
 private fun dropped(seconds: List<GnssSecond>, raceBox: Boolean): QualityMetric {
     if (seconds.none { it.stepMillis != null }) {
         return notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, "the receiver gave no fix times")
@@ -108,7 +108,7 @@ private fun dropped(seconds: List<GnssSecond>, raceBox: Boolean): QualityMetric 
     return judged(
         "gnss.dropped", "Dropped samples", percent, "%", percent <= MaxDroppedPercent, Basis.MEASURED, DroppedCriterion,
         "$missing of $expected expected samples missing from the receiver's fix times, besides $wholeSecond " +
-            "single whole-second messages the RaceBox does not send",
+            "single whole-second messages the RaceBox does not send with a fix",
     )
 }
 

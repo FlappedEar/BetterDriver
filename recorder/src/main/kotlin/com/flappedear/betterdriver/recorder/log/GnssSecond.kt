@@ -47,7 +47,7 @@ data class GnssSecond(
     val kmhMin: Double?,
     val kmhMax: Double?,
     val firstFixMicros: Long? = null,
-    /** Of [missing], single samples lost on a whole second, with a fix or not yet: a RaceBox's skip (FBBD-170). */
+    /** Of [missing], single samples lost on a whole second between two fixes: a RaceBox's skip (FBBD-170). */
     val missingOnSecond: Int = 0,
 ) {
     /** The line's message: `key=value` pairs; a value not known is left out. */
@@ -105,15 +105,19 @@ data class GnssSecond(
  * Writes a [GnssSecond] line to the continuous log for each second of [sessionId] that had GNSS
  * samples (FBBD-183). It runs on the recorder's listener thread and keeps only one second in memory.
  * [startUtcMillis] is the session's start on the phone's wall clock. [write] is the log (a test hook).
+ * [skipsWithoutFix]: the receiver is a RaceBox Micro, which skips its whole-second message without a
+ * fix too (2026-10-16 midday); a Mini sends it then, so for a Mini only a loss between fixes is the skip.
  */
 class GnssSecondLog(
     private val sessionId: String,
     private val startUtcMillis: Long,
+    private val skipsWithoutFix: Boolean = false,
     private val write: (String) -> Unit = { DebugLog.forSession(sessionId, CheckLog.GNSS, it) },
 ) : RecorderListener {
     private var current: Builder? = null
     private var lastFixT: Long? = null
     private var lastUtc: Long? = null
+    private var lastUtcFix = false
     private var dropSinceLast = false
 
     /** How often each step length (to 10 ms) was seen, for the usual step. */
@@ -152,7 +156,7 @@ class GnssSecondLog(
         val lat = value(GnssChannels.LAT.id)
         val lon = value(GnssChannels.LON.id)
         val fix = lat != null && lon != null && isFix(lat, lon)
-        value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop) }
+        value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop, fix) }
         if (fix && lat != null && lon != null) {
             b.fixes += Triple(lat, lon, value(GnssChannels.SPEED_KMH.id))
             lastFixT?.let { previous -> b.maxGap = maxOf(b.maxGap ?: 0L, set.tMicros - previous) }
@@ -164,28 +168,28 @@ class GnssSecondLog(
     /** Receivers without a fix can report 0, 0: that is no position. */
     private fun isFix(lat: Double, lon: Double) = lat != 0.0 || lon != 0.0
 
-    private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean) {
+    private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean, fix: Boolean) {
         val previousUtc = lastUtc
-        if (previousUtc != null && utc > previousUtc && !drop) step(b, previousUtc, utc - previousUtc)
+        if (previousUtc != null && utc > previousUtc && !drop) {
+            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix)
+        }
         lastUtc = utc
+        lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc
         b.utcLast = utc
         val lag = tMicros - (utc - startUtcMillis) * MicrosPerMilli
         b.lag = minOf(b.lag ?: lag, lag)
     }
 
-    /**
-     * The RaceBox Micro skips its whole-second message before its first fix as well (2026-10-16
-     * midday), so a single loss on the second is the skip with or without a fix.
-     */
-    private fun step(b: Builder, fromUtc: Long, stepMillis: Long) {
+    private fun step(b: Builder, fromUtc: Long, stepMillis: Long, fixBothSides: Boolean) {
         val key = (stepMillis + StepRoundMillis / 2) / StepRoundMillis * StepRoundMillis
         stepCounts[key] = (stepCounts[key] ?: 0) + 1
         val usual = stepCounts.maxBy { it.value }.key.coerceAtLeast(1)
         b.usual = usual
         val lost = maxOf(0L, (stepMillis.toDouble() / usual).roundToLong() - 1).toInt()
         b.missing += lost
-        if (lost == 1 && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
+        val skip = lost == 1 && (fixBothSides || skipsWithoutFix)
+        if (skip && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
         if (stepMillis * MicrosPerMilli > LongGapMicros) b.longGaps++
         b.maxRxGap = maxOf(b.maxRxGap ?: 0L, stepMillis)
     }

@@ -143,9 +143,14 @@ class SessionQualityTest {
                 else -> s
             }
         }
-        val r = sessionQuality(session(sets).copy(info = SessionInfo(start, devices = listOf("racebox"))))
+        val mini = session(sets).copy(info = SessionInfo(start, devices = listOf("racebox")))
+        // Only the Micro has an input voltage channel; a Mini sends the message without a fix, so it is lost.
+        val micro = mini.copy(channels = mapOf(120 to ChannelDef(120, "racebox_input", "V", "racebox", 1)))
+        val r = sessionQuality(micro)
         assertEquals(0.0, r.value("gnss.dropped"))
         assertTrue("besides 59 single whole-second messages" in r.metric("gnss.dropped").how)
+        // The 30 losses without a fix on both sides count: 30 of 1500, 2 %.
+        assertEquals(Verdict.FAIL, sessionQuality(mini).verdict("gnss.dropped"))
     }
 
     @Test
