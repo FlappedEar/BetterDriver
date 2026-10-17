@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.recorder.log.LogFile
 import java.io.File
 
 private const val NanosPerMicro = 1_000L
+private const val BytesPerMegabyte = 1L shl 20
 
 /**
  * The app's log, Android side (FBBD-146, FBBD-183): one continuous file, files/logs/betterdriver.log,
@@ -60,7 +61,10 @@ object AppLog {
         DebugLog.i(
             Tag,
             "start $process: BetterDriver ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE}) on " +
-                "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})",
+                "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} " +
+                "(SDK ${Build.VERSION.SDK_INT}), " +
+                // How much memory Android lets this process use (FBBD-232: a long export ran out at 256 MB).
+                "heap ${Runtime.getRuntime().maxMemory() / BytesPerMegabyte} MB",
         )
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, error ->

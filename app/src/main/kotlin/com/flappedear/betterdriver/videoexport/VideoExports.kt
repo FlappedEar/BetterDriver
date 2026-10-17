@@ -97,6 +97,10 @@ class VideoExports private constructor(private val context: Context) {
         } catch (e: Exception) {
             DebugLog.w(Tag, "reading $id for video export failed", e)
             null
+        } catch (_: OutOfMemoryError) {
+            // No stack trace: formatting one needs memory (FBBD-232).
+            DebugLog.w(Tag, "reading $id for video export failed: out of memory")
+            null
         }
         main.post { onReady(options) }
     }
@@ -243,6 +247,10 @@ class VideoExports private constructor(private val context: Context) {
                 }
             } catch (e: Exception) {
                 DebugLog.w(Tag, "planning the video export of $id failed", e)
+                finish(VideoExportEnd.Failed)
+            } catch (_: OutOfMemoryError) {
+                // No stack trace: formatting one needs memory (FBBD-232).
+                DebugLog.w(Tag, "planning the video export of $id failed: out of memory")
                 finish(VideoExportEnd.Failed)
             }
         }

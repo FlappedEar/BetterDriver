@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recorder.store
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.packedValues
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.util.Locale
 import kotlin.math.abs
@@ -146,8 +147,8 @@ fun SessionData.withGnssAtFixTime(): SessionData {
             continue
         }
         val rest = s.values.filter { it.channelId !in gnssIds }
-        if (rest.isNotEmpty()) moved += SampleSet(s.tMicros, rest)
-        if (s.tMicros - age >= 0) moved += SampleSet(s.tMicros - age, gnss)
+        if (rest.isNotEmpty()) moved += SampleSet(s.tMicros, packedValues(rest))
+        if (s.tMicros - age >= 0) moved += SampleSet(s.tMicros - age, packedValues(gnss))
     }
     return copy(sampleSets = moved.sortedBy { it.tMicros })
 }

@@ -1,7 +1,7 @@
 package com.flappedear.betterdriver.recorder.store
 
 import com.flappedear.betterdriver.recorder.ChannelDef
-import com.flappedear.betterdriver.recorder.ChannelValue
+import com.flappedear.betterdriver.recorder.PackedValues
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
 import java.io.ByteArrayOutputStream
@@ -204,7 +204,14 @@ object Frames {
             T_SAMPLES -> {
                 val t = inp.readLong()
                 val n = inp.readUnsignedShort()
-                Record.Samples(SampleSet(t, List(n) { ChannelValue(inp.readUnsignedShort(), inp.readDouble()) }))
+                val ids = CharArray(n)
+                val values = DoubleArray(n)
+                for (i in 0 until n) {
+                    ids[i] = inp.readUnsignedShort().toChar()
+                    values[i] = inp.readDouble()
+                }
+                // Packed: a long session read back is millions of values (FBBD-232).
+                Record.Samples(SampleSet(t, PackedValues(ids, values)))
             }
             T_EVENT -> Record.Event(RecorderEvent(inp.readLong(), inp.readUTF(), inp.readUTF()))
             T_END -> Record.End(inp.readLong(), inp.readUTF())

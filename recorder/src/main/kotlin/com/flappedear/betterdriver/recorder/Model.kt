@@ -49,6 +49,27 @@ data class SampleSet(val tMicros: Long, val values: List<ChannelValue>) {
     }
 }
 
+/**
+ * [values] packed into two arrays, for sample sets held in bulk: a session read back holds millions
+ * of values, and one [ChannelValue] object each ran a 63-minute drive's export out of the app's
+ * 256 MB (FBBD-232). Reading an element makes a short-lived [ChannelValue]; equality is a list's.
+ */
+fun packedValues(values: List<ChannelValue>): List<ChannelValue> =
+    values as? PackedValues ?: PackedValues(
+        CharArray(values.size) { values[it].channelId.toChar() },
+        DoubleArray(values.size) { values[it].value },
+    )
+
+/** Channel ids fit a char: they are at most [MaxChannelId]. */
+internal class PackedValues(
+    private val ids: CharArray,
+    private val numbers: DoubleArray,
+) : AbstractList<ChannelValue>(), RandomAccess {
+    override val size: Int get() = ids.size
+
+    override fun get(index: Int) = ChannelValue(ids[index].code, numbers[index])
+}
+
 /** A timestamped event, such as "gnss_lost" or "lap". */
 data class RecorderEvent(val tMicros: Long, val kind: String, val text: String)
 
