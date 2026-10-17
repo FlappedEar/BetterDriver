@@ -70,7 +70,8 @@ class VideoTest {
                 9 -> steady - 33_333
                 else -> steady + if (i % 3 == 0) 16_667 else 0
             }
-            ev(steady + media + 70_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", " media_us=$media frame_us=${offset + media}")
+            val text = " media_us=$media frame_us=${offset + media}"
+            ev(steady + media + 70_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", text)
         }
         val events = listOf(ev(1_050_000, EventKinds.VIDEO_START, "phone_0001.mp4")) + syncs
         assertEquals(steady, VideoTimeline.from(events).clips.single().startMicros)

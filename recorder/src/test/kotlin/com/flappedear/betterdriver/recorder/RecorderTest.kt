@@ -417,7 +417,8 @@ class RecorderTest {
         assertEquals(60, live.get(), "50 fixes and 10 OBD values while the writer waits on the disk")
         release.countDown()
         rec.stop()
-        assertEquals(50, store.read(rec.id).sampleSets.count { s -> s.values.any { it.channelId == GnssChannels.LAT.id } })
+        val fixes = store.read(rec.id).sampleSets.count { s -> s.values.any { it.channelId == GnssChannels.LAT.id } }
+        assertEquals(50, fixes)
     }
 
     @Test
