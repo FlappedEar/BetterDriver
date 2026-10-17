@@ -94,6 +94,8 @@ class PhoneCamera(
     private val audio: Boolean,
     /** The chosen mode first, then the thermal step-downs ([ladderFrom]). */
     private val ladder: List<VideoMode>,
+    /** Heat never steps video down or stops it; readings are still logged, every check ([PhoneHeat]). */
+    private val ignoreHeat: Boolean = false,
 ) : VideoSource {
     private val dir: File = index.videoDir
     private val clips = ClipIndexer(index)
@@ -111,7 +113,7 @@ class PhoneCamera(
     /** The ladder step [bound] records at; -1 when nothing is bound. */
     private var boundStep = -1
     private var steps: List<VideoMode> = ladder
-    private var policy = ThermalPolicy(ladder.size)
+    private var policy = ThermalPolicy(ladder.size, ignoreHeat)
 
     private var recording: Recording? = null
     private var fileIndex = 0
@@ -130,7 +132,7 @@ class PhoneCamera(
         }
     }
 
-    private var thermalLog = ThermalLog(ladder)
+    private var thermalLog = ThermalLog(ladder, ignoreHeat)
 
     /**
      * The sensor timestamp of the newest frame the camera captured, and whether that timestamp is on
@@ -174,10 +176,11 @@ class PhoneCamera(
                     sink.status("Not supported", ok = false)
                     return@addListener
                 }
-                policy = ThermalPolicy(steps.size)
-                thermalLog = ThermalLog(steps)
+                policy = ThermalPolicy(steps.size, ignoreHeat)
+                thermalLog = ThermalLog(steps, ignoreHeat)
                 sessionThermal = null
                 DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
+                if (ignoreHeat) DebugLog.w(Tag, "phone temperature ignored: video never steps down or stops for heat")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val listener = PowerManager.OnThermalStatusChangedListener { check() }
                     thermalListener = listener
@@ -368,7 +371,7 @@ class PhoneCamera(
         thermalLog.log(status, headroom, from, policy.ceiling, action)
         if (status != sessionThermal) {
             sessionThermal = status
-            sink.thermal(sink.nowMicros(), status, headroom)
+            sink.thermal(sink.nowMicros(), status, headroom, ignoreHeat)
         }
         return action
     }
@@ -380,20 +383,21 @@ class PhoneCamera(
 
 /**
  * Thermal readings in the debug log (FBBD-146): every status change and every step decision, else
- * one line per [ThermalLogEvery] checks, so a drive shows why and when video changed quality.
+ * one line per [ThermalLogEvery] checks, so a drive shows why and when video changed quality. With
+ * the phone's temperature ignored (FBBD-231) every check is logged, for the heat stress test.
  */
-private class ThermalLog(private val steps: List<VideoMode>) {
+private class ThermalLog(private val steps: List<VideoMode>, private val ignoreHeat: Boolean) {
     private var checks = 0
     private var loggedStatus = -1
 
     fun log(status: Int, headroom: Float?, from: Int, ceiling: Int, action: ThermalAction) {
         checks++
         val changed = status != loggedStatus || action != ThermalAction.Keep
-        if (!changed && checks < ThermalLogEvery) return
+        if (!changed && !ignoreHeat && checks < ThermalLogEvery) return
         checks = 0
         loggedStatus = status
         val decision = when (action) {
-            ThermalAction.Keep -> "keep"
+            ThermalAction.Keep -> if (ignoreHeat) "keep (heat ignored)" else "keep"
             ThermalAction.StopVideo -> "stop video"
             is ThermalAction.StepDown -> "step down to ${label(action.to)}"
             is ThermalAction.StepUp -> "step up to ${label(action.to)}"

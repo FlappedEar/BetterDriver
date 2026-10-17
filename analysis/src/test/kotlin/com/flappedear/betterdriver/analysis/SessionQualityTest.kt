@@ -18,6 +18,7 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
+import com.flappedear.betterdriver.recorder.thermalText
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
@@ -438,6 +439,21 @@ class SessionQualityTest {
         val hot = sessionQuality(session(sets, statuses + stop + shutdown))
         assertEquals(6.0, hot.value("thermal.max"))
         assertEquals(Verdict.FAIL, hot.verdict("thermal.status"))
+    }
+
+    @Test
+    fun `with the phone temperature ignored severe heat without a step-down passes and shutdown fails`() {
+        // FBBD-231: Arek's heat stress test, the camera keeps its mode however hot the phone gets.
+        val statuses = listOf(1_000_000L to 0, 100_000_000L to 2, 300_000_000L to 4).map { (t, s) ->
+            RecorderEvent(t, EventKinds.THERMAL_STATUS, thermalText(s, 0.9f, ignored = true))
+        }
+        val sets = stream(0, 1_000_000)
+        val r = sessionQuality(session(sets, statuses))
+        assertEquals(4.0, r.value("thermal.max"))
+        assertEquals(Verdict.PASS, r.verdict("thermal.status"))
+        assertEquals(0.0, r.value("thermal.step_downs"))
+        val shutdown = RecorderEvent(400_000_000, EventKinds.THERMAL_STATUS, thermalText(6, 1.2f, ignored = true))
+        assertEquals(Verdict.FAIL, sessionQuality(session(sets, statuses + shutdown)).verdict("thermal.status"))
     }
 
     @Test

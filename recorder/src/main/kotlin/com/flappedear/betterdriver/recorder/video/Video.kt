@@ -53,8 +53,9 @@ interface VideoSink {
     /**
      * Android's thermal [status] (PowerManager.THERMAL_STATUS_*) at session time [atMicros], first and
      * on each change, with the [headroom] forecast if known (FBBD-183). Cameras without it never call it.
+     * [ignored]: the camera ignores the temperature for a heat stress test (FBBD-231).
      */
-    fun thermal(atMicros: Long, status: Int, headroom: Float?) = Unit
+    fun thermal(atMicros: Long, status: Int, headroom: Float?, ignored: Boolean = false) = Unit
 }
 
 /** Video files of a session live in its directory under [DIR], next to the clip index (clips.json). */

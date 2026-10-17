@@ -21,6 +21,8 @@ private val ThermalStops = setOf("thermal_step", "thermal")
 
 private const val ThermalCriterion = "never SEVERE before the app's mitigation engaged; no thermal shutdown (FBBD-46)"
 
+private const val IgnoredCriterion = "no thermal shutdown; mitigation off for a heat stress test (FBBD-231)"
+
 internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): QualitySection {
     val fromCamera = events.ofKind(EventKinds.THERMAL_STATUS).mapNotNull { e ->
         fields(e.text)["status"]?.toIntOrNull()?.let { e.tMicros to it }
@@ -43,22 +45,35 @@ internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): Quali
     val max = statuses.maxOf { it.second }
     val firstSevere = statuses.firstOrNull { it.second >= Severe }?.first
     val firstStep = steps.minOfOrNull { it.tMicros }
-    val ok = max < Shutdown && (firstSevere == null || (firstStep != null && firstStep <= firstSevere))
+    // Heat stress test (FBBD-231): the camera was told to ignore the temperature, so no step-down is
+    // expected and only a thermal shutdown fails.
+    val ignoredAt = events.ofKind(EventKinds.THERMAL_STATUS).firstOrNull { fields(it.text)["heat"] == "ignored" }
+    val mitigated = ignoredAt != null || firstSevere == null || (firstStep != null && firstStep <= firstSevere)
+    val ok = max < Shutdown && mitigated
+    val status = if (ignoredAt != null) {
+        judged(
+            "thermal.status", "Thermal mitigation", max.toDouble(), "", ok, Basis.MEASURED, IgnoredCriterion,
+            "phone temperature ignored for a heat stress test; highest status ${name(max)}, a shutdown fails",
+        )
+    } else {
+        judged(
+            "thermal.status", "Thermal mitigation", max.toDouble(), "", ok, Basis.MEASURED, ThermalCriterion,
+            "highest status ${name(max)}; a step-down or stop must come before the first severe reading, " +
+                "and a shutdown fails",
+        )
+    }
     val metrics = listOf(
         info(
             "thermal.max", "Highest thermal status", max.toDouble(), "", Basis.MEASURED,
             "Android thermal status ${name(max)}",
         ),
-        judged(
-            "thermal.status", "Thermal mitigation", max.toDouble(), "", ok, Basis.MEASURED, ThermalCriterion,
-            "highest status ${name(max)}; a step-down or stop must come before the first severe reading, " +
-                "and a shutdown fails",
-        ),
+        status,
         stepCount,
     ) + notMeasuredYet
     val changes = statuses.filterIndexed { i, (_, s) -> i == 0 || statuses[i - 1].second != s }
     val notes = changes.map { (t, s) -> QualityNote(t, "thermal status ${name(s)}") } +
-        steps.map { QualityNote(it.tMicros, "camera ${reason(it)?.replace('_', ' ')}") }
+        steps.map { QualityNote(it.tMicros, "camera ${reason(it)?.replace('_', ' ')}") } +
+        listOfNotNull(ignoredAt?.let { QualityNote(it.tMicros, "phone temperature ignored (heat stress test)") })
     return QualitySection("Thermal", metrics, notes.sortedBy { it.tMicros })
 }
 
