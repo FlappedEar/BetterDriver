@@ -5,16 +5,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.flappedear.betterdriver.camera.PhoneHeat
-import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.ListRow
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 /**
  * Settings › Diagnostics › Ignore phone temperature (FBBD-231), off by default: for Arek's heat
@@ -23,15 +18,11 @@ import kotlinx.coroutines.withContext
 @Composable
 fun PhoneHeatRow() {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var ignored by remember { mutableStateOf(PhoneHeat.ignored(context)) }
     ListRow("Ignore phone temperature", if (ignored) "On" else "Off") {
         Switch(checked = ignored, onCheckedChange = { on ->
             ignored = on
-            scope.launch {
-                withContext(Dispatchers.IO) { PhoneHeat.setIgnored(context, on) }
-                DebugLog.w("PhoneHeat", "ignore phone temperature ${if (on) "on" else "off"}")
-            }
+            PhoneHeat.setIgnored(context, on)
         })
     }
     DimText(
