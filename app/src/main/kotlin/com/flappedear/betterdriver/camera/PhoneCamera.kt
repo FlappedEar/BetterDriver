@@ -124,6 +124,13 @@ class PhoneCamera(
     private var endReason = "user"
     private var nextStep: Int? = null
 
+    /**
+     * Whether the file being recorded holds data (a Status event with recorded media time; CameraX's Start
+     * event alone does not promise any). A file stopped before that ends with error 8 and no frame, so
+     * thermal checks wait for it.
+     */
+    private var fileStarted = false
+
     private val checker = object : Runnable {
         override fun run() {
             if (stopping) return
@@ -250,6 +257,7 @@ class PhoneCamera(
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
             nextStep = null
+            fileStarted = false
             var lastSync: Long? = null
             recording = pending.start(executor) { e ->
                 when (e) {
@@ -261,6 +269,7 @@ class PhoneCamera(
                         DebugLog.i(Tag, "recording $name at ${step.label}")
                     }
                     is VideoRecordEvent.Status -> {
+                        if (e.recordingStats.recordedDurationNanos > 0) fileStarted = true
                         val now = sink.nowMicros()
                         if (syncDue(now, lastSync)) {
                             lastSync = now
@@ -330,10 +339,15 @@ class PhoneCamera(
         else -> "Stopped"
     }
 
-    /** Thermal and storage check; ends the current file when video must step down or stop. */
+    /**
+     * Thermal and storage check; ends the current file when video must step down or stop. It waits
+     * until the file holds data: Android calls the thermal listener at once when it is added, and
+     * on 2026-10-17 (status severe at start) that call stopped the first file before it held a frame
+     * (error 8). The next check, 5 s later, acts instead.
+     */
     private fun check() {
-        val r = recording
-        if (r == null || nextStep != null || endReason != "user") return
+        val r = recording?.takeIf { fileStarted } ?: return
+        if (nextStep != null || endReason != "user") return
         val action = if (StatFs(dir.path).availableBytes < MinFreeBytes) null else thermalAction()
         when (action) {
             null -> {
