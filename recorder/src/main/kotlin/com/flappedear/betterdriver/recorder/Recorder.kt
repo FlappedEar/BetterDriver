@@ -274,12 +274,13 @@ class RecordingVideoSink(
 
     override fun status(text: String, ok: Boolean) = onStatus(camera, text, ok)
 
-    override fun thermal(atMicros: Long, status: Int, headroom: Float?) =
-        recording.eventAt(atMicros, EventKinds.THERMAL_STATUS, thermalText(status, headroom))
+    override fun thermal(atMicros: Long, status: Int, headroom: Float?, ignored: Boolean) =
+        recording.eventAt(atMicros, EventKinds.THERMAL_STATUS, thermalText(status, headroom, ignored))
 }
 
-/** The text of a [EventKinds.THERMAL_STATUS] event. */
-fun thermalText(status: Int, headroom: Float?): String = "status=$status headroom=${headroom ?: "n/a"}"
+/** The text of a [EventKinds.THERMAL_STATUS] event; " heat=ignored" during a heat stress test (FBBD-231). */
+fun thermalText(status: Int, headroom: Float?, ignored: Boolean = false): String =
+    "status=$status headroom=${headroom ?: "n/a"}" + if (ignored) " heat=ignored" else ""
 
 /**
  * The attached sources. Each source is stopped exactly once: [DataSource.stop] need not be idempotent.

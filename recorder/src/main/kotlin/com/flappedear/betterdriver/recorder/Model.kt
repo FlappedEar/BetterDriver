@@ -154,7 +154,8 @@ object EventKinds {
 
     /**
      * Android's thermal status changed while the phone camera ran (FBBD-21, FBBD-183). Text
-     * "status=<PowerManager.THERMAL_STATUS_*> headroom=<forecast or n/a>".
+     * "status=<PowerManager.THERMAL_STATUS_*> headroom=<forecast or n/a>", then " heat=ignored" when
+     * the camera ignored the temperature for a heat stress test (FBBD-231).
      */
     const val THERMAL_STATUS = "thermal_status"
 

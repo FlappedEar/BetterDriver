@@ -77,6 +77,9 @@ internal object RecorderProtocol {
     const val VIDEO_THERMAL_STATUS = "thermalStatus"
     const val VIDEO_HEADROOM = "headroom"
 
+    /** In a [VIDEO_THERMAL] report: true when the camera ignores the phone's temperature (FBBD-231). */
+    const val VIDEO_HEAT_IGNORED = "heatIgnored"
+
     /** Values of [VIDEO_KIND]. */
     const val VIDEO_STARTED = 1
     const val VIDEO_SYNCED = 2

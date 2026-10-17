@@ -183,6 +183,7 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
             at,
             data.getInt(RecorderProtocol.VIDEO_THERMAL_STATUS),
             data.getFloat(RecorderProtocol.VIDEO_HEADROOM, Float.NaN).takeUnless { it.isNaN() },
+            data.getBoolean(RecorderProtocol.VIDEO_HEAT_IGNORED),
         )
     }
 }

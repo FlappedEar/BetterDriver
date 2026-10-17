@@ -60,9 +60,13 @@ sealed interface ThermalAction {
  * only "light", and 720p · 60 then sat at 0.75 to 0.87, under the old 0.7 needed to step back up,
  * so the rest of both sessions stayed at 720p. Severe throttling starts at 1.0; MODERATE and SEVERE
  * still step down as before.
+ *
+ * With [ignoreHeat] (Settings › Diagnostics › Ignore phone temperature, FBBD-231) every reading keeps
+ * the chosen mode, even CRITICAL: Arek's heat stress test, where only the phone itself may throttle.
  */
 class ThermalPolicy(
     private val steps: Int,
+    private val ignoreHeat: Boolean = false,
     private val settleMicros: Long = DefaultSettleMicros,
     private val recoverMicros: Long = DefaultRecoverMicros,
     private val headroomLimit: Float = DefaultHeadroomLimit,
@@ -96,6 +100,7 @@ class ThermalPolicy(
     }
 
     fun onReading(nowMicros: Long, status: Int, headroom: Float?): ThermalAction {
+        if (ignoreHeat) return ThermalAction.Keep
         val hot = status >= Thermal.MODERATE || (headroom != null && headroom >= headroomLimit)
         val cool = status <= Thermal.LIGHT && (headroom == null || headroom < coolHeadroom)
         if (!cool) lastWarmAt = nowMicros

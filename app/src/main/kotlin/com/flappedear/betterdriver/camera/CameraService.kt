@@ -184,7 +184,7 @@ class CameraService : LifecycleService() {
         DebugLog.session = id
         main.removeCallbacks(giveUp)
         val index = VideoIndex(File(sessionsDir(this), id))
-        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode))
+        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode), PhoneHeat.ignored(this))
             .also { it.start(RemoteSink(id, startNanos)) }
     }
 
@@ -272,10 +272,11 @@ class CameraService : LifecycleService() {
             putBoolean(RecorderProtocol.VIDEO_OK, ok)
         }
 
-        override fun thermal(atMicros: Long, status: Int, headroom: Float?) =
+        override fun thermal(atMicros: Long, status: Int, headroom: Float?, ignored: Boolean) =
             report(RecorderProtocol.VIDEO_THERMAL, "", atMicros) {
                 putInt(RecorderProtocol.VIDEO_THERMAL_STATUS, status)
                 headroom?.let { putFloat(RecorderProtocol.VIDEO_HEADROOM, it) }
+                putBoolean(RecorderProtocol.VIDEO_HEAT_IGNORED, ignored)
             }
 
         private fun report(kind: Int, file: String, atMicros: Long, extra: Bundle.() -> Unit = {}) {

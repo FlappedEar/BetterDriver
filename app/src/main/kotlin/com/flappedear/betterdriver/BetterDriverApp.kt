@@ -33,6 +33,7 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.debug.DebugLogRows
+import com.flappedear.betterdriver.debug.PhoneHeatRow
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
@@ -409,7 +410,10 @@ private fun Settings(
     val coach = remember(context) { CoachPrefs.get(context) }
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
-        debugRows = { DebugLogRows() },
+        debugRows = {
+            DebugLogRows()
+            PhoneHeatRow()
+        },
         backupRows = { BackupRows() },
         setup = repo.setup,
         version = Version,

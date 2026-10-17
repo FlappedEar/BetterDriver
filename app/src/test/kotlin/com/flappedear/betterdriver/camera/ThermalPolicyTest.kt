@@ -39,6 +39,16 @@ class ThermalPolicyTest {
     }
 
     @Test
+    fun ignoredHeatNeverStepsDownOrStops() {
+        // FBBD-231: Arek's heat stress test.
+        val p = ThermalPolicy(4, ignoreHeat = true)
+        for ((i, status) in listOf(Thermal.MODERATE, Thermal.SEVERE, Thermal.CRITICAL, 6).withIndex()) {
+            assertEquals(ThermalAction.Keep, p.onReading(i * minute, status, 1.5f))
+        }
+        assertEquals(0, p.current)
+    }
+
+    @Test
     fun coolPhoneKeepsQuality() {
         val p = ThermalPolicy(4)
         assertEquals(ThermalAction.Keep, p.onReading(0, Thermal.LIGHT, 0.5f))
