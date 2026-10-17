@@ -125,8 +125,9 @@ class PhoneCamera(
     private var nextStep: Int? = null
 
     /**
-     * Whether the file being recorded has started (CameraX sent its Start event). A file stopped before
-     * that holds no frame and ends with error 8, so thermal checks wait for it.
+     * Whether the file being recorded holds data (a Status event with recorded media time; CameraX's Start
+     * event alone does not promise any). A file stopped before that ends with error 8 and no frame, so
+     * thermal checks wait for it.
      */
     private var fileStarted = false
 
@@ -261,7 +262,6 @@ class PhoneCamera(
             recording = pending.start(executor) { e ->
                 when (e) {
                     is VideoRecordEvent.Start -> {
-                        fileStarted = true
                         val now = sink.nowMicros()
                         sink.started(name, now)
                         clips.started(name, now)
@@ -269,6 +269,7 @@ class PhoneCamera(
                         DebugLog.i(Tag, "recording $name at ${step.label}")
                     }
                     is VideoRecordEvent.Status -> {
+                        if (e.recordingStats.recordedDurationNanos > 0) fileStarted = true
                         val now = sink.nowMicros()
                         if (syncDue(now, lastSync)) {
                             lastSync = now
@@ -340,7 +341,7 @@ class PhoneCamera(
 
     /**
      * Thermal and storage check; ends the current file when video must step down or stop. It waits
-     * until the file has started: Android calls the thermal listener at once when it is added, and
+     * until the file holds data: Android calls the thermal listener at once when it is added, and
      * on 2026-10-17 (status severe at start) that call stopped the first file before it held a frame
      * (error 8). The next check, 5 s later, acts instead.
      */
