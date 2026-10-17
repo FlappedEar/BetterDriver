@@ -55,11 +55,12 @@ internal fun thermalSection(events: List<RecorderEvent>, endMicros: Long): Quali
     val firstHot = events.ofKind(EventKinds.DEVICE).firstOrNull { e ->
         (fields(e.text)["battery_c"]?.toDoubleOrNull() ?: 0.0) >= StopBatteryC
     }?.tMicros
-    val firstStep = steps.minOfOrNull { it.tMicros }
     // Heat stress test (FBBD-231): the camera was told to ignore the temperature, so no step-down is
     // expected and only a thermal shutdown fails.
     val ignoredAt = events.ofKind(EventKinds.THERMAL_STATUS).firstOrNull { fields(it.text)["heat"] == "ignored" }
-    val stoppedInTime = firstHot == null || (firstStep != null && firstStep <= firstHot + StopSlackMicros)
+    // Video counts as stopped in time when no phone file was still recording a little after the first
+    // 60 °C reading; a camera that never opened a file because the phone was already hot passes.
+    val stoppedInTime = firstHot == null || phoneVideoEnds(events).none { it > firstHot + StopSlackMicros }
     val mitigated = ignoredAt != null || stoppedInTime
     val ok = max < Shutdown && mitigated
     val status = if (ignoredAt != null) {
@@ -122,6 +123,18 @@ private fun battery(events: List<RecorderEvent>, endMicros: Long): List<QualityM
             "highest battery temperature reported, at ${seconds(peak.first).toLong()} s",
         ),
     )
+}
+
+/** When each phone video file stopped; Long.MAX_VALUE for a file still recording when the session ended. */
+private fun phoneVideoEnds(events: List<RecorderEvent>): List<Long> {
+    val stops = events.ofKind(EventKinds.VIDEO_STOP).mapNotNull { e ->
+        VideoEventText.parse(e.text).takeIf { it[VideoEventText.CAMERA] == "phone" }?.get(VideoEventText.FILE)
+            ?.let { it to e.tMicros }
+    }.toMap()
+    return events.ofKind(EventKinds.VIDEO_START).mapNotNull { e ->
+        VideoEventText.parse(e.text).takeIf { it[VideoEventText.CAMERA] == "phone" }?.get(VideoEventText.FILE)
+            ?.let { stops[it] ?: Long.MAX_VALUE }
+    }
 }
 
 private fun reason(e: RecorderEvent) = VideoEventText.parse(e.text)[VideoEventText.REASON]
