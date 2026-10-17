@@ -27,10 +27,10 @@ fun PhoneHeatRow() {
     }
     DimText(
         if (ignored) {
-            "Heat stress test: video never steps down or stops for heat. The log keeps every reading. " +
+            "Heat stress test: video never stops for heat. The log keeps every reading. " +
                 "Switch off after the test."
         } else {
-            "Off: video steps down when the phone gets hot."
+            "Off: video keeps its quality and stops only at a 60 °C battery."
         },
     )
 }

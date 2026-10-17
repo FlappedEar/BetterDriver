@@ -7,8 +7,9 @@ import com.flappedear.betterdriver.setup.VideoSize
 val PhoneSizes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
 
 /**
- * The modes phone video steps down through when the phone heats up (FBBD-21), starting from the
- * mode Arek chose (FBBD-88). Frame rate comes before picture quality (Arek, 2026-10-13): every
+ * The modes phone video falls back through when the camera cannot record a mode (FBBD-21), starting
+ * from the mode Arek chose (FBBD-88). Heat no longer steps down through it (ThermalPolicy). Frame
+ * rate comes before picture quality (Arek, 2026-10-13): every
  * smaller size at the chosen rate first, each with the lower bitrate CameraX gives that size, and
  * only then the smallest size at 30 fps. It never goes above the chosen mode. A size the phone
  * cannot use starts the ladder at 1080p.
@@ -32,118 +33,63 @@ object Thermal {
     const val MODERATE = 2
     const val SEVERE = 3
     const val CRITICAL = 4
+    const val EMERGENCY = 5
 }
 
 /** What the camera should do after a thermal reading. */
 sealed interface ThermalAction {
     data object Keep : ThermalAction
-    data class StepDown(val to: Int) : ThermalAction
-    data class StepUp(val to: Int) : ThermalAction
     data object StopVideo : ThermalAction
 }
 
 /**
- * Decides when phone video steps down, and back up once the phone has cooled (FBBD-147).
+ * Decides when phone video stops for heat (FBBD-46). It no longer steps quality down or up.
  *
- * - Headroom forecast at or above [headroomLimit] (1.0 is where Android starts severe throttling)
- *   or status MODERATE: one step down. The next one waits [settleMicros] after the last change, so
- *   the phone has time to cool at the lower mode before it drops again.
- * - SEVERE: one step down at once, whatever the interval.
- * - CRITICAL or worse: video stops; data recording carries on.
- * - Already at the last step and still hot: video stops.
- * - Cool (status LIGHT or less and headroom below [coolHeadroom], or unknown) for [recoverMicros]
- *   since both the last change and the last warm reading: one step back up. Each time a step gets
- *   hot again after being stepped up to, the wait before the next step up doubles, so quality
- *   does not swing between two steps but still goes back up once the phone has really cooled.
+ * Arek's heat stress test of 2026-10-17 (FBBD-231): Android reported SEVERE after 2 min and
+ * CRITICAL from 6.5 min, with the battery at only 41 to 45 °C, while the Pixel 6 recorded 4K · 60
+ * for 55 min without a fault. The old policy (step down at MODERATE or a forecast of 0.95, stop at
+ * CRITICAL) would have stopped video at 6.5 min. Arek: "Critical would be around 60, not 45", and
+ * "we don't need this stepping". So video keeps the chosen mode and only stops, for the rest of the
+ * session (data recording carries on), when:
  *
- * Arek's drive of 2026-10-14 at 10 °C: 1080p · 60 stepped down at a forecast of 0.90 with status
- * only "light", and 720p · 60 then sat at 0.75 to 0.87, under the old 0.7 needed to step back up,
- * so the rest of both sessions stayed at 720p. Severe throttling starts at 1.0; MODERATE and SEVERE
- * still step down as before.
+ * - the battery reaches [stopC], or
+ * - Android's thermal status is EMERGENCY or SHUTDOWN (or, with the battery temperature unknown,
+ *   CRITICAL).
+ *
+ * The ladder ([ladderFrom]) is still where the camera falls back to when a mode cannot be bound.
  *
  * With [ignoreHeat] (Settings › Diagnostics › Ignore phone temperature, FBBD-231) every reading keeps
- * the chosen mode, even CRITICAL: Arek's heat stress test, where only the phone itself may throttle.
+ * the chosen mode, even SHUTDOWN: Arek's heat stress test, where only the phone itself may throttle.
  */
 class ThermalPolicy(
-    private val steps: Int,
     private val ignoreHeat: Boolean = false,
-    private val settleMicros: Long = DefaultSettleMicros,
-    private val recoverMicros: Long = DefaultRecoverMicros,
-    private val headroomLimit: Float = DefaultHeadroomLimit,
-    private val coolHeadroom: Float = DefaultCoolHeadroom,
+    private val stopC: Float = StopBatteryC,
 ) {
+    /** The ladder step the camera records at; it changes only when a mode cannot be bound. */
     var current = 0
         private set
 
-    /** The best step this session may still step up to: below any step that could not be bound. */
+    /** The best step this session may still use: below any step that could not be bound. */
     var ceiling = 0
         private set
-    private var lastChangeAt: Long? = null
-    private var lastChangeUp = false
-    private var lastWarmAt: Long? = null
 
-    /** The cool time a step up waits for; doubles each time a step up gets hot again. */
-    private var upWaitMicros = recoverMicros
-
-    /**
-     * Moves to [index] when the camera binds a step: the first one, a fallback after a bind failure,
-     * or the step a step change chose. The time of the last change is kept, so a rebind does not
-     * make the next change due at once.
-     */
+    /** Moves to [index] when the camera binds a step: the first one, or a fallback after a bind failure. */
     fun moveTo(index: Int) {
         current = index
     }
 
-    /** A step that could not be bound is never stepped up to again. */
+    /** A step that could not be bound is never used again. */
     fun failed(index: Int) {
         if (index >= ceiling) ceiling = index + 1
     }
 
-    fun onReading(nowMicros: Long, status: Int, headroom: Float?): ThermalAction {
+    /** One reading: Android's thermal [status] and the battery temperature [batteryC] (null if unknown). */
+    fun onReading(status: Int, batteryC: Float?): ThermalAction {
         if (ignoreHeat) return ThermalAction.Keep
-        val hot = status >= Thermal.MODERATE || (headroom != null && headroom >= headroomLimit)
-        val cool = status <= Thermal.LIGHT && (headroom == null || headroom < coolHeadroom)
-        if (!cool) lastWarmAt = nowMicros
-        val sinceChange = lastChangeAt?.let { nowMicros - it }
-        return when {
-            status >= Thermal.CRITICAL -> ThermalAction.StopVideo
-            hot -> stepDown(nowMicros, urgent = status >= Thermal.SEVERE, sinceChange)
-            cool && current > ceiling && recovered(nowMicros, sinceChange) -> {
-                current--
-                change(nowMicros, up = true)
-                ThermalAction.StepUp(current)
-            }
-            else -> ThermalAction.Keep
-        }
-    }
-
-    /** Cool long enough to step up: since the last change, and since the last warm reading. */
-    private fun recovered(nowMicros: Long, sinceChange: Long?): Boolean =
-        sinceChange != null && sinceChange >= upWaitMicros &&
-            lastWarmAt.let { it == null || nowMicros - it >= upWaitMicros }
-
-    private fun stepDown(nowMicros: Long, urgent: Boolean, sinceChange: Long?): ThermalAction = when {
-        // The interval only spaces step-downs: hot at the last step stops video at once.
-        current >= steps - 1 -> ThermalAction.StopVideo
-        !urgent && sinceChange != null && sinceChange < settleMicros -> ThermalAction.Keep
-        else -> {
-            // Hot again after stepping up: wait longer before trying that step again.
-            if (lastChangeUp) upWaitMicros *= 2
-            current++
-            change(nowMicros, up = false)
-            ThermalAction.StepDown(current)
-        }
-    }
-
-    private fun change(nowMicros: Long, up: Boolean) {
-        lastChangeAt = nowMicros
-        lastChangeUp = up
-    }
-
-    private companion object {
-        const val DefaultSettleMicros = 180_000_000L
-        const val DefaultRecoverMicros = 180_000_000L
-        const val DefaultHeadroomLimit = 0.95f
-        const val DefaultCoolHeadroom = 0.8f
+        val tooHot = if (batteryC != null) batteryC >= stopC else status >= Thermal.CRITICAL
+        return if (tooHot || status >= Thermal.EMERGENCY) ThermalAction.StopVideo else ThermalAction.Keep
     }
 }
+
+/** The battery temperature that stops phone video (Arek 2026-10-17: "Critical would be around 60"). */
+const val StopBatteryC = 60f

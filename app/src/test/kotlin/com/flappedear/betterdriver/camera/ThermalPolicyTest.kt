@@ -6,8 +6,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ThermalPolicyTest {
-    private val minute = 60_000_000L
-
     private fun ladder(size: VideoSize, fps: Int) = ladderFrom(VideoMode(size, fps)).map { it.label }
 
     @Test
@@ -39,133 +37,51 @@ class ThermalPolicyTest {
     }
 
     @Test
-    fun ignoredHeatNeverStepsDownOrStops() {
+    fun ignoredHeatNeverStops() {
         // FBBD-231: Arek's heat stress test.
-        val p = ThermalPolicy(4, ignoreHeat = true)
-        for ((i, status) in listOf(Thermal.MODERATE, Thermal.SEVERE, Thermal.CRITICAL, 6).withIndex()) {
-            assertEquals(ThermalAction.Keep, p.onReading(i * minute, status, 1.5f))
+        val p = ThermalPolicy(ignoreHeat = true)
+        for (status in listOf(Thermal.MODERATE, Thermal.SEVERE, Thermal.CRITICAL, Thermal.EMERGENCY, 6)) {
+            assertEquals(ThermalAction.Keep, p.onReading(status, 70f))
+        }
+    }
+
+    @Test
+    fun arekHeatTestOf17OctoberKeepsTheChosenMode() {
+        // 2026-10-17: Android said severe, then critical, with the battery at 40 to 45 °C, and the phone
+        // recorded 4K · 60 for 55 min without a fault. Android's label alone no longer touches video.
+        val p = ThermalPolicy()
+        val readings = listOf(Thermal.MODERATE to 40.4f, Thermal.SEVERE to 40.7f, Thermal.CRITICAL to 44.9f)
+        for ((status, battery) in readings) {
+            assertEquals(ThermalAction.Keep, p.onReading(status, battery))
         }
         assertEquals(0, p.current)
     }
 
     @Test
-    fun coolPhoneKeepsQuality() {
-        val p = ThermalPolicy(4)
-        assertEquals(ThermalAction.Keep, p.onReading(0, Thermal.LIGHT, 0.5f))
-        assertEquals(0, p.current)
+    fun aBatteryAt60StopsVideo() {
+        val p = ThermalPolicy()
+        assertEquals(ThermalAction.Keep, p.onReading(Thermal.CRITICAL, 59.9f))
+        assertEquals(ThermalAction.StopVideo, p.onReading(Thermal.NONE, StopBatteryC))
     }
 
     @Test
-    fun theDefaultIntervalLetsThePhoneCoolBeforeTheNextStep() {
-        // Arek's drive 2026-10-12 (FBBD-147): hot for three minutes after the first step at 60 s
-        // intervals dropped 4K · 60 to 720p · 60. Now the second step waits three minutes.
-        val p = ThermalPolicy(6)
-        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
-        assertEquals(ThermalAction.Keep, p.onReading(2 * minute, Thermal.MODERATE, null))
-        assertEquals(ThermalAction.StepDown(2), p.onReading(3 * minute, Thermal.MODERATE, null))
+    fun androidsEmergencyOrShutdownStopsVideoWhateverTheBattery() {
+        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.EMERGENCY, 40f))
+        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(6, null))
     }
 
     @Test
-    fun stepsBackUpAfterFiveCoolMinutes() {
-        val p = ThermalPolicy(6, settleMicros = minute, recoverMicros = 5 * minute)
-        p.onReading(0, Thermal.MODERATE, null)
-        p.onReading(minute, Thermal.MODERATE, null)
-        assertEquals(2, p.current)
-        // Still warm (light, but headroom high) until minute 3: the five cool minutes start there.
-        assertEquals(ThermalAction.Keep, p.onReading(3 * minute, Thermal.LIGHT, 0.8f))
-        assertEquals(ThermalAction.Keep, p.onReading(7 * minute, Thermal.LIGHT, 0.5f))
-        assertEquals(ThermalAction.StepUp(1), p.onReading(8 * minute, Thermal.LIGHT, 0.5f))
-        assertEquals(ThermalAction.Keep, p.onReading(12 * minute, Thermal.NONE, null))
-        assertEquals(ThermalAction.StepUp(0), p.onReading(13 * minute, Thermal.NONE, null))
-        assertEquals(ThermalAction.Keep, p.onReading(30 * minute, Thermal.NONE, null))
+    fun withoutABatteryTemperatureCriticalStopsVideo() {
+        assertEquals(ThermalAction.Keep, ThermalPolicy().onReading(Thermal.SEVERE, null))
+        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.CRITICAL, null))
     }
 
     @Test
-    fun aStepThatHeatsUpAgainWaitsTwiceAsLongBeforeTheNextTry() {
-        val p = ThermalPolicy(6, settleMicros = minute, recoverMicros = 5 * minute)
-        p.onReading(0, Thermal.MODERATE, null)
-        assertEquals(ThermalAction.StepUp(0), p.onReading(5 * minute, Thermal.NONE, null))
-        assertEquals(ThermalAction.StepDown(1), p.onReading(6 * minute, Thermal.MODERATE, null))
-        assertEquals(0, p.ceiling)
-        // Ten cool minutes now, not five.
-        assertEquals(ThermalAction.Keep, p.onReading(11 * minute, Thermal.NONE, null))
-        assertEquals(ThermalAction.Keep, p.onReading(15 * minute, Thermal.NONE, null))
-        assertEquals(ThermalAction.StepUp(0), p.onReading(16 * minute, Thermal.NONE, null))
-    }
-
-    @Test
-    fun arekDriveOf14OctoberKeeps1080pAndStepsBackUp() {
-        // 2026-10-14 at 10 °C: the forecast reached 0.90 to 0.92 with status light; that no longer
-        // steps down. At 720p it sat at 0.75 to 0.77, which now counts as cool after three minutes.
-        val p = ThermalPolicy(3)
-        assertEquals(ThermalAction.Keep, p.onReading(0, Thermal.LIGHT, 0.915f))
-        assertEquals(ThermalAction.StepDown(1), p.onReading(minute, Thermal.LIGHT, 0.95f))
-        assertEquals(ThermalAction.Keep, p.onReading(2 * minute, Thermal.LIGHT, 0.77f))
-        assertEquals(ThermalAction.Keep, p.onReading(3 * minute, Thermal.LIGHT, 0.75f))
-        assertEquals(ThermalAction.StepUp(0), p.onReading(5 * minute, Thermal.LIGHT, 0.76f))
-    }
-
-    @Test
-    fun aStepThatFailedToBindIsNeverSteppedUpTo() {
-        val p = ThermalPolicy(6, settleMicros = minute, recoverMicros = 5 * minute)
+    fun aStepThatFailedToBindIsNeverUsedAgain() {
+        val p = ThermalPolicy()
         p.failed(0)
         p.moveTo(1)
-        p.onReading(0, Thermal.MODERATE, null)
-        assertEquals(ThermalAction.StepUp(1), p.onReading(5 * minute, Thermal.NONE, null))
-        assertEquals(ThermalAction.Keep, p.onReading(20 * minute, Thermal.NONE, null))
-    }
-
-    @Test
-    fun moderateStepsDownOncePerInterval() {
-        val p = ThermalPolicy(4, settleMicros = minute)
-        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
-        assertEquals(ThermalAction.Keep, p.onReading(minute / 2, Thermal.MODERATE, null))
-        assertEquals(ThermalAction.StepDown(2), p.onReading(minute, Thermal.MODERATE, null))
-    }
-
-    @Test
-    fun headroomForecastStepsDownBeforeThrottling() {
-        val p = ThermalPolicy(4)
-        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.NONE, 0.95f))
-    }
-
-    @Test
-    fun severeStepsDownAtOnce() {
-        val p = ThermalPolicy(4, settleMicros = minute)
-        p.onReading(0, Thermal.MODERATE, null)
-        assertEquals(ThermalAction.StepDown(2), p.onReading(1, Thermal.SEVERE, null))
-    }
-
-    @Test
-    fun criticalOrHotAtTheLastStepStopsVideo() {
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy(4).onReading(0, Thermal.CRITICAL, null))
-        val p = ThermalPolicy(2, settleMicros = 0)
-        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
-        assertEquals(ThermalAction.StopVideo, p.onReading(1, Thermal.MODERATE, null))
-    }
-
-    @Test
-    fun hotAtTheLastStepStopsWithoutWaitingForTheInterval() {
-        val p = ThermalPolicy(2, settleMicros = minute)
-        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
-        p.moveTo(1)
-        assertEquals(ThermalAction.StopVideo, p.onReading(minute / 12, Thermal.MODERATE, null))
-    }
-
-    @Test
-    fun moveToStartsFromTheGivenStep() {
-        val p = ThermalPolicy(4)
-        p.moveTo(2)
-        assertEquals(ThermalAction.StepDown(3), p.onReading(0, Thermal.SEVERE, null))
-    }
-
-    @Test
-    fun rebindingAfterAStepDownKeepsTheInterval() {
-        val p = ThermalPolicy(4, settleMicros = minute)
-        assertEquals(ThermalAction.StepDown(1), p.onReading(0, Thermal.MODERATE, null))
-        // The camera rebinds at the new step (PhoneCamera.begin) before the next 5 s check.
-        p.moveTo(1)
-        assertEquals(ThermalAction.Keep, p.onReading(minute / 12, Thermal.MODERATE, null))
-        assertEquals(ThermalAction.StepDown(2), p.onReading(minute, Thermal.MODERATE, null))
+        assertEquals(1, p.ceiling)
+        assertEquals(1, p.current)
     }
 }
