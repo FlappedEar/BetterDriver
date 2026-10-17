@@ -345,8 +345,8 @@ class PhoneCamera(
      * (error 8). The next check, 5 s later, acts instead.
      */
     private fun check() {
-        val r = recording
-        if (r == null || !fileStarted || nextStep != null || endReason != "user") return
+        val r = recording?.takeIf { fileStarted } ?: return
+        if (nextStep != null || endReason != "user") return
         val action = if (StatFs(dir.path).availableBytes < MinFreeBytes) null else thermalAction()
         when (action) {
             null -> {
