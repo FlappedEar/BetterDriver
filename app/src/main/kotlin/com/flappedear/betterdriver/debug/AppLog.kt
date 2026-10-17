@@ -61,7 +61,8 @@ object AppLog {
         DebugLog.i(
             Tag,
             "start $process: BetterDriver ${BuildConfig.VERSION_NAME} (build ${BuildConfig.VERSION_CODE}) on " +
-                "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT}), " +
+                "${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} " +
+                "(SDK ${Build.VERSION.SDK_INT}), " +
                 // How much memory Android lets this process use (FBBD-232: a long export ran out at 256 MB).
                 "heap ${Runtime.getRuntime().maxMemory() / BytesPerMegabyte} MB",
         )

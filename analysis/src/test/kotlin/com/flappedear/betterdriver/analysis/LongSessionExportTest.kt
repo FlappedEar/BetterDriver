@@ -53,7 +53,9 @@ class LongSessionExportTest {
         val output = proc.inputStream.bufferedReader().readText()
         val exit = proc.waitFor()
         assertEquals(0, exit, "the export ran out of memory or failed:\n$output")
-        val (rows, fixes) = output.lines().first { it.startsWith("rows ") }.split(" ").let { it[1].toInt() to it[3].toInt() }
+        val words = output.lines().first { it.startsWith("rows ") }.split(" ")
+        val rows = words[1].toInt()
+        val fixes = words[3].toInt()
         // One VBO row per fix; the fixes the session read back with are all but up to a second of them
         // (the fix age correction can move the first ones before the start).
         assertEquals(fixes, rows, output)
@@ -85,7 +87,8 @@ internal object LongSession {
             // The phone's samples queue alongside, as they do in a recording.
             while (p / PhoneHz * 1e6 < t) {
                 val tp = (p / PhoneHz * 1e6).toLong()
-                writer.write(Record.Samples(SampleSet(tp, phone.map { ChannelValue(it.id, 0.1 * sin(tp / 1e6 + it.id)) })))
+                val values = phone.map { ChannelValue(it.id, 0.1 * sin(tp / 1e6 + it.id)) }
+                writer.write(Record.Samples(SampleSet(tp, values)))
                 p++
             }
             writer.write(Record.Samples(fix(t)))
@@ -117,7 +120,7 @@ internal object LongSession {
     private const val LapSeconds = 72.0
 }
 
-/** The child JVM of [LongSessionExportTest]: reads session args[1] from store args[0] and exports it, as Sessions does. */
+/** The child JVM of [LongSessionExportTest]: reads session args[1] from store args[0], exports it as Sessions does. */
 object LongSessionExportChild {
     @JvmStatic
     fun main(args: Array<String>) {

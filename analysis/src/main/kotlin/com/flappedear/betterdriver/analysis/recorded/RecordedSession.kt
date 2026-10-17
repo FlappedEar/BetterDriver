@@ -32,7 +32,7 @@ private const val MicrosPerSecond = 1_000_000.0
  * Receivers' horizontal position accuracy in metres, by preference: the RaceBox's
  * (RaceBoxChannels.H_ACC) and the Dragy's (DragyChannels.H_ACC). Other receivers report none in metres.
  */
-private val HorizontalAccuracy = listOf("gnss_hacc", "dragy_hacc")
+internal val HorizontalAccuracy = listOf("gnss_hacc", "dragy_hacc")
 
 /** The RaceBox's acceleration along its X axis, which the mount points forward (RaceBoxChannels.ACCEL_X). */
 private const val AccelerationX = "accel_x"
@@ -56,7 +56,7 @@ private val PhoneAccelerometer = listOf("phone_accel_x", "phone_accel_y", "phone
  * RaceChrono DIY receiver's, then the phone's own. All record g; the unit travels with the channel.
  * Any of them may sit in any way in the car ([fitMount]).
  */
-private val AccelerometerAxes = listOf(
+internal val AccelerometerAxes = listOf(
     listOf(AccelerationX, AccelerationY, AccelerationZ),
     listOf(RcAccelerationX, RcAccelerationY, RcAccelerationZ),
     PhoneAccelerometer,
@@ -78,20 +78,15 @@ const val LeftAcceleration = "accel_left"
  * of exactly 0°, 0° (no fix) is no data. [startFinish] (the track's start/finish line) becomes
  * the start gate; without one no laps are found. [finish], a point-to-point track's finish line
  * (FBBD-155), becomes a finish gate, and the laps are then the runs from start to finish.
- */
-fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: TrackLine? = null): TelemetrySession =
-    telemetrySessionOf(data, startFinish, finish) { true }
-
-/**
- * As [telemetrySessionOf], with only the recorded channels [keep] accepts: the VBO's G columns need
- * the accelerometers and GPS, not an hour of every other channel in memory as well (FBBD-232).
+ * Only the recorded channels [keep] accepts are read: the VBO's G columns need the accelerometers
+ * and GPS, not an hour of every other channel in memory as well (FBBD-232).
  */
 @Suppress("CyclomaticComplexMethod")
 fun telemetrySessionOf(
     data: SessionData,
     startFinish: TrackLine?,
-    finish: TrackLine?,
-    keep: (ChannelDef) -> Boolean,
+    finish: TrackLine? = null,
+    keep: (ChannelDef) -> Boolean = { true },
 ): TelemetrySession {
     val sets = data.sampleSets.sortedBy { it.tMicros }
     val origin = sets.firstOrNull()?.tMicros ?: 0L
@@ -107,11 +102,11 @@ fun telemetrySessionOf(
         val lon = set.values.firstOrNull { it.channelId == GnssChannels.LON.id }?.value
         val noFix = lat == 0.0 && lon == 0.0
         for (v in set.values) {
-            if (defOf(v.channelId) == null) continue
-            val column = columns.getOrPut(v.channelId) { Samples() }
-            if (column.size > 0 && t <= column.lastTime) continue
-            val position = v.channelId == GnssChannels.LAT.id || v.channelId == GnssChannels.LON.id
-            column.add(t, if (position && noFix) Double.NaN else v.value)
+            val column = if (defOf(v.channelId) == null) null else columns.getOrPut(v.channelId) { Samples() }
+            if (column != null && (column.size == 0 || t > column.lastTime)) {
+                val position = v.channelId == GnssChannels.LAT.id || v.channelId == GnssChannels.LON.id
+                column.add(t, if (position && noFix) Double.NaN else v.value)
+            }
         }
     }
     val channels = LinkedHashMap<String, TelemetryChannel>()
@@ -135,14 +130,6 @@ fun telemetrySessionOf(
         finish?.let { gate(TimingGateType.Finish, "Finish", it) },
     )
     return TelemetrySession(channels, aliases, gates)
-}
-
-/**
- * [data] as analysis input with only what the car's corrected G needs ([correctedAccelerometer]):
- * GNSS and the accelerometers. No laps.
- */
-fun accelerationSessionOf(data: SessionData): TelemetrySession = telemetrySessionOf(data, null, null) { def ->
-    def.id in GnssChannels.IDS || def.name in HorizontalAccuracy || AccelerometerAxes.any { def.name in it }
 }
 
 /** One channel's samples as they are collected, in arrays that grow by half. */

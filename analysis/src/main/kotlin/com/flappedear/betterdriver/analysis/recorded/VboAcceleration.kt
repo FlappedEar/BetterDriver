@@ -2,9 +2,11 @@ package com.flappedear.betterdriver.analysis.recorded
 
 import com.flappedear.betterdriver.analysis.data.Aliases
 import com.flappedear.betterdriver.analysis.data.TelemetryChannel
+import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.data.accelerationAliasInG
 import com.flappedear.betterdriver.analysis.map.TimedG
 import com.flappedear.betterdriver.analysis.map.sessionGpsG
+import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.vbo.VboDerivedChannel
 import com.flappedear.betterdriver.timing.overlay.MeasuredG
@@ -66,4 +68,12 @@ fun measuredG(data: SessionData): MeasuredG? {
     }
     // The analysis reads left positive; the overlay right.
     return MeasuredG(samples(Aliases.LONGITUDINAL_ACCELERATION, 1.0), samples(Aliases.LATERAL_ACCELERATION, -1.0))
+}
+
+/**
+ * [data] as analysis input with only what the car's corrected G needs: GNSS and the accelerometers
+ * (FBBD-232: every channel of an hour at once ran the export out of memory). No laps.
+ */
+internal fun accelerationSessionOf(data: SessionData): TelemetrySession = telemetrySessionOf(data, null) { def ->
+    def.id in GnssChannels.IDS || def.name in HorizontalAccuracy || AccelerometerAxes.any { def.name in it }
 }
