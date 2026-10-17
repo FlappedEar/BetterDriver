@@ -209,8 +209,9 @@ class Sessions private constructor(private val context: Context) {
             } catch (e: IllegalStateException) {
                 DebugLog.w(Tag, "export failed", e) // unreadable metadata
                 ExportState.Failed
-            } catch (e: OutOfMemoryError) {
-                DebugLog.w(Tag, "export failed: out of memory", e) // left on this thread it ends the app (FBBD-232)
+            } catch (_: OutOfMemoryError) {
+                // Left on this thread it ends the app (FBBD-232). No stack trace: formatting one needs memory.
+                DebugLog.w(Tag, "export failed: out of memory")
                 ExportState.Failed
             }
             main.post { exports[id] = result }
@@ -267,8 +268,9 @@ class Sessions private constructor(private val context: Context) {
             } catch (e: IllegalArgumentException) {
                 DebugLog.w(Tag, "export failed", e) // folder no longer usable
                 ExportState.Failed
-            } catch (e: OutOfMemoryError) {
-                DebugLog.w(Tag, "export failed: out of memory", e) // left on this thread it ends the app (FBBD-232)
+            } catch (_: OutOfMemoryError) {
+                // Left on this thread it ends the app (FBBD-232). No stack trace: formatting one needs memory.
+                DebugLog.w(Tag, "export failed: out of memory")
                 ExportState.Failed
             }
             main.post { exports[id] = result }
