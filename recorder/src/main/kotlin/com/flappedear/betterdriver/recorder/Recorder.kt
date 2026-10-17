@@ -166,7 +166,10 @@ class Recording internal constructor(
 
     /** Definitions bypass the bounded queue, so a full queue can never lose one. */
     override fun defineChannel(def: ChannelDef) = intake.read {
-        if (!stopping.get()) pendingChannels.add(def)
+        if (!stopping.get()) {
+            pendingChannels.add(def)
+            listeners.dispatch { it.onChannel(def) }
+        }
     }
 
     /** The values are copied here: the writer reads them later, and the source may reuse its list. */
@@ -216,8 +219,25 @@ class Recording internal constructor(
 
     fun awaitStopped(timeoutMs: Long = StopTimeoutMs): Boolean = stopped.await(timeoutMs, TimeUnit.MILLISECONDS)
 
+    /**
+     * Live consumers get each accepted record here, as it arrives, not after the writer has put it on
+     * disk: on Arek's 2026-10-17 drive a disk write stalled for 2.2 s (a 4K file ending, storage nearly
+     * full), and the track screen showed its no-GNSS banner while every fix was on time.
+     */
     private fun enqueue(record: Record) = intake.read {
-        if (!stopping.get() && !queue.offer(Cmd.Write(record))) dropped.incrementAndGet()
+        if (stopping.get()) return@read
+        if (queue.offer(Cmd.Write(record))) live(record) else dropped.incrementAndGet()
+    }
+
+    private fun live(record: Record) {
+        when (record) {
+            is Record.Samples -> listeners.dispatch { it.onSamples(record.set) }
+            // Listener errors are not sent back to listeners: a listener failing on them would loop.
+            is Record.Event -> if (record.event.kind != EventKinds.LISTENER_ERROR) {
+                listeners.dispatch { it.onEvent(record.event) }
+            }
+            is Record.Channel, is Record.End -> Unit
+        }
     }
 
     /** Stops accepting records. True for the call that actually stopped intake. */

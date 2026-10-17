@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.camera
 
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
+import com.flappedear.betterdriver.recorder.video.PhonePlacement
 import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
 import com.flappedear.betterdriver.video.VideoClip
@@ -37,13 +38,19 @@ private const val UncertaintyMicros = 100_000L
  * late, so the smallest value is the best (the same rule as the recorder's VideoTimeline). When the
  * report also says when the newest frame was captured, "frame time minus recorded media" is late too
  * but closer, by 50 to 94 ms on Arek's 2026-10-13 drive (FBBD-218), so the earlier of the two counts.
- * It is rewritten when the offset improves and every 10 s for the duration. Writes run on their own
+ * Single stray early frame times are passed over (PhonePlacement, from Arek's 2026-10-17 drive).
+ * It is rewritten when the offset changes and every 10 s for the duration. Writes run on their own
  * thread.
  *
  * Main thread for the calls.
  */
 internal class ClipIndexer(private val index: VideoIndex) {
-    private class Clip(var offset: Long, var duration: Long? = null, var written: Long = Long.MIN_VALUE)
+    private class Clip(
+        var offset: Long,
+        var duration: Long? = null,
+        var written: Long = Long.MIN_VALUE,
+        val placement: PhonePlacement = PhonePlacement(),
+    )
 
     private val io = Executors.newSingleThreadExecutor { Thread(it, "clip-index").apply { isDaemon = true } }
     private val clips = HashMap<String, Clip>()
@@ -55,9 +62,10 @@ internal class ClipIndexer(private val index: VideoIndex) {
 
     fun synced(file: String, nowMicros: Long, mediaMicros: Long, frameMicros: Long? = null) {
         val c = clips[file] ?: return
-        val estimate = minOf(nowMicros, frameMicros ?: nowMicros) - mediaMicros
-        // The first progress report replaces the start report's estimate, as in VideoTimeline.
-        val changed = c.duration == null || estimate < c.offset
+        // Placed as VideoTimeline places it when the session is read; the first progress report
+        // replaces the start report's estimate.
+        val estimate = c.placement.add(nowMicros, mediaMicros, frameMicros) ?: return
+        val changed = c.duration == null || estimate != c.offset
         if (changed) c.offset = estimate
         c.duration = mediaMicros
         if (changed || nowMicros - c.written >= RewriteIntervalMicros) write(file, nowMicros)

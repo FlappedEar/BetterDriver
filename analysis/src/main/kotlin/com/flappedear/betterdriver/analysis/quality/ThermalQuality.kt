@@ -8,8 +8,9 @@ import com.flappedear.betterdriver.recorder.video.VideoEventText
 // thermal status (from the camera while it records, and from the recorder's health reports every
 // 30 s), the camera's thermal stops and the battery temperature.
 //
-// From 0.3.29 video keeps its mode and stops only at a 60 °C battery or Android's emergency (Arek's
-// heat stress test of 2026-10-17: status critical at a 45 °C battery, 4K · 60 fine for 55 min). So
+// From 0.3.29 video keeps its mode and stops only at a 60 °C battery (Arek's heat stress test of
+// 2026-10-17: status critical at a 45 °C battery, 4K · 60 fine for 55 min), and from 0.3.30 no longer
+// at Android's emergency (emergency at a 47 °C battery on the same day's drive, no fault). So
 // Android's severe or critical label no longer fails a session; a 60 °C battery with video still
 // running does.
 
