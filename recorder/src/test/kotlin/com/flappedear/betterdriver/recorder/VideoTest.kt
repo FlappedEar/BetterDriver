@@ -6,10 +6,12 @@ import com.flappedear.betterdriver.recorder.vbo.AviSyncFormat
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
 import com.flappedear.betterdriver.recorder.vbo.VboVideo
 import com.flappedear.betterdriver.recorder.video.CameraIds
+import com.flappedear.betterdriver.recorder.video.PhonePlacement
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoEventText
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
+import com.flappedear.betterdriver.recorder.video.confirmedLowest
 import org.junit.jupiter.api.io.TempDir
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -51,6 +53,44 @@ class VideoTest {
             ev(4_070_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", " media_us=3000000 frame_us=4090000"),
         )
         assertEquals(1_020_000L, VideoTimeline.from(events).clips.single().startMicros)
+    }
+
+    /**
+     * Arek's 2026-10-17 drive: under Android's thermal emergency single reports came up to 7 frames
+     * early, and the lowest one placed a file 100 ms early. A steady lowest offset places it instead.
+     */
+    @Test
+    fun `a stray early frame time does not place the clip`() {
+        val steady = 1_020_000L
+        val syncs = (1..20).map { i ->
+            val media = i * 1_000_000L
+            // Report 5 carries a stale frame time 6 frames (100 ms) early; report 9 one 2 frames early.
+            val offset = when (i) {
+                5 -> steady - 100_000
+                9 -> steady - 33_333
+                else -> steady + if (i % 3 == 0) 16_667 else 0
+            }
+            ev(steady + media + 70_000, EventKinds.VIDEO_SYNC, "phone_0001.mp4", " media_us=$media frame_us=${offset + media}")
+        }
+        val events = listOf(ev(1_050_000, EventKinds.VIDEO_START, "phone_0001.mp4")) + syncs
+        assertEquals(steady, VideoTimeline.from(events).clips.single().startMicros)
+    }
+
+    @Test
+    fun `only the first minute of frame times places the clip`() {
+        val p = PhonePlacement()
+        for (i in 0..60) p.add(1_000_000L + i * 1_000_000L, i * 1_000_000L, 990_000L + i * 1_000_000L)
+        // Later, lower frame times (the media clock drifting) no longer move the start.
+        for (i in 61..80) p.add(1_000_000L + i * 1_000_000L, i * 1_000_000L, 960_000L + i * 1_000_000L)
+        assertEquals(990_000L, p.offset)
+    }
+
+    @Test
+    fun `confirmedLowest needs three agreeing offsets, else takes the lowest`() {
+        assertEquals(100L, confirmedLowest(listOf(100, 2_000, 3_000, 4_000, 103)))
+        assertEquals(10_000L, confirmedLowest(listOf(10_000, 10_002, 10_004, 0)))
+        assertEquals(5L, confirmedLowest(listOf(5, 50_000)))
+        assertNull(confirmedLowest(emptyList()))
     }
 
     @Test

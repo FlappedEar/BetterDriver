@@ -65,9 +65,16 @@ class ThermalPolicyTest {
     }
 
     @Test
-    fun androidsEmergencyOrShutdownStopsVideoWhateverTheBattery() {
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.EMERGENCY, 40f))
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(6, null))
+    fun androidsShutdownStopsVideoWhateverTheBattery() {
+        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.SHUTDOWN, 40f))
+        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.SHUTDOWN, null))
+    }
+
+    @Test
+    fun androidsEmergencyKeepsVideoBelow60() {
+        // Arek's 2026-10-17 afternoon drive: EMERGENCY for 12 min at a 46.6 to 47.5 °C battery, no fault.
+        assertEquals(ThermalAction.Keep, ThermalPolicy().onReading(Thermal.EMERGENCY, 47.5f))
+        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.EMERGENCY, StopBatteryC))
     }
 
     @Test

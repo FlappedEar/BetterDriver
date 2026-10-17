@@ -32,6 +32,11 @@ data class VideoPosition(val clip: VideoClip, val index: Int, val mediaMicros: L
  * closer; the smallest of both is used. On Arek's 2026-10-13 drive f - m was 50 to 94 ms earlier
  * than t - m in each file, which the data quality card showed as an 88 ms start sync error
  * (FBBD-218). With no syncs, the video_start time is used.
+ *
+ * f - m is not always late, though: on Arek's 2026-10-17 drive, under Android's thermal emergency,
+ * single reports came up to 7 frames early (a stale frame time against newer media), and the
+ * smallest one placed a file 100 ms early. So with frame times a file is placed by
+ * [confirmedLowest] of its first minute of them.
  */
 class VideoTimeline(clips: List<VideoClip>) {
 
@@ -83,7 +88,7 @@ class VideoTimeline(clips: List<VideoClip>) {
     /** What the events of one file say. */
     private class Acc {
         var start: Long? = null
-        var syncStart: Long? = null
+        val placement = PhonePlacement()
         var lastSync: Long? = null
         var stop: Long? = null
 
@@ -92,14 +97,66 @@ class VideoTimeline(clips: List<VideoClip>) {
                 EventKinds.VIDEO_START -> start = minOf(start ?: e.tMicros, e.tMicros)
                 EventKinds.VIDEO_STOP -> stop = e.tMicros
                 else -> fields[VideoEventText.MEDIA_US]?.toLongOrNull()?.let { media ->
-                    val frame = fields[VideoEventText.FRAME_US]?.toLongOrNull()?.takeIf { it <= e.tMicros }
-                    syncStart = minOf(syncStart ?: Long.MAX_VALUE, minOf(e.tMicros, frame ?: e.tMicros) - media)
+                    val frame = fields[VideoEventText.FRAME_US]?.toLongOrNull()
+                    placement.add(e.tMicros, media, frame)
                     lastSync = maxOf(lastSync ?: e.tMicros, e.tMicros)
                 }
             }
         }
 
         fun clip(camera: String, file: String): VideoClip? =
-            (syncStart ?: start)?.let { VideoClip(camera, file, it, stop ?: lastSync) }
+            (placement.offset ?: start)?.let { VideoClip(camera, file, it, stop ?: lastSync) }
+    }
+}
+
+/** Reports within this much of each other agree on a file's offset (a quarter of a 60 fps frame). */
+private const val AgreeMicros = 4_000L
+
+/** Reports that must agree before an offset counts as confirmed. */
+private const val ConfirmedBy = 3
+
+/** How long from a file's first sync its frame times place it. */
+private const val PlacementWindowMicros = 60_000_000L
+
+/**
+ * The lowest of [offsets] that at least [ConfirmedBy] of them (itself included) agree with, within
+ * [AgreeMicros]; the lowest one when none is confirmed; null when there are none. One or two stray
+ * low reports are passed over, a steady lowest value is kept.
+ */
+fun confirmedLowest(offsets: List<Long>): Long? {
+    val sorted = offsets.sorted()
+    var hi = 0
+    for (lo in sorted.indices) {
+        while (hi < sorted.size && sorted[hi] - sorted[lo] <= AgreeMicros) hi++
+        if (hi - lo >= ConfirmedBy) return sorted[lo]
+    }
+    return sorted.firstOrNull()
+}
+
+/**
+ * Where a phone file's media time 0 is on the session clock, from its sync reports as they come (see
+ * [VideoTimeline]): the [confirmedLowest] frame time less media time over the file's first minute, or
+ * with no frame times, the lowest report time less media time. Used live (the clip index) and when a
+ * session is read, so both place a file the same way.
+ */
+class PhonePlacement {
+    private var firstSync: Long? = null
+    private var lowestReport: Long? = null
+    private val frameOffsets = ArrayList<Long>()
+
+    /** The offset so far; null before the first sync. */
+    var offset: Long? = null
+        private set
+
+    /** One sync at session time [atMicros]: [mediaMicros] of media, newest frame at [frameMicros]. Returns [offset]. */
+    fun add(atMicros: Long, mediaMicros: Long, frameMicros: Long?): Long? {
+        val first = firstSync ?: atMicros.also { firstSync = it }
+        lowestReport = minOf(lowestReport ?: Long.MAX_VALUE, atMicros - mediaMicros)
+        // A frame time after the report itself is not trusted.
+        if (frameMicros != null && frameMicros <= atMicros && atMicros - first <= PlacementWindowMicros) {
+            frameOffsets += frameMicros - mediaMicros
+        }
+        offset = confirmedLowest(frameOffsets) ?: lowestReport
+        return offset
     }
 }
