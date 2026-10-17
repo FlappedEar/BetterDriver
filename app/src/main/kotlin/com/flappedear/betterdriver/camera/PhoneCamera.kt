@@ -365,7 +365,7 @@ class PhoneCamera(
         } else {
             null
         }
-        val battery = batteryC()
+        val battery = batteryC(context)
         val action = policy.onReading(status, battery)
         thermalLog.log(status, headroom, battery, policy.current, action)
         if (status != sessionThermal) {
@@ -375,17 +375,18 @@ class PhoneCamera(
         return action
     }
 
-    /** The battery temperature in °C from Android's sticky battery broadcast; null if unknown. */
-    private fun batteryC(): Float? {
-        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        val tenths = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
-        return if (tenths == Int.MIN_VALUE) null else tenths / TenthsPerDegree
-    }
-
     private companion object {
         const val Tag = "PhoneCamera"
-        const val TenthsPerDegree = 10f
     }
+}
+
+private const val TenthsPerDegree = 10f
+
+/** The battery temperature in °C from Android's sticky battery broadcast; null if unknown. */
+private fun batteryC(context: Context): Float? {
+    val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+    val tenths = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+    return if (tenths == Int.MIN_VALUE) null else tenths / TenthsPerDegree
 }
 
 /**
