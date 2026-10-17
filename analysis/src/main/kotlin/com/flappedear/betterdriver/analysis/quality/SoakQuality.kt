@@ -19,7 +19,7 @@ private val SoakParts = listOf(
         "video.phone.coverage",
         "camera records the whole run, or steps down per the thermal policy, logged",
     ),
-    Triple("soak.thermal", "thermal.status", "never thermal SEVERE before the app's mitigation; no thermal shutdown"),
+    Triple("soak.thermal", "thermal.status", "video stopped by a 60 °C battery; no thermal shutdown"),
     Triple("soak.jank", "ui.jank", "UI jank < 5 % of frames"),
     Triple("soak.battery", "thermal.battery", "battery temperature logged at least every 30 s, peak reported"),
 )

@@ -2,6 +2,8 @@ package com.flappedear.betterdriver.camera
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraMetadata
@@ -10,6 +12,7 @@ import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
 import android.hardware.camera2.params.StreamConfigurationMap
 import android.media.MediaCodec
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -80,9 +83,10 @@ private const val MaxFileBytes = 4_000_000_000L
  * The phone's back camera, recording with CameraX in the background while the track screen stays
  * on (FBBD-21). No preview: only a VideoCapture use case is bound.
  *
- * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A thermal
- * step-down or a restart after an error ends the file and starts the next one, so a file always has
- * one resolution and frame rate. Every fault ends in [VideoSink.stopped] and [VideoSink.status];
+ * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
+ * after an error ends the file and starts the next one, so a file always has one resolution and frame
+ * rate. Heat no longer steps quality down: video only stops at a 60 °C battery (ThermalPolicy).
+ * Every fault ends in [VideoSink.stopped] and [VideoSink.status];
  * nothing here throws, and nothing here can reach the recorder process.
  *
  * Main thread only.
@@ -92,7 +96,7 @@ class PhoneCamera(
     private val lifecycle: LifecycleOwner,
     index: VideoIndex,
     private val audio: Boolean,
-    /** The chosen mode first, then the thermal step-downs ([ladderFrom]). */
+    /** The chosen mode first, then the modes to fall back to when one cannot be bound ([ladderFrom]). */
     private val ladder: List<VideoMode>,
     /** Heat never steps video down or stops it; readings are still logged, every check ([PhoneHeat]). */
     private val ignoreHeat: Boolean = false,
@@ -113,7 +117,7 @@ class PhoneCamera(
     /** The ladder step [bound] records at; -1 when nothing is bound. */
     private var boundStep = -1
     private var steps: List<VideoMode> = ladder
-    private var policy = ThermalPolicy(ladder.size, ignoreHeat)
+    private var policy = ThermalPolicy(ignoreHeat)
 
     private var recording: Recording? = null
     private var fileIndex = 0
@@ -122,7 +126,6 @@ class PhoneCamera(
 
     /** What the file being finalized ends with: why it stops, and the step to start next (if any). */
     private var endReason = "user"
-    private var nextStep: Int? = null
 
     /**
      * Whether the file being recorded holds data (a Status event with recorded media time; CameraX's Start
@@ -183,7 +186,7 @@ class PhoneCamera(
                     sink.status("Not supported", ok = false)
                     return@addListener
                 }
-                policy = ThermalPolicy(steps.size, ignoreHeat)
+                policy = ThermalPolicy(ignoreHeat)
                 thermalLog = ThermalLog(steps, ignoreHeat)
                 sessionThermal = null
                 DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
@@ -194,16 +197,12 @@ class PhoneCamera(
                     power.addThermalStatusListener(executor, listener)
                 }
                 main.postDelayed(checker, CheckIntervalMs)
-                // A phone already hot starts at the step it would drop to at once. On 2026-10-16 a
-                // session started at 1080p with status moderate; the first check stopped that file
-                // before it held a frame (error 8) and started 720p a moment later.
-                when (val first = thermalAction()) {
-                    ThermalAction.StopVideo -> {
-                        endReason = "thermal"
-                        sink.status(stoppedText(endReason), ok = false)
-                    }
-                    is ThermalAction.StepDown -> begin(first.to)
-                    else -> begin(0)
+                // A phone already too hot does not start video at all.
+                if (thermalAction() == ThermalAction.StopVideo) {
+                    endReason = "thermal"
+                    sink.status(stoppedText(endReason), ok = false)
+                } else {
+                    begin(0)
                 }
             } catch (e: Exception) {
                 sink.status("Camera error", ok = false)
@@ -218,7 +217,6 @@ class PhoneCamera(
         main.removeCallbacks(checker)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) thermalListener?.let(power::removeThermalStatusListener)
         endReason = "user"
-        nextStep = null
         val r = recording
         if (r != null) r.stop() else unbindOwn(provider, bound)
     }
@@ -256,7 +254,6 @@ class PhoneCamera(
             var pending = recorder.prepareRecording(context, output)
             if (audio) pending = pending.withAudioEnabled()
             endReason = "user"
-            nextStep = null
             fileStarted = false
             var lastSync: Long? = null
             recording = pending.start(executor) { e ->
@@ -301,11 +298,9 @@ class PhoneCamera(
         val reason = stopReason(e.error, error, full)
         sink.stopped(name, sink.nowMicros(), reason)
         DebugLog.log(if (error) DebugLog.WARN else DebugLog.INFO, Tag, "$name ended: $reason", e.cause)
-        val next = nextStep
         when {
             // A file that finalizes late, after the service began a new camera, must not unbind that one.
             stopping -> unbindOwn(provider, bound)
-            next != null -> begin(next)
             full && endReason == "user" -> begin(policy.current)
             endReason != "user" -> {
                 unbindOwn(provider, bound)
@@ -340,14 +335,14 @@ class PhoneCamera(
     }
 
     /**
-     * Thermal and storage check; ends the current file when video must step down or stop. It waits
+     * Thermal and storage check; ends the current file when video must stop. It waits
      * until the file holds data: Android calls the thermal listener at once when it is added, and
      * on 2026-10-17 (status severe at start) that call stopped the first file before it held a frame
      * (error 8). The next check, 5 s later, acts instead.
      */
     private fun check() {
         val r = recording?.takeIf { fileStarted } ?: return
-        if (nextStep != null || endReason != "user") return
+        if (endReason != "user") return
         val action = if (StatFs(dir.path).availableBytes < MinFreeBytes) null else thermalAction()
         when (action) {
             null -> {
@@ -360,16 +355,6 @@ class PhoneCamera(
                 endReason = "thermal"
                 r.stop()
             }
-            is ThermalAction.StepDown -> {
-                nextStep = action.to
-                endReason = "thermal_step"
-                r.stop()
-            }
-            is ThermalAction.StepUp -> {
-                nextStep = action.to
-                endReason = "thermal_step_up"
-                r.stop()
-            }
         }
     }
 
@@ -380,9 +365,9 @@ class PhoneCamera(
         } else {
             null
         }
-        val from = policy.current
-        val action = policy.onReading(sink.nowMicros(), status, headroom)
-        thermalLog.log(status, headroom, from, policy.ceiling, action)
+        val battery = batteryC()
+        val action = policy.onReading(status, battery)
+        thermalLog.log(status, headroom, battery, policy.current, action)
         if (status != sessionThermal) {
             sessionThermal = status
             sink.thermal(sink.nowMicros(), status, headroom, ignoreHeat)
@@ -390,21 +375,29 @@ class PhoneCamera(
         return action
     }
 
+    /** The battery temperature in °C from Android's sticky battery broadcast; null if unknown. */
+    private fun batteryC(): Float? {
+        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+        val tenths = battery?.getIntExtra(BatteryManager.EXTRA_TEMPERATURE, Int.MIN_VALUE) ?: Int.MIN_VALUE
+        return if (tenths == Int.MIN_VALUE) null else tenths / TenthsPerDegree
+    }
+
     private companion object {
         const val Tag = "PhoneCamera"
+        const val TenthsPerDegree = 10f
     }
 }
 
 /**
- * Thermal readings in the debug log (FBBD-146): every status change and every step decision, else
- * one line per [ThermalLogEvery] checks, so a drive shows why and when video changed quality. With
- * the phone's temperature ignored (FBBD-231) every check is logged, for the heat stress test.
+ * Thermal readings in the debug log (FBBD-146): every status change and every stop, else one line
+ * per [ThermalLogEvery] checks, so a drive shows the phone's heat and why video stopped. With the
+ * phone's temperature ignored (FBBD-231) every check is logged, for the heat stress test.
  */
 private class ThermalLog(private val steps: List<VideoMode>, private val ignoreHeat: Boolean) {
     private var checks = 0
     private var loggedStatus = -1
 
-    fun log(status: Int, headroom: Float?, from: Int, ceiling: Int, action: ThermalAction) {
+    fun log(status: Int, headroom: Float?, batteryC: Float?, at: Int, action: ThermalAction) {
         checks++
         val changed = status != loggedStatus || action != ThermalAction.Keep
         if (!changed && !ignoreHeat && checks < ThermalLogEvery) return
@@ -413,12 +406,10 @@ private class ThermalLog(private val steps: List<VideoMode>, private val ignoreH
         val decision = when (action) {
             ThermalAction.Keep -> if (ignoreHeat) "keep (heat ignored)" else "keep"
             ThermalAction.StopVideo -> "stop video"
-            is ThermalAction.StepDown -> "step down to ${label(action.to)}"
-            is ThermalAction.StepUp -> "step up to ${label(action.to)}"
         }
         val level = if (action == ThermalAction.Keep) DebugLog.INFO else DebugLog.WARN
-        val text = "status=${statusName(status)} headroom=${headroom ?: "n/a"} at ${label(from)}: $decision " +
-            "(best allowed ${label(ceiling)})"
+        val text = "status=${statusName(status)} headroom=${headroom ?: "n/a"} battery=${batteryC ?: "n/a"} C " +
+            "at ${label(at)}: $decision"
         DebugLog.log(level, "Thermal", text, null)
     }
 
