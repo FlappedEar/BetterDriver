@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.map.AccelerometerSmoothingSeconds
 import com.flappedear.betterdriver.analysis.map.sessionGpsG
 import com.flappedear.betterdriver.analysis.map.smoothedAt
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.accel.AxisDirection
 import com.flappedear.betterdriver.recorder.accel.AxisFit
@@ -78,30 +79,45 @@ const val LeftAcceleration = "accel_left"
  * the start gate; without one no laps are found. [finish], a point-to-point track's finish line
  * (FBBD-155), becomes a finish gate, and the laps are then the runs from start to finish.
  */
+fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: TrackLine? = null): TelemetrySession =
+    telemetrySessionOf(data, startFinish, finish) { true }
+
+/**
+ * As [telemetrySessionOf], with only the recorded channels [keep] accepts: the VBO's G columns need
+ * the accelerometers and GPS, not an hour of every other channel in memory as well (FBBD-232).
+ */
 @Suppress("CyclomaticComplexMethod")
-fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: TrackLine? = null): TelemetrySession {
+fun telemetrySessionOf(
+    data: SessionData,
+    startFinish: TrackLine?,
+    finish: TrackLine?,
+    keep: (ChannelDef) -> Boolean,
+): TelemetrySession {
     val sets = data.sampleSets.sortedBy { it.tMicros }
     val origin = sets.firstOrNull()?.tMicros ?: 0L
-    val times = HashMap<Int, MutableList<Double>>()
-    val values = HashMap<Int, MutableList<Double>>()
+    val defs = HashMap<Int, ChannelDef?>()
+    fun defOf(id: Int) = defs.getOrPut(id) {
+        (data.channels[id] ?: data.info.channels.firstOrNull { it.id == id })?.takeIf(keep)
+    }
+    // Primitive arrays, not boxed lists: an hour holds millions of values (FBBD-232).
+    val columns = LinkedHashMap<Int, Samples>()
     for (set in sets) {
         val t = (set.tMicros - origin) / MicrosPerSecond
         val lat = set.values.firstOrNull { it.channelId == GnssChannels.LAT.id }?.value
         val lon = set.values.firstOrNull { it.channelId == GnssChannels.LON.id }?.value
         val noFix = lat == 0.0 && lon == 0.0
         for (v in set.values) {
-            val ts = times.getOrPut(v.channelId) { mutableListOf() }
-            if (ts.isNotEmpty() && t <= ts.last()) continue
-            ts += t
+            if (defOf(v.channelId) == null) continue
+            val column = columns.getOrPut(v.channelId) { Samples() }
+            if (column.size > 0 && t <= column.lastTime) continue
             val position = v.channelId == GnssChannels.LAT.id || v.channelId == GnssChannels.LON.id
-            values.getOrPut(v.channelId) { mutableListOf() } += if (position && noFix) Double.NaN else v.value
+            column.add(t, if (position && noFix) Double.NaN else v.value)
         }
     }
     val channels = LinkedHashMap<String, TelemetryChannel>()
-    for ((id, ts) in times) {
-        val def = data.channels[id] ?: data.info.channels.firstOrNull { it.id == id } ?: continue
-        val channelValues = values.getValue(id).toDoubleArray()
-        channels[def.name] = TelemetryChannel(def.name, ts.toDoubleArray(), channelValues, def.unit, def.provenance)
+    for ((id, column) in columns) {
+        val def = defOf(id) ?: continue
+        channels[def.name] = TelemetryChannel(def.name, column.times(), column.values(), def.unit, def.provenance)
     }
     val positions = mapOf(
         Aliases.LATITUDE to GnssChannels.LAT.name,
@@ -120,6 +136,40 @@ fun telemetrySessionOf(data: SessionData, startFinish: TrackLine?, finish: Track
     )
     return TelemetrySession(channels, aliases, gates)
 }
+
+/**
+ * [data] as analysis input with only what the car's corrected G needs ([correctedAccelerometer]):
+ * GNSS and the accelerometers. No laps.
+ */
+fun accelerationSessionOf(data: SessionData): TelemetrySession = telemetrySessionOf(data, null, null) { def ->
+    def.id in GnssChannels.IDS || def.name in HorizontalAccuracy || AccelerometerAxes.any { def.name in it }
+}
+
+/** One channel's samples as they are collected, in arrays that grow by half. */
+private class Samples {
+    private var t = DoubleArray(InitialSamples)
+    private var v = DoubleArray(InitialSamples)
+    var size = 0
+        private set
+    val lastTime: Double get() = t[size - 1]
+
+    fun add(time: Double, value: Double) {
+        if (size == t.size) {
+            val grown = size + size / 2
+            t = t.copyOf(grown)
+            v = v.copyOf(grown)
+        }
+        t[size] = time
+        v[size] = value
+        size++
+    }
+
+    fun times(): DoubleArray = t.copyOf(size)
+
+    fun values(): DoubleArray = v.copyOf(size)
+}
+
+private const val InitialSamples = 1024
 
 /** [track]'s session as analysis input: its start/finish line and, on a point-to-point track, its finish. */
 fun telemetrySessionOf(data: SessionData, track: Track): TelemetrySession =

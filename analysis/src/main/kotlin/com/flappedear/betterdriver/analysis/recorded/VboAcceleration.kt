@@ -30,7 +30,7 @@ private const val GDecimals = 3
  */
 fun vboAccelerations(data: SessionData): List<VboDerivedChannel> {
     val origin = data.sampleSets.minOfOrNull { it.tMicros } ?: return emptyList()
-    val session = telemetrySessionOf(data, null)
+    val session = accelerationSessionOf(data)
     val gps by lazy { sessionGpsG(session).orEmpty() }
     @Suppress("ReturnCount")
     fun axis(name: String, alias: String, fromGps: (TimedG) -> Double): VboDerivedChannel? {
@@ -57,7 +57,7 @@ fun vboAccelerations(data: SessionData): List<VboDerivedChannel> {
  */
 fun measuredG(data: SessionData): MeasuredG? {
     val origin = data.sampleSets.minOfOrNull { it.tMicros } ?: return null
-    val session = telemetrySessionOf(data, null)
+    val session = accelerationSessionOf(data)
     fun samples(alias: String, sign: Double): List<Pair<Long, Double>>? {
         val channel = accelerationAliasInG(session, alias)?.takeIf { it.supported }?.channel ?: return null
         return (0 until channel.sampleCount).filter { channel.values[it].isFinite() }.map {

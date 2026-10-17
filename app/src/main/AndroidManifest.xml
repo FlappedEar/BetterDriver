@@ -50,9 +50,12 @@
         </intent>
     </queries>
 
+    <!-- largeHeap: an hour of recorded data is read whole for analysis and export; the default
+         256 MB on a Pixel 6 ran a 63-minute session's export out of memory (FBBD-232). -->
     <application
         android:name=".BetterDriverApplication"
         android:allowBackup="false"
+        android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:networkSecurityConfig="@xml/network_security_config"
