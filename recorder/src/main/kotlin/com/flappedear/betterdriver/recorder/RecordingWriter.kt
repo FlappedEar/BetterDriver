@@ -157,20 +157,8 @@ internal class RecordingWriter(
         )
     }
 
-    /** Returns the bytes written. */
-    private fun write(record: Record): Long {
-        val written = chunks.write(record)
-        when (record) {
-            is Record.Channel -> listeners.dispatch { it.onChannel(record.def) }
-            is Record.Samples -> listeners.dispatch { it.onSamples(record.set) }
-            // Listener errors are not sent back to listeners: a listener failing on them would loop.
-            is Record.Event -> if (record.event.kind != EventKinds.LISTENER_ERROR) {
-                listeners.dispatch { it.onEvent(record.event) }
-            }
-            is Record.End -> Unit
-        }
-        return written
-    }
+    /** Returns the bytes written. Listeners got the record when it was submitted (Recording.enqueue). */
+    private fun write(record: Record): Long = chunks.write(record)
 
     private fun flush() {
         reportDrops()

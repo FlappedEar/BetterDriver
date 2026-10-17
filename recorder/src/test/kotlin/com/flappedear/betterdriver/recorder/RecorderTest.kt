@@ -388,6 +388,40 @@ class RecorderTest {
     }
 
     @Test
+    fun `live consumers get samples while the disk is stalled`() {
+        // Arek's 2026-10-17 drive: a disk write stalled for 2.2 s and the track screen lost its fixes.
+        val store = SessionStore(tmp)
+        val stalled = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val rec = Recorder(
+            store,
+            RecorderConfig(storageCheckIntervalMs = 0),
+            storage = {
+                if (Thread.currentThread().name.startsWith("recorder-writer")) {
+                    stalled.countDown()
+                    release.await()
+                }
+                1L shl 40
+            },
+        ).start(info())
+        val live = AtomicLong()
+        rec.listeners.add(object : RecorderListener {
+            override fun onSamples(set: SampleSet) {
+                live.incrementAndGet()
+            }
+        })
+        assertTrue(stalled.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        feed(rec, 50)
+        val until = System.nanoTime() + 5_000_000_000L
+        while (live.get() < 60 && System.nanoTime() < until) Thread.sleep(10)
+        assertEquals(60, live.get(), "50 fixes and 10 OBD values while the writer waits on the disk")
+        release.countDown()
+        rec.stop()
+        val fixes = store.read(rec.id).sampleSets.count { s -> s.values.any { it.channelId == GnssChannels.LAT.id } }
+        assertEquals(50, fixes)
+    }
+
+    @Test
     fun `low storage warns, then stops cleanly with the data intact`() {
         val store = SessionStore(tmp)
         val free = AtomicLong(1L shl 40)

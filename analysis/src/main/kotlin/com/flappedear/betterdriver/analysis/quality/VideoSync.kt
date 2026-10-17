@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoEventText
+import com.flappedear.betterdriver.recorder.video.confirmedLowest
 import kotlin.math.abs
 
 // How well each camera's video stays in sync with the session (FBBD-183), against FBBD-21 and
@@ -80,7 +81,12 @@ private fun probes(camera: String, events: List<RecorderEvent>): List<OffsetSamp
 private fun OffsetTrack.at(samples: List<OffsetSample>): Long? {
     if (samples.isEmpty()) return null
     val sorted = samples.map { it.offsetMicros }.sorted()
-    return if (lowest) sorted.first() else sorted[sorted.size / 2]
+    return when {
+        // Frame times: stray early ones are passed over, as when the file is placed (PhonePlacement).
+        lowest && independent -> confirmedLowest(sorted)
+        lowest -> sorted.first()
+        else -> sorted[sorted.size / 2]
+    }
 }
 
 private const val StartCriterion = "start sync error <= 1 frame (33 ms at 30 fps), never over 50 ms (FBBD-21, FBBD-82)"

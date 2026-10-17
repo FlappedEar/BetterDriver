@@ -34,6 +34,7 @@ object Thermal {
     const val SEVERE = 3
     const val CRITICAL = 4
     const val EMERGENCY = 5
+    const val SHUTDOWN = 6
 }
 
 /** What the camera should do after a thermal reading. */
@@ -53,8 +54,11 @@ sealed interface ThermalAction {
  * session (data recording carries on), when:
  *
  * - the battery reaches [stopC], or
- * - Android's thermal status is EMERGENCY or SHUTDOWN (or, with the battery temperature unknown,
- *   CRITICAL).
+ * - Android's thermal status is SHUTDOWN (or, with the battery temperature unknown, CRITICAL).
+ *
+ * Not at EMERGENCY: on Arek's 2026-10-17 afternoon drive Android reported EMERGENCY for 12 min at a
+ * 46.6 to 47.5 °C battery, while the Pixel 6 recorded 1080p · 60 without a fault or a shutdown.
+ * Stopping there would have lost the last 27 min of video.
  *
  * The ladder ([ladderFrom]) is still where the camera falls back to when a mode cannot be bound.
  *
@@ -87,7 +91,7 @@ class ThermalPolicy(
     fun onReading(status: Int, batteryC: Float?): ThermalAction {
         if (ignoreHeat) return ThermalAction.Keep
         val tooHot = if (batteryC != null) batteryC >= stopC else status >= Thermal.CRITICAL
-        return if (tooHot || status >= Thermal.EMERGENCY) ThermalAction.StopVideo else ThermalAction.Keep
+        return if (tooHot || status >= Thermal.SHUTDOWN) ThermalAction.StopVideo else ThermalAction.Keep
     }
 }
 
