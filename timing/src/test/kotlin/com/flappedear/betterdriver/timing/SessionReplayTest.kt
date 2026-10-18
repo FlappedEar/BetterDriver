@@ -100,6 +100,20 @@ class SessionReplayTest {
     }
 
     @Test
+    fun `two timed laps, one with a stop in it, are not replayed`() {
+        val drive = recording(4)
+        val timed = timeSession(track, drive.mapNotNull { it.toFix() }.asSequence()).laps
+            .filter { it.kind == LapKind.Timed }
+        assertEquals(2, timed.size)
+        // Three minutes parked halfway round the second timed lap.
+        val half = (timed[1].startMicros + timed[1].endMicros) / 2
+        val (before, after) = drive.partition { it.tMicros < half }
+        val stop = (1L..1_800L).map { n -> SampleSet(before.last().tMicros + n * 100_000L, before.last().values) }
+        val moved = after.map { SampleSet(it.tMicros + 180_000_000L, it.values) }
+        assertNull(SessionReplay.of(before + stop + moved, track, start))
+    }
+
+    @Test
     fun `positions at 0, 0 are no fix and are not replayed`() {
         val noFix = listOf(ChannelValue(GnssChannels.LAT.id, 0.0), ChannelValue(GnssChannels.LON.id, 0.0))
         val source = recording(10)

@@ -23,9 +23,8 @@ import kotlin.math.sin
  *
  * At its [track], only its timed laps are replayed, one after another and then again: each joins the
  * next at the line, so the car laps on and on without out laps, in laps, pit stops or laps half again
- * slower than the median. Without a track,
- * or with fewer than two timed laps, the whole session is replayed in a loop. A point-to-point track's
- * runs are not replayed: they start and finish at different places, so they cannot loop.
+ * slower than the median. A session without a saved track or two such laps, or at a point-to-point
+ * track, is not replayed: it would jump from where it ended back to where it began on every loop.
  * Fixes come at [rateHz] whatever the recording's rate, in between its points; heading follows the
  * path, speed is the recorded one or, without it, the path's.
  */
@@ -100,7 +99,8 @@ class SessionReplay private constructor(
             val fixes = all.map { Fix((it.t * MicrosPerSecond).toLong(), it.lat, it.lon) }
             val timed = timeSession(track, fixes.asSequence()).laps.filter { it.kind == LapKind.Timed }
             // A lap with a stop in it is timed too when the track has no pit lines: leave out slow ones.
-            val median = timed.map { it.timeMillis }.sorted().getOrNull(timed.size / 2) ?: 0L
+            // The lower median: of two laps, one with a stop, the stop is the slow one.
+            val median = timed.map { it.timeMillis }.sorted().getOrNull((timed.size - 1) / 2) ?: 0L
             return timed.filter { it.timeMillis <= median * SlowLap }
         }
 
