@@ -87,6 +87,7 @@ internal fun gnssSection(
         return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", RateCriterion, why)))
     }
     val drops = reconnects(samples, events)
+    val underCover = underCoverFrom(samples)
     // A pair of samples a logged drop falls between is a reconnect, not a gap (FBBD-8).
     val acrossDrop = BooleanArray(samples.size)
     drops.forEach { acrossDrop[it.before] = it.after != null }
@@ -96,11 +97,13 @@ internal fun gnssSection(
         add(p1Rate(samples, drops))
         add(dropped(samples, acrossDrop, raceBox, skipsWithoutFix))
         addAll(gapMetrics(gaps))
-        addAll(reconnectMetrics(samples, drops, endMicros))
+        addAll(reconnectMetrics(samples, drops, endMicros, underCover))
         add(stationaryNoise(samples))
     }
     val gapNotes = gaps.long.take(MaxGapNotes).map { (at, gap) -> QualityNote(at, "gap ${ms(gap)} ms") }
-    val notes = drops.map { d -> QualityNote(d.dropMicros, reconnectText(samples, d, endMicros)) } + gapNotes
+    val notes = drops.map { d ->
+        QualityNote(d.dropMicros, reconnectText(samples, d, endMicros, underCover))
+    } + gapNotes
     return QualitySection("GNSS", metrics, notes.sortedBy { it.tMicros })
 }
 

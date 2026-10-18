@@ -88,7 +88,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
         goProSection(events, clips, end),
         coachSection(events, samples),
         thermalSection(events, end),
-        screenSection(events, logOutages(seconds, end), end),
+        screenSection(events, logOutages(seconds, end), end, logUnderCoverFrom(seconds)),
         exportSection(events, end),
         startupSection(
             life, sinceUtc, s.startUtcMillis ?: 0L, endUtcMillis(s),

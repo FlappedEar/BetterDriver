@@ -39,9 +39,15 @@ internal fun outages(samples: GnssSamples, endMicros: Long): List<Outage> {
     return if (last != null && endMicros - last > BannerThresholdMicros) out + Outage(last, null) else out
 }
 
-internal fun screenSection(events: List<RecorderEvent>, outages: List<Outage>, endMicros: Long): QualitySection {
+/** [underCover]: when the drive ended under cover ([underCoverFrom]); the screen going off after it does not count. */
+internal fun screenSection(
+    events: List<RecorderEvent>,
+    outages: List<Outage>,
+    endMicros: Long,
+    underCover: Long? = null,
+): QualitySection {
     val frames = events.ofKind(EventKinds.UI_FRAMES).mapNotNull(::frameStretch)
-    val metrics = frameMetrics(frames) + screenOff(events) + banners(events, outages, endMicros)
+    val metrics = frameMetrics(frames) + screenOff(events, underCover) + banners(events, outages, endMicros)
     val notes = events.ofKind(EventKinds.SCREEN).map { QualityNote(it.tMicros, "screen ${fields(it.text)["state"]}") } +
         events.ofKind(EventKinds.GNSS_BANNER).map { QualityNote(it.tMicros, "GNSS banner ${fields(it.text)["state"]}") }
     return QualitySection("Screen", metrics, notes.sortedBy { it.tMicros })
@@ -110,17 +116,20 @@ private fun percentileBucket(buckets: LongArray, p: Double): Int? {
 
 private const val ScreenCriterion = "0 screen-off events while recording (FBBD-63)"
 
-private fun screenOff(events: List<RecorderEvent>): List<QualityMetric> {
+private fun screenOff(events: List<RecorderEvent>, underCover: Long?): List<QualityMetric> {
     val device = events.ofKind(EventKinds.DEVICE)
     if (device.isEmpty() && events.ofKind(EventKinds.SCREEN).isEmpty()) {
         val why = "the screen's state is logged while recording from this version on"
         return listOf(notMeasured("ui.screen_off", "Screen off while recording", ScreenCriterion, why))
     }
-    val off = events.ofKind(EventKinds.SCREEN).count { fields(it.text)["state"] == "off" }
+    val offs = events.ofKind(EventKinds.SCREEN).filter { fields(it.text)["state"] == "off" }
+    val after = offs.count { afterDrive(it.tMicros, underCover) }
+    val off = offs.size - after
+    val left = if (after > 0) "; $after after the drive, which had ended under cover, left out" else ""
     return listOf(
         judged(
             "ui.screen_off", "Screen off while recording", off.toDouble(), "", off == 0, Basis.MEASURED,
-            ScreenCriterion, "times Android reported the screen going off while the session recorded",
+            ScreenCriterion, "times Android reported the screen going off while the session recorded$left",
         ),
     )
 }
@@ -169,9 +178,20 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
             ),
         )
         add(delayMetric("ui.banner_show", "GNSS banner delay", showDelays, ShowCriterion, "$how; from the last fix"))
-        val clearHow = "$how; from the first fix back"
-        add(delayMetric("ui.banner_clear", "GNSS banner clear delay", clearDelays, ClearCriterion, clearHow))
+        add(clearMetric(outages, clearDelays, "$how; from the first fix back"))
     }
+}
+
+private const val NoOutageText = "no GNSS outage long enough for the banner"
+
+/** The clear delays; when the session ended in its only outages, the fix never came back to clear it. */
+private fun clearMetric(outages: List<Outage>, delays: List<Delay>, how: String): QualityMetric {
+    val label = "GNSS banner clear delay"
+    if (delays.isEmpty() && outages.isNotEmpty() && outages.all { it.nextFix == null }) {
+        val why = "the fix did not come back before the session ended"
+        return notMeasured("ui.banner_clear", label, ClearCriterion, why)
+    }
+    return delayMetric("ui.banner_clear", label, delays, ClearCriterion, how)
 }
 
 /** How long the banner took for one outage; [micros] null when it never reacted. */
@@ -186,7 +206,7 @@ private fun inTime(delays: List<Delay>) =
  * worst delay measured, or the limit when it never reacted at all.
  */
 private fun delayMetric(id: String, label: String, delays: List<Delay>, criterion: String, how: String): QualityMetric {
-    if (delays.isEmpty()) return notMeasured(id, label, criterion, "no GNSS outage long enough for the banner")
+    if (delays.isEmpty()) return notMeasured(id, label, criterion, NoOutageText)
     val missed = delays.count { it.micros == null }
     val worst = delays.mapNotNull { it.micros }.maxOrNull() ?: MaxBannerMicros
     val ok = missed == 0 && worst <= MaxBannerMicros
