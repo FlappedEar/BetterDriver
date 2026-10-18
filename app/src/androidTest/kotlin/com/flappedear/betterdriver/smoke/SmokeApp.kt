@@ -406,7 +406,8 @@ object SmokeData {
         tracks.all().filter { it.id !in SmokeFixtures.TrackIds }.forEach { tracks.delete(it.id) }
         instrumentation.runOnMainSync {
             SetupRepo.get(app).update { s ->
-                val demo = s.equipment.filter { it.model == EquipmentModel.DEMO_GNSS || it.model == EquipmentModel.DEMO_TRACK }
+                val demoModels = setOf(EquipmentModel.DEMO_GNSS, EquipmentModel.DEMO_TRACK)
+                val demo = s.equipment.filter { it.model in demoModels }
                 demo.fold(s) { acc, e -> acc.removeEquipment(e.id) }
             }
         }
