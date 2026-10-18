@@ -186,6 +186,7 @@ internal fun EquipmentRoute(nav: NavHostController, entry: NavBackStackEntry, re
         onBack = { nav.popBackStack() },
         onChooseVideo = { mode -> repo.update { it.chooseVideo(id, mode) } },
         onChooseGoPro = { m -> repo.update { it.chooseGoPro(id, m) } },
+        drives = if (item.model == EquipmentModel.DEMO_TRACK) rememberDemoDrives() else null,
     )
 }
 

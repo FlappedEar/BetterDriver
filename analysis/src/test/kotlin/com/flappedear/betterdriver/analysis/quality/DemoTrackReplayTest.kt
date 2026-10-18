@@ -98,6 +98,14 @@ class DemoTrackReplayTest {
     }
 
     @Test
+    fun `corner cues start within the first 6 minutes and keep coming`() {
+        val corners = session(15).events.filter { it.kind == CoachEvents.CUE && "kind=Corner" in it.text }
+        assertTrue(corners.size >= 6, "${corners.size} corner cues in 15 min")
+        val first = corners.first().tMicros / 1_000_000
+        assertTrue(first < 6 * 60, "first corner cue at $first s")
+    }
+
+    @Test
     fun `its made-up positions are never receiver evidence`() {
         val report = sessionQuality(session(2), track)
         val gnss = report.sections.single { it.title == "GNSS" }

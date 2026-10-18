@@ -15,8 +15,6 @@ import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
 import com.flappedear.betterdriver.core.ble.vbox.VboxSportSource
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
-import com.flappedear.betterdriver.timing.demo.DemoCircuit
-import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TcpAddress
@@ -135,8 +133,8 @@ internal object Sources {
             // Debug builds let the emulator tests switch it off (FBBD-43, FBBD-64).
             GnssType.DEMO -> FakeGnssSource(receiverOn = DemoGnssHook.receiverOn(app))
             GnssType.DEMO_TRACK -> {
-                saveDemoTrack(app)
-                FakeGnssSource(DemoCircuit(System.currentTimeMillis()), receiverOn = DemoGnssHook.receiverOn(app))
+                val script = DemoReplay.script(app, System.currentTimeMillis())
+                FakeGnssSource(script, receiverOn = DemoGnssHook.receiverOn(app))
             }
             GnssType.NMEA -> NmeaSource(app, gnss.address, gnss.name)
             GnssType.LNS -> LnsSource(app, gnss.address, gnss.name)
@@ -152,15 +150,6 @@ internal object Sources {
         val phone = if (gnss.demo) emptyList() else listOf(PhoneImuSource(app))
         return listOf(receiver) + phone + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }
-}
-
-/**
- * Saves the demo circuit's track before its first fix, so the session's timing and coach find it
- * (FBBD-233). A track already saved under its id is kept: Arek may have moved its lines.
- */
-private fun saveDemoTrack(context: Context) {
-    val store = TrackStore(tracksDir(context))
-    if (store.get(DemoCircuit.TrackId) == null) store.save(DemoCircuit.track)
 }
 
 /** A Wi-Fi receiver's source; its socket goes over Wi-Fi even when Wi-Fi has no internet. */

@@ -38,6 +38,9 @@ private const val Step = 1.0
 /** The car stands this far past the line at the start: the first lap is an out lap from standing. */
 private const val StartMeters = 5.0
 
+/** The chance that the car makes a mistake at a corner on a lap: brakes early or turns in slow. */
+private const val MistakeChance = 0.35
+
 /**
  * One piece of the layout: a straight of [length] metres, or a bend of [radius] metres turning
  * [degrees] (positive to the left). A straight with [solved] 1 or 2 is one of the two lengths sized
@@ -160,9 +163,10 @@ private class Lap(val startSeconds: Double, val seconds: DoubleArray, val speed:
 /**
  * Made-up GNSS of a car driving the demo circuit ([track]) lap after lap, [rateHz] fixes a second
  * from [startUtcMillis]. It starts standing just past the line, so the first lap is an out lap. Each
- * lap is driven a little differently: every corner taken at 90 to 100 % of the grip and braked for
- * at 7 to 9 m/s², from [seed], so the coach finds corners to work on and lap times vary by a few
- * tenths. Fix n is always the same, as [GnssScript] promises.
+ * lap is driven a little differently, from [seed]: every corner taken at 90 to 100 % of the grip and
+ * braked for at 7.5 to 9 m/s², and on about a third of them a mistake, braking early (5 to 6 m/s²) or
+ * a slow apex (80 % of the grip), so the coach finds a corner to work on most laps and lap times vary
+ * by a few tenths. Fix n is always the same, as [GnssScript] promises.
  */
 class DemoCircuit(
     override val startUtcMillis: Long,
@@ -189,7 +193,13 @@ class DemoCircuit(
         val random = Random(seed * 1_000_003L + k)
         val bends = Layout.count { it.bend }
         val grip = DoubleArray(bends) { if (k == 0) 0.8 else 0.9 + random.nextDouble() * 0.1 }
-        val braking = if (k == 0) 6.0 else 7.0 + random.nextDouble() * 2.0
+        val braking = DoubleArray(bends) { if (k == 0) 6.0 else 7.5 + random.nextDouble() * 1.5 }
+        if (k > 0) {
+            for (c in 0 until bends) {
+                if (random.nextDouble() >= MistakeChance) continue
+                if (random.nextBoolean()) braking[c] = 5.0 + random.nextDouble() else grip[c] = 0.8
+            }
+        }
         val n = path.size
         val cap = DoubleArray(n) { i ->
             val c = path.corner[i]
@@ -199,7 +209,12 @@ class DemoCircuit(
         val v = DoubleArray(n)
         v[first] = min(entry, cap[first])
         for (i in first + 1 until n) v[i] = min(cap[i], sqrt(v[i - 1] * v[i - 1] + 2 * Acceleration * Step))
-        for (i in n - 2 downTo first + 1) v[i] = min(v[i], sqrt(v[i + 1] * v[i + 1] + 2 * braking * Step))
+        // Braking for the corner ahead: the last one passed going backwards.
+        var brake = braking[0]
+        for (i in n - 2 downTo first + 1) {
+            if (path.corner[i] >= 0) brake = braking[path.corner[i]]
+            v[i] = min(v[i], sqrt(v[i + 1] * v[i + 1] + 2 * brake * Step))
+        }
         val t = DoubleArray(n)
         for (i in first + 1 until n) t[i] = t[i - 1] + 2 * Step / maxOf(v[i - 1] + v[i], 0.1)
         // Before a standing start the car is at its start point: same time and no speed.

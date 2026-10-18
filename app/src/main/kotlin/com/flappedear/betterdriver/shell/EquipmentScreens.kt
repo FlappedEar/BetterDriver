@@ -97,8 +97,10 @@ fun EquipmentScreen(
     onChooseVideo: (VideoMode) -> Unit = {},
     onDiagnostics: () -> Unit = {},
     onChooseGoPro: (GoProModel) -> Unit = {},
+    drives: DemoDrives? = null,
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
+    var choosingDrive by rememberSaveable { mutableStateOf(false) }
     var choosingVideo by rememberSaveable { mutableStateOf(false) }
     var choosingGoPro by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -113,12 +115,22 @@ fun EquipmentScreen(
                 if (item.model == EquipmentModel.RACEBOX && item.address != null) {
                     ListRow("Diagnostics", "Live", onClick = onDiagnostics)
                 }
+                drives?.let { ListRow("Drives", it.current.label, onClick = { choosingDrive = true }) }
             }
             DimText(modelNote(item.model))
             OutlinedButton(onClick = onRemove, modifier = Modifier.fillMaxWidth()) {
                 Text("Remove", color = TrackTheme.colors.loss)
             }
         }
+    }
+    if (choosingDrive && drives != null) {
+        DemoDrivesDialog(
+            drives.copy(onChoose = { d ->
+                choosingDrive = false
+                drives.onChoose(d)
+            }),
+            onDismiss = { choosingDrive = false },
+        )
     }
     if (choosingVideo) {
         VideoModeDialog(item, rememberVideoModes(item), onChooseVideo, onClose = { choosingVideo = false })
