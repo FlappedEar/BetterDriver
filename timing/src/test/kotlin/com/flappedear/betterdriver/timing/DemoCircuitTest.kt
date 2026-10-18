@@ -24,9 +24,10 @@ class DemoCircuitTest {
     private val track = DemoCircuit.track
 
     /** [minutes] of fixes at 25 Hz, as the recorder stamps them. */
-    private fun fixes(minutes: Int, g: DemoCircuit = gnss): List<Fix> = (0L until minutes * 60L * g.rateHz).map { n ->
-        assertNotNull(SampleSet(n * 1_000_000L / g.rateHz, g.fix(n)).toFix())
-    }
+    private fun fixes(minutes: Int, g: DemoCircuit = gnss): List<Fix> =
+        (0L until minutes * 60L * g.rateHz).map { n ->
+            assertNotNull(SampleSet(n * 1_000_000L / g.rateHz, g.fix(n)).toFix())
+        }
 
     @Test
     fun `it closes, and its track has a line and two sectors`() {
@@ -74,6 +75,7 @@ class DemoCircuitTest {
     @Test
     fun `a session on it is found as a loop, as Make a track from this session finds one`() {
         val loop = assertNotNull(findSessionLoop(fixes(5)))
-        assertTrue(abs(loop.lengthMeters - DemoCircuit.lengthMeters) < DemoCircuit.lengthMeters * 0.05, "${loop.lengthMeters} m")
+        val off = abs(loop.lengthMeters - DemoCircuit.lengthMeters)
+        assertTrue(off < DemoCircuit.lengthMeters * 0.05, "${loop.lengthMeters} m")
     }
 }

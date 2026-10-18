@@ -44,7 +44,9 @@ class DemoTrackReplayTest {
     /** [minutes] on the demo track, with what timing and the coach log, as the app records it. */
     private fun session(minutes: Int): SessionData {
         val gnss = DemoCircuit(start)
-        val sets = (0L until minutes * 60L * gnss.rateHz).map { n -> SampleSet(n * 1_000_000L / gnss.rateHz, gnss.fix(n)) }
+        val sets = (0L until minutes * 60L * gnss.rateHz).map { n ->
+            SampleSet(n * 1_000_000L / gnss.rateHz, gnss.fix(n))
+        }
         val events = mutableListOf<RecorderEvent>()
         val timing = LiveTiming(track)
         var predicted: Long? = null
@@ -53,7 +55,9 @@ class DemoTrackReplayTest {
             val fix = checkNotNull(set.toFix())
             val before = timing.book.count
             val state = timing.update(fix)
-            timing.book.laps.drop(before).forEach { events += RecorderEvent(set.tMicros, EventKinds.LAP_LINE, lapLineText(it, predicted)) }
+            timing.book.laps.drop(before).forEach {
+                events += RecorderEvent(set.tMicros, EventKinds.LAP_LINE, lapLineText(it, predicted))
+            }
             predicted = state.predictedMillis
             coach.onFix(checkNotNull(set.toCoachFix()), set.tMicros) { true }.events.forEach { e ->
                 events += RecorderEvent(e.tMicros, e.kind, e.text)
@@ -103,7 +107,8 @@ class DemoTrackReplayTest {
 
     @Test
     fun `the drive log report marks a demo session the same way`() {
-        val line = LogLine(start, null, "recorder", 1, "main", 'I', CheckLog.SESSION, "demo", "start utc_ms=$start source=Demo_track")
+        val text = "start utc_ms=$start source=Demo_track"
+        val line = LogLine(start, null, "recorder", 1, "main", 'I', CheckLog.SESSION, "demo", text)
         val report = driveChecks(listOf(line)).single()
         val gnss = report.sections.single { it.title == "GNSS" }
         assertEquals(Verdict.NOT_MEASURED, gnss.metrics.single().verdict)

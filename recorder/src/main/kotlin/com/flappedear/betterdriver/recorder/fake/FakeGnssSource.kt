@@ -87,10 +87,11 @@ object FakeGnssEvents {
 }
 
 /**
- * Pushes [FakeGnss] fixes, or another [GnssScript]'s, into the sink in real time on its own thread. While [receiverOn] is false
- * the receiver is "switched off", as a RaceBox out of range: no fixes are sent, fix numbers keep
- * counting with time, and the drop and the return are logged as [FakeGnssEvents], as the Bluetooth
- * sources log theirs. Emulator tests use it to drop GNSS on purpose (FBBD-43, FBBD-64).
+ * Pushes [FakeGnss] fixes, or another [GnssScript]'s, into the sink in real time on its own thread.
+ * While [receiverOn] is false the receiver is "switched off", as a RaceBox out of range: no fixes
+ * are sent, fix numbers keep counting with time, and the drop and the return are logged as
+ * [FakeGnssEvents], as the Bluetooth sources log theirs. Emulator tests use it to drop GNSS on
+ * purpose (FBBD-43, FBBD-64).
  */
 class FakeGnssSource(
     private val gnss: GnssScript = FakeGnss(),
