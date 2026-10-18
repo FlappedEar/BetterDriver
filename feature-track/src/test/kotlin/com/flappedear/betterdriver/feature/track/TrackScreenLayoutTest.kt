@@ -110,12 +110,13 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     fun slotsAndLabelsDoNotMoveWhenValuesChange() {
         show()
         showState(Updates.first())
-        val first = positions()
+        // Each anchor against where it first showed: the lap number only shows from the first fix.
+        val first = positions().toMutableMap()
         val moved = ArrayList<String>()
         Updates.drop(1).forEachIndexed { i, s ->
             showState(s)
             positions().forEach { (what, at) ->
-                val was = first.getValue(what)
+                val was = first.getOrPut(what) { at }
                 if (!same(was, at)) moved += "update ${i + 1}: $what moved from $was to $at"
             }
         }
@@ -185,7 +186,11 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         // keep their top.
         values(TrackSlots.Delta).forEachIndexed { i, n -> at["delta value $i"] = leftTop(n) }
         values(TrackSlots.Laps).forEachIndexed { i, n ->
-            if (i == 0) at["lap number"] = leftTop(n) else at["lap time $i"] = rightTop(n)
+            when {
+                i > 0 -> at["lap time $i"] = rightTop(n)
+                // No number before the first fix: nothing drawn, nothing to anchor.
+                n.size.width > 0 -> at["lap number"] = leftTop(n)
+            }
         }
         (0 until TileCount).forEach { t ->
             values(TrackSlots.tile(t)).forEachIndexed { i, n -> at["tile $t value $i"] = leftTop(n) }
