@@ -19,9 +19,11 @@ import kotlin.math.sin
  * on a real outing, Arek's Silesia Ring laps for example, without a track day. The session is read
  * on the phone; nothing of it is in the app.
  *
- * At its [track], only its timed laps are replayed, from the line where the first starts to the line
- * where the last ends, and then again: each loop joins the next at the line, so the car laps on and
- * on. Without a track, or with fewer than two timed laps, the whole session is replayed in a loop.
+ * At its [track], only its timed laps are replayed, one after another and then again: each joins the
+ * next at the line, so the car laps on and on without out laps, in laps, pit stops or laps half again
+ * slower than the median. Without a track,
+ * or with fewer than two timed laps, the whole session is replayed in a loop. A point-to-point track's
+ * runs are not replayed: they start and finish at different places, so they cannot loop.
  * Fixes come at [rateHz] whatever the recording's rate, in between its points; heading follows the
  * path, speed is the recorded one or, without it, the path's.
  */
@@ -74,22 +76,43 @@ class SessionReplay private constructor(
         private const val Satellites = 16.0
         private const val MicrosPerSecond = 1_000_000.0
 
+        /** A lap slower than this times the median lap had a stop or a spin in it. */
+        private const val SlowLap = 1.5
+
         /**
          * The replay of a session's [sets], laps cut at [track]'s line when it times two or more; null
          * when the session has fewer than two positions or lasts no time.
          */
         fun of(sets: List<SampleSet>, track: Track?, startUtcMillis: Long, rateHz: Int = 25): SessionReplay? {
+            // A run from start to a separate finish cannot loop: the car would jump back to the start.
+            if (track?.pointToPoint == true) return null
             val all = sets.sortedBy { it.tMicros }.mapNotNull(::point)
             val fixes = all.map { Fix((it.t * MicrosPerSecond).toLong(), it.lat, it.lon) }
             val laps = track?.takeIf { it.timeable }?.let { timeSession(it, fixes.asSequence()).laps }.orEmpty()
-            val timed = laps.filter { it.kind == LapKind.Timed }
+            // A lap with a stop in it is timed too when the track has no pit lines: leave out slow ones.
+            val timed = laps.filter { it.kind == LapKind.Timed }.let { all ->
+                val median = all.map { it.timeMillis }.sorted().getOrNull(all.size / 2) ?: 0L
+                all.filter { it.timeMillis <= median * SlowLap }
+            }
             val points = if (timed.size >= 2) {
-                cut(all, timed.first().startMicros / MicrosPerSecond, timed.last().endMicros / MicrosPerSecond)
+                joined(timed.map { cut(all, it.startMicros / MicrosPerSecond, it.endMicros / MicrosPerSecond) })
             } else {
                 all
             }
-            if (points.size < 2 || points.last().t <= points.first().t) return null
-            return SessionReplay(points, startUtcMillis, rateHz)
+            val lasts = points.size >= 2 && points.last().t > points.first().t
+            return if (lasts) SessionReplay(points, startUtcMillis, rateHz) else null
+        }
+
+        /**
+         * The timed laps one after another, each starting where the one before ends: out and in laps and
+         * pit stops between them are left out. Every lap starts and ends on the line, so they join there.
+         */
+        private fun joined(laps: List<List<Point>>): List<Point> {
+            var at = 0.0
+            return laps.filter { it.size >= 2 }.flatMap { lap ->
+                val from = lap.first().t
+                lap.map { Point(at + it.t - from, it.lat, it.lon, it.kmh, it.alt) }.also { at += lap.last().t - from }
+            }
         }
 
         private fun point(set: SampleSet): Point? {

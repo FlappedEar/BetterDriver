@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.timeSession
 import com.flappedear.betterdriver.timing.live.toFix
+import com.flappedear.betterdriver.timing.track.TrackKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -74,6 +75,28 @@ class SessionReplayTest {
         val first = replay.fix(0).toSet()
         assertTrue(first.any { it.channelId == GnssChannels.LAT.id })
         assertEquals(start, replay.fix(0).single { it.channelId == GnssChannels.UTC_MS.id }.value.toLong())
+    }
+
+    @Test
+    fun `a stop between stints is not replayed`() {
+        val stint = recording(5)
+        val parked = stint.last().values
+        val stop = (1L..1_800L).map { n -> SampleSet(stint.last().tMicros + n * 100_000L, parked) }
+        val after = recording(5).map { SampleSet(stop.last().tMicros + 100_000L + it.tMicros, it.values) }
+        val replay = assertNotNull(SessionReplay.of(stint + stop + after, track, start))
+        val fixes = replayed(replay, 20).mapNotNull { it.toFix() }
+        val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+        val longestStill = steps.fold(0 to 0) { (run, most), d ->
+            if (d < 0.05) (run + 1).let { it to maxOf(most, it) } else 0 to most
+        }.second
+        assertTrue(longestStill < 25, "standing still for ${longestStill / 25.0} s")
+        assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
+    }
+
+    @Test
+    fun `a point-to-point track is not replayed`() {
+        val run = track.copy(kind = TrackKind.PointToPoint, finish = track.sectorLines.first())
+        assertNull(SessionReplay.of(recording(2), run, start))
     }
 
     @Test
