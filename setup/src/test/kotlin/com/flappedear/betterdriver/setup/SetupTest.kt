@@ -33,7 +33,7 @@ class SetupTest {
         val a = s.active()
         assertEquals("RaceBox Micro 3241", a.gnss?.name)
         assertNull(a.startProblem)
-        assertEquals(listOf(TrackChannel.SPEED, TrackChannel.LAP), a.tiles)
+        assertEquals(listOf(TrackChannel.SPEED), a.tiles)
     }
 
     @Test
@@ -96,7 +96,7 @@ class SetupTest {
         val active = s.active()
         assertEquals("Garmin GLO 2", active.gnss?.name, "the first receiver is the session's")
         assertEquals(listOf("Polar H10"), active.sensors.map { it.name })
-        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP), channelsFor(active.gnss))
+        assertEquals(setOf(TrackChannel.SPEED), channelsFor(active.gnss))
         assertTrue(EquipmentModel.LNS_GNSS.paired && EquipmentModel.HEART_RATE.paired)
         assertEquals(EquipmentKind.SENSOR, s.equipment.last().kind)
     }
@@ -122,7 +122,7 @@ class SetupTest {
             .addEquipment(EquipmentModel.DRAGY, "DRG70-ABC123", "BB", ids)
         assertEquals("VBSport 00000300", s.active().gnss?.name, "the first receiver is the session's")
         assertEquals(listOf(EquipmentKind.GNSS, EquipmentKind.GNSS), s.equipment.map { it.kind })
-        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP), channelsFor(s.active().gnss))
+        assertEquals(setOf(TrackChannel.SPEED), channelsFor(s.active().gnss))
         assertTrue(EquipmentModel.VBOX_SPORT.paired && EquipmentModel.DRAGY.paired)
         assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.VBOX_SPORT, newId = ids) }
         assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.DRAGY, newId = ids) }
@@ -178,7 +178,7 @@ class SetupTest {
             .addEquipment(EquipmentModel.RACEBOX, "RaceBox Micro 3241", "CC", ids)
         assertEquals(listOf("RaceBox Mini", "RaceBox Mini S", "RaceBox Micro"), s.equipment.map { it.modelLabel })
         for (box in s.equipment) {
-            assertEquals(setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G), channelsFor(box), box.name)
+            assertEquals(setOf(TrackChannel.SPEED, TrackChannel.G), channelsFor(box), box.name)
         }
     }
 
@@ -268,13 +268,13 @@ class SetupTest {
             .addEquipment(EquipmentModel.RACEBOX, address = "AA", newId = ids)
             .addEquipment(EquipmentModel.DEMO_GNSS, newId = ids)
             .chooseTiles(listOf(TrackChannel.G, TrackChannel.SPEED, TrackChannel.G, TrackChannel.LAP))
-        assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED, TrackChannel.LAP), s.active().tiles)
+        assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED), s.active().tiles, "a saved Lap tile is left out (UI-82)")
         val demo = s.ofKind(EquipmentKind.GNSS).single { it.model == EquipmentModel.DEMO_GNSS }
         val raceBox = s.active().gnss!!
         s = s.chooseGnss(demo.id)
-        assertEquals(listOf(TrackChannel.SPEED, TrackChannel.LAP), s.active().tiles, "demo has no accelerometer")
+        assertEquals(listOf(TrackChannel.SPEED), s.active().tiles, "demo has no accelerometer")
         s = s.chooseGnss(raceBox.id)
-        assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED, TrackChannel.LAP), s.active().tiles)
+        assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED), s.active().tiles)
     }
 
     @Test

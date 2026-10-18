@@ -294,7 +294,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
                 "long_lap",
                 ExampleTrackState.copy(
                     deltaSeconds = -12.34,
-                    predictedMillis = 525_170,
+                    lapNumber = 23,
+                    lapMillis = 525_170,
                     lastMillis = 545_330,
                     bestMillis = 523_990,
                     tiles = listOf(
@@ -312,7 +313,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             beforeFirstLap().copy(tiles = tiles("0", "0.00", "1")),
             ExampleTrackState.copy(
                 deltaSeconds = 0.08,
-                predictedMillis = 59_990,
+                lapNumber = 1,
+                lapMillis = 59_990,
                 lastMillis = null,
                 bestMillis = null,
                 tiles = tiles("98", "0.98", "1"),
@@ -320,7 +322,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             ExampleTrackState.copy(deltaSeconds = -1.27, tiles = tiles("142", "1.12", "7")),
             ExampleTrackState.copy(
                 deltaSeconds = 12.34,
-                predictedMillis = 525_170,
+                lapNumber = 99,
+                lapMillis = 599_990,
                 lastMillis = 545_330,
                 bestMillis = 523_990,
                 tiles = tiles("251", "1.85", "23"),
@@ -333,7 +336,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
 
         fun beforeFirstLap() = ExampleTrackState.copy(
             deltaSeconds = null,
-            predictedMillis = null,
+            lapNumber = null,
+            lapMillis = null,
             lastMillis = null,
             bestMillis = null,
             sectors = listOf(
@@ -352,7 +356,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
 private fun NaturalWidths(s: TrackScreenState, heights: Map<String, Dp>) {
     Column {
         Natural(TrackSlots.Delta, heights) { m -> DeltaDisplay(s.deltaSeconds, m) }
-        Natural(TrackSlots.Laps, heights) { m -> LapTimes(s.predictedMillis, s.lastMillis, s.bestMillis, m) }
+        Natural(TrackSlots.Laps, heights) { m -> LapTimes(s.lapNumber, s.lapMillis, s.lastMillis, s.bestMillis, m) }
         s.tiles.take(TrackSlotsTileCount).forEachIndexed { i, t ->
             Natural(TrackSlots.tile(i), heights) { m -> ValueTile(t.label, t.value, t.unit, m, t.state) }
         }

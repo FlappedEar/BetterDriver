@@ -23,10 +23,12 @@ import com.flappedear.betterdriver.core.ui.format.formatLapTime
 private val NoTime = "$DigitPlaceholder:$DigitPlaceholder$DigitPlaceholder.$DigitPlaceholder$DigitPlaceholder"
 
 /**
- * Lap times block (UI-04 option A): predicted lap large, then last and best.
- * Best is always in the best-lap colour. Null values show dashes.
+ * Lap times block (UI-82): the lap number and the running time of the current lap large, then
+ * last and best. Arek asked for the number on its own, without a "Lap" label, and for the current
+ * lap time in place of the predicted one. Best is always in the best-lap colour. Null values show
+ * dashes; before the first line crossing the number is left empty.
  *
- * In a short window (the system bars shown by a swipe) the predicted time gives way to fit;
+ * In a short window (the system bars shown by a swipe) the top row gives way to fit;
  * last and best keep their size, so they stay readable at a glance (FBBD-65) and never get
  * squeezed out of the block.
  *
@@ -35,7 +37,8 @@ private val NoTime = "$DigitPlaceholder:$DigitPlaceholder$DigitPlaceholder.$Digi
  */
 @Composable
 fun LapTimes(
-    predictedMillis: Long?,
+    lapNumber: Int?,
+    lapMillis: Long?,
     lastMillis: Long?,
     bestMillis: Long?,
     modifier: Modifier = Modifier,
@@ -57,15 +60,41 @@ fun LapTimes(
             heroSize
         }
         Column(verticalArrangement = Arrangement.Center) {
-            LapRow("Predicted", predictedMillis, hero, FontWeight.Bold, c.text)
+            CurrentLapRow(lapNumber, lapMillis, hero)
             LapRow("Last", lastMillis, small, FontWeight.SemiBold, c.text)
             LapRow("Best", bestMillis, small, FontWeight.SemiBold, c.best)
         }
     }
 }
 
-/** Last and best, against the predicted time's size. */
+/** Last and best, against the current lap time's size. */
 private const val SmallFraction = 0.55f
+
+/** The lap number, against the current lap time's size: large, but plainly not a time. */
+private const val NumberFraction = 0.8f
+
+@Composable
+private fun CurrentLapRow(lapNumber: Int?, lapMillis: Long?, size: Dp) {
+    val c = TrackTheme.colors
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        NumberText(
+            text = lapNumber?.toString() ?: "",
+            size = size * NumberFraction,
+            color = c.text,
+            weight = FontWeight.Bold,
+        )
+        NumberText(
+            text = lapMillis?.let(::formatLapTime) ?: NoTime,
+            size = size,
+            color = if (lapMillis == null) c.textDim else c.text,
+            weight = FontWeight.Bold,
+        )
+    }
+}
 
 private val RoundingSpare = 2.dp
 
