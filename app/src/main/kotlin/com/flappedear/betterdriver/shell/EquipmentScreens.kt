@@ -123,15 +123,7 @@ fun EquipmentScreen(
             }
         }
     }
-    if (choosingDrive && drives != null) {
-        DemoDrivesDialog(
-            drives.copy(onChoose = { d ->
-                choosingDrive = false
-                drives.onChoose(d)
-            }),
-            onDismiss = { choosingDrive = false },
-        )
-    }
+    if (choosingDrive && drives != null) DemoDrivesDialog(drives, onDismiss = { choosingDrive = false })
     if (choosingVideo) {
         VideoModeDialog(item, rememberVideoModes(item), onChooseVideo, onClose = { choosingVideo = false })
     }

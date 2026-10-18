@@ -33,6 +33,7 @@ data class DemoDrives(
     }
 }
 
+/** Picking a drive chooses it and closes the dialog. */
 @Composable
 internal fun DemoDrivesDialog(drives: DemoDrives, onDismiss: () -> Unit) {
     AlertDialog(
@@ -42,7 +43,10 @@ internal fun DemoDrivesDialog(drives: DemoDrives, onDismiss: () -> Unit) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 drives.choices.forEach { d ->
                     val on = d.sessionId == drives.current.sessionId
-                    val pick = Modifier.selectable(selected = on, onClick = { drives.onChoose(d) })
+                    val pick = Modifier.selectable(selected = on, onClick = {
+                        drives.onChoose(d)
+                        onDismiss()
+                    })
                     Row(Modifier.fillMaxWidth().then(pick), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = on, onClick = null)
                         Text(d.label, style = MaterialTheme.typography.bodyLarge)

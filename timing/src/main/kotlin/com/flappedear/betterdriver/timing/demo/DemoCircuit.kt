@@ -194,12 +194,7 @@ class DemoCircuit(
         val bends = Layout.count { it.bend }
         val grip = DoubleArray(bends) { if (k == 0) 0.8 else 0.9 + random.nextDouble() * 0.1 }
         val braking = DoubleArray(bends) { if (k == 0) 6.0 else 7.5 + random.nextDouble() * 1.5 }
-        if (k > 0) {
-            for (c in 0 until bends) {
-                if (random.nextDouble() >= MistakeChance) continue
-                if (random.nextBoolean()) braking[c] = 5.0 + random.nextDouble() else grip[c] = 0.8
-            }
-        }
+        if (k > 0) mistakes(random, grip, braking)
         val n = path.size
         val cap = DoubleArray(n) { i ->
             val c = path.corner[i]
@@ -220,6 +215,14 @@ class DemoCircuit(
         // Before a standing start the car is at its start point: same time and no speed.
         for (i in 0 until first) t[i] = 0.0
         return Lap(start, t, v)
+    }
+
+    /** Now and then a corner braked too early or taken too slowly, so the coach has something to say. */
+    private fun mistakes(random: Random, grip: DoubleArray, braking: DoubleArray) {
+        for (c in grip.indices) {
+            if (random.nextDouble() >= MistakeChance) continue
+            if (random.nextBoolean()) braking[c] = 5.0 + random.nextDouble() else grip[c] = 0.8
+        }
     }
 
     override fun fix(n: Long): List<ChannelValue> {

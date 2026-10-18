@@ -105,8 +105,10 @@ class SessionReplay private constructor(
                     GnssChannels.ALT_M.id -> alt = v.value
                 }
             }
-            if (lat == null || lon == null || !lat.isFinite() || !lon.isFinite()) return null
-            return Point(set.tMicros / MicrosPerSecond, lat, lon, kmh?.takeIf { it.isFinite() }, alt)
+            val la = lat?.takeIf { it.isFinite() }
+            val lo = lon?.takeIf { it.isFinite() }
+            if (la == null || lo == null) return null
+            return Point(set.tMicros / MicrosPerSecond, la, lo, kmh?.takeIf { it.isFinite() }, alt)
         }
 
         /** [all] from [from] to [to] seconds, with points at both ends placed on the path. */
