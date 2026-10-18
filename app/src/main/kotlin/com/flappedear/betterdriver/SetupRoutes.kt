@@ -232,6 +232,7 @@ private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
     add(EquipmentModel.CAMERA_FILES)
     add(EquipmentModel.TCP_GNSS)
     if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
+    if (setup.equipment.none { it.model == EquipmentModel.DEMO_TRACK }) add(EquipmentModel.DEMO_TRACK)
 }
 
 /**

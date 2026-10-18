@@ -15,6 +15,8 @@ import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
 import com.flappedear.betterdriver.core.ble.vbox.VboxSportSource
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
+import com.flappedear.betterdriver.timing.demo.DemoCircuit
+import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TcpAddress
@@ -60,6 +62,9 @@ enum class GnssType {
 
     /** The made-up positions of Demo GNSS, which Arek adds as equipment on purpose (FBBD-83). */
     DEMO,
+
+    /** A made-up car lapping the demo circuit, whose track is saved for it (FBBD-233). */
+    DEMO_TRACK,
 }
 
 /**
@@ -71,10 +76,14 @@ data class GnssRef(
     val name: String,
     val type: GnssType = GnssType.RACEBOX,
 ) {
-    val demo: Boolean get() = type == GnssType.DEMO
+    val demo: Boolean get() = type == GnssType.DEMO || type == GnssType.DEMO_TRACK
 
     companion object {
         val Demo = GnssRef("", "Demo GNSS", GnssType.DEMO)
+        val DemoTrack = GnssRef("", "Demo track", GnssType.DEMO_TRACK)
+
+        /** The demo receiver of [type]: Demo GNSS, or the demo track. */
+        fun demoOf(type: GnssType): GnssRef = if (type == GnssType.DEMO_TRACK) DemoTrack else Demo
     }
 }
 
@@ -92,6 +101,7 @@ data class SensorRef(val address: String, val name: String) {
 /** Which source records each receiver model. */
 private val GnssTypes = mapOf(
     EquipmentModel.DEMO_GNSS to GnssType.DEMO,
+    EquipmentModel.DEMO_TRACK to GnssType.DEMO_TRACK,
     EquipmentModel.RACEBOX to GnssType.RACEBOX,
     EquipmentModel.NMEA_GNSS to GnssType.NMEA,
     EquipmentModel.LNS_GNSS to GnssType.LNS,
@@ -107,7 +117,7 @@ fun gnssRefOf(e: Equipment): GnssRef? {
     // The recorder tells a RaceBox Micro from a Mini by the advertised name, not Arek's name for it.
     return when (type) {
         null -> null
-        GnssType.DEMO -> GnssRef.Demo
+        GnssType.DEMO, GnssType.DEMO_TRACK -> GnssRef.demoOf(type)
         else -> GnssRef(e.address.orEmpty(), e.advertisedName ?: e.name, type)
     }
 }
@@ -124,6 +134,10 @@ internal object Sources {
         val receiver = when (gnss.type) {
             // Debug builds let the emulator tests switch it off (FBBD-43, FBBD-64).
             GnssType.DEMO -> FakeGnssSource(receiverOn = DemoGnssHook.receiverOn(app))
+            GnssType.DEMO_TRACK -> {
+                saveDemoTrack(app)
+                FakeGnssSource(DemoCircuit(System.currentTimeMillis()), receiverOn = DemoGnssHook.receiverOn(app))
+            }
             GnssType.NMEA -> NmeaSource(app, gnss.address, gnss.name)
             GnssType.LNS -> LnsSource(app, gnss.address, gnss.name)
             GnssType.DIY -> DiyBleSource(app, gnss.address, gnss.name)
@@ -138,6 +152,15 @@ internal object Sources {
         val phone = if (gnss.demo) emptyList() else listOf(PhoneImuSource(app))
         return listOf(receiver) + phone + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }
+}
+
+/**
+ * Saves the demo circuit's track before its first fix, so the session's timing and coach find it
+ * (FBBD-233). A track already saved under its id is kept: Arek may have moved its lines.
+ */
+private fun saveDemoTrack(context: Context) {
+    val store = TrackStore(tracksDir(context))
+    if (store.get(DemoCircuit.TrackId) == null) store.save(DemoCircuit.track)
 }
 
 /** A Wi-Fi receiver's source; its socket goes over Wi-Fi even when Wi-Fi has no internet. */

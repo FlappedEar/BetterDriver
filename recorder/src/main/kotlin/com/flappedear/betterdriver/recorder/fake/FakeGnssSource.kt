@@ -14,18 +14,31 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 /**
+ * Made-up fixes a [FakeGnssSource] sends: fix n of [rateHz] is always the same, whenever it is asked
+ * for, which lets tests check that a session holds exactly the fixes that were sent.
+ */
+interface GnssScript {
+    val rateHz: Int
+    val startUtcMillis: Long
+
+    fun utcMillis(n: Long): Long = startUtcMillis + n * 1_000 / rateHz
+
+    fun fix(n: Long): List<ChannelValue>
+}
+
+/**
  * Deterministic stand-in for a GNSS receiver: fixes around a circular "track", so tests and the
  * alpha build can record without hardware. Fix n is always the same, which lets tests check that a
  * recovered session holds exactly the fixes that were sent.
  */
 class FakeGnss(
-    val rateHz: Int = 25,
+    override val rateHz: Int = 25,
     val centerLat: Double = 52.0,
     val centerLon: Double = 21.0,
     val radiusM: Double = 200.0,
     val lapSeconds: Double = 40.0,
-    val startUtcMillis: Long = 1_760_169_600_000L, // 2025-10-11T08:00:00Z
-) {
+    override val startUtcMillis: Long = 1_760_169_600_000L, // 2025-10-11T08:00:00Z
+) : GnssScript {
     private val mPerDegLat = 111_320.0
     private val mPerDegLon = 111_320.0 * cos(Math.toRadians(centerLat))
 
@@ -41,9 +54,7 @@ class FakeGnss(
             )
         }
 
-    fun utcMillis(n: Long): Long = startUtcMillis + n * 1_000 / rateHz
-
-    fun fix(n: Long): List<ChannelValue> {
+    override fun fix(n: Long): List<ChannelValue> {
         val t = n.toDouble() / rateHz
         val angle = 2 * PI * t / lapSeconds
         val lat = centerLat + radiusM * sin(angle) / mPerDegLat
@@ -76,13 +87,13 @@ object FakeGnssEvents {
 }
 
 /**
- * Pushes [FakeGnss] fixes into the sink in real time on its own thread. While [receiverOn] is false
+ * Pushes [FakeGnss] fixes, or another [GnssScript]'s, into the sink in real time on its own thread. While [receiverOn] is false
  * the receiver is "switched off", as a RaceBox out of range: no fixes are sent, fix numbers keep
  * counting with time, and the drop and the return are logged as [FakeGnssEvents], as the Bluetooth
  * sources log theirs. Emulator tests use it to drop GNSS on purpose (FBBD-43, FBBD-64).
  */
 class FakeGnssSource(
-    private val gnss: FakeGnss = FakeGnss(),
+    private val gnss: GnssScript = FakeGnss(),
     /** Read before each fix; false drops the fix. */
     private val receiverOn: () -> Boolean = { true },
     /** Called after each fix is handed to the sink, with its index. Used by the fault-injection test. */

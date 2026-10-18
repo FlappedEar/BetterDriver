@@ -35,6 +35,7 @@ private fun withoutBluetoothNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.CAMERA_FILES -> "DJI Action, Insta360, Garmin and others"
     EquipmentModel.TCP_GNSS -> "NMEA or RaceChrono DIY over Wi-Fi"
     EquipmentModel.DEMO_GNSS -> "For trying the app"
+    EquipmentModel.DEMO_TRACK -> "Laps and coach cues on a made-up circuit"
     EquipmentModel.PHONE_CAMERA -> "Built in"
     else -> ""
 }

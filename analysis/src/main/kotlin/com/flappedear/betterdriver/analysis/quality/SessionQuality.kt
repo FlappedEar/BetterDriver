@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.track.Track
 
@@ -68,8 +69,9 @@ fun sessionQuality(
     val lags = (0 until samples.size).filter { samples.utc[it] != GnssSamples.NoUtc && samples.hasFix(it) }.map {
         samples.t[it] to samples.t[it] - (samples.utc[it] - data.info.startUtcMillis) * MicrosPerMilli
     }
+    val demo = Provenance.DemoDevice in data.info.devices
     val sections = listOfNotNull(
-        gnss.copy(metrics = gnss.metrics + clockDrift(lags, end)),
+        if (demo) demoGnssSection() else gnss.copy(metrics = gnss.metrics + clockDrift(lags, end)),
         timingSection(data, track),
         recordingSection(data, samples, previous),
         videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end),
