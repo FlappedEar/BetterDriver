@@ -268,7 +268,8 @@ class SetupTest {
             .addEquipment(EquipmentModel.RACEBOX, address = "AA", newId = ids)
             .addEquipment(EquipmentModel.DEMO_GNSS, newId = ids)
             .chooseTiles(listOf(TrackChannel.G, TrackChannel.SPEED, TrackChannel.G, TrackChannel.LAP))
-        assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED), s.active().tiles, "a saved Lap tile is left out (UI-82)")
+        // A saved Lap tile is left out (UI-82).
+        assertEquals(listOf(TrackChannel.G, TrackChannel.SPEED), s.active().tiles)
         val demo = s.ofKind(EquipmentKind.GNSS).single { it.model == EquipmentModel.DEMO_GNSS }
         val raceBox = s.active().gnss!!
         s = s.chooseGnss(demo.id)
