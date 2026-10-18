@@ -78,7 +78,7 @@ fun sessionQuality(
         goProSection(data.events, clips, end),
         coachSection(data.events, samples),
         thermalSection(data.events, end),
-        screenSection(data.events, outages(samples, end), end),
+        screenSection(data.events, outages(samples, end), end, underCoverFrom(samples)),
         exportSection(data.events, end),
         channelsSection(data),
     )

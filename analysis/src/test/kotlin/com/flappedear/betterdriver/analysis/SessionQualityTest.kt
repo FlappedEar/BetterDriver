@@ -229,6 +229,44 @@ class SessionQualityTest {
     }
 
     @Test
+    fun `drops and the screen going off after the drive ended under cover are left out`() {
+        // The 2026-10-18 evening drive: the fix went at 4 km/h, as into a garage, and never came back;
+        // minutes later the screen went off and the link dropped twice before the driver stopped.
+        val driving = stream(0, 20_000_000) + stream(20_040_000, 25_000_000, kmh = 4.0)
+        val noFix = (25_040_000L..200_000_000L step 40_000L).map { t ->
+            SampleSet(t, listOf(ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble())))
+        }.filterNot { it.tMicros in 150_000_000L..170_000_000L || it.tMicros > 180_000_000L }
+        val events = listOf(
+            RecorderEvent(140_000_000, EventKinds.SCREEN, "state=off"),
+            RecorderEvent(150_100_000, "racebox_disconnected", "no data for 3399 ms"),
+            RecorderEvent(180_100_000, "racebox_disconnected", "no data for 3236 ms"),
+        )
+        val parked = session(driving + noFix, events).copy(end = Record.End(240_000_000, "user"))
+        val r = sessionQuality(parked)
+        assertEquals(2.0, r.value("gnss.link_drops"))
+        assertEquals(Verdict.NOT_MEASURED, r.verdict("gnss.reconnect"))
+        assertTrue("under cover" in r.metric("gnss.reconnect").how)
+        assertEquals(0.0, r.value("ui.screen_off"))
+        assertEquals(Verdict.PASS, r.verdict("ui.screen_off"))
+        assertTrue("1 after the drive" in r.metric("ui.screen_off").how)
+
+        // The last fix at speed (a tunnel), or a fix coming back, is no drive ending under cover.
+        val fast = session(stream(0, 25_000_000) + noFix, events).copy(end = Record.End(240_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(fast).verdict("gnss.reconnect"))
+        assertEquals(Verdict.FAIL, sessionQuality(fast).verdict("ui.screen_off"))
+        val back = session(driving + noFix + stream(200_040_000, 210_000_000, kmh = 4.0), events)
+            .copy(end = Record.End(240_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(back).verdict("gnss.reconnect"))
+        // The link dropping right after the last fix, data back only 60 s on: a real drop, not a garage.
+        val gone = (85_040_000L..90_000_000L step 40_000L).map { t ->
+            SampleSet(t, listOf(ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble())))
+        }
+        val early = listOf(RecorderEvent(25_100_000, "racebox_disconnected", "no data for 3000 ms"))
+        val dropped = session(driving + gone, early).copy(end = Record.End(95_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(dropped).verdict("gnss.reconnect"))
+    }
+
+    @Test
     fun `position noise is the 2D standard deviation of the first 60 s of a stop`() {
         val moving = stream(0, 10_000_000)
         // Parked 70 s, east positions alternating +0.3 and -0.3 m: 1501 fixes in the first 60 s.
