@@ -62,7 +62,7 @@ private fun gnssType(name: String?, nmea: Boolean): GnssType =
 
 /** The receiver of the recording that was running when the recorder process was killed. */
 private fun wantedGnss(wanted: SharedPreferences): GnssRef? = when {
-    wanted.getBoolean(KeyGnssDemo, false) -> GnssRef.Demo
+    wanted.getBoolean(KeyGnssDemo, false) -> GnssRef.demoOf(gnssType(wanted.getString(KeyGnssType, null), false))
     else -> wanted.getString(KeyRaceBoxAddress, null)?.let {
         val type = gnssType(wanted.getString(KeyGnssType, null), wanted.getBoolean(KeyGnssNmea, false))
         GnssRef(it, wanted.getString(KeyRaceBoxName, "").orEmpty(), type)
@@ -71,7 +71,8 @@ private fun wantedGnss(wanted: SharedPreferences): GnssRef? = when {
 
 /** The receiver a start intent names: Demo GNSS, a RaceBox, another receiver, or none. */
 private fun gnssFrom(intent: Intent): GnssRef? = when {
-    intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_DEMO, false) -> GnssRef.Demo
+    intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_DEMO, false) ->
+        GnssRef.demoOf(gnssType(intent.getStringExtra(RecorderProtocol.EXTRA_GNSS_TYPE), false))
     else -> intent.getStringExtra(RecorderProtocol.EXTRA_RACEBOX_ADDRESS)?.let {
         val type = gnssType(
             intent.getStringExtra(RecorderProtocol.EXTRA_GNSS_TYPE),

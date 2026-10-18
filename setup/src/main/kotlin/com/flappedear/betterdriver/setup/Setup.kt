@@ -63,6 +63,12 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     /** Synthetic GNSS for trying the app without hardware. Only there when added on purpose. */
     DEMO_GNSS(EquipmentKind.GNSS, "Demo GNSS"),
 
+    /**
+     * Synthetic GNSS of a car lapping a made-up circuit whose track is saved for it (FBBD-233): laps,
+     * sectors and the coach's cues without a track day. Only there when added on purpose.
+     */
+    DEMO_TRACK(EquipmentKind.GNSS, "Demo track"),
+
     /** A Bluetooth LE heart-rate monitor (standard Heart Rate service, FBBD-119). Found by a scan. */
     HEART_RATE(EquipmentKind.SENSOR, "Heart-rate monitor"),
 

@@ -58,6 +58,9 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."
     EquipmentModel.DEMO_GNSS ->
         "Made-up positions on a circle, for trying the app without a receiver. Sessions with it are not real data."
+    EquipmentModel.DEMO_TRACK ->
+        "A made-up car lapping the Demo circuit: laps, sectors and coach cues without a track day. " +
+            "Its positions are not real data."
     EquipmentModel.PHONE_CAMERA -> "Records video with each session it is turned on for."
     EquipmentModel.GOPRO -> "Starts and stops with each session it is turned on for."
     EquipmentModel.GOPRO_FILES -> "Start it by hand. Add its videos to the session afterwards."
