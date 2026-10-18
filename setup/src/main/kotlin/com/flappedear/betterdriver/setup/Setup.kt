@@ -286,6 +286,11 @@ data class CarProfile(
 @Serializable
 enum class TrackChannel(val label: String, val unit: String) {
     SPEED("Speed", "km/h"),
+
+    /**
+     * No longer offered: the lap number is always on the lap times block (UI-82). Kept so a saved
+     * choice that has it still reads; [Setup.active] leaves it out.
+     */
     LAP("Lap", ""),
 
     /** Combined acceleration; needs a receiver with an accelerometer. */
@@ -295,13 +300,16 @@ enum class TrackChannel(val label: String, val unit: String) {
 /** The track screen has room for three tiles (UI-10 option A). */
 const val MaxTiles = 3
 
+/** The tiles Settings offers, in its order: every channel but [TrackChannel.LAP] (UI-82). */
+val OfferedTiles: List<TrackChannel> = TrackChannel.entries - TrackChannel.LAP
+
 /** What the next session uses. Ids refer to [Setup.equipment] and [Setup.cars]. */
 @Serializable
 data class SessionChoice(
     val carId: String? = null,
     val gnssId: String? = null,
     val cameraIds: List<String> = emptyList(),
-    val tiles: List<TrackChannel> = listOf(TrackChannel.SPEED, TrackChannel.LAP),
+    val tiles: List<TrackChannel> = listOf(TrackChannel.SPEED),
 )
 
 /** Why a session cannot start with the current choice. */
@@ -488,7 +496,7 @@ data class Setup(
 }
 
 /**
- * Channels a session can show with [gnss] as its receiver. Lap needs only a position; G needs an
+ * Channels a session can show with [gnss] as its receiver. Speed needs only a position; G needs an
  * accelerometer, which every RaceBox has (Mini, Mini S and Micro send acceleration in each data
  * message, RaceBox BLE protocol rev. 8). A plain NMEA receiver does not report one, but a RaceChrono
  * DIY device streaming $RC2/$RC3 lines over Bluetooth or Wi-Fi does (FBBD-115), and the setup
@@ -497,6 +505,6 @@ data class Setup(
 fun channelsFor(gnss: Equipment?): Set<TrackChannel> = when (gnss?.model) {
     null -> emptySet()
     EquipmentModel.RACEBOX, EquipmentModel.NMEA_GNSS, EquipmentModel.TCP_GNSS ->
-        setOf(TrackChannel.SPEED, TrackChannel.LAP, TrackChannel.G)
-    else -> setOf(TrackChannel.SPEED, TrackChannel.LAP)
+        setOf(TrackChannel.SPEED, TrackChannel.G)
+    else -> setOf(TrackChannel.SPEED)
 }
