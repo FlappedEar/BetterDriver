@@ -47,7 +47,10 @@ data class TrackScreenState(
     val recordingTime: String?,
     val alert: TrackAlert?,
     val deltaSeconds: Double?,
-    val predictedMillis: Long?,
+    /** The current lap's number, or null before the first fix. On a circuit the out lap is lap 1. */
+    val lapNumber: Int?,
+    /** The running time of the current lap. */
+    val lapMillis: Long?,
     val lastMillis: Long?,
     val bestMillis: Long?,
     val sectors: List<SectorState>,
@@ -118,7 +121,8 @@ fun TrackScreenContent(state: TrackScreenState, modifier: Modifier = Modifier) {
         Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(gap)) {
             DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Delta))
             LapTimes(
-                state.predictedMillis,
+                state.lapNumber,
+                state.lapMillis,
                 state.lastMillis,
                 state.bestMillis,
                 Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
@@ -160,11 +164,12 @@ val ExampleTrackState = TrackScreenState(
     recordingTime = "18:42",
     alert = null,
     deltaSeconds = -0.34,
-    predictedMillis = 112_070,
+    lapNumber = 8,
+    lapMillis = 47_310,
     lastMillis = 112_810,
     bestMillis = 112_410,
     sectors = listOf(SectorState("S1", -0.21), SectorState("S2", 0.08), SectorState("S3", null, current = true)),
-    tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g"), TrackTile("Lap", "7", "")),
+    tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g")),
     coachCorner = "T4",
     coachCue = "Brake at the 100 board, carry 5 km/h more to apex",
 )
@@ -204,7 +209,7 @@ private fun TrackScreenEmptyPreview() {
     BetterDriverTheme(track = true) {
         TrackScreenContent(
             ExampleTrackState.copy(
-                deltaSeconds = null, predictedMillis = null, lastMillis = null, bestMillis = null,
+                deltaSeconds = null, lapNumber = null, lapMillis = null, lastMillis = null, bestMillis = null,
                 sectors = listOf(
                     SectorState("S1", null, current = true),
                     SectorState("S2", null),

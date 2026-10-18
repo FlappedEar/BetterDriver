@@ -110,12 +110,13 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     fun slotsAndLabelsDoNotMoveWhenValuesChange() {
         show()
         showState(Updates.first())
-        val first = positions()
+        // Each anchor against where it first showed: the lap number only shows from the first fix.
+        val first = positions().toMutableMap()
         val moved = ArrayList<String>()
         Updates.drop(1).forEachIndexed { i, s ->
             showState(s)
             positions().forEach { (what, at) ->
-                val was = first.getValue(what)
+                val was = first.getOrPut(what) { at }
                 if (!same(was, at)) moved += "update ${i + 1}: $what moved from $was to $at"
             }
         }
@@ -129,7 +130,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         (States.map { it.first to it.second } + Updates.mapIndexed { i, s -> "update_$i" to s }).forEach { (name, s) ->
             natural = null
             showState(s)
-            val slots = GlanceSlots.associateWith { compose.onNodeWithTag(it).fetchSemanticsNode().size }
+            val slots = glanceSlots(minOf(s.tiles.size, TileCount))
+                .associateWith { compose.onNodeWithTag(it).fetchSemanticsNode().size }
             natural = slots.mapValues { (_, size) -> with(compose.density) { size.height.toDp() } }
             compose.waitForIdle()
             slots.forEach { (tag, size) ->
@@ -150,7 +152,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         show()
         showState(ExampleTrackState)
         val small = ArrayList<String>()
-        GlanceSlots.forEach { tag ->
+        glanceSlots(ExampleTrackState.tiles.size).forEach { tag ->
             values(tag).forEach { node ->
                 // The font size its digits are drawn at; capitals and digits are about 0.7 of it.
                 val sizeDp = fontSizeDp(node)
@@ -180,9 +182,16 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             val node = compose.onNode(hasText(label) and hasAnyAncestor(hasTestTag(slot)), useUnmergedTree = true)
             at["label $label"] = node.fetchSemanticsNode().boundsInRoot
         }
-        // Values: the delta and tiles start at a fixed place, lap times end at one; all keep their top.
+        // Values: the delta, lap number and tiles start at a fixed place, lap times end at one; all
+        // keep their top.
         values(TrackSlots.Delta).forEachIndexed { i, n -> at["delta value $i"] = leftTop(n) }
-        values(TrackSlots.Laps).forEachIndexed { i, n -> at["lap time $i"] = rightTop(n) }
+        values(TrackSlots.Laps).forEachIndexed { i, n ->
+            when {
+                i > 0 -> at["lap time $i"] = rightTop(n)
+                // No number before the first fix: nothing drawn, nothing to anchor.
+                n.size.width > 0 -> at["lap number"] = leftTop(n)
+            }
+        }
         (0 until TileCount).forEach { t ->
             values(TrackSlots.tile(t)).forEachIndexed { i, n -> at["tile $t value $i"] = leftTop(n) }
         }
@@ -216,16 +225,20 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     private companion object {
         val FixedSlots = listOf(TrackSlots.Top, TrackSlots.Coach, TrackSlots.Sectors)
         const val TileCount = 3
-        val GlanceSlots = listOf(TrackSlots.Delta, TrackSlots.Laps) + (0 until TileCount).map { TrackSlots.tile(it) }
+        val GlanceSlots = glanceSlots(TileCount)
+
+        /** The slots holding glance values when [tiles] tiles show. */
+        fun glanceSlots(tiles: Int) =
+            listOf(TrackSlots.Delta, TrackSlots.Laps) + (0 until tiles).map { TrackSlots.tile(it) }
+
         /** Each label and the slot it is in. */
         val Labels = listOf(
             "DELTA VS BEST" to TrackSlots.Delta,
-            "PREDICTED" to TrackSlots.Laps,
             "LAST" to TrackSlots.Laps,
             "BEST" to TrackSlots.Laps,
             "SPEED" to TrackSlots.tile(0),
             "G" to TrackSlots.tile(1),
-            "LAP" to TrackSlots.tile(2),
+            "OIL" to TrackSlots.tile(2),
         )
 
         val HasDescription = SemanticsMatcher.keyIsDefined(SemanticsProperties.ContentDescription)
@@ -294,13 +307,14 @@ abstract class TrackScreenLayoutTest(private val device: String) {
                 "long_lap",
                 ExampleTrackState.copy(
                     deltaSeconds = -12.34,
-                    predictedMillis = 525_170,
+                    lapNumber = 23,
+                    lapMillis = 525_170,
                     lastMillis = 545_330,
                     bestMillis = 523_990,
                     tiles = listOf(
                         TrackTile("Speed", "251", "km/h"),
                         TrackTile("G", "1.85", "g"),
-                        TrackTile("Lap", "23", ""),
+                        TrackTile("Oil", "124", "°C"),
                     ),
                 ),
                 TrackColorsGreenRed,
@@ -309,31 +323,34 @@ abstract class TrackScreenLayoutTest(private val device: String) {
 
         /** The values changing during a session, in one layout (same tiles, no alert). */
         val Updates: List<TrackScreenState> = listOf(
-            beforeFirstLap().copy(tiles = tiles("0", "0.00", "1")),
+            beforeFirstLap().copy(tiles = tiles("0", "0.00", "9")),
             ExampleTrackState.copy(
                 deltaSeconds = 0.08,
-                predictedMillis = 59_990,
+                lapNumber = 1,
+                lapMillis = 59_990,
                 lastMillis = null,
                 bestMillis = null,
-                tiles = tiles("98", "0.98", "1"),
+                tiles = tiles("98", "0.98", "60"),
             ),
-            ExampleTrackState.copy(deltaSeconds = -1.27, tiles = tiles("142", "1.12", "7")),
+            ExampleTrackState.copy(deltaSeconds = -1.27, tiles = tiles("142", "1.12", "88")),
             ExampleTrackState.copy(
                 deltaSeconds = 12.34,
-                predictedMillis = 525_170,
+                lapNumber = 99,
+                lapMillis = 599_990,
                 lastMillis = 545_330,
                 bestMillis = 523_990,
-                tiles = tiles("251", "1.85", "23"),
+                tiles = tiles("251", "1.85", "124"),
             ),
-            ExampleTrackState.copy(deltaSeconds = -0.34, tiles = tiles("9", "0.05", "99")),
+            ExampleTrackState.copy(deltaSeconds = -0.34, tiles = tiles("9", "0.05", "104")),
         )
 
-        fun tiles(speed: String, g: String, lap: String) =
-            listOf(TrackTile("Speed", speed, "km/h"), TrackTile("G", g, "g"), TrackTile("Lap", lap, ""))
+        fun tiles(speed: String, g: String, oil: String) =
+            listOf(TrackTile("Speed", speed, "km/h"), TrackTile("G", g, "g"), TrackTile("Oil", oil, "°C"))
 
         fun beforeFirstLap() = ExampleTrackState.copy(
             deltaSeconds = null,
-            predictedMillis = null,
+            lapNumber = null,
+            lapMillis = null,
             lastMillis = null,
             bestMillis = null,
             sectors = listOf(
@@ -352,7 +369,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
 private fun NaturalWidths(s: TrackScreenState, heights: Map<String, Dp>) {
     Column {
         Natural(TrackSlots.Delta, heights) { m -> DeltaDisplay(s.deltaSeconds, m) }
-        Natural(TrackSlots.Laps, heights) { m -> LapTimes(s.predictedMillis, s.lastMillis, s.bestMillis, m) }
+        Natural(TrackSlots.Laps, heights) { m -> LapTimes(s.lapNumber, s.lapMillis, s.lastMillis, s.bestMillis, m) }
         s.tiles.take(TrackSlotsTileCount).forEachIndexed { i, t ->
             Natural(TrackSlots.tile(i), heights) { m -> ValueTile(t.label, t.value, t.unit, m, t.state) }
         }

@@ -65,7 +65,8 @@ class TrackScreenScreenshotTest {
 
         val BeforeFirstLap = ExampleTrackState.copy(
             deltaSeconds = null,
-            predictedMillis = null,
+            lapNumber = null,
+            lapMillis = null,
             lastMillis = null,
             bestMillis = null,
             sectors = listOf(

@@ -18,10 +18,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.setup.MaxTiles
+import com.flappedear.betterdriver.setup.OfferedTiles
 import com.flappedear.betterdriver.setup.TrackChannel
 
-/** The tiles as Settings shows them, for example "Speed · G · Lap". */
-internal fun tilesLabel(tiles: List<TrackChannel>): String = tiles.joinToString(" · ") { it.label }.ifEmpty { "None" }
+/** The tiles as Settings shows them, for example "Speed · G". */
+internal fun tilesLabel(tiles: List<TrackChannel>): String =
+    tiles.filter { it in OfferedTiles }.joinToString(" · ") { it.label }.ifEmpty { "None" }
 
 /**
  * Settings › Recording › Track screen tiles (UI-38 option A): up to [MaxTiles], in the order they
@@ -30,13 +32,13 @@ internal fun tilesLabel(tiles: List<TrackChannel>): String = tiles.joinToString(
  */
 @Composable
 internal fun TilesDialog(chosen: List<TrackChannel>, onDone: (List<TrackChannel>) -> Unit, onClose: () -> Unit) {
-    var picked by remember { mutableStateOf(chosen) }
+    var picked by remember { mutableStateOf(chosen.filter { it in OfferedTiles }) }
     AlertDialog(
         onDismissRequest = onClose,
         title = { Text("Track screen tiles") },
         text = {
             Column {
-                TrackChannel.entries.forEach { ch ->
+                OfferedTiles.forEach { ch ->
                     val on = ch in picked
                     Row(
                         Modifier.fillMaxWidth(),

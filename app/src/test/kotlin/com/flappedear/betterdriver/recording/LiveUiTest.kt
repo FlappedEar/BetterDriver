@@ -89,7 +89,10 @@ class LiveUiTest {
         assertEquals("Tor Poznań", s.status.first().value)
         assertEquals(-0.34, requireNotNull(s.deltaSeconds), 1e-9)
         assertEquals(112_410L, s.bestMillis)
-        assertEquals("3", s.tiles.last().value)
+        assertEquals(3, s.lapNumber)
+        assertEquals(47_300L, s.lapMillis)
+        val outLap = liveTrackState(timed.copy(timing = timing.copy(lapNumber = 0, lapMillis = null)), tiles)
+        assertNull("no number before the first line crossing", outLap.lapNumber)
         assertEquals(listOf("S1", "S2"), s.sectors.map { it.name })
     }
 

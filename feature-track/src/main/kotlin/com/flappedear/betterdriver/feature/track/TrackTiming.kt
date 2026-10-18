@@ -9,7 +9,8 @@ import com.flappedear.betterdriver.timing.live.LiveTimingState
  */
 fun TrackScreenState.withTiming(timing: LiveTimingState): TrackScreenState = copy(
     deltaSeconds = timing.deltaSeconds,
-    predictedMillis = timing.predictedMillis,
+    lapNumber = timing.lapNumber.takeIf { it > 0 },
+    lapMillis = timing.lapMillis,
     lastMillis = timing.lastMillis,
     bestMillis = timing.bestMillis,
     sectors = timing.sectors.map { SectorState(it.name, it.deltaVsBestSectorSeconds, it.current) },
