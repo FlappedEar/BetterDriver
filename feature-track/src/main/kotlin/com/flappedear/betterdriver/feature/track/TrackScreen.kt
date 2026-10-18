@@ -47,7 +47,7 @@ data class TrackScreenState(
     val recordingTime: String?,
     val alert: TrackAlert?,
     val deltaSeconds: Double?,
-    /** The current lap's number, or null before the first line crossing. */
+    /** The current lap's number, or null before the first fix. On a circuit the out lap is lap 1. */
     val lapNumber: Int?,
     /** The running time of the current lap. */
     val lapMillis: Long?,

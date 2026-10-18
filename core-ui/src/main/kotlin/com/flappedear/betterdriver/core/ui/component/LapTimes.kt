@@ -26,7 +26,8 @@ private val NoTime = "$DigitPlaceholder:$DigitPlaceholder$DigitPlaceholder.$Digi
  * Lap times block (UI-82): the lap number and the running time of the current lap large, then
  * last and best. Arek asked for the number on its own, without a "Lap" label, and for the current
  * lap time in place of the predicted one. Best is always in the best-lap colour. Null values show
- * dashes; before the first line crossing the number is left empty.
+ * dashes; before the first fix the number is left empty. On a circuit the out lap is lap 1,
+ * timed from the first fix, as the lap list counts it.
  *
  * In a short window (the system bars shown by a swipe) the top row gives way to fit;
  * last and best keep their size, so they stay readable at a glance (FBBD-65) and never get
