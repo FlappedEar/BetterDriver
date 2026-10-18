@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.min
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
@@ -61,7 +62,7 @@ fun LapTimes(
             heroSize
         }
         Column(verticalArrangement = Arrangement.Center) {
-            CurrentLapRow(lapNumber, lapMillis, hero)
+            CurrentLapRow(lapNumber, lapMillis, hero, small)
             LapRow("Last", lastMillis, small, FontWeight.SemiBold, c.text)
             LapRow("Best", bestMillis, small, FontWeight.SemiBold, c.best)
         }
@@ -71,11 +72,14 @@ fun LapTimes(
 /** Last and best, against the current lap time's size. */
 private const val SmallFraction = 0.55f
 
-/** The lap number, against the current lap time's size: large, but plainly not a time. */
+/**
+ * The lap number, against the current lap time's size: large, but plainly not a time. Never
+ * smaller than last and best, so it stays readable when the top row gives way in a short window.
+ */
 private const val NumberFraction = 0.8f
 
 @Composable
-private fun CurrentLapRow(lapNumber: Int?, lapMillis: Long?, size: Dp) {
+private fun CurrentLapRow(lapNumber: Int?, lapMillis: Long?, size: Dp, small: Dp) {
     val c = TrackTheme.colors
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -84,7 +88,7 @@ private fun CurrentLapRow(lapNumber: Int?, lapMillis: Long?, size: Dp) {
     ) {
         NumberText(
             text = lapNumber?.toString() ?: "",
-            size = size * NumberFraction,
+            size = max(size * NumberFraction, small),
             color = c.text,
             weight = FontWeight.Bold,
         )
