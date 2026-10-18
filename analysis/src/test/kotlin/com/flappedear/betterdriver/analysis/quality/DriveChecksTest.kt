@@ -352,7 +352,7 @@ class DriveChecksTest {
         val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
         var t = 0L
         while (t <= 12 * minute) {
-            val fix = t >= 33_000_000L
+            val fix = t >= 33_520_000L
             val utc = start + t / 1_000 + (if (fix) -t / minute else 178L)
             val position = if (fix) 50.0 else 0.0
             gnss.onSamples(
@@ -372,6 +372,16 @@ class DriveChecksTest {
         lines.replaceAll { l ->
             val tl = CheckLog.fields(l.message)["t_us"]?.toLong()
             if (l.tag == CheckLog.GNSS && tl != null) l.copy(utcMillis = start + tl / 1_000) else l
+        }
+        // A log before 0.3.31 took the lag of the second the fix began in over its samples without a fix too.
+        lines.replaceAll { l ->
+            val f = CheckLog.fields(l.message)
+            val lag = f["lag_us"]
+            if (l.tag == CheckLog.GNSS && f["sec"] == "33" && lag != null) {
+                l.copy(message = l.message.replace("lag_us=$lag", "lag_us=${lag.toLong() - 178_000}"))
+            } else {
+                l
+            }
         }
         line(12 * minute, CheckLog.SESSION, "stop t_us=${12 * minute} reason=user")
         val clock = driveChecks(lines.toList()).single().metric("gnss.clock_10")

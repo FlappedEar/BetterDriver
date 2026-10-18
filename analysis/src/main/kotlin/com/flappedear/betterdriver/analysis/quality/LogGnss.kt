@@ -71,8 +71,10 @@ internal fun logGnssSection(
         addAll(reconnects(seconds, events, endMicros))
         add(stationary(seconds))
     }
-    // Logs before 0.3.31 took the lag over samples without a fix too, when the receiver's time is a guess.
-    val lags = seconds.filter { it.fixes > 0 }.mapNotNull { g -> g.lagMicros?.let { g.tMicros to it } }
+    // Logs before 0.3.31 took the lag over samples without a fix too, when the receiver's time is a guess:
+    // a second counts once it and the second before it had fixes, so a second a fix began in is left out.
+    val lags = seconds.filterIndexed { i, g -> g.fixes > 0 && i > 0 && seconds[i - 1].fixes > 0 }
+        .mapNotNull { g -> g.lagMicros?.let { g.tMicros to it } }
     val notes = seconds.filter { it.longGaps > 0 }.map { QualityNote(it.tMicros, "gap ${it.maxRxGapMillis} ms") }
     return QualitySection("GNSS", metrics + clockDrift(lags, endMicros), notes)
 }
