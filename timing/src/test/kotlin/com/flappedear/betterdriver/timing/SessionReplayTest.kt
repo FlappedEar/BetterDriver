@@ -70,11 +70,17 @@ class SessionReplayTest {
     }
 
     @Test
-    fun `without a track the whole session is replayed`() {
-        val replay = assertNotNull(SessionReplay.of(recording(2), track = null, start))
-        val first = replay.fix(0).toSet()
-        assertTrue(first.any { it.channelId == GnssChannels.LAT.id })
+    fun `fixes carry positions and the session's start time`() {
+        val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
+        assertTrue(replay.fix(0).any { it.channelId == GnssChannels.LAT.id })
         assertEquals(start, replay.fix(0).single { it.channelId == GnssChannels.UTC_MS.id }.value.toLong())
+    }
+
+    @Test
+    fun `a session without two timed laps is not replayed`() {
+        // It would jump from where it ended back to where it began on every loop.
+        assertNull(SessionReplay.of(recording(5), track = null, start))
+        assertNull(SessionReplay.of(recording(1), track, start))
     }
 
     @Test

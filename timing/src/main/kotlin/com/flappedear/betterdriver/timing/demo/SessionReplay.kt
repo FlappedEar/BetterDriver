@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.recorder.fake.GnssScript
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
+import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.timeSession
 import com.flappedear.betterdriver.timing.live.toFix
@@ -81,27 +82,26 @@ class SessionReplay private constructor(
         private const val SlowLap = 1.5
 
         /**
-         * The replay of a session's [sets], laps cut at [track]'s line when it times two or more; null
-         * when the session has fewer than two positions or lasts no time.
+         * The replay of a session's timed laps at [track], cut at its line; null when the track times
+         * fewer than two, since anything else would jump from its end back to its start on each loop.
          */
         fun of(sets: List<SampleSet>, track: Track?, startUtcMillis: Long, rateHz: Int = 25): SessionReplay? {
-            // A run from start to a separate finish cannot loop: the car would jump back to the start.
-            if (track?.pointToPoint == true) return null
             val all = sets.sortedBy { it.tMicros }.mapNotNull(::point)
+            val timed = timedLaps(all, track)
+            if (timed.size < 2) return null
+            val laps = timed.map { cut(all, it.startMicros / MicrosPerSecond, it.endMicros / MicrosPerSecond) }
+            return SessionReplay(joined(laps), startUtcMillis, rateHz)
+        }
+
+        /** The timed laps [track] finds in [all] that are not slow; none at a point-to-point track. */
+        private fun timedLaps(all: List<Point>, track: Track?): List<Lap> {
+            // A run from start to a separate finish cannot loop: the car would jump back to the start.
+            if (track == null || !track.timeable || track.pointToPoint) return emptyList()
             val fixes = all.map { Fix((it.t * MicrosPerSecond).toLong(), it.lat, it.lon) }
-            val laps = track?.takeIf { it.timeable }?.let { timeSession(it, fixes.asSequence()).laps }.orEmpty()
+            val timed = timeSession(track, fixes.asSequence()).laps.filter { it.kind == LapKind.Timed }
             // A lap with a stop in it is timed too when the track has no pit lines: leave out slow ones.
-            val timed = laps.filter { it.kind == LapKind.Timed }.let { all ->
-                val median = all.map { it.timeMillis }.sorted().getOrNull(all.size / 2) ?: 0L
-                all.filter { it.timeMillis <= median * SlowLap }
-            }
-            val points = if (timed.size >= 2) {
-                joined(timed.map { cut(all, it.startMicros / MicrosPerSecond, it.endMicros / MicrosPerSecond) })
-            } else {
-                all
-            }
-            val lasts = points.size >= 2 && points.last().t > points.first().t
-            return if (lasts) SessionReplay(points, startUtcMillis, rateHz) else null
+            val median = timed.map { it.timeMillis }.sorted().getOrNull(timed.size / 2) ?: 0L
+            return timed.filter { it.timeMillis <= median * SlowLap }
         }
 
         /**

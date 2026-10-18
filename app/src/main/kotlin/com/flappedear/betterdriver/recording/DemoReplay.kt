@@ -47,7 +47,7 @@ object DemoReplay {
                     DebugLog.i("DemoReplay", "replaying session $id at ${track?.id ?: "no saved track"}")
                     return it
                 }
-                DebugLog.w("DemoReplay", "session $id has no positions to replay: demo circuit instead")
+                DebugLog.w("DemoReplay", "session $id has no two timed laps at a saved track: demo circuit instead")
             } catch (e: Exception) {
                 DebugLog.w("DemoReplay", "session $id cannot be replayed: demo circuit instead", e)
             }
