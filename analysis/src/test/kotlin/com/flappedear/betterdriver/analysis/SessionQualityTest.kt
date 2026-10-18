@@ -257,6 +257,13 @@ class SessionQualityTest {
         val back = session(driving + noFix + stream(200_040_000, 210_000_000, kmh = 4.0), events)
             .copy(end = Record.End(240_000_000, "user"))
         assertEquals(Verdict.FAIL, sessionQuality(back).verdict("gnss.reconnect"))
+        // The link dropping right after the last fix, data back only 60 s on: a real drop, not a garage.
+        val gone = (85_040_000L..90_000_000L step 40_000L).map { t ->
+            SampleSet(t, listOf(ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble())))
+        }
+        val early = listOf(RecorderEvent(25_100_000, "racebox_disconnected", "no data for 3000 ms"))
+        val dropped = session(driving + gone, early).copy(end = Record.End(95_000_000, "user"))
+        assertEquals(Verdict.FAIL, sessionQuality(dropped).verdict("gnss.reconnect"))
     }
 
     @Test

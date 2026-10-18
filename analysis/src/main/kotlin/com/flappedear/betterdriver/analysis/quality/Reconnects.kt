@@ -75,19 +75,25 @@ private const val UnderCoverKmh = 10.0
 /** ...and the receiver then went on sending samples without a fix for at least this long. */
 internal const val UnderCoverMicros = 60_000_000L
 
+/** A wait between samples longer than this breaks that data without a fix. */
+private const val UnderCoverBreakMicros = 1_000_000L
+
 internal const val UnderCoverText = "the drive had ended under cover: the last fix at under 10 km/h, " +
     "then over 60 s of data without one to the end of the session"
 
 /**
  * When the drive ended under cover: the time of the session's last fix, when it came at under 10 km/h
- * and the receiver then sent samples without a fix for at least 60 s. Null when the drive did not end
+ * and the receiver then sent samples without a fix, unbroken, for at least 60 s. Null when the drive did not end
  * so. The 2026-10-18 evening drive ended so: the fix went at 4 km/h, as into a garage, and never came
  * back; minutes later the screen went off twice and the link dropped twice as the driver left.
  */
 internal fun underCoverFrom(s: GnssSamples): Long? {
     val last = (s.size - 1 downTo 0).firstOrNull { s.hasFix(it) } ?: return null
     val slow = s.speed[last].isFinite() && s.speed[last] < UnderCoverKmh
-    return s.t[last].takeIf { slow && s.t[s.size - 1] - it >= UnderCoverMicros }
+    // Data without a fix must run on unbroken from the last fix: a drop right after it is no garage.
+    var end = last
+    while (end + 1 < s.size && s.t[end + 1] - s.t[end] <= UnderCoverBreakMicros) end++
+    return s.t[last].takeIf { slow && s.t[end] - it >= UnderCoverMicros }
 }
 
 /**
@@ -95,9 +101,14 @@ internal fun underCoverFrom(s: GnssSamples): Long? {
  * when its top speed was under 10 km/h and seconds without a fix then ran on for at least 60 s.
  */
 internal fun logUnderCoverFrom(secs: List<GnssSecond>): Long? {
-    val last = secs.lastOrNull { it.fixes > 0 } ?: return null
+    val i = secs.indexOfLast { it.fixes > 0 }
+    if (i < 0) return null
+    val last = secs[i]
     val slow = last.kmhMax?.let { it < UnderCoverKmh } == true
-    return last.tMicros.takeIf { slow && secs.last().tMicros - it >= UnderCoverMicros }
+    // As for a session: seconds in a row from the last fix, no link drop between them.
+    var end = i
+    while (end + 1 < secs.size && secs[end + 1].second == secs[end].second + 1 && !secs[end + 1].afterDrop) end++
+    return last.tMicros.takeIf { slow && secs[end].tMicros - it >= UnderCoverMicros }
 }
 
 /** A drop or screen-off at [micros] came after the drive, which ended under cover from [underCover]. */

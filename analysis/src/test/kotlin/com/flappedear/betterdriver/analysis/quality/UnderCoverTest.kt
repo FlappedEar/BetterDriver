@@ -58,4 +58,10 @@ class UnderCoverTest {
         val screen = screenSection(events, emptyList(), 240 * second, null)
         assertEquals(Verdict.FAIL, screen.metric("ui.screen_off").verdict)
     }
+
+    @Test
+    fun `a drop right after the last fix is no drive ending under cover`() {
+        val secs = (0L..24L).map { sec(it, 4.0) } + sec(90, null, afterDrop = true)
+        assertNull(logUnderCoverFrom(secs))
+    }
 }
