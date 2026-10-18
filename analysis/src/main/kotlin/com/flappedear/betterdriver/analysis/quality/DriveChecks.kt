@@ -77,7 +77,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
     val last = seconds.lastOrNull()?.tMicros ?: end
     val clips = importedClips(events)
     val sections = listOfNotNull(
-        if (s.source?.startsWith(DemoSourcePrefix) == true) {
+        if (s.source in DemoSources) {
             demoGnssSection()
         } else if (s.legacy) {
             legacyGnssSection(s, end)
@@ -101,7 +101,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
 }
 
 /** The logged source of Demo GNSS and the demo track: the receiver's name, "Demo GNSS" or "Demo track" (FBBD-233). */
-private const val DemoSourcePrefix = "Demo_"
+private val DemoSources = setOf("Demo_GNSS", "Demo_track")
 
 /** When [s] ended on the phone's wall clock, as [LoggedSession.inferredEndMicros] gives it. */
 private fun endUtcMillis(s: LoggedSession): Long = (s.startUtcMillis ?: 0L) + s.inferredEndMicros() / MicrosPerMilli

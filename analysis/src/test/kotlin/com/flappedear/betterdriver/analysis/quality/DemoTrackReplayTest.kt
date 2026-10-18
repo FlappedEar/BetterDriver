@@ -113,4 +113,12 @@ class DemoTrackReplayTest {
         val gnss = report.sections.single { it.title == "GNSS" }
         assertEquals(Verdict.NOT_MEASURED, gnss.metrics.single().verdict)
     }
+
+    @Test
+    fun `a real receiver whose name starts with Demo is still judged`() {
+        val text = "start utc_ms=$start source=Demo_box_2"
+        val line = LogLine(start, null, "recorder", 1, "main", 'I', CheckLog.SESSION, "real", text)
+        val gnss = driveChecks(listOf(line)).single().sections.single { it.title == "GNSS" }
+        assertTrue(gnss.metrics.none { it.how.startsWith("demo receiver") })
+    }
 }
