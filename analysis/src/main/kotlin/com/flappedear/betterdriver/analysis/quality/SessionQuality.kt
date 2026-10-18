@@ -64,7 +64,8 @@ fun sessionQuality(
         raceBox = RaceBoxSourceName in data.info.devices,
         skipsWithoutFix = data.channels.values.any { it.name == RaceBoxMicroChannel },
     )
-    val lags = (0 until samples.size).filter { samples.utc[it] != GnssSamples.NoUtc }.map {
+    // Before its first fix a receiver's time is its own guess (2026-10-18 log): those samples are left out.
+    val lags = (0 until samples.size).filter { samples.utc[it] != GnssSamples.NoUtc && samples.hasFix(it) }.map {
         samples.t[it] to samples.t[it] - (samples.utc[it] - data.info.startUtcMillis) * MicrosPerMilli
     }
     val sections = listOfNotNull(

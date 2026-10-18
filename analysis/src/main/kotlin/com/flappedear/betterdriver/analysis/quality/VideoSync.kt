@@ -164,7 +164,8 @@ internal fun driftAt(
 
 /**
  * The phone's clock against the GNSS receiver's at 10, 20 and 30 min: how the smallest (session time −
- * receiver time) changed since the session's first minute. Both video and data are placed on the
+ * receiver time) changed since the first minute with a fix ([lags] holds only samples with a fix:
+ * before it a receiver's time is its own guess, 178 ms off on 2026-10-18). Both video and data are placed on the
  * phone's clock, so this is information: it is what a camera aligned by GPS time would drift by.
  */
 internal fun clockDrift(lags: List<Pair<Long, Long>>, endMicros: Long): List<QualityMetric> {
@@ -180,7 +181,7 @@ internal fun clockDrift(lags: List<Pair<Long, Long>>, endMicros: Long): List<Qua
             info(
                 "gnss.clock_$minutes", "Phone clock vs GNSS at $minutes min", millis(near - base), "ms", Basis.MEASURED,
                 "smallest (arrival on the phone − receiver fix time) around $minutes min, " +
-                    "less over the first minute: " +
+                    "less over the first minute with a fix: " +
                     "the phone clock's drift plus any change of the Bluetooth delay",
             )
         }

@@ -21,7 +21,7 @@ import kotlin.math.roundToLong
  * ending in this second. Steps across a link drop ([afterDrop]) count in none of these.
  * [maxGapMicros] is the longest wait on the phone between fixes ending in this second, link drops
  * included: what the track screen's GNSS banner goes by; [firstFixMicros] is when its first fix
- * came, which ends any wait over a second. [lagMicros] is the smallest
+ * came, which ends any wait over a second. [lagMicros] is the smallest, over the samples with a fix,
  * of (session time − receiver time since the session's start): how far the phone's clock is from the
  * receiver's, plus the shortest delivery delay. [lat], [lon] are the mean fix, [varianceM2] the mean
  * squared distance of the fixes from it; [kmh] the mean speed, [kmhMin] and [kmhMax] its range.
@@ -177,6 +177,8 @@ class GnssSecondLog(
         lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc
         b.utcLast = utc
+        // Before its first fix a receiver's time is its own guess, a few hundred ms off (2026-10-18 log).
+        if (!fix) return
         val lag = tMicros - (utc - startUtcMillis) * MicrosPerMilli
         b.lag = minOf(b.lag ?: lag, lag)
     }
