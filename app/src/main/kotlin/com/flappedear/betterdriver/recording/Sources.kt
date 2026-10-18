@@ -133,7 +133,7 @@ internal object Sources {
             // Debug builds let the emulator tests switch it off (FBBD-43, FBBD-64).
             GnssType.DEMO -> FakeGnssSource(receiverOn = DemoGnssHook.receiverOn(app))
             GnssType.DEMO_TRACK -> {
-                val script = DemoReplay.script(app, System.currentTimeMillis())
+                val script = DemoReplay.script(app)
                 FakeGnssSource(script, receiverOn = DemoGnssHook.receiverOn(app))
             }
             GnssType.NMEA -> NmeaSource(app, gnss.address, gnss.name)

@@ -33,17 +33,19 @@ object DemoReplay {
 
     /**
      * The fixes for a session starting now: the chosen session's replay at its saved track, or the
-     * demo circuit (its track saved first) when none is chosen or it cannot be replayed.
+     * demo circuit (its track saved first) when none is chosen or it cannot be replayed. Their UTC
+     * starts at [now] read once the session is loaded, so a long read does not put it behind the
+     * recording's own start.
      */
     // A session that cannot be read must not stop the recording: the demo circuit drives instead.
     @Suppress("TooGenericExceptionCaught")
-    fun script(context: Context, startUtcMillis: Long): GnssScript {
+    fun script(context: Context, now: () -> Long = System::currentTimeMillis): GnssScript {
         val id = sessionId(context)
         if (id != null) {
             try {
                 val data = SessionStore(sessionsDir(context)).read(id)
                 val track = trackFor(data, TrackStore(tracksDir(context)).all())
-                SessionReplay.of(data.sampleSets, track, startUtcMillis)?.let {
+                SessionReplay.of(data.sampleSets, track, now())?.let {
                     DebugLog.i("DemoReplay", "replaying session $id at ${track?.id ?: "no saved track"}")
                     return it
                 }
@@ -55,6 +57,6 @@ object DemoReplay {
         val store = TrackStore(tracksDir(context))
         // A track already saved under its id is kept: Arek may have moved its lines.
         if (store.get(DemoCircuit.TrackId) == null) store.save(DemoCircuit.track)
-        return DemoCircuit(startUtcMillis)
+        return DemoCircuit(now())
     }
 }
