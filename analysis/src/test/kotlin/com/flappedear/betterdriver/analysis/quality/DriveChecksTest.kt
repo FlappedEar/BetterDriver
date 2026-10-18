@@ -343,4 +343,40 @@ class DriveChecksTest {
         app(minute, AppLifeLog.EXIT, AppLifeLog.check(34, 0))
         assertEquals(Verdict.NOT_MEASURED, driveChecks(lines.toList()).single().metric("app.anr").verdict)
     }
+
+    @Test
+    fun `the phone clock against the GNSS counts from the first fix, not the receiver's guess before it`() {
+        // 2026-10-18: no fix for 33 s, the receiver's time 178 ms ahead until then; the phone clock then
+        // drifts 1 ms a minute against the receiver's.
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
+        var t = 0L
+        while (t <= 12 * minute) {
+            val fix = t >= 33_000_000L
+            val utc = start + t / 1_000 + (if (fix) -t / minute else 178L)
+            val position = if (fix) 50.0 else 0.0
+            gnss.onSamples(
+                SampleSet(
+                    t + 30_000,
+                    listOf(
+                        ChannelValue(GnssChannels.UTC_MS.id, utc.toDouble()),
+                        ChannelValue(GnssChannels.LAT.id, position),
+                        ChannelValue(GnssChannels.LON.id, if (fix) 19.0 else 0.0),
+                        ChannelValue(GnssChannels.SPEED_KMH.id, 50.0),
+                    ),
+                ),
+            )
+            t += 40_000
+        }
+        gnss.onStatus(RecorderStatus.Stopped("user"))
+        lines.replaceAll { l ->
+            val tl = CheckLog.fields(l.message)["t_us"]?.toLong()
+            if (l.tag == CheckLog.GNSS && tl != null) l.copy(utcMillis = start + tl / 1_000) else l
+        }
+        line(12 * minute, CheckLog.SESSION, "stop t_us=${12 * minute} reason=user")
+        val clock = driveChecks(lines.toList()).single().metric("gnss.clock_10")
+        // 10 min less the first minute with a fix: about 9 ms, not the 187 ms the guess gave.
+        assertEquals(9.0, clock.value!!, 1.5, clock.how)
+        assertTrue("first minute with a fix" in clock.how, clock.how)
+    }
 }
