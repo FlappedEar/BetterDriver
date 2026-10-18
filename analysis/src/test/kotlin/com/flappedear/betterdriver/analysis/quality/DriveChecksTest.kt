@@ -231,6 +231,17 @@ class DriveChecksTest {
         assertTrue("5 min" in r.metric("soak.gnss_rate").how)
     }
 
+    @Test
+    fun `a 29-minute drive is a soak`(@TempDir dir: File) {
+        val length = 29 * minute + 18_000_000L
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        line(length, CheckLog.SESSION, "stop t_us=$length reason=user")
+        val log = File(dir, "betterdriver.log").apply { writeText(lines.joinToString("\n") { it.format() }) }
+        val r = driveChecks(log).single()
+        assertEquals(29.0, r.metric("soak.minutes").value)
+        assertTrue("a soak needs" !in r.metric("soak.gnss_rate").how)
+    }
+
     /** A line of the app outside any recording, [tMicros] from the first recording's start. */
     private fun app(tMicros: Long, tag: String, message: String) = line(tMicros, tag, message, "main", session = null)
 

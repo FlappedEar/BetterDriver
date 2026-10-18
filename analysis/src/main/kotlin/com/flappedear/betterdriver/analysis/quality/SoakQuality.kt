@@ -3,11 +3,13 @@ package com.flappedear.betterdriver.analysis.quality
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 
-// The 30-minute soak (FBBD-46) and the VBO export (FBBD-14) in the session validation report
-// (FBBD-183). Any drive of 30 min or more is a soak: its GNSS, video, thermal, jank and battery
-// values are judged against FBBD-46 as well.
+// The soak (FBBD-46) and the VBO export (FBBD-14) in the session validation report (FBBD-183).
+// Any drive of 29 min or more is a soak: its GNSS, video, thermal, jank and battery values are
+// judged against FBBD-46 as well. Arek accepted the 29-min drive of 2026-10-18 as the soak.
 
-private const val SoakMicros = 30 * 60 * 1_000_000L
+private const val SoakMinutes = 29L
+private const val SoakMicros = SoakMinutes * 60 * 1_000_000L
+private const val ExportMicrosPer30Min = 30 * 60 * 1_000_000L
 
 /** What a soak checks: the report's own value for it, and what FBBD-46 asks. */
 private val SoakParts = listOf(
@@ -33,7 +35,7 @@ internal fun soakSection(others: List<QualitySection>, durationMicros: Long): Qu
         val source = byId[from]
         when {
             durationMicros < SoakMicros ->
-                notMeasured(id, what, criterion, "the drive lasted $minutes min; a soak needs 30 min or more")
+                notMeasured(id, what, criterion, "the drive lasted $minutes min; a soak needs $SoakMinutes min or more")
             source == null || source.verdict == Verdict.NOT_MEASURED || source.verdict == Verdict.INFO ->
                 notMeasured(id, what, criterion, "not measured in this drive: ${source?.how ?: "no value"}")
             else -> source.copy(
@@ -45,7 +47,7 @@ internal fun soakSection(others: List<QualitySection>, durationMicros: Long): Qu
         }
     }
     val length = info("soak.minutes", "Drive length", minutes.toDouble(), "min", Basis.MEASURED, "session length")
-    return QualitySection("Soak (30 min)", listOf(length) + metrics)
+    return QualitySection("Soak ($SoakMinutes min)", listOf(length) + metrics)
 }
 
 private const val SecondsPerMinute = 60L
@@ -61,7 +63,7 @@ internal fun exportSection(events: List<RecorderEvent>, durationMicros: Long): Q
     val rows = f["rows"]?.toLongOrNull()
     val samples = f["samples"]?.toLongOrNull()
     val ms = f["ms"]?.toLongOrNull()
-    val limit = ExportMillisPer30Min * maxOf(1.0, durationMicros.toDouble() / SoakMicros)
+    val limit = ExportMillisPer30Min * maxOf(1.0, durationMicros.toDouble() / ExportMicrosPer30Min)
     val metrics = listOfNotNull(
         if (rows != null && samples != null) {
             val lost = (samples - rows).coerceAtLeast(0)
