@@ -71,15 +71,6 @@ internal class GnssSamples(sets: List<SampleSet>) {
 }
 
 /**
- * The GNSS section of a session on Demo GNSS or the demo track (FBBD-233): its positions are made
- * up, so nothing about a receiver is measured, and such a session is never receiver evidence.
- */
-internal fun demoGnssSection(): QualitySection {
-    val why = "demo receiver: the positions are made up by the app, so the receiver checks need a real one"
-    return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", RateCriterion, why)))
-}
-
-/**
  * The GNSS section: [samples] with the link drops logged in [events]; [endMicros] is the session's end.
  * [raceBox] says the receiver was a RaceBox, whose whole-second skip (FBBD-170) is counted apart;
  * [skipsWithoutFix] that it was a Micro, which skips it without a fix too.

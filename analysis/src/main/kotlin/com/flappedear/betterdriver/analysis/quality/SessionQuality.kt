@@ -85,6 +85,17 @@ fun sessionQuality(
     return QualityReport(QualityFormat, data.id, data.state.name, computedAtUtcMillis, withSoak(sections, end))
 }
 
+/**
+ * The GNSS section of a session on Demo GNSS or the demo track (FBBD-233): its positions are made
+ * up, so nothing about a receiver is measured, and such a session is never receiver evidence.
+ */
+internal fun demoGnssSection(): QualitySection {
+    // The criterion the rate is judged by with a real receiver.
+    val criterion = ">= 24 Hz over the session (FBBD-8)"
+    val why = "demo receiver: the positions are made up by the app, so the receiver checks need a real one"
+    return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", criterion, why)))
+}
+
 /** [sections] with the soak (FBBD-46) after them, judged from their values. */
 internal fun withSoak(sections: List<QualitySection>, durationMicros: Long): List<QualitySection> =
     sections + soakSection(sections, durationMicros)

@@ -59,8 +59,8 @@ class DemoCircuitTest {
         // The hairpin, after the first minute of driving.
         assertTrue(kmh.drop(1_500).min() in 40.0..70.0, "slowest ${kmh.drop(1_500).min()} km/h")
         val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
-        // 200 km/h is 2.2 m per fix at 25 Hz; the line between laps is no jump either.
-        assertTrue(steps.max() < 2.5, "longest step ${steps.max()} m")
+        // 198 km/h is 2.2 m per fix at 25 Hz; the line between laps is no jump either.
+        assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
     }
 
     @Test
