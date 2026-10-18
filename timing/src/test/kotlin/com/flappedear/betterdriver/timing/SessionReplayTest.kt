@@ -94,6 +94,18 @@ class SessionReplayTest {
     }
 
     @Test
+    fun `positions at 0, 0 are no fix and are not replayed`() {
+        val noFix = listOf(ChannelValue(GnssChannels.LAT.id, 0.0), ChannelValue(GnssChannels.LON.id, 0.0))
+        val source = recording(10)
+        val gaps = source.mapIndexed { i, set ->
+            if (i < 50 || i % 600 in 1..20) SampleSet(set.tMicros, noFix) else set
+        }
+        val replay = assertNotNull(SessionReplay.of(gaps, track, start))
+        val fixes = replayed(replay, 20).mapNotNull { it.toFix() }
+        assertTrue(fixes.all { distanceMeters(GeoPoint(it.lat, it.lon), track.center) < 2_000.0 })
+    }
+
+    @Test
     fun `a point-to-point track is not replayed`() {
         val run = track.copy(kind = TrackKind.PointToPoint, finish = track.sectorLines.first())
         assertNull(SessionReplay.of(recording(2), run, start))

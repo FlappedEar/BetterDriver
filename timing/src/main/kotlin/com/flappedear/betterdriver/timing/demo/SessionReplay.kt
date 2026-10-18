@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.timeSession
+import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -115,23 +116,18 @@ class SessionReplay private constructor(
             }
         }
 
+        /** The set's position, or null without a fix: the same check as timing, so (0, 0) is no fix. */
         private fun point(set: SampleSet): Point? {
-            var lat: Double? = null
-            var lon: Double? = null
+            val fix = set.toFix() ?: return null
             var kmh: Double? = null
             var alt: Double? = null
             for (v in set.values) {
                 when (v.channelId) {
-                    GnssChannels.LAT.id -> lat = v.value
-                    GnssChannels.LON.id -> lon = v.value
                     GnssChannels.SPEED_KMH.id -> kmh = v.value
                     GnssChannels.ALT_M.id -> alt = v.value
                 }
             }
-            val la = lat?.takeIf { it.isFinite() }
-            val lo = lon?.takeIf { it.isFinite() }
-            if (la == null || lo == null) return null
-            return Point(set.tMicros / MicrosPerSecond, la, lo, kmh?.takeIf { it.isFinite() }, alt)
+            return Point(set.tMicros / MicrosPerSecond, fix.lat, fix.lon, kmh?.takeIf { it.isFinite() }, alt)
         }
 
         /** [all] from [from] to [to] seconds, with points at both ends placed on the path. */
