@@ -18,11 +18,23 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TcpAddress
 
-/** Models added without a Bluetooth search (UI-34 B): the phone camera, a GoPro started by hand, Demo GNSS. */
+/**
+ * Models added without a Bluetooth search (UI-34 B): the phone camera, a GoPro started by hand, a
+ * Wi-Fi receiver. The demo receivers come last in their own "Try the app" group (UI-79 B).
+ */
 @Composable
 internal fun WithoutBluetoothSection(models: List<EquipmentModel>, onAdd: (EquipmentModel) -> Unit) {
+    val (demos, real) = models.partition { it in DemoModels }
+    ModelGroup("Add without Bluetooth", real, onAdd)
+    ModelGroup("Try the app", demos, onAdd)
+}
+
+private val DemoModels = setOf(EquipmentModel.DEMO_GNSS, EquipmentModel.DEMO_TRACK)
+
+@Composable
+private fun ModelGroup(label: String, models: List<EquipmentModel>, onAdd: (EquipmentModel) -> Unit) {
     if (models.isEmpty()) return
-    SectionLabel("Add without Bluetooth")
+    SectionLabel(label)
     ShellCard {
         models.forEachIndexed { i, m ->
             ListRow(m.label, withoutBluetoothNote(m), divider = i > 0, onClick = { onAdd(m) })
