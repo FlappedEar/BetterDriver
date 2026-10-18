@@ -59,8 +59,8 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.DEMO_GNSS ->
         "Made-up positions on a circle, for trying the app without a receiver. Sessions with it are not real data."
     EquipmentModel.DEMO_TRACK ->
-        "A made-up car lapping the Demo circuit: laps, sectors and coach cues without a track day. " +
-            "Its positions are not real data."
+        "A made-up car drives what Drives says: the Demo circuit, or one of your sessions again. " +
+            "Laps, sectors and coach cues without a track day. Its positions are not real data."
     EquipmentModel.PHONE_CAMERA -> "Records video with each session it is turned on for."
     EquipmentModel.GOPRO -> "Starts and stops with each session it is turned on for."
     EquipmentModel.GOPRO_FILES -> "Start it by hand. Add its videos to the session afterwards."
@@ -97,8 +97,10 @@ fun EquipmentScreen(
     onChooseVideo: (VideoMode) -> Unit = {},
     onDiagnostics: () -> Unit = {},
     onChooseGoPro: (GoProModel) -> Unit = {},
+    drives: DemoDrives? = null,
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
+    var choosingDrive by rememberSaveable { mutableStateOf(false) }
     var choosingVideo by rememberSaveable { mutableStateOf(false) }
     var choosingGoPro by rememberSaveable { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
@@ -113,6 +115,7 @@ fun EquipmentScreen(
                 if (item.model == EquipmentModel.RACEBOX && item.address != null) {
                     ListRow("Diagnostics", "Live", onClick = onDiagnostics)
                 }
+                drives?.let { ListRow("Drives", it.current.label, onClick = { choosingDrive = true }) }
             }
             DimText(modelNote(item.model))
             OutlinedButton(onClick = onRemove, modifier = Modifier.fillMaxWidth()) {
@@ -120,6 +123,7 @@ fun EquipmentScreen(
             }
         }
     }
+    if (choosingDrive && drives != null) DemoDrivesDialog(drives, onDismiss = { choosingDrive = false })
     if (choosingVideo) {
         VideoModeDialog(item, rememberVideoModes(item), onChooseVideo, onClose = { choosingVideo = false })
     }
