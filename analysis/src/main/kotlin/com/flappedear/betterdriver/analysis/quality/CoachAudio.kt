@@ -24,7 +24,7 @@ internal fun audioMetrics(
     total(played, "live", MaxLiveTotalMicros),
     total(played, "clip", MaxClipTotalMicros),
     overlap(played.map { it.second }, ends),
-    perStraight(played.map { it.second }, samples),
+    perStraight(played, samples),
     focus(played.map { it.second }),
     clipShare(played.map { it.second }),
 )
@@ -101,20 +101,26 @@ private const val StraightCriterion = "at most 1 cue per straight (FBBD-27)"
 
 /**
  * Cues said on a straight that already had one: two cues are on one straight when the GNSS speed did
- * not fall by 15 km/h from its highest between their sounds (no braking zone between them).
+ * not fall by 15 km/h from its highest between their sounds (no braking zone between them). Praise
+ * followed by the straight's corner cue is one pair the coach means to say (UI-94 A), so it is not counted.
  */
-private fun perStraight(voiced: List<Voiced>, s: GnssSamples): QualityMetric {
+private fun perStraight(played: List<Pair<LoggedCue, Voiced>>, s: GnssSamples): QualityMetric {
     val label = "Extra cues on a straight"
-    val sorted = voiced.sortedBy { it.tMicros }
+    val sorted = played.sortedBy { it.second.tMicros }
     if (sorted.size < 2 || s.size < 2) {
         return notMeasured("coach.per_straight", label, StraightCriterion, "fewer than two cues")
     }
-    val extra = sorted.zipWithNext().count { (a, b) -> !brakedBetween(s, a.tMicros, b.tMicros) }
+    val extra = sorted.zipWithNext().count { (a, b) ->
+        a.first.kind != PraiseKind && !brakedBetween(s, a.second.tMicros, b.second.tMicros)
+    }
     return judged(
         "coach.per_straight", label, extra.toDouble(), "", extra == 0, Basis.DERIVED, StraightCriterion,
-        "cue pairs with no slowing of 15 km/h or more between their sounds; ${sorted.size} cue(s)",
+        "cue pairs with no slowing of 15 km/h or more between their sounds, praise before a cue aside; " +
+            "${sorted.size} cue(s)",
     )
 }
+
+private const val PraiseKind = "Praise"
 
 private fun brakedBetween(s: GnssSamples, from: Long, to: Long): Boolean {
     var top = Double.NEGATIVE_INFINITY

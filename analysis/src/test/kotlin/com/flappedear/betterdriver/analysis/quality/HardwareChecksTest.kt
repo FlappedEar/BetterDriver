@@ -67,6 +67,19 @@ class HardwareChecksTest {
     }
 
     @Test
+    fun `praise then the straight's corner cue is not an extra cue`() {
+        // Arek's 2026-10-19 evening replay: "Jedynka, to zadziałało", then the T2 cue on the same straight (UI-94 A).
+        val sets = stream(0, 60_000_000)
+        fun cue(seq: Int, at: Long, kind: String) = listOf(
+            RecorderEvent(at, "coach_cue", "seq=$seq lap=7 kind=$kind corner=1 zone_m=300.0 text=Turn 1"),
+            RecorderEvent(at + 150_000, EventKinds.COACH_VOICE, "seq=$seq path=live asked_us=$at route=speaker"),
+        )
+        val r = report(sets, cue(1, 10_000_000, "Praise") + cue(2, 12_000_000, "Corner"))
+        assertEquals(0.0, r.metric("coach.per_straight").value)
+        assertEquals(Verdict.PASS, r.metric("coach.per_straight").verdict)
+    }
+
+    @Test
     fun `a banner with fixes arriving is false, one after an outage is timed, the screen going off fails`() {
         val sets = stream(0, 120_000_000, gap = 50_000_000L..53_000_000L)
         val events = listOf(
