@@ -20,8 +20,11 @@ import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.debug.AppLog
 import com.flappedear.betterdriver.faults.AppDriver
 import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recording.DemoReplay
+import com.flappedear.betterdriver.recording.GnssRef
+import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
@@ -77,13 +80,19 @@ class ReplayDriveTest {
         AppLog.clear(d.app)
     }
 
-    /** START, as Arek does, on the Drive screen. */
+    /**
+     * Starts the recording with the Demo track as the receiver, as START does, with the app in front. The
+     * recorder starts the coach process itself; START on screen is covered by the smoke tests.
+     */
     @Test
     fun start() {
         d.openApp()
-        d.tap("START")
-        d.waitForTrackScreen()
-        val live = checkNotNull(d.waitForRecorder("the recording to start") { it.recording }.live)
+        d.instrumentation.runOnMainSync { RecorderClient.get(d.app).start(CarName, "", GnssRef.DemoTrack) }
+        val live = checkNotNull(
+            d.waitForRecorder("the recording with live GNSS", StartTimeoutMs) {
+                it.recording && it.live?.gnss == GnssState.Ok
+            }.live,
+        )
         d.saveProps(marker, KeySession to live.sessionId)
     }
 
@@ -95,13 +104,11 @@ class ReplayDriveTest {
         d.checkNoAppErrors()
     }
 
-    /** The 3 s hold, then the session saved. */
+    /** Stopped, as the 3 s hold does, then the session saved. */
     @Test
     fun stop() {
         val id = session()
-        d.openApp()
-        d.waitForTrackScreen()
-        d.holdToStop()
+        d.instrumentation.runOnMainSync { RecorderClient.get(d.app).stop() }
         d.waitFor(SaveTimeoutMs, "the session to be saved") {
             d.store.list().any { it.id == id && it.state == SessionState.FINISHED }
         }
@@ -176,6 +183,7 @@ class ReplayDriveTest {
         const val KeySession = "session"
         const val ReportName = "replay-drive.md"
         const val SaveTimeoutMs = 60_000L
+        const val StartTimeoutMs = 90_000L
         const val SettleMs = 8_000L
         const val MillisPerSecond = 1000.0
         const val MaxProblems = 5

@@ -116,7 +116,8 @@ private fun silentLaps(
 ): QualityMetric {
     val id = "coach.silent_laps"
     val label = "Coached laps without a cue"
-    val criterion = "0 laps without a cue once coaching starts, unless slow and the coach logged why (FBBD-244, FBBD-252)"
+    val criterion = "0 laps without a cue once coaching starts, unless slow and the coach logged why " +
+        "(FBBD-244, FBBD-252)"
     if (coached.size < min) {
         return notMeasured(id, label, criterion, "${coached.size} coached lap(s), $min needed")
     }

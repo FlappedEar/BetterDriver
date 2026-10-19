@@ -21,12 +21,16 @@ fail() {
 }
 
 # The log and report are kept whether the drive passed or not.
+# Each adb call is bounded and reads no input: the first run hung here for 55 min after a failed phase.
 finish() {
-  adb shell run-as "$app" cat files/replay-drive.md > "$out/replay-drive.md" 2>/dev/null || true
-  adb shell run-as "$app" sh -c 'cat files/logs/*.log' > "$out/betterdriver.log" 2>/dev/null || true
-  [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ] && cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
+  timeout 60 adb exec-out run-as "$app" cat files/replay-drive.md < /dev/null > "$out/replay-drive.md" 2>/dev/null || true
+  timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null > "$out/betterdriver.log" 2>/dev/null || true
+  if [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
+  fi
   sleep 2
   kill "$logcat" 2>/dev/null || true
+  wait "$logcat" 2>/dev/null || true
   exit "$1"
 }
 
@@ -34,7 +38,7 @@ finish() {
 phase() {
   echo "== ReplayDriveTest#$1"
   # A phase that hangs fails the drive instead of the job running out of time.
-  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" 2>&1)
+  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" < /dev/null 2>&1)
   echo "$result"
   echo "$result" | grep -q "^OK (1 test)" || fail "phase $1 failed: $(echo "$result" | grep -m5 -E 'Error|Exception|expected|:' | tr '\n' ' ')"
 }
