@@ -184,7 +184,7 @@ class CameraService : LifecycleService() {
         DebugLog.session = id
         main.removeCallbacks(giveUp)
         val index = VideoIndex(File(sessionsDir(this), id))
-        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode), PhoneHeat.ignored(this))
+        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode))
             .also { it.start(RemoteSink(id, startNanos)) }
     }
 
