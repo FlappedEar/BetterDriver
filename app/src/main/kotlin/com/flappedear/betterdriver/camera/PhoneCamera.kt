@@ -105,8 +105,6 @@ class PhoneCamera(
     private val audio: Boolean,
     /** The chosen mode first, then the modes to fall back to when one cannot be bound ([ladderFrom]). */
     private val ladder: List<VideoMode>,
-    /** Settings › Diagnostics › Ignore phone temperature ([PhoneHeat]): every thermal check is logged. */
-    private val ignoreHeat: Boolean = false,
 ) : VideoSource {
     private val dir: File = index.videoDir
     private val clips = ClipIndexer(index)
@@ -155,7 +153,7 @@ class PhoneCamera(
         }
     }
 
-    private var thermalLog = ThermalLog(ladder, ignoreHeat)
+    private var thermalLog = ThermalLog(ladder)
 
     /**
      * The sensor timestamp of the newest frame the camera captured, and whether that timestamp is on
@@ -201,10 +199,9 @@ class PhoneCamera(
                 }
                 policy = ThermalPolicy()
                 shutdown = false
-                thermalLog = ThermalLog(steps, ignoreHeat)
+                thermalLog = ThermalLog(steps)
                 sessionThermal = null
                 DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
-                if (ignoreHeat) DebugLog.w(Tag, "phone temperature ignored: every thermal check is logged")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val listener = PowerManager.OnThermalStatusChangedListener { check() }
                     thermalListener = listener
@@ -500,7 +497,7 @@ class PhoneCamera(
         thermalLog.log(status, headroom, battery, policy.current, action)
         if (status != sessionThermal) {
             sessionThermal = status
-            sink.thermal(sink.nowMicros(), status, headroom, ignoreHeat)
+            sink.thermal(sink.nowMicros(), status, headroom)
         }
         return action
     }
@@ -521,17 +518,16 @@ private fun batteryC(context: Context): Float? {
 
 /**
  * Thermal readings in the debug log (FBBD-146): every status change and every stop, else one line
- * per [ThermalLogEvery] checks, so a drive shows the phone's heat and why video stopped. With the
- * phone's temperature ignored (FBBD-231) every check is logged, for the heat stress test.
+ * per [ThermalLogEvery] checks, so a drive log shows why video stopped.
  */
-private class ThermalLog(private val steps: List<VideoMode>, private val ignoreHeat: Boolean) {
+private class ThermalLog(private val steps: List<VideoMode>) {
     private var checks = 0
     private var loggedStatus = -1
 
     fun log(status: Int, headroom: Float?, batteryC: Float?, at: Int, action: ThermalAction) {
         checks++
         val changed = status != loggedStatus || action != ThermalAction.Keep
-        if (!changed && !ignoreHeat && checks < ThermalLogEvery) return
+        if (!changed && checks < ThermalLogEvery) return
         checks = 0
         loggedStatus = status
         val decision = when (action) {
