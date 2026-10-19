@@ -131,8 +131,10 @@ internal class WideEncoder(
         ending = true
         runCatching { video.signalEndOfInputStream() }
         runCatching { pcm?.stop() }
-        videoDone.await(DrainSeconds, TimeUnit.SECONDS)
-        audioDone.await(DrainSeconds, TimeUnit.SECONDS)
+        val drained = videoDone.await(DrainSeconds, TimeUnit.SECONDS) and
+            audioDone.await(DrainSeconds, TimeUnit.SECONDS)
+        // The file is still finished: what was encoded so far plays; the log says its end is missing.
+        if (!drained) DebugLog.w(Tag, "encoders not drained after $DrainSeconds s: the last frames are lost")
         val (last, unused) = synchronized(lock) {
             // A next file that could not be opened left the full one current (cut), so it is the last.
             val c = current
@@ -424,7 +426,8 @@ internal class WideEncoder(
 
         /** Room left in a file once it asks for the keyframe that starts the next: ~20 s at 2.7K·60. */
         const val CutMarginBytes = 200_000_000L
-        const val DrainSeconds = 3L
+        /** A codec at full load ends its stream within a few frames; ten seconds is far beyond that. */
+        const val DrainSeconds = 10L
 
         /** Finishing a 3.8 GB MP4 writes its whole index; allow it far longer than draining the codecs. */
         const val CloseSeconds = 60L
