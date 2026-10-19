@@ -79,8 +79,11 @@ private const val WideSeconds = 4
 internal fun loggedFrames(lines: List<LogLine>): List<FileFrames> = lines.filter { it.tag == WideRecorderTag }
     .mapNotNull { line ->
         val g = WideFileLine.find(line.message)?.groupValues ?: return@mapNotNull null
-        val micros = g[WideSeconds].toDoubleOrNull()?.let { (it * MicrosPerSecond).roundToLong() }
         val count = g[WideFrames].toLongOrNull()
+        // The line's time runs from the first frame to the last: N frames span N-1 frame times, so
+        // the file's media time is that span stretched by one frame, as an MP4's duration counts it.
+        val micros = g[WideSeconds].toDoubleOrNull()?.takeIf { count != null && count > 1 }
+            ?.let { (it * MicrosPerSecond * count!! / (count - 1)).roundToLong() }
         if (micros == null || count == null) {
             null
         } else {
