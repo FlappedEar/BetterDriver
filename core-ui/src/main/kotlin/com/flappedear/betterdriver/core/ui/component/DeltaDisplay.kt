@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.min
@@ -18,11 +17,11 @@ import com.flappedear.betterdriver.core.ui.format.formatDelta
 import com.flappedear.betterdriver.core.ui.format.isDeltaGain
 
 /**
- * Live delta against the best lap (UI-03 option B, approved: coloured tile).
+ * Live delta against the best lap (UI-86 option B, approved: coloured number on black).
  *
- * [deltaSeconds] negative means ahead. The whole tile tints with the gain or
- * loss colour and the number stays white. Null shows "—" on a plain tile
- * (no reference lap yet). The number shrinks below [numberSize] when the tile
+ * [deltaSeconds] negative means ahead. The tile is black like the sector strip, the label
+ * is dim and the number takes the gain or loss colour; a black tile also lights no pixels
+ * on the OLED screen. Null shows a dim "—" (no reference lap yet). The number shrinks below [numberSize] when the tile
  * is too short for it, so it never overflows on a short window: what has to
  * fit is its line, which the number font makes taller than its size.
  */
@@ -33,15 +32,15 @@ fun DeltaDisplay(
     numberSize: Dp = 150.dp,
 ) {
     val c = TrackTheme.colors
-    val tint = when {
-        deltaSeconds == null -> c.surface
-        isDeltaGain(deltaSeconds) -> lerp(c.surface, c.gain, TintFraction)
-        else -> lerp(c.surface, c.loss, TintFraction)
+    val numberColor = when {
+        deltaSeconds == null -> c.textDim
+        isDeltaGain(deltaSeconds) -> c.gain
+        else -> c.loss
     }
     val lineFactor = numberLineFactor()
     BoxWithConstraints(
         modifier = modifier
-            .background(tint, RoundedCornerShape(8.dp))
+            .background(c.background, RoundedCornerShape(8.dp))
             .padding(horizontal = 16.dp, vertical = 10.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
@@ -49,18 +48,15 @@ fun DeltaDisplay(
         val room = (maxHeight - LabelHeight - Spacing - 1.dp) / lineFactor
         val fitted = min(numberSize, room.coerceAtLeast(MinNumberSize))
         Column(verticalArrangement = Arrangement.spacedBy(Spacing)) {
-            TrackLabel("Delta vs best", color = if (deltaSeconds == null) c.textDim else c.text)
+            TrackLabel("Delta vs best", color = c.textDim)
             NumberText(
                 text = deltaSeconds?.let(::formatDelta) ?: "\u2014",
                 size = fitted,
-                color = if (deltaSeconds == null) c.textDim else c.text,
+                color = numberColor,
             )
         }
     }
 }
-
-/** Share of the gain or loss colour mixed into the tile, as in the approved mockup. */
-internal const val TintFraction = 0.3f
 
 private val Spacing = 8.dp
 
