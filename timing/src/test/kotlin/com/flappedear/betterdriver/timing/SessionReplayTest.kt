@@ -15,6 +15,7 @@ import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.TrackKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -102,6 +103,15 @@ class SessionReplayTest {
         assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
         val points = { r: SessionReplay -> r.write().lines().count { it.isNotBlank() } - 1 }
         assertEquals(points(one) + points(two), points(both), "every point of both")
+    }
+
+    @Test
+    fun `a replay is timed by its own track, not by one whose line is flipped or gone`() {
+        val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
+        assertTrue(replay.timesLaps(track))
+        val line = checkNotNull(track.startFinish)
+        assertFalse(replay.timesLaps(track.copy(startFinish = line.flipped())))
+        assertFalse(replay.timesLaps(track.copy(startFinish = null)))
     }
 
     @Test

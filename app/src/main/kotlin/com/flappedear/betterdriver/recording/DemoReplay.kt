@@ -86,12 +86,12 @@ object DemoReplay {
     private fun silesiaRing(context: Context, now: () -> Long): GnssScript? = try {
         val asset = { name: String -> context.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
         val track = TrackJson.decode(asset("silesia-ring.track.json"))
+        val replay = SessionReplay.read(asset("silesia-ring.replay"), now())
         val store = TrackStore(tracksDir(context))
-        // Arek's own lines are kept, but a copy without a start/finish line would time no laps.
-        if (store.get(track.id)?.timeable != true) store.save(track)
-        val text = asset("silesia-ring.replay")
+        // Arek's own lines are kept while they time the laps; a line moved, flipped or removed would not.
+        if (store.get(track.id)?.let(replay::timesLaps) != true) store.save(track)
         DebugLog.i("DemoReplay", "replaying the built-in Silesia Ring laps at ${track.id}")
-        SessionReplay.read(text, now())
+        replay
     } catch (e: Exception) {
         DebugLog.w("DemoReplay", "built-in Silesia Ring replay cannot be read: demo circuit instead", e)
         null

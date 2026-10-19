@@ -75,6 +75,16 @@ class SessionReplay private constructor(
         }
     }
 
+    /**
+     * Whether [track] times this replay: two or more timed laps in one loop. A saved copy whose line
+     * was moved, flipped or removed would record the replay without a lap (FBBD-237).
+     */
+    fun timesLaps(track: Track): Boolean {
+        if (!track.timeable || track.pointToPoint) return false
+        val fixes = points.map { Fix((it.t * MicrosPerSecond).toLong(), it.lat, it.lon) }
+        return timeSession(track, fixes.asSequence()).laps.count { it.kind == LapKind.Timed } >= 2
+    }
+
     private fun Double?.text(decimals: Int) = this?.let { "%.${decimals}f".format(Locale.ROOT, it) } ?: "-"
 
     /** Degrees clockwise from north, from [a] to [b]. */
