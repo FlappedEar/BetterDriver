@@ -172,15 +172,18 @@ internal class WideEncoder(
     data class Closed(val file: File, val stats: FileStats, val error: String?)
 
     private fun sample(track: Track, buffer: ByteBuffer, info: MediaCodec.BufferInfo) = synchronized(lock) {
-        if (!ready()) {
+        val queued = !ready()
+        if (queued) {
             waiting.addLast(Waiting(track, buffer.copy(info), info.copy()))
             if (soundLate()) {
                 DebugLog.w(Tag, "no sound: the AAC encoder gave no format")
                 audioWanted = false
             }
-            if (ready()) while (waiting.isNotEmpty()) waiting.removeFirst().let { route(it.track, it.data, it.info) }
-        } else {
-            route(track, buffer, info)
+        }
+        // Samples held for a format go first, whichever callback made both formats known.
+        if (ready()) {
+            while (waiting.isNotEmpty()) waiting.removeFirst().let { route(it.track, it.data, it.info) }
+            if (!queued) route(track, buffer, info)
         }
     }
 
