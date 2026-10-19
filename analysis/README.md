@@ -63,7 +63,7 @@ Kotlin file comes from.
 - **Session validation report** (`quality`, FBBD-183): the P0 pass criteria (FBBD-8, -12/61, -21,
   -27/49, -43, -46, -72) checked against what a session recorded: GNSS rate, drops, gaps,
   reconnects and parked noise; laps and the predicted lap time at the line; recorder drops and
-  restarts; video offset, drift and coverage; coach cue delay and margin; thermal status. Each
+  restarts; video offset, drift and coverage; coach cue delay and margin; Android thermal shutdown, only if one happened. Each
   value is PASS, FAIL or NOT_MEASURED (with why), and says whether it was read straight from the
   data (MEASURED) or worked out by a stated heuristic (DERIVED). The app stores it as
   `quality.json` in the session's folder and puts it in the debug-log zip.

@@ -40,50 +40,14 @@ class ThermalPolicyTest {
     }
 
     @Test
-    fun ignoredHeatNeverStops() {
-        // FBBD-231: Arek's heat stress test.
-        val p = ThermalPolicy(ignoreHeat = true)
-        for (status in listOf(Thermal.MODERATE, Thermal.SEVERE, Thermal.CRITICAL, Thermal.EMERGENCY, 6)) {
-            assertEquals(ThermalAction.Keep, p.onReading(status, 70f))
-        }
-    }
-
-    @Test
-    fun arekHeatTestOf17OctoberKeepsTheChosenMode() {
-        // 2026-10-17: Android said severe, then critical, with the battery at 40 to 45 °C, and the phone
-        // recorded 4K · 60 for 55 min without a fault. Android's label alone no longer touches video.
+    fun onlyAndroidsShutdownStopsVideo() {
+        // Arek 2026-10-19: "as long as we won't trigger 0x06, we don't care about temperature".
         val p = ThermalPolicy()
-        val readings = listOf(Thermal.MODERATE to 40.4f, Thermal.SEVERE to 40.7f, Thermal.CRITICAL to 44.9f)
-        for ((status, battery) in readings) {
-            assertEquals(ThermalAction.Keep, p.onReading(status, battery))
+        for (status in Thermal.NONE until Thermal.SHUTDOWN) {
+            assertEquals(ThermalAction.Keep, p.onReading(status))
         }
+        assertEquals(ThermalAction.StopVideo, p.onReading(Thermal.SHUTDOWN))
         assertEquals(0, p.current)
-    }
-
-    @Test
-    fun aBatteryAt60StopsVideo() {
-        val p = ThermalPolicy()
-        assertEquals(ThermalAction.Keep, p.onReading(Thermal.CRITICAL, 59.9f))
-        assertEquals(ThermalAction.StopVideo, p.onReading(Thermal.NONE, StopBatteryC))
-    }
-
-    @Test
-    fun androidsShutdownStopsVideoWhateverTheBattery() {
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.SHUTDOWN, 40f))
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.SHUTDOWN, null))
-    }
-
-    @Test
-    fun androidsEmergencyKeepsVideoBelow60() {
-        // Arek's 2026-10-17 afternoon drive: EMERGENCY for 12 min at a 46.6 to 47.5 °C battery, no fault.
-        assertEquals(ThermalAction.Keep, ThermalPolicy().onReading(Thermal.EMERGENCY, 47.5f))
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.EMERGENCY, StopBatteryC))
-    }
-
-    @Test
-    fun withoutABatteryTemperatureCriticalStopsVideo() {
-        assertEquals(ThermalAction.Keep, ThermalPolicy().onReading(Thermal.SEVERE, null))
-        assertEquals(ThermalAction.StopVideo, ThermalPolicy().onReading(Thermal.CRITICAL, null))
     }
 
     @Test

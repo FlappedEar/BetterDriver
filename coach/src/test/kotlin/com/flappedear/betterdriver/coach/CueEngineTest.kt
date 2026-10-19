@@ -162,6 +162,14 @@ class CueEngineTest {
         assertTrue(praise.tMicros >= result.tMicros)
         val heardBefore = assertOutsideBrakingZones(sim.drive(paces), run.cues, paces, 0)
         assertEquals(3, heardBefore[run.cues.indexOf(praise)])
+        // The praise is logged as a coach_cue and read back for Coach review.
+        val back = assertNotNull(CoachEvents.parseCue(praise.tMicros, CoachEvents.cueText(praise)))
+        assertEquals(CueKind.Praise, back.kind)
+        assertEquals(Praise.Worked, back.praise)
+        assertEquals(praise.praised?.timeMicros, back.praised?.timeMicros)
+        assertEquals(praise.before?.timeMicros, back.before?.timeMicros)
+        // A build before 0.3.40 meets kind=Praise as an unknown kind: the cue is skipped, nothing fails.
+        assertNull(CoachEvents.parseCue(0, "seq=1 lap=4 kind=NotYetKnown corner=2 text=x"))
     }
 
     @Test

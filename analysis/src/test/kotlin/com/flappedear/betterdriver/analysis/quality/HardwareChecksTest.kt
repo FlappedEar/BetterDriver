@@ -67,6 +67,22 @@ class HardwareChecksTest {
     }
 
     @Test
+    fun `praise then the straight's corner cue is not an extra cue`() {
+        // Arek's 2026-10-19 evening replay: "Jedynka, to zadziałało", then the T2 cue on the same straight (UI-94 A).
+        val sets = stream(0, 60_000_000)
+        fun cue(seq: Int, at: Long, kind: String) = listOf(
+            RecorderEvent(at, "coach_cue", "seq=$seq lap=7 kind=$kind corner=1 zone_m=300.0 text=Turn 1"),
+            RecorderEvent(at + 150_000, EventKinds.COACH_VOICE, "seq=$seq path=live asked_us=$at route=speaker"),
+        )
+        val r = report(sets, cue(1, 10_000_000, "Praise") + cue(2, 12_000_000, "Corner"))
+        assertEquals(0.0, r.metric("coach.per_straight").value)
+        assertEquals(Verdict.PASS, r.metric("coach.per_straight").verdict)
+        // Praise followed by anything but a corner cue on the same straight still counts.
+        val lapTime = report(sets, cue(1, 10_000_000, "Praise") + cue(2, 12_000_000, "LapTime"))
+        assertEquals(1.0, lapTime.metric("coach.per_straight").value)
+    }
+
+    @Test
     fun `a banner with fixes arriving is false, one after an outage is timed, the screen going off fails`() {
         val sets = stream(0, 120_000_000, gap = 50_000_000L..53_000_000L)
         val events = listOf(
@@ -113,17 +129,6 @@ class HardwareChecksTest {
     }
 
     @Test
-    fun `a battery timer that stalls after its first report fails, here and in the soak`() {
-        val sets = stream(0, 31 * 60_000_000L)
-        val health = "battery_c=35 battery_pct=80 plugged=none thermal=0 headroom=n/a"
-        val once = RecorderEvent(0, EventKinds.DEVICE, health)
-        val r = report(sets, listOf(once))
-        assertEquals(1_860.0, r.metric("thermal.battery").value)
-        assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
-        assertEquals(Verdict.FAIL, r.metric("soak.battery").verdict)
-    }
-
-    @Test
     fun `a GoPro that started late, and a clip placed by its clock, fail`() {
         val sets = stream(0, 60_000_000)
         val events = listOf(
@@ -139,7 +144,7 @@ class HardwareChecksTest {
     }
 
     @Test
-    fun `battery reports too far apart fail, and a short drive is no soak`() {
+    fun `battery reports are never judged, and a short drive is no soak`() {
         val sets = stream(0, 120_000_000)
         val events = listOf(0L, 30_000_000L, 100_000_000L).map {
             val celsius = 35 + it / 10_000_000
@@ -147,9 +152,7 @@ class HardwareChecksTest {
             RecorderEvent(it, EventKinds.DEVICE, text)
         }
         val r = report(sets, events)
-        assertEquals(70.0, r.metric("thermal.battery").value)
-        assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
-        assertEquals(45.0, r.metric("thermal.battery_peak").value)
+        assertTrue(r.metrics.none { it.id.startsWith("thermal.") })
         val soak = r.metrics.filter { it.id.startsWith("soak.") && it.id != "soak.minutes" }
         assertTrue(soak.all { it.verdict == Verdict.NOT_MEASURED })
     }
