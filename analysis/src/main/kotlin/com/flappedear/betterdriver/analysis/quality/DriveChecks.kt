@@ -89,7 +89,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
         videoSection(events, clips, first, last, loggedFrames(s.lines)),
         goProSection(events, clips, end),
         coachSection(events, samples),
-        thermalSection(events, end),
+        thermalSection(events),
         screenSection(events, logOutages(seconds, end), end, logUnderCoverFrom(seconds)),
         exportSection(events, end),
         startupSection(

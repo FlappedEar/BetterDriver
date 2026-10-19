@@ -120,7 +120,7 @@ private fun fileDrift(reports: List<Pair<Long, Long>>): Long? {
     }
 }
 
-private const val CoverageCriterion = "100 % of the session, or stops per the thermal policy, logged (FBBD-21)"
+private const val CoverageCriterion = "100 % of the session (FBBD-21)"
 
 /**
  * The share of [from] to [to] some file of the camera covers. A file with no known end runs to the

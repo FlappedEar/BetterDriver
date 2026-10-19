@@ -129,17 +129,6 @@ class HardwareChecksTest {
     }
 
     @Test
-    fun `a battery timer that stalls after its first report fails, here and in the soak`() {
-        val sets = stream(0, 31 * 60_000_000L)
-        val health = "battery_c=35 battery_pct=80 plugged=none thermal=0 headroom=n/a"
-        val once = RecorderEvent(0, EventKinds.DEVICE, health)
-        val r = report(sets, listOf(once))
-        assertEquals(1_860.0, r.metric("thermal.battery").value)
-        assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
-        assertEquals(Verdict.FAIL, r.metric("soak.battery").verdict)
-    }
-
-    @Test
     fun `a GoPro that started late, and a clip placed by its clock, fail`() {
         val sets = stream(0, 60_000_000)
         val events = listOf(
@@ -155,7 +144,7 @@ class HardwareChecksTest {
     }
 
     @Test
-    fun `battery reports too far apart fail, and a short drive is no soak`() {
+    fun `battery reports are never judged, and a short drive is no soak`() {
         val sets = stream(0, 120_000_000)
         val events = listOf(0L, 30_000_000L, 100_000_000L).map {
             val celsius = 35 + it / 10_000_000
@@ -163,9 +152,7 @@ class HardwareChecksTest {
             RecorderEvent(it, EventKinds.DEVICE, text)
         }
         val r = report(sets, events)
-        assertEquals(70.0, r.metric("thermal.battery").value)
-        assertEquals(Verdict.FAIL, r.metric("thermal.battery").verdict)
-        assertEquals(45.0, r.metric("thermal.battery_peak").value)
+        assertTrue(r.metrics.none { it.id.startsWith("thermal.") })
         val soak = r.metrics.filter { it.id.startsWith("soak.") && it.id != "soak.minutes" }
         assertTrue(soak.all { it.verdict == Verdict.NOT_MEASURED })
     }
