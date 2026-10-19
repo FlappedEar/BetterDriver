@@ -134,6 +134,61 @@ class CueEngineTest {
         val result = run.results.single()
         assertTrue(result.improved)
         assertTrue(result.gainMicros > 50_000, "gain ${result.gainMicros}")
+        // The cue worked, so the straight after the corner praises it (FBBD-243, UI-93 C).
+        val praise = run.cues.single { it.kind == CueKind.Praise }
+        assertEquals("Turn 2, that worked", praise.text)
+        assertEquals(Praise.Worked, praise.praise)
+        assertEquals(4, praise.lap)
+        assertEquals(cue.before, praise.before)
+        assertEquals(result.after, praise.praised)
+        assertTrue(praise.tMicros >= result.tMicros)
+        val heardBefore = assertOutsideBrakingZones(sim.drive(paces), run.cues, paces, 0)
+        assertEquals(3, heardBefore[run.cues.indexOf(praise)])
+    }
+
+    @Test
+    fun `a corner faster than ever before is praised once`() {
+        val fast3 = SimCircuit.Pace(kmh = listOf(0.0, 0.0, 6.0, 0.0))
+        val paces = listOf(steady, steady, steady, fast3, fast3)
+        val drive = sim.drive(paces)
+        val run = run(CueEngine(track, CoachSettings(Verbosity.Full), reference()), drive)
+        val praise = run.cues.filter { it.kind == CueKind.Praise }
+        assertEquals(listOf("Turn 3, best yet"), praise.map { it.text }, "cues: ${run.cues.map { it.text }}")
+        // Timer lap 5 is pace 3; on lap 6 the same pace only equals the new best.
+        assertEquals(5, praise.single().lap)
+        assertEquals(Praise.BestYet, praise.single().praise)
+        assertOutsideBrakingZones(drive, run.cues, paces, 0)
+    }
+
+    @Test
+    fun `at most one praise per lap, none while learning or with lap times only`() {
+        val fast23 = SimCircuit.Pace(kmh = listOf(0.0, 5.0, 5.0, 0.0))
+        val faster23 = SimCircuit.Pace(kmh = listOf(0.0, 10.0, 10.0, 0.0))
+        val paces = listOf(fast23, steady, steady, faster23)
+        val praise = run(CueEngine(track, CoachSettings(Verbosity.Full), reference()), sim.drive(paces)).cues
+            .filter { it.kind == CueKind.Praise }
+        // Lap 2 (pace 0) beats the reference but is a learning lap; lap 5 (pace 3) beats it at both
+        // corners but is praised once.
+        assertEquals(listOf(5), praise.map { it.lap }, "praise: ${praise.map { it.text }}")
+        assertEquals("Turn 2, best yet", praise.single().text)
+        val quiet = run(CueEngine(track, CoachSettings(Verbosity.LapTimes), reference()), sim.drive(paces))
+        assertTrue(quiet.cues.none { it.kind == CueKind.Praise })
+    }
+
+    @Test
+    fun `praise is logged and read back`() {
+        val pass = CornerPass(3, 5, 400.0, 460.0, 150.0, 72.0, 6_100_000)
+        val before = pass.copy(lap = 4, minKmh = 68.0, timeMicros = 6_400_000)
+        val cue = Cue(
+            7, 1_000, 5, CueKind.Praise, "Turn 3, best yet", 3, before = before, turn = 3,
+            praise = Praise.BestYet, praised = pass,
+        )
+        val back = assertNotNull(CoachEvents.parseCue(1_000, CoachEvents.cueText(cue)))
+        assertEquals(cue, back)
+        assertEquals("0.30 s faster than your best until then", ReviewedCue(back, null).outcome())
+        assertNull(back.confidenceText())
+        assertTrue(CueClips.covers(cue.text))
+        assertTrue(CueClips.covers("Turn 12, that worked"))
     }
 
     @Test

@@ -5,7 +5,7 @@ data class ClipPart(val key: String, val pauseAfterMillis: Int)
 
 /**
  * Pre-rendered cue clips (FBBD-48). Every phrase the coach says ([Phrases]) is words that never change
- * ("Turn", "brake", "metres later", "Best lap", "point") and numbers. Each of those is rendered to a
+ * ("Turn", "brake", "metres later", "that worked", "Best lap", "point") and numbers. Each of those is rendered to a
  * clip once at coach start; a phrase is played by joining its clips, so it starts as soon as it is
  * asked for, without waiting for text-to-speech to synthesise it.
  *
@@ -80,6 +80,8 @@ object CueClips {
             // Said without the number below High confidence (FBBD-177).
             Phrases.corner(corner, Advice.BrakeLater(SampleNumber, precise = false)),
             Phrases.corner(corner, Advice.CarrySpeed(SampleNumber, precise = false)),
+            Phrases.praise(corner, Praise.Worked),
+            Phrases.praise(corner, Praise.BestYet),
             Phrases.lapTime(SampleLapMillis, best = true),
             Phrases.lapTime(SampleLapMillis, best = false),
         )

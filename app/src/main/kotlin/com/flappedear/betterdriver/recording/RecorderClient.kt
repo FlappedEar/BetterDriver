@@ -91,7 +91,11 @@ class RecorderClient private constructor(private val context: Context) {
             placeSaved = msg.data.getBoolean(RecorderProtocol.KEY_PLACE_SAVED),
             timing = RecorderProtocol.timingFrom(msg.data),
             coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
-                CoachStatus(msg.data.getString(RecorderProtocol.KEY_COACH_CORNER), it)
+                CoachStatus(
+                    msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),
+                    it,
+                    msg.data.getBoolean(RecorderProtocol.KEY_COACH_PRAISE),
+                )
             },
         )
         val running = live?.takeIf { it.stoppedReason == null }
