@@ -46,7 +46,10 @@ internal class MicSource : PcmSource {
             MediaRecorder.AudioSource.CAMCORDER, MicRate, AudioFormat.CHANNEL_IN_MONO,
             AudioFormat.ENCODING_PCM_16BIT, maxOf(min, MicRate / BuffersPerSecond * BytesPerSample) * BufferFactor,
         )
-        check(r.state == AudioRecord.STATE_INITIALIZED) { "microphone not initialized" }
+        if (r.state != AudioRecord.STATE_INITIALIZED) {
+            r.release()
+            error("microphone not initialized")
+        }
         record = r
         framesRead = 0
         r.startRecording()

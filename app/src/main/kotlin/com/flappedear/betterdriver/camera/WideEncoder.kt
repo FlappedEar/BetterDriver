@@ -103,10 +103,14 @@ internal class WideEncoder(
         if (source != null) {
             try {
                 source.start()
-                audio = audioEncoder(source, AudioCallback(source), Handler(audioThread.looper)).also { it.start() }
+                val codec = audioEncoder(source, AudioCallback(source), Handler(audioThread.looper))
+                audio = codec
+                codec.start()
             } catch (e: Exception) {
                 DebugLog.w(Tag, "no sound: microphone or AAC encoder refused", e)
                 runCatching { source.stop() }
+                audio?.release()
+                audio = null
                 synchronized(lock) { audioWanted = false }
                 audioDone.countDown()
             }

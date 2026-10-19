@@ -138,8 +138,8 @@ internal class WideRecorder(
             val now = count()
             fileEnds[done.name] = now
             fileStarts[next.name] = now
+            // Delivered even when a stop has begun: the encoder already moved on, and its end reports next.
             main.post {
-                if (ended) return@post
                 file = next
                 listener.handedOver(done, mediaMicros, next)
             }
