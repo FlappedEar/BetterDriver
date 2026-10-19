@@ -40,6 +40,18 @@ class AfterVideoTest {
     }
 
     @Test
+    fun aHandOverAfterTheStopWaitsForTheNextFile() {
+        // The file fills up just as the session stops: its stop report comes before the next file's start.
+        after.report("s1", RecorderProtocol.VIDEO_STARTED, "phone_0001.mp4")
+        after.whenClosed("s1") { reports++ }
+        after.report("s1", RecorderProtocol.VIDEO_STOPPED, "phone_0001.mp4", "file_full")
+        assertEquals(0, reports)
+        after.report("s1", RecorderProtocol.VIDEO_STARTED, "phone_0002.mp4")
+        after.report("s1", RecorderProtocol.VIDEO_STOPPED, "phone_0002.mp4", "user")
+        assertEquals(1, reports)
+    }
+
+    @Test
     fun aCameraThatNeverSaysIsWaitedOutOnce() {
         after.report("s1", RecorderProtocol.VIDEO_STARTED, "phone_0001.mp4")
         after.whenClosed("s1") { reports++ }

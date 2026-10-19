@@ -149,6 +149,7 @@ class RecorderService : Service() {
                     session,
                     data.getInt(RecorderProtocol.VIDEO_KIND),
                     data.getString(RecorderProtocol.VIDEO_FILE).orEmpty(),
+                    data.getString(RecorderProtocol.VIDEO_TEXT).orEmpty(),
                 )
             }
             active?.recording?.let { logVideoReport(it, data) { text, ok -> cameraStatus = text to ok } }
