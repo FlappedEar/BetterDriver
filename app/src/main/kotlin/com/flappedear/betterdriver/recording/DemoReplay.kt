@@ -20,7 +20,7 @@ import java.io.File
  * Arek's laps there, built into the app (FBBD-237).
  */
 object DemoReplay {
-    /** The choice of the Silesia Ring replay built into the app (assets/demo): Arek's three 27 Sep sessions (FBBD-238). */
+    /** The choice of the Silesia Ring replay built into the app (assets/demo): Arek's 27 Sep sessions. */
     const val SilesiaRing = "built-in:silesia-ring"
 
     /** When Arek's built-in Silesia Ring session started (27 Sep 2026, 11:00:30 UTC), for its name. */
