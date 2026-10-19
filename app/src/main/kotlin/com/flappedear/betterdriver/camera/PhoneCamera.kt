@@ -378,6 +378,8 @@ class PhoneCamera(
                 }
                 announced -> fileEnded(file.name, full, error?.let { "error_wide" }, null)
                 stopping -> Unit
+                // Stopped while still opening (thermal shutdown): the stop's reason, not a camera fault.
+                endReason != "user" -> fail(stoppedText(endReason))
                 else -> fail("Camera error")
             }
         }
