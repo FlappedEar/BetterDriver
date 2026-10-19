@@ -12,6 +12,9 @@ object Routes {
     /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
     const val CoachSettings = "settings/coach"
 
+    /** The coach's voice, a list of the phone's voices (FBBD-240, UI-90 A). */
+    const val CoachVoice = "settings/coach/voice"
+
     /** About and credits, opened from Settings › App (FBBD-79). */
     const val About = "settings/about"
 

@@ -49,11 +49,23 @@ class CoachVoicesTest {
     }
 
     @Test
+    fun `voices are labelled and grouped by accent`() {
+        assertEquals("English (UK) · Voice 2", CoachVoices.label(v("en-gb-x-gbc-local", "en-GB"), phone))
+        assertEquals("English (India) · Voice 1", CoachVoices.label(v("en-in-x-ena-local", "en-IN"), phone))
+        assertNull(CoachVoices.label(v("gone", "en-GB"), phone))
+        assertEquals(
+            listOf("English (United Kingdom)" to 2, "English (United States)" to 1, "English (India)" to 1,
+                "English (Nigeria)" to 1),
+            CoachVoices.byAccent(phone).map { (accent, voices) -> accent to voices.size },
+        )
+    }
+
+    @Test
     fun `speech settings are saved and read back`() {
         val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
         val store = CoachSettingsStore(file)
         assertEquals(Speech(), store.read().speech)
-        val s = CoachSettings(speech = Speech("en-gb-x-gbc-local", 1.2f))
+        val s = CoachSettings(speech = Speech("en-gb-x-gbc-local", 1.2f, 0.9f))
         store.write(s)
         assertEquals(s, store.read())
         store.write(CoachSettings())
@@ -63,8 +75,8 @@ class CoachVoicesTest {
     @Test
     fun `an out of range or damaged rate falls back`() {
         val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
-        file.writeText("speechRate=9\nttsVoice=\n")
-        assertEquals(Speech(rate = Speech.MaxRate), CoachSettingsStore(file).read().speech)
+        file.writeText("speechRate=9\nspeechPitch=0.1\nttsVoice=\n")
+        assertEquals(Speech(rate = Speech.MaxRate, pitch = Speech.MinPitch), CoachSettingsStore(file).read().speech)
         file.writeText("speechRate=NaN\n")
         assertEquals(Speech(), CoachSettingsStore(file).read().speech)
     }

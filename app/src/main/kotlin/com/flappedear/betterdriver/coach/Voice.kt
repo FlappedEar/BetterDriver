@@ -59,7 +59,8 @@ internal fun android.speech.tts.Voice.info() = TtsVoice(
 
 /**
  * Sets [speech] on [tts] (FBBD-240): its voice if still usable, else an English voice as before, and
- * its speed. Gives the voice in use, for the log; false in [Applied.english] if there is no English.
+ * its speed and pitch. Gives the voice in use, for the log; false in [Applied.english] if there is no
+ * English.
  */
 internal fun applySpeech(tts: TextToSpeech, speech: Speech): Applied {
     val all = ttsVoices(tts)
@@ -67,6 +68,7 @@ internal fun applySpeech(tts: TextToSpeech, speech: Speech): Applied {
     val set = wanted != null && all.first { it.name == wanted.name }.let { tts.setVoice(it) == TextToSpeech.SUCCESS }
     val english = set || chooseEnglish(tts)
     tts.setSpeechRate(speech.rate)
+    tts.setPitch(speech.pitch)
     val name = runCatching { tts.voice?.name }.getOrNull()
     if (speech.voiceName != null && !set) DebugLog.w("Voice", "voice ${speech.voiceName} not usable, using $name")
     return Applied(english, name)
@@ -135,7 +137,7 @@ internal class Voice(context: Context) {
         if (!engineReady) return
         val applied = applySpeech(tts, speech)
         ready = applied.english
-        DebugLog.i(Tag, "voice ${applied.voiceName ?: "none"}, speed ${speech.rate}")
+        DebugLog.i(Tag, "voice ${applied.voiceName ?: "none"}, speed ${speech.rate}, pitch ${speech.pitch}")
         warm()
     }
 
@@ -156,6 +158,22 @@ internal class Voice(context: Context) {
         if (voice == VoiceMode.PreRendered) clips.prepare(speech)
         handler.post { applyNow() }
     }
+
+    /**
+     * Says [text] live in [speech], which is used from now on (FBBD-240): the samples on the voice
+     * page and the Test voice button, so they sound as the cues will.
+     */
+    fun sample(speech: Speech, text: String) {
+        mode = VoiceMode.Live
+        this.speech = speech
+        handler.post {
+            applyNow()
+            say(text)
+        }
+    }
+
+    /** The engine's voices, null until the engine has started (FBBD-240). */
+    fun voices(): List<TtsVoice>? = if (engineReady) ttsVoices(tts).map { it.info() } else null
 
     /**
      * False when the phrase could not be played or queued (no voice yet, or the engine refused it).

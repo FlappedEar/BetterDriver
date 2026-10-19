@@ -124,17 +124,21 @@ data class CoachSettings(
 }
 
 /**
- * The coach's text-to-speech voice (FBBD-240): the engine voice named [voiceName], or the engine's
- * own English voice when null or no longer installed, said at [rate] times the normal speed.
+ * The coach's text-to-speech voice (FBBD-240, UI-90 A, UI-91 B): the engine voice named [voiceName],
+ * or the engine's own English voice when null or no longer installed, said at [rate] times the normal
+ * speed and [pitch] times the normal pitch.
  */
-data class Speech(val voiceName: String? = null, val rate: Float = 1f) {
+data class Speech(val voiceName: String? = null, val rate: Float = 1f, val pitch: Float = 1f) {
     init {
         require(rate in MinRate..MaxRate) { "speech rate must be $MinRate to $MaxRate" }
+        require(pitch in MinPitch..MaxPitch) { "speech pitch must be $MinPitch to $MaxPitch" }
     }
 
     companion object {
         const val MinRate = 0.8f
         const val MaxRate = 1.5f
+        const val MinPitch = 0.7f
+        const val MaxPitch = 1.3f
     }
 }
 

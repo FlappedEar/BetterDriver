@@ -17,29 +17,27 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.Speech
 import com.flappedear.betterdriver.coach.Verbosity
-import com.flappedear.betterdriver.coach.Voice
 import com.flappedear.betterdriver.coach.VoiceMode
 import java.util.Locale
 import kotlin.math.roundToInt
 
 private const val MillisPerSecond = 1_000f
 private const val DelayStepMillis = 100
-private const val SampleCue = "Turn 2, brake 10 metres later"
+internal const val SampleCue = "Turn 2, brake 10 metres later"
+private const val Tenths = 10f
 
 /** What each verbosity says, for the settings row and the dialog. */
 internal fun verbosityLabel(v: Verbosity) = when (v) {
@@ -68,9 +66,10 @@ data class PickedCorners(val trackId: String, val trackName: String, val corners
  * (FBBD-148; null while they are read), the headset's audio delay as measured on this page
  * ([delayNow], FBBD-49: the coach measures it itself at each session's start) and the delay used when it
  * cannot be measured (up to 2 s, so a cue still ends before the braking zone), and how many laps it
- * learns before the first corner cue. Each change is saved at once. "Test voice" says a sample cue on
- * the current audio output. Advanced: whether cues are said by live text-to-speech or from clips
- * rendered at coach start (FBBD-48).
+ * learns before the first corner cue. The voice (FBBD-240, UI-90 A): a Voice row ([voiceLabel], null
+ * while the phone's voices are read) opening the voice page, and speed and pitch (UI-91 B). Each change
+ * is saved at once. "Test voice" ([onTest]) says a sample cue on the current audio output. Advanced:
+ * whether cues are said by live text-to-speech or from clips rendered at coach start (FBBD-48).
  */
 @Composable
 fun CoachSettingsScreen(
@@ -80,6 +79,9 @@ fun CoachSettingsScreen(
     picked: List<PickedCorners>? = null,
     onClearPicked: (trackId: String) -> Unit = {},
     delayNow: String? = null,
+    voiceLabel: String? = null,
+    onVoice: () -> Unit = {},
+    onTest: () -> Unit = {},
 ) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Spoken coach", onBack = onBack)
@@ -90,7 +92,8 @@ fun CoachSettingsScreen(
             ShellCard { VerbosityPicker(current, onChange) }
             picked?.let { ShellCard { Picked(it, onClearPicked) } }
             ShellCard { DelayAndLaps(current, onChange, delayNow) }
-            ShellCard { TestVoice(current.voice, current.speech) }
+            ShellCard { VoiceAndSpeed(current, onChange, voiceLabel, onVoice) }
+            ShellCard { TestVoice(onTest) }
             SectionLabel("Advanced", Modifier.padding(start = 4.dp, top = 8.dp))
             ShellCard { VoicePicker(current, onChange) }
         }
@@ -169,22 +172,50 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, de
     )
 }
 
-/** Says, on [VoiceMode.PreRendered], from clips once they are rendered; live until then. */
+/** The voice row and the speed and pitch sliders (UI-90 A, UI-91 B), saved when a slider is let go. */
 @Composable
-private fun TestVoice(mode: VoiceMode, speech: Speech) {
-    val context = LocalContext.current
-    val voice = remember { Voice(context) }
-    DisposableEffect(voice) { onDispose { voice.shutdown() } }
-    LaunchedEffect(voice, mode, speech) { voice.use(mode, speech) }
+private fun VoiceAndSpeed(s: CoachSettings, onChange: (CoachSettings) -> Unit, label: String?, onVoice: () -> Unit) {
+    ListRow("Voice", label ?: "…", divider = false, onClick = onVoice)
+    SpeechSlider("Speed", s.speech.rate, Speech.MinRate..Speech.MaxRate) {
+        onChange(s.copy(speech = s.speech.copy(rate = it)))
+    }
+    SpeechSlider("Pitch", s.speech.pitch, Speech.MinPitch..Speech.MaxPitch) {
+        onChange(s.copy(speech = s.speech.copy(pitch = it)))
+    }
+    DimText("Speed 0.8× to 1.5×, pitch 0.7× to 1.3×.")
+}
+
+/** A 0.1 step slider for a speech factor, shown as "1.2×". */
+@Composable
+private fun SpeechSlider(name: String, value: Float, range: ClosedFloatingPointRange<Float>, onSet: (Float) -> Unit) {
+    var v by remember(value) { mutableFloatStateOf(value) }
+    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+        Text(factor(v), style = MaterialTheme.typography.bodyLarge)
+    }
+    Slider(
+        value = v,
+        onValueChange = { v = ((it * Tenths).roundToInt() / Tenths).coerceIn(range) },
+        onValueChangeFinished = { if (v != value) onSet(v) },
+        valueRange = range,
+        steps = ((range.endInclusive - range.start) * Tenths).roundToInt() - 1,
+    )
+}
+
+private fun factor(f: Float) = String.format(Locale.ROOT, "%.1f×", f)
+
+/** Says the sample cue in the coach's voice, speed and pitch, on the current audio output. */
+@Composable
+private fun TestVoice(onTest: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         DimText("Plays “$SampleCue” on the current audio output.", Modifier.weight(1f))
-        TextButton(onClick = { voice.say(SampleCue) }) { Text("Test voice") }
+        TextButton(onClick = onTest) { Text("Test voice") }
     }
 }
 
 @Composable
 private fun VoicePicker(s: CoachSettings, onChange: (CoachSettings) -> Unit) {
-    Text("Voice", style = MaterialTheme.typography.bodyLarge)
+    Text("Voice playback", style = MaterialTheme.typography.bodyLarge)
     VoiceMode.entries.forEach { v ->
         val pick = Modifier.selectable(selected = s.voice == v, onClick = { onChange(s.copy(voice = v)) })
         Row(Modifier.fillMaxWidth().then(pick), verticalAlignment = Alignment.CenterVertically) {
@@ -209,6 +240,7 @@ private fun CoachSettingsScreenPreview() {
                 onBack = {},
                 picked = listOf(PickedCorners("t1", "Tor Poznań", listOf("Corner 3", "Corners 5–6"))),
                 delayNow = "190 ms now, on Cardo PACKTALK",
+                voiceLabel = "English (UK) · Voice 3",
             )
         }
     }

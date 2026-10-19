@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import java.util.Locale
+
 /**
  * A text-to-speech voice as the engine lists it (FBBD-240): its [name], its language as a BCP 47
  * [languageTag] ("en-GB"), whether it needs the internet ([needsNetwork]) and whether its data is on
@@ -28,10 +30,32 @@ object CoachVoices {
 
     /** [voice]'s number among the usable voices of its accent, from 1; null if it is not usable. */
     fun number(voice: TtsVoice, all: List<TtsVoice>): Int? = usable(all)
-        .filter { it.languageTag.equals(voice.languageTag, ignoreCase = true) }
+        .filter { it.languageTag.replace('_', '-').equals(voice.languageTag.replace('_', '-'), ignoreCase = true) }
         .indexOfFirst { it.name == voice.name }
         .takeIf { it >= 0 }
         ?.plus(1)
+
+    /** The usable voices grouped by accent, in [usable]'s order, for the voice page (UI-90 A). */
+    fun byAccent(all: List<TtsVoice>): List<Pair<String, List<TtsVoice>>> = usable(all)
+        .groupBy { it.languageTag.replace('_', '-').lowercase() }
+        .map { (_, voices) -> accent(voices.first().languageTag) to voices }
+
+    /** "English (United Kingdom)": an accent's heading on the voice page. */
+    fun accent(tag: String): String = Locale.forLanguageTag(tag.replace('_', '-')).getDisplayName(Locale.ENGLISH)
+
+    /** "English (UK) · Voice 3": the voice on the Spoken coach page; null if it is not usable. */
+    fun label(voice: TtsVoice, all: List<TtsVoice>): String? {
+        val n = number(voice, all) ?: return null
+        val locale = Locale.forLanguageTag(voice.languageTag.replace('_', '-'))
+        val country = when (locale.country) {
+            "GB" -> "UK"
+            "US" -> "US"
+            "" -> null
+            else -> locale.getDisplayCountry(Locale.ENGLISH)
+        }
+        val language = locale.getDisplayLanguage(Locale.ENGLISH)
+        return (if (country != null) "$language ($country)" else language) + " · Voice $n"
+    }
 
     private fun isEnglish(tag: String) =
         tag.lowercase().let { it == "en" || it.startsWith("en-") || it.startsWith("en_") }
