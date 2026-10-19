@@ -517,11 +517,11 @@ class CueEngine(
             b.onTimedLap(lapPasses)
         }
         lapPasses.clear()
+        // A praise still waiting when a cooling-down lap ends goes with the rest of that lap's speech.
+        val cooled = inLap.cruising
         val inPits = inLap.onLapDone(laps.speedKmh, book?.map?.path)
-        if (inPits) {
-            pendingLap = null
-            praises.clear()
-        }
+        if (inPits) pendingLap = null
+        if (inPits || cooled) praises.clear()
         if (timed) onTimedLap(lap, now, say = !inPits)
         cursor = book?.map?.cursor()
         meters = book?.map?.meters(laps.timer.lapNumber).orEmpty()
