@@ -85,6 +85,10 @@ internal class WideEncoder(
     private var audioWanted = pcm != null
     private val waiting = ArrayDeque<Waiting>()
 
+    /** Sound newer than the latest video while a cut is pending: it goes to whichever file the cut puts it in. */
+    private val heldSound = ArrayDeque<Waiting>()
+    private var videoUs = Long.MIN_VALUE
+
     init {
         // A refusal leaves no encoder for the caller to stop, so the threads end here.
         val started = runCatching { videoEncoder(target, VideoCallback(), Handler(videoThread.looper)) }
@@ -137,6 +141,7 @@ internal class WideEncoder(
         if (!drained) DebugLog.w(Tag, "encoders not drained after $DrainSeconds s: the last frames are lost")
         val (last, unused) = synchronized(lock) {
             // A next file that could not be opened left the full one current (cut), so it is the last.
+            releaseSound(all = true)
             val c = current
             closePrevious()
             current = null
@@ -201,7 +206,43 @@ internal class WideEncoder(
     }
 
     private fun route(track: Track, buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
-        if (track == Track.Audio) routeAudio(buffer, info) else routeVideo(buffer, info)
+        if (track == Track.Audio) {
+            holdOrRouteAudio(buffer, info)
+        } else {
+            routeVideo(buffer, info)
+            videoUs = info.presentationTimeUs
+            releaseSound(all = false)
+        }
+    }
+
+    /** A cut is pending: the keyframe that starts the next file has not been seen yet. */
+    private fun cutPending() = cuts.due && next != null
+
+    /**
+     * The sound encoder runs ahead of a loaded video encoder: sound past the latest frame waits while a
+     * cut is pending, so sound after the cut's keyframe goes to the next file, not the end of this one.
+     */
+    private fun holdOrRouteAudio(buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
+        val ahead = cutPending() && info.presentationTimeUs > videoUs
+        if (ahead || heldSound.isNotEmpty()) {
+            heldSound.addLast(Waiting(Track.Audio, buffer.copy(info), info.copy()))
+            // Video that stopped coming must not hold sound for ever.
+            if (heldSound.size > MaxHeldSound) heldSound.removeFirst().let { routeAudio(it.data, it.info) }
+            releaseSound(all = false)
+        } else {
+            routeAudio(buffer, info)
+        }
+    }
+
+    /** Routes held sound the video has caught up with; [all] of it once there is no cut to wait for. */
+    private fun releaseSound(all: Boolean) {
+        while (heldSound.isNotEmpty()) {
+            val first = heldSound.first()
+            val free = all || !cutPending() || first.info.presentationTimeUs <= videoUs
+            if (!free) return
+            heldSound.removeFirst()
+            routeAudio(first.data, first.info)
+        }
     }
 
     private fun routeVideo(buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
@@ -435,6 +476,9 @@ internal class WideEncoder(
         /** Finishing a 3.8 GB MP4 writes its whole index; allow it far longer than draining the codecs. */
         const val CloseSeconds = 60L
         const val AudioWaitUs = 1_000_000L
+
+        /** About 4 s of AAC frames (1024 samples at 48 kHz each). */
+        const val MaxHeldSound = 200
 
         /** ~21 ms of 48 kHz mono per read, so each sound sample is timed closely. */
         const val PcmChunkBytes = 2_048
