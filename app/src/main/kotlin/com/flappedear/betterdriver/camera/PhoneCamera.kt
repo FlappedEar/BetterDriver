@@ -396,7 +396,7 @@ class PhoneCamera(
     /** A file is recording: the session, the clip index and the status line hear of it. */
     private fun announce(name: String, step: VideoMode, stepIndex: Int) {
         val now = sink.nowMicros()
-        sink.started(name, now)
+        sink.started(name, now, step.fps)
         clips.started(name, now)
         sink.status(step.label, ok = stepIndex == 0)
         DebugLog.i(Tag, "recording $name at ${step.label}")

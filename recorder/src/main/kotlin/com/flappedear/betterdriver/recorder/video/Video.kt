@@ -35,8 +35,11 @@ interface VideoSource {
 interface VideoSink {
     fun nowMicros(): Long
 
-    /** [file] began; [startMicros] is the session time of its media time 0. */
-    fun started(file: String, startMicros: Long)
+    /**
+     * [file] began; [startMicros] is the session time of its media time 0. [fps] is the frame rate it
+     * was set to record at, when the camera knows it, so the report can check the rate it got (FBBD-246).
+     */
+    fun started(file: String, startMicros: Long, fps: Int? = null)
 
     /**
      * At session time [atMicros], [file] had recorded [mediaMicros] of media. About once a second.
@@ -76,6 +79,9 @@ object VideoEventText {
     const val FILE = "file"
     const val MEDIA_US = "media_us"
     const val FRAME_US = "frame_us"
+
+    /** In a video_start event: the frame rate the file was set to record at (FBBD-246). */
+    const val FPS = "fps"
     const val REASON = "reason"
 
     fun format(vararg pairs: Pair<String, Any>): String =

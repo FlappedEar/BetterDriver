@@ -10,8 +10,13 @@ import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
 import java.io.IOException
 import java.util.concurrent.Executors
+import java.util.concurrent.Future
+import java.util.concurrent.TimeUnit
 
 private const val RewriteIntervalMicros = 10_000_000L
+
+/** How long a closed file's last index write may hold up its stop report. */
+private const val FinishWriteMs = 1_000L
 
 /** How often the camera reports its progress (media recorded so far) to the recorder and the clip index. */
 private const val SyncIntervalMicros = 1_000_000L
@@ -71,14 +76,23 @@ internal class ClipIndexer(private val index: VideoIndex) {
         if (changed || nowMicros - c.written >= RewriteIntervalMicros) write(file, nowMicros)
     }
 
+    /**
+     * [file] is closed with [mediaMicros] of media. Returns once the index has it, so the report the
+     * recorder makes on hearing of the stop reads the whole file (FBBD-247); at most [FinishWriteMs].
+     */
+    @Suppress("TooGenericExceptionCaught") // A slow or failed write leaves the report to its recheck.
     fun finished(file: String, mediaMicros: Long) {
         val c = clips[file] ?: return
         if (mediaMicros > 0) c.duration = mediaMicros
-        write(file, Long.MAX_VALUE)
+        try {
+            write(file, Long.MAX_VALUE)?.get(FinishWriteMs, TimeUnit.MILLISECONDS)
+        } catch (e: Exception) {
+            DebugLog.w("ClipIndexer", "index of $file not written in time", e)
+        }
     }
 
-    private fun write(file: String, nowMicros: Long) {
-        val c = clips[file] ?: return
+    private fun write(file: String, nowMicros: Long): Future<*>? {
+        val c = clips[file] ?: return null
         c.written = nowMicros
         val clip = VideoClip(
             fileName = file,
@@ -88,12 +102,12 @@ internal class ClipIndexer(private val index: VideoIndex) {
             alignment = Alignment(AlignmentMethod.CAPTURE_CLOCK, UncertaintyMicros),
             durationUs = c.duration,
         )
-        io.execute {
+        return io.submit(Runnable {
             try {
                 index.put(clip)
             } catch (e: IOException) {
                 DebugLog.w("ClipIndexer", "could not index $file", e)
             }
-        }
+        })
     }
 }

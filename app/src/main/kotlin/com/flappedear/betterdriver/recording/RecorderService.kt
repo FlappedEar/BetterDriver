@@ -144,6 +144,13 @@ class RecorderService : Service() {
     private val clients = LiveClients(
         state = ::state,
         onVideo = { data ->
+            data.getString(RecorderProtocol.VIDEO_SESSION)?.let { session ->
+                afterVideo.report(
+                    session,
+                    data.getInt(RecorderProtocol.VIDEO_KIND),
+                    data.getString(RecorderProtocol.VIDEO_FILE).orEmpty(),
+                )
+            }
             active?.recording?.let { logVideoReport(it, data) { text, ok -> cameraStatus = text to ok } }
         },
         onCoach = { what, data ->
@@ -152,6 +159,9 @@ class RecorderService : Service() {
         onUi = { data -> active?.recording?.let { logUiReport(it, data) } },
     )
     private val wanted by lazy { getSharedPreferences("recorder", Context.MODE_PRIVATE) }
+
+    /** The stop's report waits for the camera's last file (FBBD-247). */
+    private val afterVideo = AfterVideo({ r, ms -> main.postDelayed(r, ms) }, main::removeCallbacks)
 
     @Volatile
     private var active: Active? = null
@@ -316,7 +326,7 @@ class RecorderService : Service() {
         active = null
         DebugLog.i(Tag, "recording ${recording.id} ended: $reason")
         DebugLog.session = null
-        logQuality(this, control, recording.id)
+        afterVideo.whenClosed(recording.id) { logQuality(this, control, recording.id) }
         // How the app's processes ended during the drive, read after it, so its ANRs are known (FBBD-41).
         control.execute { StartupLog.logExits(this) }
         if (reason != UserStop) lastError = endedMessage(reason)

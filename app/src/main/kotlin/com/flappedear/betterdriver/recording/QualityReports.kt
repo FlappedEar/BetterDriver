@@ -1,6 +1,9 @@
 package com.flappedear.betterdriver.recording
 
 import android.content.Context
+import android.media.MediaMetadataRetriever
+import android.os.Build
+import com.flappedear.betterdriver.analysis.quality.FileFrames
 import com.flappedear.betterdriver.analysis.quality.PreviousSession
 import com.flappedear.betterdriver.analysis.quality.QualityClip
 import com.flappedear.betterdriver.analysis.quality.QualityReport
@@ -15,7 +18,9 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.video.ClipStatus
+import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoIndex
+import com.flappedear.betterdriver.video.VideoSourceKind
 import java.io.File
 import java.io.IOException
 
@@ -46,7 +51,20 @@ internal class QualityReports(private val store: SessionStore, private val track
     private fun make(id: String, dir: File): QualityReport? = try {
         val data = store.read(dir)
         val now = System.currentTimeMillis()
-        val report = sessionQuality(data, trackFor(data, tracks.all()), clips(dir), previous(data), now)
+        val local = localClips(dir)
+        val clips = local.map {
+            QualityClip(
+                it.sourceId,
+                it.fileName,
+                it.sessionOffsetUs,
+                it.durationUs?.let(it::sessionTimeUs),
+                it.alignment.method.name,
+                it.alignment.uncertaintyUs,
+            )
+        }
+        val frames = local.filter { it.kind == VideoSourceKind.PHONE }
+            .mapNotNull { countFrames(it.sourceId, File(VideoIndex(dir).videoDir, it.fileName)) }
+        val report = sessionQuality(data, trackFor(data, tracks.all()), clips, previous(data), now, frames)
         write(File(dir, FileName), report.toJson())
         DebugLog.i(Tag, "report of $id: ${report.count(Verdict.PASS)} pass, ${report.count(Verdict.FAIL)} fail")
         report
@@ -78,18 +96,9 @@ internal class QualityReports(private val store: SessionStore, private val track
         }
     }
 
-    /** The session's local clips with how each was lined up; none when its index is unreadable. */
-    private fun clips(dir: File): List<QualityClip> = try {
-        VideoIndex(dir).clips().filter { it.status == ClipStatus.LOCAL }.map {
-            QualityClip(
-                it.sourceId,
-                it.fileName,
-                it.sessionOffsetUs,
-                it.durationUs?.let(it::sessionTimeUs),
-                it.alignment.method.name,
-                it.alignment.uncertaintyUs,
-            )
-        }
+    /** The session's local clips; none when its index is unreadable. */
+    private fun localClips(dir: File): List<VideoClip> = try {
+        VideoIndex(dir).clips().filter { it.status == ClipStatus.LOCAL }
     } catch (e: IOException) {
         DebugLog.w(Tag, "unreadable clip index in $dir", e)
         emptyList()
@@ -109,6 +118,32 @@ internal class QualityReports(private val store: SessionStore, private val track
         }
     }
 
+    /**
+     * The frames [file] holds and its media time, from its MP4 (FBBD-246); null below Android 9, which
+     * cannot count them, or for a file that cannot be read.
+     */
+    @Suppress("TooGenericExceptionCaught") // MediaMetadataRetriever reports a bad file as a runtime exception.
+    private fun countFrames(camera: String, file: File): FileFrames? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P || !file.isFile) return null
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(file.path)
+            fun number(key: Int) = retriever.extractMetadata(key)?.toLongOrNull()
+            val frames = number(MediaMetadataRetriever.METADATA_KEY_VIDEO_FRAME_COUNT)
+            val millis = number(MediaMetadataRetriever.METADATA_KEY_DURATION)
+            if (frames == null || millis == null) {
+                null
+            } else {
+                FileFrames(camera, file.name, frames, millis * MicrosPerMilli)
+            }
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "frames of ${file.name} not counted", e)
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
+    }
+
     /** Written whole, so a crash mid-write leaves the old report or none, never half of one. */
     private fun write(file: File, text: String) {
         val temp = File(file.parentFile, "$FileName.tmp")
@@ -124,6 +159,7 @@ internal class QualityReports(private val store: SessionStore, private val track
         const val FileName = "quality.json"
 
         private const val Tag = "QualityReports"
+        private const val MicrosPerMilli = 1_000L
         private val Lock = Any()
     }
 }

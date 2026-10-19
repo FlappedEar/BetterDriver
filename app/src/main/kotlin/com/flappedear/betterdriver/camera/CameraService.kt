@@ -253,8 +253,10 @@ class CameraService : LifecycleService() {
     private inner class RemoteSink(private val session: String, private val startNanos: Long) : VideoSink {
         override fun nowMicros() = (System.nanoTime() - startNanos) / NanosPerMicro
 
-        override fun started(file: String, startMicros: Long) =
-            report(RecorderProtocol.VIDEO_STARTED, file, startMicros)
+        override fun started(file: String, startMicros: Long, fps: Int?) =
+            report(RecorderProtocol.VIDEO_STARTED, file, startMicros) {
+                fps?.let { putInt(RecorderProtocol.VIDEO_FPS, it) }
+            }
 
         override fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long?) =
             report(RecorderProtocol.VIDEO_SYNCED, file, atMicros) {
