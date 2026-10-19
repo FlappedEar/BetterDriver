@@ -139,10 +139,16 @@ data class CoachSettings(
 
 /**
  * The coach's text-to-speech voice (FBBD-240, UI-90 A, UI-91 B): the engine voice named [voiceName],
- * or the engine's own English voice when null or no longer installed, said at [rate] times the normal
- * speed and [pitch] times the normal pitch.
+ * or the engine's own voice of the coach's language when null or no longer installed, said at [rate]
+ * times the normal speed and [pitch] times the normal pitch. [engine] is the speech engine's package
+ * (FBBD-245, UI-101 A), null for the phone's default engine.
  */
-data class Speech(val voiceName: String? = null, val rate: Float = 1f, val pitch: Float = 1f) {
+data class Speech(
+    val voiceName: String? = null,
+    val rate: Float = 1f,
+    val pitch: Float = 1f,
+    val engine: String? = null,
+) {
     init {
         require(rate in MinRate..MaxRate) { "speech rate must be $MinRate to $MaxRate" }
         require(pitch in MinPitch..MaxPitch) { "speech pitch must be $MinPitch to $MaxPitch" }

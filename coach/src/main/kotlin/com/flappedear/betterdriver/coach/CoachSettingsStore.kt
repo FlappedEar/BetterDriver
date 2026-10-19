@@ -35,6 +35,7 @@ class CoachSettingsStore(private val file: File) {
                     ?.coerceIn(Speech.MinRate, Speech.MaxRate) ?: d.speech.rate,
                 pitch = p.getProperty(KeyPitch)?.toFloatOrNull()?.takeIf { it.isFinite() }
                     ?.coerceIn(Speech.MinPitch, Speech.MaxPitch) ?: d.speech.pitch,
+                engine = p.getProperty(KeyEngine)?.takeIf { it.isNotBlank() },
             ),
         )
     }
@@ -48,6 +49,7 @@ class CoachSettingsStore(private val file: File) {
         p.setProperty(KeyVoice, settings.voice.name)
         p.setProperty(KeyLanguage, settings.language.name)
         settings.speech.voiceName?.let { p.setProperty(KeyTtsVoice, it) }
+        settings.speech.engine?.let { p.setProperty(KeyEngine, it) }
         p.setProperty(KeyRate, settings.speech.rate.toString())
         p.setProperty(KeyPitch, settings.speech.pitch.toString())
         val tmp = File(file.parentFile, file.name + ".tmp")
@@ -70,5 +72,6 @@ class CoachSettingsStore(private val file: File) {
         const val KeyTtsVoice = "ttsVoice"
         const val KeyRate = "speechRate"
         const val KeyPitch = "speechPitch"
+        const val KeyEngine = "ttsEngine"
     }
 }

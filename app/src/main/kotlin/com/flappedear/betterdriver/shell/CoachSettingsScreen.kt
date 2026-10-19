@@ -34,7 +34,6 @@ import kotlin.math.roundToInt
 
 private const val MillisPerSecond = 1_000f
 private const val DelayStepMillis = 100
-internal const val SampleCue = "Turn 2, brake at 100, 10 later"
 
 /** What each verbosity says, for the settings row and the dialog. */
 internal fun verbosityLabel(v: Verbosity) = when (v) {
@@ -82,6 +81,8 @@ fun CoachSettingsScreen(
     voiceLabel: String? = null,
     onVoice: () -> Unit = {},
     onTest: () -> Unit = {},
+    engines: List<EngineRow>? = null,
+    defaultEngine: String? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Spoken coach", onBack = onBack)
@@ -92,8 +93,8 @@ fun CoachSettingsScreen(
             ShellCard { VerbosityPicker(current, onChange) }
             picked?.let { ShellCard { Picked(it, onClearPicked) } }
             ShellCard { DelayAndLaps(current, onChange, delayNow) }
-            ShellCard { VoiceAndSpeed(current, onChange, voiceLabel, onVoice) }
-            ShellCard { TestVoice(onTest) }
+            ShellCard { VoiceAndSpeed(current, onChange, voiceLabel, onVoice, engines, defaultEngine) }
+            ShellCard { TestVoice(sampleCue(current.language), onTest) }
             SectionLabel("Advanced", Modifier.padding(start = 4.dp, top = 8.dp))
             ShellCard { VoicePicker(current, onChange) }
         }
@@ -172,11 +173,11 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, de
     )
 }
 
-/** Says the sample cue in the coach's voice, speed and pitch, on the current audio output. */
+/** Says the sample cue [sample] in the coach's language, voice, speed and pitch, on the current audio output. */
 @Composable
-private fun TestVoice(onTest: () -> Unit) {
+private fun TestVoice(sample: String, onTest: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        DimText("Plays “$SampleCue” on the current audio output.", Modifier.weight(1f))
+        DimText("Plays “$sample” on the current audio output.", Modifier.weight(1f))
         TextButton(onClick = onTest) { Text("Test voice") }
     }
 }
@@ -209,6 +210,8 @@ private fun CoachSettingsScreenPreview() {
                 picked = listOf(PickedCorners("t1", "Tor Poznań", listOf("Corner 3", "Corners 5–6"))),
                 delayNow = "190 ms now, on Cardo PACKTALK",
                 voiceLabel = "English (UK) · Voice 3",
+                engines = listOf(EngineRow("com.google.android.tts", "Speech Services by Google")),
+                defaultEngine = "com.google.android.tts",
             )
         }
     }

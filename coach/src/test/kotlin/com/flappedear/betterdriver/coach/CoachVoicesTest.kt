@@ -33,6 +33,17 @@ class CoachVoicesTest {
     }
 
     @Test
+    fun `in Polish only the Polish voices, labelled Polski`() {
+        val polish = CoachVoices.usable(phone, CoachLanguage.Polish)
+        assertEquals(listOf("pl-pl-x-oda-local"), polish.map { it.name })
+        assertEquals("Polski · Voice 1", CoachVoices.label(polish.single(), phone))
+        assertEquals("pl-pl-x-oda-local", CoachVoices.choose("pl-pl-x-oda-local", phone, CoachLanguage.Polish)?.name)
+        assertNull(CoachVoices.choose("en-gb-x-gbc-local", phone, CoachLanguage.Polish), "an English voice is not kept")
+        assertEquals(CoachLanguage.Polish, CoachVoices.languageOf("pl_PL"))
+        assertEquals(CoachLanguage.English, CoachVoices.languageOf("de-DE"))
+    }
+
+    @Test
     fun `a saved voice is used only while it is usable`() {
         assertEquals("en-gb-x-gbc-local", CoachVoices.choose("en-gb-x-gbc-local", phone)?.name)
         assertNull(CoachVoices.choose("en-gb-x-gbd-network", phone))
@@ -65,7 +76,7 @@ class CoachVoicesTest {
         val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
         val store = CoachSettingsStore(file)
         assertEquals(Speech(), store.read().speech)
-        val s = CoachSettings(speech = Speech("en-gb-x-gbc-local", 1.2f, 0.9f))
+        val s = CoachSettings(speech = Speech("en-gb-x-gbc-local", 1.2f, 0.9f, engine = "org.woheller69.ttsengine"))
         store.write(s)
         assertEquals(s, store.read())
         store.write(CoachSettings())

@@ -100,7 +100,7 @@ class CoachService : Service() {
         val settings = set.copy(audioDelayMillis = delay.millis)
         DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source}")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
-        voice?.use(settings.voice, settings.speech)
+        voice?.use(settings.voice, settings.speech, settings.language)
         active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, sessionDelay)
     }
 

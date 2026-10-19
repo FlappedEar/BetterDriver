@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
+import com.flappedear.betterdriver.coach.CoachLanguage
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CoachVoices
@@ -33,9 +34,10 @@ import com.flappedear.betterdriver.coach.VoiceMode
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.shell.CoachSettingsScreen
 import com.flappedear.betterdriver.shell.CoachVoiceScreen
+import com.flappedear.betterdriver.shell.EngineRow
 import com.flappedear.betterdriver.shell.PickedCorners
-import com.flappedear.betterdriver.shell.SampleCue
 import com.flappedear.betterdriver.shell.VoiceRow
+import com.flappedear.betterdriver.shell.sampleCue
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -65,13 +67,14 @@ internal fun NavGraphBuilder.coachSettings(nav: NavHostController, padding: Padd
                 .sortedBy { it.trackName }
         }
         val voice = rememberVoice()
-        LaunchedEffect(voice, coach.settings.voice, coach.settings.speech) {
-            voice.use(coach.settings.voice, coach.settings.speech)
+        val settings = coach.settings
+        LaunchedEffect(voice, settings.voice, settings.speech, settings.language) {
+            voice.use(settings.voice, settings.speech, settings.language)
         }
-        val voices = rememberVoices(voice)
-        val label = voices?.let { all ->
-            val chosen = CoachVoices.choose(coach.settings.speech.voiceName, all)
-            chosen?.let { CoachVoices.label(it, all) } ?: "Phone default"
+        val phone = rememberVoices(voice, settings.speech.engine)
+        val label = phone?.let { p ->
+            val chosen = CoachVoices.choose(settings.speech.voiceName, p.voices, settings.language)
+            chosen?.let { CoachVoices.label(it, p.voices) } ?: "Engine default"
         }
         Box(Modifier.padding(padding)) {
             CoachSettingsScreen(
@@ -83,7 +86,9 @@ internal fun NavGraphBuilder.coachSettings(nav: NavHostController, padding: Padd
                 delayNow = rememberDelayNow(coach.settings.voice == VoiceMode.PreRendered),
                 voiceLabel = label,
                 onVoice = { nav.navigate(Routes.CoachVoice) },
-                onTest = { voice.say(SampleCue) },
+                onTest = { voice.sample(settings.speech, settings.language, sampleCue(settings.language)) },
+                engines = phone?.engines,
+                defaultEngine = phone?.defaultEngine,
             )
         }
     }
@@ -96,24 +101,28 @@ private fun NavGraphBuilder.coachVoice(nav: NavHostController, padding: PaddingV
         val context = LocalContext.current
         val coach = remember(context) { CoachPrefs.get(context) }
         val voice = rememberVoice()
-        val voices = rememberVoices(voice)
+        val speech = coach.settings.speech
+        val language = coach.settings.language
+        val voices = rememberVoices(voice, speech.engine)?.voices
         val groups = voices?.let { all ->
-            CoachVoices.byAccent(all).map { (accent, vs) ->
+            CoachVoices.byAccent(all, language).map { (accent, vs) ->
                 accent to vs.map { VoiceRow(it.name, "Voice ${CoachVoices.number(it, all)}") }
             }
         }
-        val speech = coach.settings.speech
+        val sample = sampleCue(language)
+        LaunchedEffect(voice, speech.engine) { voice.use(VoiceMode.Live, speech, language) }
         Box(Modifier.padding(padding)) {
             CoachVoiceScreen(
                 groups,
-                selected = voices?.let { CoachVoices.choose(speech.voiceName, it)?.name },
+                selected = voices?.let { CoachVoices.choose(speech.voiceName, it, language)?.name },
                 onPick = { name ->
                     coach.update(coach.settings.copy(speech = speech.copy(voiceName = name)))
-                    voice.sample(speech.copy(voiceName = name), SampleCue)
+                    voice.sample(speech.copy(voiceName = name), language, sample)
                 },
-                onPlay = { name -> voice.sample(speech.copy(voiceName = name), SampleCue) },
+                onPlay = { name -> voice.sample(speech.copy(voiceName = name), language, sample) },
                 onMoreVoices = { openTtsSettings(context) },
                 onBack = { nav.popBackStack() },
+                language = if (language == CoachLanguage.Polish) "Polish" else "English",
             )
         }
     }
@@ -128,31 +137,40 @@ private fun rememberVoice(): Voice {
     return voice
 }
 
+/** What the phone's speech engine offers (UI-101 A): its voices, the phone's engines and its default one. */
+private data class PhoneSpeech(val voices: List<TtsVoice>, val engines: List<EngineRow>, val defaultEngine: String?)
+
 /**
- * The phone's voices, once [voice]'s engine has started; null until then, empty if it never does. Read
- * again each time the page comes back, so a voice installed in Android's settings shows at once.
+ * The voices of [voice]'s engine [engine] and the phone's engines, once the engine has started; null
+ * until then, empty if it never does. Read again each time the page comes back, so a voice or engine
+ * installed meanwhile shows at once, and when another engine is picked.
  */
 @Composable
-private fun rememberVoices(voice: Voice): List<TtsVoice>? {
-    var voices by remember(voice) { mutableStateOf<List<TtsVoice>?>(null) }
+private fun rememberVoices(voice: Voice, engine: String?): PhoneSpeech? {
+    var phone by remember(voice) { mutableStateOf<PhoneSpeech?>(null) }
     var resumes by remember { mutableIntStateOf(0) }
     LifecycleResumeEffect(Unit) {
         resumes++
         onPauseOrDispose { }
     }
-    LaunchedEffect(voice, resumes) {
+    LaunchedEffect(voice, resumes, engine) {
         var waited = 0L
         while (true) {
-            val read = withContext(Dispatchers.IO) { voice.voices() }
+            val read = withContext(Dispatchers.IO) {
+                voice.voices(engine)?.let { vs ->
+                    val engines = voice.engines(engine).orEmpty().map { EngineRow(it.first, it.second) }
+                    PhoneSpeech(vs, engines, voice.defaultEngine(engine))
+                }
+            }
             if (read != null || waited >= VoicesWaitMillis) {
-                voices = read ?: voices ?: emptyList()
+                phone = read ?: phone ?: PhoneSpeech(emptyList(), emptyList(), null)
                 break
             }
             delay(VoicesPollMillis)
             waited += VoicesPollMillis
         }
     }
-    return voices
+    return phone
 }
 
 /** Android's text-to-speech settings, where more voices are downloaded; the system settings if absent. */

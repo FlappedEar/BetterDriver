@@ -23,10 +23,11 @@ private fun readClip(f: File): Pcm? = try {
 private fun partFile(d: File, key: String) = File(d, CueClips.fileName(key) + ".${Process.myPid()}.part")
 
 /**
- * The pre-rendered cue clips (FBBD-48): every word group and number the coach can say
- * ([CueClips.vocabulary]), rendered once with text-to-speech to WAV files in the app's cache and held
- * in memory, so a phrase is joined from clips and plays at once. Clips already rendered by the same
- * voice are reused, so only the first coached session after an install or a voice change renders.
+ * The pre-rendered cue clips (FBBD-48): every word group and number the coach can say in its language
+ * ([CueClips.vocabulary], FBBD-245), rendered once with text-to-speech to WAV files in the app's cache
+ * and held in memory, so a phrase is joined from clips and plays at once. Clips already rendered by
+ * the same engine, voice and language are reused, so only the first coached session after an install
+ * or a change of any of them renders.
  * Rendering uses a text-to-speech instance of its own, so the live voice can speak meanwhile. Until
  * the clips are ready, or if rendering fails, [phrase] gives null and the live voice is used. All work
  * runs on [handler]'s thread.
@@ -40,6 +41,12 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
     // Handler thread only.
     private var started = false
     private var speech = Speech()
+    private var book: PhraseBook = Phrases
+
+    /** The language of the clips held in [clips]; a phrase of another language is said live. */
+    @Volatile
+    private var clipsLanguage = CoachLanguage.English
+    private var language = CoachLanguage.English
 
     /** Counts renders, so a late callback of a replaced render is ignored. */
     private var generation = 0
@@ -51,28 +58,38 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
 
     private val timeout = Runnable { fail("rendering took over ${RenderTimeoutMillis / MillisPerSecond} s") }
 
-    /** Starts rendering or loading the clips, once per voice, speed and pitch ([speech], FBBD-240). */
-    fun prepare(speech: Speech) {
+    /**
+     * Starts rendering or loading the clips, once per engine, voice, speed and pitch ([speech],
+     * FBBD-240) and [language] (FBBD-245).
+     */
+    fun prepare(speech: Speech, language: CoachLanguage) {
         handler.post {
-            if (started && speech == this.speech) return@post
+            if (started && speech == this.speech && language == this.language) return@post
             if (started) reset()
             started = true
             this.speech = speech
+            this.language = language
+            book = PhraseBook.of(language)
             generation++
             startedAt = SystemClock.elapsedRealtime()
-            DebugLog.i(Tag, "preparing ${CueClips.vocabulary.size} cue clips")
+            DebugLog.i(Tag, "preparing ${CueClips.vocabulary(book).size} cue clips (${language.tag})")
             val gen = generation
-            renderer = TextToSpeech(app) { status ->
-                handler.post { if (gen == generation) onRendererReady(status == TextToSpeech.SUCCESS) }
-            }
+            renderer = TextToSpeech(
+                app,
+                { status -> handler.post { if (gen == generation) onRendererReady(status == TextToSpeech.SUCCESS) } },
+                speech.engine,
+            )
             handler.postDelayed(timeout, RenderTimeoutMillis)
         }
     }
 
-    /** [text] joined from clips, or null if the clips are not ready or one of its parts has none. */
-    fun phrase(text: String): Pcm? {
-        val c = clips ?: return null
-        val parts = CueClips.parts(text)
+    /**
+     * [text] in [language] joined from clips, or null if the clips are not ready, are of another
+     * language, or one of its parts has none.
+     */
+    fun phrase(text: String, language: CoachLanguage): Pcm? {
+        val c = clips?.takeIf { clipsLanguage == language } ?: return null
+        val parts = CueClips.parts(text, PhraseBook.of(language))
         val pcms = parts.mapNotNull { p -> c[p.key]?.let { it to p.pauseAfterMillis } }
         return if (parts.isNotEmpty() && pcms.size == parts.size) Pcm.join(pcms) else null
     }
@@ -95,19 +112,21 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
 
     private fun onRendererReady(ok: Boolean) {
         val tts = renderer ?: return
-        if (ok && applySpeech(tts, speech).english) render(tts) else fail("no English voice to render with")
+        val spoken = ok && applySpeech(tts, speech, language).spoken
+        if (spoken) render(tts) else fail("no ${language.tag} voice to render with")
     }
 
     private fun render(tts: TextToSpeech) {
         val root = File(app.cacheDir, ClipsDir)
         // One folder per voice and vocabulary, so a voice change renders afresh; older folders go.
         val voice = "${tts.voice?.name}|${speech.rate}|${speech.pitch}"
-        val signature = "${tts.defaultEngine}|$voice|${CueClips.vocabulary}|$ClipFormat"
+        val vocabulary = CueClips.vocabulary(book)
+        val signature = "${speech.engine ?: tts.defaultEngine}|$voice|$vocabulary|$ClipFormat"
         val d = File(root, Integer.toHexString(signature.hashCode()))
         root.listFiles()?.filter { it != d }?.forEach { it.deleteRecursively() }
         d.mkdirs()
         dir = d
-        pending += CueClips.vocabulary.filterNot { File(d, CueClips.fileName(it)).isFile }
+        pending += vocabulary.filterNot { File(d, CueClips.fileName(it)).isFile }
         rendered = pending.size
         if (pending.isEmpty()) return load(d)
         tts.setOnUtteranceProgressListener(Progress())
@@ -126,16 +145,18 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
     }
 
     private fun load(d: File) {
-        val loaded = CueClips.vocabulary
+        val vocabulary = CueClips.vocabulary(book)
+        val loaded = vocabulary
             .mapNotNull { key -> readClip(File(d, CueClips.fileName(key)))?.let { key to it } }
             .toMap()
-        val bad = CueClips.vocabulary - loaded.keys
+        val bad = vocabulary - loaded.keys
         if (bad.isNotEmpty()) {
             // Damaged files are rendered again next time.
             bad.forEach { File(d, CueClips.fileName(it)).delete() }
             fail("${bad.size} clips unreadable")
             return
         }
+        clipsLanguage = language
         clips = loaded
         val ms = SystemClock.elapsedRealtime() - startedAt
         DebugLog.i(Tag, "cue clips ready in $ms ms: ${loaded.size} clips, $rendered rendered, the rest from cache")
