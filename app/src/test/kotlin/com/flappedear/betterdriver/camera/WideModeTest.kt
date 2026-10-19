@@ -40,6 +40,13 @@ class WideModeTest {
     }
 
     @Test
+    fun aeRangeIsOneTheCameraAdvertises() {
+        assertEquals(60 to 60, aeRange(listOf(15 to 30, 30 to 30, 15 to 60, 60 to 60), 60))
+        assertEquals(30 to 60, aeRange(listOf(15 to 30, 15 to 60, 30 to 60), 60))
+        assertNull(aeRange(listOf(15 to 30, 30 to 30), 60))
+    }
+
+    @Test
     fun mediaTimeRunsFromTheFirstFrame() {
         assertNull(mediaOf(0, 5_000_000))
         assertEquals(1_000_000L, mediaOf(2_000_000_000, 3_000_000_000))

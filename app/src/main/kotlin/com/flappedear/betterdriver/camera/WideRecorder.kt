@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.camera
 import android.annotation.SuppressLint
 import android.content.Context
 import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
 import android.hardware.camera2.CaptureRequest
@@ -188,7 +189,7 @@ internal class WideRecorder(
             val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                 addTarget(surface)
                 set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
-                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, Range(target.fps, target.fps))
+                set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, advertisedRange())
             }.build()
             resetFile()
             recorder?.start()
@@ -198,6 +199,14 @@ internal class WideRecorder(
             DebugLog.w(Tag, "could not start ${target.label}", e)
             finish(error = "start failed: ${e.javaClass.simpleName}", full = false)
         }
+    }
+
+    /** An auto-exposure range the camera advertises for the target rate ([aeRange]); fixed if it has none. */
+    private fun advertisedRange(): Range<Int> {
+        val ranges = context.getSystemService(CameraManager::class.java).getCameraCharacteristics(cameraId)
+            .get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES).orEmpty()
+        val (lower, upper) = aeRange(ranges.map { it.lower to it.upper }, target.fps) ?: (target.fps to target.fps)
+        return Range(lower, upper)
     }
 
     @SuppressLint("MissingPermission") // Audio is only asked for when RECORD_AUDIO is granted (CameraService).

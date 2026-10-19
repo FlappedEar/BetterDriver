@@ -65,8 +65,10 @@ private const val FallbackFps = 60
  */
 @OptIn(ExperimentalCamera2Interop::class)
 internal fun wideFrame(info: CameraInfo, fps: Int): Pair<Int, Int>? {
-    val streams = Camera2CameraInfo.from(info)
-        .getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+    val camera = Camera2CameraInfo.from(info)
+    val ranges = camera.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+    val streams = camera.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+    if (streams == null || aeRange(ranges.orEmpty().map { it.lower to it.upper }, fps) == null) return null
     // The sizes for the surface WideRecorder attaches: a MediaRecorder's, which can differ from MediaCodec's.
     val fast = streams.getOutputSizes(MediaRecorder::class.java).orEmpty().filter { size ->
         val nanos = runCatching { streams.getOutputMinFrameDuration(MediaRecorder::class.java, size) }.getOrNull()
@@ -74,6 +76,14 @@ internal fun wideFrame(info: CameraInfo, fps: Int): Pair<Int, Int>? {
     }
     return wideSize(fast.map { it.width to it.height })?.takeIf { (w, h) -> encoderTakes(w, h, fps) }
 }
+
+/**
+ * The auto-exposure frame-rate range to request for [fps], from the camera's advertised [ranges]
+ * (Camera2 accepts only those): the fixed range when there is one, else the one ending at [fps] that
+ * lets the rate drop least. Null when none ends at [fps].
+ */
+internal fun aeRange(ranges: List<Pair<Int, Int>>, fps: Int): Pair<Int, Int>? =
+    ranges.filter { (_, upper) -> upper == fps }.maxByOrNull { (lower, _) -> lower }
 
 /** What [WideRecorder] records for 2.7K at [fps] on the back camera [info]; null when [wideFrame] is. */
 @OptIn(ExperimentalCamera2Interop::class)
