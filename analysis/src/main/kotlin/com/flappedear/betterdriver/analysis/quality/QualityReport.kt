@@ -5,7 +5,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /** Bumped whenever what the report holds or how it is worked out changes; an older stored report is made again. */
-const val QualityFormat = 3 // 2: the Channels section (FBBD-174); 3: the hardware checks of every drive
+// 2: the Channels section (FBBD-174); 3: the hardware checks of every drive; 4: video frame rate (FBBD-246).
+const val QualityFormat = 4
 
 /** A value against its pass criterion (FBBD-183). */
 @Serializable

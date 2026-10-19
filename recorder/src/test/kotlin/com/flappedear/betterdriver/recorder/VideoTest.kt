@@ -143,7 +143,7 @@ class VideoTest {
         val sink = RecordingVideoSink(rec, CameraIds.PHONE)
         now += 5_000_000_000L
         // Stamped 2 s before the recorder logs it, as a report from the camera process would be.
-        sink.started("phone_0001.mp4", (now - 2_000_000_000L - rec.startNanos) / 1_000)
+        sink.started("phone_0001.mp4", (now - 2_000_000_000L - rec.startNanos) / 1_000, fps = 60)
         sink.synced("phone_0001.mp4", rec.nowMicros(), 2_000_000)
         sink.stopped("phone_0001.mp4", rec.nowMicros(), "user")
         rec.stop()
@@ -151,6 +151,9 @@ class VideoTest {
         val clip = VideoTimeline.from(data.events).clips.single()
         assertEquals(3_000_000, clip.startMicros)
         assertEquals(5_000_000, clip.endMicros)
+        // The rate the file was set to, for the report's frame-rate check (FBBD-246).
+        val start = data.events.single { it.kind == EventKinds.VIDEO_START }
+        assertEquals("60", VideoEventText.parse(start.text)[VideoEventText.FPS])
     }
 
     @Test

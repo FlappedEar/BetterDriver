@@ -57,4 +57,15 @@ class WideModeTest {
         assertEquals("61 frames in 1.0 s = 60.0 fps", fpsLine(61, 1_000_000))
         assertEquals("0 frames in 0.0 s = 0.0 fps", fpsLine(0, 0))
     }
+
+    @Test
+    fun skippedSensorFramesAreCountedFromTheGap() {
+        // Arek's Pixel 6 at 2.7K·60 (2026-10-19): a 16.814 ms sensor frame time.
+        val frame = 16_814_000L
+        assertEquals(0L, framesSkipped(frame, frame))
+        assertEquals(1L, framesSkipped(2 * frame + 300_000, frame))
+        assertEquals(3L, framesSkipped(4 * frame, frame))
+        assertEquals(0L, framesSkipped(frame - 2_000_000, frame))
+        assertEquals(0L, framesSkipped(2 * frame, 0))
+    }
 }
