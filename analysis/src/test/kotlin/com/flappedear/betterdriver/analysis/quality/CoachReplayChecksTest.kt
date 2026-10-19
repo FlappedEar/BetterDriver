@@ -6,7 +6,9 @@ import kotlin.test.assertEquals
 
 class CoachReplayChecksTest {
     private fun pitOut(vararg quiet: Pair<Int, String>): QualityMetric = coachReplayChecks(
-        quiet.mapIndexed { i, (lap, reason) -> RecorderEvent(i * 1_000_000L, "coach_quiet", "lap=$lap reason=$reason") },
+        quiet.mapIndexed { i, (lap, reason) ->
+            RecorderEvent(i * 1_000_000L, "coach_quiet", "lap=$lap reason=$reason")
+        },
         "pl",
     ).single { it.id == "coach.pit_out" }
 
