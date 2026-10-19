@@ -155,6 +155,16 @@ class SetupTest {
     }
 
     @Test
+    fun phoneOffers27kAt60Only() {
+        // FBBD-239, Arek's pick UI-83 B: 2.7K between 4K and 1080p, at 60 fps only.
+        assertEquals(
+            listOf("4K · 60", "4K · 30", "2.7K · 60", "1080p · 60", "1080p · 30", "720p · 60", "720p · 30"),
+            EquipmentModel.PHONE_CAMERA.videoModes.map { it.label },
+        )
+        assertEquals(VideoMode(VideoSize.FHD, 60), EquipmentModel.PHONE_CAMERA.defaultVideo)
+    }
+
+    @Test
     fun choosingAGoProModel() {
         var s = Setup()
             .addEquipment(EquipmentModel.GOPRO, "GoPro 1", "AA", ids)

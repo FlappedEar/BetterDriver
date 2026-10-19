@@ -3,8 +3,8 @@ package com.flappedear.betterdriver.camera
 import com.flappedear.betterdriver.setup.VideoMode
 import com.flappedear.betterdriver.setup.VideoSize
 
-/** The frame sizes phone video can use, largest first. 2.7K is a GoPro size only. */
-val PhoneSizes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
+/** The frame sizes phone video can use, largest first. 2.7K records through WideRecorder (FBBD-239). */
+val PhoneSizes = listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD, VideoSize.HD)
 
 /**
  * The modes phone video falls back through when the camera cannot record a mode (FBBD-21), starting
@@ -16,12 +16,14 @@ val PhoneSizes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
  */
 fun ladderFrom(start: VideoMode): List<VideoMode> {
     val size = start.size.takeIf { it in PhoneSizes } ?: VideoSize.FHD
-    val sizes = PhoneSizes.dropWhile { it != size }
+    // 2.7K is offered at 60 fps only (Arek, UI-83 B, 2026-10-19), so a ladder at 30 fps skips it.
+    val sizes = PhoneSizes.dropWhile { it != size }.filter { it != VideoSize.QHD || start.fps >= HighFps }
     val atRate = sizes.map { VideoMode(it, start.fps) }
     return if (start.fps > LowFps) atRate + VideoMode(sizes.last(), LowFps) else atRate
 }
 
 private const val LowFps = 30
+private const val HighFps = 60
 
 /**
  * Android's thermal status (PowerManager.THERMAL_STATUS_*), as plain numbers so this stays testable

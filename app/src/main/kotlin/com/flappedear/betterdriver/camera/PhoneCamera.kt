@@ -62,6 +62,9 @@ private fun frameMicros(nowMicros: Long, frameNanos: Long, realtime: Boolean): L
     return nowMicros - (clock - frameNanos) / NanosPerMicro
 }
 private const val CheckIntervalMs = 5_000L
+
+/** How often a 2.7K recording reports progress; [syncDue] keeps it to about once a second. */
+private const val WideSyncMs = 250L
 private const val RetryDelayMs = 3_000L
 private const val MaxRestarts = 3
 private const val ForecastSeconds = 10
@@ -83,6 +86,9 @@ private const val MaxFileBytes = 4_000_000_000L
  * The phone's back camera, recording with CameraX in the background while the track screen stays
  * on (FBBD-21). No preview: only a VideoCapture use case is bound.
  *
+ * 2.7K has no CameraX preset, so that mode records through [WideRecorder] (Camera2 and MediaRecorder)
+ * with nothing bound to CameraX (FBBD-239); files, sync reports and stops work the same way.
+ *
  * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
  * after an error ends the file and starts the next one, so a file always has one resolution and frame
  * rate. Heat no longer steps quality down: video only stops at a 60 °C battery (ThermalPolicy).
@@ -91,6 +97,7 @@ private const val MaxFileBytes = 4_000_000_000L
  *
  * Main thread only.
  */
+@Suppress("TooManyFunctions") // One function per step of a file's life, for two recording paths.
 class PhoneCamera(
     private val context: Context,
     private val lifecycle: LifecycleOwner,
@@ -120,6 +127,9 @@ class PhoneCamera(
     private var policy = ThermalPolicy(ignoreHeat)
 
     private var recording: Recording? = null
+
+    /** The 2.7K recording, when the current step is 2.7K; [recording] is null then. */
+    private var wide: WideRecorder? = null
     private var fileIndex = 0
     private var restarts = 0
     private var stopping = false
@@ -218,7 +228,12 @@ class PhoneCamera(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) thermalListener?.let(power::removeThermalStatusListener)
         endReason = "user"
         val r = recording
-        if (r != null) r.stop() else unbindOwn(provider, bound)
+        val w = wide
+        when {
+            r != null -> r.stop()
+            w != null -> w.stop()
+            else -> unbindOwn(provider, bound)
+        }
     }
 
     /** The ladder steps the back camera supports. */
@@ -235,6 +250,10 @@ class PhoneCamera(
         val step = steps[stepIndex]
         policy.moveTo(stepIndex)
         try {
+            if (step.size == VideoSize.QHD) {
+                beginWide(p, stepIndex, step)
+                return
+            }
             // A full file at the same step keeps the camera open: closing and reopening it left about
             // 2 s without video between files. Only a new step (or the first file) binds again.
             val capture = bound?.takeIf { boundStep == stepIndex } ?: run {
@@ -258,13 +277,7 @@ class PhoneCamera(
             var lastSync: Long? = null
             recording = pending.start(executor) { e ->
                 when (e) {
-                    is VideoRecordEvent.Start -> {
-                        val now = sink.nowMicros()
-                        sink.started(name, now)
-                        clips.started(name, now)
-                        sink.status(step.label, ok = stepIndex == 0)
-                        DebugLog.i(Tag, "recording $name at ${step.label}")
-                    }
+                    is VideoRecordEvent.Start -> announce(name, step, stepIndex)
                     is VideoRecordEvent.Status -> {
                         if (e.recordingStats.recordedDurationNanos > 0) fileStarted = true
                         val now = sink.nowMicros()
@@ -290,14 +303,118 @@ class PhoneCamera(
         }
     }
 
+    /**
+     * Starts 2.7K at [step] through [WideRecorder], with nothing bound to CameraX. Throws when the
+     * camera has no 2.7K size at this rate or the recorder refuses it, so [begin] falls down the ladder.
+     */
+    private fun beginWide(p: ProcessCameraProvider, stepIndex: Int, step: VideoMode) {
+        val info = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
+            ?: error("no back camera")
+        val target = wideTarget(context, info, step.fps, MaxFileBytes) ?: error("no 2.7K size at ${step.fps} fps")
+        unbindOwn(p, bound)
+        bound = null
+        boundStep = -1
+        realtimeFrames = realtimeTimestamps(info)
+        fileIndex++
+        val file = File(dir, VideoFiles.liveName(camera, fileIndex))
+        endReason = "user"
+        fileStarted = false
+        DebugLog.i(Tag, "2.7K: ${target.label}, ${target.bitrate} bit/s, rotation ${target.orientation}")
+        val w = WideRecorder(context, cameraIdOf(info), target, audio, WideFiles(step, stepIndex))
+        w.start(file)
+        wide = w
+    }
+
+    /** What [WideRecorder] reports, turned into the same file events as the CameraX path. */
+    private inner class WideFiles(private val step: VideoMode, private val stepIndex: Int) : WideRecorder.Listener {
+        private var name: String? = null
+        private var lastSync: Long? = null
+
+        private val ticker = object : Runnable {
+            override fun run() {
+                sync()
+                main.postDelayed(this, WideSyncMs)
+            }
+        }
+
+        override fun nextFile(): File {
+            fileIndex++
+            return File(dir, VideoFiles.liveName(camera, fileIndex))
+        }
+
+        override fun started(file: File) {
+            name = file.name
+            lastSync = null
+            announce(file.name, step, stepIndex)
+            main.postDelayed(ticker, WideSyncMs)
+        }
+
+        override fun handedOver(file: File, mediaMicros: Long, next: File) {
+            clips.finished(file.name, mediaMicros)
+            sink.stopped(file.name, sink.nowMicros(), "file_full")
+            DebugLog.i(Tag, "${file.name} ended: file_full")
+            main.removeCallbacks(ticker)
+            started(next)
+        }
+
+        override fun ended(file: File, mediaMicros: Long, full: Boolean, error: String?, hadData: Boolean) {
+            main.removeCallbacks(ticker)
+            wide = null
+            val announced = name == file.name
+            if (announced) clips.finished(file.name, mediaMicros)
+            if (error != null) DebugLog.w(Tag, "2.7K: $error")
+            when {
+                // A mode that records no frame at all is not tried again: the next step takes over.
+                error != null && !hadData && !stopping && endReason == "user" -> {
+                    if (announced) sink.stopped(file.name, sink.nowMicros(), "error_wide")
+                    policy.failed(stepIndex)
+                    if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
+                }
+                announced -> fileEnded(file.name, full, error?.let { "error_wide" }, null)
+                stopping -> Unit
+                else -> fail("Camera error")
+            }
+        }
+
+        /** About once a second, as CameraX's status events: media recorded so far and the newest frame. */
+        private fun sync() {
+            val w = wide
+            val n = name
+            val media = w?.mediaMicros
+            if (w == null || n == null || media == null) return
+            fileStarted = true
+            val now = sink.nowMicros()
+            if (syncDue(now, lastSync)) {
+                lastSync = now
+                val frame = frameMicros(now, w.lastFrameNanos, realtimeFrames)
+                sink.synced(n, now, media, frame)
+                clips.synced(n, now, media, frame)
+            }
+        }
+    }
+
+    /** A file is recording: the session, the clip index and the status line hear of it. */
+    private fun announce(name: String, step: VideoMode, stepIndex: Int) {
+        val now = sink.nowMicros()
+        sink.started(name, now)
+        clips.started(name, now)
+        sink.status(step.label, ok = stepIndex == 0)
+        DebugLog.i(Tag, "recording $name at ${step.label}")
+    }
+
     private fun onFinalized(name: String, e: VideoRecordEvent.Finalize) {
         recording = null
         // A full file is finished and playable: the next file starts at once, and it is no restart.
         val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
         val error = !full && e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
-        val reason = stopReason(e.error, error, full)
+        fileEnded(name, full, if (error) "error_${e.error}" else null, e.cause)
+    }
+
+    /** A file ended with [error] (its reason) or none: what comes next, for either recording path. */
+    private fun fileEnded(name: String, full: Boolean, error: String?, cause: Throwable?) {
+        val reason = error ?: if (full && endReason == "user") "file_full" else endReason
         sink.stopped(name, sink.nowMicros(), reason)
-        DebugLog.log(if (error) DebugLog.WARN else DebugLog.INFO, Tag, "$name ended: $reason", e.cause)
+        DebugLog.log(if (error != null) DebugLog.WARN else DebugLog.INFO, Tag, "$name ended: $reason", cause)
         when {
             // A file that finalizes late, after the service began a new camera, must not unbind that one.
             stopping -> unbindOwn(provider, bound)
@@ -306,7 +423,7 @@ class PhoneCamera(
                 unbindOwn(provider, bound)
                 sink.status(stoppedText(endReason), ok = false)
             }
-            error && restarts < MaxRestarts -> {
+            error != null && restarts < MaxRestarts -> {
                 restarts++
                 boundStep = -1 // after an error the camera is closed and opened again
                 sink.status("Restarting", ok = false)
@@ -314,13 +431,6 @@ class PhoneCamera(
             }
             else -> fail("Camera error")
         }
-    }
-
-    /** Why a file ended, for the session's video event. */
-    private fun stopReason(code: Int, error: Boolean, full: Boolean) = when {
-        error -> "error_$code"
-        full && endReason == "user" -> "file_full"
-        else -> endReason
     }
 
     private fun fail(text: String) {
@@ -341,21 +451,27 @@ class PhoneCamera(
      * (error 8). The next check, 5 s later, acts instead.
      */
     private fun check() {
-        val r = recording?.takeIf { fileStarted } ?: return
+        if (!fileStarted || (recording == null && wide == null)) return
         if (endReason != "user") return
         val action = if (StatFs(dir.path).availableBytes < MinFreeBytes) null else thermalAction()
         when (action) {
             null -> {
                 DebugLog.w(Tag, "video stops: less than 1 GB free")
                 endReason = "storage"
-                r.stop()
+                stopFile()
             }
             ThermalAction.Keep -> Unit
             ThermalAction.StopVideo -> {
                 endReason = "thermal"
-                r.stop()
+                stopFile()
             }
         }
+    }
+
+    /** Ends the file being recorded; its end arrives as for any other stop. */
+    private fun stopFile() {
+        val r = recording
+        if (r != null) r.stop() else wide?.stop()
     }
 
     private fun thermalAction(): ThermalAction {
@@ -427,7 +543,8 @@ private class ThermalLog(private val steps: List<VideoMode>, private val ignoreH
 }
 
 /**
- * The [modes] the back camera reports it can record: its CameraX video qualities, a frame-rate
+ * The [modes] the back camera reports it can record: its CameraX video qualities (for 2.7K, a 16:9
+ * stream size between 1080p and 4K that the H.264 encoder takes at the rate, [wideFrame]), a frame-rate
  * range covering the rate, and a minimum frame duration at that quality's own frame size short
  * enough for the rate (Camera2 stream configuration), so 60 fps offered only at 1080p is not
  * offered at 4K. CameraX 1.4 still treats the rate as a target, so a phone may record at another
@@ -445,10 +562,12 @@ fun supportedPhoneModes(p: ProcessCameraProvider, modes: List<VideoMode>): List<
         .getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
     return modes.filter { mode ->
         val quality = phoneQuality(mode.size)
-        mode.size in PhoneSizes &&
-            quality in qualities &&
-            (ranges.isEmpty() || ranges.any { it.lower <= mode.fps && mode.fps <= it.upper }) &&
-            fastEnough(streams, QualitySelector.getResolution(info, quality), mode.fps)
+        val rate = ranges.isEmpty() || ranges.any { it.lower <= mode.fps && mode.fps <= it.upper }
+        when {
+            mode.size !in PhoneSizes || !rate -> false
+            mode.size == VideoSize.QHD -> wideFrame(info, mode.fps) != null
+            else -> quality in qualities && fastEnough(streams, QualitySelector.getResolution(info, quality), mode.fps)
+        }
     }
 }
 
@@ -461,7 +580,7 @@ private fun fastEnough(streams: StreamConfigurationMap?, size: Size?, fps: Int):
 
 private const val NanosPerSecond = 1_000_000_000L
 
-/** The CameraX quality for a phone frame size; 2.7K is not a phone size and maps to 1080p. */
+/** The CameraX quality for a phone frame size; 2.7K has none (it records through [WideRecorder]) and maps to 1080p. */
 internal fun phoneQuality(size: VideoSize): Quality = when (size) {
     VideoSize.UHD -> Quality.UHD
     VideoSize.QHD, VideoSize.FHD -> Quality.FHD
@@ -488,11 +607,14 @@ private fun bindPhoneCapture(
     val capture = builder.build()
     p.unbindAll()
     val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
-    val realtime = Camera2CameraInfo.from(back.cameraInfo)
-        .getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
-        CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
-    return capture to realtime
+    return capture to realtimeTimestamps(back.cameraInfo)
 }
+
+/** Whether the camera's frame timestamps are on elapsedRealtime (else on System.nanoTime). */
+@OptIn(ExperimentalCamera2Interop::class)
+private fun realtimeTimestamps(info: CameraInfo): Boolean =
+    Camera2CameraInfo.from(info).getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+        CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
 
 /** Unbinds [useCase] alone: a camera that ends late must not take down the one that replaced it. */
 private fun unbindOwn(provider: ProcessCameraProvider?, useCase: UseCase?) {
