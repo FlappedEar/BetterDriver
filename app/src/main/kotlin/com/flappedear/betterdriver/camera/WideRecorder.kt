@@ -122,13 +122,20 @@ internal class WideRecorder(
     }
 
     private fun opened(r: MediaRecorder) = object : CameraDevice.StateCallback() {
+        @Suppress("TooGenericExceptionCaught") // Camera2 reports these as runtime and access exceptions.
         override fun onOpened(camera: CameraDevice) {
             if (ended) {
                 camera.close()
                 return
             }
             device = camera
-            createSession(camera, r.surface)
+            try {
+                createSession(camera, r.surface)
+            } catch (e: Exception) {
+                // A camera lost or a surface refused here throws instead of calling onConfigureFailed.
+                DebugLog.w(Tag, "capture session not created", e)
+                finish(error = "session failed: ${e.javaClass.simpleName}", full = false)
+            }
         }
 
         override fun onDisconnected(camera: CameraDevice) {
