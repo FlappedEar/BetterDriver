@@ -41,6 +41,9 @@ internal object CoachProtocol {
     /** In a status report: the coach line's corner label and text, each absent when empty. */
     const val STATUS_CORNER = "corner"
     const val STATUS_TEXT = "statusText"
+
+    /** In a status report: true when the coach line shows a praise (FBBD-243). */
+    const val STATUS_PRAISE = "praise"
 }
 
 /** Coach files: settings, and the per-track references with their session index. */

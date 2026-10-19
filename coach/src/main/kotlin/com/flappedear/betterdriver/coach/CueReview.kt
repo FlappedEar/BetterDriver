@@ -85,9 +85,12 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
  * What a corner cue led to, in words for the review: the change it asked for, how far from the best
  * pass that left the driver, and the corner time. Numbers (metres, km/h, seconds) only when the cue
  * and the pass after it are both High confidence (FBBD-177); otherwise the same sentence without
- * them. Null for a lap-time cue or before the next pass.
+ * them. Null for a lap-time cue or before the next pass. A praise (FBBD-243) says how much faster
+ * the corner was than the pass it beat.
  */
-fun ReviewedCue.outcome(): String? {
+fun ReviewedCue.outcome(): String? = if (cue.kind == CueKind.Praise) cue.praiseOutcome() else cornerOutcome()
+
+private fun ReviewedCue.cornerOutcome(): String? {
     val r = result
     val before = cue.before
     if (r == null || before == null) return null
@@ -156,6 +159,23 @@ private fun speedChange(moved: Double, toBest: Double?, precise: Boolean): Strin
 private fun timeChange(gainMicros: Long, precise: Boolean): String {
     val s = if (precise) String.format(Locale.ROOT, "%.2f s", abs(gainMicros) / MicrosPerSecond) else "time"
     return if (gainMicros >= 0) "$s gained" else "$s lost"
+}
+
+/** "0.21 s faster than before the cue" or "0.30 s faster than your best until then" (FBBD-243). */
+private fun Cue.praiseOutcome(): String? {
+    val beaten = before
+    val pass = praised
+    val against = when (praise) {
+        Praise.Worked -> "before the cue"
+        Praise.BestYet -> "your best until then"
+        null -> null
+    }
+    return if (beaten == null || pass == null || against == null) {
+        null
+    } else {
+        val seconds = (beaten.timeMicros - pass.timeMicros) / MicrosPerSecond
+        String.format(Locale.ROOT, "%.2f s faster than %s", seconds, against)
+    }
 }
 
 /** "9 m " with [precise], nothing without: the sentence reads the same either way. */

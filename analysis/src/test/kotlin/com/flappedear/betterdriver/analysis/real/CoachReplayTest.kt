@@ -213,7 +213,10 @@ class CoachReplayTest {
             val lap = laps.firstOrNull { it.contains(h.start) } ?: continue
             val along = assertNotNull(lap.alongAt(h.start), "'${h.text}' heard off the track")
             val next = lap.nextCorner(along)
-            perStraight.getOrPut(lap.traced.lap.number to next) { mutableListOf() } += h.text
+            // A praise (FBBD-243) may share the straight with the next corner's cue when both fit (UI-94 A).
+            if (h.kind != CueKind.Praise) {
+                perStraight.getOrPut(lap.traced.lap.number to next) { mutableListOf() } += h.text
+            }
             // The braking a corner cue is heard before: the next on this lap.
             val zone = next?.takeIf { h.kind == CueKind.Corner }?.let { lap.zones[it] } ?: continue
             margins += assertNotNull(lap.timeAt(zone.start)) - h.start

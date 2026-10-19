@@ -349,6 +349,7 @@ class RecorderService : Service() {
         if (a != null) {
             coachStatus.corner?.let { state.putString(RecorderProtocol.KEY_COACH_CORNER, it) }
             coachStatus.text?.let { state.putString(RecorderProtocol.KEY_COACH_TEXT, it) }
+            state.putBoolean(RecorderProtocol.KEY_COACH_PRAISE, coachStatus.praise)
         }
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }

@@ -57,6 +57,8 @@ data class TrackScreenState(
     val tiles: List<TrackTile>,
     val coachCorner: String?,
     val coachCue: String?,
+    /** The coach line shows a praise (FBBD-243): its text is green. */
+    val coachPraise: Boolean = false,
 )
 
 /**
@@ -128,7 +130,12 @@ fun TrackScreenContent(state: TrackScreenState, modifier: Modifier = Modifier) {
                 Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
             )
         }
-        CoachLine(state.coachCorner, state.coachCue, Modifier.fillMaxWidth().height(44.dp).testTag(TrackSlots.Coach))
+        CoachLine(
+            state.coachCorner,
+            state.coachCue,
+            Modifier.fillMaxWidth().height(44.dp).testTag(TrackSlots.Coach),
+            praise = state.coachPraise,
+        )
         Row(Modifier.fillMaxWidth().height(80.dp), horizontalArrangement = Arrangement.spacedBy(gap)) {
             SectorStrip(state.sectors, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Sectors))
             Row(Modifier.weight(0.38f).fillMaxHeight(), horizontalArrangement = Arrangement.spacedBy(gap)) {

@@ -3,7 +3,8 @@ package com.flappedear.betterdriver.coach
 import com.flappedear.betterdriver.timing.track.Track
 
 /** What the track screen's coach line shows (FBBD-98): a corner label and a short text, or nothing. */
-data class CoachStatus(val corner: String?, val text: String?) {
+/** The coach line: its corner label and text; [praise] when it shows a praise (FBBD-243), drawn green. */
+data class CoachStatus(val corner: String?, val text: String?, val praise: Boolean = false) {
     companion object {
         val None = CoachStatus(null, null)
     }
@@ -54,7 +55,7 @@ class CoachSession(
             val e = engine ?: return CoachStatus.None
             val cue = lastCue
             return when {
-                cue != null -> CoachStatus(cue.heardTurn?.let { "T$it" }, lineText(cue))
+                cue != null -> CoachStatus(cue.heardTurn?.let { "T$it" }, lineText(cue), cue.kind == CueKind.Praise)
                 else -> when (val p = e.phase) {
                     is CoachPhase.Learning -> CoachStatus(null, "Coach learning · ${p.done} of ${p.needed} laps")
                     CoachPhase.Coaching -> CoachStatus(null, "Coach on")
@@ -85,7 +86,7 @@ class CoachSession(
         return CoachOutput(events, status)
     }
 
-    /** The cue without "Turn N, ", since the corner is shown beside it: "Brake 15 metres later". */
+    /** The cue without "Turn N, ", since the corner is shown beside it: "Brake 15 metres later", "That worked". */
     private fun lineText(cue: Cue): String {
         val t = if (cue.corner != null) cue.text.substringAfter(", ") else cue.text
         return t.replaceFirstChar { it.uppercase() }
