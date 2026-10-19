@@ -222,6 +222,8 @@ data class Cue(
     val doubts: List<CueDoubt> = emptyList(),
     val praise: Praise? = null,
     val praised: CornerPass? = null,
+    /** The language it was said in (FBBD-245); the cue review is written in it too (UI-100 B). */
+    val language: CoachLanguage = CoachLanguage.English,
 ) {
     /** The corner number the driver heard, for a corner cue. */
     val heardTurn: Int? get() = turn ?: corner

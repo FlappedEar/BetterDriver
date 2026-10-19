@@ -3,7 +3,6 @@ package com.flappedear.betterdriver.coach
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import java.io.IOException
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -19,12 +18,18 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
     val judged: Int get() = cues.count { it.result != null }
     val improved: Int get() = cues.count { it.result?.improved == true }
 
-    /** For example "12 cues · 5 of 8 corners better"; "No cues" when the coach said nothing. */
+    /**
+     * For example "12 cues · 5 of 8 corners better"; "No cues" when the coach said nothing. In the
+     * language the cues were said in (FBBD-245).
+     */
     val summary: String
-        get() = when {
-            cues.isEmpty() -> "No cues"
-            judged == 0 -> plural(cues.size, "cue")
-            else -> "${plural(cues.size, "cue")} · $improved of $judged corners better"
+        get() {
+            val words = ReviewWords.of(cues.firstOrNull()?.cue?.language ?: CoachLanguage.English)
+            return when {
+                cues.isEmpty() -> words.noCues
+                judged == 0 -> words.cues(cues.size)
+                else -> "${words.cues(cues.size)} · ${words.better(improved, judged)}"
+            }
         }
 
     companion object {
@@ -87,11 +92,15 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
  * and the pass after it are both High confidence (FBBD-177); otherwise the same sentence without
  * them. A cue that said its target (FBBD-242) is reviewed by it: "Braked at 108 m, 8 m later than
  * before" or "Apex 58 km/h, 3 more than before". Null for a lap-time cue or before the next pass. A
- * praise (FBBD-243) says how much faster the corner was than the pass it beat.
+ * praise (FBBD-243) says how much faster the corner was than the pass it beat. In the language the
+ * cue was said in (FBBD-245).
  */
-fun ReviewedCue.outcome(): String? = if (cue.kind == CueKind.Praise) cue.praiseOutcome() else cornerOutcome()
+fun ReviewedCue.outcome(): String? {
+    val words = ReviewWords.of(cue.language)
+    return if (cue.kind == CueKind.Praise) cue.praiseOutcome(words) else cornerOutcome(words)
+}
 
-private fun ReviewedCue.cornerOutcome(): String? {
+private fun ReviewedCue.cornerOutcome(words: ReviewWords): String? {
     val r = result
     val before = cue.before
     if (r == null || before == null) return null
@@ -101,104 +110,76 @@ private fun ReviewedCue.cornerOutcome(): String? {
     val anchor = advice?.brakeAnchor(before)
     val change = when {
         precise && advice is Advice.CarrySpeed && advice.goalKmh != null ->
-            "Apex ${r.after.minKmh.roundToInt()} km/h, " +
-                moved(r.after.minKmh - before.minKmh, NearKmh, "more", "less")
+            words.apex(r.after.minKmh.roundToInt()) + moved(r.after.minKmh - before.minKmh, NearKmh, false, words)
         precise && anchor != null ->
-            "Braked at ${(anchor - r.after.brakeAt).roundToInt()} m, " +
-                moved(r.after.brakeAt - before.brakeAt, NearMeters, "m later", "m earlier", SamePoint)
+            words.brakedAt((anchor - r.after.brakeAt).roundToInt()) +
+                moved(r.after.brakeAt - before.brakeAt, NearMeters, true, words)
         advice is Advice.CarrySpeed ->
-            speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh }, precise)
-        else -> brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt }, precise)
+            speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh }, precise, words)
+        else ->
+            brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt }, precise, words)
     }
-    return "$change · ${timeChange(r.gainMicros, precise)}"
+    return "$change · ${timeChange(r.gainMicros, precise, words)}"
 }
 
 /**
  * How far a corner cue could be trusted (FBBD-177), for the review: "High confidence", or for one
  * said without its number why, as "Medium confidence: positions far apart". Null for a lap-time cue.
+ * In the language the cue was said in (FBBD-245).
  */
 fun Cue.confidenceText(): String? {
     if (kind != CueKind.Corner) return null
-    val label = "${confidence.label} confidence"
-    return if (doubts.isEmpty()) label else "$label: " + doubts.joinToString("; ") { it.text }
+    val words = ReviewWords.of(language)
+    val label = words.confidence(confidence)
+    // A doubt worked out when the cue was made (a gap's length) is in English; read it back by its code.
+    val reasons = doubts.joinToString("; ") { if (language == CoachLanguage.English) it.text else words.doubt(it.code) }
+    return if (doubts.isEmpty()) label else "$label: $reasons"
 }
 
-/** "8 m later than before", "3 more than before", or [same] (default "same as before") when under [near]. */
-private fun moved(by: Double, near: Int, up: String, down: String, same: String = "same as before"): String {
+/** "8 m later than before", "3 more than before", or the same as before when under [near]; [m] for metres. */
+private fun moved(by: Double, near: Int, m: Boolean, words: ReviewWords): String {
     val n = by.roundToInt()
-    return when {
-        abs(n) < near -> same
-        n > 0 -> "$n $up than before"
-        else -> "${-n} $down than before"
-    }
+    return if (abs(n) < near) words.same(m) else words.moved(n, m)
 }
 
-private const val SamePoint = "at the same point as before"
 private const val NearMeters = 2
 private const val NearKmh = 1
 private const val MicrosPerSecond = 1_000_000.0
+
+/** Null when [n] is under [near] either way ("the same"), else whether it is above. */
+private fun direction(n: Int, near: Int): Boolean? = if (abs(n) < near) null else n > 0
 
 /**
  * "Braked 9 m later, 4 m short of best", or without [precise] "Braked later, short of best"; [toBest]
  * is how much later the best pass braked.
  */
-private fun brakeChange(moved: Double, toBest: Double?, precise: Boolean): String {
+private fun brakeChange(moved: Double, toBest: Double?, precise: Boolean, words: ReviewWords): String {
     val m = moved.roundToInt()
-    val first = when {
-        abs(m) < NearMeters -> "Braked at the same point"
-        m > 0 -> "Braked ${amount(m, "m", precise)}later"
-        else -> "Braked ${amount(-m, "m", precise)}earlier"
-    }
+    val first = words.braked(direction(m, NearMeters), abs(m).takeIf { precise })
     val gap = toBest?.roundToInt() ?: return first
-    val second = when {
-        abs(gap) < NearMeters -> "at the best point"
-        gap > 0 -> "${amount(gap, "m", precise)}short of best"
-        else -> "${amount(-gap, "m", precise)}past best"
-    }
-    return "$first, $second"
+    return "$first, " + words.toBestPoint(direction(gap, NearMeters), abs(gap).takeIf { precise })
 }
 
 /** "Minimum speed 3 km/h higher, 2 km/h under best", or without [precise] "Minimum speed higher, under best". */
-private fun speedChange(moved: Double, toBest: Double?, precise: Boolean): String {
+private fun speedChange(moved: Double, toBest: Double?, precise: Boolean, words: ReviewWords): String {
     val v = moved.roundToInt()
-    val first = when {
-        abs(v) < NearKmh -> "Same minimum speed"
-        v > 0 -> "Minimum speed ${amount(v, "km/h", precise)}higher"
-        else -> "Minimum speed ${amount(-v, "km/h", precise)}lower"
-    }
+    val first = words.minSpeed(direction(v, NearKmh), abs(v).takeIf { precise })
     val gap = toBest?.roundToInt() ?: return first
-    val second = when {
-        abs(gap) < NearKmh -> "at best"
-        gap > 0 -> "${amount(gap, "km/h", precise)}under best"
-        else -> "${amount(-gap, "km/h", precise)}over best"
-    }
-    return "$first, $second"
+    return "$first, " + words.toBestSpeed(direction(gap, NearKmh), abs(gap).takeIf { precise })
 }
 
 /** "0.12 s gained" or "0.05 s lost" across the corner; without [precise] "time gained" or "time lost". */
-private fun timeChange(gainMicros: Long, precise: Boolean): String {
-    val s = if (precise) String.format(Locale.ROOT, "%.2f s", abs(gainMicros) / MicrosPerSecond) else "time"
-    return if (gainMicros >= 0) "$s gained" else "$s lost"
-}
+private fun timeChange(gainMicros: Long, precise: Boolean, words: ReviewWords): String =
+    words.time(gainMicros >= 0, (abs(gainMicros) / MicrosPerSecond).takeIf { precise })
 
 /** "0.21 s faster than before the cue" or "0.30 s faster than your best until then" (FBBD-243). */
-private fun Cue.praiseOutcome(): String? {
+private fun Cue.praiseOutcome(words: ReviewWords): String? {
     val beaten = before
     val pass = praised
-    val against = when (praise) {
-        Praise.Worked -> "before the cue"
-        Praise.BestYet -> "your best until then"
-        null -> null
-    }
-    return if (beaten == null || pass == null || against == null) {
+    val kind = praise
+    return if (beaten == null || pass == null || kind == null) {
         null
     } else {
-        val seconds = (beaten.timeMicros - pass.timeMicros) / MicrosPerSecond
-        String.format(Locale.ROOT, "%.2f s faster than %s", seconds, against)
+        words.faster((beaten.timeMicros - pass.timeMicros) / MicrosPerSecond, kind == Praise.Worked)
     }
 }
-
-/** "9 m " with [precise], nothing without: the sentence reads the same either way. */
-private fun amount(n: Int, unit: String, precise: Boolean) = if (precise) "$n $unit " else ""
-
-private fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"

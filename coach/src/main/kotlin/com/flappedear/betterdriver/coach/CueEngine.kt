@@ -351,9 +351,10 @@ private class SpeechTiming(
         return min(atSpeed, byReference).roundToLong() - fixAgeMicros
     }
 
+    /** [cue] is being said from now: nothing else until it has been heard. Gives it with its language. */
     fun said(cue: Cue): Cue {
         speakingUntil = cue.tMicros + needMicros(cue.text)
-        return cue
+        return cue.copy(language = settings.language)
     }
 
     /** [cue] was never played, so nothing is being said. */
