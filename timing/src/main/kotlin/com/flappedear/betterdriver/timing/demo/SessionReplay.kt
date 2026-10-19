@@ -190,15 +190,34 @@ class SessionReplay private constructor(
 
         /**
          * The timed laps one after another, each starting where the one before ends: out and in laps and
-         * pit stops between them are left out. Every lap starts and ends on the line, so they join there.
+         * pit stops between them are left out. Every lap starts and ends on the line, but laps from
+         * different sessions cross it metres apart, so the car drives across that gap at its speed
+         * there, and from the last lap's end back to the first lap's start to close the loop (Codex).
          */
         private fun joined(laps: List<List<Point>>): List<Point> {
-            var at = 0.0
-            return laps.filter { it.size >= 2 }.flatMap { lap ->
+            val out = mutableListOf<Point>()
+            for (lap in laps.filter { it.size >= 2 }) {
+                val at = out.lastOrNull()?.let { it.t + bridgeSeconds(out, lap.first()) } ?: 0.0
                 val from = lap.first().t
-                lap.map { Point(at + it.t - from, it.lat, it.lon, it.kmh, it.alt) }.also { at += lap.last().t - from }
+                out += lap.map { Point(at + it.t - from, it.lat, it.lon, it.kmh, it.alt) }
             }
+            val start = out.firstOrNull() ?: return out
+            val bridge = bridgeSeconds(out, start)
+            if (bridge > 0.0) out += Point(out.last().t + bridge, start.lat, start.lon, start.kmh, start.alt)
+            return out
         }
+
+        /** Seconds to drive from the end of [path] to [to] at the speed there; none for a gap under [SameSpot]. */
+        private fun bridgeSeconds(path: List<Point>, to: Point): Double {
+            val end = path.last()
+            val gap = distanceMeters(GeoPoint(end.lat, end.lon), GeoPoint(to.lat, to.lon))
+            if (gap < SameSpot) return 0.0
+            val kmh = end.kmh ?: if (path.size >= 2) speedAt(path, path.size - 2) else StoppedKmh
+            return gap / (maxOf(kmh, StoppedKmh) / KmhPerMs)
+        }
+
+        /** Closer than this, two points on the line are the same spot. */
+        private const val SameSpot = 0.5
 
         /** The set's position, or null without a fix: the same check as timing, so (0, 0) is no fix. */
         private fun point(set: SampleSet): Point? {

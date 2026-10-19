@@ -106,6 +106,21 @@ class SessionReplayTest {
     }
 
     @Test
+    fun `sessions that cross the line metres apart are joined by driving across the gap`() {
+        val one = assertNotNull(SessionReplay.of(recording(5), track, start))
+        // About 11 m north: as two of Arek's Silesia Ring sessions, which cross the line 13 m apart.
+        val shifted = recording(7).map { set ->
+            val values = set.values.map { if (it.channelId == GnssChannels.LAT.id) it.copy(value = it.value + 1e-4) else it }
+            SampleSet(set.tMicros, values)
+        }
+        val two = assertNotNull(SessionReplay.of(shifted, track, start))
+        val both = SessionReplay.joined(listOf(one, two), start)
+        val fixes = replayed(both, 30).mapNotNull { it.toFix() }
+        val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+        assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
+    }
+
+    @Test
     fun `a replay is timed by its own track, not by one whose line is flipped or gone`() {
         val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
         assertTrue(replay.timesLaps(track))
