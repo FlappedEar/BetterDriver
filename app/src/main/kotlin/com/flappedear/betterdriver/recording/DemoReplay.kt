@@ -88,8 +88,21 @@ object DemoReplay {
         val track = TrackJson.decode(asset("silesia-ring.track.json"))
         val replay = SessionReplay.read(asset("silesia-ring.replay"), now())
         val store = TrackStore(tracksDir(context))
-        // Arek's own lines are kept while they time the laps; a line moved, flipped or removed would not.
-        if (store.get(track.id)?.let(replay::timesLaps) != true) store.save(track)
+        // Arek's edits are kept while they time the laps. A line flipped or removed would not: only the
+        // built-in start/finish comes back, his sectors, pit lines and name stay (Codex).
+        val saved = store.get(track.id)
+        if (saved == null) {
+            store.save(track)
+        } else if (!replay.timesLaps(saved)) {
+            val mended = saved.copy(
+                kind = track.kind,
+                startFinish = track.startFinish,
+                finish = track.finish,
+                center = track.center,
+                radiusMeters = track.radiusMeters,
+            )
+            store.save(if (replay.timesLaps(mended)) mended else track)
+        }
         DebugLog.i("DemoReplay", "replaying the built-in Silesia Ring laps at ${track.id}")
         replay
     } catch (e: Exception) {
