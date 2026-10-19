@@ -459,10 +459,12 @@ class PhoneCamera(
      * data: a file stopped before its first frame ends with error 8.
      */
     private fun check() {
+        // Read first, also after video stopped for another reason: a shutdown must reach the session log.
+        val action = thermalAction()
         if (endReason != "user") return
         val recordingNow = recording != null || wide != null
         when {
-            thermalAction() == ThermalAction.StopVideo -> {
+            action == ThermalAction.StopVideo -> {
                 shutdown = true
                 endReason = "thermal"
                 if (recordingNow) {
