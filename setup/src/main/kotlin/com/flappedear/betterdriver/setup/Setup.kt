@@ -203,8 +203,10 @@ data class VideoMode(val size: VideoSize, val fps: Int) {
 private const val HighFps = 60
 private const val LowFps = 30
 
-private val PhoneVideoModes = listOf(VideoSize.UHD, VideoSize.FHD, VideoSize.HD)
+/** 2.7K is offered at 60 fps only (Arek, UI-83 B, 2026-10-19; FBBD-239). */
+private val PhoneVideoModes = listOf(VideoSize.UHD, VideoSize.QHD, VideoSize.FHD, VideoSize.HD)
     .flatMap { listOf(VideoMode(it, HighFps), VideoMode(it, LowFps)) }
+    .filterNot { it.size == VideoSize.QHD && it.fps == LowFps }
 
 /** The mode used until Arek chooses one: 1080p at 60, lighter on heat, storage and download than 4K. */
 private fun List<VideoMode>.defaultMode(): VideoMode? = VideoMode(VideoSize.FHD, HighFps).takeIf { it in this }

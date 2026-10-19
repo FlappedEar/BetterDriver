@@ -1,0 +1,53 @@
+package com.flappedear.betterdriver.camera
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Test
+
+class WideModeTest {
+    @Test
+    fun pixel6SizesGive2688x1512() {
+        // Arek's Pixel 6, log of 2026-10-19 (FBBD-239): the back camera's encoder sizes at 60 fps.
+        val pixel6 = listOf(
+            4032 to 2268, 3840 to 2160, 3264 to 1836, 2688 to 1512, 1920 to 1080, 1792 to 1008, 1280 to 720,
+        )
+        assertEquals(2688 to 1512, wideSize(pixel6))
+    }
+
+    @Test
+    fun onlySixteenByNineBetween1080pAnd4K() {
+        assertNull(wideSize(listOf(3840 to 2160, 1920 to 1080, 2560 to 1920, 2688 to 1500)))
+        assertEquals(2560 to 1440, wideSize(listOf(2560 to 1440)))
+    }
+
+    @Test
+    fun nearestToGoPro27kWins() {
+        assertEquals(2688 to 1512, wideSize(listOf(3264 to 1836, 2560 to 1440, 2688 to 1512)))
+    }
+
+    @Test
+    fun landscapeBackCameraNeedsNoRotation() {
+        assertEquals(0, orientationHint(sensorDegrees = 90, displayDegrees = 90))
+        assertEquals(90, orientationHint(sensorDegrees = 90, displayDegrees = 0))
+        assertEquals(180, orientationHint(sensorDegrees = 90, displayDegrees = 270))
+    }
+
+    @Test
+    fun bitrateScalesByPixelsAndFrameRate() {
+        // A 4K · 30 profile at 48 Mbit/s: 2688×1512 is 49 % of the pixels, at twice the rate.
+        assertEquals(47_040_000, scaledBitrate(48_000_000, 3840, 2160, 30, 2688, 1512, 60))
+        assertEquals(1_000_000, scaledBitrate(10, 3840, 2160, 30, 1280, 720, 30))
+    }
+
+    @Test
+    fun mediaTimeRunsFromTheFirstFrame() {
+        assertNull(mediaOf(0, 5_000_000))
+        assertEquals(1_000_000L, mediaOf(2_000_000_000, 3_000_000_000))
+    }
+
+    @Test
+    fun fpsLineSaysTheRateRecorded() {
+        assertEquals("61 frames in 1.0 s = 60.0 fps", fpsLine(61, 1_000_000))
+        assertEquals("0 frames in 0.0 s = 0.0 fps", fpsLine(0, 0))
+    }
+}
