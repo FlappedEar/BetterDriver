@@ -95,7 +95,8 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
     private fun render(tts: TextToSpeech) {
         val root = File(app.cacheDir, ClipsDir)
         // One folder per voice and vocabulary, so a voice change renders afresh; older folders go.
-        val signature = "${tts.defaultEngine}|${tts.voice?.name}|${speech.rate}|${speech.pitch}|${CueClips.vocabulary}|$ClipFormat"
+        val voice = "${tts.voice?.name}|${speech.rate}|${speech.pitch}"
+        val signature = "${tts.defaultEngine}|$voice|${CueClips.vocabulary}|$ClipFormat"
         val d = File(root, Integer.toHexString(signature.hashCode()))
         root.listFiles()?.filter { it != d }?.forEach { it.deleteRecursively() }
         d.mkdirs()
