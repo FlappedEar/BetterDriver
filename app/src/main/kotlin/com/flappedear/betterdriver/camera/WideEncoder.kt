@@ -143,7 +143,10 @@ internal class WideEncoder(
             c to n
         }
         closer.shutdown()
-        closer.awaitTermination(DrainSeconds, TimeUnit.SECONDS)
+        // The file handed over last may still be finishing; the end is reported only once it is.
+        if (!closer.awaitTermination(CloseSeconds, TimeUnit.SECONDS)) {
+            DebugLog.w(Tag, "a handed-over file was still finishing after $CloseSeconds s")
+        }
         val closed = last?.let { Closed(it.file, it.stats(), finish(it)) }
         runCatching { video.stop() }
         video.release()
@@ -420,6 +423,9 @@ internal class WideEncoder(
         /** Room left in a file once it asks for the keyframe that starts the next: ~20 s at 2.7K·60. */
         const val CutMarginBytes = 200_000_000L
         const val DrainSeconds = 3L
+
+        /** Finishing a 3.8 GB MP4 writes its whole index; allow it far longer than draining the codecs. */
+        const val CloseSeconds = 60L
         const val AudioWaitUs = 1_000_000L
 
         /** ~21 ms of 48 kHz mono per read, so each sound sample is timed closely. */
