@@ -164,6 +164,7 @@ class Sessions private constructor(private val context: Context) {
                 DebugLog.w(Tag, "delete failed", e)
                 DeleteResult.FAILED
             }
+            DebugLog.i(Tag, "delete $id: $result")
             publish()
             main.post { deleted(id, result) }
         }
