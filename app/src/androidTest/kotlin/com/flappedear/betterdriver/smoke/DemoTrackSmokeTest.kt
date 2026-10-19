@@ -60,7 +60,10 @@ class DemoTrackSmokeTest {
         addDemoTrack()
         openDrives()
         app.waitForText("Silesia Ring", substring = true).performClick()
+        app.waitUntilGone("Cancel")
         app.waitForText("Silesia Ring", substring = true)
+        // The Demo track's own screen has no tabs: back to Devices first.
+        app.back()
         val id = driveASession()
 
         check(SmokeData.tracks().any { it.id == SilesiaRingTrackId }) { "Silesia Ring's track was not saved" }
