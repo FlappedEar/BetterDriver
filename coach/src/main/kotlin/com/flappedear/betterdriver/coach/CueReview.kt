@@ -85,7 +85,8 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
  * What a corner cue led to, in words for the review: the change it asked for, how far from the best
  * pass that left the driver, and the corner time. Numbers (metres, km/h, seconds) only when the cue
  * and the pass after it are both High confidence (FBBD-177); otherwise the same sentence without
- * them. Null for a lap-time cue or before the next pass.
+ * them. A cue that said its target (FBBD-242) is reviewed by it: "Braked at 108 m, 8 m later than
+ * before" or "Apex 58 km/h, 3 more than before". Null for a lap-time cue or before the next pass.
  */
 fun ReviewedCue.outcome(): String? {
     val r = result
@@ -93,8 +94,15 @@ fun ReviewedCue.outcome(): String? {
     if (r == null || before == null) return null
     val precise = cue.confidence.precise && r.confidence.precise
     val target = cue.target
-    val change = when (cue.advice) {
-        is Advice.CarrySpeed ->
+    val advice = cue.advice
+    val anchor = advice?.let { brakeAnchorOf(it, before) }
+    val change = when {
+        precise && advice is Advice.CarrySpeed && advice.goalKmh != null ->
+            "Apex ${r.after.minKmh.roundToInt()} km/h, " + moved(r.after.minKmh - before.minKmh, NearKmh, "more", "less")
+        precise && anchor != null ->
+            "Braked at ${(anchor - r.after.brakeAt).roundToInt()} m, " +
+                moved(r.after.brakeAt - before.brakeAt, NearMeters, "m later", "m earlier", "at the same point as before")
+        advice is Advice.CarrySpeed ->
             speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh }, precise)
         else -> brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt }, precise)
     }
@@ -109,6 +117,26 @@ fun Cue.confidenceText(): String? {
     if (kind != CueKind.Corner) return null
     val label = "${confidence.label} confidence"
     return if (doubts.isEmpty()) label else "$label: " + doubts.joinToString("; ") { it.text }
+}
+
+/**
+ * Where a brake cue's target was counted to, on the reference path: the brake point it asked for
+ * plus its distance before the corner. Null for advice without a brake target.
+ */
+private fun brakeAnchorOf(a: Advice, before: CornerPass): Double? = when (a) {
+    is Advice.BrakeLater -> a.at?.let { before.brakeAt + a.meters + it }
+    is Advice.BrakeEarlier -> a.at?.let { at -> a.meters?.let { before.brakeAt - it + at } }
+    is Advice.CarrySpeed -> null
+}
+
+/** "8 m later than before", "3 more than before", or [same] (default "same as before") when under [near]. */
+private fun moved(by: Double, near: Int, up: String, down: String, same: String = "same as before"): String {
+    val n = by.roundToInt()
+    return when {
+        abs(n) < near -> same
+        n > 0 -> "$n $up than before"
+        else -> "${-n} $down than before"
+    }
 }
 
 private const val NearMeters = 2

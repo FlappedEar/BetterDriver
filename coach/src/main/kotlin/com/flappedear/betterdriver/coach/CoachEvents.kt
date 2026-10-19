@@ -173,25 +173,37 @@ object CoachEvents {
         return fields to spoken
     }
 
-    /** "brake_later:10", or "brake_later:10:vague" for advice said without its number (FBBD-177). */
-    private fun adviceText(a: Advice) = when (a) {
-        is Advice.BrakeLater -> "brake_later:${a.meters}" + (if (a.precise) "" else ":$Vague")
-        Advice.BrakeEarlier -> "brake_earlier"
-        is Advice.CarrySpeed -> "carry:${a.kmh}" + (if (a.precise) "" else ":$Vague")
+    /**
+     * "brake_later:10", "brake_later:10:vague" for advice said without its number (FBBD-177), with
+     * its target "brake_later:10:at=100" (FBBD-242); "brake_earlier:10:at=120"; "carry:5:goal=60".
+     * Before FBBD-242 brake_earlier had no number and nothing had a target; those still parse.
+     */
+    private fun adviceText(a: Advice): String {
+        val (kind, number, target) = when (a) {
+            is Advice.BrakeLater -> Triple("brake_later", a.meters, a.at?.let { "$At$it" })
+            is Advice.BrakeEarlier -> Triple("brake_earlier", a.meters, a.at?.let { "$At$it" })
+            is Advice.CarrySpeed -> Triple("carry", a.kmh, a.goalKmh?.let { "$Goal$it" })
+        }
+        return listOfNotNull(kind, number?.toString(), Vague.takeUnless { a.precise }, target).joinToString(":")
     }
 
     private fun parseAdvice(s: String): Advice {
         val parts = s.split(':')
-        val precise = parts.getOrNull(2) != Vague
+        val rest = parts.drop(1)
+        val number = rest.firstOrNull()?.toIntOrNull()
+        val precise = Vague !in rest
+        fun tagged(tag: String) = rest.firstOrNull { it.startsWith(tag) }?.removePrefix(tag)?.toInt()
         return when (parts[0]) {
-            "brake_later" -> Advice.BrakeLater(parts[1].toInt(), precise)
-            "brake_earlier" -> Advice.BrakeEarlier
-            "carry" -> Advice.CarrySpeed(parts[1].toInt(), precise)
+            "brake_later" -> Advice.BrakeLater(requireNotNull(number), precise, tagged(At))
+            "brake_earlier" -> Advice.BrakeEarlier(number, precise, tagged(At))
+            "carry" -> Advice.CarrySpeed(requireNotNull(number), precise, tagged(Goal))
             else -> throw IllegalArgumentException("unknown advice $s")
         }
     }
 
     private const val Vague = "vague"
+    private const val At = "at="
+    private const val Goal = "goal="
 
     /** "lap,brakeAt,apexAt,entryKmh,minKmh,timeMicros", distances and speeds to 0.1. */
     private fun passText(p: CornerPass) = String.format(

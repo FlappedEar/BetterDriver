@@ -5,6 +5,7 @@ package com.flappedear.betterdriver.coach
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -81,8 +82,14 @@ class CueEngineTest {
         // Braking 15 m earlier into the same braking curve moves the braking point back by less than 15 m.
         val shift = sim.brakePoint(1, steady) - sim.brakePoint(1, early2)
         val metres = Math.round(shift / 5).toInt() * 5
-        assertEquals(Advice.BrakeLater(metres), cue.advice, "true shift $shift m")
-        assertEquals("Turn 2, brake $metres metres later", cue.text)
+        val advice = assertIs<Advice.BrakeLater>(cue.advice)
+        assertEquals(metres, advice.meters, "true shift $shift m")
+        // The target (FBBD-242): the asked-for brake point, counted to the apex on a track without corners.
+        val corner2 = engine.corners[1]
+        val before = assertNotNull(cue.before)
+        val at = Math.round((corner2.apexAt - before.brakeAt - metres) / 5).toInt() * 5
+        assertEquals(at, advice.at)
+        assertEquals("Turn 2, brake at $at, $metres later", cue.text)
         // Paces 0 to 2 are the learning laps (timer laps 2 to 4); the cue comes on the next one.
         assertEquals(5, cue.lap)
         val heardBefore = assertOutsideBrakingZones(drive, run.cues, paces, 0)
@@ -194,7 +201,7 @@ class CueEngineTest {
         assertNull(advise(target.copy(timeMicros = 5_040_000, brakeAt = 80.0), target))
         assertEquals(Advice.BrakeLater(20), advise(pass(brakeAt = 60.0), target))
         assertEquals(Advice.BrakeLater(10), advise(pass(brakeAt = 89.0), target))
-        assertEquals(Advice.BrakeEarlier, advise(pass(brakeAt = 115.0, minKmh = 74.0), target))
+        assertEquals(Advice.BrakeEarlier(15), advise(pass(brakeAt = 115.0, minKmh = 74.0), target))
         assertEquals(Advice.CarrySpeed(5), advise(pass(minKmh = 75.0), target))
         assertNull(advise(pass(minKmh = 78.0), target))
     }

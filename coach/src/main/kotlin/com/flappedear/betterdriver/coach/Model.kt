@@ -45,6 +45,12 @@ data class Corner(
     val cornerId: String? = null,
     /** The corner number the driver hears: the track corner's (FBBD-172). */
     val turnNumber: Int? = null,
+    /**
+     * Where the corner starts on the reference path: the start of its track corner (FBBD-172), the
+     * point lap analysis measures braking to (FBBD-242). Null without a corner identity, for the
+     * second braking corner of a chain, or for an apex on a straight.
+     */
+    val entryAt: Double? = null,
 ) {
     /** The number said and shown for it: the track's corner number, else the coach's own. */
     val label: Int get() = turnNumber ?: number
@@ -123,23 +129,33 @@ data class CoachSettings(
 
 /**
  * What the coach asks for at one corner. Below High confidence (FBBD-177) it is said without its
- * number ([precise] false): "brake a little later", not "brake 10 metres later".
+ * numbers ([precise] false): "brake a little later", not "brake at 100, 10 later".
+ *
+ * Each carries the target as well as the change (FBBD-242, UI-87 C, UI-88 C): [BrakeLater.at] and
+ * [BrakeEarlier.at] are where to brake, in metres before the corner ([brakeAnchor]), and
+ * [CarrySpeed.goalKmh] the apex speed to reach. Advice logged before FBBD-242 has no target (null).
  */
 sealed interface Advice {
-    /** Braked earlier than the reference: brake [meters] later (a multiple of 5). */
-    data class BrakeLater(val meters: Int, val precise: Boolean = true) : Advice
+    /** Said with its numbers (High confidence). */
+    val precise: Boolean
 
-    /** Braked later than the reference and lost speed at the apex: brake earlier. */
-    data object BrakeEarlier : Advice
+    /** Braked earlier than the reference: brake [meters] later (a multiple of 5), at [at] m before the corner. */
+    data class BrakeLater(val meters: Int, override val precise: Boolean = true, val at: Int? = null) : Advice
 
-    /** Slower at the apex than the reference: carry [kmh] more. */
-    data class CarrySpeed(val kmh: Int, val precise: Boolean = true) : Advice
+    /**
+     * Braked later than the reference and lost speed at the apex: brake [meters] earlier, at [at] m
+     * before the corner; both null in advice logged before FBBD-242.
+     */
+    data class BrakeEarlier(val meters: Int? = null, override val precise: Boolean = true, val at: Int? = null) : Advice
 
-    /** The same advice, said with its number only when [precise]. */
+    /** Slower at the apex than the reference: carry [kmh] more, [goalKmh] at the apex. */
+    data class CarrySpeed(val kmh: Int, override val precise: Boolean = true, val goalKmh: Int? = null) : Advice
+
+    /** The same advice, said with its numbers only when [precise]. */
     fun withPrecision(precise: Boolean): Advice = when (this) {
         is BrakeLater -> copy(precise = precise)
+        is BrakeEarlier -> copy(precise = precise)
         is CarrySpeed -> copy(precise = precise)
-        BrakeEarlier -> this
     }
 }
 

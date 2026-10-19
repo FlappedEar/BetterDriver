@@ -18,19 +18,31 @@ fun lapFrame(track: Track): LocalFrame? = track.startFinish?.let { LocalFrame(it
  * an apex off the centreline, a corner keeps only the coach's own number.
  *
  * So the coach's "Turn 3" is the lap analysis's "Corner 3", whichever lap either of them is built on.
+ *
+ * Each also gets [Corner.entryAt], where its track corner starts on [path] (FBBD-242): the apex less
+ * the centreline's metres from the corner's start to the apex. Only for an apex inside its own corner
+ * and the first braking corner of a chain; the later ones of a chain start inside it.
  */
 fun identifyCorners(corners: List<Corner>, path: LapTrace, frame: LocalFrame, identity: TrackRevision?): List<Corner> {
-    if (identity == null) return corners.map { it.copy(cornerId = null, turnNumber = null) }
+    if (identity == null) return corners.map { it.copy(cornerId = null, turnNumber = null, entryAt = null) }
     val taken = HashMap<String, Int>()
+    val length = identity.lengthMeters
     return corners.map { c ->
         val apex = pointAt(path, c.apexAt)
         val heading = pointAt(path, c.apexAt + ApexHeadingMeters) - pointAt(path, c.apexAt - ApexHeadingMeters)
-        val segment = identity.locate(frame, apex, heading)?.let { identity.cornerAt(it) }
-        if (segment == null) {
-            c.copy(cornerId = null, turnNumber = null)
+        val at = identity.locate(frame, apex, heading)
+        val segment = at?.let { identity.cornerAt(it) }
+        if (at == null || segment == null) {
+            c.copy(cornerId = null, turnNumber = null, entryAt = null)
         } else {
             val k = taken.merge(segment.id, 1, Int::plus)!! - 1
-            c.copy(cornerId = segment.id, turnNumber = minOf(segment.number + k, segment.lastNumber))
+            val inside = identity.segmentAt(at).id == segment.id
+            val entry = if (inside && k == 0) c.apexAt - (at - segment.startMeters).mod(length) else null
+            c.copy(
+                cornerId = segment.id,
+                turnNumber = minOf(segment.number + k, segment.lastNumber),
+                entryAt = entry?.takeIf { it >= 0.0 },
+            )
         }
     }
 }

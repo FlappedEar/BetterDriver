@@ -8,6 +8,9 @@ data class ClipPart(val key: String, val pauseAfterMillis: Int)
  * ("Turn", "brake", "metres later", "Best lap", "point") and numbers. Each of those is rendered to a
  * clip once at coach start; a phrase is played by joining its clips, so it starts as soon as it is
  * asked for, without waiting for text-to-speech to synthesise it.
+ *
+ * A number from 100 to 999 (a brake point or an apex speed, FBBD-242) is said as track people say it,
+ * from the clips there are: 150 as "1" "50" ("one fifty"), 105 as "1" "oh" "5", 200 as "2" "hundred".
  */
 object CueClips {
     /** Numbers rendered as clips: 0 to 99, and "00" to "09" for a lap time's seconds. */
@@ -35,7 +38,7 @@ object CueClips {
                 word.isEmpty() -> Unit
                 word.all(Char::isDigit) -> {
                     flush(WordGapMillis)
-                    out += ClipPart(word, WordGapMillis)
+                    numberKeys(word).forEach { out += ClipPart(it, WordGapMillis) }
                 }
                 else -> words += word
             }
@@ -49,12 +52,30 @@ object CueClips {
         return out
     }
 
+    /** The clips of the number [word]: itself, or for 100 to 999 its hundreds and the rest. */
+    private fun numberKeys(word: String): List<String> {
+        val n = word.toIntOrNull()
+        if (n == null || n <= MaxNumber || n > MaxSpokenNumber || word.startsWith('0')) return listOf(word)
+        val rest = n % Hundred
+        val tail = when {
+            rest == 0 -> listOf(HundredWord)
+            rest < PaddedNumbers -> listOf(OhWord, rest.toString())
+            else -> listOf(rest.toString())
+        }
+        return listOf((n / Hundred).toString()) + tail
+    }
+
     /** Every clip the coach can need: the fixed words of each kind of phrase, and the numbers. */
     val vocabulary: Set<String> by lazy {
         val corner = Corner(1, 0.0, 0.0, 0.0, 0.0, Turn.Straight)
         val samples = listOf(
+            // With the target (FBBD-242).
+            Phrases.corner(corner, Advice.BrakeLater(SampleNumber, at = SampleNumber)),
+            Phrases.corner(corner, Advice.BrakeEarlier(SampleNumber, at = SampleNumber)),
+            Phrases.corner(corner, Advice.CarrySpeed(SampleNumber, goalKmh = SampleNumber)),
+            // Without it, as logged before FBBD-242.
             Phrases.corner(corner, Advice.BrakeLater(SampleNumber)),
-            Phrases.corner(corner, Advice.BrakeEarlier),
+            Phrases.corner(corner, Advice.BrakeEarlier()),
             Phrases.corner(corner, Advice.CarrySpeed(SampleNumber)),
             // Said without the number below High confidence (FBBD-177).
             Phrases.corner(corner, Advice.BrakeLater(SampleNumber, precise = false)),
@@ -64,7 +85,7 @@ object CueClips {
         )
         val words = samples.flatMap(::parts).map { it.key }.filterNot { it.all(Char::isDigit) }
         val numbers = (0..MaxNumber).map(Int::toString) + (0..<PaddedNumbers).map { "0$it" }
-        (words + numbers).toSortedSet()
+        (words + numbers + HundredWord + OhWord).toSortedSet()
     }
 
     /** Whether every part of [text] has a clip, so it can be said without live text-to-speech. */
@@ -77,4 +98,8 @@ object CueClips {
     private const val SampleNumber = 10
     private const val SampleLapMillis = 92_400L
     private const val PaddedNumbers = 10
+    private const val Hundred = 100
+    private const val MaxSpokenNumber = 999
+    private const val HundredWord = "hundred"
+    private const val OhWord = "oh"
 }
