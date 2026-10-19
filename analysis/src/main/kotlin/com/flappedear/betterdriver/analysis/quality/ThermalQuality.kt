@@ -12,8 +12,11 @@ import com.flappedear.betterdriver.recorder.video.VideoEventText
 /** Android's PowerManager.THERMAL_STATUS_SHUTDOWN. */
 private const val Shutdown = 6
 
+/** How long a file may take to finish after the shutdown status: 10 s. */
+private const val FinishMicros = 10_000_000L
+
 private const val ShutdownCriterion = "no Android thermal shutdown (status 0x06) (FBBD-46)"
-private const val FinishedCriterion = "every phone video file ended at a thermal shutdown (FBBD-46)"
+private const val FinishedCriterion = "every phone video file ended within 10 s of a thermal shutdown (FBBD-46)"
 
 /**
  * The thermal section, or null when Android never reported a shutdown: the phone's thermal status
@@ -27,7 +30,8 @@ internal fun thermalSection(events: List<RecorderEvent>): QualitySection? {
         fields(e.text)["thermal"]?.toIntOrNull()?.let { e.tMicros to it }
     }
     val at = (fromCamera + fromRecorder).filter { it.second >= Shutdown }.minOfOrNull { it.first } ?: return null
-    val open = phoneVideoEnds(events).count { it == Long.MAX_VALUE }
+    // A file that went on past the shutdown was not ended for it, even if a later stop was logged.
+    val open = phoneVideoEnds(events).count { it > at + FinishMicros }
     val metrics = listOf(
         judged(
             "thermal.shutdown", "Thermal shutdown", seconds(at), "s", false, Basis.MEASURED, ShutdownCriterion,
@@ -35,7 +39,7 @@ internal fun thermalSection(events: List<RecorderEvent>): QualitySection? {
         ),
         judged(
             "thermal.shutdown_video", "Video files left unfinished", open.toDouble(), "", open == 0, Basis.MEASURED,
-            FinishedCriterion, "phone video files with no logged end",
+            FinishedCriterion, "phone video files with no logged end within 10 s of the shutdown",
         ),
     )
     return QualitySection("Thermal shutdown", metrics, listOf(QualityNote(at, "Android thermal shutdown")))

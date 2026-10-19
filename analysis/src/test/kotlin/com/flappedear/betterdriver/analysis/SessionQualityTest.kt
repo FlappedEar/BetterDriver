@@ -492,6 +492,10 @@ class SessionQualityTest {
         val unfinished = sessionQuality(session(sets, statuses + start + fromDevice))
         assertEquals(Verdict.FAIL, unfinished.verdict("thermal.shutdown"))
         assertEquals(Verdict.FAIL, unfinished.verdict("thermal.shutdown_video"))
+        // A file stopped only when the session ended, long after the shutdown, was not ended for it.
+        val late = RecorderEvent(600_000_000, EventKinds.VIDEO_STOP, "camera=phone file=phone_0001.mp4 reason=user")
+        val ranOn = sessionQuality(session(sets, statuses + start + shutdown + late))
+        assertEquals(Verdict.FAIL, ranOn.verdict("thermal.shutdown_video"))
     }
 
     @Test
