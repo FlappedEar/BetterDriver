@@ -56,8 +56,11 @@ internal fun frameRate(camera: String, events: List<RecorderEvent>, counted: Lis
         }
         else -> {
             val (file, fps, target) = worst
+            // A file a counter missed is named, not passed over: the verdict covers the counted ones.
+            val missed = (set.keys - rated.map { it.first }.toSet()).sorted()
             val how = "frames in each file over its media time; " +
-                "worst of ${rated.size} file(s): $file, set to $target fps"
+                "worst of ${rated.size} file(s): $file, set to $target fps" +
+                if (missed.isEmpty()) "" else "; not counted: ${missed.joinToString(", ")}"
             judged(id, label, fps, "fps", fps >= target * MinFrameRateShare, Basis.MEASURED, FrameRateCriterion, how)
         }
     }
