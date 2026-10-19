@@ -134,8 +134,8 @@ internal class WideEncoder(
         videoDone.await(DrainSeconds, TimeUnit.SECONDS)
         audioDone.await(DrainSeconds, TimeUnit.SECONDS)
         val (last, unused) = synchronized(lock) {
-            // With no current file (the next could not be opened), the last is the one before.
-            val c = current ?: previous.also { previous = null }
+            // A next file that could not be opened left the full one current (cut), so it is the last.
+            val c = current
             closePrevious()
             current = null
             val n = next
@@ -225,12 +225,13 @@ internal class WideEncoder(
         val file = next
         if (done == null || file == null) return current
         next = null
-        previous = done
-        val opened = open(file, pts)
-        current = opened
-        if (!audioOn()) closePrevious()
-        if (opened != null) events.handedOver(done.file, done.mediaMicros, file, pts * NanosPerMicro)
-        return opened
+        // Unopened, the recording fails and the full file stays current, for stop() to finish as the last.
+        return open(file, pts)?.also { opened ->
+            previous = done
+            current = opened
+            if (!audioOn()) closePrevious()
+            events.handedOver(done.file, done.mediaMicros, file, pts * NanosPerMicro)
+        }
     }
 
     private fun routeAudio(buffer: ByteBuffer, info: MediaCodec.BufferInfo) {
@@ -260,6 +261,7 @@ internal class WideEncoder(
         } catch (e: Exception) {
             DebugLog.w(Tag, "${file.name} not opened", e)
             runCatching { muxer?.release() }
+            file.delete()
             events.failed("file not opened: ${e.javaClass.simpleName}")
             null
         }
