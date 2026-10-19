@@ -19,14 +19,17 @@ fun lapFrame(track: Track): LocalFrame? = track.startFinish?.let { LocalFrame(it
  *
  * So the coach's "Turn 3" is the lap analysis's "Corner 3", whichever lap either of them is built on.
  *
- * Each also gets [Corner.entryAt], where its track corner starts on [path] (FBBD-242): the apex less
- * the centreline's metres from the corner's start to the apex. Only for an apex inside its own corner
- * and the first braking corner of a chain; the later ones of a chain start inside it.
+ * Each also gets [Corner.entryAt], where its track corner starts on [path] (FBBD-242): the corner's
+ * start placed on [path] as the lap analysis places it ([TrackRevision.place]), or where that cannot
+ * be done, the apex less the centreline's metres from the corner's start to the apex. Only for an apex
+ * inside its own corner and the first braking corner of a chain; the later ones of a chain start
+ * inside it.
  */
 fun identifyCorners(corners: List<Corner>, path: LapTrace, frame: LocalFrame, identity: TrackRevision?): List<Corner> {
     if (identity == null) return corners.map { it.copy(cornerId = null, turnNumber = null, entryAt = null) }
     val taken = HashMap<String, Int>()
     val length = identity.lengthMeters
+    val starts = identity.place(frame, path.points, path.along)
     return corners.map { c ->
         val apex = pointAt(path, c.apexAt)
         val heading = pointAt(path, c.apexAt + ApexHeadingMeters) - pointAt(path, c.apexAt - ApexHeadingMeters)
@@ -37,7 +40,8 @@ fun identifyCorners(corners: List<Corner>, path: LapTrace, frame: LocalFrame, id
         } else {
             val k = taken.merge(segment.id, 1, Int::plus)!! - 1
             val inside = identity.segmentAt(at).id == segment.id
-            val entry = if (inside && k == 0) c.apexAt - (at - segment.startMeters).mod(length) else null
+            val placed = starts?.get(identity.segments.indexOf(segment))?.takeIf { it <= c.apexAt }
+            val entry = if (inside && k == 0) placed ?: (c.apexAt - (at - segment.startMeters).mod(length)) else null
             c.copy(
                 cornerId = segment.id,
                 turnNumber = minOf(segment.number + k, segment.lastNumber),

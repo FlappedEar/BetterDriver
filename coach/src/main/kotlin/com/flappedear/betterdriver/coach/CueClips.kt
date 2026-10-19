@@ -53,7 +53,7 @@ object CueClips {
     }
 
     /** The clips of the number [word]: itself, or for 100 to 999 its hundreds and the rest. */
-    private fun numberKeys(word: String): List<String> {
+    internal fun numberKeys(word: String): List<String> {
         val n = word.toIntOrNull()?.takeUnless { word.startsWith('0') }
         if (n == null || n !in (MaxNumber + 1)..MaxSpokenNumber) return listOf(word)
         val rest = n % Hundred

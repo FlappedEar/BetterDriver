@@ -76,14 +76,18 @@ object Phrases {
 
     /**
      * About how long text-to-speech takes to say [text] at normal rate: a fixed start plus a time per
-     * word, counting a two-digit number as two words. An estimate; the audio delay setting covers lag.
+     * word, counting a two-digit number as two words and a number over 99 as the parts it is said in
+     * ("1 oh 5", [CueClips.numberKeys]). An estimate; the audio delay setting covers lag.
      */
     fun durationMicros(text: String): Long {
         val words = text.split(' ', ',').filter { it.isNotBlank() }.sumOf { w ->
-            if (w.all(Char::isDigit) && w.length >= 2 && w.toInt() > SpokenAsOneWord) 2L else 1L
+            if (w.all(Char::isDigit)) CueClips.numberKeys(w).sumOf(::numberWords) else 1L
         }
         return StartMicros + words * WordMicros
     }
+
+    private fun numberWords(key: String): Long =
+        if (key.all(Char::isDigit) && key.length >= 2 && key.toInt() > SpokenAsOneWord) 2L else 1L
 
     private const val HalfTenth = 50L
     private const val MillisPerTenth = 100L

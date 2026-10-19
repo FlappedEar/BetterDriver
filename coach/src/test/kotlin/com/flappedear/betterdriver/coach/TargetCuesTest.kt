@@ -119,4 +119,16 @@ class TargetCuesTest {
         val vague = reviewed(Advice.BrakeLater(15, false, 100), pass(brakeAt = 93.0), pass(brakeAt = 85.0))
         assertEquals("Braked later, short of best · time gained", vague)
     }
+
+    @Test
+    fun `a number over 99 takes as long as the parts it is said in`() {
+        val word = Phrases.durationMicros("brake") - Phrases.durationMicros("")
+        fun words(text: String) = (Phrases.durationMicros(text) - Phrases.durationMicros("")) / word
+        assertEquals(1, words("15"))
+        assertEquals(2, words("50"))
+        assertEquals(3, words("105"), "1 oh 5")
+        assertEquals(3, words("150"), "1 50")
+        assertEquals(2, words("200"), "2 hundred")
+        assertEquals(7, words("Turn 3, brake at 105"))
+    }
 }
