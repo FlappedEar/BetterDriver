@@ -14,14 +14,14 @@ class PolishPhrasesTest {
 
     @Test
     fun `corner cues say the target first, then the change`() {
-        assertEquals("Zakręt 3, hamuj na 100, 10 później", pl.corner(corner, Advice.BrakeLater(10, at = 100)))
-        assertEquals("Zakręt 3, hamuj na 120, 10 wcześniej", pl.corner(corner, Advice.BrakeEarlier(10, at = 120)))
-        assertEquals("Zakręt 3, 60 w apeksie, 5 więcej", pl.corner(corner, Advice.CarrySpeed(5, goalKmh = 60)))
-        assertEquals("Zakręt 3, hamuj trochę później", pl.corner(corner, Advice.BrakeLater(10, precise = false)))
-        assertEquals("Zakręt 3, trochę więcej prędkości", pl.corner(corner, Advice.CarrySpeed(5, precise = false)))
-        assertEquals("Zakręt 3, hamuj wcześniej", pl.corner(corner, Advice.BrakeEarlier()))
-        assertEquals("Zakręt 3, hamuj 15 metrów później", pl.corner(corner, Advice.BrakeLater(15)))
-        assertEquals("Zakręt 3, 5 więcej", pl.corner(corner, Advice.CarrySpeed(5)))
+        assertEquals("Trójka, hamuj na 100, 10 później", pl.corner(corner, Advice.BrakeLater(10, at = 100)))
+        assertEquals("Trójka, hamuj na 120, 10 wcześniej", pl.corner(corner, Advice.BrakeEarlier(10, at = 120)))
+        assertEquals("Trójka, 60 w apeksie, 5 więcej", pl.corner(corner, Advice.CarrySpeed(5, goalKmh = 60)))
+        assertEquals("Trójka, hamuj trochę później", pl.corner(corner, Advice.BrakeLater(10, precise = false)))
+        assertEquals("Trójka, trochę więcej prędkości", pl.corner(corner, Advice.CarrySpeed(5, precise = false)))
+        assertEquals("Trójka, hamuj wcześniej", pl.corner(corner, Advice.BrakeEarlier()))
+        assertEquals("Trójka, hamuj 15 metrów później", pl.corner(corner, Advice.BrakeLater(15)))
+        assertEquals("Trójka, 5 więcej", pl.corner(corner, Advice.CarrySpeed(5)))
     }
 
     @Test
@@ -36,19 +36,29 @@ class PolishPhrasesTest {
     fun `short cue, coach line and praise`() {
         val advice = Advice.BrakeLater(10, at = 100)
         val cue = Cue(1, 0, 5, CueKind.Corner, pl.corner(corner, advice), 3, advice, turn = 3)
-        assertEquals("Zakręt 3, hamuj na 100", pl.shortCorner(cue))
+        assertEquals("Trójka, hamuj na 100", pl.shortCorner(cue))
         assertEquals("Hamuj na 100 m · 10 później", pl.line(advice))
         assertEquals("60 km/h w apeksie · 5 więcej", pl.line(Advice.CarrySpeed(5, goalKmh = 60)))
         assertNull(pl.line(Advice.BrakeLater(10, precise = false)))
-        assertEquals("Zakręt 3, to zadziałało", pl.praise(corner, Praise.Worked))
-        assertEquals("Zakręt 3, najlepiej dotąd", pl.praise(corner, Praise.BestYet))
+        assertEquals("Trójka, to zadziałało", pl.praise(corner, Praise.Worked))
+        assertEquals("Trójka, najlepiej dotąd", pl.praise(corner, Praise.BestYet))
     }
 
     @Test
-    fun `lap times use przecinek`() {
-        assertEquals("1 32 przecinek 4", pl.lapTime(92_449, best = false))
-        assertEquals("Najlepsze okrążenie, 2 05 przecinek 0", pl.lapTime(124_960, best = true))
-        assertEquals("58 przecinek 3", pl.lapTime(58_300, best = false))
+    fun `corners up to 10 are named by their number nouns`() {
+        fun named(n: Int) = pl.praise(Corner(n, 0.0, 0.0, 0.0, 0.0, Turn.Straight), Praise.Worked)
+        assertEquals("Jedynka, to zadziałało", named(1))
+        assertEquals("Ósemka, to zadziałało", named(8))
+        assertEquals("Dziesiątka, to zadziałało", named(10))
+        assertEquals("Zakręt 11, to zadziałało", named(11))
+        (1..12).forEach { assertTrue(CueClips.covers(named(it), pl), named(it)) }
+    }
+
+    @Test
+    fun `lap times are the bare numbers`() {
+        assertEquals("1, 32, 4", pl.lapTime(92_449, best = false))
+        assertEquals("Najlepsze okrążenie, 2, 05, 0", pl.lapTime(124_960, best = true))
+        assertEquals("58, 3", pl.lapTime(58_300, best = false))
     }
 
     @Test
@@ -75,7 +85,7 @@ class PolishPhrasesTest {
         }
         assertTrue(CueClips.covers(pl.praise(corner, Praise.Worked), pl))
         assertTrue(CueClips.covers("Zakręt 12, najlepiej dotąd", pl))
-        assertFalse(CueClips.covers("Zakręt 3, hamuj na 1500, 10 później", pl))
+        assertFalse(CueClips.covers("Trójka, hamuj na 1500, 10 później", pl))
         // English clips do not say Polish phrases.
         assertFalse(CueClips.covers(pl.corner(corner, Advice.BrakeLater(10, at = 100))))
     }
@@ -92,8 +102,8 @@ class PolishPhrasesTest {
 
     @Test
     fun `a whole hundred is one word long`() {
-        val one = pl.durationMicros("Zakręt 3, hamuj na 200")
-        val two = pl.durationMicros("Zakręt 3, hamuj na 210")
+        val one = pl.durationMicros("Trójka, hamuj na 200")
+        val two = pl.durationMicros("Trójka, hamuj na 210")
         assertEquals(400_000L, two - one)
         assertEquals(PhraseBook.of(CoachLanguage.Polish), pl)
         assertEquals(PhraseBook.of(CoachLanguage.English), Phrases)

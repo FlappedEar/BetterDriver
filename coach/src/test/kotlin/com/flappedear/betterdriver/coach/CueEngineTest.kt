@@ -112,8 +112,9 @@ class CueEngineTest {
         assertEquals(english.cues.map { it.kind to it.lap }, polish.cues.map { it.kind to it.lap })
         val cue = polish.cues.single { it.kind == CueKind.Corner }
         val advice = assertIs<Advice.BrakeLater>(cue.advice)
-        assertEquals("Zakręt 2, hamuj na ${advice.at}, ${advice.meters} później", cue.text)
-        polish.cues.filter { it.kind == CueKind.LapTime }.forEach { assertTrue("przecinek" in it.text, it.text) }
+        assertEquals("Dwójka, hamuj na ${advice.at}, ${advice.meters} później", cue.text)
+        val lapTime = Regex("""(Najlepsze okrążenie, )?(\d+, )?\d+, \d""")
+        polish.cues.filter { it.kind == CueKind.LapTime }.forEach { assertTrue(lapTime.matches(it.text), it.text) }
         assertTrue(polish.cues.all { CueClips.covers(it.text, PolishPhrases) }, polish.cues.joinToString { it.text })
         assertOutsideBrakingZones(drive, polish.cues, paces, 0, PolishPhrases)
     }

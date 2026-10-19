@@ -100,7 +100,11 @@ object CueClips {
             book.praise(corner, Praise.BestYet),
             book.lapTime(SampleLapMillis, best = true),
             book.lapTime(SampleLapMillis, best = false),
-        )
+            book.lapTime(SampleShortLapMillis, best = false),
+        ) + (1..SampleCorners).map {
+            // A language that names corners by word ("Trójka") has a clip per name.
+            book.praise(Corner(it, 0.0, 0.0, 0.0, 0.0, Turn.Straight), Praise.Worked)
+        }
         val words = samples.flatMap { parts(it, book) }.map { it.key }.filterNot { it.all(Char::isDigit) }
         val numbers = (0..MaxNumber).map(Int::toString) + (0..<PaddedNumbers).map { "0$it" }
         val big = (MaxNumber + 1..MaxSpokenNumber).flatMap { book.numberKeys(it.toString()) }
@@ -117,6 +121,8 @@ object CueClips {
 
     private const val SampleNumber = 10
     private const val SampleLapMillis = 92_400L
+    private const val SampleShortLapMillis = 58_300L
+    private const val SampleCorners = 30
     private const val PaddedNumbers = 10
     private const val Hundred = 100
     private const val MaxSpokenNumber = 999

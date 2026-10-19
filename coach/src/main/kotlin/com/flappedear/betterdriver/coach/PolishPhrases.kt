@@ -2,10 +2,11 @@ package com.flappedear.betterdriver.coach
 
 /**
  * What the coach says in Polish (FBBD-245): the same phrases as [Phrases], with the same numbers, in
- * the same order. A draft of the wording until Arek picks it (UI review round 24, UI-96 to UI-101):
- * corners as "Zakręt 3", the target first, then the change ("Zakręt 3, hamuj na 100, 10 później"),
- * lap times with "przecinek". Numbers stay digits, so text-to-speech says them in Polish and the
- * pre-rendered clips ([CueClips]) join them from parts: 150 as "100" "50" ("sto pięćdziesiąt").
+ * the same order, worded as Arek picked on the UI review page, round 24: corners 1 to 10 by their
+ * number nouns, "Trójka" (UI-97 B), short phrases with the target first, then the change ("Trójka,
+ * hamuj na 100, 10 później", UI-98 A), lap times as bare numbers, "1, 32, 4" (UI-99 B, his note
+ * "Jeden, trzydzieści dwa, cztery"). Numbers stay digits, so text-to-speech says them in Polish and
+ * the pre-rendered clips ([CueClips]) join them from parts: 150 as "100" "50" ("sto pięćdziesiąt").
  */
 object PolishPhrases : PhraseBook {
     override fun corner(corner: Corner, advice: Advice): String = turn(corner.label) + ", " + advice(advice)
@@ -53,10 +54,10 @@ object PolishPhrases : PhraseBook {
         Praise.BestYet -> "najlepiej dotąd"
     }
 
-    /** "1 32 przecinek 4" ("jeden trzydzieści dwa przecinek cztery"); "Najlepsze okrążenie, ..." for a new best. */
+    /** "1, 32, 4" ("jeden, trzydzieści dwa, cztery"); "Najlepsze okrążenie, ..." for a new best. */
     override fun lapTime(millis: Long, best: Boolean): String {
         val (minutes, seconds, tenth) = lapTimeParts(millis)
-        val time = if (minutes > 0) "$minutes $seconds przecinek $tenth" else "${seconds.toInt()} przecinek $tenth"
+        val time = if (minutes > 0) "$minutes, $seconds, $tenth" else "${seconds.toInt()}, $tenth"
         return if (best) "Najlepsze okrążenie, $time" else time
     }
 
@@ -72,7 +73,13 @@ object PolishPhrases : PhraseBook {
     override fun numberWords(key: String): Long =
         if (key.all(Char::isDigit) && key.toInt() % Hundred == 0 && key.toInt() > 0) 1L else super.numberWords(key)
 
-    private fun turn(n: Int) = "Zakręt $n"
+    /** "Jedynka" to "Dziesiątka" for corners 1 to 10, as drivers say them; "Zakręt 11" from 11 on. */
+    private fun turn(n: Int) = TurnNames.getOrNull(n - 1)?.takeIf { n >= 1 } ?: "Zakręt $n"
+
+    private val TurnNames = listOf(
+        "Jedynka", "Dwójka", "Trójka", "Czwórka", "Piątka",
+        "Szóstka", "Siódemka", "Ósemka", "Dziewiątka", "Dziesiątka",
+    )
 
     /** "metr", "metry" or "metrów" after [n]: 1 metr, 2 to 4 metry (not 12 to 14), else metrów. */
     internal fun metres(n: Int?): String {
