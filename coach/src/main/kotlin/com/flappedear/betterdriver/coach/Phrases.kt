@@ -17,6 +17,12 @@ object Phrases {
         }
     }
 
+    /** "Turn 3, that worked" or "Turn 3, best yet" (FBBD-243, UI-93 C). */
+    fun praise(corner: Corner, praise: Praise): String = "Turn ${corner.label}, " + when (praise) {
+        Praise.Worked -> "that worked"
+        Praise.BestYet -> "best yet"
+    }
+
     /** "1 32 point 4", read by text-to-speech as "one thirty-two point four"; "Best lap, ..." for a new best. */
     fun lapTime(millis: Long, best: Boolean): String {
         val tenths = (millis + HalfTenth) / MillisPerTenth

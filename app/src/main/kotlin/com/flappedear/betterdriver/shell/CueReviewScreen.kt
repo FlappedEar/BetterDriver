@@ -83,6 +83,7 @@ private fun CueCard(item: ReviewedCue) {
     val cue = item.cue
     val (verdict, color) = when {
         cue.kind == CueKind.LapTime -> "Lap time" to Color.Unspecified
+        cue.kind == CueKind.Praise -> "Praise" to c.gain
         item.result == null -> "No pass after" to Color.Unspecified
         item.result?.improved == true -> "Better" to c.gain
         else -> "Not yet" to c.loss

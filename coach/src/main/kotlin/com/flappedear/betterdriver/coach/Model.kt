@@ -167,12 +167,20 @@ sealed interface Advice {
 /** Why a corner cue is not High confidence (FBBD-177): a short [code] for the log and its [text]. */
 data class CueDoubt(val code: String, val cap: Confidence, val text: String)
 
-/** Why a cue was spoken. */
-enum class CueKind { Corner, LapTime }
+/** Why a cue was spoken. [Praise] (FBBD-243): a corner was done better. */
+enum class CueKind { Corner, LapTime, Praise }
+
+/**
+ * What a praise said (FBBD-243, UI-93 C): a cue at the corner [Worked] (“that worked”), or the corner
+ * was driven faster than ever before ([BestYet], “best yet”).
+ */
+enum class Praise { Worked, BestYet }
 
 /**
  * One spoken cue (FBBD-97). [seq] counts the session's cues from 1. For a corner cue, [before] is the
- * last pass it was based on and [target] the best pass it aims at.
+ * last pass it was based on and [target] the best pass it aims at. For a praise (FBBD-243), [praise]
+ * says which, [praised] is the pass praised and [before] the pass it beat: the one before the cue
+ * that worked, or the fastest pass until then.
  */
 data class Cue(
     val seq: Int,
@@ -199,6 +207,8 @@ data class Cue(
      */
     val confidence: Confidence = Confidence.HIGH,
     val doubts: List<CueDoubt> = emptyList(),
+    val praise: Praise? = null,
+    val praised: CornerPass? = null,
 ) {
     /** The corner number the driver heard, for a corner cue. */
     val heardTurn: Int? get() = turn ?: corner

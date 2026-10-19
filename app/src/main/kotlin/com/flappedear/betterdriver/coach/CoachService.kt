@@ -189,6 +189,7 @@ class CoachService : Service() {
         send(a, RecorderProtocol.MSG_COACH_STATUS) {
             status.corner?.let { putString(CoachProtocol.STATUS_CORNER, it) }
             status.text?.let { putString(CoachProtocol.STATUS_TEXT, it) }
+            putBoolean(CoachProtocol.STATUS_PRAISE, status.praise)
         }
     }
 

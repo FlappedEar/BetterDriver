@@ -53,6 +53,9 @@ private const val MinCueSpeedKmh = 20.0
 /** A lap time not spoken this long after the line is dropped. */
 private const val LapCueExpiryMicros = 20_000_000L
 
+/** A praise not said this long after its corner is dropped (FBBD-243). */
+private const val PraiseExpiryMicros = 15_000_000L
+
 /** [CornerBook.cuedOnLap] of a corner not cued yet: far enough below any lap that it is always rested. */
 private const val NeverCued = Int.MIN_VALUE / 2
 
@@ -94,6 +97,8 @@ private class CornerBook(
     private val fastest = Array(n) { mutableListOf<CornerPass>() }
     val targets = arrayOfNulls<CornerPass>(n)
     val lastPass = arrayOfNulls<CornerPass>(n)
+    /** Each corner's last pass at race pace: not one driven after lifting off to cool down ([InLap]). */
+    val lastAtPace = arrayOfNulls<CornerPass>(n)
     /** Each corner's recent losses against its target, oldest first. */
     val losses = Array(n) { ArrayDeque<Long>() }
     val cuedOnLap = IntArray(n) { NeverCued }
@@ -117,9 +122,12 @@ private class CornerBook(
     fun confirmed(i: Int): CornerPass? = fastest[i].getOrNull(ConfirmingPasses - 1)
 
 
-    fun onPass(pass: CornerPass) {
+    /** [pass] is the corner's latest; [cruising] when driven after lifting off to cool down. */
+    fun onPass(pass: CornerPass, cruising: Boolean) {
         val i = pass.corner - 1
         lastPass[i] = pass
+        if (cruising) return
+        lastAtPace[i] = pass
         targets[i]?.takeUnless { pass.unusable() }?.let { t ->
             losses[i].addLast(pass.timeMicros - t.timeMicros)
             while (losses[i].size > LossHistory) losses[i].removeFirst()
@@ -188,6 +196,75 @@ private class CornerBook(
         } else {
             maxOf(c.apexAt, targets[i]?.apexAt ?: c.apexAt, lastPass[i]?.apexAt ?: c.apexAt)
         }
+    }
+}
+
+/**
+ * Praise waiting for the straight after its corner (FBBD-243): at most one is pending, a newer one
+ * replaces it, and at most one is said per lap. A praise not said within [PraiseExpiryMicros] is dropped.
+ */
+private class PraiseQueue {
+    private var waiting: Cue? = null
+    private var praisedLap = NeverCued
+
+    /** Whether a praise was said for a pass on [lap]. */
+    fun praised(lap: Int) = lap == praisedLap
+
+    /** [cue] has no seq yet; its time is when it was found. */
+    fun offer(cue: Cue) {
+        waiting = cue
+    }
+
+    fun clear() {
+        waiting = null
+    }
+
+    /**
+     * The praise to say at [now], or null: one waits, the voice is [free], and it is heard in full
+     * ([need]) before the braking zone [timeToZone] away. One that can no longer fit is dropped; while
+     * the car is too slow to tell ([timeToZone] null) it waits.
+     */
+    fun next(now: Long, timeToZone: Long?, free: Boolean, need: (Cue) -> Long): Cue? {
+        waiting?.takeIf { now > it.tMicros + PraiseExpiryMicros }?.let { waiting = null }
+        val cue = waiting
+        val fits = cue != null && timeToZone != null && timeToZone >= need(cue)
+        if (cue != null && timeToZone != null && !fits) waiting = null
+        if (!fits || !free) return null
+        waiting = null
+        praisedLap = cue.lap
+        return cue
+    }
+
+    /** [cue] was never played: its lap may still be praised. */
+    fun unsaid(cue: Cue) {
+        if (praisedLap == cue.lap) praisedLap = NeverCued
+    }
+}
+
+/**
+ * The praise [pass] earns (FBBD-243), or null: “that worked” when the cue [result] is for moved the way
+ * it asked and gained time, else “best yet” when it beat the corner's fastest pass so far by
+ * [MinLossMicros]. Targets change only at the end of a timed lap, so the fastest pass here is still the
+ * one from before this lap. A pass too weak to coach from is never praised.
+ */
+private fun praiseFor(b: CornerBook, pass: CornerPass, result: CueResult?, now: Long): Cue? {
+    val corner = b.map.corners.getOrNull(pass.corner - 1)
+    val fastest = b.targets.getOrNull(pass.corner - 1)
+    val worked = result != null && result.improved && result.gainMicros > 0
+    val best = fastest != null && fastest !== pass && fastest.timeMicros - pass.timeMicros >= MinLossMicros
+    val kind = when {
+        worked -> Praise.Worked
+        best -> Praise.BestYet
+        else -> null
+    }
+    return if (corner == null || kind == null || pass.unusable()) {
+        null
+    } else {
+        Cue(
+            0, now, pass.lap, CueKind.Praise, Phrases.praise(corner, kind), corner.number,
+            before = if (worked) result?.cue?.before else fastest, turn = corner.label,
+            cornerId = corner.cornerId, praise = kind, praised = pass,
+        )
     }
 }
 
@@ -295,12 +372,20 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *   when the [earlier] reference has a session driven [sameDay] (back out after a break in the pits,
  *   FBBD-190), at most [WarmUpLaps], since the corners and targets are known already.
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
- *   there and may give one cue: brake later, brake earlier, or carry more speed. It is timed to end,
+ *   there (the lap before's, when the last lap passed it cooling down) and may give one cue: brake
+ *   later, brake earlier, or carry more speed. It is timed to end,
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
- * - **In-lap** ([InLap], FBBD-202): nothing is said once the driver lifts off on a straight to cool
- *   down, to the end of that lap, nor after a lap ends in the pit lane, whose time is not said.
+ * - **Praise** (FBBD-243, UI-92 B, UI-93 C, UI-94 A, UI-95 A): with corner cues on and the learning laps
+ *   done, a corner done better is praised on the straight after it, at most once per lap: “Turn 3, that
+ *   worked” when the cue there moved the way it asked and gained time, else “Turn 3, best yet” when the
+ *   pass beat the fastest one until then by [MinLossMicros]. A pass too weak to coach from is never
+ *   praised. It is said only when it and that straight's corner cue both fit; when not, the cue wins.
+ * - **In-lap** ([InLap], FBBD-202): no advice once the driver lifts off from race pace on a straight
+ *   to cool down, to the end of that lap, only the time of the lap before; passes driven cooling down
+ *   are never coached from nor measured as a cue's result. Nothing at all after a lap ends in the
+ *   pit lane, whose time is not said.
  * - **Corner numbers** are the track's (FBBD-172): each braking corner is said by the number of the
  *   track corner it is in ([identifyCorners]), as the lap analysis numbers it.
  * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by CornerId, or by
@@ -358,6 +443,8 @@ class CueEngine(
 
     private var pendingLap: PendingLap? = null
 
+    private val praises = PraiseQueue()
+
     /** The corners being coached, once known. */
     val corners: List<Corner> get() = book?.map?.corners.orEmpty()
 
@@ -397,7 +484,7 @@ class CueEngine(
         }
         inLap.update(fix.tMicros, laps.speedKmh, along?.takeIf { book?.onStraight(it) == true }, book?.map?.path)
         val cue = when {
-            settings.verbosity == Verbosity.Off || inLap.quiet -> null
+            settings.verbosity == Verbosity.Off || inLap.inPitLane -> null
             along == null -> speakLapTime(fix.tMicros, null, anywhere = true)
             else -> speak(fix.tMicros, along)
         }
@@ -419,7 +506,10 @@ class CueEngine(
         }
         lapPasses.clear()
         val inPits = inLap.onLapDone(laps.speedKmh, book?.map?.path)
-        if (inPits) pendingLap = null
+        if (inPits) {
+            pendingLap = null
+            praises.clear()
+        }
         if (timed) onTimedLap(lap, now, say = !inPits)
         cursor = book?.map?.cursor()
         meters = book?.map?.meters(laps.timer.lapNumber).orEmpty()
@@ -440,18 +530,24 @@ class CueEngine(
     }
 
     private fun onPass(pass: CornerPass, now: Long): CueResult? {
-        book?.onPass(pass)
-        lapPasses += pass
+        val cruising = inLap.cruising
+        book?.onPass(pass, cruising)
+        if (!cruising) lapPasses += pass
         val cue = openCues.remove(pass.corner)
         val before = cue?.before
-        // A pass too weak to coach from (FBBD-177) says nothing about whether the cue worked: no
-        // result, so the review shows no gain and no Better or Not yet for it.
-        return if (cue == null || before == null || pass.unusable()) {
+        // A pass too weak to coach from (FBBD-177), or driven cooling down, says nothing about whether
+        // the cue worked: no result, so the review shows no gain and no Better or Not yet for it.
+        val weak = pass.unusable() || cruising
+        val result = if (cue == null || before == null || weak) {
             null
         } else {
             val gain = before.timeMicros - pass.timeMicros
             CueResult(now, cue, pass, improved(cue.advice, before, pass), gain, confidenceOf(passDoubts(pass)))
         }
+        val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
+        val b = book
+        if (learned && b != null && !praises.praised(pass.lap)) praiseFor(b, pass, result, now)?.let(praises::offer)
+        return result
     }
 
     /**
@@ -460,6 +556,10 @@ class CueEngine(
      */
     fun unsaid(cue: Cue) {
         speech.unsaid(cue)
+        if (cue.kind == CueKind.Praise) {
+            praises.unsaid(cue)
+            return
+        }
         val corner = cue.corner ?: return
         if (openCues[corner]?.seq == cue.seq) openCues.remove(corner)
         book?.cuedOnLap?.let { if (it[corner - 1] == cue.lap) it[corner - 1] = NeverCued }
@@ -468,6 +568,8 @@ class CueEngine(
     /** At most one cue for this fix, with the car [along] the reference path. */
     @Suppress("ReturnCount") // Each early return is a reason to stay quiet on this fix.
     private fun speak(now: Long, along: Double): Cue? {
+        // Cooling down: no advice, but the time of the lap just driven is still said.
+        if (inLap.cruising) return speakLapTime(now, null, anywhere = true)
         val b = book ?: return null
         val next = b.next(along) ?: return null
         val lap = laps.timer.lapNumber
@@ -479,8 +581,13 @@ class CueEngine(
         val zoneStart = b.zoneStart(next)
         val time = speech.timeTo(b.map.path, along, zoneStart)
         val cue = p.cue
+        // Praise first, when it and this straight's corner cue both fit (UI-94 A: else the cue wins).
+        val cueNeed = cue?.let { speech.needMicros(it.text) + MarginMicros } ?: 0L
+        val praise = praises.next(now, time, speech.free(now)) { speech.needMicros(it.text) + MarginMicros + cueNeed }
+        if (praise != null) return speech.said(praise.copy(seq = ++seq, tMicros = now, zoneMeters = zoneStart - along))
         return if (cue != null) speakCorner(cue, now, time, zoneStart - along) else speakLapTime(now, time)
     }
+
 
     /**
      * Says [planned] when it fits on this straight; drops it once it no longer can. [zoneMeters] is the
@@ -519,7 +626,9 @@ class CueEngine(
     private fun cornerCue(b: CornerBook, corner: Corner, now: Long): Cue? {
         val i = corner.number - 1
         val lap = laps.timer.lapNumber
-        val last = b.lastPass[i]?.takeIf { it.lap == lap - 1 }
+        // The last lap's pass, or when the last lap was cooled down there, the lap before's at race pace.
+        val recent = b.lastPass[i]?.takeIf { it.lap == lap - 1 }
+        val last = b.lastAtPace[i]?.takeIf { recent != null && (it === recent || it.lap == lap - 2) }
         val target = b.confirmed(i)?.takeIf { it !== last }
         if (last == null || target == null || !mayCue(b, corner, lap)) return null
         val unidentified = identity != null && corner.cornerId == null
