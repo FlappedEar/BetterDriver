@@ -143,15 +143,16 @@ class AnalysisSmokeTest {
             app.onNode(hasText("Compare") and hasClickAction()).performClick()
             app.pumpUntilText("Compare laps", timeoutMs = LoadTimeoutMs)
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-            // Back goes to the review's lap picker, then back again to Corner laps.
+            // Back goes to the review's lap picker, which has no frame loop.
             app.pumpBack()
-            app.pumpUntilText("Compare laps")
-            app.pumpBack()
-            app.pumpUntil(LoadTimeoutMs, "the lap review to close") {
-                !app.showsText("Compare laps")
-            }
+            app.pumpUntilNode(hasText("Compare") and hasClickAction())
         }
-        app.waitForText("TIME THROUGH THE CORNER", substring = true)
+        // Back again to Corner laps on the automatic clock: Corner laps comes back with its player,
+        // whose effects must be applied on the main thread, and frames pumped by hand can apply them
+        // off it (FBBD-234).
+        app.back()
+        app.waitUntilGone("Compare laps", timeoutMs = LoadTimeoutMs)
+        app.waitForText("TIME THROUGH THE CORNER", substring = true, timeoutMs = LoadTimeoutMs)
 
         // Then to the analysis as it was left.
         app.back()
