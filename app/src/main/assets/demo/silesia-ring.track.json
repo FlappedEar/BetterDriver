@@ -1,0 +1,75 @@
+{
+    "format": "betterdriver-track",
+    "version": 1,
+    "track": {
+        "id": "silesia-ring",
+        "name": "Silesia Ring",
+        "center": {
+            "lat": 50.528465,
+            "lon": 18.097838833333334
+        },
+        "country": "PL",
+        "layout": "",
+        "radiusMeters": 2000.0,
+        "startFinish": {
+            "left": {
+                "lat": 50.52874125706447,
+                "lon": 18.09814311981735
+            },
+            "right": {
+                "lat": 50.52818874293553,
+                "lon": 18.097534546849317
+            }
+        },
+        "sectorLines": [
+            {
+                "left": {
+                    "lat": 50.5260468969206,
+                    "lon": 18.098744077351736
+                },
+                "right": {
+                    "lat": 50.52562710307941,
+                    "lon": 18.09849058931493
+                }
+            },
+            {
+                "left": {
+                    "lat": 50.52656706321199,
+                    "lon": 18.093194367655975
+                },
+                "right": {
+                    "lat": 50.52698960345467,
+                    "lon": 18.09343629901069
+                }
+            },
+            {
+                "left": {
+                    "lat": 50.527093144932344,
+                    "lon": 18.096130312694708
+                },
+                "right": {
+                    "lat": 50.526954188400985,
+                    "lon": 18.096803020638628
+                }
+            },
+            {
+                "left": {
+                    "lat": 50.529853780812196,
+                    "lon": 18.09040955986029
+                },
+                "right": {
+                    "lat": 50.529670885854465,
+                    "lon": 18.091055773473045
+                }
+            }
+        ],
+        "pitEntry": null,
+        "pitExit": null,
+        "circuitId": null,
+        "revision": 1,
+        "updatedUtcMillis": 0,
+        "kind": "circuit",
+        "finish": null,
+        "identity": null
+    }
+}

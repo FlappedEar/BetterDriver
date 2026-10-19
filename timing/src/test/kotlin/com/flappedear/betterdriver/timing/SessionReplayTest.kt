@@ -15,6 +15,7 @@ import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.TrackKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -74,6 +75,28 @@ class SessionReplayTest {
         val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
         assertTrue(replay.fix(0).any { it.channelId == GnssChannels.LAT.id })
         assertEquals(start, replay.fix(0).single { it.channelId == GnssChannels.UTC_MS.id }.value.toLong())
+    }
+
+    @Test
+    fun `a replay written as text reads back the same fixes`() {
+        val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
+        val back = SessionReplay.read(replay.write(), start)
+        for (n in listOf(0L, 7L, 1_000L, 9_999L)) {
+            val a = replay.fix(n).associate { it.channelId to it.value }
+            val b = back.fix(n).associate { it.channelId to it.value }
+            assertEquals(a.keys, b.keys)
+            a.forEach { (id, v) ->
+                val within = if (id == GnssChannels.LAT.id || id == GnssChannels.LON.id) 1e-6 else 0.05
+                assertEquals(v, b.getValue(id), within, "channel $id at $n")
+            }
+        }
+    }
+
+    @Test
+    fun `text that is not a replay is refused`() {
+        assertFailsWith<IllegalArgumentException> { SessionReplay.read("hello", start) }
+        val onePoint = SessionReplay.FormatLine + "\n1 2 3 - -"
+        assertFailsWith<IllegalArgumentException> { SessionReplay.read(onePoint, start) }
     }
 
     @Test
