@@ -469,6 +469,20 @@ class CueEngine(
     /** The corners of the session focus (FBBD-20), by number, the primary's first, once the corners are known. */
     val focusCorners: List<Int> get() = book?.chosen?.let { (it.primary + it.secondary).distinct() }.orEmpty()
 
+    /**
+     * Why the coach says nothing about corners now (FBBD-202): [CoachEvents.PIT_LANE] after a lap that
+     * ended in the pit lane, [CoachEvents.COOLING_DOWN] once the car lifted off to cool down; else null.
+     */
+    val quietReason: String?
+        get() = when {
+            inLap.inPitLane -> CoachEvents.PIT_LANE
+            inLap.cruising -> CoachEvents.COOLING_DOWN
+            else -> null
+        }
+
+    /** The lap being driven, as live timing numbers it. */
+    val lapNumber: Int get() = laps.timer.lapNumber
+
     val phase: CoachPhase
         get() = when {
             settings.verbosity < Verbosity.Focus -> CoachPhase.Quiet

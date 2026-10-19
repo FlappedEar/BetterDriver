@@ -37,6 +37,16 @@ object CoachEvents {
      */
     const val FOCUS = "coach_focus"
 
+    /**
+     * The coach went quiet for the rest of a lap (FBBD-202): text "lap=<n> reason=<[COOLING_DOWN] or
+     * [PIT_LANE]>". So a log shows which laps it took as cool-down, not only that it said nothing (FBBD-244).
+     */
+    const val QUIET = "coach_quiet"
+    const val COOLING_DOWN = "cooling_down"
+    const val PIT_LANE = "pit_lane"
+
+    fun quietText(lap: Int, reason: String) = "lap=$lap reason=$reason"
+
     /** The text of a [FOCUS] event: the session the focus came from, and its corners' CornerIds, the primary first. */
     fun focusText(sessionId: String, cornerIds: List<String>) =
         "source=$sessionId corners=${cornerIds.joinToString(",")}"
