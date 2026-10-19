@@ -52,6 +52,9 @@ class CoachSession(
 
     private var lastCue: Cue? = null
 
+    /** Why the coach was quiet at the last fix (FBBD-202), so each new quiet spell is logged once. */
+    private var quiet: String? = null
+
     /** The last cue said; until there is one, whether the coach is learning or on. */
     val status: CoachStatus
         get() {
@@ -71,6 +74,11 @@ class CoachSession(
         val e = engine ?: return CoachOutput(emptyList(), status)
         val u = e.update(fix)
         val events = mutableListOf<CoachEvent>()
+        val reason = e.quietReason
+        if (reason != null && reason != quiet) {
+            events += CoachEvent(fix.tMicros, CoachEvents.QUIET, CoachEvents.quietText(e.lapNumber, reason))
+        }
+        quiet = reason
         for (r in u.results) events += CoachEvent(r.tMicros, CoachEvents.RESULT, CoachEvents.resultText(r))
         for (cue in u.cues) {
             val problem = when {

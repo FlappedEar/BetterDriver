@@ -18,6 +18,13 @@ private const val NoiseKmh = 0.5
  */
 private const val AtPaceShare = 0.8
 
+/**
+ * While cooling down, a corner driven within this share of its fastest time is driven at race pace;
+ * [BackAtPacePasses] of them in a row end the cool-down: the lift was for traffic (FBBD-252).
+ */
+private const val BackAtPaceShare = 1.05
+private const val BackAtPacePasses = 2
+
 /** The reference lap slowed over a stretch when it lost more than this. */
 private const val ReferenceSlowerKmh = 2.0
 
@@ -35,7 +42,10 @@ private const val MicrosPerSecond = 1_000_000.0
  * - **Pit lane.** A lap ended at less than half the reference lap's speed at the line: that lap was
  *   the in-lap. Its time is not said, and nothing is said until the car is back up to that speed.
  *
- * A lift of 3 s for traffic also quiets the rest of that lap; the next lap is coached again.
+ * A lift of 3 s for traffic quiets the coach too, until two corners in a row are driven within 5 % of
+ * their fastest times ([onCornerPass]): at Silesia Ring on 27 Sep 2026 a lift just past the line went
+ * on to a 137.4 s lap, silent to its end before FBBD-252. Real cool-down laps there were 8 to 150 %
+ * slower through every corner.
  */
 internal class InLap {
     private class Sample(val tMicros: Long, val kmh: Double, val along: Double)
@@ -43,6 +53,7 @@ internal class InLap {
     private val straight = ArrayDeque<Sample>()
     private var cooling = false
     private var pitLaneBelowKmh: Double? = null
+    private var passesAtPace = 0
 
     /** Nothing is to be said. */
     val quiet: Boolean get() = cooling || pitLaneBelowKmh != null
@@ -59,9 +70,25 @@ internal class InLap {
      */
     fun onLapDone(kmh: Double, path: LapTrace?): Boolean {
         cooling = false
+        passesAtPace = 0
         straight.clear()
         pitLaneBelowKmh = path?.let { it.speedsKmh.last() * PitLaneShare }?.takeIf { kmh < it }
         return pitLaneBelowKmh != null
+    }
+
+    /**
+     * A corner was driven in [timeMicros], its fastest time so far [bestMicros] (null if none): while
+     * cooling down, [BackAtPacePasses] corners in a row near their best end it (FBBD-252).
+     */
+    fun onCornerPass(timeMicros: Long, bestMicros: Long?) {
+        if (!cooling) return
+        val atPace = bestMicros != null && timeMicros <= bestMicros * BackAtPaceShare
+        passesAtPace = if (atPace) passesAtPace + 1 else 0
+        if (passesAtPace >= BackAtPacePasses) {
+            cooling = false
+            passesAtPace = 0
+            straight.clear()
+        }
     }
 
     /** The car at [kmh] at [tMicros]; [along] the reference [path] while on a straight, else null. */
