@@ -47,6 +47,23 @@ The numeric pass criteria for the real-device checks live in their Jira issues
 labelled P0). The plan of record is the Confluence page "BetterDriver plan of
 record: closed-loop coach".
 
+## 3. After publishing (every release)
+
+A release is reported done only after these, in the same session:
+
+1. Confluence "BetterDriver Home" (page 12648561): the banner's green badge
+   says "Alpha X.Y.Z released" and its "Latest:" line names the version, the
+   date and what changed.
+2. Confluence "BetterDriver status" (page 12976129): a Now entry and a new
+   row at the top of the Releases table.
+3. Confluence "What blocks 1.0" (16482306), the plan of record (14483457) and
+   "BetterDriver validation without test drives" (15007745), where the
+   release changes them.
+4. Jira: the issues the release ships moved to their real state.
+
+The release run's summary repeats this list. From 0.3.25 to 0.4.0 the Home
+banner was not part of the steps and stayed at 0.3.24 for 20 releases.
+
 ## Template
 
 ```markdown
