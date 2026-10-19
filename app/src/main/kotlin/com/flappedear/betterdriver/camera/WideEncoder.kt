@@ -86,7 +86,10 @@ internal class WideEncoder(
     private val waiting = ArrayDeque<Waiting>()
 
     init {
-        val started = videoEncoder(target, VideoCallback(), Handler(videoThread.looper))
+        // A refusal leaves no encoder for the caller to stop, so the threads end here.
+        val started = runCatching { videoEncoder(target, VideoCallback(), Handler(videoThread.looper)) }
+            .onFailure { quitThreads() }
+            .getOrThrow()
         video = started.codec
         setup = started.setup
         surface = started.surface
@@ -145,10 +148,15 @@ internal class WideEncoder(
             a.release()
         }
         surface.release()
-        videoThread.quitSafely()
-        audioThread.quitSafely()
+        quitThreads()
         unused?.delete()
         return closed
+    }
+
+    private fun quitThreads() {
+        closer.shutdown()
+        videoThread.quitSafely()
+        audioThread.quitSafely()
     }
 
     /** The last file: [stats], and [error] when it could not be finished. */

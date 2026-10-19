@@ -5,7 +5,6 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.AudioTimestamp
 import android.media.MediaRecorder
-import android.os.SystemClock
 import java.nio.ByteBuffer
 
 /** 16-bit PCM sound for [WideEncoder], with each read's time on the camera's clock. */
@@ -29,10 +28,10 @@ internal data class PcmRead(val bytes: Int, val nanos: Long)
 
 /**
  * The phone's camcorder microphone, as MediaRecorder recorded it for 2.7K: 48 kHz mono. Each read is
- * timed by the frame position Android reports, on the camera's clock: boot time when the camera's
- * frames are ([realtime]), else monotonic.
+ * timed by the frame position Android reports, on the monotonic clock: the camera stamps the frames
+ * it draws into a video encoder on that clock, whatever its sensor timestamps are.
  */
-internal class MicSource(private val realtime: Boolean) : PcmSource {
+internal class MicSource : PcmSource {
     override val sampleRate = MicRate
     override val channels = 1
 
@@ -66,12 +65,10 @@ internal class MicSource(private val realtime: Boolean) : PcmSource {
 
     /** When frame [frame] was recorded: from Android's latest timestamp, else now less the [frames] just read. */
     private fun timeOf(r: AudioRecord, frame: Long, frames: Int): Long {
-        val base = if (realtime) AudioTimestamp.TIMEBASE_BOOTTIME else AudioTimestamp.TIMEBASE_MONOTONIC
-        return if (r.getTimestamp(stamp, base) == AudioRecord.SUCCESS) {
+        return if (r.getTimestamp(stamp, AudioTimestamp.TIMEBASE_MONOTONIC) == AudioRecord.SUCCESS) {
             stamp.nanoTime + (frame - stamp.framePosition) * NanosPerSecond / MicRate
         } else {
-            val now = if (realtime) SystemClock.elapsedRealtimeNanos() else System.nanoTime()
-            now - frames.toLong() * NanosPerSecond / MicRate
+            System.nanoTime() - frames.toLong() * NanosPerSecond / MicRate
         }
     }
 

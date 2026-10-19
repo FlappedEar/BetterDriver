@@ -30,7 +30,8 @@ import java.util.concurrent.atomic.AtomicLong
  * A file that nears [WideTarget.maxFileBytes] hands over to the next one ([Listener.nextFile]) at a
  * keyframe without closing the camera, as the CameraX path does, so video has no gap between files.
  * Every end, error or not, closes the camera and is reported once through [Listener.ended]. Callbacks
- * arrive on the main thread. [realtime]: the camera's frame times are boot time, not monotonic.
+ * arrive on the main thread. [realtime]: the camera's sensor timestamps are boot time, not monotonic;
+ * the frames it draws into the encoder are monotonic either way, as are the encoder's times.
  */
 @Suppress("TooManyFunctions") // One function per camera and encoder step.
 internal class WideRecorder(
@@ -51,6 +52,9 @@ internal class WideRecorder(
 
         /** [file] is full and finished, and [next] has taken over without closing the camera. */
         fun handedOver(file: File, mediaMicros: Long, next: File)
+
+        /** [file], already handed over, could not be finished ([error]) and has been deleted. */
+        fun lost(file: File, error: String)
 
         /**
          * Recording ended and the camera is closed. [error] is null for a stop that was asked for or a
@@ -74,6 +78,9 @@ internal class WideRecorder(
     /** The sensor timestamp of the newest frame, and where the current file starts; 0 before any. */
     private val lastNanos = AtomicLong(0)
     private val firstNanos = AtomicLong(0)
+
+    /** Sensor timestamp less encoder time: boot time less monotonic when [realtime], else 0. */
+    private var sensorShift = 0L
 
     /**
      * Since the camera started: frames it delivered, failed or lost on the way to the encoder, and
@@ -122,12 +129,12 @@ internal class WideRecorder(
         }
 
         override fun started(file: File, baseNanos: Long) {
-            firstNanos.set(baseNanos)
+            firstNanos.set(baseNanos + sensorShift)
             fileStarts[file.name] = count()
         }
 
         override fun handedOver(done: File, mediaMicros: Long, next: File, baseNanos: Long) {
-            firstNanos.set(baseNanos)
+            firstNanos.set(baseNanos + sensorShift)
             val now = count()
             fileEnds[done.name] = now
             fileStarts[next.name] = now
@@ -140,6 +147,11 @@ internal class WideRecorder(
 
         override fun closed(file: File, stats: WideEncoder.FileStats, error: String?) {
             logFile(file, stats, error)
+            // An MP4 that was not finished cannot be played: it leaves the session, as the last one would.
+            if (error != null) {
+                file.delete()
+                main.post { listener.lost(file, error) }
+            }
         }
 
         override fun full() {
@@ -161,8 +173,8 @@ internal class WideRecorder(
     fun start(first: File) {
         file = first
         try {
-            val clock: () -> Long = if (realtime) SystemClock::elapsedRealtimeNanos else System::nanoTime
-            val e = WideEncoder(target, if (audio) MicSource(realtime) else null, clock, encoded)
+            sensorShift = if (realtime) SystemClock.elapsedRealtimeNanos() - System.nanoTime() else 0L
+            val e = WideEncoder(target, if (audio) MicSource() else null, System::nanoTime, encoded)
             encoder = e
             DebugLog.i(Tag, "encoder ${e.setup}")
             e.start(first)

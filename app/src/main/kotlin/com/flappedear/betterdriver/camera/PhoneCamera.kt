@@ -357,6 +357,11 @@ class PhoneCamera(
             started(next)
         }
 
+        override fun lost(file: File, error: String) {
+            DebugLog.w(Tag, "2.7K: ${file.name} lost: $error")
+            clips.lost(file.name)
+        }
+
         override fun ended(file: File, mediaMicros: Long, full: Boolean, error: String?, hadData: Boolean) {
             main.removeCallbacks(ticker)
             wide = null
