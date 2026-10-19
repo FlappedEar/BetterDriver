@@ -114,6 +114,8 @@ data class CoachSettings(
     val learningLaps: Int = DefaultLearningLaps,
     /** How cues are voiced (FBBD-48): live text-to-speech, or clips rendered at coach start. */
     val voice: VoiceMode = VoiceMode.Live,
+    /** Which text-to-speech voice says the cues, and how fast (FBBD-240). */
+    val speech: Speech = Speech(),
 ) {
     init {
         require(audioDelayMillis in 0..MaxAudioDelayMillis) { "audio delay must be 0 to $MaxAudioDelayMillis ms" }
@@ -124,6 +126,25 @@ data class CoachSettings(
         const val DefaultLearningLaps = 3
         const val MaxLearningLaps = 10
         const val MaxAudioDelayMillis = 2_000
+    }
+}
+
+/**
+ * The coach's text-to-speech voice (FBBD-240, UI-90 A, UI-91 B): the engine voice named [voiceName],
+ * or the engine's own English voice when null or no longer installed, said at [rate] times the normal
+ * speed and [pitch] times the normal pitch.
+ */
+data class Speech(val voiceName: String? = null, val rate: Float = 1f, val pitch: Float = 1f) {
+    init {
+        require(rate in MinRate..MaxRate) { "speech rate must be $MinRate to $MaxRate" }
+        require(pitch in MinPitch..MaxPitch) { "speech pitch must be $MinPitch to $MaxPitch" }
+    }
+
+    companion object {
+        const val MinRate = 0.8f
+        const val MaxRate = 1.5f
+        const val MinPitch = 0.7f
+        const val MaxPitch = 1.3f
     }
 }
 

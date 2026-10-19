@@ -58,6 +58,12 @@ internal object ShellIcons {
             "a.996.996 0 0 0 0-1.41L10.7 6.7c-.38-.38-1.02-.38-1.41.01z",
     )
 
+    /** play_arrow */
+    val Play = icon(
+        "Play",
+        "M8 6.82v10.36c0 .79.87 1.27 1.54.84l8.14-5.18c.62-.39.62-1.29 0-1.69L9.54 5.98C8.87 5.55 8 6.03 8 6.82z",
+    )
+
     private fun icon(name: String, path: String): ImageVector = ImageVector.Builder(
         name = name,
         defaultWidth = 24.dp,
