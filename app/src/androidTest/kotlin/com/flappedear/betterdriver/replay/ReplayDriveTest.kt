@@ -96,18 +96,11 @@ class ReplayDriveTest {
         d.saveProps(marker, KeySession to live.sessionId)
     }
 
-    /** Still the same recording, with the coach running; the script calls it now and then. */
-    @Test
-    fun stillRecording() {
-        val live = d.recorder().live
-        assertEquals("the recording", session(), live?.sessionId)
-        d.checkNoAppErrors()
-    }
-
     /** Stopped, as the 3 s hold does, then the session saved. */
     @Test
     fun stop() {
         val id = session()
+        assertEquals("one recording all along", id, d.recorder().live?.sessionId)
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).stop() }
         d.waitFor(SaveTimeoutMs, "the session to be saved") {
             d.store.list().any { it.id == id && it.state == SessionState.FINISHED }

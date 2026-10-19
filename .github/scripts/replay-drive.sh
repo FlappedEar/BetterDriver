@@ -40,6 +40,10 @@ phase() {
   # A phase that hangs fails the drive instead of the job running out of time.
   result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" < /dev/null 2>&1)
   echo "$result"
+  if ! echo "$result" | grep -q "^OK (1 test)"; then
+    # What the test runner and the app's processes logged last, for a phase that hung or failed.
+    grep -E "TestRunner|AndroidRuntime|ReplayDriveTest" "$log" | tail -40
+  fi
   echo "$result" | grep -q "^OK (1 test)" || fail "phase $1 failed: $(echo "$result" | grep -m5 -E 'Error|Exception|expected|:' | tr '\n' ' ')"
 }
 
@@ -70,7 +74,11 @@ while [ "$(date +%s)" -lt "$end" ]; do
   left=$(( (end - $(date +%s)) / 60 ))
   echo "Replaying; about $left min left."
 done
-phase stillRecording --no-restart
+# The test runner waits for the app's main thread to go idle before a test, which it never does while
+# the track screen draws every frame: the second run hung there for 10 min. Home, as a phone put away,
+# stops the drawing; the recorder and coach keep running in their own processes.
+adb shell input keyevent KEYCODE_HOME || true
+sleep 5
 phase stop --no-restart
 phase check --no-restart
 finish 0
