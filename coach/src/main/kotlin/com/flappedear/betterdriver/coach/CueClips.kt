@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import java.util.concurrent.ConcurrentHashMap
+
 /** One piece of a phrase said from a pre-rendered clip (FBBD-48): words or a number, and the pause after it. */
 data class ClipPart(val key: String, val pauseAfterMillis: Int)
 
@@ -11,6 +13,9 @@ data class ClipPart(val key: String, val pauseAfterMillis: Int)
  *
  * A number from 100 to 999 (a brake point or an apex speed, FBBD-242) is said as track people say it,
  * from the clips there are: 150 as "1" "50" ("one fifty"), 105 as "1" "oh" "5", 200 as "2" "hundred".
+ *
+ * Each language has clips of its own (FBBD-245): the words of its phrases ([PhraseBook]) and the
+ * number parts it says them with ([PhraseBook.numberKeys]).
  */
 object CueClips {
     /** Numbers rendered as clips: 0 to 99, and "00" to "09" for a lap time's seconds. */
@@ -22,9 +27,9 @@ object CueClips {
 
     /**
      * [text] as clips, in order. Numbers are clips of their own; the words between them are one clip, so
-     * they keep their natural flow; a comma becomes a longer pause.
+     * they keep their natural flow; a comma becomes a longer pause. Numbers are split as [book] says them.
      */
-    fun parts(text: String): List<ClipPart> {
+    fun parts(text: String, book: PhraseBook = Phrases): List<ClipPart> {
         val out = mutableListOf<ClipPart>()
         val words = mutableListOf<String>()
         fun flush(pause: Int) {
@@ -38,7 +43,7 @@ object CueClips {
                 word.isEmpty() -> Unit
                 word.all(Char::isDigit) -> {
                     flush(WordGapMillis)
-                    numberKeys(word).forEach { out += ClipPart(it, WordGapMillis) }
+                    book.numberKeys(word).forEach { out += ClipPart(it, WordGapMillis) }
                 }
                 else -> words += word
             }
@@ -65,33 +70,50 @@ object CueClips {
         return listOf((n / Hundred).toString()) + tail
     }
 
-    /** Every clip the coach can need: the fixed words of each kind of phrase, and the numbers. */
-    val vocabulary: Set<String> by lazy {
+    /** Every English clip the coach can need ([vocabulary] of [Phrases]). */
+    val vocabulary: Set<String> by lazy { vocabulary(Phrases) }
+
+    private val vocabularies = ConcurrentHashMap<PhraseBook, Set<String>>()
+
+    /**
+     * Every clip the coach can need in [book]'s language: the fixed words of each kind of phrase, the
+     * numbers 0 to 99, "00" to "09" for a lap time's seconds, and the parts of 100 to 999.
+     */
+    fun vocabulary(book: PhraseBook): Set<String> = vocabularies.getOrPut(book) {
         val corner = Corner(1, 0.0, 0.0, 0.0, 0.0, Turn.Straight)
         val samples = listOf(
             // With the target (FBBD-242).
-            Phrases.corner(corner, Advice.BrakeLater(SampleNumber, at = SampleNumber)),
-            Phrases.corner(corner, Advice.BrakeEarlier(SampleNumber, at = SampleNumber)),
-            Phrases.corner(corner, Advice.CarrySpeed(SampleNumber, goalKmh = SampleNumber)),
+            book.corner(corner, Advice.BrakeLater(SampleNumber, at = SampleNumber)),
+            book.corner(corner, Advice.BrakeEarlier(SampleNumber, at = SampleNumber)),
+            book.corner(corner, Advice.CarrySpeed(SampleNumber, goalKmh = SampleNumber)),
             // Without it, as logged before FBBD-242.
-            Phrases.corner(corner, Advice.BrakeLater(SampleNumber)),
-            Phrases.corner(corner, Advice.BrakeEarlier()),
-            Phrases.corner(corner, Advice.CarrySpeed(SampleNumber)),
+            book.corner(corner, Advice.BrakeLater(SampleNumber)),
+            // A language whose word for metres follows the number ("1 metr", "2 metry", "5 metrów").
+            book.corner(corner, Advice.BrakeLater(1)),
+            book.corner(corner, Advice.BrakeLater(2)),
+            book.corner(corner, Advice.BrakeEarlier()),
+            book.corner(corner, Advice.CarrySpeed(SampleNumber)),
             // Said without the number below High confidence (FBBD-177).
-            Phrases.corner(corner, Advice.BrakeLater(SampleNumber, precise = false)),
-            Phrases.corner(corner, Advice.CarrySpeed(SampleNumber, precise = false)),
-            Phrases.praise(corner, Praise.Worked),
-            Phrases.praise(corner, Praise.BestYet),
-            Phrases.lapTime(SampleLapMillis, best = true),
-            Phrases.lapTime(SampleLapMillis, best = false),
-        )
-        val words = samples.flatMap(::parts).map { it.key }.filterNot { it.all(Char::isDigit) }
+            book.corner(corner, Advice.BrakeLater(SampleNumber, precise = false)),
+            book.corner(corner, Advice.CarrySpeed(SampleNumber, precise = false)),
+            book.praise(corner, Praise.Worked),
+            book.praise(corner, Praise.BestYet),
+            book.lapTime(SampleLapMillis, best = true),
+            book.lapTime(SampleLapMillis, best = false),
+            book.lapTime(SampleShortLapMillis, best = false),
+        ) + (1..SampleCorners).map {
+            // A language that names corners by word ("Trójka") has a clip per name.
+            book.praise(Corner(it, 0.0, 0.0, 0.0, 0.0, Turn.Straight), Praise.Worked)
+        }
+        val words = samples.flatMap { parts(it, book) }.map { it.key }.filterNot { it.all(Char::isDigit) }
         val numbers = (0..MaxNumber).map(Int::toString) + (0..<PaddedNumbers).map { "0$it" }
-        (words + numbers + HundredWord + OhWord).toSortedSet()
+        val big = (MaxNumber + 1..MaxSpokenNumber).flatMap { book.numberKeys(it.toString()) }
+        (words + numbers + big).toSortedSet()
     }
 
-    /** Whether every part of [text] has a clip, so it can be said without live text-to-speech. */
-    fun covers(text: String): Boolean = parts(text).let { p -> p.isNotEmpty() && p.all { it.key in vocabulary } }
+    /** Whether every part of [text] has a clip in [book]'s language, so it can be said without live text-to-speech. */
+    fun covers(text: String, book: PhraseBook = Phrases): Boolean =
+        parts(text, book).let { p -> p.isNotEmpty() && p.all { it.key in vocabulary(book) } }
 
     /** A file name for [key]'s clip: lower case, letters and digits, anything else an underscore. */
     fun fileName(key: String): String =
@@ -99,6 +121,8 @@ object CueClips {
 
     private const val SampleNumber = 10
     private const val SampleLapMillis = 92_400L
+    private const val SampleShortLapMillis = 58_300L
+    private const val SampleCorners = 30
     private const val PaddedNumbers = 10
     private const val Hundred = 100
     private const val MaxSpokenNumber = 999

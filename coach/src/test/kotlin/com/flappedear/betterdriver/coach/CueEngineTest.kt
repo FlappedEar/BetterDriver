@@ -53,9 +53,10 @@ class CueEngineTest {
         cues: List<Cue>,
         paces: List<SimCircuit.Pace>,
         delayMillis: Int,
+        phrases: PhraseBook = Phrases,
     ): List<Int> = cues.map { cue ->
         val start = cue.tMicros + DefaultLatencyMicros + delayMillis * 1_000L
-        val end = start + Phrases.durationMicros(cue.text)
+        val end = start + phrases.durationMicros(cue.text)
         val heard = (0..10).map { distanceAt(drive, start + (end - start) * it / 10) }
         for (d in heard) {
             val lap = (d / sim.length).toInt().coerceIn(0, paces.size - 1)
@@ -99,6 +100,23 @@ class CueEngineTest {
         assertEquals(cue.seq, result.cue.seq)
         assertFalse(result.improved)
         assertEquals(CoachPhase.Coaching, engine.phase)
+    }
+
+    @Test
+    fun `in Polish the same cues are said in Polish, still before the braking zone`() {
+        val paces = listOf(early2, early2, early2, early2, steady, steady)
+        val drive = sim.drive(paces)
+        val english = run(CueEngine(track, CoachSettings(Verbosity.Focus), reference()), drive)
+        val settings = CoachSettings(Verbosity.Focus, language = CoachLanguage.Polish)
+        val polish = run(CueEngine(track, settings, reference()), drive)
+        assertEquals(english.cues.map { it.kind to it.lap }, polish.cues.map { it.kind to it.lap })
+        val cue = polish.cues.single { it.kind == CueKind.Corner }
+        val advice = assertIs<Advice.BrakeLater>(cue.advice)
+        assertEquals("Dwójka, hamuj na ${advice.at}, ${advice.meters} później", cue.text)
+        val lapTime = Regex("""(Najlepsze okrążenie, )?(\d+, )?\d+, \d""")
+        polish.cues.filter { it.kind == CueKind.LapTime }.forEach { assertTrue(lapTime.matches(it.text), it.text) }
+        assertTrue(polish.cues.all { CueClips.covers(it.text, PolishPhrases) }, polish.cues.joinToString { it.text })
+        assertOutsideBrakingZones(drive, polish.cues, paces, 0, PolishPhrases)
     }
 
     @Test

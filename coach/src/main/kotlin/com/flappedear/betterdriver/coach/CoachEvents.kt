@@ -71,6 +71,7 @@ object CoachEvents {
         if (cue.doubts.isNotEmpty()) append(" why=").append(cue.doubts.joinToString(",") { it.code })
         cue.praise?.let { append(" praise=").append(it.name) }
         cue.praised?.let { append(" praised=").append(passText(it)) }
+        if (cue.language != CoachLanguage.English) append(" lang=").append(cue.language.tag)
         append(" text=").append(cue.text)
     }
 
@@ -140,6 +141,7 @@ object CoachEvents {
                 .map { CueDoubt(it, CueDoubts.cap(it), CueDoubts.text(it)) },
             praise = fields["praise"]?.let(Praise::valueOf),
             praised = corner?.let { c -> fields["praised"]?.let { parsePass(c, it) } },
+            language = CoachLanguage.entries.firstOrNull { it.tag == fields["lang"] } ?: CoachLanguage.English,
         )
     }.getOrNull()
 

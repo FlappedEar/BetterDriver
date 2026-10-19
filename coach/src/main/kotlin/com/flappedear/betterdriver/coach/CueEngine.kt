@@ -247,7 +247,13 @@ private class PraiseQueue {
  * [MinLossMicros]. Targets change only at the end of a timed lap, so the fastest pass here is still the
  * one from before this lap. A pass too weak to coach from is never praised.
  */
-private fun praiseFor(b: CornerBook, pass: CornerPass, result: CueResult?, now: Long): Cue? {
+private fun praiseFor(
+    b: CornerBook,
+    pass: CornerPass,
+    result: CueResult?,
+    now: Long,
+    phrases: PhraseBook,
+): Cue? {
     val corner = b.map.corners.getOrNull(pass.corner - 1)
     val fastest = b.targets.getOrNull(pass.corner - 1)
     val worked = result != null && result.improved && result.gainMicros > 0
@@ -261,7 +267,7 @@ private fun praiseFor(b: CornerBook, pass: CornerPass, result: CueResult?, now: 
         null
     } else {
         Cue(
-            0, now, pass.lap, CueKind.Praise, Phrases.praise(corner, kind), corner.number,
+            0, now, pass.lap, CueKind.Praise, phrases.praise(corner, kind), corner.number,
             before = if (worked) result?.cue?.before else fastest, turn = corner.label,
             cornerId = corner.cornerId, praise = kind, praised = pass,
         )
@@ -300,7 +306,11 @@ private fun cornersFrom(
  * When a phrase can be spoken (FBBD-97): the car's recent speeds, whether it is braking, and whether
  * a phrase started now is heard in full before a braking zone.
  */
-private class SpeechTiming(private val settings: CoachSettings, private val latencyMicros: Long) {
+private class SpeechTiming(
+    private val settings: CoachSettings,
+    private val latencyMicros: Long,
+    private val phrases: PhraseBook,
+) {
     private val speeds = ArrayDeque<Pair<Long, Double>>()
     var kmh = 0.0
         private set
@@ -317,7 +327,7 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
 
     /** From asking for [text] until it has been heard. */
     fun needMicros(text: String) =
-        latencyMicros + settings.audioDelayMillis * MicrosPerMilli + Phrases.durationMicros(text)
+        latencyMicros + settings.audioDelayMillis * MicrosPerMilli + phrases.durationMicros(text)
 
     /** Free to speak: not braking and nothing still being said. */
     fun free(now: Long): Boolean {
@@ -341,9 +351,10 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
         return min(atSpeed, byReference).roundToLong() - fixAgeMicros
     }
 
+    /** [cue] is being said from now: nothing else until it has been heard. Gives it with its language. */
     fun said(cue: Cue): Cue {
         speakingUntil = cue.tMicros + needMicros(cue.text)
-        return cue
+        return cue.copy(language = settings.language)
     }
 
     /** [cue] was never played, so nothing is being said. */
@@ -408,7 +419,8 @@ class CueEngine(
     private val focus: List<CornerPick> = emptyList(),
 ) {
     private val laps = LapCollector(track)
-    private val speech = SpeechTiming(settings, latencyMicros)
+    private val phrases = PhraseBook.of(settings.language)
+    private val speech = SpeechTiming(settings, latencyMicros, phrases)
     private val inLap = InLap()
     private val identity = track.identity
     private val picked: (CornerMap) -> Chosen = { m ->
@@ -525,7 +537,7 @@ class CueEngine(
         val isBest = best == null || lap.timeMicros < best
         if (isBest) bestLapMicros = lap.timeMicros
         if (say && settings.verbosity >= Verbosity.LapTimes) {
-            pendingLap = PendingLap(Phrases.lapTime(lap.timeMillis, isBest), lap.number, now + LapCueExpiryMicros)
+            pendingLap = PendingLap(phrases.lapTime(lap.timeMillis, isBest), lap.number, now + LapCueExpiryMicros)
         }
     }
 
@@ -546,7 +558,9 @@ class CueEngine(
         }
         val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         val b = book
-        if (learned && b != null && !praises.praised(pass.lap)) praiseFor(b, pass, result, now)?.let(praises::offer)
+        if (learned && b != null && !praises.praised(pass.lap)) {
+            praiseFor(b, pass, result, now, phrases)?.let(praises::offer)
+        }
         return result
     }
 
@@ -591,14 +605,14 @@ class CueEngine(
 
     /**
      * Says [full] when it fits on this straight; drops it once it no longer can. When the whole cue no
-     * longer fits but its target alone does ([Phrases.shortCorner]), that is said instead. [zoneMeters]
+     * longer fits but its target alone does ([PhraseBook.shortCorner]), that is said instead. [zoneMeters]
      * is the distance to the braking zone, logged with the cue.
      */
     private fun speakCorner(full: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
         var planned = full
         var need = speech.needMicros(planned.text) + MarginMicros
         // Too long for what is left of the straight: the target alone, if that fits (FBBD-242).
-        val short = Phrases.shortCorner(planned)
+        val short = phrases.shortCorner(planned)
         if (timeToZone != null && timeToZone < need && short != null) {
             val shortNeed = speech.needMicros(short) + MarginMicros
             if (timeToZone >= shortNeed) {
@@ -650,7 +664,7 @@ class CueEngine(
         val advice = advise(last, target, corner)?.takeIf { confidence.advises }?.withPrecision(confidence.precise)
         return advice?.let {
             Cue(
-                0, now, lap, CueKind.Corner, Phrases.corner(corner, it), corner.number, it, last, target,
+                0, now, lap, CueKind.Corner, phrases.corner(corner, it), corner.number, it, last, target,
                 turn = corner.label, cornerId = corner.cornerId, confidence = confidence, doubts = doubts,
             )
         }

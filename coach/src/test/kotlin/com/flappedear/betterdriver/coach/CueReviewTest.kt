@@ -25,10 +25,10 @@ class CueReviewTest {
     private val track = sim.track()
 
     /** A coached outing: 3 laps learned, then turn 2 braked 15 m early until the cue, then at the best point. */
-    private fun coachedEvents(): List<RecorderEvent> {
+    private fun coachedEvents(language: CoachLanguage = CoachLanguage.English): List<RecorderEvent> {
         val laps = tracedLaps(track, sim.drive(List(3) { SimCircuit.Pace() }).fixes.asSequence())
         val reference = assertNotNull(buildReference(track, listOf(SessionLaps("earlier", laps))))
-        val session = CoachSession(CoachSettings(Verbosity.Full), track, reference)
+        val session = CoachSession(CoachSettings(Verbosity.Full, language = language), track, reference)
         val early2 = SimCircuit.Pace(earlierM = listOf(0.0, 15.0, 0.0, 0.0))
         val paces = List(3) { early2 } + List(2) { SimCircuit.Pace() }
         return sim.drive(paces).fixes.flatMap { f -> session.onFix(f, f.tMicros) { true }.events }
@@ -50,6 +50,40 @@ class CueReviewTest {
         assertNull(review.cues.first { it.cue.kind == CueKind.LapTime }.outcome())
         assertEquals(0, review.problems)
         assertTrue(review.summary.matches(Regex("\\d+ cues · \\d+ of \\d+ corners better")), review.summary)
+    }
+
+    @Test
+    fun `cues said in Polish are reviewed in Polish`() {
+        val events = coachedEvents(CoachLanguage.Polish)
+        assertTrue(events.filter { it.kind == CoachEvents.CUE }.all { " lang=pl " in it.text })
+        val review = CueReview.of(events)
+        assertTrue(review.cues.all { it.cue.language == CoachLanguage.Polish })
+        val last = review.cues.last { it.cue.kind == CueKind.Corner }
+        val outcome = assertNotNull(last.outcome())
+        assertTrue(outcome.startsWith("Hamowanie na ") && "później niż poprzednio" in outcome, outcome)
+        assertTrue(Regex("""zysk \d+,\d\d s""").containsMatchIn(outcome), outcome)
+        assertEquals("Pewność wysoka", last.cue.confidenceText())
+        assertTrue(review.summary.matches(Regex("""\d+ wskazów\w+ · \d+ z \d+ zakrętów lepiej""")), review.summary)
+        // English cues are logged as before, without a language.
+        assertTrue(coachedEvents().filter { it.kind == CoachEvents.CUE }.none { "lang=" in it.text })
+    }
+
+    @Test
+    fun `the Polish review words`() {
+        val pl = PolishReview
+        assertEquals("1 wskazówka", pl.cues(1))
+        assertEquals("3 wskazówki", pl.cues(3))
+        assertEquals("12 wskazówek", pl.cues(12))
+        assertEquals("22 wskazówki", pl.cues(22))
+        assertEquals("Hamowanie 9 m później", pl.braked(true, 9))
+        assertEquals("Hamowanie wcześniej", pl.braked(false, null))
+        assertEquals("4 m przed najlepszym", pl.toBestPoint(true, 4))
+        assertEquals("Prędkość minimalna wyższa o 3 km/h", pl.minSpeed(true, 3))
+        assertEquals("Prędkość minimalna niższa", pl.minSpeed(false, null))
+        assertEquals("strata 0,05 s", pl.time(false, 0.05))
+        assertEquals("zysk czasu", pl.time(true, null))
+        assertEquals("0,21 s szybciej niż przed wskazówką", pl.faster(0.21, worked = true))
+        assertEquals("Pewność średnia", pl.confidence(Confidence.MEDIUM))
     }
 
     @Test

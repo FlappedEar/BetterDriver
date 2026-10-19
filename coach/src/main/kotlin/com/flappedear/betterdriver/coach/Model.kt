@@ -105,6 +105,12 @@ enum class VoiceMode {
     PreRendered,
 }
 
+/** The language the coach speaks (FBBD-245): its phrases ([PhraseBook.of]) and the voice that says them. */
+enum class CoachLanguage(val tag: String) {
+    English("en"),
+    Polish("pl"),
+}
+
 /** Coach settings, set in the app (FBBD-98). */
 data class CoachSettings(
     val verbosity: Verbosity = Verbosity.Focus,
@@ -114,6 +120,8 @@ data class CoachSettings(
     val learningLaps: Int = DefaultLearningLaps,
     /** How cues are voiced (FBBD-48): live text-to-speech, or clips rendered at coach start. */
     val voice: VoiceMode = VoiceMode.Live,
+    /** The language cues are said in (FBBD-245). */
+    val language: CoachLanguage = CoachLanguage.English,
     /** Which text-to-speech voice says the cues, and how fast (FBBD-240). */
     val speech: Speech = Speech(),
 ) {
@@ -131,10 +139,16 @@ data class CoachSettings(
 
 /**
  * The coach's text-to-speech voice (FBBD-240, UI-90 A, UI-91 B): the engine voice named [voiceName],
- * or the engine's own English voice when null or no longer installed, said at [rate] times the normal
- * speed and [pitch] times the normal pitch.
+ * or the engine's own voice of the coach's language when null or no longer installed, said at [rate]
+ * times the normal speed and [pitch] times the normal pitch. [engine] is the speech engine's package
+ * (FBBD-245, UI-101 A), null for the phone's default engine.
  */
-data class Speech(val voiceName: String? = null, val rate: Float = 1f, val pitch: Float = 1f) {
+data class Speech(
+    val voiceName: String? = null,
+    val rate: Float = 1f,
+    val pitch: Float = 1f,
+    val engine: String? = null,
+) {
     init {
         require(rate in MinRate..MaxRate) { "speech rate must be $MinRate to $MaxRate" }
         require(pitch in MinPitch..MaxPitch) { "speech pitch must be $MinPitch to $MaxPitch" }
@@ -235,6 +249,8 @@ data class Cue(
     val doubts: List<CueDoubt> = emptyList(),
     val praise: Praise? = null,
     val praised: CornerPass? = null,
+    /** The language it was said in (FBBD-245); the cue review is written in it too (UI-100 B). */
+    val language: CoachLanguage = CoachLanguage.English,
 ) {
     /** The corner number the driver heard, for a corner cue. */
     val heardTurn: Int? get() = turn ?: corner

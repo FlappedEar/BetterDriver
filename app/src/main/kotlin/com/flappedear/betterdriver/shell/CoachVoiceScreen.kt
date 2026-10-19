@@ -27,8 +27,9 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 
 /**
  * The coach's voice (FBBD-240, UI-90 A), opened from the Voice row of the Spoken coach page: the
- * phone's offline English voices grouped by accent ([groups], heading to rows; null while they are
- * read), the one in use ([selected]) marked. ▶ says the sample cue in that voice ([onPlay]); tapping a
+ * speech engine's offline voices of the coach's language ([language], "English" or "Polish", FBBD-245)
+ * grouped by accent ([groups], heading to rows; null while they are read), the one in use ([selected])
+ * marked. ▶ says the sample cue in that voice ([onPlay]); tapping a
  * voice uses it ([onPick]). [onMoreVoices] opens Android's text-to-speech settings, where more voices
  * are downloaded.
  */
@@ -40,6 +41,7 @@ fun CoachVoiceScreen(
     onPlay: (String) -> Unit,
     onMoreVoices: () -> Unit,
     onBack: () -> Unit,
+    language: String = "English",
 ) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar("Voice", onBack = onBack)
@@ -49,7 +51,7 @@ fun CoachVoiceScreen(
         ) {
             when {
                 groups == null -> DimText("Reading the phone's voices…")
-                groups.isEmpty() -> DimText("This phone has no English voice that works without internet.")
+                groups.isEmpty() -> DimText("This speech engine has no $language voice that works without internet.")
                 else -> groups.forEach { (accent, voices) ->
                     SectionLabel(accent, Modifier.padding(start = 4.dp, top = 4.dp))
                     ShellCard { voices.forEach { VoiceLine(it, it.name == selected, onPick, onPlay) } }
