@@ -45,7 +45,7 @@ class CueReviewTest {
         assertEquals(last.cue.seq, result.seq)
         assertTrue(result.improved, "turn 2 at the best point after the cue")
         val outcome = assertNotNull(last.outcome())
-        assertTrue(outcome.startsWith("Braked 1") && "later" in outcome && "gained" in outcome, outcome)
+        assertTrue(outcome.startsWith("Braked at ") && "later than before" in outcome && "gained" in outcome, outcome)
         // Lap-time cues have no outcome.
         assertNull(review.cues.first { it.cue.kind == CueKind.LapTime }.outcome())
         assertEquals(0, review.problems)

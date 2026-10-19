@@ -19,13 +19,32 @@ object Phrases {
             a.at != null -> "brake at ${a.at}, ${a.meters} later"
             else -> "brake ${a.meters} metres later"
         }
-        is Advice.BrakeEarlier ->
-            if (a.precise && a.at != null && a.meters != null) "brake at ${a.at}, ${a.meters} earlier" else "brake earlier"
+        is Advice.BrakeEarlier -> when {
+            a.precise && a.at != null && a.meters != null -> "brake at ${a.at}, ${a.meters} earlier"
+            else -> "brake earlier"
+        }
         is Advice.CarrySpeed -> when {
             !a.precise -> "carry a little more speed"
             a.goalKmh != null -> "${a.goalKmh} at the apex, ${a.kmh} more"
             else -> "carry ${a.kmh} more"
         }
+    }
+
+    /**
+     * [cue] with its target only, for a straight too short for the whole cue (FBBD-242): "Turn 3,
+     * brake at 100", "Turn 3, 60 at the apex". Null when the cue has no target or is already short.
+     */
+    fun shortCorner(cue: Cue): String? {
+        val a = cue.advice
+        val target = when {
+            a == null || !a.precise -> null
+            a is Advice.BrakeLater && a.at != null -> "brake at ${a.at}"
+            a is Advice.BrakeEarlier && a.at != null -> "brake at ${a.at}"
+            a is Advice.CarrySpeed && a.goalKmh != null -> "${a.goalKmh} at the apex"
+            else -> null
+        }
+        val turn = cue.heardTurn
+        return if (target == null || turn == null) null else "Turn $turn, $target".takeIf { it != cue.text }
     }
 
     /**

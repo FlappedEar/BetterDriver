@@ -75,7 +75,7 @@ class CueConfidenceTest {
         val cue = cornerCues(twice, drive.fixes).first { it.corner == 2 }
         assertTrue(cue.advice is Advice.BrakeLater)
         assertEquals(Confidence.HIGH, cue.confidence, cue.confidenceText())
-        assertTrue(cue.text.contains("metres"), cue.text)
+        assertTrue(cue.text.contains("brake at"), cue.text)
     }
 
     @Test

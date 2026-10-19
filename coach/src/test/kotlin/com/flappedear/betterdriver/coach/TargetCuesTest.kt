@@ -13,7 +13,8 @@ import kotlin.test.assertNull
 class TargetCuesTest {
     /** Turn 3: the corner starts 200 m along, its apex is at 260 m. */
     private val corner = Corner(2, 120.0, 260.0, 150.0, 60.0, Turn.Left, "c3", 3, entryAt = 200.0)
-    private val target = CornerPass(2, 1, brakeAt = 100.0, apexAt = 260.0, entryKmh = 150.0, minKmh = 62.0, timeMicros = 5_000_000)
+    private val target =
+        CornerPass(2, 1, brakeAt = 100.0, apexAt = 260.0, entryKmh = 150.0, minKmh = 62.0, timeMicros = 5_000_000)
 
     private fun pass(brakeAt: Double = 100.0, minKmh: Double = 62.0) =
         target.copy(lap = 4, timeMicros = 5_300_000, brakeAt = brakeAt, minKmh = minKmh)
@@ -24,7 +25,7 @@ class TargetCuesTest {
         assertEquals(Advice.BrakeLater(15, at = 100), advise(pass(brakeAt = 85.0), target, corner))
         // 15 m late, slower at the apex: asked for 100 m along again.
         assertEquals(Advice.BrakeEarlier(15, at = 100), advise(pass(brakeAt = 115.0, minKmh = 56.0), target, corner))
-        assertEquals(Advice.CarrySpeed(4, goalKmh = 61), advise(pass(minKmh = 57.0), target, corner))
+        assertEquals(Advice.CarrySpeed(5, goalKmh = 62), advise(pass(minKmh = 57.0), target, corner))
         // Without the corner, as before: the change only.
         assertEquals(Advice.BrakeLater(15), advise(pass(brakeAt = 85.0), target))
     }
@@ -50,6 +51,15 @@ class TargetCuesTest {
         // Logged before FBBD-242, without a target.
         assertEquals("Turn 3, brake 10 metres later", Phrases.corner(corner, Advice.BrakeLater(10)))
         assertEquals("Turn 3, carry 5 more", Phrases.corner(corner, Advice.CarrySpeed(5)))
+    }
+
+    @Test
+    fun `a straight too short for the whole cue gets the target alone`() {
+        fun cue(a: Advice) = Cue(1, 0, 4, CueKind.Corner, Phrases.corner(corner, a), 2, a, turn = 3)
+        assertEquals("Turn 3, brake at 100", Phrases.shortCorner(cue(Advice.BrakeLater(10, at = 100))))
+        assertEquals("Turn 3, 60 at the apex", Phrases.shortCorner(cue(Advice.CarrySpeed(5, goalKmh = 60))))
+        assertNull(Phrases.shortCorner(cue(Advice.BrakeLater(10, false, 100))))
+        assertNull(Phrases.shortCorner(cue(Advice.BrakeLater(10))))
     }
 
     @Test
@@ -85,7 +95,11 @@ class TargetCuesTest {
     }
 
     private fun reviewed(advice: Advice, after: CornerPass, before: CornerPass = pass()): String? {
-        val cue = Cue(7, 0, 4, CueKind.Corner, Phrases.corner(corner, advice), 2, advice, before, target, turn = 3)
+        val conf = if (advice.precise) Confidence.HIGH else Confidence.MEDIUM
+        val cue = Cue(
+            7, 0, 4, CueKind.Corner, Phrases.corner(corner, advice), 2, advice, before, target,
+            turn = 3, confidence = conf,
+        )
         val r = CueResult(1, cue, after, true, 120_000, Confidence.HIGH)
         val events = listOf(
             RecorderEvent(0, CoachEvents.CUE, CoachEvents.cueText(cue)),

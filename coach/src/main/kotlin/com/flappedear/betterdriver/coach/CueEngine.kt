@@ -483,11 +483,23 @@ class CueEngine(
     }
 
     /**
-     * Says [planned] when it fits on this straight; drops it once it no longer can. [zoneMeters] is the
-     * distance to the braking zone, logged with the cue.
+     * Says [full] when it fits on this straight; drops it once it no longer can. When the whole cue no
+     * longer fits but its target alone does ([Phrases.shortCorner]), that is said instead. [zoneMeters]
+     * is the distance to the braking zone, logged with the cue.
      */
-    private fun speakCorner(planned: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
-        val need = speech.needMicros(planned.text) + MarginMicros
+    private fun speakCorner(full: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
+        var planned = full
+        var need = speech.needMicros(planned.text) + MarginMicros
+        // Too long for what is left of the straight: the target alone, if that fits (FBBD-242).
+        val short = Phrases.shortCorner(planned)
+        if (timeToZone != null && timeToZone < need && short != null) {
+            val shortNeed = speech.needMicros(short) + MarginMicros
+            if (timeToZone >= shortNeed) {
+                planned = planned.copy(text = short)
+                need = shortNeed
+                plan = Plan(planned.corner!!, planned.lap, planned)
+            }
+        }
         val late = timeToZone != null && timeToZone < need
         if (late) plan = Plan(planned.corner!!, planned.lap, null)
         val ready = timeToZone != null && !late && timeToZone <= need + LeadMicros
@@ -584,7 +596,8 @@ private fun metresBefore(corner: Corner, brakeAt: Double): Int? =
 /** Whether [after] moved the way [advice] asked, from [before]: at least half of what was asked. */
 fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean = when (advice) {
     is Advice.BrakeLater -> after.brakeAt - before.brakeAt >= advice.meters / 2.0
-    is Advice.BrakeEarlier -> before.brakeAt - after.brakeAt >= maxOf(advice.meters ?: 0, BrakeToleranceMeters.toInt()) / 2.0
+    is Advice.BrakeEarlier ->
+        before.brakeAt - after.brakeAt >= maxOf(advice.meters ?: 0, BrakeToleranceMeters.toInt()) / 2.0
     is Advice.CarrySpeed -> after.minKmh - before.minKmh >= advice.kmh / 2.0
     null -> after.timeMicros < before.timeMicros
 }

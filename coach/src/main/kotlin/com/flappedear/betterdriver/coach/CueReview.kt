@@ -98,10 +98,11 @@ fun ReviewedCue.outcome(): String? {
     val anchor = advice?.let { brakeAnchorOf(it, before) }
     val change = when {
         precise && advice is Advice.CarrySpeed && advice.goalKmh != null ->
-            "Apex ${r.after.minKmh.roundToInt()} km/h, " + moved(r.after.minKmh - before.minKmh, NearKmh, "more", "less")
+            "Apex ${r.after.minKmh.roundToInt()} km/h, " +
+                moved(r.after.minKmh - before.minKmh, NearKmh, "more", "less")
         precise && anchor != null ->
             "Braked at ${(anchor - r.after.brakeAt).roundToInt()} m, " +
-                moved(r.after.brakeAt - before.brakeAt, NearMeters, "m later", "m earlier", "at the same point as before")
+                moved(r.after.brakeAt - before.brakeAt, NearMeters, "m later", "m earlier", SamePoint)
         advice is Advice.CarrySpeed ->
             speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh }, precise)
         else -> brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt }, precise)
@@ -139,6 +140,7 @@ private fun moved(by: Double, near: Int, up: String, down: String, same: String 
     }
 }
 
+private const val SamePoint = "at the same point as before"
 private const val NearMeters = 2
 private const val NearKmh = 1
 private const val MicrosPerSecond = 1_000_000.0
