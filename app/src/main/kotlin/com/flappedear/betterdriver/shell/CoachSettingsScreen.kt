@@ -30,6 +30,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.coach.CoachSettings
+import com.flappedear.betterdriver.coach.Speech
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.Voice
 import com.flappedear.betterdriver.coach.VoiceMode
@@ -89,7 +90,7 @@ fun CoachSettingsScreen(
             ShellCard { VerbosityPicker(current, onChange) }
             picked?.let { ShellCard { Picked(it, onClearPicked) } }
             ShellCard { DelayAndLaps(current, onChange, delayNow) }
-            ShellCard { TestVoice(current.voice) }
+            ShellCard { TestVoice(current.voice, current.speech) }
             SectionLabel("Advanced", Modifier.padding(start = 4.dp, top = 8.dp))
             ShellCard { VoicePicker(current, onChange) }
         }
@@ -170,11 +171,11 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, de
 
 /** Says, on [VoiceMode.PreRendered], from clips once they are rendered; live until then. */
 @Composable
-private fun TestVoice(mode: VoiceMode) {
+private fun TestVoice(mode: VoiceMode, speech: Speech) {
     val context = LocalContext.current
     val voice = remember { Voice(context) }
     DisposableEffect(voice) { onDispose { voice.shutdown() } }
-    LaunchedEffect(voice, mode) { voice.use(mode) }
+    LaunchedEffect(voice, mode, speech) { voice.use(mode, speech) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         DimText("Plays “$SampleCue” on the current audio output.", Modifier.weight(1f))
         TextButton(onClick = { voice.say(SampleCue) }) { Text("Test voice") }

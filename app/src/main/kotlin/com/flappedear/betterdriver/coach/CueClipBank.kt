@@ -36,6 +36,10 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
 
     // Handler thread only.
     private var started = false
+    private var speech = Speech()
+
+    /** Counts renders, so a late callback of a replaced render is ignored. */
+    private var generation = 0
     private var renderer: TextToSpeech? = null
     private var dir: File? = null
     private val pending = mutableSetOf<String>()
@@ -44,11 +48,14 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
 
     private val timeout = Runnable { fail("rendering took over ${RenderTimeoutMillis / MillisPerSecond} s") }
 
-    /** Starts rendering or loading the clips, once. */
-    fun prepare() {
+    /** Starts rendering or loading the clips, once per voice and speed ([speech], FBBD-240). */
+    fun prepare(speech: Speech) {
         handler.post {
-            if (started) return@post
+            if (started && speech == this.speech) return@post
+            if (started) reset()
             started = true
+            this.speech = speech
+            generation++
             startedAt = SystemClock.elapsedRealtime()
             DebugLog.i(Tag, "preparing ${CueClips.vocabulary.size} cue clips")
             renderer = TextToSpeech(app) { status -> handler.post { onRendererReady(status == TextToSpeech.SUCCESS) } }
@@ -72,15 +79,23 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
         }
     }
 
+    /** Drops the clips and stops a render of another voice or speed. */
+    private fun reset() {
+        clips = null
+        pending.clear()
+        dir = null
+        finish()
+    }
+
     private fun onRendererReady(ok: Boolean) {
         val tts = renderer ?: return
-        if (ok && chooseEnglish(tts)) render(tts) else fail("no English voice to render with")
+        if (ok && applySpeech(tts, speech).english) render(tts) else fail("no English voice to render with")
     }
 
     private fun render(tts: TextToSpeech) {
         val root = File(app.cacheDir, ClipsDir)
         // One folder per voice and vocabulary, so a voice change renders afresh; older folders go.
-        val signature = "${tts.defaultEngine}|${tts.voice?.name}|${CueClips.vocabulary}|$ClipFormat"
+        val signature = "${tts.defaultEngine}|${tts.voice?.name}|${speech.rate}|${CueClips.vocabulary}|$ClipFormat"
         val d = File(root, Integer.toHexString(signature.hashCode()))
         root.listFiles()?.filter { it != d }?.forEach { it.deleteRecursively() }
         d.mkdirs()
@@ -90,7 +105,7 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
         if (pending.isEmpty()) return load(d)
         tts.setOnUtteranceProgressListener(Progress())
         val refused = pending.toList().filter { key ->
-            tts.synthesizeToFile(key, Bundle(), partFile(d, key), key) != TextToSpeech.SUCCESS
+            tts.synthesizeToFile(key, Bundle(), partFile(d, key), "$generation:$key") != TextToSpeech.SUCCESS
         }
         if (refused.isNotEmpty()) fail("text-to-speech refused to render ${refused.size} clips")
     }
@@ -144,8 +159,10 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
 
         override fun onError(utteranceId: String?, errorCode: Int) = clip(utteranceId, ok = false)
 
-        private fun clip(key: String?, ok: Boolean) {
-            if (key != null) handler.post { onClip(key, ok) }
+        private fun clip(id: String?, ok: Boolean) {
+            val gen = id?.substringBefore(':')?.toIntOrNull() ?: return
+            val key = id.substringAfter(':')
+            handler.post { if (gen == generation) onClip(key, ok) }
         }
     }
 

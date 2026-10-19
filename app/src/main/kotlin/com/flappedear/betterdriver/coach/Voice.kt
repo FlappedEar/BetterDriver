@@ -42,6 +42,38 @@ internal fun chooseEnglish(tts: TextToSpeech): Boolean = listOf(Locale.UK, Local
     tts.setLanguage(locale) >= TextToSpeech.LANG_AVAILABLE
 }
 
+/** The engine's voices as the coach sees them (FBBD-240); empty if the engine will not list them. */
+internal fun ttsVoices(tts: TextToSpeech): List<android.speech.tts.Voice> = try {
+    tts.voices?.toList().orEmpty()
+} catch (e: RuntimeException) {
+    DebugLog.w("Voice", "text-to-speech voices not listed", e)
+    emptyList()
+}
+
+internal fun android.speech.tts.Voice.info() = TtsVoice(
+    name = name,
+    languageTag = locale.toLanguageTag(),
+    needsNetwork = isNetworkConnectionRequired,
+    installed = TextToSpeech.Engine.KEY_FEATURE_NOT_INSTALLED !in features.orEmpty(),
+)
+
+/**
+ * Sets [speech] on [tts] (FBBD-240): its voice if still usable, else an English voice as before, and
+ * its speed. Gives the voice in use, for the log; false in [Applied.english] if there is no English.
+ */
+internal fun applySpeech(tts: TextToSpeech, speech: Speech): Applied {
+    val all = ttsVoices(tts)
+    val wanted = CoachVoices.choose(speech.voiceName, all.map { it.info() })
+    val set = wanted != null && all.first { it.name == wanted.name }.let { tts.setVoice(it) == TextToSpeech.SUCCESS }
+    val english = set || chooseEnglish(tts)
+    tts.setSpeechRate(speech.rate)
+    val name = runCatching { tts.voice?.name }.getOrNull()
+    if (speech.voiceName != null && !set) DebugLog.w("Voice", "voice ${speech.voiceName} not usable, using $name")
+    return Applied(english, name)
+}
+
+internal data class Applied(val english: Boolean, val voiceName: String?)
+
 /**
  * The coach's voice (FBBD-98), on [AudioOut]: to whatever audio output is connected, a helmet headset or
  * the car over Bluetooth, or the phone speaker, as navigation guidance with transient focus so music
@@ -68,6 +100,12 @@ internal class Voice(context: Context) {
     @Volatile
     private var mode = VoiceMode.Live
 
+    @Volatile
+    private var speech = Speech()
+
+    @Volatile
+    private var engineReady = false
+
     /** Live phrases not yet ended, by utterance id: when each was asked for (elapsed-realtime nanos). */
     private val asked = ConcurrentHashMap<String, Asked>()
 
@@ -88,7 +126,16 @@ internal class Voice(context: Context) {
     }
 
     private fun onInit(status: Int) {
-        ready = status == TextToSpeech.SUCCESS && chooseEnglish(tts)
+        engineReady = status == TextToSpeech.SUCCESS
+        handler.post { applyNow() }
+    }
+
+    /** On the voice thread: sets the wanted voice and speed on the started engine, then warms it. */
+    private fun applyNow() {
+        if (!engineReady) return
+        val applied = applySpeech(tts, speech)
+        ready = applied.english
+        DebugLog.i(Tag, "voice ${applied.voiceName ?: "none"}, speed ${speech.rate}")
         warm()
     }
 
@@ -98,14 +145,16 @@ internal class Voice(context: Context) {
     }
 
     /**
-     * How phrases are said from now on, set at each coached session's start; pre-rendered starts
-     * rendering the clips if they are not yet. Warms the audio path again.
+     * How phrases are said from now on, set at each coached session's start: live or pre-rendered,
+     * and which voice at what speed ([speech], FBBD-240). Pre-rendered starts rendering the clips if
+     * they are not yet rendered with that voice and speed. Warms the audio path again.
      */
-    fun use(voice: VoiceMode) {
+    fun use(voice: VoiceMode, speech: Speech = Speech()) {
         if (voice != mode) DebugLog.i(Tag, "voice: $voice")
         mode = voice
-        if (voice == VoiceMode.PreRendered) clips.prepare()
-        warm()
+        this.speech = speech
+        if (voice == VoiceMode.PreRendered) clips.prepare(speech)
+        handler.post { applyNow() }
     }
 
     /**
