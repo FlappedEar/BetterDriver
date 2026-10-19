@@ -34,7 +34,7 @@ import com.flappedear.betterdriver.setup.VideoSize
 /** What a mode costs or gives, under its name in the dialog. */
 private fun modeNote(mode: VideoMode, recommended: Boolean): String {
     val size = when (mode.size) {
-        VideoSize.UHD -> "Sharpest; most heat and storage"
+        VideoSize.UHD -> "Sharpest; most storage"
         VideoSize.QHD -> "Between 4K and 1080p · half of 4K's pixels"
         VideoSize.FHD -> "A quarter of 4K's pixels"
         VideoSize.HD -> "Smallest files"
@@ -107,8 +107,7 @@ internal fun VideoModeDialog(
                 }
                 DimText(
                     if (item.model == EquipmentModel.PHONE_CAMERA) {
-                        "Only modes this phone supports. Video keeps this mode for the whole session; Android may " +
-                            "dim the screen when the phone is hot. Video stops only if the battery reaches 60 °C. " +
+                        "Only modes this phone supports. Video keeps this mode for the whole session. " +
                             "Data recording never stops."
                     } else {
                         "Set on the GoPro when the session starts. If it refuses, it records with its own setting."

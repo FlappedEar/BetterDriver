@@ -91,7 +91,7 @@ private const val MaxFileBytes = 4_000_000_000L
  *
  * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
  * after an error ends the file and starts the next one, so a file always has one resolution and frame
- * rate. Heat no longer steps quality down: video only stops at a 60 °C battery (ThermalPolicy).
+ * rate. Video stops only at Android's thermal shutdown, which ends the file first (ThermalPolicy).
  * Every fault ends in [VideoSink.stopped] and [VideoSink.status];
  * nothing here throws, and nothing here can reach the recorder process.
  *
@@ -105,7 +105,7 @@ class PhoneCamera(
     private val audio: Boolean,
     /** The chosen mode first, then the modes to fall back to when one cannot be bound ([ladderFrom]). */
     private val ladder: List<VideoMode>,
-    /** Heat never steps video down or stops it; readings are still logged, every check ([PhoneHeat]). */
+    /** Settings › Diagnostics › Ignore phone temperature ([PhoneHeat]): every thermal check is logged. */
     private val ignoreHeat: Boolean = false,
 ) : VideoSource {
     private val dir: File = index.videoDir
@@ -124,7 +124,7 @@ class PhoneCamera(
     /** The ladder step [bound] records at; -1 when nothing is bound. */
     private var boundStep = -1
     private var steps: List<VideoMode> = ladder
-    private var policy = ThermalPolicy(ignoreHeat)
+    private var policy = ThermalPolicy()
 
     private var recording: Recording? = null
 
@@ -196,18 +196,18 @@ class PhoneCamera(
                     sink.status("Not supported", ok = false)
                     return@addListener
                 }
-                policy = ThermalPolicy(ignoreHeat)
+                policy = ThermalPolicy()
                 thermalLog = ThermalLog(steps, ignoreHeat)
                 sessionThermal = null
                 DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
-                if (ignoreHeat) DebugLog.w(Tag, "phone temperature ignored: video never steps down or stops for heat")
+                if (ignoreHeat) DebugLog.w(Tag, "phone temperature ignored: every thermal check is logged")
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                     val listener = PowerManager.OnThermalStatusChangedListener { check() }
                     thermalListener = listener
                     power.addThermalStatusListener(executor, listener)
                 }
                 main.postDelayed(checker, CheckIntervalMs)
-                // A phone already too hot does not start video at all.
+                // A phone already at thermal shutdown does not start video at all.
                 if (thermalAction() == ThermalAction.StopVideo) {
                     endReason = "thermal"
                     sink.status(stoppedText(endReason), ok = false)
@@ -482,7 +482,7 @@ class PhoneCamera(
             null
         }
         val battery = batteryC(context)
-        val action = policy.onReading(status, battery)
+        val action = policy.onReading(status)
         thermalLog.log(status, headroom, battery, policy.current, action)
         if (status != sessionThermal) {
             sessionThermal = status
@@ -521,7 +521,7 @@ private class ThermalLog(private val steps: List<VideoMode>, private val ignoreH
         checks = 0
         loggedStatus = status
         val decision = when (action) {
-            ThermalAction.Keep -> if (ignoreHeat) "keep (heat ignored)" else "keep"
+            ThermalAction.Keep -> "keep"
             ThermalAction.StopVideo -> "stop video"
         }
         val level = if (action == ThermalAction.Keep) DebugLog.INFO else DebugLog.WARN

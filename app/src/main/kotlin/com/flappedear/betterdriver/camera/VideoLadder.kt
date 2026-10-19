@@ -46,31 +46,18 @@ sealed interface ThermalAction {
 }
 
 /**
- * Decides when phone video stops for heat (FBBD-46). It no longer steps quality down or up.
+ * Decides when phone video stops (FBBD-46): only at Android's THERMAL_STATUS_SHUTDOWN (0x06). Arek,
+ * 2026-10-19: "as long as we won't trigger 0x06, we don't care about temperature". At SHUTDOWN the
+ * camera ends its file so the video is finished before Android powers the phone off; data recording
+ * carries on. No other status and no battery temperature touches video.
  *
- * Arek's heat stress test of 2026-10-17 (FBBD-231): Android reported SEVERE after 2 min and
- * CRITICAL from 6.5 min, with the battery at only 41 to 45 °C, while the Pixel 6 recorded 4K · 60
- * for 55 min without a fault. The old policy (step down at MODERATE or a forecast of 0.95, stop at
- * CRITICAL) would have stopped video at 6.5 min. Arek: "Critical would be around 60, not 45", and
- * "we don't need this stepping". So video keeps the chosen mode and only stops, for the rest of the
- * session (data recording carries on), when:
+ * Its history: up to 0.4.0 video also stopped at a 60 °C battery (0.3.29) and, before 0.3.29,
+ * stepped quality down on Android's earlier statuses, which cut good video on Arek's 2026-10-17
+ * drives (CRITICAL at a 45 °C battery, EMERGENCY at 47 °C, both without a fault).
  *
- * - the battery reaches [stopC], or
- * - Android's thermal status is SHUTDOWN (or, with the battery temperature unknown, CRITICAL).
- *
- * Not at EMERGENCY: on Arek's 2026-10-17 afternoon drive Android reported EMERGENCY for 12 min at a
- * 46.6 to 47.5 °C battery, while the Pixel 6 recorded 1080p · 60 without a fault or a shutdown.
- * Stopping there would have lost the last 27 min of video.
- *
- * The ladder ([ladderFrom]) is still where the camera falls back to when a mode cannot be bound.
- *
- * With [ignoreHeat] (Settings › Diagnostics › Ignore phone temperature, FBBD-231) every reading keeps
- * the chosen mode, even SHUTDOWN: Arek's heat stress test, where only the phone itself may throttle.
+ * The ladder ([ladderFrom]) is where the camera falls back to when a mode cannot be bound.
  */
-class ThermalPolicy(
-    private val ignoreHeat: Boolean = false,
-    private val stopC: Float = StopBatteryC,
-) {
+class ThermalPolicy {
     /** The ladder step the camera records at; it changes only when a mode cannot be bound. */
     var current = 0
         private set
@@ -89,13 +76,7 @@ class ThermalPolicy(
         if (index >= ceiling) ceiling = index + 1
     }
 
-    /** One reading: Android's thermal [status] and the battery temperature [batteryC] (null if unknown). */
-    fun onReading(status: Int, batteryC: Float?): ThermalAction {
-        if (ignoreHeat) return ThermalAction.Keep
-        val tooHot = if (batteryC != null) batteryC >= stopC else status >= Thermal.CRITICAL
-        return if (tooHot || status >= Thermal.SHUTDOWN) ThermalAction.StopVideo else ThermalAction.Keep
-    }
+    /** One reading of Android's thermal [status]. */
+    fun onReading(status: Int): ThermalAction =
+        if (status >= Thermal.SHUTDOWN) ThermalAction.StopVideo else ThermalAction.Keep
 }
-
-/** The battery temperature that stops phone video (Arek 2026-10-17: "Critical would be around 60"). */
-const val StopBatteryC = 60f

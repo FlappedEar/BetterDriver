@@ -40,16 +40,13 @@ class DriveLogReplayTest {
         // Just over 24 Hz, enough for Arek (2026-10-13); the missing messages fail on their own above.
         assertEquals(Verdict.PASS, r.metric("gnss.rate").verdict)
         assertEquals(24.02, r.metric("gnss.rate").value!!, 0.05)
-        // Thermal status reached "light" only; the camera stepped down from 4K 60 to 4K 30 once, logged.
-        assertEquals(1.0, r.metric("thermal.max").value)
-        assertEquals(Verdict.PASS, r.metric("thermal.status").verdict)
-        assertEquals(1.0, r.metric("thermal.step_downs").value)
+        // Thermal status reached "light" only, far from shutdown: nothing about heat is reported.
+        assertTrue(r.metrics.none { it.id.startsWith("thermal.") })
         // Five phone files back to back: only the hand-overs between them are missing.
         assertEquals(Verdict.PASS, r.metric("video.phone.coverage").verdict)
         // A 40-minute drive is a soak; what 0.3.1 did not log stays not measured.
         assertEquals(Verdict.FAIL, r.metric("soak.gnss_dropped").verdict)
-        assertEquals(Verdict.PASS, r.metric("soak.thermal").verdict)
-        for (id in listOf("thermal.battery", "ui.jank", "ui.false_banners", "video.phone.sync_error", "soak.battery")) {
+        for (id in listOf("ui.jank", "ui.false_banners", "video.phone.sync_error")) {
             assertEquals(Verdict.NOT_MEASURED, r.metric(id).verdict, id)
         }
     }

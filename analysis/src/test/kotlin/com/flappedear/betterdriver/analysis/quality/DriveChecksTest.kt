@@ -209,12 +209,10 @@ class DriveChecksTest {
         check("ui.false_banners", Verdict.FAIL, 1.0)
         check("ui.banner_show", Verdict.PASS, 1.2, 0.05)
         check("ui.banner_clear", Verdict.PASS, 0.5, 0.05)
-        // Thermal and soak (FBBD-46), export (FBBD-14).
-        check("thermal.battery", Verdict.PASS, 30.0)
-        check("thermal.status", Verdict.PASS)
+        // Soak (FBBD-46), export (FBBD-14); no thermal shutdown, so no thermal rows.
+        assertTrue(r.metrics.none { it.id.startsWith("thermal.") })
         check("soak.gnss_rate", Verdict.PASS)
         check("soak.jank", Verdict.PASS)
-        check("soak.battery", Verdict.PASS)
         check("soak.video", Verdict.PASS)
         check("export.lost", Verdict.PASS, 0.0)
         check("export.time", Verdict.PASS, 4.2, 1e-9)

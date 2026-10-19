@@ -4,7 +4,7 @@ import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 
 // The soak (FBBD-46) and the VBO export (FBBD-14) in the session validation report (FBBD-183).
-// Any drive of 29 min or more is a soak: its GNSS, video, thermal, jank and battery values are
+// Any drive of 29 min or more is a soak: its GNSS, video and jank values are
 // judged against FBBD-46 as well. Arek accepted the 29-min drive of 2026-10-18 as the soak.
 
 private const val SoakMinutes = 29L
@@ -16,14 +16,8 @@ private val SoakParts = listOf(
     Triple("soak.gnss_rate", "gnss.rate", "GNSS rate >= 24 Hz"),
     Triple("soak.gnss_dropped", "gnss.dropped", "GNSS dropped samples <= 0.5 %"),
     Triple("soak.gnss_gap", "gnss.max_gap", "GNSS longest gap <= 200 ms, reconnects left out"),
-    Triple(
-        "soak.video",
-        "video.phone.coverage",
-        "camera records the whole run, or steps down per the thermal policy, logged",
-    ),
-    Triple("soak.thermal", "thermal.status", "video stopped by a 60 °C battery; no thermal shutdown"),
+    Triple("soak.video", "video.phone.coverage", "camera records the whole run"),
     Triple("soak.jank", "ui.jank", "UI jank < 5 % of frames"),
-    Triple("soak.battery", "thermal.battery", "battery temperature logged at least every 30 s, peak reported"),
 )
 
 /** The soak section from the report's [others] sections; [durationMicros] is the session's length. */

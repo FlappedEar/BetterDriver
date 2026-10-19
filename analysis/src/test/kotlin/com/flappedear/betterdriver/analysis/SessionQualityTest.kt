@@ -459,47 +459,39 @@ class SessionQualityTest {
     }
 
     @Test
-    fun `severe heat passes, and a 60 degree battery passes only with video stopped`() {
-        // 2026-10-17: Android said critical at a 45 °C battery; that alone no longer fails a session.
-        val statuses = listOf(1_000_000L to 0, 100_000_000L to 3, 300_000_000L to 4).map { (t, s) ->
+    fun `heat is never reported unless Android reaches shutdown`() {
+        // Arek 2026-10-19: "as long as we won't trigger 0x06, we don't care about temperature".
+        val statuses = listOf(1_000_000L to 0, 100_000_000L to 3, 300_000_000L to 5).map { (t, s) ->
             RecorderEvent(t, EventKinds.THERMAL_STATUS, "status=$s headroom=1.1")
         }
-        val warm = RecorderEvent(200_000_000, EventKinds.DEVICE, "battery_c=45.0 thermal=4 headroom=1.1")
-        val hot = RecorderEvent(500_000_000, EventKinds.DEVICE, "battery_c=60.2 thermal=4 headroom=1.2")
+        val hot = RecorderEvent(500_000_000, EventKinds.DEVICE, "battery_c=70.0 thermal=5 headroom=1.2")
         val start = RecorderEvent(1_000_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4")
-        val stop =
-            RecorderEvent(503_000_000, EventKinds.VIDEO_STOP, "camera=phone file=phone_0001.mp4 reason=thermal")
         val sets = stream(0, 1_000_000)
-        val r = sessionQuality(session(sets, statuses + warm + start))
-        assertEquals(4.0, r.value("thermal.max"))
-        assertEquals(Verdict.PASS, r.verdict("thermal.status"))
-        val stopped = sessionQuality(session(sets, statuses + warm + start + hot + stop))
-        assertEquals(Verdict.PASS, stopped.verdict("thermal.status"))
-        assertEquals(1.0, sessionQuality(session(sets, statuses + hot + stop)).value("thermal.step_downs"))
-        assertEquals(Verdict.FAIL, sessionQuality(session(sets, statuses + start + hot)).verdict("thermal.status"))
-        // Already hot at the start: the camera never opened a file, which passes (Codex review).
-        assertEquals(Verdict.PASS, sessionQuality(session(sets, statuses + hot)).verdict("thermal.status"))
-        assertEquals(Verdict.NOT_MEASURED, sessionQuality(session(sets)).verdict("thermal.status"))
-        // Reaching shutdown fails even with video stopped.
-        val shutdown = RecorderEvent(600_000_000, EventKinds.THERMAL_STATUS, "status=6 headroom=1.3")
-        val worst = sessionQuality(session(sets, statuses + hot + stop + shutdown))
-        assertEquals(6.0, worst.value("thermal.max"))
-        assertEquals(Verdict.FAIL, worst.verdict("thermal.status"))
+        val r = sessionQuality(session(sets, statuses + hot + start))
+        assertTrue(r.sections.none { it.title.contains("Thermal") })
+        val ids = r.metrics.map { it.id }
+        assertTrue(ids.none { it.startsWith("thermal.") || it == "soak.thermal" || it == "soak.battery" })
     }
 
     @Test
-    fun `with the phone temperature ignored severe heat without a step-down passes and shutdown fails`() {
-        // FBBD-231: Arek's heat stress test, the camera keeps its mode however hot the phone gets.
-        val statuses = listOf(1_000_000L to 0, 100_000_000L to 2, 300_000_000L to 4).map { (t, s) ->
+    fun `a thermal shutdown fails, and so does a video file it left unfinished`() {
+        val statuses = listOf(1_000_000L to 0, 300_000_000L to 5).map { (t, s) ->
             RecorderEvent(t, EventKinds.THERMAL_STATUS, thermalText(s, 0.9f, ignored = true))
         }
+        val start = RecorderEvent(1_000_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4")
+        val shutdown = RecorderEvent(400_000_000, EventKinds.THERMAL_STATUS, thermalText(6, 1.2f))
+        val stop =
+            RecorderEvent(401_000_000, EventKinds.VIDEO_STOP, "camera=phone file=phone_0001.mp4 reason=thermal")
         val sets = stream(0, 1_000_000)
-        val r = sessionQuality(session(sets, statuses))
-        assertEquals(4.0, r.value("thermal.max"))
-        assertEquals(Verdict.PASS, r.verdict("thermal.status"))
-        assertEquals(0.0, r.value("thermal.step_downs"))
-        val shutdown = RecorderEvent(400_000_000, EventKinds.THERMAL_STATUS, thermalText(6, 1.2f, ignored = true))
-        assertEquals(Verdict.FAIL, sessionQuality(session(sets, statuses + shutdown)).verdict("thermal.status"))
+        val finished = sessionQuality(session(sets, statuses + start + shutdown + stop))
+        assertEquals(400.0, finished.value("thermal.shutdown"))
+        assertEquals(Verdict.FAIL, finished.verdict("thermal.shutdown"))
+        assertEquals(Verdict.PASS, finished.verdict("thermal.shutdown_video"))
+        // From the recorder's health report too.
+        val fromDevice = RecorderEvent(400_000_000, EventKinds.DEVICE, "battery_c=40.0 thermal=6 headroom=1.2")
+        val unfinished = sessionQuality(session(sets, statuses + start + fromDevice))
+        assertEquals(Verdict.FAIL, unfinished.verdict("thermal.shutdown"))
+        assertEquals(Verdict.FAIL, unfinished.verdict("thermal.shutdown_video"))
     }
 
     @Test

@@ -13,7 +13,7 @@ import com.flappedear.betterdriver.shell.ListRow
 
 /**
  * Settings › Diagnostics › Ignore phone temperature (FBBD-231), off by default: for Arek's heat
- * stress test, video keeps its chosen mode however hot the phone gets. Applies from the next session.
+ * stress test the log keeps every thermal reading. Applies from the next session.
  */
 @Composable
 fun PhoneHeatRow() {
@@ -27,10 +27,9 @@ fun PhoneHeatRow() {
     }
     DimText(
         if (ignored) {
-            "Heat stress test: video never stops for heat. The log keeps every reading. " +
-                "Switch off after the test."
+            "Heat stress test: the log keeps every reading. Switch off after the test."
         } else {
-            "Off: video keeps its quality and stops only at a 60 °C battery."
+            "Off: video keeps its quality."
         },
     )
 }

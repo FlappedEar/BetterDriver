@@ -79,7 +79,7 @@ fun sessionQuality(
         videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end, frames),
         goProSection(data.events, clips, end),
         coachSection(data.events, samples),
-        thermalSection(data.events, end),
+        thermalSection(data.events),
         screenSection(data.events, outages(samples, end), end, underCoverFrom(samples)),
         exportSection(data.events, end),
         channelsSection(data),
