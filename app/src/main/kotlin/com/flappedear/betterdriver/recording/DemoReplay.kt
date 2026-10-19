@@ -87,7 +87,8 @@ object DemoReplay {
         val asset = { name: String -> context.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
         val track = TrackJson.decode(asset("silesia-ring.track.json"))
         val store = TrackStore(tracksDir(context))
-        if (store.get(track.id) == null) store.save(track)
+        // Arek's own lines are kept, but a copy without a start/finish line would time no laps.
+        if (store.get(track.id)?.timeable != true) store.save(track)
         val text = asset("silesia-ring.replay")
         DebugLog.i("DemoReplay", "replaying the built-in Silesia Ring laps at ${track.id}")
         SessionReplay.read(text, now())
