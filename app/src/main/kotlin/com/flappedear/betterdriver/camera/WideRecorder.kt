@@ -134,12 +134,13 @@ internal class WideRecorder(
         }
 
         override fun handedOver(done: File, mediaMicros: Long, next: File, baseNanos: Long) {
-            firstNanos.set(baseNanos + sensorShift)
             val now = count()
             fileEnds[done.name] = now
             fileStarts[next.name] = now
             // Delivered even when a stop has begun: the encoder already moved on, and its end reports next.
+            // The new start changes on the main thread with the file, so a progress report never pairs them wrongly.
             main.post {
+                firstNanos.set(baseNanos + sensorShift)
                 file = next
                 listener.handedOver(done, mediaMicros, next)
             }
