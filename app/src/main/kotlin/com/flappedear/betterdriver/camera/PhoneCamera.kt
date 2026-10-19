@@ -438,6 +438,7 @@ private class ThermalLog(private val steps: List<VideoMode>, private val ignoreH
 fun supportedPhoneModes(p: ProcessCameraProvider, modes: List<VideoMode>): List<VideoMode> {
     val info: CameraInfo = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
         ?: return emptyList()
+    logPhoneVideoCapabilities(info)
     val qualities = Recorder.getVideoCapabilities(info).getSupportedQualities(DynamicRange.SDR)
     val ranges = info.supportedFrameRateRanges
     val streams = Camera2CameraInfo.from(info)
