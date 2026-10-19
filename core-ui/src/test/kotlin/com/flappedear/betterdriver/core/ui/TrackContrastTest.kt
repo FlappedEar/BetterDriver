@@ -3,9 +3,7 @@ package com.flappedear.betterdriver.core.ui
 import androidx.compose.material3.ColorScheme
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
-import com.flappedear.betterdriver.core.ui.component.TintFraction
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.max
@@ -24,8 +22,8 @@ class TrackContrastTest {
         palettes.forEach { (name, c) ->
             check(name, "text on background", c.text, c.background, Enhanced)
             check(name, "text on surface", c.text, c.surface, Enhanced)
-            check(name, "delta on gain tint", c.text, lerp(c.surface, c.gain, TintFraction), Enhanced)
-            check(name, "delta on loss tint", c.text, lerp(c.surface, c.loss, TintFraction), Enhanced)
+            check(name, "delta ahead on black", c.gain, c.background, Enhanced)
+            check(name, "delta behind on black", c.loss, c.background, Enhanced)
         }
     }
 
@@ -55,13 +53,11 @@ class TrackContrastTest {
     fun everyTrackTextIsAtLeast7To1ForSunlight() {
         val failures = ArrayList<String>()
         palettes.forEach { (name, c) ->
-            val gainTint = lerp(c.surface, c.gain, TintFraction)
-            val lossTint = lerp(c.surface, c.loss, TintFraction)
             val pairs = listOf(
                 Triple("values on background", c.text, c.background),
                 Triple("values on surface (lap times, tiles, coach line)", c.text, c.surface),
-                Triple("delta and its label on gain tint", c.text, gainTint),
-                Triple("delta and its label on loss tint", c.text, lossTint),
+                Triple("delta ahead (number on black)", c.gain, c.background),
+                Triple("delta behind (number on black)", c.loss, c.background),
                 Triple("labels, units and empty values on surface", c.textDim, c.surface),
                 Triple("status labels and empty sectors on background", c.textDim, c.background),
                 Triple("best lap on surface", c.best, c.surface),
