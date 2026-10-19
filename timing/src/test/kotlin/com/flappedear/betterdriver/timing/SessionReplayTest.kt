@@ -15,6 +15,8 @@ import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.TrackKind
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -77,6 +79,64 @@ class SessionReplayTest {
     }
 
     @Test
+    fun `a replay written as text reads back the same fixes`() {
+        val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
+        val back = SessionReplay.read(replay.write(), start)
+        for (n in listOf(0L, 7L, 1_000L, 9_999L)) {
+            val a = replay.fix(n).associate { it.channelId to it.value }
+            val b = back.fix(n).associate { it.channelId to it.value }
+            assertEquals(a.keys, b.keys)
+            a.forEach { (id, v) ->
+                val within = if (id == GnssChannels.LAT.id || id == GnssChannels.LON.id) 1e-6 else 0.05
+                assertEquals(v, b.getValue(id), within, "channel $id at $n")
+            }
+        }
+    }
+
+    @Test
+    fun `two sessions joined lap on, one after the other, without a jump`() {
+        val one = assertNotNull(SessionReplay.of(recording(5), track, start))
+        val two = assertNotNull(SessionReplay.of(recording(7), track, start))
+        val both = SessionReplay.joined(listOf(one, two), start)
+        val fixes = replayed(both, 30).mapNotNull { it.toFix() }
+        val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+        assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
+        val points = { r: SessionReplay -> r.write().lines().count { it.isNotBlank() } - 1 }
+        assertEquals(points(one) + points(two), points(both), "every point of both")
+    }
+
+    @Test
+    fun `sessions that cross the line metres apart are joined by driving across the gap`() {
+        val one = assertNotNull(SessionReplay.of(recording(5), track, start))
+        val lat = GnssChannels.LAT.id
+        // About 11 m north: as two of Arek's Silesia Ring sessions, which cross the line 13 m apart.
+        val shifted = recording(7).map { set ->
+            SampleSet(set.tMicros, set.values.map { if (it.channelId == lat) it.copy(value = it.value + 1e-4) else it })
+        }
+        val two = assertNotNull(SessionReplay.of(shifted, track, start))
+        val both = SessionReplay.joined(listOf(one, two), start)
+        val fixes = replayed(both, 30).mapNotNull { it.toFix() }
+        val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+        assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
+    }
+
+    @Test
+    fun `a replay is timed by its own track, not by one whose line is flipped or gone`() {
+        val replay = assertNotNull(SessionReplay.of(recording(5), track, start))
+        assertTrue(replay.timesLaps(track))
+        val line = checkNotNull(track.startFinish)
+        assertFalse(replay.timesLaps(track.copy(startFinish = line.flipped())))
+        assertFalse(replay.timesLaps(track.copy(startFinish = null)))
+    }
+
+    @Test
+    fun `text that is not a replay is refused`() {
+        assertFailsWith<IllegalArgumentException> { SessionReplay.read("hello", start) }
+        val onePoint = SessionReplay.FormatLine + "\n1 2 3 - -"
+        assertFailsWith<IllegalArgumentException> { SessionReplay.read(onePoint, start) }
+    }
+
+    @Test
     fun `a session without two timed laps is not replayed`() {
         // It would jump from where it ended back to where it began on every loop.
         assertNull(SessionReplay.of(recording(5), track = null, start))
@@ -111,6 +171,27 @@ class SessionReplayTest {
         val stop = (1L..1_800L).map { n -> SampleSet(before.last().tMicros + n * 100_000L, before.last().values) }
         val moved = after.map { SampleSet(it.tMicros + 180_000_000L, it.values) }
         assertNull(SessionReplay.of(before + stop + moved, track, start))
+    }
+
+    @Test
+    fun `a lap in which the car stands still is not replayed, with or without recorded speed`() {
+        for (speed in listOf(true, false)) {
+            val drive = recording(6, speed = speed)
+            val timed = timeSession(track, drive.mapNotNull { it.toFix() }.asSequence()).laps
+                .filter { it.kind == LapKind.Timed }
+            // Ten seconds parked halfway round the second timed lap: not slow enough to leave out by time.
+            val half = (timed[1].startMicros + timed[1].endMicros) / 2
+            val (before, after) = drive.partition { it.tMicros < half }
+            val parked = before.last().values.map {
+                if (it.channelId == GnssChannels.SPEED_KMH.id) ChannelValue(it.channelId, 0.0) else it
+            }
+            val stop = (1L..100L).map { n -> SampleSet(before.last().tMicros + n * 100_000L, parked) }
+            val moved = after.map { SampleSet(it.tMicros + 10_000_000L, it.values) }
+            val replay = assertNotNull(SessionReplay.of(before + stop + moved, track, start))
+            val fixes = replayed(replay, 20).mapNotNull { it.toFix() }
+            val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+            assertTrue(steps.count { it < 0.05 } < 25, "standing still with speed=$speed")
+        }
     }
 
     @Test

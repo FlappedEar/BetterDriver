@@ -30,4 +30,9 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // BuiltInReplayTest (FBBD-237) checks, or with -PwriteBuiltInReplay=true writes, the app's built-in replay.
+    val demo = file("../app/src/main/assets/demo")
+    systemProperty("builtInReplayDir", demo.path)
+    providers.gradleProperty("writeBuiltInReplay").orNull?.let { systemProperty("writeBuiltInReplay", it) }
+    inputs.dir(demo).optional().withPropertyName("builtInReplay")
 }

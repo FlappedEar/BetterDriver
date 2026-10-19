@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.sessionanalysis.trackFor
 import com.flappedear.betterdriver.timing.demo.DemoCircuit
 import com.flappedear.betterdriver.timing.demo.SessionReplay
+import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.io.File
 
@@ -15,9 +16,16 @@ import java.io.File
  * What the Demo track receiver drives (FBBD-235): the made-up demo circuit, or a session on the phone
  * replayed lap after lap, Arek's Silesia Ring outing for example (Settings › Devices › Demo track ›
  * Drives). The choice is the session id in a small file, so the recorder process reads the current
- * one at each session start; no file means the demo circuit.
+ * one at each session start; no file means the demo circuit. [SilesiaRing] is chosen the same way:
+ * Arek's laps there, built into the app (FBBD-237).
  */
 object DemoReplay {
+    /** The choice of the Silesia Ring replay built into the app (assets/demo): Arek's 27 Sep sessions. */
+    const val SilesiaRing = "built-in:silesia-ring"
+
+    /** When Arek's built-in Silesia Ring session started (27 Sep 2026, 11:00:30 UTC), for its name. */
+    const val SilesiaRingStartUtcMillis = 1_790_506_830_000L
+
     private fun file(context: Context) = File(context.filesDir, "demo_track_session")
 
     /** The chosen session's id, or null for the demo circuit. */
@@ -37,26 +45,68 @@ object DemoReplay {
      * starts at [now] read once the session is loaded, so a long read does not put it behind the
      * recording's own start.
      */
-    // A session that cannot be read must not stop the recording: the demo circuit drives instead.
-    @Suppress("TooGenericExceptionCaught")
     fun script(context: Context, now: () -> Long = System::currentTimeMillis): GnssScript {
-        val id = sessionId(context)
-        if (id != null) {
-            try {
-                val data = SessionStore(sessionsDir(context)).read(id)
-                val track = trackFor(data, TrackStore(tracksDir(context)).all())
-                SessionReplay.of(data.sampleSets, track, now())?.let {
-                    DebugLog.i("DemoReplay", "replaying session $id at ${track?.id ?: "no saved track"}")
-                    return it
-                }
-                DebugLog.w("DemoReplay", "session $id has no two timed laps at a saved track: demo circuit instead")
-            } catch (e: Exception) {
-                DebugLog.w("DemoReplay", "session $id cannot be replayed: demo circuit instead", e)
-            }
+        val replay = when (val id = sessionId(context)) {
+            null -> null
+            SilesiaRing -> silesiaRing(context, now)
+            else -> session(context, id, now)
         }
+        return replay ?: demoCircuit(context, now)
+    }
+
+    private fun demoCircuit(context: Context, now: () -> Long): GnssScript {
         val store = TrackStore(tracksDir(context))
         // A track already saved under its id is kept: Arek may have moved its lines.
         if (store.get(DemoCircuit.TrackId) == null) store.save(DemoCircuit.track)
         return DemoCircuit(now())
+    }
+
+    // A session that cannot be read must not stop the recording: the demo circuit drives instead.
+    @Suppress("TooGenericExceptionCaught")
+    private fun session(context: Context, id: String, now: () -> Long): GnssScript? = try {
+        val data = SessionStore(sessionsDir(context)).read(id)
+        val track = trackFor(data, TrackStore(tracksDir(context)).all())
+        SessionReplay.of(data.sampleSets, track, now()).also {
+            if (it != null) {
+                DebugLog.i("DemoReplay", "replaying session $id at ${track?.id ?: "no saved track"}")
+            } else {
+                DebugLog.w("DemoReplay", "session $id has no two timed laps at a saved track: demo circuit instead")
+            }
+        }
+    } catch (e: Exception) {
+        DebugLog.w("DemoReplay", "session $id cannot be replayed: demo circuit instead", e)
+        null
+    }
+
+    /**
+     * Arek's Silesia Ring laps, joined into one loop on the computer (BuiltInReplayTest), with the
+     * track they were timed at, saved first as the demo circuit's is.
+     */
+    @Suppress("TooGenericExceptionCaught") // As for a session: the demo circuit drives instead.
+    private fun silesiaRing(context: Context, now: () -> Long): GnssScript? = try {
+        val asset = { name: String -> context.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
+        val track = TrackJson.decode(asset("silesia-ring.track.json"))
+        val replay = SessionReplay.read(asset("silesia-ring.replay"), now())
+        val store = TrackStore(tracksDir(context))
+        // Arek's edits are kept while they time the laps. A line flipped or removed would not: only the
+        // built-in start/finish comes back, his sectors, pit lines and name stay (Codex).
+        val saved = store.get(track.id)
+        if (saved == null) {
+            store.save(track)
+        } else if (!replay.timesLaps(saved)) {
+            val mended = saved.copy(
+                kind = track.kind,
+                startFinish = track.startFinish,
+                finish = track.finish,
+                center = track.center,
+                radiusMeters = track.radiusMeters,
+            )
+            store.save(if (replay.timesLaps(mended)) mended else track)
+        }
+        DebugLog.i("DemoReplay", "replaying the built-in Silesia Ring laps at ${track.id}")
+        replay
+    } catch (e: Exception) {
+        DebugLog.w("DemoReplay", "built-in Silesia Ring replay cannot be read: demo circuit instead", e)
+        null
     }
 }
