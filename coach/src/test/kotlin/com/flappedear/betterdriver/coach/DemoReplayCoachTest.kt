@@ -46,6 +46,12 @@ class DemoReplayCoachTest {
     }
 
     @Test
+    fun `no praise for a corner driven cooling down`() {
+        val praised = cues.filter { it.kind == CueKind.Praise }.mapNotNull { it.praised?.lap }
+        assertTrue(praised.none { it == 10 || it == 16 }, "praise for laps $praised")
+    }
+
+    @Test
     fun `a lap time is said when the next lap is lifted off`() {
         val times = cues.filter { it.kind == CueKind.LapTime }.map { it.lap }
         assertTrue(9 in times && 16 in times, "lap times said for laps $times")
