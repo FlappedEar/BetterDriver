@@ -33,7 +33,8 @@ finish() {
 # phase NAME [--no-restart]
 phase() {
   echo "== ReplayDriveTest#$1"
-  result=$(adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" 2>&1)
+  # A phase that hangs fails the drive instead of the job running out of time.
+  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" 2>&1)
   echo "$result"
   echo "$result" | grep -q "^OK (1 test)" || fail "phase $1 failed: $(echo "$result" | grep -m5 -E 'Error|Exception|expected|:' | tr '\n' ' ')"
 }

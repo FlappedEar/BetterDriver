@@ -40,6 +40,23 @@ class InLapTest {
     }
 
     @Test
+    fun `a lift for traffic ends after two corners in a row at race pace (FBBD-252)`() {
+        val lap = InLap()
+        lap.drive(130.0, 1.5, 3.5)
+        assertTrue(lap.cruising)
+        // One corner near its best, then one 20 % slower: still cooling down.
+        lap.onCornerPass(10_200_000L, 10_000_000L)
+        lap.onCornerPass(12_000_000L, 10_000_000L)
+        assertTrue(lap.cruising)
+        lap.onCornerPass(10_400_000L, 10_000_000L)
+        assertTrue(lap.cruising)
+        // Two in a row within 5 % of their best: the rest of the lap is coached.
+        lap.onCornerPass(10_300_000L, 10_000_000L)
+        assertFalse(lap.cruising)
+        assertFalse(lap.quiet)
+    }
+
+    @Test
     fun `braking, easing off before it and driving on are not cooling down (FBBD-202)`() {
         val lap = InLap()
         lap.drive(130.0, 6.0, 4.0)

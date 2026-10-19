@@ -558,6 +558,8 @@ class CueEngine(
     private fun onPass(pass: CornerPass, now: Long): CueResult? {
         val cruising = inLap.cruising
         book?.onPass(pass, cruising)
+        // Back at race pace after a lift for traffic: coached again from the next corner (FBBD-252).
+        inLap.onCornerPass(pass.timeMicros, book?.targets?.getOrNull(pass.corner - 1)?.timeMicros)
         if (!cruising) lapPasses += pass
         val cue = openCues.remove(pass.corner)
         val before = cue?.before

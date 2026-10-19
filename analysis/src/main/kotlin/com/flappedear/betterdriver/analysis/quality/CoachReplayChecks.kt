@@ -75,8 +75,8 @@ fun replayLaps(events: List<RecorderEvent>): List<ReplayLap> = events.ofKind(Eve
  *
  * - FBBD-244: once coaching starts, no lap at race pace goes by without a cue unless the coach logged
  *   why it was quiet; a lap out of the pit lane is never taken as cooling down; no advice is measured
- *   from a lap driven cooling down. Laps at race pace the coach kept quiet are listed, not failed: a
- *   3 s lift for traffic quiets the rest of a lap by design (FBBD-202).
+ *   from a lap driven cooling down. A lap at race pace gets a cue even if a lift for traffic quieted
+ *   the coach for a while (FBBD-252); laps at race pace it went quiet on are listed.
  * - FBBD-242: corner cues said with numbers give an absolute target.
  * - FBBD-243: praise is said, never for a lap driven cooling down.
  * - FBBD-245: every cue is in [language] ("pl" or "en").
@@ -116,20 +116,22 @@ private fun silentLaps(
 ): QualityMetric {
     val id = "coach.silent_laps"
     val label = "Coached laps without a cue"
-    val criterion = "0 laps without a cue once coaching starts, unless the coach logged why it was quiet (FBBD-244)"
+    val criterion = "0 laps without a cue once coaching starts, unless slow and the coach logged why (FBBD-244, FBBD-252)"
     if (coached.size < min) {
         return notMeasured(id, label, criterion, "${coached.size} coached lap(s), $min needed")
     }
     val quietLaps = quiet.map { it.lap }.toSet()
     val said = coached.associate { lap -> lap.number to cues.count { it.lap == lap.number } }
-    val silent = coached.filter { said[it.number] == 0 && it.number !in quietLaps }.map { it.number }
+    // A lap at race pace is coached even when the coach went quiet on it for a while (FBBD-252).
+    val silent = coached.filter { said[it.number] == 0 && (it.number !in quietLaps || it.number in atPace) }
+        .map { it.number }
     val quietAtPace = coached.filter { it.number in quietLaps && it.number in atPace }
         .joinToString { lap -> "${lap.number} (${"%.1f".format(lap.timeMillis / MillisPerSecond)} s, " +
             quiet.filter { it.lap == lap.number }.joinToString("/") { it.reason } + ")" }
     return judged(
         id, label, silent.size.toDouble(), "laps", silent.isEmpty(), Basis.MEASURED, criterion,
         "cues per coached lap (" + said.entries.joinToString { "${it.key}: ${it.value}" } + ")" +
-            (if (silent.isEmpty()) "" else "; silent with no reason logged: $silent") +
+            (if (silent.isEmpty()) "" else "; silent: $silent") +
             (if (quietAtPace.isEmpty()) "" else "; quiet at race pace: $quietAtPace"),
     )
 }
