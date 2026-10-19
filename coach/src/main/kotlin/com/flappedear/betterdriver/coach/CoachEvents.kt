@@ -69,6 +69,8 @@ object CoachEvents {
         cue.cornerId?.let { append(" corner_id=").append(it) }
         if (cue.kind == CueKind.Corner) append(" conf=").append(cue.confidence.name)
         if (cue.doubts.isNotEmpty()) append(" why=").append(cue.doubts.joinToString(",") { it.code })
+        cue.praise?.let { append(" praise=").append(it.name) }
+        cue.praised?.let { append(" praised=").append(passText(it)) }
         append(" text=").append(cue.text)
     }
 
@@ -136,6 +138,8 @@ object CoachEvents {
             confidence = Confidence.parse(fields["conf"]) ?: Confidence.HIGH,
             doubts = fields["why"]?.split(',')?.filter { it.isNotEmpty() }.orEmpty()
                 .map { CueDoubt(it, CueDoubts.cap(it), CueDoubts.text(it)) },
+            praise = fields["praise"]?.let(Praise::valueOf),
+            praised = corner?.let { c -> fields["praised"]?.let { parsePass(c, it) } },
         )
     }.getOrNull()
 
