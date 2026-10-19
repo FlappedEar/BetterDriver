@@ -245,7 +245,7 @@ private class PraiseQueue {
  * The praise [pass] earns (FBBD-243), or null: “that worked” when the cue [result] is for moved the way
  * it asked and gained time, else “best yet” when it beat the corner's fastest pass so far by
  * [MinLossMicros]. Targets change only at the end of a timed lap, so the fastest pass here is still the
- * one from before this lap. A pass too weak to coach from is never praised.
+ * one from before this lap. A pass too weak to coach from, or driven cooling down, is never praised.
  */
 private fun praiseFor(
     b: CornerBook,
@@ -556,9 +556,9 @@ class CueEngine(
             val gain = before.timeMicros - pass.timeMicros
             CueResult(now, cue, pass, improved(cue.advice, before, pass), gain, confidenceOf(passDoubts(pass)))
         }
-        val learned = settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
+        val mayPraise = !cruising && settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         val b = book
-        if (learned && b != null && !praises.praised(pass.lap)) {
+        if (mayPraise && b != null && !praises.praised(pass.lap)) {
             praiseFor(b, pass, result, now, phrases)?.let(praises::offer)
         }
         return result
