@@ -126,9 +126,12 @@ class ReplayDriveTest {
             "no corner cue said; coach problems: " +
                 events.filter { it.kind == "coach_problem" }.take(MaxProblems).joinToString { it.text }
         }
-        val failed = coach.filter { it.verdict == Verdict.FAIL }
-        check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
         checkNotNull(report) { "the log has no recording $id" }
+        // The drive checks count too, except those that measure the emulator's own screen, start-up and
+        // speech engine rather than the app: a phone's values come from Arek's logs.
+        val drive = report.metrics.filterNot { it.id in EmulatorChecks || it.id.startsWith("ui.") }
+        val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
+        check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
         d.checkNoAppErrors()
     }
 
@@ -180,5 +183,8 @@ class ReplayDriveTest {
         const val SettleMs = 8_000L
         const val MillisPerSecond = 1000.0
         const val MaxProblems = 5
+
+        /** Drive checks of the emulator's hardware: start-up time, speech engine delay, frame times. */
+        val EmulatorChecks = setOf("app.cold_start", "coach.tts", "coach.delay", "coach.headset", "soak.jank")
     }
 }
