@@ -97,6 +97,8 @@ private class CornerBook(
     private val fastest = Array(n) { mutableListOf<CornerPass>() }
     val targets = arrayOfNulls<CornerPass>(n)
     val lastPass = arrayOfNulls<CornerPass>(n)
+    /** Each corner's last pass at race pace: not one driven after lifting off to cool down ([InLap]). */
+    val lastAtPace = arrayOfNulls<CornerPass>(n)
     /** Each corner's recent losses against its target, oldest first. */
     val losses = Array(n) { ArrayDeque<Long>() }
     val cuedOnLap = IntArray(n) { NeverCued }
@@ -120,9 +122,12 @@ private class CornerBook(
     fun confirmed(i: Int): CornerPass? = fastest[i].getOrNull(ConfirmingPasses - 1)
 
 
-    fun onPass(pass: CornerPass) {
+    /** [pass] is the corner's latest; [cruising] when driven after lifting off to cool down. */
+    fun onPass(pass: CornerPass, cruising: Boolean) {
         val i = pass.corner - 1
         lastPass[i] = pass
+        if (cruising) return
+        lastAtPace[i] = pass
         targets[i]?.takeUnless { pass.unusable() }?.let { t ->
             losses[i].addLast(pass.timeMicros - t.timeMicros)
             while (losses[i].size > LossHistory) losses[i].removeFirst()
@@ -367,7 +372,8 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *   when the [earlier] reference has a session driven [sameDay] (back out after a break in the pits,
  *   FBBD-190), at most [WarmUpLaps], since the corners and targets are known already.
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
- *   there and may give one cue: brake later, brake earlier, or carry more speed. It is timed to end,
+ *   there (the lap before's, when the last lap passed it cooling down) and may give one cue: brake
+ *   later, brake earlier, or carry more speed. It is timed to end,
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
@@ -376,8 +382,10 @@ private class SpeechTiming(private val settings: CoachSettings, private val late
  *   worked” when the cue there moved the way it asked and gained time, else “Turn 3, best yet” when the
  *   pass beat the fastest one until then by [MinLossMicros]. A pass too weak to coach from is never
  *   praised. It is said only when it and that straight's corner cue both fit; when not, the cue wins.
- * - **In-lap** ([InLap], FBBD-202): nothing is said once the driver lifts off on a straight to cool
- *   down, to the end of that lap, nor after a lap ends in the pit lane, whose time is not said.
+ * - **In-lap** ([InLap], FBBD-202): no advice once the driver lifts off from race pace on a straight
+ *   to cool down, to the end of that lap, only the time of the lap before; passes driven cooling down
+ *   are never coached from nor measured as a cue's result. Nothing at all after a lap ends in the
+ *   pit lane, whose time is not said.
  * - **Corner numbers** are the track's (FBBD-172): each braking corner is said by the number of the
  *   track corner it is in ([identifyCorners]), as the lap analysis numbers it.
  * - **Picked corners** ([picks], FBBD-148) are matched to the coach's corners by CornerId, or by
@@ -476,7 +484,7 @@ class CueEngine(
         }
         inLap.update(fix.tMicros, laps.speedKmh, along?.takeIf { book?.onStraight(it) == true }, book?.map?.path)
         val cue = when {
-            settings.verbosity == Verbosity.Off || inLap.quiet -> null
+            settings.verbosity == Verbosity.Off || inLap.inPitLane -> null
             along == null -> speakLapTime(fix.tMicros, null, anywhere = true)
             else -> speak(fix.tMicros, along)
         }
@@ -522,13 +530,15 @@ class CueEngine(
     }
 
     private fun onPass(pass: CornerPass, now: Long): CueResult? {
-        book?.onPass(pass)
-        lapPasses += pass
+        val cruising = inLap.cruising
+        book?.onPass(pass, cruising)
+        if (!cruising) lapPasses += pass
         val cue = openCues.remove(pass.corner)
         val before = cue?.before
-        // A pass too weak to coach from (FBBD-177) says nothing about whether the cue worked: no
-        // result, so the review shows no gain and no Better or Not yet for it.
-        val result = if (cue == null || before == null || pass.unusable()) {
+        // A pass too weak to coach from (FBBD-177), or driven cooling down, says nothing about whether
+        // the cue worked: no result, so the review shows no gain and no Better or Not yet for it.
+        val weak = pass.unusable() || cruising
+        val result = if (cue == null || before == null || weak) {
             null
         } else {
             val gain = before.timeMicros - pass.timeMicros
@@ -558,6 +568,8 @@ class CueEngine(
     /** At most one cue for this fix, with the car [along] the reference path. */
     @Suppress("ReturnCount") // Each early return is a reason to stay quiet on this fix.
     private fun speak(now: Long, along: Double): Cue? {
+        // Cooling down: no advice, but the time of the lap just driven is still said.
+        if (inLap.cruising) return speakLapTime(now, null, anywhere = true)
         val b = book ?: return null
         val next = b.next(along) ?: return null
         val lap = laps.timer.lapNumber
@@ -614,7 +626,9 @@ class CueEngine(
     private fun cornerCue(b: CornerBook, corner: Corner, now: Long): Cue? {
         val i = corner.number - 1
         val lap = laps.timer.lapNumber
-        val last = b.lastPass[i]?.takeIf { it.lap == lap - 1 }
+        // The last lap's pass, or when the last lap was cooled down there, the lap before's at race pace.
+        val recent = b.lastPass[i]?.takeIf { it.lap == lap - 1 }
+        val last = b.lastAtPace[i]?.takeIf { recent != null && (it === recent || it.lap == lap - 2) }
         val target = b.confirmed(i)?.takeIf { it !== last }
         if (last == null || target == null || !mayCue(b, corner, lap)) return null
         val unidentified = identity != null && corner.cornerId == null

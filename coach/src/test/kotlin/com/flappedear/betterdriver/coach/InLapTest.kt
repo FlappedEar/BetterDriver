@@ -34,6 +34,7 @@ class InLapTest {
         assertFalse(lap.quiet, "2.5 s of lifting")
         lap.drive(130.0, 1.5, 3.5, startMicros = 10_000_000L)
         assertTrue(lap.quiet)
+        assertTrue(lap.cruising)
         assertFalse(lap.onLapDone(125.0, path), "the lap ended at speed")
         assertFalse(lap.quiet, "the next lap is coached")
     }
@@ -48,6 +49,15 @@ class InLapTest {
         // Off the straight (in a corner) nothing is measured.
         repeat(50) { lap.update(30_000_000L + it * 100_000L, 130.0 - it, null, path) }
         assertFalse(lap.quiet)
+    }
+
+    @Test
+    fun `slowing below race pace, out of the pit lane, is not cooling down`() {
+        val lap = InLap()
+        // 70 km/h where the reference lap does 130: still getting up to speed.
+        lap.drive(70.0, 1.0, 4.0)
+        assertFalse(lap.quiet)
+        assertFalse(lap.cruising)
     }
 
     @Test
