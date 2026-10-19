@@ -196,6 +196,14 @@ class SessionReplay private constructor(
          */
         private fun joined(laps: List<List<Point>>): List<Point> {
             val out = mutableListOf<Point>()
+            // Seconds to drive from the end of out to the point at the speed there; none for the same spot.
+            fun bridgeSeconds(path: List<Point>, to: Point): Double {
+                val end = path.last()
+                val gap = distanceMeters(GeoPoint(end.lat, end.lon), GeoPoint(to.lat, to.lon))
+                if (gap < SameSpot) return 0.0
+                val kmh = end.kmh ?: if (path.size >= 2) speedAt(path, path.size - 2) else StoppedKmh
+                return gap / (maxOf(kmh, StoppedKmh) / KmhPerMs)
+            }
             for (lap in laps.filter { it.size >= 2 }) {
                 val at = out.lastOrNull()?.let { it.t + bridgeSeconds(out, lap.first()) } ?: 0.0
                 val from = lap.first().t
@@ -205,15 +213,6 @@ class SessionReplay private constructor(
             val bridge = bridgeSeconds(out, start)
             if (bridge > 0.0) out += Point(out.last().t + bridge, start.lat, start.lon, start.kmh, start.alt)
             return out
-        }
-
-        /** Seconds to drive from the end of [path] to [to] at the speed there; none for a gap under [SameSpot]. */
-        private fun bridgeSeconds(path: List<Point>, to: Point): Double {
-            val end = path.last()
-            val gap = distanceMeters(GeoPoint(end.lat, end.lon), GeoPoint(to.lat, to.lon))
-            if (gap < SameSpot) return 0.0
-            val kmh = end.kmh ?: if (path.size >= 2) speedAt(path, path.size - 2) else StoppedKmh
-            return gap / (maxOf(kmh, StoppedKmh) / KmhPerMs)
         }
 
         /** Closer than this, two points on the line are the same spot. */
