@@ -251,8 +251,8 @@ class PhoneCamera(
     @SuppressLint("MissingPermission") // Audio is only enabled when RECORD_AUDIO is granted (CameraService).
     @Suppress("TooGenericExceptionCaught") // CameraX reports unsupported settings and busy cameras as exceptions.
     private fun begin(stepIndex: Int) {
-        if (shutdown) return
-        val p = provider ?: return
+        // After Android's thermal shutdown no file starts again, also from a pending restart.
+        val p = provider?.takeUnless { shutdown } ?: return
         val step = steps[stepIndex]
         policy.moveTo(stepIndex)
         try {
