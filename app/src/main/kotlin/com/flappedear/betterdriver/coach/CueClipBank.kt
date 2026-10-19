@@ -48,7 +48,7 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
 
     private val timeout = Runnable { fail("rendering took over ${RenderTimeoutMillis / MillisPerSecond} s") }
 
-    /** Starts rendering or loading the clips, once per voice and speed ([speech], FBBD-240). */
+    /** Starts rendering or loading the clips, once per voice, speed and pitch ([speech], FBBD-240). */
     fun prepare(speech: Speech) {
         handler.post {
             if (started && speech == this.speech) return@post
@@ -95,7 +95,7 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
     private fun render(tts: TextToSpeech) {
         val root = File(app.cacheDir, ClipsDir)
         // One folder per voice and vocabulary, so a voice change renders afresh; older folders go.
-        val signature = "${tts.defaultEngine}|${tts.voice?.name}|${speech.rate}|${CueClips.vocabulary}|$ClipFormat"
+        val signature = "${tts.defaultEngine}|${tts.voice?.name}|${speech.rate}|${speech.pitch}|${CueClips.vocabulary}|$ClipFormat"
         val d = File(root, Integer.toHexString(signature.hashCode()))
         root.listFiles()?.filter { it != d }?.forEach { it.deleteRecursively() }
         d.mkdirs()
