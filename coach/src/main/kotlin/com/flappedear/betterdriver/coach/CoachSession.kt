@@ -47,6 +47,9 @@ class CoachSession(
     private val engine = track?.takeIf { coaches(it) && settings.verbosity != Verbosity.Off }
         ?.let { CueEngine(it, settings, reference, picks = picks, sameDay = sameDay, focus = focus) }
 
+    /** The coach line follows the language the cues are said in (FBBD-245). */
+    private val phrases = PhraseBook.of(settings.language)
+
     private var lastCue: Cue? = null
 
     /** The last cue said; until there is one, whether the coach is learning or on. */
@@ -88,10 +91,10 @@ class CoachSession(
 
     /**
      * The cue without "Turn N, ", since the corner is shown beside it: "Brake at 100 m · 10 later"
-     * ([Phrases.line]), or the words said: "Brake a little later", "That worked".
+     * ([PhraseBook.line]), or the words said: "Brake a little later", "That worked".
      */
     private fun lineText(cue: Cue): String {
-        cue.advice?.let(Phrases::line)?.let { return it }
+        cue.advice?.let(phrases::line)?.let { return it }
         val t = if (cue.corner != null) cue.text.substringAfter(", ") else cue.text
         return t.replaceFirstChar { it.uppercase() }
     }

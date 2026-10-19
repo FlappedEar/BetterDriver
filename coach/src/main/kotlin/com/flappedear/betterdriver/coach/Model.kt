@@ -105,6 +105,12 @@ enum class VoiceMode {
     PreRendered,
 }
 
+/** The language the coach speaks (FBBD-245): its phrases ([PhraseBook.of]) and the voice that says them. */
+enum class CoachLanguage(val tag: String) {
+    English("en"),
+    Polish("pl"),
+}
+
 /** Coach settings, set in the app (FBBD-98). */
 data class CoachSettings(
     val verbosity: Verbosity = Verbosity.Focus,
@@ -114,6 +120,8 @@ data class CoachSettings(
     val learningLaps: Int = DefaultLearningLaps,
     /** How cues are voiced (FBBD-48): live text-to-speech, or clips rendered at coach start. */
     val voice: VoiceMode = VoiceMode.Live,
+    /** The language cues are said in (FBBD-245). */
+    val language: CoachLanguage = CoachLanguage.English,
 ) {
     init {
         require(audioDelayMillis in 0..MaxAudioDelayMillis) { "audio delay must be 0 to $MaxAudioDelayMillis ms" }

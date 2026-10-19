@@ -28,6 +28,7 @@ class CoachSettingsStore(private val file: File) {
             learningLaps = p.getProperty(KeyLearning)?.toIntOrNull()
                 ?.coerceIn(0, CoachSettings.MaxLearningLaps) ?: d.learningLaps,
             voice = VoiceMode.entries.firstOrNull { it.name == p.getProperty(KeyVoice) } ?: d.voice,
+            language = CoachLanguage.entries.firstOrNull { it.name == p.getProperty(KeyLanguage) } ?: d.language,
         )
     }
 
@@ -38,6 +39,7 @@ class CoachSettingsStore(private val file: File) {
         p.setProperty(KeyDelay, settings.audioDelayMillis.toString())
         p.setProperty(KeyLearning, settings.learningLaps.toString())
         p.setProperty(KeyVoice, settings.voice.name)
+        p.setProperty(KeyLanguage, settings.language.name)
         val tmp = File(file.parentFile, file.name + ".tmp")
         FileOutputStream(tmp).use { out ->
             p.store(out, "BetterDriver coach settings")
@@ -54,5 +56,6 @@ class CoachSettingsStore(private val file: File) {
         const val KeyDelay = "audioDelayMillis"
         const val KeyLearning = "learningLaps"
         const val KeyVoice = "voice"
+        const val KeyLanguage = "language"
     }
 }
