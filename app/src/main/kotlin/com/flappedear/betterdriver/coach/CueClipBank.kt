@@ -19,6 +19,9 @@ private fun readClip(f: File): Pcm? = try {
     null
 }
 
+/** Where a clip is rendered, named with this process id, before it is renamed into place. */
+private fun partFile(d: File, key: String) = File(d, CueClips.fileName(key) + ".${Process.myPid()}.part")
+
 /**
  * The pre-rendered cue clips (FBBD-48): every word group and number the coach can say
  * ([CueClips.vocabulary]), rendered once with text-to-speech to WAV files in the app's cache and held
@@ -110,8 +113,6 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
         }
         if (refused.isNotEmpty()) fail("text-to-speech refused to render ${refused.size} clips")
     }
-
-    private fun partFile(d: File, key: String) = File(d, CueClips.fileName(key) + ".${Process.myPid()}.part")
 
     private fun onClip(key: String, ok: Boolean) {
         val d = dir?.takeIf { key in pending } ?: return

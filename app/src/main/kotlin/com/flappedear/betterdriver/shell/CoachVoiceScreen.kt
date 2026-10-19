@@ -25,9 +25,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 
-/** One voice on the voice page: the engine's [name] and "Voice 3", its number within its accent. */
-data class VoiceRow(val name: String, val label: String)
-
 /**
  * The coach's voice (FBBD-240, UI-90 A), opened from the Voice row of the Spoken coach page: the
  * phone's offline English voices grouped by accent ([groups], heading to rows; null while they are

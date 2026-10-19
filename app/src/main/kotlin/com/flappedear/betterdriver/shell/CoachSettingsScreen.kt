@@ -18,7 +18,6 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,7 +27,6 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.coach.CoachSettings
-import com.flappedear.betterdriver.coach.Speech
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.VoiceMode
 import java.util.Locale
@@ -37,7 +35,6 @@ import kotlin.math.roundToInt
 private const val MillisPerSecond = 1_000f
 private const val DelayStepMillis = 100
 internal const val SampleCue = "Turn 2, brake 10 metres later"
-private const val Tenths = 10f
 
 /** What each verbosity says, for the settings row and the dialog. */
 internal fun verbosityLabel(v: Verbosity) = when (v) {
@@ -59,6 +56,9 @@ private fun seconds(ms: Int) = String.format(Locale.ROOT, "%.1f s", ms / MillisP
 
 /** The corners picked for the coach at one track (FBBD-148), as the settings page lists them. */
 data class PickedCorners(val trackId: String, val trackName: String, val corners: List<String>)
+
+/** One voice on the voice page: the engine's [name] and "Voice 3", its number within its accent. */
+data class VoiceRow(val name: String, val label: String)
 
 /**
  * Spoken coach settings (FBBD-98, UI-64 option B), a page of its own opened from Settings › App: how
@@ -171,38 +171,6 @@ private fun DelayAndLaps(s: CoachSettings, onChange: (CoachSettings) -> Unit, de
             "Back out on the same day, it needs only one.",
     )
 }
-
-/** The voice row and the speed and pitch sliders (UI-90 A, UI-91 B), saved when a slider is let go. */
-@Composable
-private fun VoiceAndSpeed(s: CoachSettings, onChange: (CoachSettings) -> Unit, label: String?, onVoice: () -> Unit) {
-    ListRow("Voice", label ?: "…", divider = false, onClick = onVoice)
-    SpeechSlider("Speed", s.speech.rate, Speech.MinRate..Speech.MaxRate) {
-        onChange(s.copy(speech = s.speech.copy(rate = it)))
-    }
-    SpeechSlider("Pitch", s.speech.pitch, Speech.MinPitch..Speech.MaxPitch) {
-        onChange(s.copy(speech = s.speech.copy(pitch = it)))
-    }
-    DimText("Speed 0.8× to 1.5×, pitch 0.7× to 1.3×.")
-}
-
-/** A 0.1 step slider for a speech factor, shown as "1.2×". */
-@Composable
-private fun SpeechSlider(name: String, value: Float, range: ClosedFloatingPointRange<Float>, onSet: (Float) -> Unit) {
-    var v by remember(value) { mutableFloatStateOf(value) }
-    Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Text(factor(v), style = MaterialTheme.typography.bodyLarge)
-    }
-    Slider(
-        value = v,
-        onValueChange = { v = ((it * Tenths).roundToInt() / Tenths).coerceIn(range) },
-        onValueChangeFinished = { if (v != value) onSet(v) },
-        valueRange = range,
-        steps = ((range.endInclusive - range.start) * Tenths).roundToInt() - 1,
-    )
-}
-
-private fun factor(f: Float) = String.format(Locale.ROOT, "%.1f×", f)
 
 /** Says the sample cue in the coach's voice, speed and pitch, on the current audio output. */
 @Composable

@@ -13,6 +13,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 private const val NanosPerMilli = 1_000_000L
 
+/** Logs the time from asking for a phrase to its sound starting, for [path] "live" or "pre-rendered". */
+private fun logStart(path: String, askedAt: Long, startedAt: Long) =
+    DebugLog.i("Voice", "$path voice start ${(startedAt - askedAt) / NanosPerMilli} ms")
+
 /**
  * A phrase's sound started: at [System.nanoTime] [nanoTime] (the session clock's base), said [path]
  * ("live" or "clip"), to [route] ("headset" or "speaker"). For the drive's checks (FBBD-47): when
@@ -43,6 +47,7 @@ internal fun chooseEnglish(tts: TextToSpeech): Boolean = listOf(Locale.UK, Local
 }
 
 /** The engine's voices as the coach sees them (FBBD-240); empty if the engine will not list them. */
+@Suppress("TooGenericExceptionCaught") // An engine that fails to list voices only leaves the default.
 internal fun ttsVoices(tts: TextToSpeech): List<android.speech.tts.Voice> = try {
     tts.voices?.toList().orEmpty()
 } catch (e: RuntimeException) {
@@ -132,17 +137,15 @@ internal class Voice(context: Context) {
         handler.post { applyNow() }
     }
 
-    /** On the voice thread: sets the wanted voice and speed on the started engine, then warms it. */
+    /**
+     * On the voice thread: sets the wanted voice and speed on the started engine, then warms it: opens
+     * the audio path with a moment of silence, so the next phrase does not wait for it.
+     */
     private fun applyNow() {
         if (!engineReady) return
         val applied = applySpeech(tts, speech)
         ready = applied.english
         DebugLog.i(Tag, "voice ${applied.voiceName ?: "none"}, speed ${speech.rate}, pitch ${speech.pitch}")
-        warm()
-    }
-
-    /** Opens the audio path with a moment of silence, so the next phrase does not wait for it. */
-    private fun warm() {
         if (ready) tts.playSilentUtterance(WarmMillis, TextToSpeech.QUEUE_ADD, WarmId)
     }
 
@@ -216,9 +219,6 @@ internal class Voice(context: Context) {
         }
         return queued
     }
-
-    private fun logStart(path: String, askedAt: Long, startedAt: Long) =
-        DebugLog.i(Tag, "$path voice start ${(startedAt - askedAt) / NanosPerMilli} ms")
 
     /** Where the sound goes: a connected headset (Bluetooth, wired or USB), else the phone speaker. */
     private fun route() = if (out.headset() != null) "headset" else "speaker"
