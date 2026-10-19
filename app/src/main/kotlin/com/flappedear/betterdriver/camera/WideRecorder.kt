@@ -10,6 +10,7 @@ import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.media.MediaMetadataRetriever
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
@@ -345,7 +346,7 @@ internal class WideRecorder(
             next?.delete()
             val err = error ?: stopError
             if (f != null && (!hadData || stopError != null)) f.delete()
-            if (f != null) logFile(f, media ?: 0)
+            if (f != null) logFile(f, media ?: 0, if (audio && f.isFile) audioTrack(f) else null)
             main.post {
                 thread.quitSafely()
                 if (f != null) listener.ended(f, media ?: 0, full, err, hadData && stopError == null)
@@ -373,10 +374,30 @@ internal class WideRecorder(
         return stopError
     }
 
-    private fun logFile(f: File, media: Long) {
+    /** [audio]: whether the finished file holds the sound asked for; null when not checked. */
+    private fun logFile(f: File, media: Long, audio: Boolean? = null) {
         val missing = "camera_failed=${failedFrames.get()} buffers_lost=${lostBuffers.get()} " +
-            "skipped=${skippedFrames.get()}"
+            "skipped=${skippedFrames.get()}" + audio?.let { " audio=${if (it) "yes" else "no"}" }.orEmpty()
         DebugLog.i(Tag, "${f.name}: ${target.label} ${fpsLine(fileFrames.get(), media)} ${f.length()} bytes $missing")
+    }
+
+    /**
+     * Whether [f] has a sound track. The capture rate [clockFor] sets must leave sound on: AOSP records
+     * it whenever the capture rate is not below the frame rate, while MediaRecorder's documentation
+     * says a capture rate means time lapse without sound; the log says which held on the phone.
+     */
+    @Suppress("TooGenericExceptionCaught") // A file the retriever cannot read is reported as unknown.
+    private fun audioTrack(f: File): Boolean? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(f.path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "sound of ${f.name} not checked", e)
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
     }
 
     private companion object {
