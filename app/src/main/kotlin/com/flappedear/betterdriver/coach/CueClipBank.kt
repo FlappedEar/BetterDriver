@@ -61,7 +61,10 @@ internal class CueClipBank(context: Context, private val handler: Handler) {
             generation++
             startedAt = SystemClock.elapsedRealtime()
             DebugLog.i(Tag, "preparing ${CueClips.vocabulary.size} cue clips")
-            renderer = TextToSpeech(app) { status -> handler.post { onRendererReady(status == TextToSpeech.SUCCESS) } }
+            val gen = generation
+            renderer = TextToSpeech(app) { status ->
+                handler.post { if (gen == generation) onRendererReady(status == TextToSpeech.SUCCESS) }
+            }
             handler.postDelayed(timeout, RenderTimeoutMillis)
         }
     }
