@@ -111,7 +111,8 @@ private fun perStraight(played: List<Pair<LoggedCue, Voiced>>, s: GnssSamples): 
         return notMeasured("coach.per_straight", label, StraightCriterion, "fewer than two cues")
     }
     val extra = sorted.zipWithNext().count { (a, b) ->
-        a.first.kind != PraiseKind && !brakedBetween(s, a.second.tMicros, b.second.tMicros)
+        val praiseThenCue = a.first.kind == PraiseKind && b.first.kind == CornerKind
+        !praiseThenCue && !brakedBetween(s, a.second.tMicros, b.second.tMicros)
     }
     return judged(
         "coach.per_straight", label, extra.toDouble(), "", extra == 0, Basis.DERIVED, StraightCriterion,
@@ -121,6 +122,7 @@ private fun perStraight(played: List<Pair<LoggedCue, Voiced>>, s: GnssSamples): 
 }
 
 private const val PraiseKind = "Praise"
+private const val CornerKind = "Corner"
 
 private fun brakedBetween(s: GnssSamples, from: Long, to: Long): Boolean {
     var top = Double.NEGATIVE_INFINITY

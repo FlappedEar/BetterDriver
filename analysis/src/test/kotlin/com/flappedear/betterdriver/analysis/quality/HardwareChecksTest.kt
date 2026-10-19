@@ -77,6 +77,9 @@ class HardwareChecksTest {
         val r = report(sets, cue(1, 10_000_000, "Praise") + cue(2, 12_000_000, "Corner"))
         assertEquals(0.0, r.metric("coach.per_straight").value)
         assertEquals(Verdict.PASS, r.metric("coach.per_straight").verdict)
+        // Praise followed by anything but a corner cue on the same straight still counts.
+        val lapTime = report(sets, cue(1, 10_000_000, "Praise") + cue(2, 12_000_000, "LapTime"))
+        assertEquals(1.0, lapTime.metric("coach.per_straight").value)
     }
 
     @Test
