@@ -93,7 +93,7 @@ class PolishPhrasesTest {
     @Test
     fun `a whole hundred is one word long`() {
         val one = pl.durationMicros("Zakręt 3, hamuj na 200")
-        val two = pl.durationMicros("Zakręt 3, hamuj na 250")
+        val two = pl.durationMicros("Zakręt 3, hamuj na 210")
         assertEquals(400_000L, two - one)
         assertEquals(PhraseBook.of(CoachLanguage.Polish), pl)
         assertEquals(PhraseBook.of(CoachLanguage.English), Phrases)

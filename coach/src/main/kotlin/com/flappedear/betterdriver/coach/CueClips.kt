@@ -88,6 +88,9 @@ object CueClips {
             book.corner(corner, Advice.CarrySpeed(SampleNumber, goalKmh = SampleNumber)),
             // Without it, as logged before FBBD-242.
             book.corner(corner, Advice.BrakeLater(SampleNumber)),
+            // A language whose word for metres follows the number ("1 metr", "2 metry", "5 metrów").
+            book.corner(corner, Advice.BrakeLater(1)),
+            book.corner(corner, Advice.BrakeLater(2)),
             book.corner(corner, Advice.BrakeEarlier()),
             book.corner(corner, Advice.CarrySpeed(SampleNumber)),
             // Said without the number below High confidence (FBBD-177).
