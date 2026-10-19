@@ -70,6 +70,8 @@ internal object RecorderProtocol {
 
     /** In a [VIDEO_SYNCED] report: the session time the newest frame was captured, when known (FBBD-21). */
     const val VIDEO_FRAME_US = "frameMicros"
+    /** In a [VIDEO_STARTED] report: the frame rate the file was set to record at (FBBD-246). */
+    const val VIDEO_FPS = "fps"
     const val VIDEO_TEXT = "text"
     const val VIDEO_OK = "ok"
 

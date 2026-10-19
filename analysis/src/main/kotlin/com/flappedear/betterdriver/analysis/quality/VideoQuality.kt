@@ -26,9 +26,15 @@ private val PlainStops = setOf("user", "file_full")
 
 /**
  * The video section, one set of values per camera. [from] and [to] are the first and last GNSS
- * sample: the part of the session video should cover.
+ * sample: the part of the session video should cover. [frames] are the files whose frames were counted.
  */
-internal fun videoSection(events: List<RecorderEvent>, clips: List<QualityClip>, from: Long, to: Long): QualitySection {
+internal fun videoSection(
+    events: List<RecorderEvent>,
+    clips: List<QualityClip>,
+    from: Long,
+    to: Long,
+    frames: List<FileFrames> = emptyList(),
+): QualitySection {
     val endMicros = to
     val indexed = clips.map { VideoClip(it.camera, it.file, it.startMicros, it.endMicros) }
     val timeline = VideoTimeline.from(events, indexed)
@@ -43,7 +49,8 @@ internal fun videoSection(events: List<RecorderEvent>, clips: List<QualityClip>,
             offset(camera, own.first(), byFile[camera to own.first().file]),
             startSyncError(camera, own, events),
             drift(camera, own, events),
-        ) + driftAt(camera, own, events, endMicros) + coverage(camera, own, from, to)
+        ) + driftAt(camera, own, events, endMicros) + coverage(camera, own, from, to) +
+            listOfNotNull(frameRate(camera, events, frames.filter { it.camera == camera }))
     }
     val notes = events.ofKind(EventKinds.VIDEO_STOP).mapNotNull { e ->
         val f = VideoEventText.parse(e.text)

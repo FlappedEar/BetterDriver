@@ -157,6 +157,70 @@ internal class LiveClients(
     fun close() = main.removeCallbacks(ticker)
 }
 
+/** How long the stop's report waits for the camera to close its last file: longer than the camera gives it. */
+internal const val VideoCloseWaitMs = 8_000L
+
+/** The stop reason of a file that filled up and handed over to the next (PhoneCamera). */
+private const val FullFile = "file_full"
+
+/** Stands for the file a full one hands over to, until its start report arrives. */
+private const val NextFile = "/next"
+
+/**
+ * Holds what must wait for a session's camera files to close (FBBD-247): the report made at the stop
+ * ran 0.7 s before a 2.7K file was finished and counted its last seconds as missing video. It follows
+ * the files the camera process reports open and closed, and runs a held action once none is open, or
+ * after [waitMs] if the camera never says. [schedule] and [cancel] post and remove a delayed action.
+ * Main thread.
+ */
+internal class AfterVideo(
+    private val schedule: (Runnable, Long) -> Unit,
+    private val cancel: (Runnable) -> Unit,
+    private val waitMs: Long = VideoCloseWaitMs,
+) {
+    private val open = HashMap<String, MutableSet<String>>()
+    private val held = HashMap<String, Runnable>()
+
+    /**
+     * A camera report: [kind] ([RecorderProtocol.VIDEO_STARTED] and so on) of [file] in [session], with
+     * a stop's [reason]. A file that stopped full hands over to a next one whose start report follows,
+     * so it stays open as [NextFile] until that start; with no next file the wait runs out.
+     */
+    fun report(session: String, kind: Int, file: String, reason: String = "") {
+        when (kind) {
+            RecorderProtocol.VIDEO_STARTED -> open.getOrPut(session) { mutableSetOf() }.apply {
+                remove(NextFile)
+                add(file)
+            }
+            RecorderProtocol.VIDEO_STOPPED -> {
+                val files = open[session] ?: return
+                files -= file
+                if (reason == FullFile) files += NextFile
+                if (files.isEmpty()) held[session]?.let { cancel(it); it.run() }
+            }
+        }
+    }
+
+    /** Runs [then] once [session]'s camera files are closed; at once when none is open. */
+    fun whenClosed(session: String, then: () -> Unit) {
+        if (open[session].isNullOrEmpty()) {
+            open.remove(session)
+            then()
+            return
+        }
+        val run = object : Runnable {
+            override fun run() {
+                if (held[session] !== this) return
+                held.remove(session)
+                open.remove(session)
+                then()
+            }
+        }
+        held[session] = run
+        schedule(run, waitMs)
+    }
+}
+
 /**
  * Logs a camera report ([RecorderProtocol.MSG_VIDEO]) as a video event at the session time the
  * camera stamped, so nothing about the camera can stop or delay the recording. Reports for another
@@ -170,7 +234,11 @@ internal fun logVideoReport(recording: Recording, data: Bundle, onStatus: (Strin
     val text = data.getString(RecorderProtocol.VIDEO_TEXT).orEmpty()
     val sink = RecordingVideoSink(recording, camera) { _, status, ok -> onStatus(status, ok) }
     when (data.getInt(RecorderProtocol.VIDEO_KIND)) {
-        RecorderProtocol.VIDEO_STARTED -> sink.started(file, at)
+        RecorderProtocol.VIDEO_STARTED -> sink.started(
+            file,
+            at,
+            data.getInt(RecorderProtocol.VIDEO_FPS).takeIf { data.containsKey(RecorderProtocol.VIDEO_FPS) },
+        )
         RecorderProtocol.VIDEO_SYNCED -> sink.synced(
             file,
             at,

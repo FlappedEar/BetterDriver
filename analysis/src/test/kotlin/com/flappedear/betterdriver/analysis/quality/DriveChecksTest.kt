@@ -242,6 +242,62 @@ class DriveChecksTest {
         assertTrue("a soak needs" !in r.metric("soak.gnss_rate").how)
     }
 
+    /**
+     * A 2.7K recording of 7.5 min as the app logs it: video_start with the set rate, sync reports, and
+     * WideRecorder's line for the file it closed, written after the session stopped.
+     */
+    private fun wideDrive(dir: File, frames: Long): QualityReport {
+        val length = 450_000_000L
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=Demo_track")
+        event(500_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4 fps=60")
+        var s = 1_500_000L
+        while (s < length) {
+            event(s, EventKinds.VIDEO_SYNC, "camera=phone file=phone_0001.mp4 media_us=${s - 500_000} frame_us=$s")
+            s += 1_000_000
+        }
+        line(length, CheckLog.SESSION, "stop t_us=$length reason=user")
+        val wide = "phone_0001.mp4: 2688x1512@60 $frames frames in 446.5 s = 0.0 fps 2045178095 bytes"
+        line(length + 900_000, "WideRecorder", wide, process = "camera")
+        val log = File(dir, "betterdriver.log").apply { writeText(lines.joinToString("\n") { it.format() }) }
+        return driveChecks(log).single()
+    }
+
+    @Test
+    fun `a 2_7K file that holds a fifth fewer frames fails the frame rate check`(@TempDir dir: File) {
+        // Arek's 2026-10-19 16:18 replay on 0.3.43: 21,603 frames in 446.5 s at 2.7K·60 (FBBD-246).
+        val m = wideDrive(dir, frames = 21_603).metric("video.phone.frame_rate")
+        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertEquals(48.38, m.value!!, 0.01)
+        assertEquals(listOf("FBBD-239", "FBBD-246"), m.keys)
+        assertTrue("set to 60 fps" in m.how)
+    }
+
+    @Test
+    fun `a 2_7K file at the camera's own 59_5 fps passes the frame rate check`(@TempDir dir: File) {
+        // The sensor's 16.814 ms frame time from the same log: 59.47 fps.
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.frame_rate")
+        assertEquals(Verdict.PASS, m.verdict, m.how)
+        assertEquals(59.47, m.value!!, 0.01)
+    }
+
+    @Test
+    fun `a file with a set rate but no count is named in the frame rate check`(@TempDir dir: File) {
+        event(460_000_000, EventKinds.VIDEO_START, "camera=phone file=phone_0002.mp4 fps=60")
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.frame_rate")
+        assertEquals(Verdict.PASS, m.verdict)
+        assertTrue("not counted: phone_0002.mp4" in m.how, m.how)
+    }
+
+    @Test
+    fun `phone video with a set rate but no counted file has its frame rate not measured`() {
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=Demo_track")
+        event(500_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4 fps=60")
+        event(1_500_000, EventKinds.VIDEO_SYNC, "camera=phone file=phone_0001.mp4 media_us=1000000 frame_us=1500000")
+        line(minute, CheckLog.SESSION, "stop t_us=$minute reason=user")
+        val m = driveChecks(lines).single().metric("video.phone.frame_rate")
+        assertEquals(Verdict.NOT_MEASURED, m.verdict)
+    }
+
     /** A line of the app outside any recording, [tMicros] from the first recording's start. */
     private fun app(tMicros: Long, tag: String, message: String) = line(tMicros, tag, message, "main", session = null)
 

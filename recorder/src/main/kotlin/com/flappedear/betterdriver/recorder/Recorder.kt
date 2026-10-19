@@ -266,10 +266,11 @@ class RecordingVideoSink(
 ) : VideoSink {
     override fun nowMicros() = recording.nowMicros()
 
-    override fun started(file: String, startMicros: Long) = recording.eventAt(
+    override fun started(file: String, startMicros: Long, fps: Int?) = recording.eventAt(
         startMicros,
         EventKinds.VIDEO_START,
-        VideoEventText.format(VideoEventText.CAMERA to camera, VideoEventText.FILE to file),
+        VideoEventText.format(VideoEventText.CAMERA to camera, VideoEventText.FILE to file) +
+            fps?.let { " ${VideoEventText.FPS}=$it" }.orEmpty(),
     )
 
     override fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long?) = recording.eventAt(

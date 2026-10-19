@@ -48,12 +48,14 @@ private const val RaceBoxMicroChannel = "racebox_input"
  * [previous] the session a recorder restart carried on from, when it names one. Pure: reading the
  * session and its files is the caller's.
  */
+@Suppress("LongParameterList") // Each is something the report is made from.
 fun sessionQuality(
     data: SessionData,
     track: Track? = null,
     clips: List<QualityClip> = emptyList(),
     previous: PreviousSession? = null,
     computedAtUtcMillis: Long = 0L,
+    frames: List<FileFrames> = emptyList(),
 ): QualityReport {
     val samples = GnssSamples(data.sampleSets)
     val lastEvent = data.events.maxOfOrNull { it.tMicros } ?: 0L
@@ -74,7 +76,7 @@ fun sessionQuality(
         if (demo) demoGnssSection() else gnss.copy(metrics = gnss.metrics + clockDrift(lags, end)),
         timingSection(data, track),
         recordingSection(data, samples, previous),
-        videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end),
+        videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end, frames),
         goProSection(data.events, clips, end),
         coachSection(data.events, samples),
         thermalSection(data.events, end),

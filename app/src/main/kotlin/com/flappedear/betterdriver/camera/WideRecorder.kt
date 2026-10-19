@@ -6,9 +6,11 @@ import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.media.MediaMetadataRetriever
 import android.media.MediaRecorder
 import android.os.Build
 import android.os.Handler
@@ -73,6 +75,14 @@ internal class WideRecorder(
     private val firstNanos = AtomicLong(0)
     private val fileFrames = AtomicLong(0)
 
+    /**
+     * Per file: frames the camera failed or lost on the way to the recorder, and sensor frames no
+     * request was waiting for (the recorder held the camera back), so a log tells where frames went (FBBD-246).
+     */
+    private val failedFrames = AtomicLong(0)
+    private val lostBuffers = AtomicLong(0)
+    private val skippedFrames = AtomicLong(0)
+
     /** Sensor timestamp of the newest frame; 0 before the first. */
     val lastFrameNanos: Long get() = lastNanos.get()
 
@@ -82,9 +92,18 @@ internal class WideRecorder(
     private val frames = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, result: TotalCaptureResult) {
             val t = result.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
-            firstNanos.compareAndSet(0, t)
-            lastNanos.set(t)
+            val previous = lastNanos.getAndSet(t)
+            val frame = result.get(CaptureResult.SENSOR_FRAME_DURATION) ?: 0L
+            if (!firstNanos.compareAndSet(0, t)) skippedFrames.addAndGet(framesSkipped(t - previous, frame))
             fileFrames.incrementAndGet()
+        }
+
+        override fun onCaptureFailed(s: CameraCaptureSession, r: CaptureRequest, failure: CaptureFailure) {
+            failedFrames.incrementAndGet()
+        }
+
+        override fun onCaptureBufferLost(s: CameraCaptureSession, r: CaptureRequest, target: Surface, frame: Long) {
+            lostBuffers.incrementAndGet()
         }
     }
 
@@ -228,6 +247,7 @@ internal class WideRecorder(
             r.setVideoEncoder(MediaRecorder.VideoEncoder.H264)
             r.setVideoSize(target.width, target.height)
             r.setVideoFrameRate(target.fps)
+            clockFor(r, target.fps)
             r.setVideoEncodingBitRate(target.bitrate)
             if (audio) {
                 r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
@@ -248,6 +268,22 @@ internal class WideRecorder(
 
     @Suppress("DEPRECATION") // MediaRecorder(Context) is API 31.
     private fun legacyRecorder() = MediaRecorder()
+
+    /**
+     * Tells the encoder it must keep up with [fps]. MediaRecorder sets the encoder's operating rate
+     * only when a capture rate is set (AOSP StagefrightRecorder.setupVideoEncoder); without it the
+     * encoder may run its clock for less, and the camera, held back, skips frames: Arek's 2026-10-19
+     * 2.7K·60 replay kept 48.4 fps from a sensor at 59.5 (FBBD-246). A capture rate equal to the
+     * frame rate is neither time lapse nor slow motion, so frame times and audio stay as they are.
+     */
+    @Suppress("TooGenericExceptionCaught") // A refusal only leaves the encoder's own clock.
+    private fun clockFor(r: MediaRecorder, fps: Int) {
+        try {
+            r.setCaptureRate(fps.toDouble())
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "capture rate $fps refused", e)
+        }
+    }
 
     @Suppress("TooGenericExceptionCaught") // A refused next file only means this one fills up and ends.
     private fun onInfo(what: Int) {
@@ -282,6 +318,9 @@ internal class WideRecorder(
     private fun resetFile() {
         firstNanos.set(0)
         fileFrames.set(0)
+        failedFrames.set(0)
+        lostBuffers.set(0)
+        skippedFrames.set(0)
     }
 
     /**
@@ -307,7 +346,7 @@ internal class WideRecorder(
             next?.delete()
             val err = error ?: stopError
             if (f != null && (!hadData || stopError != null)) f.delete()
-            if (f != null) logFile(f, media ?: 0)
+            if (f != null) logFile(f, media ?: 0, if (audio && f.isFile) audioTrack(f) else null)
             main.post {
                 thread.quitSafely()
                 if (f != null) listener.ended(f, media ?: 0, full, err, hadData && stopError == null)
@@ -335,8 +374,30 @@ internal class WideRecorder(
         return stopError
     }
 
-    private fun logFile(f: File, media: Long) {
-        DebugLog.i(Tag, "${f.name}: ${target.label} ${fpsLine(fileFrames.get(), media)} ${f.length()} bytes")
+    /** [audio]: whether the finished file holds the sound asked for; null when not checked. */
+    private fun logFile(f: File, media: Long, audio: Boolean? = null) {
+        val missing = "camera_failed=${failedFrames.get()} buffers_lost=${lostBuffers.get()} " +
+            "skipped=${skippedFrames.get()}" + audio?.let { " audio=${if (it) "yes" else "no"}" }.orEmpty()
+        DebugLog.i(Tag, "${f.name}: ${target.label} ${fpsLine(fileFrames.get(), media)} ${f.length()} bytes $missing")
+    }
+
+    /**
+     * Whether [f] has a sound track. The capture rate [clockFor] sets must leave sound on: AOSP records
+     * it whenever the capture rate is not below the frame rate, while MediaRecorder's documentation
+     * says a capture rate means time lapse without sound; the log says which held on the phone.
+     */
+    @Suppress("TooGenericExceptionCaught") // A file the retriever cannot read is reported as unknown.
+    private fun audioTrack(f: File): Boolean? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(f.path)
+            retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO) == "yes"
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "sound of ${f.name} not checked", e)
+            null
+        } finally {
+            runCatching { retriever.release() }
+        }
     }
 
     private companion object {
@@ -374,3 +435,11 @@ internal fun fpsLine(frames: Long, mediaMicros: Long): String {
     return "$frames frames in ${"%.1f".format(java.util.Locale.ROOT, seconds)} s = " +
         "${"%.1f".format(java.util.Locale.ROOT, fps)} fps"
 }
+
+/**
+ * Sensor frames between two recorded ones [gapNanos] apart, at the sensor's frame time [frameNanos]:
+ * 0 for back-to-back frames, 1 when one frame in between never reached the recorder (FBBD-246).
+ */
+internal fun framesSkipped(gapNanos: Long, frameNanos: Long): Long =
+    // Rounded, as frame times jitter by a fraction of a frame.
+    if (frameNanos <= 0 || gapNanos <= 0) 0 else (Math.round(gapNanos.toDouble() / frameNanos) - 1).coerceAtLeast(0L)
