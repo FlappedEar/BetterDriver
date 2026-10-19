@@ -178,7 +178,7 @@ val ExampleTrackState = TrackScreenState(
     sectors = listOf(SectorState("S1", -0.21), SectorState("S2", 0.08), SectorState("S3", null, current = true)),
     tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g")),
     coachCorner = "T4",
-    coachCue = "Brake at the 100 board, carry 5 km/h more to apex",
+    coachCue = "Brake at 100 m · 10 later",
 )
 
 @Preview(name = "Track screen", widthDp = 914, heightDp = 411)

@@ -37,6 +37,15 @@ class CueClipsTest {
     }
 
     @Test
+    fun `numbers over 99 are said as track people say them`() {
+        fun keys(text: String) = CueClips.parts(text).map { it.key }
+        assertEquals(listOf("Turn", "3", "brake at", "1", "50", "10", "later"), keys("Turn 3, brake at 150, 10 later"))
+        assertEquals(listOf("brake at", "1", "oh", "5"), keys("brake at 105"))
+        assertEquals(listOf("brake at", "2", "hundred"), keys("brake at 200"))
+        assertEquals(listOf("1", "02", "point", "5"), keys("1 02 point 5"), "lap times keep their padded seconds")
+    }
+
+    @Test
     fun `every phrase the coach can say is covered by the vocabulary`() {
         for (n in 1..40) {
             val corner = Corner(n, 0.0, 0.0, 0.0, 0.0, Turn.Left)
@@ -46,7 +55,7 @@ class CueClipsTest {
             for (k in 1..MaxCarryKmh.toInt()) {
                 assertTrue(CueClips.covers(Phrases.corner(corner, Advice.CarrySpeed(k))))
             }
-            assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeEarlier)))
+            assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeEarlier())))
             // Below High confidence, without the number (FBBD-177).
             assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeLater(10, precise = false))))
             assertTrue(CueClips.covers(Phrases.corner(corner, Advice.CarrySpeed(4, precise = false))))
@@ -55,7 +64,18 @@ class CueClipsTest {
             assertTrue(CueClips.covers(Phrases.lapTime(ms, best = false)), Phrases.lapTime(ms, best = false))
             assertTrue(CueClips.covers(Phrases.lapTime(ms, best = true)))
         }
-        assertFalse(CueClips.covers("Turn 3, brake 150 metres later"), "a number beyond the clips stays live")
+        // With targets (FBBD-242): brake points and apex speeds up to 999 are joined from clips.
+        for (n in 1..40) {
+            val corner = Corner(n, 0.0, 0.0, 0.0, 0.0, Turn.Left)
+            for (at in 5..400 step 5) {
+                assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeLater(10, at = at))), "at $at")
+                assertTrue(CueClips.covers(Phrases.corner(corner, Advice.BrakeEarlier(15, at = at))), "at $at")
+            }
+            for (kmh in 20..260) {
+                assertTrue(CueClips.covers(Phrases.corner(corner, Advice.CarrySpeed(5, goalKmh = kmh))), "$kmh km/h")
+            }
+        }
+        assertFalse(CueClips.covers("Turn 3, brake at 1500, 10 later"), "a number beyond the clips stays live")
         assertFalse(CueClips.covers("Box this lap"))
         assertFalse(CueClips.covers(""))
     }

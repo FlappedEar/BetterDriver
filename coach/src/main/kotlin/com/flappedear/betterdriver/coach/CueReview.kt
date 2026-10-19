@@ -85,8 +85,9 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
  * What a corner cue led to, in words for the review: the change it asked for, how far from the best
  * pass that left the driver, and the corner time. Numbers (metres, km/h, seconds) only when the cue
  * and the pass after it are both High confidence (FBBD-177); otherwise the same sentence without
- * them. Null for a lap-time cue or before the next pass. A praise (FBBD-243) says how much faster
- * the corner was than the pass it beat.
+ * them. A cue that said its target (FBBD-242) is reviewed by it: "Braked at 108 m, 8 m later than
+ * before" or "Apex 58 km/h, 3 more than before". Null for a lap-time cue or before the next pass. A
+ * praise (FBBD-243) says how much faster the corner was than the pass it beat.
  */
 fun ReviewedCue.outcome(): String? = if (cue.kind == CueKind.Praise) cue.praiseOutcome() else cornerOutcome()
 
@@ -96,8 +97,16 @@ private fun ReviewedCue.cornerOutcome(): String? {
     if (r == null || before == null) return null
     val precise = cue.confidence.precise && r.confidence.precise
     val target = cue.target
-    val change = when (cue.advice) {
-        is Advice.CarrySpeed ->
+    val advice = cue.advice
+    val anchor = advice?.brakeAnchor(before)
+    val change = when {
+        precise && advice is Advice.CarrySpeed && advice.goalKmh != null ->
+            "Apex ${r.after.minKmh.roundToInt()} km/h, " +
+                moved(r.after.minKmh - before.minKmh, NearKmh, "more", "less")
+        precise && anchor != null ->
+            "Braked at ${(anchor - r.after.brakeAt).roundToInt()} m, " +
+                moved(r.after.brakeAt - before.brakeAt, NearMeters, "m later", "m earlier", SamePoint)
+        advice is Advice.CarrySpeed ->
             speedChange(r.after.minKmh - before.minKmh, target?.let { it.minKmh - r.after.minKmh }, precise)
         else -> brakeChange(r.after.brakeAt - before.brakeAt, target?.let { it.brakeAt - r.after.brakeAt }, precise)
     }
@@ -114,6 +123,17 @@ fun Cue.confidenceText(): String? {
     return if (doubts.isEmpty()) label else "$label: " + doubts.joinToString("; ") { it.text }
 }
 
+/** "8 m later than before", "3 more than before", or [same] (default "same as before") when under [near]. */
+private fun moved(by: Double, near: Int, up: String, down: String, same: String = "same as before"): String {
+    val n = by.roundToInt()
+    return when {
+        abs(n) < near -> same
+        n > 0 -> "$n $up than before"
+        else -> "${-n} $down than before"
+    }
+}
+
+private const val SamePoint = "at the same point as before"
 private const val NearMeters = 2
 private const val NearKmh = 1
 private const val MicrosPerSecond = 1_000_000.0

@@ -34,7 +34,7 @@ import kotlin.math.roundToInt
 
 private const val MillisPerSecond = 1_000f
 private const val DelayStepMillis = 100
-internal const val SampleCue = "Turn 2, brake 10 metres later"
+internal const val SampleCue = "Turn 2, brake at 100, 10 later"
 
 /** What each verbosity says, for the settings row and the dialog. */
 internal fun verbosityLabel(v: Verbosity) = when (v) {
