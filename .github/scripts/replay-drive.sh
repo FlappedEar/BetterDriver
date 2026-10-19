@@ -25,6 +25,8 @@ fail() {
 finish() {
   timeout 60 adb exec-out run-as "$app" cat files/replay-drive.md < /dev/null > "$out/replay-drive.md" 2>/dev/null || true
   timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null > "$out/betterdriver.log" 2>/dev/null || true
+  # The report in the job's log too, where it can be read without the artifact.
+  [ -s "$out/replay-drive.md" ] && cat "$out/replay-drive.md"
   if [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
   fi

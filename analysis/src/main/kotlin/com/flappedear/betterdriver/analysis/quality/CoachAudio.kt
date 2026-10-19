@@ -76,6 +76,9 @@ private fun total(played: List<Pair<LoggedCue, Voiced>>, path: String, limit: Lo
     }
 }
 
+/** Overlapping cues named in the check. */
+private const val MaxOverlapsShown = 3
+
 private const val OverlapCriterion = "0 overlapping cues (FBBD-27, FBBD-47, FBBD-48)"
 
 /** A cue whose sound started before the one before it ended, or that cut the one before it off. */
@@ -87,13 +90,20 @@ private fun overlap(voiced: List<Voiced>, ends: List<RecorderEvent>): QualityMet
     }
     val endOf = ends.associate { e -> fields(e.text)["seq"]?.toIntOrNull() to (e.tMicros to fields(e.text)["end"]) }
     val sorted = voiced.sortedBy { it.tMicros }
-    val overlaps = sorted.zipWithNext().count { (a, b) ->
-        val (endAt, how) = endOf[a.seq] ?: return@count false
+    val overlaps = sorted.zipWithNext().filter { (a, b) ->
+        val (endAt, how) = endOf[a.seq] ?: return@filter false
         b.tMicros < endAt || how == "stopped"
     }
+    // Which cues, so a FAIL can be told apart: one started early, or one cut off.
+    val shown = overlaps.take(MaxOverlapsShown).joinToString { (a, b) ->
+        val (endAt, how) = endOf.getValue(a.seq)
+        "cue ${a.seq} $how at ${"%.1f".format(endAt / MicrosPerSecond.toDouble())} s, " +
+            "cue ${b.seq} at ${"%.1f".format(b.tMicros / MicrosPerSecond.toDouble())} s"
+    }
     return judged(
-        "coach.overlap", label, overlaps.toDouble(), "", overlaps == 0, Basis.MEASURED, OverlapCriterion,
-        "cues whose sound started before the one before it ended, or cut it off; ${sorted.size} cue(s)",
+        "coach.overlap", label, overlaps.size.toDouble(), "", overlaps.isEmpty(), Basis.MEASURED, OverlapCriterion,
+        "cues whose sound started before the one before it ended, or cut it off; ${sorted.size} cue(s)" +
+            (if (shown.isEmpty()) "" else ": $shown"),
     )
 }
 
