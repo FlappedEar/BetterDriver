@@ -109,7 +109,9 @@ private fun CueCard(item: ReviewedCue) {
 private fun CueReviewPreview() {
     val before = CornerPass(2, 4, 480.0, 560.0, 152.0, 70.0, 8_800_000)
     val target = before.copy(brakeAt = 495.0, minKmh = 71.0, timeMicros = 8_500_000)
-    val corner = Cue(5, 0, 5, CueKind.Corner, "Turn 2, brake 15 metres later", 2, Advice.BrakeLater(15), before, target)
+    val corner = Cue(
+        5, 0, 5, CueKind.Corner, "Turn 2, brake at 65, 15 later", 2, Advice.BrakeLater(15, at = 65), before, target,
+    )
     val after = before.copy(lap = 5, brakeAt = 491.0, timeMicros = 8_620_000)
     val review = CueReview(
         listOf(

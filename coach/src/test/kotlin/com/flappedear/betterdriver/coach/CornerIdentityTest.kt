@@ -55,19 +55,24 @@ class CornerIdentityTest {
         assertEquals(listOf(1, 2, 3, 4), corners.map { it.number })
         assertEquals(listOf("c1", "c2", "c3", "c4"), corners.map { it.cornerId })
         assertEquals(listOf(1, 3, 4, 5), corners.map { it.label })
-        assertEquals("Turn 3, brake earlier", Phrases.corner(corners[1], Advice.BrakeEarlier))
+        // Each starts where its track corner does, before its apex and within the corner (FBBD-242).
+        corners.forEach { c ->
+            val entry = assertNotNull(c.entryAt, "corner ${c.number}")
+            assertTrue(c.apexAt - entry in 0.0..sim.arc, "corner ${c.number}: entry $entry, apex ${c.apexAt}")
+        }
+        assertEquals("Turn 3, brake earlier", Phrases.corner(corners[1], Advice.BrakeEarlier()))
         // Without an identity, the coach's own numbers, as before.
         val plain = CueEngine(sim.track(), CoachSettings(Verbosity.Full), reference()).corners
         assertEquals(listOf(1, 2, 3, 4), plain.map { it.label })
-        assertTrue(plain.all { it.cornerId == null })
+        assertTrue(plain.all { it.cornerId == null && it.entryAt == null })
     }
 
     @Test
     fun `cues are logged and read back with the number said`() {
         val corner = identifyCorners(reference().corners, reference().path(), frame, identity)[1]
         val cue = Cue(
-            7, 1_000, 4, CueKind.Corner, Phrases.corner(corner, Advice.BrakeEarlier), corner.number,
-            Advice.BrakeEarlier, turn = corner.label, cornerId = corner.cornerId,
+            7, 1_000, 4, CueKind.Corner, Phrases.corner(corner, Advice.BrakeEarlier()), corner.number,
+            Advice.BrakeEarlier(), turn = corner.label, cornerId = corner.cornerId,
         )
         val read = assertNotNull(CoachEvents.parseCue(1_000, CoachEvents.cueText(cue)))
         assertEquals(3, read.heardTurn)

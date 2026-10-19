@@ -65,7 +65,7 @@ private const val LossHistory = 3
 /** A cue's target has been driven this many times at least (FBBD-177): never a time seen once. */
 const val ConfirmingPasses = 2
 
-private const val MetresStep = 5
+internal const val MetresStep = 5
 private const val KmhPerMps = 3.6
 private const val MicrosPerSecond = 1_000_000.0
 
@@ -590,11 +590,23 @@ class CueEngine(
 
 
     /**
-     * Says [planned] when it fits on this straight; drops it once it no longer can. [zoneMeters] is the
-     * distance to the braking zone, logged with the cue.
+     * Says [full] when it fits on this straight; drops it once it no longer can. When the whole cue no
+     * longer fits but its target alone does ([Phrases.shortCorner]), that is said instead. [zoneMeters]
+     * is the distance to the braking zone, logged with the cue.
      */
-    private fun speakCorner(planned: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
-        val need = speech.needMicros(planned.text) + MarginMicros
+    private fun speakCorner(full: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
+        var planned = full
+        var need = speech.needMicros(planned.text) + MarginMicros
+        // Too long for what is left of the straight: the target alone, if that fits (FBBD-242).
+        val short = Phrases.shortCorner(planned)
+        if (timeToZone != null && timeToZone < need && short != null) {
+            val shortNeed = speech.needMicros(short) + MarginMicros
+            if (timeToZone >= shortNeed) {
+                planned = planned.copy(text = short)
+                need = shortNeed
+                plan = Plan(planned.corner!!, planned.lap, planned)
+            }
+        }
         val late = timeToZone != null && timeToZone < need
         if (late) plan = Plan(planned.corner!!, planned.lap, null)
         val ready = timeToZone != null && !late && timeToZone <= need + LeadMicros
@@ -635,7 +647,7 @@ class CueEngine(
         val doubts = cueDoubts(last, target, b.losses[i].toList(), unidentified)
         val confidence = confidenceOf(doubts)
         // Low: weak evidence gives no advice at all; Medium: advice without its number.
-        val advice = advise(last, target)?.takeIf { confidence.advises }?.withPrecision(confidence.precise)
+        val advice = advise(last, target, corner)?.takeIf { confidence.advises }?.withPrecision(confidence.precise)
         return advice?.let {
             Cue(
                 0, now, lap, CueKind.Corner, Phrases.corner(corner, it), corner.number, it, last, target,
@@ -652,26 +664,49 @@ class CueEngine(
     }
 }
 
-/** What to ask for at a corner, given the last pass and the fastest one (FBBD-97); null if nothing. */
-fun advise(pass: CornerPass, target: CornerPass): Advice? {
+/**
+ * What to ask for at a corner, given the last pass and the fastest one (FBBD-97); null if nothing.
+ * With the [corner], the advice also says the target (FBBD-242): where the asked-for brake point is,
+ * in metres before the corner ([brakeAnchor]), or the apex speed to reach.
+ */
+fun advise(pass: CornerPass, target: CornerPass, corner: Corner? = null): Advice? {
     if (pass.timeMicros - target.timeMicros < MinLossMicros) return null
     val brake = pass.brakeAt - target.brakeAt // Negative: braked earlier than the target.
     val speed = pass.minKmh - target.minKmh
     return when {
         brake <= -BrakeToleranceMeters -> {
-            val metres = (min(-brake, MaxBrakeLaterMeters) / MetresStep).roundToInt() * MetresStep
-            Advice.BrakeLater(maxOf(MetresStep, metres))
+            val metres = maxOf(MetresStep, (min(-brake, MaxBrakeLaterMeters) / MetresStep).roundToInt() * MetresStep)
+            Advice.BrakeLater(metres, at = corner?.let { metresBefore(it, pass.brakeAt + metres) })
         }
-        speed <= -SpeedToleranceKmh && brake >= BrakeToleranceMeters -> Advice.BrakeEarlier
-        speed <= -SpeedToleranceKmh -> Advice.CarrySpeed(min(-speed, MaxCarryKmh).roundToInt())
+        speed <= -SpeedToleranceKmh && brake >= BrakeToleranceMeters -> {
+            val metres = maxOf(MetresStep, (brake / MetresStep).roundToInt() * MetresStep)
+            Advice.BrakeEarlier(metres, at = corner?.let { metresBefore(it, pass.brakeAt - metres) })
+        }
+        speed <= -SpeedToleranceKmh -> {
+            val kmh = min(-speed, MaxCarryKmh).roundToInt()
+            Advice.CarrySpeed(kmh, goalKmh = corner?.let { (pass.minKmh + kmh).roundToInt() })
+        }
         else -> null
     }
 }
 
+/**
+ * Where a brake point [brakeAt] along the reference path is counted to (FBBD-242, UI-89 A): the
+ * start of the corner ([Corner.entryAt]), the point the lap analysis measures braking to; the apex
+ * when the corner has no start, or the brake point is not before it.
+ */
+fun brakeAnchor(corner: Corner, brakeAt: Double): Double =
+    corner.entryAt?.takeIf { it - brakeAt >= MetresStep } ?: corner.apexAt
+
+/** [brakeAt] in metres before [corner] ([brakeAnchor]), to [MetresStep]; null when not before it. */
+private fun metresBefore(corner: Corner, brakeAt: Double): Int? =
+    ((brakeAnchor(corner, brakeAt) - brakeAt) / MetresStep).roundToInt().times(MetresStep).takeIf { it >= MetresStep }
+
 /** Whether [after] moved the way [advice] asked, from [before]: at least half of what was asked. */
 fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean = when (advice) {
     is Advice.BrakeLater -> after.brakeAt - before.brakeAt >= advice.meters / 2.0
-    Advice.BrakeEarlier -> before.brakeAt - after.brakeAt >= BrakeToleranceMeters / 2
+    is Advice.BrakeEarlier ->
+        before.brakeAt - after.brakeAt >= maxOf(advice.meters ?: 0, BrakeToleranceMeters.toInt()) / 2.0
     is Advice.CarrySpeed -> after.minKmh - before.minKmh >= advice.kmh / 2.0
     null -> after.timeMicros < before.timeMicros
 }
