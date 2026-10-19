@@ -91,6 +91,18 @@ internal class ClipIndexer(private val index: VideoIndex) {
         }
     }
 
+    /** [file] could not be finished and is gone: it leaves the index. */
+    fun lost(file: String) {
+        clips.remove(file)
+        io.submit(Runnable {
+            try {
+                index.remove(file)
+            } catch (e: IOException) {
+                DebugLog.w("ClipIndexer", "could not drop $file from the index", e)
+            }
+        })
+    }
+
     private fun write(file: String, nowMicros: Long): Future<*>? {
         val c = clips[file] ?: return null
         c.written = nowMicros
