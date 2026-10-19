@@ -52,6 +52,17 @@ class AfterVideoTest {
     }
 
     @Test
+    fun aStopBetweenAHandOverAndTheNextStartWaitsForTheNextFile() {
+        after.report("s1", RecorderProtocol.VIDEO_STARTED, "phone_0001.mp4")
+        after.report("s1", RecorderProtocol.VIDEO_STOPPED, "phone_0001.mp4", "file_full")
+        after.whenClosed("s1") { reports++ }
+        assertEquals(0, reports)
+        after.report("s1", RecorderProtocol.VIDEO_STARTED, "phone_0002.mp4")
+        after.report("s1", RecorderProtocol.VIDEO_STOPPED, "phone_0002.mp4", "user")
+        assertEquals(1, reports)
+    }
+
+    @Test
     fun aCameraThatNeverSaysIsWaitedOutOnce() {
         after.report("s1", RecorderProtocol.VIDEO_STARTED, "phone_0001.mp4")
         after.whenClosed("s1") { reports++ }

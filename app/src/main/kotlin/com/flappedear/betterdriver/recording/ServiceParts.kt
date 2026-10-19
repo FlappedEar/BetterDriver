@@ -163,6 +163,9 @@ internal const val VideoCloseWaitMs = 8_000L
 /** The stop reason of a file that filled up and handed over to the next (PhoneCamera). */
 private const val FullFile = "file_full"
 
+/** Stands for the file a full one hands over to, until its start report arrives. */
+private const val NextFile = "/next"
+
 /**
  * Holds what must wait for a session's camera files to close (FBBD-247): the report made at the stop
  * ran 0.7 s before a 2.7K file was finished and counted its last seconds as missing video. It follows
@@ -181,15 +184,19 @@ internal class AfterVideo(
     /**
      * A camera report: [kind] ([RecorderProtocol.VIDEO_STARTED] and so on) of [file] in [session], with
      * a stop's [reason]. A file that stopped full hands over to a next one whose start report follows,
-     * so it closes nothing; with no next file the wait runs out.
+     * so it stays open as [NextFile] until that start; with no next file the wait runs out.
      */
     fun report(session: String, kind: Int, file: String, reason: String = "") {
         when (kind) {
-            RecorderProtocol.VIDEO_STARTED -> open.getOrPut(session) { mutableSetOf() } += file
+            RecorderProtocol.VIDEO_STARTED -> open.getOrPut(session) { mutableSetOf() }.apply {
+                remove(NextFile)
+                add(file)
+            }
             RecorderProtocol.VIDEO_STOPPED -> {
                 val files = open[session] ?: return
                 files -= file
-                if (files.isEmpty() && reason != FullFile) held[session]?.let { cancel(it); it.run() }
+                if (reason == FullFile) files += NextFile
+                if (files.isEmpty()) held[session]?.let { cancel(it); it.run() }
             }
         }
     }
