@@ -12,6 +12,7 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraInfo
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.math.roundToInt
 
 /** Frame sizes between 1080p and 4K that a 2.7K or 1440p phone mode would use (FBBD-239). */
 @Suppress("MagicNumber") // The frame sizes themselves.
@@ -54,7 +55,7 @@ internal fun logPhoneVideoCapabilities(info: CameraInfo) {
 
 /** Frames per second a minimum frame duration allows; 0 when unknown. */
 internal fun maxFps(minFrameNanos: Long?): Int =
-    if (minFrameNanos == null || minFrameNanos <= 0) 0 else Math.round(NanosPerSecond.toDouble() / minFrameNanos).toInt()
+    if (minFrameNanos == null || minFrameNanos <= 0) 0 else (NanosPerSecond.toDouble() / minFrameNanos).roundToInt()
 
 /** "3840x2160@60 2704x1520@60 …", largest first; "none" when the camera lists none. */
 internal fun encoderSizesLine(sizes: List<Pair<Pair<Int, Int>, Int>>): String =
