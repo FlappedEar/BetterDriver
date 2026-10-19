@@ -210,7 +210,11 @@ internal fun logCoachReport(recording: Recording, what: Int, data: Bundle, onSta
             if (kind in CoachEventKinds) recording.eventAt(data.getLong(CoachProtocol.T_US), kind, text)
         }
         RecorderProtocol.MSG_COACH_STATUS -> onStatus(
-            CoachStatus(data.getString(CoachProtocol.STATUS_CORNER), data.getString(CoachProtocol.STATUS_TEXT)),
+            CoachStatus(
+                data.getString(CoachProtocol.STATUS_CORNER),
+                data.getString(CoachProtocol.STATUS_TEXT),
+                data.getBoolean(CoachProtocol.STATUS_PRAISE),
+            ),
         )
     }
 }

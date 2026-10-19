@@ -70,6 +70,7 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         tiles = tiles.map { ch -> TrackTile(tileLabel(ch, timing), tileValue(ch, live, timing) ?: NoValue, ch.unit) },
         coachCorner = state.coach?.corner,
         coachCue = state.coach?.text,
+        coachPraise = state.coach?.praise == true,
     )
     return if (timing == null) screen else screen.withTiming(timing)
 }

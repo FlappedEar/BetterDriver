@@ -38,10 +38,11 @@ private val Speaker: ImageVector = ImageVector.Builder(
 
 /**
  * Text copy of the last spoken cue (UI-09 option A, text enlarged at Arek's request), or whether the
- * coach is learning (FBBD-98). Null [cue] keeps the slot empty, so the layout never moves.
+ * coach is learning (FBBD-98). Null [cue] keeps the slot empty, so the layout never moves. A [praise]
+ * (FBBD-243) is drawn in the gain colour.
  */
 @Composable
-fun CoachLine(corner: String?, cue: String?, modifier: Modifier = Modifier) {
+fun CoachLine(corner: String?, cue: String?, modifier: Modifier = Modifier, praise: Boolean = false) {
     val c = TrackTheme.colors
     Row(
         modifier.background(c.surface, RoundedCornerShape(6.dp)).padding(horizontal = 12.dp),
@@ -54,7 +55,7 @@ fun CoachLine(corner: String?, cue: String?, modifier: Modifier = Modifier) {
             Text(
                 cue,
                 style = textStyle(20.dp, FontWeight.Medium),
-                color = c.text,
+                color = if (praise) c.gain else c.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

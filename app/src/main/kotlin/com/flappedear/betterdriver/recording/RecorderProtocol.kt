@@ -112,6 +112,9 @@ internal object RecorderProtocol {
     const val KEY_COACH_CORNER = "coachCorner"
     const val KEY_COACH_TEXT = "coachText"
 
+    /** In a [MSG_STATE] bundle: true when the coach line shows a praise (FBBD-243). */
+    const val KEY_COACH_PRAISE = "coachPraise"
+
     /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
     const val KEY_PLACE = "place"
 
