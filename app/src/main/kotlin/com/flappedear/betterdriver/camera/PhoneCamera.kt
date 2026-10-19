@@ -144,6 +144,9 @@ class PhoneCamera(
      */
     private var fileStarted = false
 
+    /** Android reported thermal shutdown this session: no file is started again. */
+    private var shutdown = false
+
     private val checker = object : Runnable {
         override fun run() {
             if (stopping) return
@@ -197,6 +200,7 @@ class PhoneCamera(
                     return@addListener
                 }
                 policy = ThermalPolicy()
+                shutdown = false
                 thermalLog = ThermalLog(steps, ignoreHeat)
                 sessionThermal = null
                 DebugLog.i(Tag, "steps ${steps.joinToString { it.label }} (chosen ${ladder.first().label})")
@@ -209,6 +213,7 @@ class PhoneCamera(
                 main.postDelayed(checker, CheckIntervalMs)
                 // A phone already at thermal shutdown does not start video at all.
                 if (thermalAction() == ThermalAction.StopVideo) {
+                    shutdown = true
                     endReason = "thermal"
                     sink.status(stoppedText(endReason), ok = false)
                 } else {
@@ -246,6 +251,7 @@ class PhoneCamera(
     @SuppressLint("MissingPermission") // Audio is only enabled when RECORD_AUDIO is granted (CameraService).
     @Suppress("TooGenericExceptionCaught") // CameraX reports unsupported settings and busy cameras as exceptions.
     private fun begin(stepIndex: Int) {
+        if (shutdown) return
         val p = provider ?: return
         val step = steps[stepIndex]
         policy.moveTo(stepIndex)
@@ -445,24 +451,28 @@ class PhoneCamera(
     }
 
     /**
-     * Thermal and storage check; ends the current file when video must stop. It waits
-     * until the file holds data: Android calls the thermal listener at once when it is added, and
-     * on 2026-10-17 (status severe at start) that call stopped the first file before it held a frame
-     * (error 8). The next check, 5 s later, acts instead.
+     * Thermal and storage check; ends the current file when video must stop. Android's thermal
+     * shutdown is acted on at once, also before the file holds a frame or between restarts, so the
+     * file is finished before the phone powers off. The storage check waits until the file holds
+     * data: a file stopped before its first frame ends with error 8.
      */
     private fun check() {
-        if (!fileStarted || (recording == null && wide == null)) return
         if (endReason != "user") return
-        val action = if (StatFs(dir.path).availableBytes < MinFreeBytes) null else thermalAction()
-        when (action) {
-            null -> {
+        val recordingNow = recording != null || wide != null
+        when {
+            thermalAction() == ThermalAction.StopVideo -> {
+                shutdown = true
+                endReason = "thermal"
+                if (recordingNow) {
+                    stopFile()
+                } else {
+                    unbindOwn(provider, bound)
+                    sink.status(stoppedText(endReason), ok = false)
+                }
+            }
+            fileStarted && recordingNow && StatFs(dir.path).availableBytes < MinFreeBytes -> {
                 DebugLog.w(Tag, "video stops: less than 1 GB free")
                 endReason = "storage"
-                stopFile()
-            }
-            ThermalAction.Keep -> Unit
-            ThermalAction.StopVideo -> {
-                endReason = "thermal"
                 stopFile()
             }
         }
