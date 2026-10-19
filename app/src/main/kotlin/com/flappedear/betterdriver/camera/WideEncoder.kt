@@ -215,8 +215,11 @@ internal class WideEncoder(
         }
     }
 
-    /** A cut is pending: the keyframe that starts the next file has not been seen yet. */
-    private fun cutPending() = cuts.due && next != null
+    /**
+     * A cut is pending: the file is due, and the keyframe that starts the next has not been seen yet,
+     * whether or not the next file has arrived from the main thread.
+     */
+    private fun cutPending() = cuts.due
 
     /**
      * The sound encoder runs ahead of a loaded video encoder: sound past the latest frame waits while a
