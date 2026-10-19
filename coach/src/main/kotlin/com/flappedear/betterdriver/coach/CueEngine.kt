@@ -406,8 +406,7 @@ class CueEngine(
         inLap.update(fix.tMicros, laps.speedKmh, along?.takeIf { book?.onStraight(it) == true }, book?.map?.path)
         val cue = when {
             settings.verbosity == Verbosity.Off || inLap.inPitLane -> null
-            // Cooling down: no advice, but the time of the lap just driven is still said.
-            along == null || inLap.cruising -> speakLapTime(fix.tMicros, null, anywhere = true)
+            along == null -> speakLapTime(fix.tMicros, null, anywhere = true)
             else -> speak(fix.tMicros, along)
         }
         return if (cue == null && results.isEmpty()) CoachUpdate.None else CoachUpdate(listOfNotNull(cue), results)
@@ -456,7 +455,8 @@ class CueEngine(
         val before = cue?.before
         // A pass too weak to coach from (FBBD-177), or driven cooling down, says nothing about whether
         // the cue worked: no result, so the review shows no gain and no Better or Not yet for it.
-        return if (cue == null || before == null || pass.unusable() || cruising) {
+        val weak = pass.unusable() || cruising
+        return if (cue == null || before == null || weak) {
             null
         } else {
             val gain = before.timeMicros - pass.timeMicros
@@ -478,6 +478,8 @@ class CueEngine(
     /** At most one cue for this fix, with the car [along] the reference path. */
     @Suppress("ReturnCount") // Each early return is a reason to stay quiet on this fix.
     private fun speak(now: Long, along: Double): Cue? {
+        // Cooling down: no advice, but the time of the lap just driven is still said.
+        if (inLap.cruising) return speakLapTime(now, null, anywhere = true)
         val b = book ?: return null
         val next = b.next(along) ?: return null
         val lap = laps.timer.lapNumber
