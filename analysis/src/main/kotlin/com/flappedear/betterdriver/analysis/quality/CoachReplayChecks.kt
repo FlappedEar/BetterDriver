@@ -142,7 +142,8 @@ private fun outOfPitLane(quiet: List<ReplayQuiet>): QualityMetric {
     val id = "coach.pit_out"
     val label = "Laps out of the pit lane taken as cool-down"
     val criterion = "0 laps out of the pit lane taken as cooling down (FBBD-244)"
-    val pitOut = quiet.filter { it.reason == "pit_lane" }.map { it.lap + 1 }.toSet()
+    // The lap counter moves on at the line before the coach logs pit_lane, so its lap is the out-lap.
+    val pitOut = quiet.filter { it.reason == "pit_lane" }.map { it.lap }.toSet()
     if (pitOut.isEmpty()) return notMeasured(id, label, criterion, "no lap ended in the pit lane")
     val wrong = quiet.filter { it.reason == "cooling_down" && it.lap in pitOut }.map { it.lap }.distinct()
     return judged(
