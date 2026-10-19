@@ -26,6 +26,15 @@ object RealCorpus {
     /** RaceChrono Pro 10.2.4 at Silesia Ring on 27 Sep 2026: 10 Hz GNSS with OBD, 23 min, with RaceChrono's lines. */
     const val SILESIA = "silesia-ring-2026-09-27-racechrono.vbo.gz"
 
+    /** The same day's second session, from 13:53 local: 29 min at 10 Hz with OBD, the same lines (FBBD-238). */
+    const val SILESIA_1353 = "silesia-ring-2026-09-27-1353-racechrono.vbo.gz"
+
+    /** The same day's third session, from 14:54 local: 29 min at 10 Hz with OBD, the same lines (FBBD-238). */
+    const val SILESIA_1454 = "silesia-ring-2026-09-27-1454-racechrono.vbo.gz"
+
+    /** Arek's three Silesia Ring sessions of 27 Sep 2026, in the order he drove them. */
+    val SILESIA_DAY = listOf(SILESIA, SILESIA_1353, SILESIA_1454)
+
     /**
      * BetterDriver 0.3.1 VBO export, 12 Oct 2026 10:36 UTC: a road drive at 25 Hz with phone video,
      * 27 min of it once 1.5 km at each end were trimmed off.

@@ -111,6 +111,15 @@ class SessionReplay private constructor(
             return SessionReplay(joined(laps), startUtcMillis, rateHz)
         }
 
+        /**
+         * [replays] one after another, each starting at the line where the one before ends: several
+         * sessions at one track as one loop (FBBD-238). Starts at [startUtcMillis].
+         */
+        fun joined(replays: List<SessionReplay>, startUtcMillis: Long, rateHz: Int = 25): SessionReplay {
+            require(replays.isNotEmpty()) { "nothing to join" }
+            return SessionReplay(joined(replays.map { it.points }), startUtcMillis, rateHz)
+        }
+
         /** First line of [write]'s text. */
         const val FormatLine = "betterdriver-replay 1"
 

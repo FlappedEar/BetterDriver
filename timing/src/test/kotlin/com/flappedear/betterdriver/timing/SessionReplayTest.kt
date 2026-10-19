@@ -93,6 +93,18 @@ class SessionReplayTest {
     }
 
     @Test
+    fun `two sessions joined lap on, one after the other, without a jump`() {
+        val one = assertNotNull(SessionReplay.of(recording(5), track, start))
+        val two = assertNotNull(SessionReplay.of(recording(7), track, start))
+        val both = SessionReplay.joined(listOf(one, two), start)
+        val fixes = replayed(both, 30).mapNotNull { it.toFix() }
+        val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+        assertTrue(steps.max() < 3.0, "longest step ${steps.max()} m")
+        val points = { r: SessionReplay -> r.write().lines().count { it.isNotBlank() } - 1 }
+        assertEquals(points(one) + points(two), points(both), "every point of both")
+    }
+
+    @Test
     fun `text that is not a replay is refused`() {
         assertFailsWith<IllegalArgumentException> { SessionReplay.read("hello", start) }
         val onePoint = SessionReplay.FormatLine + "\n1 2 3 - -"
