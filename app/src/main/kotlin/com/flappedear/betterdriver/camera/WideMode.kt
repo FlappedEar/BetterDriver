@@ -4,9 +4,9 @@ import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.display.DisplayManager
 import android.media.CamcorderProfile
+import android.media.MediaCodec
 import android.media.MediaCodecList
 import android.media.MediaFormat
-import android.media.MediaRecorder
 import android.view.Display
 import android.view.Surface
 import androidx.annotation.OptIn
@@ -69,9 +69,9 @@ internal fun wideFrame(info: CameraInfo, fps: Int): Pair<Int, Int>? {
     val ranges = camera.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
     val streams = camera.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
     if (streams == null || aeRange(ranges.orEmpty().map { it.lower to it.upper }, fps) == null) return null
-    // The sizes for the surface WideRecorder attaches: a MediaRecorder's, which can differ from MediaCodec's.
-    val fast = streams.getOutputSizes(MediaRecorder::class.java).orEmpty().filter { size ->
-        val nanos = runCatching { streams.getOutputMinFrameDuration(MediaRecorder::class.java, size) }.getOrNull()
+    // The sizes for the surface WideRecorder attaches: a MediaCodec encoder's input surface.
+    val fast = streams.getOutputSizes(MediaCodec::class.java).orEmpty().filter { size ->
+        val nanos = runCatching { streams.getOutputMinFrameDuration(MediaCodec::class.java, size) }.getOrNull()
         nanos == null || nanos <= 0 || nanos <= NanosPerSecond / fps
     }
     return wideSize(fast.map { it.width to it.height })?.takeIf { (w, h) -> encoderTakes(w, h, fps) }

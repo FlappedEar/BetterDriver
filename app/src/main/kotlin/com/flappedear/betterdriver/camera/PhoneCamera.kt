@@ -86,7 +86,7 @@ private const val MaxFileBytes = 4_000_000_000L
  * The phone's back camera, recording with CameraX in the background while the track screen stays
  * on (FBBD-21). No preview: only a VideoCapture use case is bound.
  *
- * 2.7K has no CameraX preset, so that mode records through [WideRecorder] (Camera2 and MediaRecorder)
+ * 2.7K has no CameraX preset, so that mode records through [WideRecorder] (Camera2 and MediaCodec)
  * with nothing bound to CameraX (FBBD-239); files, sync reports and stops work the same way.
  *
  * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
@@ -320,7 +320,7 @@ class PhoneCamera(
         endReason = "user"
         fileStarted = false
         DebugLog.i(Tag, "2.7K: ${target.label}, ${target.bitrate} bit/s, rotation ${target.orientation}")
-        val w = WideRecorder(context, cameraIdOf(info), target, audio, WideFiles(step, stepIndex))
+        val w = WideRecorder(context, cameraIdOf(info), target, audio, realtimeFrames, WideFiles(step, stepIndex))
         w.start(file)
         wide = w
     }
