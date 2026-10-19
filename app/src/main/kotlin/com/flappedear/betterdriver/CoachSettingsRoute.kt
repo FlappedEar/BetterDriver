@@ -12,11 +12,13 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.composable
@@ -126,19 +128,28 @@ private fun rememberVoice(): Voice {
     return voice
 }
 
-/** The phone's voices, once [voice]'s engine has started; null until then, empty if it never does. */
+/**
+ * The phone's voices, once [voice]'s engine has started; null until then, empty if it never does. Read
+ * again each time the page comes back, so a voice installed in Android's settings shows at once.
+ */
 @Composable
 private fun rememberVoices(voice: Voice): List<TtsVoice>? {
     var voices by remember(voice) { mutableStateOf<List<TtsVoice>?>(null) }
-    LaunchedEffect(voice) {
+    var resumes by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        resumes++
+        onPauseOrDispose { }
+    }
+    LaunchedEffect(voice, resumes) {
         var waited = 0L
-        while (voices == null) {
-            voices = withContext(Dispatchers.IO) { voice.voices() }
-                ?: if (waited >= VoicesWaitMillis) emptyList() else null
-            if (voices == null) {
-                delay(VoicesPollMillis)
-                waited += VoicesPollMillis
+        while (true) {
+            val read = withContext(Dispatchers.IO) { voice.voices() }
+            if (read != null || waited >= VoicesWaitMillis) {
+                voices = read ?: voices ?: emptyList()
+                break
             }
+            delay(VoicesPollMillis)
+            waited += VoicesPollMillis
         }
     }
     return voices
