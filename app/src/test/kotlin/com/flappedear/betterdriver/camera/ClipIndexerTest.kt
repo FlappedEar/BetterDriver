@@ -73,6 +73,23 @@ class ClipIndexerTest {
         assertEquals(1_020_000L, awaitClip(index) { it.durationUs == 2_000_000L }.sessionOffsetUs)
     }
 
+    /** FBBD-248: a 2.7K file that could not be finished after its handover leaves the index; the next stays. */
+    @Test
+    fun aLostFileLeavesTheIndex() {
+        val index = VideoIndex(tmp.newFolder("s3"))
+        val clips = ClipIndexer(index)
+        clips.started("phone_0001.mp4", 1_000_000)
+        clips.finished("phone_0001.mp4", 2_000_000)
+        clips.started("phone_0002.mp4", 3_000_000)
+        clips.lost("phone_0001.mp4")
+        clips.synced("phone_0001.mp4", 4_000_000, 2_000_000)
+        val until = System.currentTimeMillis() + WaitMillis
+        while (index.clips().map { it.fileName } != listOf("phone_0002.mp4")) {
+            if (System.currentTimeMillis() > until) throw AssertionError("still indexed: ${index.clips()}")
+            Thread.sleep(PollMillis)
+        }
+    }
+
     private fun awaitClip(index: VideoIndex, done: (VideoClip) -> Boolean): VideoClip {
         val until = System.currentTimeMillis() + WaitMillis
         while (System.currentTimeMillis() < until) {
