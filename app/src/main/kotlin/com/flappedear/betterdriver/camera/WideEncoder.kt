@@ -140,6 +140,8 @@ internal class WideEncoder(
         // The file is still finished: what was encoded so far plays; the log says its end is missing.
         if (!drained) DebugLog.w(Tag, "encoders not drained after $DrainSeconds s: the last frames are lost")
         val (last, unused) = synchronized(lock) {
+            // Video still held for a sound format that never came is not lost with the sound.
+            giveUpSound()
             // A next file that could not be opened left the full one current (cut), so it is the last.
             releaseSound(all = true)
             val c = current
@@ -193,6 +195,13 @@ internal class WideEncoder(
     }
 
     private fun ready() = videoFormat != null && (audioFormat != null || !audioWanted)
+
+    /** With no sound format yet, goes on without sound and routes the video held for it. */
+    private fun giveUpSound() {
+        if (audioFormat != null) return
+        audioWanted = false
+        if (ready()) while (waiting.isNotEmpty()) waiting.removeFirst().let { route(it.track, it.data, it.info) }
+    }
 
     /** Video is ready but the AAC encoder has given no format for a second of it: go on without sound. */
     private fun soundLate(): Boolean {
@@ -402,6 +411,7 @@ internal class WideEncoder(
 
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
             DebugLog.w(Tag, "AAC encoder error; the rest is silent", e)
+            synchronized(lock) { giveUpSound() }
             audioDone.countDown()
         }
 
