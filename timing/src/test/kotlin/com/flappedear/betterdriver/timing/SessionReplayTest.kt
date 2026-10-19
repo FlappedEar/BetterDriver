@@ -137,6 +137,27 @@ class SessionReplayTest {
     }
 
     @Test
+    fun `a lap in which the car stands still is not replayed, with or without recorded speed`() {
+        for (speed in listOf(true, false)) {
+            val drive = recording(6, speed = speed)
+            val timed = timeSession(track, drive.mapNotNull { it.toFix() }.asSequence()).laps
+                .filter { it.kind == LapKind.Timed }
+            // Ten seconds parked halfway round the second timed lap: not slow enough to leave out by time.
+            val half = (timed[1].startMicros + timed[1].endMicros) / 2
+            val (before, after) = drive.partition { it.tMicros < half }
+            val parked = before.last().values.map {
+                if (it.channelId == GnssChannels.SPEED_KMH.id) ChannelValue(it.channelId, 0.0) else it
+            }
+            val stop = (1L..100L).map { n -> SampleSet(before.last().tMicros + n * 100_000L, parked) }
+            val moved = after.map { SampleSet(it.tMicros + 10_000_000L, it.values) }
+            val replay = assertNotNull(SessionReplay.of(before + stop + moved, track, start))
+            val fixes = replayed(replay, 20).mapNotNull { it.toFix() }
+            val steps = fixes.zipWithNext { a, b -> distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+            assertTrue(steps.count { it < 0.05 } < 25, "standing still with speed=$speed")
+        }
+    }
+
+    @Test
     fun `positions at 0, 0 are no fix and are not replayed`() {
         val noFix = listOf(ChannelValue(GnssChannels.LAT.id, 0.0), ChannelValue(GnssChannels.LON.id, 0.0))
         val source = recording(10)

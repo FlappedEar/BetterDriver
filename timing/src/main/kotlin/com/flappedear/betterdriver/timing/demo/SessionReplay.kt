@@ -155,7 +155,18 @@ class SessionReplay private constructor(
         private fun stops(all: List<Point>, lap: Lap): Boolean {
             val from = lap.startMicros / MicrosPerSecond
             val to = lap.endMicros / MicrosPerSecond
-            return all.any { it.t in from..to && (it.kmh ?: Double.MAX_VALUE) < StoppedKmh }
+            return all.indices.any { i -> all[i].t in from..to && speedAt(all, i) < StoppedKmh }
+        }
+
+        /** The recorded speed at point [i], or without one the path's to the next point, as [fix] has it. */
+        private fun speedAt(all: List<Point>, i: Int): Double {
+            val a = all[i]
+            val b = all.getOrNull(i + 1)
+            return a.kmh ?: if (b != null && b.t > a.t) {
+                distanceMeters(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) / (b.t - a.t) * KmhPerMs
+            } else {
+                Double.MAX_VALUE
+            }
         }
 
         /**
