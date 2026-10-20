@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.recording
 
 import android.content.Context
 import android.net.ConnectivityManager
+import android.net.Network
 import android.net.NetworkCapabilities
 import com.flappedear.betterdriver.core.ble.ImuCalibrationStore
 import com.flappedear.betterdriver.core.ble.RaceBoxSource
@@ -12,6 +13,8 @@ import com.flappedear.betterdriver.core.ble.lns.LnsSource
 import com.flappedear.betterdriver.core.ble.nmea.NmeaSource
 import com.flappedear.betterdriver.core.ble.nmea.TcpNetwork
 import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
+import com.flappedear.betterdriver.core.ble.obd.ObdSource
+import com.flappedear.betterdriver.core.ble.obd.ObdTarget
 import com.flappedear.betterdriver.core.ble.vbox.VboxSportSource
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
@@ -123,8 +126,8 @@ fun gnssRefOf(e: Equipment): GnssRef? {
 /**
  * Data sources for a new recording: the chosen receiver, each kind of which reconnects on its own
  * if the link drops, or Demo GNSS, plus the phone's accelerometer and the first listed heart rate
- * monitor. There is no fallback: without a
- * receiver nothing is recorded, never simulated positions (FBBD-83).
+ * monitor, and a Wi-Fi OBD-II adapter whenever the phone is on its network (FBBD-15). There is no
+ * fallback: without a receiver nothing is recorded, never simulated positions (FBBD-83).
  */
 internal object Sources {
     fun create(context: Context, gnss: GnssRef, sensors: List<SensorRef> = emptyList()): List<DataSource> {
@@ -148,7 +151,9 @@ internal object Sources {
         // The phone's accelerometer always records: G from a real accelerometer when the receiver's does
         // not match the GPS (FBBD-218). Not with Demo GNSS, whose made-up drive it would not match.
         val phone = if (gnss.demo) emptyList() else listOf(PhoneImuSource(app))
-        return listOf(receiver) + phone + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
+        // OBD-II over Wi-Fi needs no setup: it records whenever the phone is on the adapter's network.
+        val obd = if (gnss.demo) emptyList() else listOf(ObdSource(targets = { obdTargets(app) }))
+        return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }
 }
 
@@ -164,15 +169,36 @@ private fun tcpSource(context: Context, gnss: GnssRef): DataSource {
  * no internet, and Android then sends other sockets and name lookups over mobile data. Falls back to
  * the default with no Wi-Fi.
  */
-@Suppress("DEPRECATION") // allNetworks: the callback API would need a listener for one lookup.
-private fun wifiNetwork(context: Context): TcpNetwork {
-    val cm = context.getSystemService(ConnectivityManager::class.java)
-    val wifi = cm?.allNetworks?.firstOrNull {
-        cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-    } ?: return TcpNetwork.Default
-    return object : TcpNetwork {
-        override fun createSocket(): Socket = wifi.socketFactory.createSocket()
+private fun wifiNetwork(context: Context): TcpNetwork = wifi(context)?.let(::onNetwork) ?: TcpNetwork.Default
 
-        override fun resolve(host: String): InetAddress = wifi.getByName(host)
+@Suppress("DEPRECATION") // allNetworks: the callback API would need a listener for one lookup.
+private fun wifi(context: Context): Network? {
+    val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
+    return cm.allNetworks.firstOrNull {
+        cm.getNetworkCapabilities(it)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
     }
+}
+
+private fun onNetwork(network: Network): TcpNetwork = object : TcpNetwork {
+    override fun createSocket(): Socket = network.socketFactory.createSocket()
+
+    override fun resolve(host: String): InetAddress = network.getByName(host)
+}
+
+/** The port cheap Wi-Fi ELM327 adapters listen on, at 192.168.0.10 (their usual address). */
+private const val ElmWifiPort = 35_000
+private const val ElmWifiHost = "192.168.0.10"
+
+/**
+ * Where a Wi-Fi ELM327 may be (FBBD-15): the Wi-Fi network's gateway, which is the adapter when the
+ * phone is on its access point, then the usual 192.168.0.10, both on port 35000. Empty without Wi-Fi.
+ */
+private fun obdTargets(context: Context): List<ObdTarget> {
+    val network = wifi(context) ?: return emptyList()
+    val cm = context.getSystemService(ConnectivityManager::class.java)
+    val gateway = cm?.getLinkProperties(network)?.routes
+        ?.firstOrNull { it.isDefaultRoute && it.gateway?.isAnyLocalAddress == false }
+        ?.gateway?.hostAddress
+    val tcp = onNetwork(network)
+    return listOfNotNull(gateway, ElmWifiHost).distinct().map { ObdTarget(it, ElmWifiPort, tcp) }
 }

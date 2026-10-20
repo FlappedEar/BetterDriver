@@ -148,11 +148,36 @@ class DemoDriveReplayTest {
         }
         // FBBD-47: the coach starts a corner cue a second sooner than before (lead 2.5 s, was 1.5 s), so the
         // speech engine's delay is absorbed and the cue still ends well before the braking zone.
+        // One cue per straight (FBBD-27), praise before the straight's cue aside (UI-94 A), as the drive
+        // check coach.per_straight judges it: a cue that starts early must not let a praise follow it.
+        val extra = sameStraight(events, language)
+        assertTrue(extra.isEmpty(), "cues on one straight: $extra")
         val spare = spareSeconds(events, language).sorted()
         println("corner cues ${language.tag}: ${spare.size}, spare before the braking zone " +
             "min ${"%.2f".format(spare.first())} s, median ${"%.2f".format(spare[spare.size / 2])} s")
         assertTrue(spare.first() >= MinSpareSeconds, "a cue ends ${spare.first()} s before its braking zone")
         assertTrue(spare[spare.size / 2] >= MinMedianSpareSeconds, "median spare ${spare[spare.size / 2]} s")
+    }
+
+    /**
+     * Pairs of cues said one after the other with no slowing of [BrakingDropKmh] between their sound
+     * starts (asked for at the trigger, heard after [DefaultLatencyMicros]), praise before a corner cue aside.
+     */
+    private fun sameStraight(events: List<RecorderEvent>, language: CoachLanguage): List<String> {
+        val cues = events.filter { it.kind == "coach_cue" }
+        return cues.zipWithNext().filter { (a, b) ->
+            val praiseThenCue = " kind=Praise" in a.text && " kind=Corner" in b.text
+            val from = a.tMicros + DefaultLatencyMicros
+            val to = b.tMicros + DefaultLatencyMicros
+            var top = Double.NEGATIVE_INFINITY
+            val braked = speeds.any { (t, v) ->
+                t in from..to && run {
+                    top = maxOf(top, v)
+                    top - v >= BrakingDropKmh
+                }
+            }
+            !praiseThenCue && !braked
+        }.map { (a, b) -> "${language.tag}: ${a.text.substringAfter(" text=")} / ${b.text.substringAfter(" text=")}" }
     }
 
     /**
@@ -211,6 +236,9 @@ class DemoDriveReplayTest {
     private companion object {
         /** The built-in replay's loop, 2828 s, once round. */
         const val LoopSeconds = 2_830L
+
+        /** The drive check's slowing between two cues on different straights (coach.per_straight). */
+        const val BrakingDropKmh = 15.0
 
         val ZoneMeters = Regex(" zone_m=([0-9.]+)")
 

@@ -187,14 +187,14 @@ jobs:
           retention-days: 7
 
   # Arek's Demo track drive, done by CI instead of by him (FBBD-192): the Silesia Ring laps built into
-  # the app (his 27 Sep 2026 sessions) replayed through the whole app on an emulator for 22 minutes,
-  # coach at Full in Polish, then the app's continuous log checked as his shared logs are: the drive
-  # checks and what the coach said lap by lap (FBBD-244, 242, 243, 245). replay-drive.sh; the report
+  # the app (his 27 Sep 2026 sessions) replayed through the whole app on an emulator for 10 minutes,
+  # coach at Full in Polish knowing the track from an earlier outing, then the app's continuous log checked as his shared logs are: the drive
+  # checks and what the coach said lap by lap (FBBD-244, 242, 243, 245, 177). replay-drive.sh; the report
   # is on the run's summary page and in the replay-drive artifact.
   replay:
     name: Replay drive
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 30
     env:
       AVD_KEY: avd-34-google_apis-x86_64-pixel_6-v1
     steps:

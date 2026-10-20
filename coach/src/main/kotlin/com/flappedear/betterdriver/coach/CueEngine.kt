@@ -323,6 +323,9 @@ private class SpeechTiming(
     /** How old the latest fix was when it arrived ([CoachFix.ageMicros]): the car is that much further on. */
     var fixAgeMicros = 0L
 
+    /** The output's own delay; changes when the output does (FBBD-255). */
+    var audioDelayMillis = settings.audioDelayMillis
+
     /**
      * Whether the voice has finished the last phrase (FBBD-253). The estimate in [needMicros] is only an
      * estimate, and fixes that waited in a queue run the coach's clock ahead of the sound; a phrase
@@ -338,7 +341,7 @@ private class SpeechTiming(
 
     /** From asking for [text] until it has been heard. */
     fun needMicros(text: String) =
-        latencyMicros + settings.audioDelayMillis * MicrosPerMilli + phrases.durationMicros(text)
+        latencyMicros + audioDelayMillis * MicrosPerMilli + phrases.durationMicros(text)
 
     /** Free to speak: not braking and nothing still being said. */
     fun free(now: Long): Boolean {
@@ -434,6 +437,16 @@ class CueEngine(
     private val speech = SpeechTiming(settings, latencyMicros, phrases)
     private val inLap = InLap()
     private val identity = track.identity
+
+    /**
+     * The audio output's own delay the cues allow for, from [CoachSettings.audioDelayMillis]; set anew
+     * when the output changes during the session, such as a headset connected (FBBD-255).
+     */
+    var audioDelayMillis: Int
+        get() = speech.audioDelayMillis
+        set(value) {
+            speech.audioDelayMillis = value.coerceIn(0, CoachSettings.MaxAudioDelayMillis)
+        }
     private val picked: (CornerMap) -> Chosen = { m ->
         fun numbers(p: CornerPick) = pickedCorners(m, laps.frame, listOf(p), identity).sorted()
         Chosen(
@@ -456,8 +469,11 @@ class CueEngine(
     private var bestLapMicros: Long? = null
     private var seq = 0
 
-    /** The plan for the straight being driven: the next corner, and what to say there if anything. */
-    private class Plan(val corner: Int, val lap: Int, val cue: Cue?)
+    /**
+     * The plan for the straight being driven: the next corner, what to say there if anything, and
+     * whether its corner cue was [said] already.
+     */
+    private class Plan(val corner: Int, val lap: Int, val cue: Cue?, val said: Boolean = false)
 
     private var plan: Plan? = null
     private val openCues = mutableMapOf<Int, Cue>()
@@ -608,6 +624,7 @@ class CueEngine(
         }
         val corner = cue.corner ?: return
         if (openCues[corner]?.seq == cue.seq) openCues.remove(corner)
+        plan?.takeIf { it.corner == corner && it.lap == cue.lap }?.let { plan = Plan(corner, it.lap, null) }
         book?.cuedOnLap?.let { if (it[corner - 1] == cue.lap) it[corner - 1] = NeverCued }
     }
 
@@ -628,6 +645,9 @@ class CueEngine(
         val time = speech.timeTo(b.map.path, along, zoneStart)
         val cue = p.cue
         // Praise first, when it and this straight's corner cue both fit (UI-94 A: else the cue wins).
+        // A praise found only after the cue was said (the cue starts early, FBBD-47) waits for no other
+        // straight: the cue won.
+        if (p.said) praises.clear()
         val cueNeed = cue?.let { speech.needMicros(it.text) + MarginMicros } ?: 0L
         val praise = praises.next(now, time, speech.free(now)) { speech.needMicros(it.text) + MarginMicros + cueNeed }
         if (praise != null) return speech.said(praise.copy(seq = ++seq, tMicros = now, zoneMeters = zoneStart - along))
@@ -657,7 +677,7 @@ class CueEngine(
         if (late) plan = Plan(planned.corner!!, planned.lap, null)
         val ready = timeToZone != null && !late && timeToZone <= need + LeadMicros
         if (!ready || !speech.free(now)) return null
-        plan = Plan(planned.corner!!, planned.lap, null)
+        plan = Plan(planned.corner!!, planned.lap, null, said = true)
         pendingLap = null // One cue per straight.
         val cue = speech.said(planned.copy(seq = ++seq, tMicros = now, zoneMeters = zoneMeters))
         openCues[planned.corner] = cue

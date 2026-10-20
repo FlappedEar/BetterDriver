@@ -36,15 +36,27 @@ class CoachService : Service() {
     private val messenger = Messenger(handler)
     private var voice: Voice? = null
 
+    /** Measures the output again when it changes mid-session (FBBD-255). */
+    private var routes: AudioRouteWatch? = null
+
     /** The recording being coached. Coach thread only. */
     private class Active(
         val id: String,
         val startNanos: Long,
         val recorder: Messenger?,
         val settings: CoachSettings,
-        val delay: SessionDelay,
+        val delay: SessionDelays,
+        /** Where the delay cues are timed for came from: "measured" or "set" (FBBD-255). */
+        var timingSource: String,
     ) {
         var coach: CoachSession? = null
+
+        /** The delay cues are timed for, of the output they play on now (FBBD-255). */
+        var timingMillis = settings.audioDelayMillis
+
+        /** The output type and path ("live" or "clip") [timingMillis] is of. */
+        var timingOutput = ""
+        var timingPath = ""
         var status: CoachStatus = CoachStatus.None
 
         fun now() = (System.nanoTime() - startNanos) / NanosPerMicro
@@ -55,11 +67,28 @@ class CoachService : Service() {
     override fun onCreate() {
         super.onCreate()
         voice = Voice(this)
+        routes = AudioRouteWatch(this, handler) { r ->
+            val a = active ?: return@AudioRouteWatch
+            // A route change, not yet measured: what was measured on another device of its type is not its.
+            if (r.live == null && r.clip == null) a.delay.forget(r.output)
+            r.live?.let { a.delay.measured("live", it.output, it.millis) }
+            r.clip?.let { a.delay.measured("clip", it.output, it.millis) }
+            val output = r.timing?.output ?: r.output
+            val used = a.delay.on(r.path, output)
+            a.timingMillis = used.millis
+            a.timingSource = used.source
+            a.timingOutput = output
+            a.timingPath = r.path
+            a.coach?.audioDelay(used.millis)
+            DebugLog.i(Tag, "cues now timed for an audio delay of ${used.millis} ms (${used.source}) on ${r.output}")
+        }
     }
 
     override fun onBind(intent: Intent): IBinder = messenger.binder
 
     override fun onDestroy() {
+        routes?.shutdown()
+        routes = null
         thread.quitSafely()
         voice?.shutdown()
         voice = null
@@ -90,18 +119,28 @@ class CoachService : Service() {
         // each path they take: live text-to-speech always (clips fall back to it), pre-rendered clips'
         // low-latency path too when they are on. The delay set in the settings is used only when
         // Android gives no audio clock.
-        val live = OutputDelayProbe.measure()
         val clips = set.voice == VoiceMode.PreRendered
-        val clip = if (clips) OutputDelayProbe.measure(lowLatency = true) else null
-        val sessionDelay = SessionDelay(live, clip, set.audioDelayMillis)
+        // The output as known before measuring: one that changes meanwhile is measured again (FBBD-255).
+        val before = routes?.outputs?.device()?.id
+        val live = OutputDelayProbe.probe()
+        val clip = if (clips) OutputDelayProbe.probe(lowLatency = true) else null
+        val delays = SessionDelays(set.audioDelayMillis)
+        live?.let { delays.measured("live", it.output, it.millis) }
+        clip?.let { delays.measured("clip", it.output, it.millis) }
         // Cues are timed for the path most of them take: the set delay when it was not measured.
         val path = if (clips) "clip" else "live"
-        val delay = sessionDelay.on(path, (if (clips) clip else live)?.output.orEmpty())
+        val output = (if (clips) clip else live)?.output ?: routes?.outputs?.output().orEmpty()
+        val delay = delays.on(path, output)
         val settings = set.copy(audioDelayMillis = delay.millis)
-        DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source}")
+        DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source} on $output")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice, settings.speech, settings.language)
-        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, sessionDelay)
+        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays, delay.source)
+            .also {
+                it.timingOutput = output
+                it.timingPath = path
+            }
+        routes?.watch(clips, live, clip, before)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
@@ -121,7 +160,9 @@ class CoachService : Service() {
         // What the last analysed session at the track recommends working on (FBBD-20), primary first.
         val focus = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
             ?.let { sessionFocusOf(this, it, a.id) }
-        a.coach = CoachSession(a.settings, track, reference, picks, sameDay, focus?.picks.orEmpty())
+        // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
+        val settings = a.settings.copy(audioDelayMillis = a.timingMillis)
+        a.coach = CoachSession(settings, track, reference, picks, sameDay, focus?.picks.orEmpty())
         // Which recommendation this session works on, for the coaching history (FBBD-180).
         if (focus != null && focus.picks.isNotEmpty()) {
             val corners = focus.record.targets.sortedBy { !it.primary }.mapNotNull { it.cornerId }
@@ -144,7 +185,7 @@ class CoachService : Service() {
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
         val out = coach.onFix(fix, a.now(), voiceFree = voice?.speaking != true) { text ->
-            val ask = Asked(a.now()).also { asked = it }
+            val ask = Asked(a.now(), a.timingSource, a.timingOutput, a.timingPath).also { asked = it }
             fun micros(nanoTime: Long) = (nanoTime - a.startNanos) / NanosPerMicro
             // Both posted, so they run after this fix: by then the cue's number is known.
             val ended = Ended { nanoTime, end ->
@@ -171,15 +212,30 @@ class CoachService : Service() {
         updateStatus(a, out.status)
     }
 
-    /** A cue asked of the voice at session time [askedMicros]; [seq] is set once the coach has logged it. */
-    private class Asked(val askedMicros: Long) {
+    /**
+     * A cue asked of the voice at session time [askedMicros], timed for a delay of output [timedOutput]
+     * on path [timedPath] that was [timedSource] ("measured" or "set"); [seq] is set once the coach has logged it.
+     */
+    private class Asked(
+        val askedMicros: Long,
+        val timedSource: String,
+        val timedOutput: String,
+        val timedPath: String,
+    ) {
         var seq: Int? = null
 
         /** The event text of its sound starting, how it was said and where it went; null if never logged. */
         fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int, outDelaySource: String) = seq?.let {
+            // Its sound went another way than it was timed for: the route changed meanwhile, or a clip
+            // was not ready and live speech said it.
+            val timed = when {
+                start.device != timedOutput -> OtherOutput
+                start.path != timedPath -> OtherPath
+                else -> timedSource
+            }
             CoachEvents.voiceText(
                 it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
-                outDelaySource,
+                outDelaySource, timed,
             )
         }
     }
@@ -216,21 +272,12 @@ class CoachService : Service() {
 
     private companion object {
         const val Tag = "CoachService"
-    }
-}
 
-/**
- * The audio delays measured at a session's start (FBBD-49): on the [live] text-to-speech path and, with
- * pre-rendered clips on, the [clip] path; else the [setMillis] from the settings.
- */
-private class SessionDelay(val live: MeasuredDelay?, val clip: MeasuredDelay?, val setMillis: Int) {
-    /**
-     * The delay of a cue said on [path] ("live" or "clip") to output [device]: the one measured on that
-     * path and output, else the set one (a headset connected or gone since was not measured).
-     */
-    fun on(path: String, device: String): AudioDelayUsed {
-        val m = (if (path == "clip") clip else live)?.takeIf { it.output == device }
-        return OutputDelay.effective(setMillis, m?.millis)
+        /** timed_src of a cue whose sound went to another output than it was timed for (FBBD-255). */
+        const val OtherOutput = "other_output"
+
+        /** timed_src of a cue said on another path (live, clip) than it was timed for (FBBD-255). */
+        const val OtherPath = "other_path"
     }
 }
 
