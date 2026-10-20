@@ -23,8 +23,11 @@ const val GnssLostMinMicros = MicrosPerSecond
 private const val StaleMinMicros = 3 * MicrosPerSecond
 private const val StalePeriods = 3
 
-/** The longest gap taken as a channel's sampling period: twice a slow OBD-II PID's 5 s. */
-private const val MaxPeriodMicros = 10 * MicrosPerSecond
+/**
+ * A channel's sampling period is the shortest of its last gaps: one outage is a single long gap,
+ * while a PID polled every 13 s (many slow PIDs on a slow adapter) has every gap that long.
+ */
+private const val PeriodGaps = 4
 
 /** OBD-II channels are named "obd_<id>" with source "obd" (core-ble ObdSource). */
 private const val ObdSource = "obd"
@@ -225,12 +228,16 @@ class LiveTracker(
 private class ShownValue(val name: String) {
     private var value = Double.NaN
     private var atMicros = Long.MIN_VALUE
+    private val gaps = LongArray(PeriodGaps)
+    private var gapCount = 0
     private var periodMicros = 0L
 
     fun update(t: Long, v: Double) {
         if (!v.isFinite()) return
-        // A gap longer than the slowest PID's period is an outage, not the channel's rate.
-        if (atMicros != Long.MIN_VALUE && t > atMicros && t - atMicros <= MaxPeriodMicros) periodMicros = t - atMicros
+        if (atMicros != Long.MIN_VALUE && t > atMicros) {
+            gaps[gapCount++ % PeriodGaps] = t - atMicros
+            periodMicros = (0 until minOf(gapCount, PeriodGaps)).minOf { gaps[it] }
+        }
         value = v
         atMicros = maxOf(atMicros, t)
     }

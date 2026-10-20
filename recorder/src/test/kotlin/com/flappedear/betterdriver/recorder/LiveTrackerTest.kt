@@ -274,6 +274,16 @@ class LiveTrackerTest {
     }
 
     @Test
+    fun `a PID polled every 13 s keeps its value between polls`() {
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now })
+        tracker.onChannel(ChannelDef(300, "obd_coolant_temp", "°C", "obd", 2))
+        for (i in 0..3L) tracker.onSamples(SampleSet(i * 13 * MicrosPerSecond, listOf(ChannelValue(300, 90.0))))
+        now = 51 * MicrosPerSecond
+        assertEquals(90.0, tracker.snapshot().channels.getValue("obd_coolant_temp"))
+    }
+
+    @Test
     fun `GNSS and other channels are not shown as live values`() {
         val tracker = LiveTracker("s", 0, { 0L })
         GnssChannels.ALL.forEach(tracker::onChannel)
