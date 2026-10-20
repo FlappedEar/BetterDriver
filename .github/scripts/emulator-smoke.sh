@@ -8,7 +8,13 @@
 # logcat reports it: a crash in a background process does not fail a test by
 # itself. The log is kept in build/emulator/logcat.txt for the workflow to
 # upload when something fails.
+#
+# PART splits the work between two emulators that CI runs side by side: "tests" runs only the
+# Gradle smoke tests, "faults" only the kill, fault and permission scripts. Unset runs everything.
+# The APKs may already be building in the background (ci.yml): when build/apk-build.status is
+# expected, the script waits for it first.
 set -uo pipefail
+part=${PART:-all}
 app=com.flappedear.betterdriver
 out=build/emulator
 mkdir -p "$out"
@@ -28,17 +34,46 @@ adb logcat -c || true
 adb logcat -v threadtime > "$log" 2>&1 &
 logcat=$!
 
-./gradlew :app:connectedDebugAndroidTest --stacktrace
-status=$?
-# The track screen's time and garbage per update (FBBD-266, TrackScreenFramesTest), to compare builds.
-grep 'TrackFrames' "$log" || true
+status=0
+built=0
+bash .github/scripts/wait-apk-build.sh || { status=1; built=1; }
 
-# The UI-process kill test (FBBD-72), with the APKs Gradle built; logcat still runs.
-bash .github/scripts/ui-kill.sh || status=1
-# Fault injection during a recording: memory pressure, screen off, GNSS loss, recorder kill, 10 stops.
-bash .github/scripts/faults.sh || status=1
-# Permissions denied and revoked; last, as each revoke ends the app.
-bash .github/scripts/permissions.sh || status=1
+# With the APKs built in the background the tests start about a minute after boot, while Android
+# is still busy with its post-boot work, and WideEncoderTest then loses frames (220 of 241). Wait
+# until the emulator's CPUs are less than half busy over 3 s (the load average lags by minutes),
+# at most 3 min.
+cpu() { adb shell head -1 /proc/stat 2>/dev/null | awk '{ print $2+$3+$4+$7+$8, $5+$6 }'; }
+started=$SECONDS
+while [ $((SECONDS - started)) -lt 180 ]; do
+  read -r busy1 idle1 <<<"$(cpu)"
+  sleep 3
+  read -r busy2 idle2 <<<"$(cpu)"
+  pct=$(awk -v b=$((${busy2:-0} - ${busy1:-0})) -v i=$((${idle2:-0} - ${idle1:-0})) \
+    'BEGIN { print (b + i > 0) ? int(100 * b / (b + i)) : 100 }')
+  echo "Emulator CPU busy: $pct %"
+  [ "$pct" -lt 50 ] && break
+done
+echo "Emulator settled after $((SECONDS - started)) s."
+
+if [ "$built" -eq 0 ] && [ "$part" != faults ]; then
+  ./gradlew :app:connectedDebugAndroidTest --stacktrace || status=1
+  # The track screen's time and garbage per update (FBBD-266, TrackScreenFramesTest), to compare builds.
+  grep 'TrackFrames' "$log" || true
+fi
+
+if [ "$built" -eq 0 ] && [ "$part" != tests ]; then
+  # The scripts install the APKs Gradle built; built here when nothing built them yet.
+  [ -f app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk ] \
+    || ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace || { status=1; built=1; }
+fi
+if [ "$built" -eq 0 ] && [ "$part" != tests ]; then
+  # The UI-process kill test (FBBD-72), with the APKs Gradle built; logcat still runs.
+  bash .github/scripts/ui-kill.sh || status=1
+  # Fault injection during a recording: memory pressure, screen off, GNSS loss, recorder kill, 10 stops.
+  bash .github/scripts/faults.sh || status=1
+  # Permissions denied and revoked; last, as each revoke ends the app.
+  bash .github/scripts/permissions.sh || status=1
+fi
 
 # Lets logcat write the last lines before it stops.
 sleep 3

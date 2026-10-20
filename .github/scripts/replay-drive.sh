@@ -65,6 +65,7 @@ adb logcat -c || true
 adb logcat -v threadtime > "$log" 2>&1 &
 logcat=$!
 
+bash .github/scripts/wait-apk-build.sh || fail "the APKs did not build"
 adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk || fail "app not installed"
 adb install -r -t -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || fail "test APK not installed"
 
