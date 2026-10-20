@@ -32,8 +32,12 @@ const val DefaultLatencyMicros = 300_000L
 /** Timed laps before corner cues when the track was driven earlier the same day (FBBD-190): a warm-up lap. */
 const val WarmUpLaps = 1
 
-/** A cue starts at most this long before it must have ended, so it is still fresh at the corner. */
-private const val LeadMicros = 1_500_000L
+/**
+ * A cue starts at most this long before it must have ended, so it is still fresh at the corner. One
+ * second more than the 1.5 s before (FBBD-47): text-to-speech takes up to about 0.3 s to start a phrase
+ * with numbers in it, and Arek accepted that delay on 2026-10-20 as long as the cue starts a second sooner.
+ */
+private const val LeadMicros = 2_500_000L
 
 /** A cue that would end less than this before the braking zone is not spoken at all. */
 private const val MarginMicros = 300_000L

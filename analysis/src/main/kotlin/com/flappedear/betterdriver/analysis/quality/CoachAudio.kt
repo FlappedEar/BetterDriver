@@ -9,7 +9,6 @@ import com.flappedear.betterdriver.recorder.RecorderEvent
 // audio focus and the share of pre-rendered clips.
 
 private const val P95 = 0.95
-private const val MaxTtsMicros = 150_000L
 private const val MaxLiveTotalMicros = 400_000L
 private const val MaxClipTotalMicros = 250_000L
 
@@ -30,9 +29,11 @@ internal fun audioMetrics(
     clipShare(played.map { it.second }),
 )
 
-private const val TtsCriterion = "text-to-speech p95 <= 150 ms (FBBD-47)"
-
-/** Live phrases: from asking the voice to its first audio being ready. */
+/**
+ * Live phrases: from asking the voice to its first audio being ready. For information only (FBBD-47):
+ * Arek accepted this delay on 2026-10-20 and the coach starts its cues a second sooner instead; the
+ * cue's whole delay is judged by coach.total_live and whether it is heard in time by coach.margin.
+ */
 private fun tts(voiced: List<Voiced>): QualityMetric {
     val label = "Text-to-speech p95"
     val times = voiced.filter { it.path == "live" }.mapNotNull { v ->
@@ -41,10 +42,11 @@ private fun tts(voiced: List<Voiced>): QualityMetric {
         if (asked != null && ready != null) (ready - asked).toDouble() else null
     }
     val p95 = nearestRank(times, P95)
-        ?: return notMeasured("coach.tts", label, TtsCriterion, "no live phrase with its audio-ready time logged")
-    return judged(
-        "coach.tts", label, p95 / MicrosPerMilli, "ms", p95 <= MaxTtsMicros, Basis.MEASURED, TtsCriterion,
-        "from asking the voice to the engine's first audio, ${times.size} live phrase(s)",
+        ?: return notMeasured("coach.tts", label, null, "no live phrase with its audio-ready time logged")
+    return info(
+        "coach.tts", label, p95 / MicrosPerMilli, "ms", Basis.MEASURED,
+        "from asking the voice to the engine's first audio, ${times.size} live phrase(s); accepted as it is, " +
+            "the cues start a second sooner instead (FBBD-47)",
     )
 }
 
