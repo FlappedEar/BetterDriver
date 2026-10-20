@@ -84,8 +84,8 @@ internal fun SectionLabel(text: String, modifier: Modifier = Modifier) {
 }
 
 /**
- * One row of a settings list: a label, an optional value on the right and an
- * optional trailing control. Rows after the first get a divider above them.
+ * One row of a settings list: a label with an optional [supporting] line under it, an optional
+ * value on the right and an optional trailing control. Rows after the first get a divider above them.
  */
 @Composable
 internal fun ListRow(
@@ -93,6 +93,7 @@ internal fun ListRow(
     value: String? = null,
     divider: Boolean = true,
     onClick: (() -> Unit)? = null,
+    supporting: String? = null,
     trailing: @Composable () -> Unit = {},
 ) {
     Column {
@@ -105,7 +106,14 @@ internal fun ListRow(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            if (supporting == null) {
+                Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+            } else {
+                Column(Modifier.weight(1f)) {
+                    Text(label, style = MaterialTheme.typography.bodyLarge)
+                    DimText(supporting)
+                }
+            }
             if (value != null) {
                 Text(
                     value,

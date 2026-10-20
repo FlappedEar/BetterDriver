@@ -35,8 +35,21 @@ interface ObdClock {
  * channels with no [PidChannel.header] are polled: the generic mode 01 PIDs, and the profile's own
  * mode 01 channels.
  *
+ * Faster polling on CAN (FBBD-270). Each request used to cost the ELM327's wait for more ECUs to
+ * answer, about 200 of the 230 ms per request in Arek's Corolla log of 2026-10-20 (Wi-Fi clone), so:
+ * - [multiPid]: up to six mode 01 PIDs go in one request ([MultiPid]). Polling switches headers on
+ *   (`AT H1`) so that answers of several frames from several ECUs can be told apart. Checked once
+ *   with the first group; when the car answers only one of its PIDs, every PID is asked on its own.
+ * - [responseCount]: once a request has had [LEARN_SAMPLES] full answers, it is sent with the most
+ *   answers they got (`010C0D11494A042`), so the adapter returns as soon as they are in instead of waiting out
+ *   its timeout. Whether an adapter counts messages or CAN frames is learned: messages first, and
+ *   when that cuts an answer short, frames from then on. An adapter that rejects it (`?`) is asked
+ *   without it from then on; a request that then gets no value is learned again without it, and
+ *   every [RESAMPLE_EVERY] counted requests one goes without, so a late ECU is still seen.
+ *
  * [clock] tells the time and waits.
  */
+@Suppress("TooManyFunctions", "LongParameterList") // The two FBBD-270 switches are for tests.
 class ElmPoller(
     private val line: ElmLine,
     private val profile: CarProfile,
@@ -44,7 +57,47 @@ class ElmPoller(
     private val running: () -> Boolean,
     private val clock: ObdClock,
     private val rateLogMs: Long = DEFAULT_RATE_LOG_MS,
+    private val multiPid: Boolean = true,
+    private val responseCount: Boolean = true,
 ) {
+    /** What each group's request got without a count, by its lead request. */
+    private class Learned {
+        /** The most messages, frames and values any answer without a count got. */
+        var messages = 0
+        var frames = 0
+        var values = 0
+
+        /** Answers without a count so far, and counted requests since the last one. */
+        var samples = 0
+        var counted = 0
+
+        /** Whether the count can be used: learned from enough answers, and not due a fresh one. */
+        val ready: Boolean get() = samples >= LEARN_SAMPLES && counted < RESAMPLE_EVERY
+
+        fun sample(messages: Int, frames: Int, values: Int) {
+            this.messages = maxOf(this.messages, messages)
+            this.frames = maxOf(this.frames, frames)
+            this.values = maxOf(this.values, values)
+            samples++
+            counted = 0
+        }
+    }
+
+    private val expected = HashMap<Request, Learned>()
+
+    /** Whether the adapter takes a response count; off on non-CAN protocols and after a `?`. */
+    private var countOn = false
+
+    /** Whether the adapter's response count counts CAN frames rather than ECU messages. */
+    private var countsFrames = false
+
+    /** Whether polling answers carry CAN ids (`AT H1`). */
+    private var headers = false
+
+    private val lastValues = LinkedHashMap<String, Double>()
+    private var requests = 0
+    private var rateStartMs = 0L
+
     /**
      * Sets up the adapter, discovers the car's PIDs and polls until stopped. Returns why it ended,
      * for the log; throws an [java.io.IOException] when the line closes.
@@ -57,7 +110,64 @@ class ElmPoller(
         val channels = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
         listener.ready(adapter, protocol, voltage, supported, channels)
         if (channels.isEmpty()) return "no channels to poll"
-        return poll(channels)
+        val can = isCan(protocol)
+        countOn = responseCount && can
+        val groups = groupsFor(channels, combine = multiPid && can)
+        listener.log(
+            "polling " + groups.joinToString(" ") { g -> g.joinToString("+") { it.id } } +
+                " multi_pid=${if (groups.any { g -> g.distinctBy { it.pid }.size > 1 }) "on" else "off"}" +
+                " response_count=${if (countOn) "on" else "off"}",
+        )
+        return poll(channels, groups)
+    }
+
+    /**
+     * The requests to poll: [MultiPid] groups when [combine] and the first multi-PID group gets more
+     * than one of its PIDs back, with headers on or, when the adapter's headers-on answer cannot be
+     * read, off; else one PID per request.
+     */
+    @Suppress("ReturnCount") // Each early return is one way multi-PID requests are not used.
+    private fun groupsFor(channels: List<PidChannel>, combine: Boolean): List<List<PidChannel>> {
+        val singles = MultiPid.groups(channels, combine = false)
+        if (!combine) return singles
+        val groups = MultiPid.groups(channels)
+        val probe = groups.firstOrNull { g -> g.distinctBy { it.pid }.size > 1 } ?: return singles
+        val cmd = MultiPid.command(probe)
+        var answer = ""
+        for (withHeaders in listOf(true, false)) {
+            if (!setHeaders(withHeaders)) continue
+            val text = line.command(cmd, REQUEST_TIMEOUT_MS)
+            val messages = messagesOf(text, cmd)
+            val got = decode(probe, messages)
+            if (got.keys.distinctBy { it.pid }.size > 1) {
+                expected.getOrPut(probe.first().request) { Learned() }.sample(messages.size, frameCount(text), got.size)
+                return groups
+            }
+            answer = text?.trim()?.replace('\r', ' ') ?: "nothing"
+        }
+        listener.log("multi_pid off: $cmd answered $answer")
+        return singles
+    }
+
+    /**
+     * `AT H1` or `AT H0`; true when the adapter took it. [headers] follows only an acknowledged
+     * change, so the parser keeps reading what the adapter prints.
+     */
+    private fun setHeaders(on: Boolean): Boolean {
+        val ok = line.command(if (on) "ATH1" else "ATH0", AT_TIMEOUT_MS)?.contains("OK") == true
+        if (ok) headers = on
+        return ok
+    }
+
+    /** The ECU messages in [text], the answer to [cmd], read with the current [headers] setting. */
+    private fun messagesOf(text: String?, cmd: String): List<EcuMessage> {
+        val response = text?.let { ElmParser.parse(it, headers = headers, command = cmd) }
+        return (response as? ElmResponse.Messages)?.messages.orEmpty()
+    }
+
+    /** CAN frames in an answer: its data lines, less the length line of a headers-off multi-frame answer. */
+    private fun frameCount(text: String?): Int = text.orEmpty().split('\r', '\n').map { it.trim().uppercase() }.count {
+        DATA_LINE.matches(it) && !(!headers && it.length == LENGTH_LINE)
     }
 
     /** The adapter's identity (`ELM327 v1.5`) and voltage, or null when it answered no setup command. */
@@ -112,11 +222,12 @@ class ElmPoller(
         return supported.takeIf { it.isNotEmpty() }
     }
 
-    private fun poll(channels: List<PidChannel>): String {
-        val scheduler = PollScheduler(channels)
-        val byRequest = channels.groupBy { it.request }
+    private fun poll(channels: List<PidChannel>, groups: List<List<PidChannel>>): String {
+        val scheduler = PollScheduler(channels, groups = groups)
+        val byRequest = groups.associateBy { it.first().request }
         var timeouts = 0
-        var nextRateLog = clock.nowMs() + rateLogMs
+        rateStartMs = clock.nowMs()
+        var nextRateLog = rateStartMs + rateLogMs
         var ended: String? = null
         while (ended == null && running()) {
             val now = clock.nowMs()
@@ -138,24 +249,75 @@ class ElmPoller(
         return ended ?: "stopped"
     }
 
-    /** Sends [request] and reports its channels' values; false when no prompt came back in time. */
+    /** Sends [request]'s group and reports its channels' values; false when no prompt came back in time. */
     private fun ask(request: Request, byRequest: Map<Request, List<PidChannel>>, scheduler: PollScheduler): Boolean {
-        val cmd = hex(request.mode, 2) + hex(request.pid, 2 * request.pidLength)
+        val group = byRequest[request].orEmpty()
+        val base = MultiPid.command(group)
+        val learned = expected[request]
+        val count = learned?.takeIf { it.ready }?.let { if (countsFrames) it.frames else it.messages }
+            ?.takeIf { countOn && it in 1..MAX_COUNT }
+        val cmd = if (count != null) base + hex(count, 1) else base
         val sent = clock.nowMs()
-        val text = line.command(cmd, REQUEST_TIMEOUT_MS)
+        var text = line.command(cmd, REQUEST_TIMEOUT_MS)
+        if (count != null && text?.trim() == "?") {
+            countOn = false
+            listener.log("response_count off: $cmd answered ?")
+            text = line.command(base, REQUEST_TIMEOUT_MS)
+        }
         val done = clock.nowMs()
-        val response = text?.let { ElmParser.parse(it, headers = false, command = cmd) }
-        val messages = (response as? ElmResponse.Messages)?.messages.orEmpty()
+        val messages = messagesOf(text, cmd)
         // The answer is stamped halfway through the request: the ECU read it some time in between.
         val at = sent + (done - sent) / 2
-        var answered = false
-        for (channel in byRequest[request].orEmpty()) {
-            val value = channel.decode(messages)?.takeIf { it.isFinite() } ?: continue
-            answered = true
+        val values = decode(group, messages)
+        for ((channel, value) in values) {
+            lastValues[channel.id] = value
             listener.value(channel, value, at)
         }
-        scheduler.completed(request, sent, done - sent, answered)
+        learn(request, learned, count, text, messages.size, values.size)
+        requests++
+        val answered = values.keys.mapTo(HashSet()) { it.request }
+        scheduler.completed(request, sent, done - sent, answered.isNotEmpty(), answered)
         return text != null
+    }
+
+    /**
+     * Updates what [request] is expected to get after an answer [text] of [messages] messages and
+     * [values] values, sent with [count] (null: none) while [learned] was known.
+     */
+    private fun learn(request: Request, learned: Learned?, count: Int?, text: String?, messages: Int, values: Int) {
+        if (count == null || learned == null) {
+            // Without a count every ECU had its time to answer: the most seen over a few answers,
+            // and again now and then, is what the count waits for, so a slower ECU is not cut off.
+            if (messages > 0) expected.getOrPut(request) { Learned() }.sample(messages, frameCount(text), values)
+            return
+        }
+        learned.counted++
+        when {
+            values >= learned.values -> Unit
+            // Cut short by a count of messages where the adapter counts frames.
+            !countsFrames && learned.frames > learned.messages -> {
+                countsFrames = true
+                listener.log("response_count counts frames: answer ${text?.trim()?.replace('\r', ' ')}")
+            }
+            // An ECU that answered last time did not this time: learn again without a count.
+            else -> expected.remove(request)
+        }
+    }
+
+    /** The value of each channel of [group] in [messages], first ECU first. */
+    private fun decode(group: List<PidChannel>, messages: List<EcuMessage>): Map<PidChannel, Double> {
+        val multi = group.distinctBy { it.pid }.size > 1
+        val parts = if (multi) messages.map { MultiPid.split(it.bytes) } else emptyList()
+        val out = LinkedHashMap<PidChannel, Double>()
+        for (channel in group) {
+            val value = if (multi) {
+                parts.firstNotNullOfOrNull { p -> p[channel.pid]?.let { channel.decode(it) } }
+            } else {
+                channel.decode(messages)
+            }
+            value?.takeIf { it.isFinite() }?.let { out[channel] = it }
+        }
+        return out
     }
 
     private fun logRates(scheduler: PollScheduler, channels: List<PidChannel>, nowMs: Long) {
@@ -163,8 +325,25 @@ class ElmPoller(
             "${it.id}=${"%.1f".format(Locale.ROOT, scheduler.achievedHz(it, nowMs))}"
         }
         val latency = scheduler.latencyMs?.let { "%.0f".format(Locale.ROOT, it) } ?: "n/a"
-        listener.log("rates_hz $rates latency_ms=$latency")
+        // Over the whole interval, idle waits for slow channels included.
+        val elapsed = nowMs - rateStartMs
+        val perSecond = if (elapsed > 0) requests * MS_PER_S / elapsed else 0.0
+        listener.log(
+            "rates_hz $rates latency_ms=$latency requests_per_s=${"%.1f".format(Locale.ROOT, perSecond)}" +
+                " response_count=${if (countOn) "on" else "off"}",
+        )
+        requests = 0
+        rateStartMs = nowMs
+        // The latest value of every channel, so slow ones (oil, coolant) can be read from the log.
+        if (lastValues.isNotEmpty()) {
+            val values = lastValues.entries.joinToString(" ") { (id, v) -> "$id=${"%.1f".format(Locale.ROOT, v)}" }
+            listener.log("values $values")
+        }
     }
+
+    /** ATDPN `6`..`9` (or `A6`.. when found automatically): ISO 15765-4 CAN, where FBBD-270 applies. */
+    private fun isCan(protocol: String): Boolean =
+        protocol.trim().removePrefix("A").let { it.length == 1 && it[0] in '6'..'9' }
 
     companion object {
         /** Echo, line feeds, spaces and headers off; adaptive timing; automatic protocol. */
@@ -182,5 +361,19 @@ class ElmPoller(
         const val MAX_TIMEOUTS = 5
 
         const val DEFAULT_RATE_LOG_MS = 60_000L
+
+        /** A headers-off multi-frame answer starts with its length in three hex digits (`00E`). */
+        private const val LENGTH_LINE = 3
+
+        /** One frame as printed: hex, after a frame number (`1:`) with headers off. */
+        private val DATA_LINE = Regex("""([0-9A-F]:)?[0-9A-F ]+""")
+
+        /** Answers without a count before one is sent, and counted requests between such answers. */
+        private const val LEARN_SAMPLES = 3
+        private const val RESAMPLE_EVERY = 50
+
+        /** The ELM327 response count is one hex digit. */
+        private const val MAX_COUNT = 0xF
+        private const val MS_PER_S = 1000.0
     }
 }

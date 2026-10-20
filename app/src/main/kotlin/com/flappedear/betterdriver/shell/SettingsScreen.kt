@@ -73,7 +73,8 @@ fun SettingsScreen(
     trackScreen: TrackScreenPrefs = TrackScreenPrefs(),
     onTrackScreen: (TrackScreenPrefs) -> Unit = {},
     onOpenAbout: () -> Unit = {},
-    obdRow: String = obdRowValue(null),
+    obdRow: String = obdRowValue(null, null),
+    obdAdapter: ObdAdapterLabel? = null,
     onOpenObd: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
@@ -94,9 +95,11 @@ fun SettingsScreen(
             when (SettingsTab.entries[tab]) {
                 SettingsTab.Devices -> {
                     EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
-                    // UI-104 B: the Wi-Fi OBD-II adapter is not added as equipment; the recorder looks for it.
+                    // UI-105 C: OBD-II adapters are equipment; this row opens the page of the listed one.
                     SectionLabel("Car data", Modifier.padding(top = 8.dp, start = 4.dp))
-                    ShellCard { ListRow(ObdTitle, obdRow, divider = false, onClick = onOpenObd) }
+                    ShellCard {
+                        ListRow(ObdTitle, obdRow, divider = false, supporting = obdAdapter?.text, onClick = onOpenObd)
+                    }
                 }
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar, obdRow, onOpenObd)
                 SettingsTab.Recording -> {

@@ -33,13 +33,19 @@ private const val Tag = "Obd"
  * its owner. [status] is the connection as the OBD page shows it (FBBD-261). Used by the recorder
  * ([ObdSource]) and, outside a session, by the OBD page; an adapter takes one connection at a time,
  * so only one runs at once. Log lines carry the tag "Obd" and the [owner].
+ *
+ * While started, [watch] tells it when the phone's Wi-Fi or Bluetooth comes back ([obdWatch]), and
+ * the next try starts at once (FBBD-271). Nothing the connection throws reaches the process: an
+ * uncaught exception on this thread killed the recorder at Stop (FBBD-269).
  */
+@Suppress("LongParameterList") // Collaborators, each with a default.
 class ObdLink(
     private val targets: () -> List<ObdTarget>,
     private val listener: ObdLinkListener = object : ObdLinkListener {},
     private val profile: CarProfile = CarProfile.Generic,
     private val owner: String = "recorder",
     private val fallback: () -> List<ObdTarget> = { emptyList() },
+    private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
 ) {
     private val tracker = ObdStatusTracker()
 
@@ -47,6 +53,7 @@ class ObdLink(
     private var running = false
     private var thread: Thread? = null
     private var connector: ObdConnector? = null
+    private var watching: AutoCloseable? = null
 
     fun status(): ObdStatus = tracker.snapshot(SystemClock.elapsedRealtime())
 
@@ -54,20 +61,42 @@ class ObdLink(
         running = true
         val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback)
         connector = c
-        thread = Thread({
-            c.run { running }
-            DebugLog.i(Tag, "$owner: reader stopped")
-        }, "obd-$owner").apply {
+        thread = Thread({ read(c) }, "obd-$owner").apply {
             isDaemon = true
             start()
+        }
+        watching = watch { what ->
+            DebugLog.i(Tag, "$owner: $what")
+            c.retryNow()
         }
     }
 
     fun stop() {
         running = false
+        closeQuietly(watching)
+        watching = null
         connector?.stop()
         thread?.interrupt()
         thread = null
+    }
+
+    @Suppress("TooGenericExceptionCaught") // Whatever goes wrong, car data ends and the recording goes on.
+    private fun read(c: ObdConnector) {
+        try {
+            c.run { running }
+            DebugLog.i(Tag, "$owner: reader stopped")
+        } catch (e: Exception) {
+            DebugLog.e(Tag, "$owner: reader failed", e)
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught") // A watch that fails to close only leaves a callback behind.
+    private fun closeQuietly(c: AutoCloseable?) {
+        try {
+            c?.close()
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "$owner: watch not closed", e)
+        }
     }
 
     private val clock = object : ObdClock {

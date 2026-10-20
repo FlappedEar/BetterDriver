@@ -39,7 +39,8 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      * null when no prompt came within [timeoutMs]. After a timeout the adapter may still be working
      * on that command, and a byte sent now would abort it and be lost, or its late answer would be
      * read as the next one's; so the next command first waits up to [resyncMs] for that late
-     * prompt and throws the late answer away. Throws an [IOException] when the line is [close]d.
+     * prompt and throws the late answer away. Throws an [IOException] when the line is [close]d, or
+     * when the waiting thread is interrupted (stopping a session does that, FBBD-269).
      */
     fun command(text: String, timeoutMs: Long): String? {
         synchronized(lock) {
@@ -69,7 +70,13 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
             closed?.let { throw IOException(it) }
             val leftMs = (deadline - System.nanoTime()) / NanosPerMs
             if (leftMs <= 0) return null
-            lock.wait(leftMs)
+            try {
+                lock.wait(leftMs)
+            } catch (e: InterruptedException) {
+                // An uncaught InterruptedException here killed the recorder process at Stop (FBBD-269).
+                Thread.currentThread().interrupt()
+                throw IOException("interrupted", e)
+            }
         }
     }
 

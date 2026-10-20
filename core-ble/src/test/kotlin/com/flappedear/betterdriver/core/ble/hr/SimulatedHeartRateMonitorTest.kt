@@ -73,10 +73,10 @@ class SimulatedHeartRateMonitorTest {
     @Test
     fun `a simulated strap records heart rate, reconnects and logs what the drive checks grade`() {
         val store = SessionStore(tmp.newFolder())
-        // The test submits ~3,200 sample sets at once, faster than the listener thread takes them: with
-        // the default 1,024-update queue the oldest are dropped (by design) and the log misses some
-        // heart rate. A queue that holds the whole drive makes the log's count exact.
-        val config = RecorderConfig(listenerQueueCapacity = 8_192)
+        // The test feeds two minutes in a burst, far faster than real time. The listener queue drops its
+        // oldest updates when the listener falls behind (by design, FBBD-69), so a slow CI runner lost
+        // strap values from the log; make room for all of them.
+        val config = RecorderConfig(listenerQueueCapacity = 10_000)
         val rec = Recorder(store, config, nanoTime = nanos::get).start(
             SessionInfo(gnss.startUtcMillis, devices = listOf("fake-gnss"), channels = GnssChannels.ALL),
         )

@@ -61,6 +61,16 @@ class ElmParserTest {
     }
 
     @Test
+    fun `a single-frame answer between the frames of another ECU's answer`() {
+        // FBBD-270: with headers off, the TCM's short answer can arrive between the ECM's frames.
+        val text = "00D\r0:410C1AF80D32\r410D32\r1:11404933041A4D\r\r>"
+        assertEquals(
+            listOf(msg(null, "41 0D 32"), msg(null, "41 0C 1A F8 0D 32 11 40 49 33 04 1A 4D")),
+            messages(text, headers = false),
+        )
+    }
+
+    @Test
     fun `headerless frames must be numbered in order`() {
         // Frame 1 twice: duplicate.
         val duplicate = "014\r0: 49 02 01 31 44 34\r1: 47 50 30 30 52 35 35\r1: 47 50 30 30 52 35 35\r>"

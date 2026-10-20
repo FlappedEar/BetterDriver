@@ -4,9 +4,9 @@ import kotlinx.serialization.Serializable
 
 /**
  * What a piece of equipment does in a session. A sensor (a heart-rate monitor, FBBD-119) records
- * with every session while it is listed. OBD readers join in Phase 5 (FBBD-3).
+ * with every session while it is listed, and so does a car-data reader (an OBD-II adapter, FBBD-121).
  */
-enum class EquipmentKind { GNSS, CAMERA, SENSOR }
+enum class EquipmentKind { GNSS, CAMERA, SENSOR, CAR_DATA }
 
 /**
  * The kinds of equipment the app can work with (FBBD-105). Each is a family, not one product:
@@ -72,6 +72,19 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     /** A Bluetooth LE heart-rate monitor (standard Heart Rate service, FBBD-119). Found by a scan. */
     HEART_RATE(EquipmentKind.SENSOR, "Heart-rate monitor"),
 
+    /**
+     * An ELM327 or STN OBD-II adapter over Bluetooth (FBBD-121, UI-105 C), such as the Vgate vLinker
+     * MC+: paired in Android's Bluetooth settings (Classic, over the serial port profile) or found by
+     * a scan (Bluetooth LE). Only listed adapters are used.
+     */
+    OBD_BLUETOOTH(EquipmentKind.CAR_DATA, "OBD-II adapter"),
+
+    /**
+     * An ELM327 OBD-II adapter on its own Wi-Fi network (FBBD-15). Its address is "host:port"
+     * ([TcpAddress]), [WifiObdAddress] for the usual cheap adapters.
+     */
+    OBD_WIFI(EquipmentKind.CAR_DATA, "Wi-Fi OBD-II adapter"),
+
     /** The phone's own camera (FBBD-21). There is only one. */
     PHONE_CAMERA(EquipmentKind.CAMERA, "Phone camera"),
 
@@ -106,10 +119,12 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
 
     /** True for models paired over Bluetooth, which need an address. */
     val paired: Boolean
-        get() = this in setOf(RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, VBOX_SPORT, DRAGY, GOPRO, HEART_RATE)
+        get() = this in setOf(
+            RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, VBOX_SPORT, DRAGY, GOPRO, HEART_RATE, OBD_BLUETOOTH,
+        )
 
-    /** True for models reached at an address: a Bluetooth one, or a Wi-Fi receiver's "host:port". */
-    val needsAddress: Boolean get() = paired || this == TCP_GNSS
+    /** True for models reached at an address: a Bluetooth one, or a Wi-Fi device's "host:port". */
+    val needsAddress: Boolean get() = paired || this == TCP_GNSS || this == OBD_WIFI
 
     val isGoPro: Boolean get() = this == GOPRO || this == GOPRO_FILES
 
@@ -199,6 +214,9 @@ enum class VideoSize(val label: String) { UHD("4K"), QHD("2.7K"), FHD("1080p"), 
 data class VideoMode(val size: VideoSize, val fps: Int) {
     val label: String get() = "${size.label} · $fps"
 }
+
+/** Where cheap Wi-Fi ELM327 adapters listen: 192.168.0.10, port 35000 (FBBD-15). */
+const val WifiObdAddress = "192.168.0.10:35000"
 
 private const val HighFps = 60
 private const val LowFps = 30
@@ -330,6 +348,8 @@ data class ActiveSession(
     val tiles: List<TrackChannel>,
     /** Sensors recorded with the session: every listed one (FBBD-119). */
     val sensors: List<Equipment> = emptyList(),
+    /** OBD-II adapters the session reads the car with: every listed one, tried in turn (FBBD-121). */
+    val carData: List<Equipment> = emptyList(),
 ) {
     val startProblem: StartProblem? get() = if (gnss == null) StartProblem.NO_GNSS else null
 
@@ -371,6 +391,7 @@ data class Setup(
             cameras = session.cameraIds.mapNotNull { id -> equipment(id)?.takeIf { it.kind == EquipmentKind.CAMERA } },
             tiles = session.tiles.filter { it in channelsFor(gnss) },
             sensors = ofKind(EquipmentKind.SENSOR),
+            carData = ofKind(EquipmentKind.CAR_DATA),
         )
     }
 
@@ -408,7 +429,7 @@ data class Setup(
         return when (model.kind) {
             EquipmentKind.GNSS -> if (active().gnss == null) next.chooseGnss(item.id) else next
             EquipmentKind.CAMERA -> next.useCamera(item.id, true)
-            EquipmentKind.SENSOR -> next
+            EquipmentKind.SENSOR, EquipmentKind.CAR_DATA -> next
         }
     }
 

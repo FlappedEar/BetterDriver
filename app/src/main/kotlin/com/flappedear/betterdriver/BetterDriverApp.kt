@@ -41,6 +41,7 @@ import com.flappedear.betterdriver.recording.GnssSound
 import com.flappedear.betterdriver.recording.SensorRef
 import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
+import com.flappedear.betterdriver.recording.obdAdapterLabel
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTileChoices
@@ -424,6 +425,8 @@ private fun Settings(
     val updates = remember(context) { AppUpdates.get(context) }
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), Sessions.get(context))
     val coach = remember(context) { CoachPrefs.get(context) }
+    val firstAdapter = repo.setup.active().carData.firstOrNull()
+    val obdAdapter = remember(firstAdapter) { obdAdapterLabel(context, firstAdapter) }
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
         debugRows = { DebugLogRows() },
@@ -451,7 +454,8 @@ private fun Settings(
             prefs.updateGnssSound(p.gnssSound)
         },
         onOpenAbout = { nav.navigate(Routes.About) },
-        obdRow = obdRowValue(RecorderClient.get(context).state.obd),
+        obdRow = obdRowValue(RecorderClient.get(context).state.obd, obdAdapter),
+        obdAdapter = obdAdapter,
         onOpenObd = { nav.navigate(Routes.Obd) },
     )
 }
