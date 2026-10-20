@@ -66,15 +66,17 @@ class HeartRateSource internal constructor(
 
     /** The monitor's state for the status strip, or null when stopped. */
     fun status(): HeartRateStatus? {
-        val l = link ?: return null
-        val d = decoder ?: return null
-        val s = sink ?: return null
+        val l = link
+        val d = decoder
+        val s = sink
+        if (l == null || d == null || s == null) return null
         val state = when (l.state.value) {
             is LinkState.Streaming -> if (d.noContact) HeartRateLink.NO_CONTACT else HeartRateLink.STREAMING
             is LinkState.Reconnecting -> HeartRateLink.LOST
             else -> HeartRateLink.CONNECTING
         }
-        val bpm = d.lastBpm?.takeIf { state == HeartRateLink.STREAMING && s.nowMicros() - d.lastBpmMicros <= FreshMicros }
+        val fresh = s.nowMicros() - d.lastBpmMicros <= FreshMicros
+        val bpm = d.lastBpm?.takeIf { state == HeartRateLink.STREAMING && fresh }
         return HeartRateStatus(state, bpm)
     }
 
