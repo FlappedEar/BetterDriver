@@ -52,9 +52,11 @@ import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.mapUi
 import com.flappedear.betterdriver.feature.analysis.qualityUi
+import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.feature.analysis.withQuality
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.qualityReports
@@ -92,6 +94,8 @@ private class Loaded(
     val coached: CoachedSession = CoachedSession(),
     /** Where the session came from when imported from another app's file (FBBD-181); null when recorded here. */
     val origin: String? = null,
+    /** The heart-rate strap's name (FBBD-225), from its event; null without one. */
+    val heartRateDevice: String? = null,
 ) {
     val title: String get() = track.displayName
 }
@@ -272,6 +276,7 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
         null
     }
     val ui = analysisUi(loaded.title, analysis, comparison)
+        ?.let { withHeartRate(it, analysis, loaded.session, loaded.heartRateDevice) }
         ?: return AnalysisState.Unavailable(
             "No lap counts: every lap has a GPS gap or is not a full lap.",
             acceleration = loaded.whole.acceleration,
@@ -366,7 +371,11 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
     val coached = CoachedSession(CoachEvents.focusSource(data.events), CoachEvents.cuesByCorner(data.events))
     val whole = WholeSession(acceleration, gForces)
-    val loaded = Loaded(session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info))
+    val strap = data.events.firstOrNull { it.kind == HeartRateLogIds.DEVICE }
+        ?.text?.substringAfter("name=", "")?.ifEmpty { null }
+    val loaded = Loaded(
+        session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info), strap,
+    )
     // No corners to pick where the coach does not run (point-to-point tracks, FBBD-155).
     val candidates = if (coaches(track)) coachCandidates(analysis, id) else emptyMap()
     return Load.Done(loaded, candidates, lapVideo(sessions, data, track))
