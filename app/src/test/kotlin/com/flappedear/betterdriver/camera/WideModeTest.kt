@@ -77,6 +77,16 @@ class WideModeTest {
     }
 
     @Test
+    fun relayedFramesGoToTheEncoderOnTheMonotonicClock() {
+        // The phone slept 5 h since boot: boot time is that far ahead of the monotonic clock.
+        val mono = 300_000_000_000L
+        val boot = mono + 18_000_000_000_000L
+        assertEquals("a boot-time frame 120 ms old", mono - 120_000_000, monotonic(boot - 120_000_000, boot, mono))
+        assertEquals("a monotonic frame stays", mono - 120_000_000, monotonic(mono - 120_000_000, boot, mono))
+        assertEquals("never slept: either clock", mono - 5, monotonic(mono - 5, mono, mono))
+    }
+
+    @Test
     fun skippedSensorFramesAreCountedFromTheGap() {
         // Arek's Pixel 6 at 2.7K·60 (2026-10-19): a 16.814 ms sensor frame time.
         val frame = 16_814_000L

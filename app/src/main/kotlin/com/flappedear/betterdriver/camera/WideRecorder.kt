@@ -10,6 +10,7 @@ import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.Looper
@@ -23,8 +24,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Records the phone's back camera at a frame size CameraX has no preset for, such as 2688×1512 for
- * 2.7K (FBBD-239): Camera2 draws straight into [WideEncoder]'s video encoder, which writes the MP4s
- * itself. CameraX must have nothing bound while it runs. Until 0.4.0 a MediaRecorder took the frames;
+ * 2.7K (FBBD-239): Camera2 draws into [WideEncoder]'s video encoder through a [FrameRelay], and the
+ * encoder writes the MP4s itself. CameraX must have nothing bound while it runs. Until 0.4.0 a MediaRecorder took the frames;
  * it kept only ~50 of 60 fps (FBBD-246) and failed handing over to the next file at 3.8 GB (FBBD-248).
  *
  * A file that nears [WideTarget.maxFileBytes] hands over to the next one ([Listener.nextFile]) at a
@@ -69,6 +70,7 @@ internal class WideRecorder(
     private val background = Handler(thread.looper)
 
     private var encoder: WideEncoder? = null
+    private var relay: FrameRelay? = null
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var file: File? = null
@@ -210,7 +212,7 @@ internal class WideRecorder(
             }
             device = camera
             try {
-                createSession(camera, e.surface)
+                createSession(camera, cameraSurface(e))
             } catch (x: Exception) {
                 // A camera lost or a surface refused here throws instead of calling onConfigureFailed.
                 DebugLog.w(Tag, "capture session not created", x)
@@ -249,6 +251,24 @@ internal class WideRecorder(
                 return
             }
             finish(error = "camera error $code", full = false)
+        }
+    }
+
+    /**
+     * Where the camera draws: a [FrameRelay] in front of the encoder (FBBD-246), or the encoder's own
+     * surface before Android 10 or when the relay cannot be set up.
+     */
+    @Suppress("TooGenericExceptionCaught") // ImageReader and ImageWriter refuse a size or format at runtime.
+    private fun cameraSurface(e: WideEncoder): Surface {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return e.surface
+        return try {
+            FrameRelay(e.surface, target.width, target.height).also {
+                relay = it
+                DebugLog.i(Tag, "camera frames through a relay")
+            }.surface
+        } catch (x: Exception) {
+            DebugLog.w(Tag, "no relay: the camera draws straight into the encoder", x)
+            e.surface
         }
     }
 
@@ -305,13 +325,20 @@ internal class WideRecorder(
         val e = encoder
         val s = session
         val d = device
+        val r = relay
         encoder = null
         session = null
         device = null
+        relay = null
         background.post {
             runCatching { s?.stopRepeating() }
             runCatching { s?.close() }
             runCatching { d?.close() }
+            // The relay goes before the encoder's surface does; what it handed on is still encoded.
+            r?.let {
+                it.close()
+                DebugLog.i(Tag, "camera frames ${it.counts()}")
+            }
             // Frames still on their way are encoded before the end of the stream.
             val closed = e?.stop()
             val last = closed?.file ?: f
