@@ -155,13 +155,19 @@ class SetupTest {
     }
 
     @Test
-    fun phoneOffers27kAt60Only() {
-        // FBBD-239, Arek's pick UI-83 B: 2.7K between 4K and 1080p, at 60 fps only.
+    fun phoneOffersNo27k() {
+        // Arek's pick UI-103 A (2026-10-20, FBBD-246 Won't do): 2.7K is gone from the phone's list.
         assertEquals(
-            listOf("4K · 60", "4K · 30", "2.7K · 60", "1080p · 60", "1080p · 30", "720p · 60", "720p · 30"),
+            listOf("4K · 60", "4K · 30", "1080p · 60", "1080p · 30", "720p · 60", "720p · 30"),
             EquipmentModel.PHONE_CAMERA.videoModes.map { it.label },
         )
         assertEquals(VideoMode(VideoSize.FHD, 60), EquipmentModel.PHONE_CAMERA.defaultVideo)
+    }
+
+    @Test
+    fun aSaved27kPhoneModeBecomes1080p60() {
+        val phone = Equipment("p", EquipmentModel.PHONE_CAMERA, "Phone", video = VideoMode(VideoSize.QHD, 60))
+        assertEquals(VideoMode(VideoSize.FHD, 60), phone.videoMode)
     }
 
     @Test
