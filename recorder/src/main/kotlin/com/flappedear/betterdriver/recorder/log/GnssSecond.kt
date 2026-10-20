@@ -169,6 +169,8 @@ class GnssSecondLog(
         val lon = value(GnssChannels.LON.id)
         val fix = lat != null && lon != null && isFix(lat, lon)
         value(GnssChannels.UTC_MS.id)?.roundToLong()?.let { utc -> receiverTime(b, set.tMicros, utc, drop, fix) }
+        // After the step it ends, and with or without the receiver's time (Codex on #260).
+        if (fix) fixSeen = true
         if (fix && lat != null && lon != null) {
             b.fixes += Triple(lat, lon, value(GnssChannels.SPEED_KMH.id))
             lastFixT?.let { previous -> b.maxGap = maxOf(b.maxGap ?: 0L, set.tMicros - previous) }
@@ -185,7 +187,6 @@ class GnssSecondLog(
         if (previousUtc != null && utc > previousUtc && !drop) {
             step(b, previousUtc, utc - previousUtc, fix && lastUtcFix, preFix = !fixSeen)
         }
-        if (fix) fixSeen = true
         lastUtc = utc
         lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc

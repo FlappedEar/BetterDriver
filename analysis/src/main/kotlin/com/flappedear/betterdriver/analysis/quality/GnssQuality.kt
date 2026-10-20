@@ -177,7 +177,8 @@ private class Gaps(
 
 private fun gaps(s: GnssSamples, acrossDrop: BooleanArray): Gaps {
     val receiverClock = s.utc.count { it != GnssSamples.NoUtc } >= 2
-    val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && (!receiverClock || s.utc[it] != GnssSamples.NoUtc) }
+    // A position without the receiver's time is a fix too (the DIY receiver can send one, Codex on #260).
+    val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) }
     // Each gap with the index of the sample that ends it; without any fix every gap is judged.
     val (beforeFix, all) = steps(s, acrossDrop, receiverClock)
         .partition { (to, _) -> firstFix != null && to <= firstFix }
