@@ -15,6 +15,10 @@ private val UnfinishedLine = Regex("""^(\S+\.mp4): \d+x\d+@\d+ .* error=(.+)$"""
 private val UnopenedLine = Regex("""^(\S+\.mp4) not opened""")
 
 private const val HandoverTag = "WideRecorder"
+private const val HandoverDone = 1
+private const val HandoverNext = 2
+private const val HandoverGap = 3
+private const val HandoverFrame = 4
 private const val HandoverCriterion =
     "each next file starts within 2.5 frame times of the last frame of the full one, every handed-over file " +
         "finished (FBBD-248)"
@@ -38,7 +42,7 @@ internal fun fileHandovers(lines: List<LogLine>): QualityMetric? {
     val own = lines.filter { it.tag == HandoverTag }
     val handovers = own.mapNotNull { l ->
         HandoverLine.find(l.message)?.groupValues?.let { g ->
-            Handover(g[1], g[2], g[3].toLong(), g[4].toLong())
+            Handover(g[HandoverDone], g[HandoverNext], g[HandoverGap].toLong(), g[HandoverFrame].toLong())
         }
     }
     val unopened = own.mapNotNull { UnopenedLine.find(it.message)?.groupValues?.get(1) }
@@ -51,7 +55,7 @@ internal fun fileHandovers(lines: List<LogLine>): QualityMetric? {
     val how = buildString {
         append("${handovers.size} handover(s), gap from the last frame of each full file to the first of the next")
         if (worst != null) {
-            append("; largest ${ms(worst.gapMicros)} ms (frame time ${ms(worst.frameMicros)} ms), ")
+            append("; largest ${msText(worst.gapMicros)} ms (frame time ${msText(worst.frameMicros)} ms), ")
             append("${worst.done} to ${worst.next}")
         }
         if (unfinished.isNotEmpty()) append("; not finished: ${unfinished.joinToString(", ")}")
@@ -65,4 +69,4 @@ internal fun fileHandovers(lines: List<LogLine>): QualityMetric? {
     )
 }
 
-private fun ms(micros: Long) = "%.1f".format(java.util.Locale.ROOT, micros / MicrosPerMilli.toDouble())
+private fun msText(micros: Long) = "%.1f".format(java.util.Locale.ROOT, micros / MicrosPerMilli.toDouble())

@@ -30,6 +30,7 @@ private val PlainStops = setOf("user", "file_full")
  * sample: the part of the session video should cover. [frames] are the files whose frames were counted;
  * [handover] is the phone's file handover check from the log ([fileHandovers]).
  */
+@Suppress("LongParameterList") // Each is a part of the session the video is checked against.
 internal fun videoSection(
     events: List<RecorderEvent>,
     clips: List<QualityClip>,
