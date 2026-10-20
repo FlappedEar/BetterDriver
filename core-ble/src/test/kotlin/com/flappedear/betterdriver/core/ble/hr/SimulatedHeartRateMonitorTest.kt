@@ -123,7 +123,8 @@ class SimulatedHeartRateMonitorTest {
         assertEquals(1, kinds.count { it == HeartRateEvents.DEVICE })
         assertEquals(2, kinds.count { it == HeartRateEvents.CONNECTED })
         assertEquals(1, kinds.count { it == HeartRateEvents.DISCONNECTED })
-        assertEquals(listOf("lost", "detected"), data.events.filter { it.kind == HeartRateEvents.CONTACT }.map { it.text })
+        val contact = data.events.filter { it.kind == HeartRateEvents.CONTACT }.map { it.text }
+        assertEquals(listOf("lost", "detected"), contact)
         assertTrue(data.events.first { it.kind == HeartRateEvents.DEVICE }.text.endsWith("name=Polar H10 1234"))
 
         val vbo = ByteArrayOutputStream().also { VboExporter.export(data, it) }.toString(Charsets.UTF_8)
