@@ -119,7 +119,7 @@ class ElmPollerTest {
     }
 
     @Test
-    fun `ignition off: the car does not answer the bitmask`() {
+    fun `ignition off, the car does not answer the bitmask`() {
         val answers = car()
         answers["0100"] = "SEARCHING...\rUNABLE TO CONNECT"
         val got = Recorded()
