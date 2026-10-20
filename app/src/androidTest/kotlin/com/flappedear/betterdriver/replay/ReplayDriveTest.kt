@@ -44,7 +44,8 @@ import java.io.File
  * 29 Aug 2026 sessions, FBBD-254), replayed through the whole app on the emulator, recorder, live timing,
  * coach process and voice, with the coach at Full in the language replay-drive.sh asks for. Then the
  * app's continuous log is checked as his shared logs are: the drive checks (FBBD-183) and what the coach
- * said lap by lap (FBBD-244, FBBD-242, FBBD-243, FBBD-245). Run in phases by .github/scripts/replay-drive.sh, which lets the drive run in between.
+ * said lap by lap (FBBD-244, FBBD-242, FBBD-243, FBBD-245). Run in phases by
+ * .github/scripts/replay-drive.sh, which lets the drive run in between.
  *
  * What only his phone and car can show (camera frame rate, RaceBox link, headset delay) is not checked.
  */
