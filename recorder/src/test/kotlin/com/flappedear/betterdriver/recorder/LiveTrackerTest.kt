@@ -247,7 +247,10 @@ class LiveTrackerTest {
         // Coolant every 5 s (a slow PID), heart rate every second.
         tracker.onSamples(SampleSet(0, listOf(ChannelValue(300, 88.0))))
         tracker.onSamples(SampleSet(5 * MicrosPerSecond, listOf(ChannelValue(300, 90.0))))
-        for (s in 0..5L) tracker.onSamples(SampleSet(s * MicrosPerSecond, listOf(ChannelValue(400, 120.0 + s), ChannelValue(401, 500.0))))
+        for (s in 0..5L) {
+            val beat = listOf(ChannelValue(400, 120.0 + s), ChannelValue(401, 500.0))
+            tracker.onSamples(SampleSet(s * MicrosPerSecond, beat))
+        }
         now = 5 * MicrosPerSecond
         assertEquals(mapOf("obd_coolant_temp" to 90.0, "heart_rate" to 125.0), tracker.snapshot().channels)
 

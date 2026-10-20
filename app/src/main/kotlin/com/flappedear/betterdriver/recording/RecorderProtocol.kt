@@ -205,9 +205,9 @@ internal object RecorderProtocol {
     }
 
     private fun channels(b: Bundle): Map<String, Double> {
-        val names = b.getStringArray(CHANNEL_NAMES) ?: return emptyMap()
-        val values = b.getDoubleArray(CHANNEL_VALUES) ?: return emptyMap()
-        if (names.size != values.size) return emptyMap()
+        val names = b.getStringArray(CHANNEL_NAMES)
+        val values = b.getDoubleArray(CHANNEL_VALUES)
+        if (names == null || values == null || names.size != values.size) return emptyMap()
         return names.indices.associate { names[it] to values[it] }
     }
 

@@ -494,7 +494,10 @@ data class Setup(
     fun chooseTiles(tiles: List<TrackChannel>): Setup =
         copy(session = session.copy(tiles = tiles.distinct().take(MaxTiles)))
 
-    /** The track screen's tiles: as chosen, or for a setup saved before FBBD-262 built from its [SessionChoice.tiles]. */
+    /**
+     * The track screen's tiles: as chosen, or for a setup saved before FBBD-262 built from its
+     * [SessionChoice.tiles].
+     */
     val trackScreens: TrackScreens get() = session.screens ?: TrackScreens.from(session.tiles)
 
     /** Sets one track-screen tile (FBBD-262); null empties it. */

@@ -61,11 +61,17 @@ internal class TileSources(
 internal fun trackTile(id: String?, s: TileSources): TrackTile? {
     if (id == null) return null
     val ch = channel(id)
+    val label = if (id == TileIds.LAP_NUMBER && s.timing?.pointToPoint == true) "Run" else ch.label
+    return TrackTile(label, tileValue(ch, s) ?: NoTileValue, ch.unit, id = id, hasData = hasData(id, s))
+}
+
+/** The channel's value now as the tile shows it, or null when it has none. */
+private fun tileValue(ch: TileChannel, s: TileSources): String? {
     val live = s.live
     val timing = s.timing
     // The receiver's last speed stays known after the fix is lost; it is not the car's speed now.
     val fix = live?.takeIf { it.gnss == GnssState.Ok }
-    val value: String? = when (id) {
+    return when (val id = ch.id) {
         TileIds.SPEED -> fix?.speedKmh?.roundToInt()?.toString()
         TileIds.G -> live?.gCombined?.let { String.format(Locale.ROOT, "%.2f", it) }
         TileIds.SATELLITES -> fix?.sats?.toString()
@@ -77,8 +83,6 @@ internal fun trackTile(id: String?, s: TileSources): TrackTile? {
         TileIds.LAP_NUMBER -> timing?.lapNumber?.takeIf { it > 0 }?.toString()
         else -> live?.channels?.get(id)?.let { v -> if (v.isFinite()) formatValue(v, ch.unit) else null }
     }
-    val label = if (id == TileIds.LAP_NUMBER && timing?.pointToPoint == true) "Run" else ch.label
-    return TrackTile(label, value ?: NoTileValue, ch.unit, id = id, hasData = hasData(id, s))
 }
 
 /**

@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -188,59 +190,62 @@ fun TrackScreenContent(
             } else {
                 StatusStrip(state.status, state.recordingTime, top, page = page, pages = TrackPages)
             }
-            val coach = @Composable {
-                CoachLine(
-                    state.coachCorner,
-                    state.coachCue,
-                    Modifier.fillMaxWidth().height(CoachHeight).testTag(TrackSlots.Coach),
-                    praise = state.coachPraise,
-                )
-            }
+            val coach = Modifier.fillMaxWidth().height(CoachHeight).testTag(TrackSlots.Coach)
             if (page == 0) {
-                Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(Gap)) {
-                    DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Delta))
-                    LapTimes(
-                        state.lapNumber,
-                        state.lapMillis,
-                        state.lastMillis,
-                        state.bestMillis,
-                        Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
-                    )
-                }
-                coach()
-                val twoRows = window >= TwoRowsMinHeight
-                val height = if (twoRows) PanelHeight else OneRowHeight
-                TilePanel(
-                    state.tiles,
-                    MainColumns,
-                    if (twoRows) MainRows else 1,
-                    height,
-                    MainValueSize,
-                    TrackSlots::tile,
-                    Modifier.fillMaxWidth().height(height).testTag(TrackSlots.Panel),
-                    onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } },
-                )
+                MainPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } })
             } else {
-                // The status strip and the coach line stay; the tiles take the rest (UI-121 B).
-                val editing = onHoldTile != null
-                if (shownRows(state.secondTiles, SecondColumns, SecondRows, editing).isEmpty()) {
-                    Spacer(Modifier.fillMaxWidth().weight(1f))
-                } else {
-                    TilePanel(
-                        state.secondTiles,
-                        SecondColumns,
-                        SecondRows,
-                        window - TopHeight - CoachHeight - Gap * 2,
-                        SecondValueSize,
-                        TrackSlots::secondTile,
-                        Modifier.fillMaxWidth().weight(1f).testTag(TrackSlots.Second),
-                        onHoldTile?.let { hold -> { slot: Int -> hold(1, slot) } },
-                    )
-                }
-                coach()
+                SecondPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(1, slot) } })
             }
         }
     }
+}
+
+/** Delta and lap times, the coach line, then two rows of tiles (UI-120 C). */
+@Composable
+private fun ColumnScope.MainPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
+    Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(Gap)) {
+        DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Delta))
+        LapTimes(
+            state.lapNumber,
+            state.lapMillis,
+            state.lastMillis,
+            state.bestMillis,
+            Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
+        )
+    }
+    CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    val twoRows = window >= TwoRowsMinHeight
+    val height = if (twoRows) PanelHeight else OneRowHeight
+    TilePanel(
+        state.tiles,
+        MainColumns,
+        if (twoRows) MainRows else 1,
+        height,
+        MainValueSize,
+        TrackSlots::tile,
+        Modifier.fillMaxWidth().height(height).testTag(TrackSlots.Panel),
+        onHoldTile,
+    )
+}
+
+/** The second screen: the status strip and the coach line stay; the tiles take the rest (UI-121 B). */
+@Composable
+private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
+    if (shownRows(state.secondTiles, SecondColumns, SecondRows, onHoldTile != null).isEmpty()) {
+        Spacer(Modifier.fillMaxWidth().weight(1f))
+    } else {
+        TilePanel(
+            state.secondTiles,
+            SecondColumns,
+            SecondRows,
+            window - TopHeight - CoachHeight - Gap * 2,
+            SecondValueSize,
+            TrackSlots::secondTile,
+            Modifier.fillMaxWidth().weight(1f).testTag(TrackSlots.Second),
+            onHoldTile,
+        )
+    }
+    CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
 }
 
 private val Gap = 6.dp

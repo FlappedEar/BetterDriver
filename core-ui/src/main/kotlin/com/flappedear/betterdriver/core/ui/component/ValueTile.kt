@@ -54,11 +54,9 @@ fun ValueTile(
         ValueState.Critical -> c.onLoss
     }
     val bg = if (state == ValueState.Critical) c.loss else c.surface
-    val valueColor = when (state) {
-        ValueState.Normal -> if (dim) c.textDim else c.text
-        ValueState.Cold -> c.cold
-        ValueState.Warning -> c.warning
-        ValueState.Critical -> c.onLoss
+    val valueColor = when {
+        state == ValueState.Normal && dim -> c.textDim
+        else -> stripe ?: c.text
     }
     val labelColor = if (state == ValueState.Critical) c.onLoss else c.textDim
     Row(modifier.clip(RoundedCornerShape(8.dp)).background(bg)) {

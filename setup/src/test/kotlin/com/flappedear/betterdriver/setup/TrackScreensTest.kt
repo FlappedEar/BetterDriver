@@ -37,7 +37,10 @@ class TrackScreensTest {
     @Test
     fun `short or unknown lists read as full screens and survive a save`() {
         val screens = TrackScreens(main = listOf("speed", "some_future_channel"), second = emptyList())
-        assertEquals(listOf("speed", "some_future_channel") + List(MaxMainTiles - 2) { null }, screens.tiles(TrackPage.MAIN))
+        assertEquals(
+            listOf("speed", "some_future_channel") + List(MaxMainTiles - 2) { null },
+            screens.tiles(TrackPage.MAIN),
+        )
         val s = Setup().copy(session = SessionChoice(screens = screens))
         assertEquals(s, SetupJson.decode(SetupJson.encode(s)))
     }
