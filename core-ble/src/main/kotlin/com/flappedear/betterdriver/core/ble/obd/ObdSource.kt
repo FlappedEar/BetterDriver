@@ -103,8 +103,8 @@ class ObdSource(
             }
             if (!running) break
             // A connection that opened and ended is retried soon; no adapter at all backs off.
-            if (reason == null) failures++ else failures = 0
-            sleep(RetryMs[minOf(failures, RetryMs.size - 1)])
+            failures = if (reason == null) failures + 1 else 0
+            sleep(RetryMs[(failures - 1).coerceIn(0, RetryMs.size - 1)])
         }
         DebugLog.i(Tag, "reader stopped")
     }
