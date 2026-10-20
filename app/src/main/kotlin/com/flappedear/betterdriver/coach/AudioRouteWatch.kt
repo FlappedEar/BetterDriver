@@ -60,11 +60,15 @@ internal class AudioRouteWatch(
         audio?.registerAudioDeviceCallback(changed, handler)
     }
 
-    /** Watches a session measured on the output routed now, with pre-rendered [clips] on or off. */
-    fun watch(clips: Boolean) {
-        watched = Watched(clips, outputs.device()?.id)
+    /**
+     * Watches a session with pre-rendered [clips] on or off, whose delays were [measured] at its start
+     * on the output routed now. If not (the route changed while measuring), the output is measured again.
+     */
+    fun watch(clips: Boolean, measured: Boolean) {
+        watched = Watched(clips, if (measured) outputs.device()?.id else NotMeasured)
         handler.removeCallbacks(poll)
         handler.postDelayed(poll, PollMillis)
+        if (!measured) settle()
     }
 
     fun shutdown() {
@@ -89,6 +93,8 @@ internal class AudioRouteWatch(
         w.deviceId = device?.id
         val now = AudioOutputs.typeOf(device)
         DebugLog.i(Tag, "audio output now $now${outputs.headset()?.let { " ($it)" }.orEmpty()}, measuring its delay")
+        // Until it is measured, cues are timed for what is known of the new output, as their log says.
+        onMeasured(Remeasured(now, w.clips, null, null))
         probeHandler.post {
             val live = OutputDelayProbe.probe()
             val clip = if (w.clips) OutputDelayProbe.probe(lowLatency = true) else null
@@ -99,6 +105,9 @@ internal class AudioRouteWatch(
     private companion object {
         const val Tag = "AudioRoute"
         const val SettleMillis = 1_500L
+
+        /** No device has this id: the output routed at the start was not measured. */
+        const val NotMeasured = -1
 
         /** How often the route is checked besides device events: a switch between connected devices has none. */
         const val PollMillis = 5_000L
