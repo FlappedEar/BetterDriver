@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -148,6 +149,8 @@ private fun Ready(
                     // What to work on next comes first (FBBD-20): the answer the session is analysed for.
                     Focus(ui, compare, layout, width)
                     Summary(ui, width, optimalVideo)
+                    // Heart rate under the lap times, only when the session recorded it (UI-107 A, UI-109).
+                    ui.heartRate?.let { HeartRateCard(it, width) }
                     // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
                     // so the next focus and the best lap both stay on the first screen of a phone on its side.
                     CoachingHistory(ui.coaching, width)
@@ -338,11 +341,35 @@ private fun inBand(band: CornerBand, meters: Double) = if (band.endMeters >= ban
     meters >= band.startMeters || meters <= band.endMeters
 }
 
+/** The session's heart rate (FBBD-225, UI-107 A): average, highest and lowest. */
+@Composable
+private fun HeartRateCard(hr: HeartRateUi, modifier: Modifier) {
+    Card(modifier) {
+        TrackLabel(hr.device?.let { "Heart rate · $it" } ?: "Heart rate")
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            Figure("Average", "${hr.averageBpm}", "bpm", TrackTheme.colors.text, Modifier.weight(1f), HeartRateSize)
+            Figure("Max", "${hr.maxBpm}", "bpm", TrackTheme.colors.text, Modifier.weight(1f), HeartRateSize)
+            Figure("Min", "${hr.minBpm}", "bpm", TrackTheme.colors.text, Modifier.weight(1f), HeartRateSize)
+        }
+        Dim("Whole session, ${hr.minutes} min")
+    }
+}
+
+private val HeartRateSize = 22.dp
+
+/** Wide enough for "188 · 199". */
+private val LapHeartRateWidth = 76.dp
+
 @Composable
 private fun Laps(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
     val c = TrackTheme.colors
+    // A heart rate column only when the session recorded heart rate (UI-107 A, UI-109).
+    val heartRate = ui.laps.any { it.heartRate != null }
     Card(modifier) {
-        TrackLabel("Laps · tap one to compare")
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TrackLabel("Laps · tap one to compare", Modifier.weight(1f))
+            if (heartRate) TrackLabel("bpm avg · max")
+        }
         for (lap in ui.laps) {
             val compared = ui.compare?.otherNumber == lap.number
             val counted = lap.deltaSeconds != null
@@ -377,6 +404,14 @@ private fun Laps(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
                     lap.note.isNotEmpty() -> Dim(lap.note, color = c.warning)
                     lap.best -> Dim("Best", color = c.best)
                     lap.deltaSeconds != null -> Text(formatDelta(lap.deltaSeconds), color = c.loss)
+                }
+                if (heartRate) {
+                    Text(
+                        lap.heartRate?.let { "${it.averageBpm} · ${it.maxBpm}" }.orEmpty(),
+                        color = c.textDim,
+                        textAlign = TextAlign.End,
+                        modifier = Modifier.width(LapHeartRateWidth),
+                    )
                 }
             }
         }

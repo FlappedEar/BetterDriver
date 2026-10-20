@@ -6,16 +6,20 @@ import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.confidence.bestGapConfidence
 import com.flappedear.betterdriver.analysis.confidence.lossConfidence
+import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.driving.DrivingStateRun
 import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
 import com.flappedear.betterdriver.analysis.focus.FocusRole
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.heartrate.heartRateStats
+import com.flappedear.betterdriver.analysis.heartrate.lapHeartRates
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /** What the analysis screen shows while it loads, when it cannot, and when it can. */
@@ -49,7 +53,19 @@ data class LapRow(
     val best: Boolean,
     /** Why the lap is not counted, or empty. */
     val note: String,
+    /** The lap's heart rate (FBBD-225); null when none was recorded during it. */
+    val heartRate: LapHeartRate? = null,
 )
+
+/** A lap's average and highest heart rate, beats per minute (UI-107 A). */
+data class LapHeartRate(val averageBpm: Int, val maxBpm: Int)
+
+/**
+ * The session's heart rate (FBBD-225, UI-107 A): average, highest and lowest, from the strap named
+ * [device] (null when the session does not name it), over [minutes] of heart rate. Only a session
+ * that recorded heart rate has one (UI-109).
+ */
+data class HeartRateUi(val device: String?, val averageBpm: Int, val maxBpm: Int, val minBpm: Int, val minutes: Int)
 
 /** One corner or straight of the theoretical best, with the compared lap's time through it. */
 data class SectorRow(
@@ -229,6 +245,8 @@ data class AnalysisUi(
     val sources: AnalysisProvenance = AnalysisProvenance(),
     /** The whole session's G-G diagram; null without movement. */
     val gForces: GgTrace? = null,
+    /** The session's heart rate; null when it recorded none. */
+    val heartRate: HeartRateUi? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */
@@ -320,6 +338,24 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         realisticLaps = realistic?.laps.orEmpty(),
     )
 }
+
+/**
+ * [ui] with the heart rate [session] recorded (FBBD-225): the whole session's and each lap's.
+ * [device] is the strap's name. A session or lap without heart rate shows none (UI-109).
+ */
+fun withHeartRate(ui: AnalysisUi, analysis: SessionAnalysis, session: TelemetrySession, device: String?): AnalysisUi {
+    val whole = heartRateStats(session) ?: return ui
+    val laps = lapHeartRates(session, analysis.laps.timedLaps)
+    val minutes = ((whole.lastSeconds - whole.firstSeconds) / SecondsPerMinute).roundToInt().coerceAtLeast(1)
+    return ui.copy(
+        heartRate = HeartRateUi(device, whole.averageBpm, whole.maxBpm, whole.minBpm, minutes),
+        laps = ui.laps.map { row ->
+            row.copy(heartRate = laps.getOrNull(row.index)?.let { LapHeartRate(it.averageBpm, it.maxBpm) })
+        },
+    )
+}
+
+private const val SecondsPerMinute = 60.0
 
 /** Segment ids of the session's corners. */
 private fun cornerIds(analysis: SessionAnalysis): Set<String> =

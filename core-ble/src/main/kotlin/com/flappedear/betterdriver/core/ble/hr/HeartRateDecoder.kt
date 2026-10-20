@@ -10,7 +10,7 @@ import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 object HeartRateChannels {
     const val SOURCE = "heart_rate"
 
-    val HEART_RATE = ChannelDef(HeartRateLogIds.CHANNEL, "heart_rate", "bpm", SOURCE, 0)
+    val HEART_RATE = ChannelDef(HeartRateLogIds.CHANNEL, HeartRateLogIds.NAME, "bpm", SOURCE, 0)
 
     /** One value per beat, stamped at the beat (see [HeartRateDecoder]). */
     val RR_INTERVAL = ChannelDef(401, "hr_rr_interval", "ms", SOURCE, 1)

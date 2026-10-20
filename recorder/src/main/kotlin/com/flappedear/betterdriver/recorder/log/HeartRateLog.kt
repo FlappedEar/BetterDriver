@@ -11,6 +11,9 @@ object HeartRateLogIds {
     /** core-ble's HeartRateChannels.HEART_RATE. */
     const val CHANNEL = 400
 
+    /** That channel's name, as the session, the VBO export and the analysis know it. */
+    const val NAME = "heart_rate"
+
     /** core-ble's HeartRateEvents.DEVICE: "address=<address> name=<name>", once at start. */
     const val DEVICE = "hr_device"
 
