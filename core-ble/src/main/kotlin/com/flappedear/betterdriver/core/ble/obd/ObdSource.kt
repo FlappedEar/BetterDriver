@@ -39,12 +39,14 @@ private const val ObdDecimals = 2
  * touches the rest of the session.
  *
  * Connects, drops and the per-channel rates go to the session events and the app log (tag "Obd");
- * the running source's [status] is what the OBD page shows during a session (FBBD-261).
+ * the running source's [status] is what the OBD page shows during a session (FBBD-261). [watch]
+ * reports Wi-Fi and Bluetooth coming back, so a lost adapter is tried again at once (FBBD-271).
  */
 class ObdSource(
     private val targets: () -> List<ObdTarget>,
     private val profile: CarProfile = CarProfile.Generic,
     private val fallback: () -> List<ObdTarget> = { emptyList() },
+    private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
 ) : DataSource {
     override val name = "obd"
 
@@ -54,7 +56,7 @@ class ObdSource(
     fun status(): ObdStatus? = link?.status()
 
     override fun start(sink: SampleSink) {
-        val l = ObdLink(targets, Listener(sink), profile, fallback = fallback)
+        val l = ObdLink(targets, Listener(sink), profile, fallback = fallback, watch = watch)
         link = l
         current = this
         l.start()

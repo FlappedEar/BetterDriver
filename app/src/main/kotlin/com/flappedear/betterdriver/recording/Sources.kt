@@ -158,7 +158,7 @@ internal object Sources {
         val obd = if (gnss.demo) {
             emptyList()
         } else {
-            listOf(ObdSource({ obdTargets(app) }, fallback = ObdLeScan(app)::targets))
+            listOf(ObdSource({ obdTargets(app) }, fallback = ObdLeScan(app)::targets, watch = { obdWatch(app, it) }))
         }
         return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }

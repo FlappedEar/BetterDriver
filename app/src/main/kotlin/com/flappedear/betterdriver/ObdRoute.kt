@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.core.ble.obd.ObdLeScan
 import com.flappedear.betterdriver.core.ble.obd.ObdLink
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.obdTargets
+import com.flappedear.betterdriver.recording.obdWatch
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
 import kotlinx.coroutines.delay
@@ -32,7 +33,12 @@ internal fun ObdRoute(recorder: RecorderClient, onBack: () -> Unit) {
             null
         } else {
             val app = context.applicationContext
-            ObdLink(targets = { obdTargets(app) }, owner = "page", fallback = ObdLeScan(app)::targets)
+            ObdLink(
+                targets = { obdTargets(app) },
+                owner = "page",
+                fallback = ObdLeScan(app)::targets,
+                watch = { obdWatch(app, it) },
+            )
         }
     }
     DisposableEffect(link) {

@@ -142,7 +142,13 @@ class BleSerialConnection(
         while (pending && !reported) {
             val left = (deadline - System.nanoTime()) / NanosPerMs
             if (left <= 0) return "write not acknowledged in $writeTimeoutMs ms"
-            lock.wait(left)
+            try {
+                lock.wait(left)
+            } catch (_: InterruptedException) {
+                // Stopping a session interrupts the OBD thread; a write then fails, never crashes (FBBD-269).
+                Thread.currentThread().interrupt()
+                return "interrupted"
+            }
         }
         return ended ?: if (failed) "write failed" else null
     }
