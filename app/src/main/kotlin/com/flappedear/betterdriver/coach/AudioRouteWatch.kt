@@ -18,10 +18,11 @@ internal class Remeasured(val output: String, val clips: Boolean, val live: Prob
 }
 
 /**
- * Watches the coach voice's output during a session (FBBD-255): when it changes, such as a headset
- * connected after the session's start, the new output's delay is measured and handed to [onMeasured]
- * on [handler]'s thread. Measuring blocks for a second or more, so it runs on a thread of its own.
- * Each change goes in the continuous log.
+ * Watches the coach voice's output during a session (FBBD-255): when the device it is routed to
+ * changes, such as a headset connected after the session's start or the route switched with every
+ * device still connected, the new output's delay is measured and handed to [onMeasured] on
+ * [handler]'s thread. Checked when devices connect or go, and every few seconds besides. Measuring
+ * blocks for a second or more, so it runs on a thread of its own. Each change goes in the continuous log.
  */
 internal class AudioRouteWatch(
     context: Context,
@@ -36,8 +37,8 @@ internal class AudioRouteWatch(
     private val probeThread = HandlerThread("coach-probe").apply { start() }
     private val probeHandler = Handler(probeThread.looper)
 
-    /** The session watched and the output last measured for it. [handler]'s thread only. */
-    private class Watched(val clips: Boolean, var output: String)
+    /** The session watched and the device last measured for it, by id. [handler]'s thread only. */
+    private class Watched(val clips: Boolean, var deviceId: Int?)
 
     private var watched: Watched? = null
 
@@ -47,19 +48,29 @@ internal class AudioRouteWatch(
         override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = settle()
     }
     private val check = Runnable { check() }
+    private val poll = object : Runnable {
+        override fun run() {
+            if (watched == null) return
+            check()
+            handler.postDelayed(this, PollMillis)
+        }
+    }
 
     init {
         audio?.registerAudioDeviceCallback(changed, handler)
     }
 
-    /** Watches a session whose delays were measured on [output], with pre-rendered [clips] on or off. */
-    fun watch(clips: Boolean, output: String) {
-        watched = Watched(clips, output)
+    /** Watches a session measured on the output routed now, with pre-rendered [clips] on or off. */
+    fun watch(clips: Boolean) {
+        watched = Watched(clips, outputs.device()?.id)
+        handler.removeCallbacks(poll)
+        handler.postDelayed(poll, PollMillis)
     }
 
     fun shutdown() {
         watched = null
         handler.removeCallbacks(check)
+        handler.removeCallbacks(poll)
         audio?.unregisterAudioDeviceCallback(changed)
         probeThread.quitSafely()
     }
@@ -73,9 +84,10 @@ internal class AudioRouteWatch(
 
     private fun check() {
         val w = watched ?: return
-        val now = outputs.output()
-        if (now == w.output) return
-        w.output = now
+        val device = outputs.device()
+        if (device?.id == w.deviceId) return
+        w.deviceId = device?.id
+        val now = AudioOutputs.typeOf(device)
         DebugLog.i(Tag, "audio output now $now${outputs.headset()?.let { " ($it)" }.orEmpty()}, measuring its delay")
         probeHandler.post {
             val live = OutputDelayProbe.probe()
@@ -87,5 +99,8 @@ internal class AudioRouteWatch(
     private companion object {
         const val Tag = "AudioRoute"
         const val SettleMillis = 1_500L
+
+        /** How often the route is checked besides device events: a switch between connected devices has none. */
+        const val PollMillis = 5_000L
     }
 }
