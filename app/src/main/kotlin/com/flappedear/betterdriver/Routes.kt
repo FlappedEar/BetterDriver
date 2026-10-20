@@ -15,6 +15,9 @@ object Routes {
     /** The coach's voice, a list of the phone's voices (FBBD-240, UI-90 A). */
     const val CoachVoice = "settings/coach/voice"
 
+    /** The OBD-II adapter's connection and live values, from Settings › Devices (FBBD-261, UI-104 B). */
+    const val Obd = "settings/obd"
+
     /** About and credits, opened from Settings › App (FBBD-79). */
     const val About = "settings/about"
 
