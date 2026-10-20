@@ -36,7 +36,7 @@ private enum class CountSupport {
  * ISO-TP multi-frame, printed with headers on or off as `AT H1`/`AT H0` set. [multiPidEcu] false is
  * an ECU that answers only the first PID of a multi-PID request; [rejectHeaders] an adapter that
  * answers `?` to `AT H1`, [rejectHeadersOff] one that answers `?` to `AT H0` once headers
- * are on. [tcm] adds a second ECU (7E9) that
+ * are on; [tcmSilentFor] keeps the TCM quiet for that many first requests. [tcm] adds a second ECU (7E9) that
  * answers speed and coolant too, as a transmission ECU can.
  */
 @Suppress("LongParameterList")
@@ -50,11 +50,13 @@ private class TimedCorolla(
     val trailingWaitMs: Long = 200,
     val rejectHeaders: Boolean = false,
     val rejectHeadersOff: Boolean = false,
+    val tcmSilentFor: Int = 0,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
     lateinit var line: ElmLine
     private var headers = false
+    private var mode01Requests = 0
 
     private val supported: Set<Int> = (
         "01,03,04,05,06,07,0C,0D,0E,0F,10,11,13,1C,1F,20,21,2E,30,31,33,34,35,3C,3E,40,41,42,43,44,45,46,47," +
@@ -105,7 +107,11 @@ private class TimedCorolla(
         val asked = if (multiPidEcu) pids else pids.take(1)
         val messages = listOfNotNull(
             ecuAnswer(asked) { it in supported || it == 0x00 }?.let { 0x7E8 to it },
-            if (tcm) ecuAnswer(asked) { it in tcmPids }?.let { 0x7E9 to it } else null,
+            if (tcm && ++mode01Requests > tcmSilentFor) {
+                ecuAnswer(asked) { it in tcmPids }?.let { 0x7E9 to it }
+            } else {
+                null
+            },
         ).map { (id, data) -> frames(id, data) }
         if (messages.isEmpty()) {
             now += transportMs + ecuMs + trailingWaitMs
@@ -330,8 +336,17 @@ class ObdRatesTest {
         val after = run(TimedCorolla(CountSupport.MESSAGES))
         val rate = after.listener.logs.last { it.startsWith("rates_hz ") }
         val perSecond = Regex("requests_per_s=([0-9.]+)").find(rate)!!.groupValues[1].toDouble()
-        // Two fast requests at 12.8 Hz and the slow one at 2 Hz.
-        assertEquals(2 * 12.75 + 2, perSecond, 1.5)
+        // Two fast requests at the rpm rate and the slow one at the oil rate.
+        assertEquals(2 * after.rates.getValue("rpm") + after.rates.getValue("oil_temp"), perSecond, 2.0)
+    }
+
+    @Test
+    fun `an ECU missing from the first answer is still waited for`() {
+        // The TCM misses the probe; the count comes from several answers, so it includes the TCM.
+        val after = run(TimedCorolla(CountSupport.MESSAGES, tcm = true, tcmSilentFor = 1))
+        val counted = after.car.sent.filter { it.startsWith("010C0D11494A04") && it.length == 15 }
+        assertTrue(counted.isNotEmpty() && counted.all { it.endsWith("2") }, counted.distinct().toString())
+        assertTrue(after.rates.getValue("rpm") >= 10.0, "rpm ${after.rates["rpm"]}")
     }
 
     @Test

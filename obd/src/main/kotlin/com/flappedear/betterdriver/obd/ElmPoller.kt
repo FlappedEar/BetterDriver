@@ -40,11 +40,12 @@ interface ObdClock {
  * - [multiPid]: up to six mode 01 PIDs go in one request ([MultiPid]). Polling switches headers on
  *   (`AT H1`) so that answers of several frames from several ECUs can be told apart. Checked once
  *   with the first group; when the car answers only one of its PIDs, every PID is asked on its own.
- * - [responseCount]: once a request has had a full answer, it is sent with how many answers to wait
- *   for (`010C0D11494A042`), so the adapter returns as soon as they are in instead of waiting out
+ * - [responseCount]: once a request has had [LEARN_SAMPLES] full answers, it is sent with the most
+ *   answers they got (`010C0D11494A042`), so the adapter returns as soon as they are in instead of waiting out
  *   its timeout. Whether an adapter counts messages or CAN frames is learned: messages first, and
  *   when that cuts an answer short, frames from then on. An adapter that rejects it (`?`) is asked
- *   without it from then on; a request that then gets no value is learned again without it.
+ *   without it from then on; a request that then gets no value is learned again without it, and
+ *   every [RESAMPLE_EVERY] counted requests one goes without, so a late ECU is still seen.
  *
  * [clock] tells the time and waits.
  */
@@ -60,7 +61,27 @@ class ElmPoller(
     private val responseCount: Boolean = true,
 ) {
     /** What each group's request got without a count, by its lead request. */
-    private class Learned(val messages: Int, val frames: Int, val values: Int)
+    private class Learned {
+        /** The most messages, frames and values any answer without a count got. */
+        var messages = 0
+        var frames = 0
+        var values = 0
+
+        /** Answers without a count so far, and counted requests since the last one. */
+        var samples = 0
+        var counted = 0
+
+        /** Whether the count can be used: learned from enough answers, and not due a fresh one. */
+        val ready: Boolean get() = samples >= LEARN_SAMPLES && counted < RESAMPLE_EVERY
+
+        fun sample(messages: Int, frames: Int, values: Int) {
+            this.messages = maxOf(this.messages, messages)
+            this.frames = maxOf(this.frames, frames)
+            this.values = maxOf(this.values, values)
+            samples++
+            counted = 0
+        }
+    }
 
     private val expected = HashMap<Request, Learned>()
 
@@ -119,7 +140,7 @@ class ElmPoller(
             val messages = messagesOf(text, cmd)
             val got = decode(probe, messages)
             if (got.keys.distinctBy { it.pid }.size > 1) {
-                expected[probe.first().request] = Learned(messages.size, frameCount(text), got.size)
+                expected.getOrPut(probe.first().request) { Learned() }.sample(messages.size, frameCount(text), got.size)
                 return groups
             }
             answer = text?.trim()?.replace('\r', ' ') ?: "nothing"
@@ -233,7 +254,7 @@ class ElmPoller(
         val group = byRequest[request].orEmpty()
         val base = MultiPid.command(group)
         val learned = expected[request]
-        val count = learned?.let { if (countsFrames) it.frames else it.messages }
+        val count = learned?.takeIf { it.ready }?.let { if (countsFrames) it.frames else it.messages }
             ?.takeIf { countOn && it in 1..MAX_COUNT }
         val cmd = if (count != null) base + hex(count, 1) else base
         val sent = clock.nowMs()
@@ -264,10 +285,15 @@ class ElmPoller(
      * [values] values, sent with [count] (null: none) while [learned] was known.
      */
     private fun learn(request: Request, learned: Learned?, count: Int?, text: String?, messages: Int, values: Int) {
+        if (count == null || learned == null) {
+            // Without a count every ECU had its time to answer: the most seen over a few answers,
+            // and again now and then, is what the count waits for, so a slower ECU is not cut off.
+            if (messages > 0) expected.getOrPut(request) { Learned() }.sample(messages, frameCount(text), values)
+            return
+        }
+        learned.counted++
         when {
-            // A full answer: from now on the adapter is told how many answers to wait for.
-            learned == null -> if (messages > 0) expected[request] = Learned(messages, frameCount(text), values)
-            count == null || values >= learned.values -> Unit
+            values >= learned.values -> Unit
             // Cut short by a count of messages where the adapter counts frames.
             !countsFrames && learned.frames > learned.messages -> {
                 countsFrames = true
@@ -341,6 +367,10 @@ class ElmPoller(
 
         /** One frame as printed: hex, after a frame number (`1:`) with headers off. */
         private val DATA_LINE = Regex("""([0-9A-F]:)?[0-9A-F ]+""")
+
+        /** Answers without a count before one is sent, and counted requests between such answers. */
+        private const val LEARN_SAMPLES = 3
+        private const val RESAMPLE_EVERY = 50
 
         /** The ELM327 response count is one hex digit. */
         private const val MAX_COUNT = 0xF
