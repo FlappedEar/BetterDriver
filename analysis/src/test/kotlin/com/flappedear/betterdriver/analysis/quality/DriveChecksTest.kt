@@ -553,17 +553,41 @@ class DriveChecksTest {
         // The pattern of Arek's 2026-10-20 15:22 drive (counts only): 21 samples lost in a row 3.4 s in, an
         // 880 ms gap, with the first fix 40.2 s in. gnss.max_gap failed on it although nothing the app uses
         // was lost; after the fix the longest gap was 80 ms.
+        val r = coldStart((64L..84L).toSet() + (0 until 10).map { 1_207L + it * 600 })
+        val gap = r.metric("gnss.max_gap")
+        assertEquals(Verdict.PASS, gap.verdict, gap.how)
+        assertEquals(80.0, gap.value)
+        assertTrue("from the receiver's first fix" in gap.how, gap.how)
+        val before = r.metric("gnss.max_gap_before_fix")
+        assertEquals(Verdict.INFO, before.verdict)
+        assertEquals(880.0, before.value)
+        assertEquals(0.0, r.metric("gnss.long_gaps").value)
+        val note = r.sections.first { it.title == "GNSS" }.notes.single()
+        assertEquals("gap 880 ms before the first fix, not judged", note.text)
+    }
+
+    @Test
+    fun `a gap after the first fix in the same second is still judged (FBBD-273, Codex on #260)`() {
+        // The fix comes 40.2 s in (sample 1005); six samples lost right after it: a 280 ms step ending in that
+        // same second, after the fix.
+        val r = coldStart((1_006L..1_011L).toSet())
+        val gap = r.metric("gnss.max_gap")
+        assertEquals(Verdict.FAIL, gap.verdict, gap.how)
+        assertEquals(280.0, gap.value)
+        assertEquals(1.0, r.metric("gnss.long_gaps").value)
+    }
+
+    /** Five minutes at 25 Hz without a fix until 40.2 s in, samples [lost] never arriving; its drive checks. */
+    private fun coldStart(lost: Set<Long>): QualityReport {
         line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
         val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
         val fixAt = 40_200_000L
         val stop = 300_000_000L
-        val lostBefore = (64L..84L).toSet()
-        val lostAfter = (0 until 10).map { 1_207L + it * 600 }.toSet()
         var i = 0L
         var t = 0L
         while (t <= stop) {
             val fix = t >= fixAt
-            if (i !in lostBefore && i !in lostAfter) {
+            if (i !in lost) {
                 gnss.onSamples(
                     SampleSet(
                         t + 30_000,
@@ -585,14 +609,6 @@ class DriveChecksTest {
             if (l.tag == CheckLog.GNSS && tl != null) l.copy(utcMillis = start + tl / 1_000) else l
         }
         line(stop, CheckLog.SESSION, "stop t_us=$stop reason=user")
-        val r = driveChecks(lines.toList()).single()
-        val gap = r.metric("gnss.max_gap")
-        assertEquals(Verdict.PASS, gap.verdict, gap.how)
-        assertEquals(80.0, gap.value)
-        assertTrue("from the receiver's first fix" in gap.how, gap.how)
-        val before = r.metric("gnss.max_gap_before_fix")
-        assertEquals(Verdict.INFO, before.verdict)
-        assertEquals(880.0, before.value)
-        assertEquals(0.0, r.metric("gnss.long_gaps").value)
+        return driveChecks(lines.toList()).single()
     }
 }

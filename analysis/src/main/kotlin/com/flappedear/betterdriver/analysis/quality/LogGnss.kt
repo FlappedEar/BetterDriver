@@ -64,8 +64,8 @@ internal fun logGnssSection(
         addAll(logMaxGap(seconds))
         add(
             info(
-                "gnss.long_gaps", "Gaps over 200 ms", afterFix(seconds).sumOf { it.longGaps }.toDouble(), "",
-                Basis.MEASURED, "receiver steps over 200 ms from the receiver's first fix, link drops left out",
+                "gnss.long_gaps", "Gaps over 200 ms", seconds.sumOf { it.longGaps }.toDouble(), "", Basis.MEASURED,
+                "receiver steps over 200 ms, link drops and those before the first fix (FBBD-273) left out",
             ),
         )
         addAll(reconnects(seconds, events, endMicros))
@@ -75,11 +75,7 @@ internal fun logGnssSection(
     // guess: only seconds whose every sample had a fix count, so a second a fix began in is left out.
     val lags = seconds.filter { it.fixes > 0 && it.fixes == it.samples }
         .mapNotNull { g -> g.lagMicros?.let { g.tMicros to it } }
-    val judgedFrom = afterFix(seconds).firstOrNull()?.second ?: Long.MAX_VALUE
-    val notes = seconds.filter { it.longGaps > 0 }.map {
-        val early = if (it.second < judgedFrom) " before the first fix, not judged" else ""
-        QualityNote(it.tMicros, "gap ${it.maxRxGapMillis} ms$early")
-    }
+    val notes = logGapNotes(seconds)
     return QualitySection("GNSS", metrics + clockDrift(lags, endMicros), notes)
 }
 

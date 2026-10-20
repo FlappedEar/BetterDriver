@@ -228,6 +228,11 @@ class SessionQualityTest {
         val never = sessionQuality(session(sets.filter { it.tMicros < fixAt }))
         assertEquals(Verdict.FAIL, never.verdict("gnss.max_gap"))
         assertEquals(880.0, never.value("gnss.max_gap"))
+        // A first fix on the last sample leaves no gap after it to judge (Codex on #260).
+        val last = sets.filter { it.tMicros <= fixAt }
+        val onlyBefore = sessionQuality(session(last))
+        assertEquals(Verdict.NOT_MEASURED, onlyBefore.verdict("gnss.max_gap"))
+        assertNull(onlyBefore.value("gnss.mean_gap"))
     }
 
     @Test

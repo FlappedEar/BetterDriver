@@ -25,6 +25,8 @@ import kotlin.math.roundToLong
  * of (session time − receiver time since the session's start): how far the phone's clock is from the
  * receiver's, plus the shortest delivery delay. [lat], [lon] are the mean fix, [varianceM2] the mean
  * squared distance of the fixes from it; [kmh] the mean speed, [kmhMin] and [kmhMax] its range.
+ * Since 1.3.1 the steps up to the one ending on the session's first fix count in [preFixLongGaps] and
+ * [maxRxPreGapMillis] instead of [longGaps] and [maxRxGapMillis] (FBBD-273); older lines count them in both.
  */
 data class GnssSecond(
     val second: Long,
@@ -49,6 +51,10 @@ data class GnssSecond(
     val firstFixMicros: Long? = null,
     /** Of [missing], single samples lost on a whole second between two fixes: a RaceBox's skip (FBBD-170). */
     val missingOnSecond: Int = 0,
+    /** Steps over 200 ms up to the session's first fix (FBBD-273). */
+    val preFixLongGaps: Int = 0,
+    /** The longest step on the receiver's clock up to the session's first fix (FBBD-273). */
+    val maxRxPreGapMillis: Long? = null,
 ) {
     /** The line's message: `key=value` pairs; a value not known is left out. */
     fun format(): String = listOf(
@@ -58,6 +64,7 @@ data class GnssSecond(
         "lat" to decimal(lat, Degrees), "lon" to decimal(lon, Degrees), "var_m2" to decimal(varianceM2, Variance),
         "kmh" to decimal(kmh, Speed), "kmh_min" to decimal(kmhMin, Speed), "kmh_max" to decimal(kmhMax, Speed),
         "fix_us" to firstFixMicros, "miss_s" to missingOnSecond.takeIf { it > 0 },
+        "long_pre" to preFixLongGaps.takeIf { it > 0 }, "max_rx_pre_ms" to maxRxPreGapMillis,
     ).filter { it.second != null }.joinToString(" ") { (k, v) -> "$k=$v" }
 
     private fun decimal(value: Double?, format: String) = value?.let { String.format(Locale.ROOT, format, it) }
@@ -96,6 +103,8 @@ data class GnssSecond(
                 kmhMax = f["kmh_max"]?.toDoubleOrNull(),
                 firstFixMicros = f["fix_us"]?.toLongOrNull(),
                 missingOnSecond = f["miss_s"]?.toIntOrNull() ?: 0,
+                preFixLongGaps = f["long_pre"]?.toIntOrNull() ?: 0,
+                maxRxPreGapMillis = f["max_rx_pre_ms"]?.toLongOrNull(),
             )
         }
     }
@@ -119,6 +128,9 @@ class GnssSecondLog(
     private var lastUtc: Long? = null
     private var lastUtcFix = false
     private var dropSinceLast = false
+
+    /** A fix has ended a step on the receiver's clock: later steps are judged (FBBD-273). */
+    private var fixSeen = false
 
     /** How often each step length (to 10 ms) was seen, for the usual step. */
     private val stepCounts = HashMap<Long, Int>()
@@ -171,8 +183,9 @@ class GnssSecondLog(
     private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean, fix: Boolean) {
         val previousUtc = lastUtc
         if (previousUtc != null && utc > previousUtc && !drop) {
-            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix)
+            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix, preFix = !fixSeen)
         }
+        if (fix) fixSeen = true
         lastUtc = utc
         lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc
@@ -183,7 +196,7 @@ class GnssSecondLog(
         b.lag = minOf(b.lag ?: lag, lag)
     }
 
-    private fun step(b: Builder, fromUtc: Long, stepMillis: Long, fixBothSides: Boolean) {
+    private fun step(b: Builder, fromUtc: Long, stepMillis: Long, fixBothSides: Boolean, preFix: Boolean) {
         val key = (stepMillis + StepRoundMillis / 2) / StepRoundMillis * StepRoundMillis
         stepCounts[key] = (stepCounts[key] ?: 0) + 1
         val usual = stepCounts.maxBy { it.value }.key.coerceAtLeast(1)
@@ -192,8 +205,14 @@ class GnssSecondLog(
         b.missing += lost
         val skip = lost == 1 && (fixBothSides || skipsWithoutFix)
         if (skip && onWholeSecond(fromUtc + stepMillis / 2, usual)) b.missingOnSecond++
-        if (stepMillis * MicrosPerMilli > LongGapMicros) b.longGaps++
-        b.maxRxGap = maxOf(b.maxRxGap ?: 0L, stepMillis)
+        val long = stepMillis * MicrosPerMilli > LongGapMicros
+        if (preFix) {
+            if (long) b.preFixLongGaps++
+            b.maxRxPreGap = maxOf(b.maxRxPreGap ?: 0L, stepMillis)
+        } else {
+            if (long) b.longGaps++
+            b.maxRxGap = maxOf(b.maxRxGap ?: 0L, stepMillis)
+        }
     }
 
     private fun onWholeSecond(utc: Long, step: Long): Boolean {
@@ -208,6 +227,8 @@ class GnssSecondLog(
         var usual: Long? = null
         var longGaps = 0
         var maxRxGap: Long? = null
+        var preFixLongGaps = 0
+        var maxRxPreGap: Long? = null
         var maxGap: Long? = null
         var firstFix: Long? = null
         var afterDrop = false
@@ -234,7 +255,7 @@ class GnssSecondLog(
                 second, tMicros, samples, fixes.size, missing, usual, longGaps, maxRxGap, maxGap, afterDrop,
                 utcFirst, utcLast, lag, lat, lon, variance,
                 speeds.average().takeIf { speeds.isNotEmpty() }, speeds.minOrNull(), speeds.maxOrNull(), firstFix,
-                missingOnSecond,
+                missingOnSecond, preFixLongGaps, maxRxPreGap,
             )
         }
     }

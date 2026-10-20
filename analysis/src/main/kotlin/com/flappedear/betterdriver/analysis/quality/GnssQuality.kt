@@ -168,7 +168,7 @@ private fun p1Rate(s: GnssSamples, drops: List<Reconnect>): QualityMetric {
  */
 private class Gaps(
     val max: Long,
-    val mean: Double,
+    val mean: Double?,
     val long: List<Pair<Long, Long>>,
     val receiverClock: Boolean,
     val beforeFix: List<Pair<Long, Long>>,
@@ -183,7 +183,7 @@ private fun gaps(s: GnssSamples, acrossDrop: BooleanArray): Gaps {
         .partition { (to, _) -> firstFix != null && to <= firstFix }
         .let { (a, b) -> a.map { (to, gap) -> s.t[to] to gap } to b.map { (to, gap) -> s.t[to] to gap } }
     val max = all.maxOfOrNull { it.second } ?: 0L
-    val mean = if (all.isEmpty()) 0.0 else all.sumOf { it.second }.toDouble() / all.size
+    val mean = if (all.isEmpty()) null else all.sumOf { it.second }.toDouble() / all.size
     val firstFixMicros = firstFix?.let { s.t[it] }
     return Gaps(max, mean, all.filter { it.second > MaxGapMicros }, receiverClock, beforeFix, firstFixMicros)
 }
@@ -216,13 +216,18 @@ private fun gapMetrics(g: Gaps): List<QualityMetric> {
     }
     val how = "between consecutive samples, by $clock"
     val judgedHow = if (g.firstFixMicros == null) how else "$how, from the receiver's first fix"
+    val criterion = "<= 200 ms, link drops left out (FBBD-8)"
+    // Every step was before the first fix or across a link drop: nothing after the fix to judge.
+    val longest = if (g.mean == null && g.firstFixMicros != null) {
+        notMeasured("gnss.max_gap", "Longest gap", criterion, "no gap between samples after the receiver's first fix")
+    } else {
+        val ok = g.max <= MaxGapMicros
+        judged("gnss.max_gap", "Longest gap", millis(g.max), "ms", ok, Basis.MEASURED, criterion, judgedHow)
+    }
     return listOf(
-        judged(
-            "gnss.max_gap", "Longest gap", millis(g.max), "ms", g.max <= MaxGapMicros, Basis.MEASURED,
-            "<= 200 ms, link drops left out (FBBD-8)", judgedHow,
-        ),
+        longest,
         maxGapBeforeFixInfo(g.beforeFix.maxOfOrNull { it.second }?.let(::millis) ?: 0.0, g.firstFixMicros),
-        info("gnss.mean_gap", "Mean gap", g.mean / MicrosPerMilli, "ms", Basis.MEASURED, judgedHow),
+        info("gnss.mean_gap", "Mean gap", g.mean?.div(MicrosPerMilli), "ms", Basis.MEASURED, judgedHow),
         info(
             "gnss.long_gaps", "Gaps over 200 ms", g.long.size.toDouble(), "", Basis.MEASURED,
             "$judgedHow; each listed with its time",
