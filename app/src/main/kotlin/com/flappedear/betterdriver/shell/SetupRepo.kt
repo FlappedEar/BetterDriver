@@ -52,7 +52,7 @@ class SetupRepo private constructor(context: Context) {
      * process restarted mid-session reconnects to the same cameras and tiles. Only read while a
      * session runs; the next START replaces it.
      */
-    private val runningStore = SetupStore(File(files, RunningFileName))
+    private val runningStore = SetupStore(File(files, SessionSetupFile))
     private var running by mutableStateOf(DebugGuards.allowDisk { runningStore.load() })
 
     /** What the running session uses. Falls back to [setup] if no session was ever started. */
@@ -113,7 +113,8 @@ class SetupRepo private constructor(context: Context) {
 
     companion object {
         private const val FileName = "setup.json"
-        private const val RunningFileName = "session-setup.json"
+        /** The setup the running session started with; the recorder reads its OBD-II adapters from it (FBBD-121). */
+        const val SessionSetupFile = "session-setup.json"
         private const val Tag = "SetupRepo"
 
         @Volatile

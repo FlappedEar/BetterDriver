@@ -28,6 +28,7 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
     private val lock = Any()
     private var state = ObdLinkState.Searching
     private var detail = "Looking for the adapter"
+    private var adapterName: String? = null
     private var channels: List<PidChannel> = emptyList()
     private var since = 0L
     private val latest = HashMap<String, Double>()
@@ -40,10 +41,11 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
         clear()
     }
 
-    /** The adapter at [where] accepted the connection. */
-    fun connecting(where: String) = synchronized(lock) {
+    /** The adapter [name] accepted the connection; the page names it while it is connected (UI-106 A). */
+    fun connecting(name: String) = synchronized(lock) {
         state = ObdLinkState.Connecting
-        detail = "Adapter at $where · setting up"
+        detail = "$name · setting up"
+        adapterName = name
         clear()
     }
 
@@ -51,7 +53,7 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
     fun ready(adapter: String, protocol: String, voltage: String?, channels: List<PidChannel>, nowMs: Long) =
         synchronized(lock) {
             state = ObdLinkState.Connected
-            detail = listOfNotNull(adapter, protocolName(protocol), voltage).joinToString(" · ")
+            detail = listOfNotNull(adapterName, adapter, protocolName(protocol), voltage).joinToString(" · ")
             this.channels = channels
             since = nowMs
         }
@@ -88,6 +90,7 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
     }
 
     private fun clear() {
+        if (state == ObdLinkState.Searching) adapterName = null
         channels = emptyList()
         latest.clear()
         arrivals.clear()

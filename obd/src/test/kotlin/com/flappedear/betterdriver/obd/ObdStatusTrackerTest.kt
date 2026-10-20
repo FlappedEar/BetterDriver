@@ -13,7 +13,7 @@ class ObdStatusTrackerTest {
     @Test
     fun `values and rates of a connected car`() {
         val t = ObdStatusTracker(windowMs = 5_000)
-        t.connecting("192.168.0.10:35000")
+        t.connecting("vLinker MC+")
         assertEquals(ObdLinkState.Connecting, t.snapshot(0).state)
         t.ready("ELM327 v1.5", "A6", "12.4V", listOf(rpm, fuel), nowMs = 1_000)
         // RPM every 100 ms for 5 s; fuel level once.
@@ -21,7 +21,7 @@ class ObdStatusTrackerTest {
         t.value(fuel, 62.0, 1_500)
         val s = t.snapshot(6_000)
         assertEquals(ObdLinkState.Connected, s.state)
-        assertEquals("ELM327 v1.5 · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V", s.detail)
+        assertEquals("vLinker MC+ · ELM327 v1.5 · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V", s.detail)
         assertEquals(listOf("rpm", "fuel_level"), s.readings.map { it.id })
         assertEquals(850.0, s.readings[0].value)
         assertEquals(10.0, s.readings[0].hz, 0.01)
