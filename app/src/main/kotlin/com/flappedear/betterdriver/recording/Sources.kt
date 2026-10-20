@@ -13,9 +13,12 @@ import com.flappedear.betterdriver.core.ble.lns.LnsSource
 import com.flappedear.betterdriver.core.ble.nmea.NmeaSource
 import com.flappedear.betterdriver.core.ble.nmea.TcpNetwork
 import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
+import com.flappedear.betterdriver.core.ble.obd.ObdLeScan
 import com.flappedear.betterdriver.core.ble.obd.ObdSource
-import com.flappedear.betterdriver.core.ble.obd.ObdTarget
+import com.flappedear.betterdriver.core.ble.obd.WifiObdTarget
+import com.flappedear.betterdriver.core.ble.obd.pairedObdTargets
 import com.flappedear.betterdriver.core.ble.vbox.VboxSportSource
+import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.setup.Equipment
@@ -151,8 +154,12 @@ internal object Sources {
         // The phone's accelerometer always records: G from a real accelerometer when the receiver's does
         // not match the GPS (FBBD-218). Not with Demo GNSS, whose made-up drive it would not match.
         val phone = if (gnss.demo) emptyList() else listOf(PhoneImuSource(app))
-        // OBD-II over Wi-Fi needs no setup: it records whenever the phone is on the adapter's network.
-        val obd = if (gnss.demo) emptyList() else listOf(ObdSource(targets = { obdTargets(app) }))
+        // OBD-II needs no setup: a paired Bluetooth adapter, the Wi-Fi one, or a Bluetooth LE one nearby.
+        val obd = if (gnss.demo) {
+            emptyList()
+        } else {
+            listOf(ObdSource({ obdTargets(app) }, fallback = ObdLeScan(app)::targets))
+        }
         return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }
 }
@@ -190,15 +197,19 @@ private const val ElmWifiPort = 35_000
 private const val ElmWifiHost = "192.168.0.10"
 
 /**
- * Where a Wi-Fi ELM327 may be (FBBD-15): the Wi-Fi network's gateway, which is the adapter when the
- * phone is on its access point, then the usual 192.168.0.10, both on port 35000. Empty without Wi-Fi.
+ * The OBD-II adapters to try, in order (FBBD-121): paired Bluetooth adapters first, then where a
+ * Wi-Fi ELM327 may be (FBBD-15): the Wi-Fi network's gateway, which is the adapter when the phone is
+ * on its access point, then the usual 192.168.0.10, both on port 35000 (none without Wi-Fi). A
+ * Bluetooth LE adapter that is not paired is found by the fallback scan, [ObdLeScan], only when none
+ * of these answers.
  */
 internal fun obdTargets(context: Context): List<ObdTarget> {
-    val network = wifi(context) ?: return emptyList()
+    val paired = pairedObdTargets(context)
+    val network = wifi(context) ?: return paired
     val cm = context.getSystemService(ConnectivityManager::class.java)
     val gateway = cm?.getLinkProperties(network)?.routes
         ?.firstOrNull { it.isDefaultRoute && it.gateway?.isAnyLocalAddress == false }
         ?.gateway?.hostAddress
     val tcp = onNetwork(network)
-    return listOfNotNull(gateway, ElmWifiHost).distinct().map { ObdTarget(it, ElmWifiPort, tcp) }
+    return paired + listOfNotNull(gateway, ElmWifiHost).distinct().map { WifiObdTarget(it, ElmWifiPort, tcp) }
 }

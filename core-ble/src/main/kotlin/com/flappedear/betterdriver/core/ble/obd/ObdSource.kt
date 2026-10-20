@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.core.ble.obd
 import android.os.SystemClock
 import com.flappedear.betterdriver.obd.CarProfile
 import com.flappedear.betterdriver.obd.ObdStatus
+import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.PidChannel
 import com.flappedear.betterdriver.obd.StandardPids
 import com.flappedear.betterdriver.recorder.ChannelDef
@@ -13,7 +14,10 @@ import com.flappedear.betterdriver.recorder.SampleSink
 
 /** Session events of the OBD-II reader (FBBD-15). */
 object ObdEvents {
-    /** Text "host=<host:port> adapter=<ATI answer> protocol=<ATDPN answer> pids=<supported, hex>". */
+    /**
+     * Text "host=<adapter: host:port, or name and transport> transport=<Wi-Fi|Bluetooth|Bluetooth LE>
+     * adapter=<ATI answer> protocol=<ATDPN answer> pids=<supported, hex>".
+     */
     const val CONNECTED = "obd_connected"
 
     /** Text "reason=<why the connection ended>". */
@@ -28,8 +32,8 @@ private const val ObdChannelOther = 850
 private const val ObdDecimals = 2
 
 /**
- * A Wi-Fi ELM327 OBD-II adapter as a recorder [DataSource] (FBBD-15, first transport for Arek's
- * Wi-Fi adapter). While the session runs an [ObdLink] keeps trying [targets], sets the adapter up,
+ * An ELM327 OBD-II adapter as a recorder [DataSource] (FBBD-15 Wi-Fi, FBBD-121 Bluetooth Classic and
+ * LE). While the session runs an [ObdLink] keeps trying [targets] (then [fallback]), sets the adapter up,
  * discovers the car's mode 01 PIDs and records every one it answers as a channel "obd_<id>" with
  * source "obd" (so its provenance is measured OBD). A lost adapter or a car switched off never
  * touches the rest of the session.
@@ -40,6 +44,7 @@ private const val ObdDecimals = 2
 class ObdSource(
     private val targets: () -> List<ObdTarget>,
     private val profile: CarProfile = CarProfile.Generic,
+    private val fallback: () -> List<ObdTarget> = { emptyList() },
 ) : DataSource {
     override val name = "obd"
 
@@ -49,7 +54,7 @@ class ObdSource(
     fun status(): ObdStatus? = link?.status()
 
     override fun start(sink: SampleSink) {
-        val l = ObdLink(targets, Listener(sink), profile)
+        val l = ObdLink(targets, Listener(sink), profile, fallback = fallback)
         link = l
         current = this
         l.start()
@@ -63,14 +68,16 @@ class ObdSource(
 
     private inner class Listener(private val sink: SampleSink) : ObdLinkListener {
         override fun ready(
-            where: String,
+            target: ObdTarget,
             adapter: String,
             protocol: String,
             supported: Set<Int>,
             channels: List<PidChannel>,
         ) {
             val pids = supported.joinToString(",") { "%02X".format(it) }
-            sink.event(ObdEvents.CONNECTED, "host=$where adapter=$adapter protocol=$protocol pids=$pids")
+            val how = target.transport.label
+            val text = "host=${target.where} transport=$how adapter=$adapter protocol=$protocol pids=$pids"
+            sink.event(ObdEvents.CONNECTED, text)
             for (c in channels) defineOnce(c)
         }
 
@@ -80,7 +87,7 @@ class ObdSource(
             sink.submit(SampleSet(sink.nowMicros() - ageMicros, listOf(ChannelValue(def.id, value))))
         }
 
-        override fun ended(where: String, reason: String) {
+        override fun ended(target: ObdTarget, reason: String) {
             sink.event(ObdEvents.DISCONNECTED, "reason=$reason")
         }
 

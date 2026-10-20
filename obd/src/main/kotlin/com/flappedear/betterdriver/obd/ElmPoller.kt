@@ -71,10 +71,25 @@ class ElmPoller(
         }
         if (answered == 0) return null
         val id = line.command("ATI", AT_TIMEOUT_MS)?.trim()
+        logIdentity(id)
         val volts = line.command("ATRV", AT_TIMEOUT_MS)?.trim()
         listener.log("adapter ${id ?: reset?.trim().orEmpty()} voltage ${volts ?: "n/a"}")
         val name = id ?: reset?.trim()?.lines()?.lastOrNull { it.isNotBlank() } ?: "ELM327"
         return name to volts?.takeIf { it.isNotEmpty() && '?' !in it }
+    }
+
+    /**
+     * Logs what the adapter says it is (FBBD-121): ATI (the ELM327 version it claims), AT@1 (its
+     * description) and, on an STN chip (OBDLink and some Vgate adapters), STI and STDI (chip and
+     * device). A plain ELM327 answers `?` to the ST commands, which is logged too, so the first log of
+     * a new adapter shows which chip it has.
+     */
+    private fun logIdentity(ati: String?) {
+        val answers = listOf("ATI" to ati) + IDENTITY.map { it to line.command(it, AT_TIMEOUT_MS)?.trim() }
+        val text = answers.joinToString(" ") { (cmd, answer) ->
+            "$cmd=" + (answer?.replace(Regex("\\s+"), " ")?.ifEmpty { "(empty)" } ?: "(no answer)")
+        }
+        listener.log("identity $text")
     }
 
     /** The mode 01 PIDs the car has, from the `01 00`, `01 20`, … bitmasks; null when none answered. */
@@ -154,6 +169,9 @@ class ElmPoller(
     companion object {
         /** Echo, line feeds, spaces and headers off; adaptive timing; automatic protocol. */
         val SETUP = listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0")
+
+        /** Asked after ATI, for the log only: description, STN chip and STN device. */
+        val IDENTITY = listOf("AT@1", "STI", "STDI")
 
         const val RESET_TIMEOUT_MS = 3_000L
         const val AT_TIMEOUT_MS = 1_500L
