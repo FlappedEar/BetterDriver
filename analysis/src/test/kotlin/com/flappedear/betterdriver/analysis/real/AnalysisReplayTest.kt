@@ -5,6 +5,7 @@ package com.flappedear.betterdriver.analysis.real
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.VboFixture
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.data.Aliases
 import com.flappedear.betterdriver.analysis.data.TelemetryChannel
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.focus.MaxSecondaryFocus
@@ -17,6 +18,7 @@ import com.flappedear.betterdriver.analysis.optimal.sessionRange
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
+import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.VideoClip
@@ -140,9 +142,21 @@ class AnalysisReplayTest {
             assertEquals(b.first, a.first)
             assertEquals(b.second, a.second, 0.001, a.first)
         }
+        // With the OBD pedals read as Telemetry reads them (FBBD-203), all three focus areas match.
         fun areas(a: SessionAnalysis) =
-            sessionFocusAreas(a).take(2).map { Triple(it.kind, it.name, it.lap to it.against) }
+            sessionFocusAreas(a).take(3).map { Triple(it.kind, it.name, it.lap to it.against) }
         assertEquals(areas(telemetry), areas(same))
+    }
+
+    @Test
+    fun `the file's OBD pedals are the analysis' measured brake and throttle (FBBD-203)`() {
+        val session = telemetrySessionOf(silesia(), track)
+        assertEquals("brake_pos-obd", session.aliases[Aliases.BRAKE])
+        assertEquals("accelerator_pos-obd", session.aliases[Aliases.THROTTLE])
+        assertEquals(Provenance.MEASURED_OBD, session.provenanceOf(Aliases.BRAKE))
+        assertEquals(Provenance.MEASURED_OBD, session.provenanceOf(Aliases.THROTTLE))
+        // RaceChrono's calculated columns are not measurements.
+        assertEquals(Provenance.CALCULATED, session.channels["longacc-calc"]?.provenance)
     }
 
     @Test

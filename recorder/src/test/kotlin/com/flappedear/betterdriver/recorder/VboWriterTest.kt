@@ -87,6 +87,10 @@ class VboWriterTest {
         assertEquals("030.725", VboWriter.velocity(30.725))
         assertEquals("223.24", VboWriter.heading(223.24))
         assertEquals("000.00", VboWriter.heading(360.0))
+        // FBBD-203: rounded before wrapping, so a heading just under 360° is not written 360.00.
+        assertEquals("000.00", VboWriter.heading(359.996))
+        assertEquals("359.99", VboWriter.heading(359.994))
+        assertEquals("000.00", VboWriter.heading(-0.001))
         assertEquals("+00043.70", VboWriter.height(43.7))
         assertEquals("-00001.50", VboWriter.height(-1.5))
     }
