@@ -286,11 +286,13 @@ class DriveChecksTest {
     }
 
     @Test
-    fun `only a video larger than 1080p either way up is 2_7K`() {
+    fun `only a video between 1080p and 4K either way up is 2_7K`() {
         assertTrue(isWide(2688, 1512))
         assertTrue(isWide(1512, 2688))
         assertFalse(isWide(1920, 1080))
         assertFalse(isWide(1080, 1920))
+        assertFalse(isWide(3840, 2160))
+        assertFalse(isWide(2160, 3840))
     }
 
     @Test

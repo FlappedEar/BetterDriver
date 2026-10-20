@@ -25,8 +25,8 @@ data class FileFrames(
     val wide: Boolean = false,
 )
 
-/** Whether a [width]×[height] video, either way up, is larger than 1080p: 2.7K, which is not judged. */
-fun isWide(width: Int, height: Int): Boolean = maxOf(width, height) > FullHdLong
+/** Whether a [width]×[height] video, either way up, is between 1080p and 4K: 2.7K, which is not judged. */
+fun isWide(width: Int, height: Int): Boolean = maxOf(width, height) in (FullHdLong + 1) until UhdLong
 
 /** A file may record down to this share of the rate it was set to: 57 fps at 60 (FBBD-246). */
 private const val MinFrameRateShare = 0.95
@@ -35,6 +35,9 @@ private const val FrameRateCriterion = ">= 95 % of the set frame rate, 57 fps at
 
 /** The long side of 1080p: anything larger is 2.7K, whose rate is not judged (FBBD-246 Won't do). */
 private const val FullHdLong = 1920
+
+/** The long side of 4K, which is judged like 1080p. */
+private const val UhdLong = 3840
 
 /**
  * The frame rate the camera's files hold: frames over media time, the worst file against the rate it
