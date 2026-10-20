@@ -42,11 +42,19 @@ private class Recorded : ObdListener {
     var supported: Set<Int> = emptySet()
     var channels: List<PidChannel> = emptyList()
     var adapter = ""
+    var voltage: String? = null
     val values = ArrayList<Pair<String, Double>>()
     val logs = ArrayList<String>()
 
-    override fun ready(adapter: String, protocol: String, supported: Set<Int>, channels: List<PidChannel>) {
+    override fun ready(
+        adapter: String,
+        protocol: String,
+        voltage: String?,
+        supported: Set<Int>,
+        channels: List<PidChannel>,
+    ) {
         this.adapter = adapter
+        this.voltage = voltage
         this.supported = supported
         this.channels = channels
     }
@@ -96,6 +104,7 @@ class ElmPollerTest {
         val got = Recorded()
         assertEquals("stopped", poller(elm, got, stopAfter = 200).run())
         assertEquals("ELM327 v1.5", got.adapter)
+        assertEquals("12.6V", got.voltage)
         assertEquals(setOf(0x05, 0x0C, 0x0D, 0x11), got.supported)
         assertEquals(listOf("coolant_temp", "rpm", "speed", "throttle"), got.channels.map { it.id })
         assertTrue(Pair("rpm", 1726.0) in got.values)

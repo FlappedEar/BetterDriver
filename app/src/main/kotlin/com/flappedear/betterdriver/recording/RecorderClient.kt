@@ -17,6 +17,7 @@ import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.CameraService
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.gopro.GoPros
+import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.setup.VideoMode
@@ -43,6 +44,8 @@ data class RecorderState(
     val timing: LiveTimingState? = null,
     /** The coach line (FBBD-98): the last cue, or whether the coach is learning; null when it says nothing. */
     val coach: CoachStatus? = null,
+    /** The recording's OBD-II connection and values (FBBD-261), or null when it records no OBD. */
+    val obd: ObdStatus? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
@@ -90,6 +93,7 @@ class RecorderClient private constructor(private val context: Context) {
             place = msg.data.getString(RecorderProtocol.KEY_PLACE),
             placeSaved = msg.data.getBoolean(RecorderProtocol.KEY_PLACE_SAVED),
             timing = RecorderProtocol.timingFrom(msg.data),
+            obd = RecorderProtocol.obdFrom(msg.data),
             coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
                 CoachStatus(
                     msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),

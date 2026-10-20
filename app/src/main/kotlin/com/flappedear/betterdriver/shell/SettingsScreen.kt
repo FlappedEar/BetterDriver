@@ -74,6 +74,8 @@ fun SettingsScreen(
     trackScreen: TrackScreenPrefs = TrackScreenPrefs(),
     onTrackScreen: (TrackScreenPrefs) -> Unit = {},
     onOpenAbout: () -> Unit = {},
+    obdRow: String = obdRowValue(null),
+    onOpenObd: () -> Unit = {},
 ) {
     var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
@@ -91,8 +93,13 @@ fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             when (SettingsTab.entries[tab]) {
-                SettingsTab.Devices -> EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
-                SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar)
+                SettingsTab.Devices -> {
+                    EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
+                    // UI-104 B: the Wi-Fi OBD-II adapter is not added as equipment; the recorder looks for it.
+                    SectionLabel("Car data", Modifier.padding(top = 8.dp, start = 4.dp))
+                    ShellCard { ListRow(ObdTitle, obdRow, divider = false, onClick = onOpenObd) }
+                }
+                SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar, obdRow, onOpenObd)
                 SettingsTab.Recording -> {
                     RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
                     TrackScreenCard(trackScreen, onTrackScreen)
@@ -105,11 +112,17 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun CarTab(setup: Setup, onOpenCar: (CarProfile) -> Unit, onAddCar: () -> Unit) {
+private fun CarTab(
+    setup: Setup,
+    onOpenCar: (CarProfile) -> Unit,
+    onAddCar: () -> Unit,
+    obdRow: String,
+    onOpenObd: () -> Unit,
+) {
     CarCards(setup.cars, setup.session.carId, onOpenCar, onAddCar)
     ShellCard {
         ListRow("Units", "km/h, °C", divider = false)
-        ListRow("Car data (OBD-II)", "Later")
+        ListRow("Car data (OBD-II)", obdRow, onClick = onOpenObd)
     }
 }
 

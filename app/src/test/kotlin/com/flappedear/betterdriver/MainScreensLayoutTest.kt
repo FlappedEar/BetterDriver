@@ -24,6 +24,9 @@ import com.flappedear.betterdriver.core.ui.testing.edgeToEdge
 import com.flappedear.betterdriver.core.ui.testing.assertLayoutClean
 import com.flappedear.betterdriver.core.ui.testing.deviceLayout
 import com.flappedear.betterdriver.core.ui.testing.saveScreenshot
+import com.flappedear.betterdriver.obd.ObdLinkState
+import com.flappedear.betterdriver.obd.ObdReading
+import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -38,6 +41,8 @@ import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionTransferState
 import com.flappedear.betterdriver.shell.SessionsScreen
+import com.flappedear.betterdriver.shell.ObdScreen
+import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTab
 import com.flappedear.betterdriver.shell.SetupScreen
@@ -88,6 +93,27 @@ abstract class MainScreensLayoutTest(private val device: String) {
             actions = SessionCardActions(),
             onStart = {},
             onAddReceiver = {},
+        )
+    }
+
+    @Test
+    fun obd() = checkScreen("obd", Routes.Settings) {
+        ObdScreen(
+            ObdView(
+                recording = false,
+                status = ObdStatus(
+                    ObdLinkState.Connected,
+                    "ELM327 v1.5 · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V",
+                    listOf(
+                        ObdReading("rpm", "RPM", "rpm", 2850.0, 9.1),
+                        ObdReading("speed", "Speed", "km/h", 92.0, 9.0),
+                        ObdReading("throttle", "Throttle", "%", 34.1, 9.0),
+                        ObdReading("engine_load", "Engine load", "%", 41.2, 4.5),
+                        ObdReading("fuel_level", "Fuel level", "%", 62.0, 0.2),
+                    ),
+                ),
+            ),
+            onBack = {},
         )
     }
 
