@@ -28,11 +28,19 @@ import kotlin.math.abs
  */
 @RequiresApi(Build.VERSION_CODES.Q)
 internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buffers: Int = Buffers) {
-    private val thread = HandlerThread("WideRelay").apply { start() }
     private val reader = ImageReader.newInstance(
         width, height, ImageFormat.PRIVATE, buffers, HardwareBuffer.USAGE_VIDEO_ENCODE,
     )
-    private val writer = ImageWriter.newInstance(encoderSurface, WriterBuffers, ImageFormat.PRIVATE)
+
+    // A writer the encoder's surface refuses leaves nothing open: the caller then draws straight in.
+    @Suppress("TooGenericExceptionCaught") // ImageWriter refuses a surface or format at runtime.
+    private val writer = try {
+        ImageWriter.newInstance(encoderSurface, WriterBuffers, ImageFormat.PRIVATE)
+    } catch (e: Exception) {
+        reader.close()
+        throw e
+    }
+    private val thread = HandlerThread("WideRelay").apply { start() }
 
     private val received = AtomicLong(0)
     private val passed = AtomicLong(0)
@@ -68,8 +76,25 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
     /** Frames the camera gave, handed to the encoder, and lost on the way, for the log. */
     fun counts(): String = "relay=${received.get()} relayed=${passed.get()} relay_failed=${failed.get()}"
 
-    /** Stops handing frames on; call once the camera has stopped, before the encoder ends its stream. */
+    /**
+     * Stops handing frames on; call once the camera has been told to stop, before the encoder ends its
+     * stream. The camera still completes the captures in flight: frames go on to the encoder until none
+     * has come for [QuietMillis] (at most [CloseMillis]), so the recording's last frames are kept.
+     */
     fun close() {
+        val until = SystemClock.uptimeMillis() + CloseMillis
+        var seen = received.get()
+        var quietSince = SystemClock.uptimeMillis()
+        while (SystemClock.uptimeMillis() < until) {
+            Thread.sleep(PollMillis)
+            val now = received.get()
+            if (now != seen) {
+                seen = now
+                quietSince = SystemClock.uptimeMillis()
+            } else if (SystemClock.uptimeMillis() - quietSince >= QuietMillis) {
+                break
+            }
+        }
         closed = true
         // The relay's thread finishes the frame in hand before the reader and writer go.
         val done = CountDownLatch(1)
@@ -89,6 +114,8 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
         /** Buffers the encoder may hold at once; more than its own queue ever takes. */
         const val WriterBuffers = 8
         const val CloseMillis = 1_000L
+        const val QuietMillis = 150L
+        const val PollMillis = 20L
     }
 }
 

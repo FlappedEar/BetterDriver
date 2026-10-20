@@ -71,8 +71,7 @@ class FrameRelayTest {
         val began = System.nanoTime()
         val drawn = draw(relay, seconds = 6)
         val drawnNanos = System.nanoTime() - began
-        // Frames still on their way through the relay arrive before it closes.
-        Thread.sleep(SettleMillis)
+        // Closed at once, as the recorder does when the camera stops: frames still on their way are kept.
         relay.close()
         encoder.stop()
         assertEquals("problems the encoder reported", emptyList<String>(), synchronized(problems) { problems.toList() })
@@ -130,6 +129,5 @@ class FrameRelayTest {
 
     private companion object {
         const val Fps = 30
-        const val SettleMillis = 500L
     }
 }
