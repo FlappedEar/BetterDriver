@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.shell
 
+import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
 
@@ -28,3 +29,9 @@ data class SessionCardActions(
 
 /** Settings tabs (UI-15 option B). */
 enum class SettingsTab(val title: String) { Devices("Devices"), Car("Car"), Recording("Recording"), App("App") }
+
+/**
+ * What the OBD page shows (FBBD-261): whether a session records, and its OBD-II connection; status is
+ * null when the recording has no OBD source (Demo GNSS).
+ */
+data class ObdView(val recording: Boolean, val status: ObdStatus?)

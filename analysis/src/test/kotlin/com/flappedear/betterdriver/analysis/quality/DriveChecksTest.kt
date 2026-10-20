@@ -200,6 +200,7 @@ class DriveChecksTest {
         check("coach.per_straight", Verdict.PASS, 0.0)
         check("coach.focus", Verdict.PASS, 100.0)
         check("coach.headset", Verdict.PASS, 100.0)
+        check("coach.out_delay", Verdict.PASS, 100.0)
         check("coach.margin", Verdict.PASS, 100.0)
         check("coach.in_zone", Verdict.PASS, 0.0)
         check("coach.clips", Verdict.NOT_MEASURED)

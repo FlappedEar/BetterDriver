@@ -30,7 +30,8 @@ const val MaxCueAgeMicros = 400_000L
  * recorder detected, null if none; without a start/finish line there are no laps and nothing to say.
  * Each fix comes with [onFix]'s `nowMicros`, the session clock when it is handled: a fix that waited
  * in a queue (the reference was still loading) can no longer time a cue, so its cues are dropped.
- * [onFix]'s `say` plays a phrase and returns false if the voice refused it. A dropped or refused cue
+ * [onFix]'s `say` plays a phrase and returns false if the voice refused it; its `voiceFree` is false
+ * while the voice is still saying a phrase, so no cue cuts one off (FBBD-253). A dropped or refused cue
  * is logged as a problem, never as a cue, and no result is measured against it. [picks] are the
  * corners the driver picked for this track in the lap analysis (FBBD-148). [sameDay]: the reference
  * has a session driven earlier the same day, so the coach only warms up (FBBD-190). [focus] is the
@@ -73,9 +74,14 @@ class CoachSession(
             }
         }
 
-    fun onFix(fix: CoachFix, nowMicros: Long, say: (String) -> Boolean): CoachOutput {
+    /** The audio output changed (FBBD-255): cues from now on allow for its delay, [millis]. */
+    fun audioDelay(millis: Int) {
+        engine?.audioDelayMillis = millis
+    }
+
+    fun onFix(fix: CoachFix, nowMicros: Long, voiceFree: Boolean = true, say: (String) -> Boolean): CoachOutput {
         val e = engine ?: return CoachOutput(emptyList(), status)
-        val u = e.update(fix)
+        val u = e.update(fix, voiceFree)
         val events = mutableListOf<CoachEvent>()
         val reason = e.quietReason
         val was = quiet

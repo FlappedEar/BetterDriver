@@ -4,8 +4,11 @@ import java.util.Locale
 
 /** What an [ElmPoller] reports. Called on the poller's thread. */
 interface ObdListener {
-    /** The adapter is set up and the car answered: [channels] are what will be polled. */
-    fun ready(adapter: String, protocol: String, supported: Set<Int>, channels: List<PidChannel>)
+    /**
+     * The adapter is set up and the car answered: [channels] are what will be polled. [voltage] is
+     * the adapter's ATRV answer (the car's battery at the OBD port), null when it gave none.
+     */
+    fun ready(adapter: String, protocol: String, voltage: String?, supported: Set<Int>, channels: List<PidChannel>)
 
     /** [channel] read [value] at [atMs] on the poller's clock. */
     fun value(channel: PidChannel, value: Double, atMs: Long)
@@ -48,17 +51,17 @@ class ElmPoller(
      */
     @Suppress("ReturnCount") // Each early return is one way the connection is not usable.
     fun run(): String {
-        val adapter = setUp() ?: return "adapter not answering"
+        val (adapter, voltage) = setUp() ?: return "adapter not answering"
         val supported = discover() ?: return "car not answering"
         val protocol = line.command("ATDPN", AT_TIMEOUT_MS)?.trim().orEmpty()
         val channels = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
-        listener.ready(adapter, protocol, supported, channels)
+        listener.ready(adapter, protocol, voltage, supported, channels)
         if (channels.isEmpty()) return "no channels to poll"
         return poll(channels)
     }
 
-    /** The adapter's identity (`ELM327 v1.5`), or null when it answered no setup command. */
-    private fun setUp(): String? {
+    /** The adapter's identity (`ELM327 v1.5`) and voltage, or null when it answered no setup command. */
+    private fun setUp(): Pair<String, String?>? {
         val reset = line.command("ATZ", RESET_TIMEOUT_MS)
         var answered = if (reset != null) 1 else 0
         for (cmd in SETUP) {
@@ -70,7 +73,8 @@ class ElmPoller(
         val id = line.command("ATI", AT_TIMEOUT_MS)?.trim()
         val volts = line.command("ATRV", AT_TIMEOUT_MS)?.trim()
         listener.log("adapter ${id ?: reset?.trim().orEmpty()} voltage ${volts ?: "n/a"}")
-        return id ?: reset?.trim()?.lines()?.lastOrNull { it.isNotBlank() } ?: "ELM327"
+        val name = id ?: reset?.trim()?.lines()?.lastOrNull { it.isNotBlank() } ?: "ELM327"
+        return name to volts?.takeIf { it.isNotEmpty() && '?' !in it }
     }
 
     /** The mode 01 PIDs the car has, from the `01 00`, `01 20`, … bitmasks; null when none answered. */

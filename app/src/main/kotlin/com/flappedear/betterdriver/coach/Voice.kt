@@ -134,6 +134,18 @@ internal class Voice(context: Context) {
     @Volatile
     private var engineReady = false
 
+    /** When the last phrase was asked for, [SystemClock.elapsedRealtimeNanos]; for [speaking]. */
+    @Volatile
+    private var lastAskedAt = 0L
+
+    /**
+     * Whether a phrase is still being said (FBBD-253): the coach waits for its end instead of cutting
+     * it off with the next. An engine that never reports a phrase's end holds the coach for at most
+     * [MaxPhraseNanos].
+     */
+    val speaking: Boolean
+        get() = out.busy && SystemClock.elapsedRealtimeNanos() - lastAskedAt < MaxPhraseNanos
+
     /** Counts engines started, so a late start of a replaced engine is ignored. Voice thread only. */
     private var engineGeneration = 0
 
@@ -256,6 +268,7 @@ internal class Voice(context: Context) {
     fun say(text: String, onEnd: Ended = Ended { _, _ -> }, onStart: Started = Started { }): Boolean {
         val id = "cue-${ids.incrementAndGet()}"
         val at = SystemClock.elapsedRealtimeNanos()
+        lastAskedAt = at
         val clip = if (mode == VoiceMode.PreRendered) clips.phrase(text, language) else null
         return (clip != null && playClip(clip, id, at, onStart, onEnd)) ||
             (ready && speak(text, id, at, onStart, onEnd))
@@ -290,7 +303,7 @@ internal class Voice(context: Context) {
         return queued
     }
 
-    /** Where the sound goes: a connected headset (Bluetooth, wired or USB), else the phone speaker. */
+    /** Where the sound is routed (FBBD-255): a headset (Bluetooth, wired or USB), else the phone speaker. */
     private fun route() = if (out.headset() != null) "headset" else "speaker"
 
     /** Logs a live phrase's start and end, and gives the focus back when it ends, stops or fails. */
@@ -330,5 +343,6 @@ internal class Voice(context: Context) {
         const val WarmMillis = 50L
         const val SampleWaitMillis = 5_000L
         const val SamplePollMillis = 100L
+        const val MaxPhraseNanos = 10_000_000_000L
     }
 }

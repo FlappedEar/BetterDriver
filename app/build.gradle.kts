@@ -74,6 +74,7 @@ dependencies {
     implementation(project(":timing"))
     implementation(project(":coach"))
     implementation(project(":core-ble"))
+    implementation(project(":obd"))
     implementation(project(":updater"))
     implementation(project(":transfer"))
     implementation(libs.androidx.core.ktx)

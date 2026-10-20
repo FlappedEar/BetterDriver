@@ -1,18 +1,16 @@
 #!/usr/bin/env bash
 # Arek's Demo track drive, done by CI on the emulator that is already running (ReplayDriveTest): the
-# Silesia Ring laps built into the app (his 27 Sep 2026 sessions), or with DRIVE=jastrzab his Jastrząb
-# laps (29 Aug 2026, FBBD-254), replayed through the whole app,
-# coach at Full in $LANGUAGE (Polish unless set), for $REPLAY_MINUTES minutes in real time, enough for
-# the coach's 3 learning laps and coached laps after them. Then the continuous log is checked as his
-# shared logs are, and the report goes to the run's summary and build/replay-drive/.
+# Silesia Ring laps built into the app (his 27 Sep 2026 sessions) replayed through the whole app,
+# coach at Full in $LANGUAGE (Polish unless set), for $REPLAY_MINUTES minutes in real time (10: Arek,
+# 2026-10-20). The coach knows the track from an earlier outing and learns 1 lap, so laps 3 and 4 are
+# coached (ReplayDriveTest). Then the continuous log is checked as his shared logs are, and the report
+# goes to the run's summary and build/replay-drive/.
 set -uo pipefail
 app=com.flappedear.betterdriver
 runner=$app.test/androidx.test.runner.AndroidJUnitRunner
 test=$app.replay.ReplayDriveTest
-minutes=${REPLAY_MINUTES:-22}
+minutes=${REPLAY_MINUTES:-10}
 language=${LANGUAGE:-Polish}
-drive=${DRIVE:-silesia-ring}
-checkEverySeconds=60
 out=build/replay-drive
 mkdir -p "$out"
 log="$out/logcat.txt"
@@ -29,6 +27,12 @@ finish() {
   timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null > "$out/betterdriver.log" 2>/dev/null || true
   # The report in the job's log too, where it can be read without the artifact.
   [ -s "$out/replay-drive.md" ] && cat "$out/replay-drive.md"
+  # Each cue's trigger, sound start and end as the coach logged them (FBBD-253), and the voice's own
+  # lines, so an overlap can be traced without the artifact. No positions are in these lines.
+  if [ -s "$out/betterdriver.log" ]; then
+    echo "== Coach cues and their sound"
+    grep -E "coach_(cue|voice|voice_end|problem|quiet)|[^a-zA-Z]Voice[^a-zA-Z]|CoachService" "$out/betterdriver.log" | tail -400
+  fi
   if [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
   fi
@@ -38,11 +42,12 @@ finish() {
   exit "$1"
 }
 
-# phase NAME [--no-restart]
+# phase NAME [--no-restart] [SECONDS]
 phase() {
-  echo "== ReplayDriveTest#$1"
+  echo "== ReplayDriveTest#$1 at $(date -u +%H:%M:%S)"
   # A phase that hangs fails the drive instead of the job running out of time.
-  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e drive "$drive" -e class "$test#$1" "$runner" < /dev/null 2>&1)
+  result=$(timeout "${3:-600}" adb shell am instrument -w ${2:-} -e language "$language" -e minutes "$minutes" \
+    -e class "$test#$1" "$runner" < /dev/null 2>&1)
   echo "$result"
   if ! echo "$result" | grep -q "^OK (1 test)"; then
     # What the test runner and the app's processes logged last, for a phase that hung or failed.
@@ -69,20 +74,13 @@ echo "Speech engines: $(adb shell cmd package query-services -a android.intent.a
 phase seed
 adb shell am start -W -n "$app/.MainActivity" >/dev/null || fail "the app did not open"
 sleep 3
-phase start --no-restart
-
-# The drive: the app stays in front on the track screen, as on Arek's phone.
-end=$(( $(date +%s) + minutes * 60 ))
-while [ "$(date +%s)" -lt "$end" ]; do
-  sleep "$checkEverySeconds"
-  left=$(( (end - $(date +%s)) / 60 ))
-  echo "Replaying; about $left min left."
-done
-# The test runner waits for the app's main thread to go idle before a test, which it never does while
-# the track screen draws every frame: the second run hung there for 10 min. Home, as a phone put away,
-# stops the drawing; the recorder and coach keep running in their own processes.
+# The drive, started, driven and stopped in one test: the app stays in front on the track screen, as
+# on Arek's phone. The test runner waits for the app's main thread to go idle before a test, which it
+# never does while the track screen draws every frame: a stop phase of its own waited 8 min there.
+echo "Replaying for $minutes min."
+phase drive --no-restart $(( minutes * 60 + 300 ))
+# Home, as a phone put away, stops any drawing before the check.
 adb shell input keyevent KEYCODE_HOME || true
 sleep 5
-phase stop --no-restart
 phase check --no-restart
 finish 0

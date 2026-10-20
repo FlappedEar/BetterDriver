@@ -63,6 +63,7 @@ import com.flappedear.betterdriver.shell.SessionDeleting
 import com.flappedear.betterdriver.shell.SessionsListDetail
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
+import com.flappedear.betterdriver.shell.obdRowValue
 import com.flappedear.betterdriver.shell.SettingsTab
 import com.flappedear.betterdriver.shell.appNavigation
 import com.flappedear.betterdriver.shell.shownSession
@@ -193,6 +194,10 @@ private fun NavGraphBuilder.settingsPages(nav: NavHostController, padding: Paddi
     coachSettings(nav, padding)
     composable(Routes.About) {
         Box(Modifier.padding(padding)) { AboutScreen(Version, onBack = { nav.popBackStack() }) }
+    }
+    composable(Routes.Obd) {
+        val recorder = RecorderClient.get(LocalContext.current)
+        Box(Modifier.padding(padding)) { ObdRoute(recorder, onBack = { nav.popBackStack() }) }
     }
 }
 
@@ -435,5 +440,7 @@ private fun Settings(
             prefs.updateGnssSound(p.gnssSound)
         },
         onOpenAbout = { nav.navigate(Routes.About) },
+        obdRow = obdRowValue(RecorderClient.get(context).state.obd),
+        onOpenObd = { nav.navigate(Routes.Obd) },
     )
 }

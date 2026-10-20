@@ -193,7 +193,7 @@ private const val ElmWifiHost = "192.168.0.10"
  * Where a Wi-Fi ELM327 may be (FBBD-15): the Wi-Fi network's gateway, which is the adapter when the
  * phone is on its access point, then the usual 192.168.0.10, both on port 35000. Empty without Wi-Fi.
  */
-private fun obdTargets(context: Context): List<ObdTarget> {
+internal fun obdTargets(context: Context): List<ObdTarget> {
     val network = wifi(context) ?: return emptyList()
     val cm = context.getSystemService(ConnectivityManager::class.java)
     val gateway = cm?.getLinkProperties(network)?.routes

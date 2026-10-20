@@ -1,6 +1,9 @@
 package com.flappedear.betterdriver.recording
 
 import android.os.Bundle
+import com.flappedear.betterdriver.obd.ObdLinkState
+import com.flappedear.betterdriver.obd.ObdReading
+import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.timing.live.LiveSector
 import com.flappedear.betterdriver.timing.live.LiveTimingState
@@ -123,6 +126,14 @@ internal object RecorderProtocol {
     /** In a [MSG_STATE] bundle: true when [KEY_PLACE] is a saved track, false for a circuit-list match. */
     const val KEY_PLACE_SAVED = "placeSaved"
 
+    private const val OBD_STATE = "obd.state"
+    private const val OBD_DETAIL = "obd.detail"
+    private const val OBD_IDS = "obd.ids"
+    private const val OBD_NAMES = "obd.names"
+    private const val OBD_UNITS = "obd.units"
+    private const val OBD_VALUES = "obd.values"
+    private const val OBD_HZ = "obd.hz"
+
     private const val SESSION_ID = "sessionId"
     private const val START_UTC = "startUtcMillis"
     private const val ELAPSED = "elapsedMicros"
@@ -198,6 +209,31 @@ internal object RecorderProtocol {
         putDoubleArray(VS_SECTOR, t.sectors.map { it.deltaVsBestSectorSeconds ?: Double.NaN }.toDoubleArray())
         putInt(CURRENT, t.sectors.indexOfFirst { it.current })
         putBoolean(POINT_TO_POINT, t.pointToPoint)
+    }
+
+    /** Adds the recording's OBD-II connection (FBBD-261) to a [MSG_STATE] bundle. */
+    fun putObd(b: Bundle, s: ObdStatus) = b.apply {
+        putString(OBD_STATE, s.state.name)
+        putString(OBD_DETAIL, s.detail)
+        putStringArray(OBD_IDS, s.readings.map { it.id }.toTypedArray())
+        putStringArray(OBD_NAMES, s.readings.map { it.name }.toTypedArray())
+        putStringArray(OBD_UNITS, s.readings.map { it.unit }.toTypedArray())
+        putDoubleArray(OBD_VALUES, s.readings.map { it.value }.toDoubleArray())
+        putDoubleArray(OBD_HZ, s.readings.map { it.hz }.toDoubleArray())
+    }
+
+    /** The recording's OBD-II connection, or null when the recording has no OBD source. */
+    fun obdFrom(b: Bundle): ObdStatus? {
+        val state = b.getString(OBD_STATE)?.let { name -> ObdLinkState.entries.firstOrNull { it.name == name } }
+            ?: return null
+        val ids = b.getStringArray(OBD_IDS).orEmpty()
+        val names = b.getStringArray(OBD_NAMES).orEmpty()
+        val units = b.getStringArray(OBD_UNITS).orEmpty()
+        val values = b.getDoubleArray(OBD_VALUES) ?: DoubleArray(0)
+        val hz = b.getDoubleArray(OBD_HZ) ?: DoubleArray(0)
+        val n = minOf(ids.size, names.size, units.size, values.size, hz.size)
+        val readings = (0 until n).map { ObdReading(ids[it], names[it], units[it], values[it], hz[it]) }
+        return ObdStatus(state, b.getString(OBD_DETAIL).orEmpty(), readings)
     }
 
     /** Live timing from a [MSG_STATE] bundle, or null when the recording is not being timed. */

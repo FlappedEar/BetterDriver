@@ -52,6 +52,8 @@ internal class Voiced(
     val focus: String? = null,
     val outDelayMillis: Long? = null,
     val outDelaySource: String? = null,
+    /** Where the delay the cue was timed for came from when it was asked (FBBD-255); older sessions lack it. */
+    val timedSource: String? = null,
 ) {
     /**
      * When the sound reached the driver's ear: its start plus the output's own delay when known. A delay
@@ -103,13 +105,13 @@ private fun loggedCue(e: RecorderEvent): LoggedCue? {
     return LoggedCue(e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull(), f["kind"])
 }
 
-private fun voiced(e: RecorderEvent): Voiced? {
+internal fun voiced(e: RecorderEvent): Voiced? {
     val f = fields(e.text)
     val seq = f["seq"]?.toIntOrNull() ?: return null
     return Voiced(
         e.tMicros, seq, f["path"].orEmpty(), f["route"].orEmpty(), f["asked_us"]?.toLongOrNull(),
         f["ready_us"]?.toLongOrNull(), f["device"], f["focus"], f["out_delay_ms"]?.toLongOrNull(),
-        f["out_delay_src"],
+        f["out_delay_src"], f["timed_src"],
     )
 }
 
