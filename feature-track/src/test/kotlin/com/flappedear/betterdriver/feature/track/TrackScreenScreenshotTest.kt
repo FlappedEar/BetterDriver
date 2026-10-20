@@ -6,7 +6,6 @@ import com.flappedear.betterdriver.core.ui.TrackColors
 import com.flappedear.betterdriver.core.ui.TrackColorsBlueOrange
 import com.flappedear.betterdriver.core.ui.TrackColorsGreenRed
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
-import com.flappedear.betterdriver.core.ui.component.SectorState
 import com.flappedear.betterdriver.core.ui.component.ValueState
 import com.github.takahirom.roborazzi.captureRoboImage
 import org.junit.Test
@@ -41,7 +40,31 @@ class TrackScreenScreenshotTest {
 
     @Test
     fun blueOrangePalette() = snap("track_screen_blue_orange", TrackColorsBlueOrange) {
-        TrackScreenContent(ExampleTrackState.copy(sectors = MixedSectors))
+        TrackScreenContent(ExampleTrackState)
+    }
+
+    /** UI-121 B: the second screen, three rows of four; its dot lit in the status strip (UI-122 A). */
+    @Test
+    fun secondScreen() = snap("track_screen_second") { TrackScreenContent(ExampleTrackState, page = 1) }
+
+    /** UI-125 B: a new install shows speed and G, the other slots empty. */
+    @Test
+    fun newInstall() = snap("track_screen_new_install") {
+        TrackScreenContent(
+            ExampleTrackState.copy(
+                tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g")) + List(8) { null },
+            ),
+        )
+    }
+
+    /** UI-126 B: oil temperature has no data and is left out; the others in its row widen. */
+    @Test
+    fun tileWithoutData() = snap("track_screen_no_data") { TrackScreenContent(NoOil) }
+
+    /** UI-123 B: with the car stopped every tile shows, so each can be held; no data is a dash. */
+    @Test
+    fun tileWithoutDataCarStopped() = snap("track_screen_no_data_stopped") {
+        TrackScreenContent(NoOil.copy(editable = true))
     }
 
     /** System bars shown by a swipe: 340 dp tall. The delta shrinks, nothing else moves. */
@@ -56,11 +79,10 @@ class TrackScreenScreenshotTest {
     }
 
     private companion object {
-        val MixedSectors = listOf(
-            SectorState("S1", -0.21),
-            SectorState("S2", 0.08),
-            SectorState("S3", -0.05),
-            SectorState("S4", null, current = true),
+        val NoOil = ExampleTrackState.copy(
+            tiles = ExampleTrackState.tiles.map { t ->
+                if (t != null && t.id == "obd_oil_temp") t.copy(hasData = false) else t
+            },
         )
 
         val BeforeFirstLap = ExampleTrackState.copy(
@@ -69,11 +91,6 @@ class TrackScreenScreenshotTest {
             lapMillis = null,
             lastMillis = null,
             bestMillis = null,
-            sectors = listOf(
-                SectorState("S1", null, current = true),
-                SectorState("S2", null),
-                SectorState("S3", null),
-            ),
             coachCorner = null,
             coachCue = null,
         )

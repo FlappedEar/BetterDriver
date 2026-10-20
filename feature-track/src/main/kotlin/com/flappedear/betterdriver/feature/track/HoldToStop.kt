@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
@@ -22,12 +21,15 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.AwaitPointerEventScope
+import androidx.compose.ui.input.pointer.PointerId
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.textStyle
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import java.util.Locale
 
 /** UI-16: Arek asked for 3 s instead of the proposed 2 s. */
@@ -41,25 +43,40 @@ private const val StartAngle = -90f
  * Stops the session after a hold anywhere on [content] (UI-16 option A).
  * While the finger is down a ring fills over [HoldToStopMillis]; lifting the
  * finger earlier cancels it. A bump or a short tap does nothing.
+ *
+ * A swipe across changes screen (UI-121, UI-122) and never stops the session: once the finger
+ * travels [HoldMoveLimit] the ring stops, and on lifting it a sideways move of [SwipeDistance] calls
+ * [onSwipe] with 1 for a swipe to the left (the next screen) and -1 for one to the right.
  */
 @Composable
-internal fun HoldToStop(onStop: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+internal fun HoldToStop(
+    onStop: () -> Unit,
+    modifier: Modifier = Modifier,
+    onSwipe: (Int) -> Unit = {},
+    content: @Composable () -> Unit,
+) {
     val progress = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val stop by rememberUpdatedState(onStop)
+    val swipe by rememberUpdatedState(onSwipe)
     Box(
         modifier.pointerInput(Unit) {
             awaitEachGesture {
-                awaitFirstDown(requireUnconsumed = false)
+                val down = awaitFirstDown(requireUnconsumed = false)
                 val hold = scope.launch {
                     progress.snapTo(0f)
                     progress.animateTo(1f, tween(HoldToStopMillis, easing = LinearEasing))
                     stop()
                 }
-                waitForUpOrCancellation()
-                if (hold.isActive) {
+                val clear = {
                     hold.cancel()
                     scope.launch { progress.snapTo(0f) }
+                }
+                val moved = trackMove(down.id, down.position, HoldMoveLimit.toPx()) { clear() }
+                // Lifted early: clear the ring. A finished hold has stopped the session.
+                if (hold.isActive) clear()
+                if (moved != null && abs(moved.x) >= SwipeDistance.toPx() && abs(moved.x) > abs(moved.y)) {
+                    swipe(if (moved.x < 0) 1 else -1)
                 }
             }
         },
@@ -71,6 +88,35 @@ internal fun HoldToStop(onStop: () -> Unit, modifier: Modifier = Modifier, conte
         }
     }
 }
+
+/**
+ * Follows the pointer [id] until it lifts or the gesture is cancelled. Calls [onMoved] once the
+ * finger is [limit] px from [start]. Returns how far it went from [start] when it lifted, or null
+ * when the gesture was cancelled.
+ */
+private suspend fun AwaitPointerEventScope.trackMove(
+    id: PointerId,
+    start: Offset,
+    limit: Float,
+    onMoved: () -> Unit,
+): Offset? {
+    var moved = false
+    while (true) {
+        val change = awaitPointerEvent().changes.firstOrNull { it.id == id } ?: return null
+        val travel = change.position - start
+        if (!moved && travel.getDistance() >= limit) {
+            moved = true
+            onMoved()
+        }
+        if (!change.pressed) return travel
+    }
+}
+
+/** A finger that travels this far is swiping, not holding: the ring stops. A bump moves it less. */
+private val HoldMoveLimit = 24.dp
+
+/** The sideways travel that changes screen. */
+private val SwipeDistance = 48.dp
 
 @Composable
 private fun HoldRing(progress: Float, modifier: Modifier = Modifier) {

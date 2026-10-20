@@ -32,7 +32,6 @@ import com.flappedear.betterdriver.feature.track.TrackBrightness
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.Setup
-import com.flappedear.betterdriver.setup.TrackChannel
 import com.flappedear.betterdriver.setup.VideoMode
 import java.util.Locale
 
@@ -45,7 +44,8 @@ data class TrackScreenPrefs(
 )
 
 /**
- * Settings (UI-15 option B): tabs for Devices, Car, Recording (with the track-screen tiles) and App.
+ * Settings (UI-15 option B): tabs for Devices, Car, Recording and App. The track screen's tiles are
+ * changed on the track screen itself (UI-123 B).
  * [initialTab] lets the first-run checklist open a tab directly.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -64,7 +64,6 @@ fun SettingsScreen(
     onBack: (() -> Unit)? = null,
     trackCount: Int = 0,
     onTracks: () -> Unit = {},
-    onChooseTiles: (List<TrackChannel>) -> Unit = {},
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
     updateRow: @Composable () -> Unit = {},
     debugRows: @Composable () -> Unit = {},
@@ -101,7 +100,7 @@ fun SettingsScreen(
                 }
                 SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar, obdRow, onOpenObd)
                 SettingsTab.Recording -> {
-                    RecordingTab(setup, onChooseTiles, onChooseVideo, trackCount, onTracks)
+                    RecordingTab(setup, onChooseVideo, trackCount, onTracks)
                     TrackScreenCard(trackScreen, onTrackScreen)
                 }
                 SettingsTab.App ->
@@ -126,33 +125,25 @@ private fun CarTab(
     }
 }
 
-/**
- * Recording settings, including the track-screen tiles for every session (UI-38 option A) and one
- * Video row per camera the app sets (UI-39).
- */
+/** Recording settings: tracks, one Video row per camera the app sets (UI-39), and storage. */
 @Composable
 private fun RecordingTab(
     setup: Setup,
-    onChooseTiles: (List<TrackChannel>) -> Unit,
     onChooseVideo: (Equipment, VideoMode) -> Unit,
     trackCount: Int,
     onTracks: () -> Unit,
 ) {
-    val tiles = setup.session.tiles
     val context = LocalContext.current
     val freeGb = remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
-    var choosingTiles by rememberSaveable { mutableStateOf(false) }
     var choosingVideo by rememberSaveable { mutableStateOf<String?>(null) }
     ShellCard {
         val tracks = if (trackCount == 1) "1 track" else "$trackCount tracks"
         ListRow("Tracks and timing lines", tracks, divider = false, onClick = onTracks)
-        ListRow("Track screen tiles", tilesLabel(tiles), onClick = { choosingTiles = true })
         setup.equipment.filter { it.videoMode != null }.forEach { cam ->
             ListRow("Video · ${cam.name}", videoLabel(cam), onClick = { choosingVideo = cam.id })
         }
         ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb))
     }
-    if (choosingTiles) TilesDialog(tiles, onChooseTiles, onClose = { choosingTiles = false })
     setup.equipment(choosingVideo)?.let { cam ->
         VideoModeDialog(cam, rememberVideoModes(cam), { onChooseVideo(cam, it) }, onClose = { choosingVideo = null })
     }

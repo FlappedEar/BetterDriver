@@ -233,4 +233,37 @@ class LiveTrackerTest {
         val duration = assertNotNull(summary.durationMicros)
         assertTrue(duration >= live.elapsedMicros, "duration $duration < ${live.elapsedMicros}")
     }
+
+    @Test
+    fun `shows the latest OBD and heart-rate values, NaN once they stop arriving`() {
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now })
+        val coolant = ChannelDef(300, "obd_coolant_temp", "°C", "obd", 2)
+        val heart = ChannelDef(400, "heart_rate", "bpm", "heart_rate", 0)
+        val rr = ChannelDef(401, "hr_rr_interval", "ms", "heart_rate", 1)
+        listOf(coolant, heart, rr).forEach(tracker::onChannel)
+        assertTrue(tracker.snapshot().channels.isEmpty())
+
+        // Coolant every 5 s (a slow PID), heart rate every second.
+        tracker.onSamples(SampleSet(0, listOf(ChannelValue(300, 88.0))))
+        tracker.onSamples(SampleSet(5 * MicrosPerSecond, listOf(ChannelValue(300, 90.0))))
+        for (s in 0..5L) tracker.onSamples(SampleSet(s * MicrosPerSecond, listOf(ChannelValue(400, 120.0 + s), ChannelValue(401, 500.0))))
+        now = 5 * MicrosPerSecond
+        assertEquals(mapOf("obd_coolant_temp" to 90.0, "heart_rate" to 125.0), tracker.snapshot().channels)
+
+        // 4 s later: heart rate (1 s period) is stale after 3 s; coolant (5 s period) keeps for 15 s.
+        now = 9 * MicrosPerSecond
+        assertEquals(mapOf("obd_coolant_temp" to 90.0, "heart_rate" to Double.NaN), tracker.snapshot().channels)
+        now = 21 * MicrosPerSecond
+        assertEquals(mapOf("obd_coolant_temp" to Double.NaN, "heart_rate" to Double.NaN), tracker.snapshot().channels)
+    }
+
+    @Test
+    fun `GNSS and other channels are not shown as live values`() {
+        val tracker = LiveTracker("s", 0, { 0L })
+        GnssChannels.ALL.forEach(tracker::onChannel)
+        tracker.onChannel(ChannelDef(110, "accel_x", "g", "racebox"))
+        tracker.onSamples(SampleSet(0, gnss.fix(0) + ChannelValue(110, 0.2)))
+        assertTrue(tracker.snapshot().channels.isEmpty())
+    }
 }

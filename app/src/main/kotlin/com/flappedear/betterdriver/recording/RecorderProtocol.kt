@@ -147,6 +147,8 @@ internal object RecorderProtocol {
     private const val STOPPED = "stoppedReason"
     private const val DROPPED = "droppedSamples"
     private const val G_COMBINED = "gCombined"
+    private const val CHANNEL_NAMES = "channelNames"
+    private const val CHANNEL_VALUES = "channelValues"
 
     private const val LAP = "timing.lap"
     private const val LAP_MS = "timing.lapMillis"
@@ -174,6 +176,11 @@ internal object RecorderProtocol {
         s.stoppedReason?.let { putString(STOPPED, it) }
         putLong(DROPPED, s.droppedSamples)
         s.gCombined?.let { putDouble(G_COMBINED, it) }
+        if (s.channels.isNotEmpty()) {
+            val names = s.channels.keys.toTypedArray()
+            putStringArray(CHANNEL_NAMES, names)
+            putDoubleArray(CHANNEL_VALUES, DoubleArray(names.size) { s.channels.getValue(names[it]) })
+        }
     }
 
     /** Null for an idle service (no session id). */
@@ -193,7 +200,15 @@ internal object RecorderProtocol {
             droppedSamples = b.getLong(DROPPED),
             gCombined = if (b.containsKey(G_COMBINED)) b.getDouble(G_COMBINED) else null,
             receiverRateHz = b.getInt(RECEIVER_RATE),
+            channels = channels(b),
         )
+    }
+
+    private fun channels(b: Bundle): Map<String, Double> {
+        val names = b.getStringArray(CHANNEL_NAMES) ?: return emptyMap()
+        val values = b.getDoubleArray(CHANNEL_VALUES) ?: return emptyMap()
+        if (names.size != values.size) return emptyMap()
+        return names.indices.associate { names[it] to values[it] }
     }
 
     /** Adds live timing (FBBD-12) to a [MSG_STATE] bundle. Unknown values are left out, or NaN in the sector arrays. */
