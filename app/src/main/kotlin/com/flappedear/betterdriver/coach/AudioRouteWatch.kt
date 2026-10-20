@@ -98,7 +98,13 @@ internal class AudioRouteWatch(
         probeHandler.post {
             val live = OutputDelayProbe.probe()
             val clip = if (w.clips) OutputDelayProbe.probe(lowLatency = true) else null
-            handler.post { if (watched === w) onMeasured(Remeasured(now, w.clips, live, clip)) }
+            handler.post {
+                if (watched === w) {
+                    // Not measured (still settling, or no track): the next check measures it again.
+                    if ((if (w.clips) clip else live) == null) w.deviceId = NotMeasured
+                    onMeasured(Remeasured(now, w.clips, live, clip))
+                }
+            }
         }
     }
 
