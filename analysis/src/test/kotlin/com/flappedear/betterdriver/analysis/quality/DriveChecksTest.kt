@@ -577,11 +577,19 @@ class DriveChecksTest {
         assertEquals(1.0, r.metric("gnss.long_gaps").value)
     }
 
-    /** Five minutes at 25 Hz without a fix until 40.2 s in, samples [lost] never arriving; its drive checks. */
-    private fun coldStart(lost: Set<Long>): QualityReport {
+    @Test
+    fun `without any fix every gap is judged (FBBD-273, Codex on #260)`() {
+        val r = coldStart((64L..84L).toSet(), fixAt = Long.MAX_VALUE)
+        val gap = r.metric("gnss.max_gap")
+        assertEquals(Verdict.FAIL, gap.verdict, gap.how)
+        assertEquals(880.0, gap.value)
+        assertEquals(1.0, r.metric("gnss.long_gaps").value)
+    }
+
+    /** Five minutes at 25 Hz without a fix until [fixAt] µs, samples [lost] never arriving; its drive checks. */
+    private fun coldStart(lost: Set<Long>, fixAt: Long = 40_200_000L): QualityReport {
         line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
         val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
-        val fixAt = 40_200_000L
         val stop = 300_000_000L
         var i = 0L
         var t = 0L

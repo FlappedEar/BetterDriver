@@ -179,25 +179,29 @@ private fun gaps(s: GnssSamples, acrossDrop: BooleanArray): Gaps {
     val receiverClock = s.utc.count { it != GnssSamples.NoUtc } >= 2
     // A position without the receiver's time is a fix too (the DIY receiver can send one, Codex on #260).
     val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) }
-    // Each gap with the index of the sample that ends it; without any fix every gap is judged.
+    // A gap that starts before the first fix is not judged, also when it runs past an untimed fix (Codex on
+    // #260); without any fix every gap is judged.
     val (beforeFix, all) = steps(s, acrossDrop, receiverClock)
-        .partition { (to, _) -> firstFix != null && to <= firstFix }
-        .let { (a, b) -> a.map { (to, gap) -> s.t[to] to gap } to b.map { (to, gap) -> s.t[to] to gap } }
+        .partition { it.from < (firstFix ?: Int.MIN_VALUE) }
+        .let { (a, b) -> a.map { s.t[it.to] to it.gap } to b.map { s.t[it.to] to it.gap } }
     val max = all.maxOfOrNull { it.second } ?: 0L
     val mean = if (all.isEmpty()) null else all.sumOf { it.second }.toDouble() / all.size
     val firstFixMicros = firstFix?.let { s.t[it] }
     return Gaps(max, mean, all.filter { it.second > MaxGapMicros }, receiverClock, beforeFix, firstFixMicros)
 }
 
-/** The gaps between consecutive samples (by the receiver's clock when it has one), each with the index ending it. */
-private fun steps(s: GnssSamples, acrossDrop: BooleanArray, receiverClock: Boolean): List<Pair<Int, Long>> {
-    val all = mutableListOf<Pair<Int, Long>>()
+/** A gap of [gap] µs from sample [from] to sample [to]. */
+private class Step(val from: Int, val to: Int, val gap: Long)
+
+/** The gaps between consecutive samples, by the receiver's clock when it has one. */
+private fun steps(s: GnssSamples, acrossDrop: BooleanArray, receiverClock: Boolean): List<Step> {
+    val all = mutableListOf<Step>()
     var previous = -1
     var dropBetween = false
     for (i in 0 until s.size) {
         if (!receiverClock || s.utc[i] != GnssSamples.NoUtc) {
             val gap = if (previous < 0 || dropBetween) 0L else gap(s, previous, i, receiverClock)
-            if (gap > 0) all += i to gap
+            if (gap > 0) all += Step(previous, i, gap)
             previous = i
             dropBetween = false
         }

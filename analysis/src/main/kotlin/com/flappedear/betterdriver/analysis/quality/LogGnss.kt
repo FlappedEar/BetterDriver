@@ -64,7 +64,7 @@ internal fun logGnssSection(
         addAll(logMaxGap(seconds))
         add(
             info(
-                "gnss.long_gaps", "Gaps over 200 ms", seconds.sumOf { it.longGaps }.toDouble(), "", Basis.MEASURED,
+                "gnss.long_gaps", "Gaps over 200 ms", logLongGaps(seconds).toDouble(), "", Basis.MEASURED,
                 "receiver steps over 200 ms, link drops and those before the first fix (FBBD-273) left out",
             ),
         )

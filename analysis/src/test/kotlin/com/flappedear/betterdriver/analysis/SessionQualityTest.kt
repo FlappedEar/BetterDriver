@@ -237,6 +237,9 @@ class SessionQualityTest {
         val u = sessionQuality(session(untimed))
         assertEquals(Verdict.PASS, u.verdict("gnss.max_gap"), u.metric("gnss.max_gap").how)
         assertEquals(880.0, u.value("gnss.max_gap_before_fix"))
+        // An outage up to that untimed fix is a gap that starts before it, not judged either.
+        val outage = untimed.filterNot { it.tMicros in 39_600_000L..40_160_000L }
+        assertEquals(Verdict.PASS, sessionQuality(session(outage)).verdict("gnss.max_gap"))
         // A first fix on the last sample leaves no gap after it to judge (Codex on #260).
         val last = sets.filter { it.tMicros <= fixAt }
         val onlyBefore = sessionQuality(session(last))

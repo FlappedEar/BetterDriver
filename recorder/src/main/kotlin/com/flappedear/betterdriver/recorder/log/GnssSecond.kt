@@ -25,7 +25,7 @@ import kotlin.math.roundToLong
  * of (session time − receiver time since the session's start): how far the phone's clock is from the
  * receiver's, plus the shortest delivery delay. [lat], [lon] are the mean fix, [varianceM2] the mean
  * squared distance of the fixes from it; [kmh] the mean speed, [kmhMin] and [kmhMax] its range.
- * Since 1.3.1 the steps up to the one ending on the session's first fix count in [preFixLongGaps] and
+ * Since 1.3.0 the steps that start before the session's first fix count in [preFixLongGaps] and
  * [maxRxPreGapMillis] instead of [longGaps] and [maxRxGapMillis] (FBBD-273); older lines count them in both.
  */
 data class GnssSecond(
@@ -129,8 +129,11 @@ class GnssSecondLog(
     private var lastUtcFix = false
     private var dropSinceLast = false
 
-    /** A fix has ended a step on the receiver's clock: later steps are judged (FBBD-273). */
+    /** The session has had a fix (FBBD-273). */
     private var fixSeen = false
+
+    /** The receiver time [lastUtc] came before any fix: a step from it is not judged (FBBD-273). */
+    private var lastUtcPreFix = true
 
     /** How often each step length (to 10 ms) was seen, for the usual step. */
     private val stepCounts = HashMap<Long, Int>()
@@ -185,8 +188,9 @@ class GnssSecondLog(
     private fun receiverTime(b: Builder, tMicros: Long, utc: Long, drop: Boolean, fix: Boolean) {
         val previousUtc = lastUtc
         if (previousUtc != null && utc > previousUtc && !drop) {
-            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix, preFix = !fixSeen)
+            step(b, previousUtc, utc - previousUtc, fix && lastUtcFix, preFix = lastUtcPreFix)
         }
+        lastUtcPreFix = !fixSeen && !fix
         lastUtc = utc
         lastUtcFix = fix
         if (b.utcFirst == null) b.utcFirst = utc
