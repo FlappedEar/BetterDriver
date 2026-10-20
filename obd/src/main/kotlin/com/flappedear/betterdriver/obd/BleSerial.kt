@@ -109,6 +109,9 @@ class BleSerialConnection(
     private var failed = false
     private var released = false
 
+    /** [ended] has been passed to [bytes], so a waiting write may fail now. */
+    private var reported = false
+
     init {
         require(payload > 0) { "payload must be positive: $payload" }
     }
@@ -136,7 +139,7 @@ class BleSerialConnection(
     /** Under [lock]: waits for [writeDone]; null when the write went through, else why not. */
     private fun awaitAck(): String? {
         val deadline = System.nanoTime() + writeTimeoutMs * NanosPerMs
-        while (pending && ended == null) {
+        while (pending && !reported) {
             val left = (deadline - System.nanoTime()) / NanosPerMs
             if (left <= 0) return "write not acknowledged in $writeTimeoutMs ms"
             lock.wait(left)
@@ -171,9 +174,13 @@ class BleSerialConnection(
         synchronized(lock) {
             if (ended != null) return
             ended = reason
+        }
+        // The reader hears why before a waiting write fails, so the line closes with this reason.
+        bytes.closed(reason)
+        synchronized(lock) {
+            reported = true
             lock.notifyAll()
         }
-        bytes.closed(reason)
     }
 
     companion object {
