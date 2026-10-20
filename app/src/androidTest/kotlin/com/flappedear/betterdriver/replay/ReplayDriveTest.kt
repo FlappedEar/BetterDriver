@@ -14,12 +14,18 @@ import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
 import com.flappedear.betterdriver.analysis.quality.replayQuiet
 import com.flappedear.betterdriver.coach.CoachLanguage
+import com.flappedear.betterdriver.coach.CoachReferenceStore
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachSettingsStore
+import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.buildReference
+import com.flappedear.betterdriver.coach.toCoachFix
+import com.flappedear.betterdriver.coach.tracedLaps
 import com.flappedear.betterdriver.debug.AppLog
 import com.flappedear.betterdriver.faults.AppDriver
 import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recording.DemoReplay
@@ -30,6 +36,9 @@ import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.smoke.appPermissions
+import com.flappedear.betterdriver.timing.demo.SessionReplay
+import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.uikill.UiKillPhase
 import org.junit.Assert.assertEquals
 import org.junit.Rule
@@ -44,7 +53,12 @@ import java.io.File
  * app on the emulator, recorder, live timing, coach process and voice, with the coach at Full in the
  * language replay-drive.sh asks for. Then the app's continuous log is checked as his shared logs are:
  * the drive checks (FBBD-183) and what the coach said lap by lap (FBBD-244, FBBD-242, FBBD-243,
- * FBBD-245). Run in phases by .github/scripts/replay-drive.sh, which lets the drive run in between.
+ * FBBD-245). Run in phases by .github/scripts/replay-drive.sh.
+ *
+ * The drive is 10 minutes (Arek, 2026-10-20: "replay drive na 10 minut zamiast na 30"): the coach knows
+ * the track from an earlier outing there, one drive round the same laps, as his 27 Sep sessions on his
+ * phone, and learns 1 lap, so laps 3 and 4 are coached. ReplayDriveSubsetTest checks on the computer
+ * that these laps make every coach check; DemoDriveReplayTest drives all 19 laps.
  *
  * What only his phone and car can show (camera frame rate, RaceBox link, headset delay) is not checked.
  */
@@ -60,7 +74,10 @@ class ReplayDriveTest {
     private val language = CoachLanguage.entries.firstOrNull { it.name == args.getString("language") }
         ?: CoachLanguage.Polish
 
-    /** A clean phone: no sessions, an empty log, the Demo track on the built-in Silesia Ring laps, coach at Full. */
+    /**
+     * A clean phone: no sessions, an empty log, the Demo track on the built-in Silesia Ring laps, coach at
+     * Full learning [LearningLaps] lap, with what it knows of the track from an earlier outing there.
+     */
     @Test
     fun seed() {
         marker.delete()
@@ -76,16 +93,38 @@ class ReplayDriveTest {
         DemoReplay.choose(d.app, DemoReplay.SilesiaRing)
         // The coach process reads its settings from this file at each session start (CoachProtocol).
         CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties"))
-            .write(CoachSettings(Verbosity.Full, language = language))
+            .write(CoachSettings(Verbosity.Full, language = language, learningLaps = LearningLaps))
+        earlierOuting()
         AppLog.clear(d.app)
     }
 
     /**
-     * Starts the recording with the Demo track as the receiver, as START does, with the app in front. The
-     * recorder starts the coach process itself; START on screen is covered by the smoke tests.
+     * The coach's reference for the Silesia Ring from one drive round the built-in laps, saved with its
+     * track as the coach library keeps them, so the coach starts with the corners and targets known. It
+     * names no session, as none is on the phone, so the library keeps it instead of rebuilding it.
+     */
+    private fun earlierOuting() {
+        val asset = { name: String -> d.app.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
+        // Saving a track already on the phone raises its revision, and a reference fits one revision only:
+        // it is built for the track as saved (Codex).
+        val track = TrackStore(File(d.app.filesDir, "tracks")).save(TrackJson.decode(asset("silesia-ring.track.json")))
+        val replay = SessionReplay.read(asset("silesia-ring.replay"), 0L)
+        val fixes = (0 until LoopSeconds * replay.rateHz).asSequence().mapNotNull { n ->
+            SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
+        }
+        val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
+        CoachReferenceStore(File(d.app.filesDir, "coach/references")).save(reference.copy(sessions = emptyList()))
+    }
+
+    /**
+     * The drive, in one test: the recording started with the Demo track as the receiver, as START does,
+     * with the app in front, [minutes] on the track screen in real time, then stopped as the 3 s hold
+     * does and the session saved. The recorder starts the coach process itself; START and the hold on
+     * screen are covered by the smoke tests. One test, because the runner waits for the app's main thread
+     * to go idle before each test: a stop phase after the drive waited 8 min there on every run.
      */
     @Test
-    fun start() {
+    fun drive() {
         d.openApp()
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).start(CarName, "", GnssRef.DemoTrack) }
         val live = checkNotNull(
@@ -93,13 +132,13 @@ class ReplayDriveTest {
                 it.recording && it.live?.gnss == GnssState.Ok
             }.live,
         )
-        d.saveProps(marker, KeySession to live.sessionId)
-    }
-
-    /** Stopped, as the 3 s hold does, then the session saved. */
-    @Test
-    fun stop() {
-        val id = session()
+        val id = live.sessionId
+        d.saveProps(marker, KeySession to id)
+        val minutes = args.getString("minutes")?.toLongOrNull() ?: DefaultMinutes
+        for (left in minutes downTo 1) {
+            Log.i(Tag, "replaying; $left min left")
+            Thread.sleep(MillisPerMinute)
+        }
         assertEquals("one recording all along", id, d.recorder().live?.sessionId)
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).stop() }
         d.waitFor(SaveTimeoutMs, "the session to be saved") {
@@ -127,6 +166,10 @@ class ReplayDriveTest {
                 events.filter { it.kind == "coach_problem" }.take(MaxProblems).joinToString { it.text }
         }
         checkNotNull(report) { "the log has no recording $id" }
+        // A 10-minute drive is checked only if the coach coached its laps 3 and 4: without its earlier
+        // outing it would still be learning, and its checks would pass by not being measured.
+        val silent = coach.single { it.id == "coach.silent_laps" }
+        check(silent.verdict != Verdict.NOT_MEASURED) { "${silent.label}: ${silent.how}" }
         // The drive checks count too, except those that measure the emulator's own screen, start-up and
         // speech engine rather than the app: a phone's values come from Arek's logs.
         val drive = report.metrics.filterNot { m ->
@@ -183,6 +226,17 @@ class ReplayDriveTest {
         const val SaveTimeoutMs = 60_000L
         const val StartTimeoutMs = 90_000L
         const val SettleMs = 8_000L
+        const val MillisPerMinute = 60_000L
+        const val MicrosPerSecond = 1_000_000L
+
+        /** replay-drive.sh's REPLAY_MINUTES when it gives none. */
+        const val DefaultMinutes = 10L
+
+        /** The coach's learning laps: with the earlier outing known, lap 3 is coached (ReplayDriveSubsetTest). */
+        const val LearningLaps = 1
+
+        /** The built-in replay's loop, 2828 s, once round: the earlier outing. */
+        const val LoopSeconds = 2_830L
         const val MillisPerSecond = 1000.0
         const val MaxProblems = 5
 
