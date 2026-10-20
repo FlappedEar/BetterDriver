@@ -122,7 +122,7 @@ class CoachService : Service() {
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice, settings.speech, settings.language)
         active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays)
-        routes?.watch(clips, measured = (if (clips) clip else live) != null)
+        routes?.watch(clips, measured = live != null && (!clips || clip != null))
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
