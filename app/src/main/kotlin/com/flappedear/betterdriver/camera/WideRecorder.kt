@@ -275,7 +275,7 @@ internal class WideRecorder(
     private fun cameraSurface(e: WideEncoder): Surface {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return e.surface
         return try {
-            FrameRelay(e.surface, target.width, target.height, sensorShift, ::sensorSeen).also {
+            FrameRelay(e.surface, target.width, target.height, sensorShift, ::sensorSeen, e.softwareOnly).also {
                 relay = it
                 DebugLog.i(Tag, "camera frames through a relay")
             }.surface

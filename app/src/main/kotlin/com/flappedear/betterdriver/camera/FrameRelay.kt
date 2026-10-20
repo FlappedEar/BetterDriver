@@ -27,6 +27,7 @@ import kotlin.math.abs
  * stay on the sound's clock whichever clock the sensor runs on. [shiftNanos] is boot time less
  * monotonic for a camera that stamps on boot time (0 otherwise); [sensorSeen] tells whether a time is
  * one of the camera's recent SENSOR_TIMESTAMPs, which shows which clock the reader's frames carry.
+ * [softwareEncoder] makes the buffers readable by the CPU, as an encoder that runs on it needs.
  */
 @RequiresApi(Build.VERSION_CODES.Q)
 internal class FrameRelay(
@@ -35,10 +36,11 @@ internal class FrameRelay(
     height: Int,
     private val shiftNanos: Long = 0,
     private val sensorSeen: (Long) -> Boolean = { false },
+    softwareEncoder: Boolean = false,
     buffers: Int = Buffers,
 ) {
     private val reader = ImageReader.newInstance(
-        width, height, ImageFormat.PRIVATE, buffers, HardwareBuffer.USAGE_VIDEO_ENCODE,
+        width, height, ImageFormat.PRIVATE, buffers, relayUsage(softwareEncoder),
     )
 
     // A writer the encoder's surface refuses leaves nothing open: the caller then draws straight in.
@@ -140,6 +142,13 @@ internal class FrameRelay(
         const val PollMillis = 20L
     }
 }
+
+/**
+ * What the relay's buffers are for: the encoder, and the CPU too for a [softwareEncoder] (the
+ * emulator's), which cannot read a buffer only the video hardware may.
+ */
+internal fun relayUsage(softwareEncoder: Boolean): Long =
+    HardwareBuffer.USAGE_VIDEO_ENCODE or (if (softwareEncoder) HardwareBuffer.USAGE_CPU_READ_OFTEN else 0L)
 
 /**
  * [frameNanos] on the monotonic clock: a frame stamped on boot time ([bootNanos] now) is moved by the

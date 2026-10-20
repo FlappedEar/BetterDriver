@@ -67,7 +67,7 @@ class FrameRelayTest {
         }
         encoder = WideEncoder(target, null, System::nanoTime, events, cutMarginBytes = 400_000)
         encoder.start(file(1))
-        val relay = FrameRelay(encoder.surface, target.width, target.height)
+        val relay = FrameRelay(encoder.surface, target.width, target.height, softwareEncoder = encoder.softwareOnly)
         val began = System.nanoTime()
         val drawn = draw(relay, seconds = 6)
         val drawnNanos = System.nanoTime() - began
@@ -76,8 +76,8 @@ class FrameRelayTest {
         encoder.stop()
         assertEquals("problems the encoder reported", emptyList<String>(), synchronized(problems) { problems.toList() })
 
-        val counts = relay.counts()
-        assertTrue(counts, counts.endsWith("relay_failed=0"))
+        val counts = "${relay.counts()}, ${encoder.setup} software=${encoder.softwareOnly}"
+        assertTrue(counts, relay.counts().endsWith("relay_failed=0"))
         val files = dir.listFiles().orEmpty().filter { it.length() > 0 }.sortedBy { it.name }
         assertTrue("several files: ${files.map { it.name }} ($counts)", files.size >= 2)
         val times = files.map { frameTimes(it) }

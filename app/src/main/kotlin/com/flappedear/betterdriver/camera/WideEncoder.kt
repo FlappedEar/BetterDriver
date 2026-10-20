@@ -72,6 +72,9 @@ internal class WideEncoder(
     /** How the video encoder was set up, for the log: codec, type and operating rate. */
     val setup: String
 
+    /** Whether the video encoder runs on the CPU (the emulator's): it reads frames from memory, not the GPU. */
+    val softwareOnly: Boolean
+
     /** The surface the camera draws into. */
     val surface: Surface
 
@@ -96,6 +99,7 @@ internal class WideEncoder(
             .getOrThrow()
         video = started.codec
         setup = started.setup
+        softwareOnly = isSoftwareOnly(started.codec)
         surface = started.surface
     }
 
@@ -522,6 +526,13 @@ internal fun operatingRates(fps: Int): List<Int?> = listOf(fps * 2, fps, null)
 
 /** A started video encoder, the surface it takes frames from, and how it was set up (for the log). */
 internal class StartedEncoder(val codec: MediaCodec, val surface: Surface, val setup: String)
+
+/** Whether [codec] is a CPU encoder: Android's own (c2.android., OMX.google.) or one that says so. */
+internal fun isSoftwareOnly(codec: MediaCodec): Boolean {
+    val named = codec.name.startsWith("c2.android.") || codec.name.startsWith("OMX.google.")
+    return named || Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && runCatching { codec.codecInfo.isSoftwareOnly }
+        .getOrDefault(false)
+}
 
 /**
  * A started video encoder for [target] in asynchronous mode on [handler], fed from a surface: H.264,
