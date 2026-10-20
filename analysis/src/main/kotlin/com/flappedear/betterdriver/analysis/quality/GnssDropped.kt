@@ -37,36 +37,46 @@ internal fun droppedMetrics(
 ): List<QualityMetric> {
     val steps = receiverSteps(s, acrossDrop)
     val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && s.utc[it] != GnssSamples.NoUtc }
-    // The usual step from after the first fix, so a cold start's losses do not set it either.
+    // The usual step from after the first fix, so a cold start's losses do not set it either; the losses
+    // before the fix are still counted, by the whole session's step, when no step follows the fix.
     val judgedSteps = if (firstFix == null) steps else steps.filter { it.to > firstFix }
-    val usual = nearestRank(judgedSteps.map { it.millis.toDouble() }, Median)
-    if (usual == null || usual <= 0) {
-        val why = if (steps.isEmpty()) {
-            "the receiver gave no fix times, so missing samples cannot be told from late ones"
-        } else {
-            "no step between the receiver's fix times after its first fix"
-        }
+    val usual = nearestRank(judgedSteps.map { it.millis.toDouble() }, Median)?.takeIf { it > 0 }
+    val cadence = usual ?: nearestRank(steps.map { it.millis.toDouble() }, Median)?.takeIf { it > 0 }
+    if (cadence == null) {
+        val why = "the receiver gave no fix times, so missing samples cannot be told from late ones"
         return listOf(notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why))
     }
-    val lost = tally(steps, usual, firstFix ?: Int.MAX_VALUE, raceBox, skipsWithoutFix)
-    val missing = lost.missing
-    val beforeFix = lost.beforeFix
-    val before = beforeFixInfo(beforeFix, firstFix?.let { s.t[it] })
-    val metric = if (firstFix == null) {
-        notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, NoFixText)
-    } else {
-        val received = (firstFix until s.size).count { s.utc[it] != GnssSamples.NoUtc }
-        val expected = received + missing + lost.wholeSecond
-        val percent = missing * Percent / expected
-        val skips = lost.wholeSecond + lost.skipsBeforeFix
-        val how = "$missing of $expected expected samples missing from the receiver's fix times since its " +
-            "first fix (usual step ${usual.roundToLong()} ms), besides $skips single whole-second messages " +
-            "the RaceBox does not send" + (if (skipsWithoutFix) "" else " with a fix") + "; $beforeFix missing " +
-            "before the first fix, counted apart"
-        val ok = percent <= MaxDroppedPercent
-        judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
+    val lost = tally(steps, cadence, firstFix ?: Int.MAX_VALUE, raceBox, skipsWithoutFix)
+    val metric = when {
+        firstFix == null -> notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, NoFixText)
+        usual == null -> notMeasured(
+            "gnss.dropped", "Dropped samples", DroppedCriterion,
+            "no step between the receiver's fix times after its first fix",
+        )
+        else -> judgedDropped(s, firstFix, lost, usual, skipsWithoutFix)
     }
-    return listOf(metric, before)
+    return listOf(metric, beforeFixInfo(lost.beforeFix, firstFix?.let { s.t[it] }))
+}
+
+/** The dropped-samples verdict from the receiver's [firstFix] on, with the [usual] step after it. */
+private fun judgedDropped(
+    s: GnssSamples,
+    firstFix: Int,
+    lost: Tally,
+    usual: Double,
+    skipsWithoutFix: Boolean,
+): QualityMetric {
+    val missing = lost.missing
+    val received = (firstFix until s.size).count { s.utc[it] != GnssSamples.NoUtc }
+    val expected = received + missing + lost.wholeSecond
+    val percent = missing * Percent / expected
+    val skips = lost.wholeSecond + lost.skipsBeforeFix
+    val how = "$missing of $expected expected samples missing from the receiver's fix times since its " +
+        "first fix (usual step ${usual.roundToLong()} ms), besides $skips single whole-second messages " +
+        "the RaceBox does not send" + (if (skipsWithoutFix) "" else " with a fix") + "; ${lost.beforeFix} " +
+        "missing before the first fix, counted apart"
+    val ok = percent <= MaxDroppedPercent
+    return judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
 }
 
 /** Samples lost in [steps], those up to the step ending on sample [firstFix] apart, the RaceBox's skips apart. */
