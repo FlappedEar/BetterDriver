@@ -405,17 +405,21 @@ private fun Laps(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
                     lap.best -> Dim("Best", color = c.best)
                     lap.deltaSeconds != null -> Text(formatDelta(lap.deltaSeconds), color = c.loss)
                 }
-                if (heartRate) {
-                    Text(
-                        lap.heartRate?.let { "${it.averageBpm} · ${it.maxBpm}" }.orEmpty(),
-                        color = c.textDim,
-                        textAlign = TextAlign.End,
-                        modifier = Modifier.width(LapHeartRateWidth),
-                    )
-                }
+                if (heartRate) LapHeartRateCell(lap.heartRate)
             }
         }
     }
+}
+
+/** A lap's average and highest heart rate; empty for a lap without heart rate (UI-109). */
+@Composable
+private fun LapHeartRateCell(heartRate: LapHeartRate?) {
+    Text(
+        heartRate?.let { "${it.averageBpm} · ${it.maxBpm}" }.orEmpty(),
+        color = TrackTheme.colors.textDim,
+        textAlign = TextAlign.End,
+        modifier = Modifier.width(LapHeartRateWidth),
+    )
 }
 
 @Composable

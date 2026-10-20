@@ -6,20 +6,16 @@ import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.confidence.bestGapConfidence
 import com.flappedear.betterdriver.analysis.confidence.lossConfidence
-import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.driving.DrivingStateRun
 import com.flappedear.betterdriver.analysis.focus.FocusAreaKind
 import com.flappedear.betterdriver.analysis.focus.FocusRole
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
-import com.flappedear.betterdriver.analysis.heartrate.heartRateStats
-import com.flappedear.betterdriver.analysis.heartrate.lapHeartRates
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
 import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
-import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /** What the analysis screen shows while it loads, when it cannot, and when it can. */
@@ -338,24 +334,6 @@ fun analysisUi(title: String, analysis: SessionAnalysis, comparison: LapComparis
         realisticLaps = realistic?.laps.orEmpty(),
     )
 }
-
-/**
- * [ui] with the heart rate [session] recorded (FBBD-225): the whole session's and each lap's.
- * [device] is the strap's name. A session or lap without heart rate shows none (UI-109).
- */
-fun withHeartRate(ui: AnalysisUi, analysis: SessionAnalysis, session: TelemetrySession, device: String?): AnalysisUi {
-    val whole = heartRateStats(session) ?: return ui
-    val laps = lapHeartRates(session, analysis.laps.timedLaps)
-    val minutes = ((whole.lastSeconds - whole.firstSeconds) / SecondsPerMinute).roundToInt().coerceAtLeast(1)
-    return ui.copy(
-        heartRate = HeartRateUi(device, whole.averageBpm, whole.maxBpm, whole.minBpm, minutes),
-        laps = ui.laps.map { row ->
-            row.copy(heartRate = laps.getOrNull(row.index)?.let { LapHeartRate(it.averageBpm, it.maxBpm) })
-        },
-    )
-}
-
-private const val SecondsPerMinute = 60.0
 
 /** Segment ids of the session's corners. */
 private fun cornerIds(analysis: SessionAnalysis): Set<String> =
