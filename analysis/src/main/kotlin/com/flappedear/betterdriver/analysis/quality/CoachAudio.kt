@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 
 // The coach's sound in the session validation report (FBBD-183), against FBBD-27, FBBD-47, FBBD-48
@@ -80,6 +81,12 @@ private fun total(played: List<Pair<LoggedCue, Voiced>>, path: String, limit: Lo
 private const val MaxOverlapsShown = 3
 
 private const val OverlapCriterion = "0 overlapping cues (FBBD-27, FBBD-47, FBBD-48)"
+
+/** The overlapping cues check on a log's events alone (FBBD-253), as the replay checks run it. */
+internal fun cueOverlap(events: List<RecorderEvent>): QualityMetric = overlap(
+    events.filter { it.kind == EventKinds.COACH_VOICE }.mapNotNull(::voiced),
+    events.filter { it.kind == EventKinds.COACH_VOICE_END },
+)
 
 /** A cue whose sound started before the one before it ended, or that cut the one before it off. */
 private fun overlap(voiced: List<Voiced>, ends: List<RecorderEvent>): QualityMetric {

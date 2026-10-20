@@ -27,6 +27,12 @@ finish() {
   timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null > "$out/betterdriver.log" 2>/dev/null || true
   # The report in the job's log too, where it can be read without the artifact.
   [ -s "$out/replay-drive.md" ] && cat "$out/replay-drive.md"
+  # Each cue's trigger, sound start and end as the coach logged them (FBBD-253), and the voice's own
+  # lines, so an overlap can be traced without the artifact. No positions are in these lines.
+  if [ -s "$out/betterdriver.log" ]; then
+    echo "== Coach cues and their sound"
+    grep -E "coach_(cue|voice|voice_end|problem|quiet)|[^a-zA-Z]Voice[^a-zA-Z]|CoachService" "$out/betterdriver.log" | tail -400
+  fi
   if [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
   fi

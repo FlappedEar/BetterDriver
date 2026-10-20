@@ -142,7 +142,8 @@ class CoachService : Service() {
             data.getLong(CoachProtocol.FIX_AGE_US, 0L),
         )
         var asked: Asked? = null
-        val out = coach.onFix(fix, a.now()) { text ->
+        // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
+        val out = coach.onFix(fix, a.now(), voiceFree = voice?.speaking != true) { text ->
             val ask = Asked(a.now()).also { asked = it }
             fun micros(nanoTime: Long) = (nanoTime - a.startNanos) / NanosPerMicro
             // Both posted, so they run after this fix: by then the cue's number is known.
