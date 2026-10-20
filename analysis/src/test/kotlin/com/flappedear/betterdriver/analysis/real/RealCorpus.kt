@@ -36,6 +36,14 @@ object RealCorpus {
     val SILESIA_DAY = listOf(SILESIA, SILESIA_1353, SILESIA_1454)
 
     /**
+     * Arek's six RaceChrono Pro 10.2.4 sessions at Autodrom Jastrząb on 29 Aug 2026, in the order he
+     * drove them (local start times): 10 Hz GNSS with OBD, 15 to 26 min each, RaceChrono's start line
+     * and no splits (FBBD-254).
+     */
+    val JASTRZAB_DAY = listOf("1000", "1129", "1303", "1437", "1606", "1720")
+        .map { "jastrzab-2026-08-29-$it-racechrono.vbo.gz" }
+
+    /**
      * BetterDriver 0.3.1 VBO export, 12 Oct 2026 10:36 UTC: a road drive at 25 Hz with phone video,
      * 27 min of it once 1.5 km at each end were trimmed off.
      */
@@ -104,13 +112,21 @@ object RealCorpus {
      * lines (sector lines in split-number order, the order the lap crosses them), centred on the
      * start/finish line. [id] and [revision] let a test make it again or edit it.
      */
-    fun silesiaTrack(id: String = "silesia-ring", revision: Int = 1): Track {
-        val lines = raceChronoLines(SILESIA)
+    fun silesiaTrack(id: String = "silesia-ring", revision: Int = 1): Track =
+        raceChronoTrack(SILESIA, id, "Silesia Ring", revision)
+
+    /** Autodrom Jastrząb as Arek would save it from his 29 Aug 2026 files: RaceChrono's start/finish line. */
+    fun jastrzabTrack(id: String = "jastrzab", revision: Int = 1): Track =
+        raceChronoTrack(JASTRZAB_DAY.first(), id, "Autodrom Jastrząb", revision)
+
+    /** The Polish circuit of the VBO [file], from its RaceChrono lines, as [silesiaTrack] says. */
+    private fun raceChronoTrack(file: String, id: String, name: String, revision: Int): Track {
+        val lines = raceChronoLines(file)
         val start = lines.single { it.type == "Start" }
         val splits = lines.filter { it.type == "Split" }.sortedBy { it.name.substringAfter("Split ").trim().toInt() }
         return Track(
             id = id,
-            name = "Silesia Ring",
+            name = name,
             center = start.first,
             country = "PL",
             startFinish = trackLine(start),

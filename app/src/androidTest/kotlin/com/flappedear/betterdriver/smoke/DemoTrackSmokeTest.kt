@@ -23,7 +23,8 @@ import org.junit.runner.RunWith
  * The Demo track receiver (FBBD-233) as Arek uses it without a track day: added under Devices, it
  * saves the demo circuit's track on its own, and a session started with it is timed at that track
  * with the coach process running, as at a real circuit. The session is then one of the Demo track's
- * Drives (FBBD-235), and the Silesia Ring laps built into the app drive at their own track (FBBD-237).
+ * Drives (FBBD-235), and the Silesia Ring and Jastrząb laps built into the app drive at their own
+ * tracks (FBBD-237, FBBD-254).
  */
 @RunWith(AndroidJUnit4::class)
 class DemoTrackSmokeTest {
@@ -68,6 +69,20 @@ class DemoTrackSmokeTest {
 
         check(SmokeData.tracks().any { it.id == SilesiaRingTrackId }) { "Silesia Ring's track was not saved" }
         assertTimedAt(id, SilesiaRingTrackId)
+    }
+
+    @Test
+    fun theBuiltInJastrzabLapsAreTimedAtJastrzab() {
+        addDemoTrack()
+        openDrives()
+        app.waitForText("Autodrom Jastrząb", substring = true).performClick()
+        app.waitUntilGone("Cancel")
+        app.waitForText("Autodrom Jastrząb", substring = true)
+        app.back()
+        val id = driveASession()
+
+        check(SmokeData.tracks().any { it.id == JastrzabTrackId }) { "Jastrząb's track was not saved" }
+        assertTimedAt(id, JastrzabTrackId)
     }
 
     private fun addDemoTrack() {
@@ -122,6 +137,9 @@ class DemoTrackSmokeTest {
 
         /** The track of the built-in Silesia Ring laps (app/src/main/assets/demo). */
         const val SilesiaRingTrackId = "silesia-ring"
+
+        /** The track of the built-in Jastrząb laps (FBBD-254). */
+        const val JastrzabTrackId = "jastrzab"
 
         /** Long enough for the first fix and the track to be picked. */
         const val DrivingMs = 20_000L

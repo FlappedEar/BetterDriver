@@ -20,9 +20,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The Demo track's "Drives" choice (FBBD-235): the demo circuit, Arek's Silesia Ring laps built into
- * the app (FBBD-237) and every session on the phone that is not recording, newest first, labelled by
- * date and track. Null until the list is read.
+ * The Demo track's "Drives" choice (FBBD-235): the demo circuit, Arek's Silesia Ring and Jastrząb laps
+ * built into the app (FBBD-237, FBBD-254) and every session on the phone that is not recording, newest
+ * first, labelled by date and track. Null until the list is read.
  */
 @Composable
 internal fun rememberDemoDrives(): DemoDrives? {
@@ -32,7 +32,7 @@ internal fun rememberDemoDrives(): DemoDrives? {
         value = withContext(Dispatchers.IO) { sessionDrives(context) }
     }
     val list = sessions ?: return null
-    val choices = listOf(DemoDrives.Circuit, silesiaRing()) + list
+    val choices = listOf(DemoDrives.Circuit, silesiaRing(), jastrzab()) + list
     return DemoDrives(
         current = choices.firstOrNull { it.sessionId == chosen } ?: DemoDrives.Circuit,
         choices = choices,
@@ -46,6 +46,10 @@ internal fun rememberDemoDrives(): DemoDrives? {
 /** Arek's Silesia Ring laps built into the app (FBBD-237), named as a session at that track would be. */
 private fun silesiaRing() =
     DemoDrive(DemoReplay.SilesiaRing, "${sessionLabel(DemoReplay.SilesiaRingStartUtcMillis)} · Silesia Ring")
+
+/** Arek's Autodrom Jastrząb laps built into the app (FBBD-254), named as Silesia Ring's are. */
+private fun jastrzab() =
+    DemoDrive(DemoReplay.Jastrzab, "${sessionLabel(DemoReplay.JastrzabStartUtcMillis)} · Autodrom Jastrząb")
 
 /** Logged with the count, so a log tells an empty list from a missing session (Arek, 0.3.35). */
 private fun sessionDrives(context: Context): List<DemoDrive> {

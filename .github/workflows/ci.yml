@@ -81,7 +81,7 @@ jobs:
                       text = (bad.get('message') or bad.text or '').strip().replace('\n', ' ')[:900]
                       print(f"::error title={case.get('classname')}.{case.get('name')}::{text}")
           PY
-      # The coach on every lap of Arek's built-in Silesia Ring drive (DemoDriveReplayTest), on the summary page.
+      # The coach on every lap of Arek's built-in Silesia Ring and Jastrząb drives (DemoDriveReplayTest), on the summary page.
       - name: Coach replay report
         if: always() && matrix.robolectric
         run: cat analysis/build/reports/replay-drive/*.md >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true

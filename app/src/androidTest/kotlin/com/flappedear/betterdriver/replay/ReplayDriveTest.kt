@@ -205,7 +205,8 @@ class ReplayDriveTest {
         appendLine("| --- | --- | --- | --- | --- |")
         for (lap in replayLaps(events)) {
             val said = cues.filter { it.lap == lap.number }.joinToString("; ") { it.text }
-            val still = quiet.filter { it.lap == lap.number }.joinToString { it.reason }
+            val still = quiet.filter { it.lap == lap.number }
+                .joinToString { if (it.back) "${it.reason}, back" else it.reason }
             val time = "%.1f".format(lap.timeMillis / MillisPerSecond)
             appendLine("| ${lap.number} | ${lap.kind} | $time s | $still | $said |")
         }

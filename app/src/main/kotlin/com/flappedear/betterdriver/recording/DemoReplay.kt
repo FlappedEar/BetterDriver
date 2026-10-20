@@ -16,8 +16,8 @@ import java.io.File
  * What the Demo track receiver drives (FBBD-235): the made-up demo circuit, or a session on the phone
  * replayed lap after lap, Arek's Silesia Ring outing for example (Settings › Devices › Demo track ›
  * Drives). The choice is the session id in a small file, so the recorder process reads the current
- * one at each session start; no file means the demo circuit. [SilesiaRing] is chosen the same way:
- * Arek's laps there, built into the app (FBBD-237).
+ * one at each session start; no file means the demo circuit. [SilesiaRing] and [Jastrzab] are chosen
+ * the same way: Arek's laps there, built into the app (FBBD-237, FBBD-254).
  */
 object DemoReplay {
     /** The choice of the Silesia Ring replay built into the app (assets/demo): Arek's 27 Sep sessions. */
@@ -25,6 +25,15 @@ object DemoReplay {
 
     /** When Arek's built-in Silesia Ring session started (27 Sep 2026, 11:00:30 UTC), for its name. */
     const val SilesiaRingStartUtcMillis = 1_790_506_830_000L
+
+    /** The choice of the Autodrom Jastrząb replay built into the app (assets/demo): Arek's 29 Aug sessions. */
+    const val Jastrzab = "built-in:jastrzab"
+
+    /** When Arek's first built-in Jastrząb session started (29 Aug 2026, 08:00:09 UTC), for its name. */
+    const val JastrzabStartUtcMillis = 1_787_990_409_000L
+
+    /** The asset name in assets/demo of each built-in choice. */
+    private val BuiltInAssets = mapOf(SilesiaRing to "silesia-ring", Jastrzab to "jastrzab")
 
     private fun file(context: Context) = File(context.filesDir, "demo_track_session")
 
@@ -46,9 +55,11 @@ object DemoReplay {
      * recording's own start.
      */
     fun script(context: Context, now: () -> Long = System::currentTimeMillis): GnssScript {
-        val replay = when (val id = sessionId(context)) {
-            null -> null
-            SilesiaRing -> silesiaRing(context, now)
+        val id = sessionId(context)
+        val builtIn = id?.let { BuiltInAssets[it] }
+        val replay = when {
+            id == null -> null
+            builtIn != null -> builtIn(context, builtIn, now)
             else -> session(context, id, now)
         }
         return replay ?: demoCircuit(context, now)
@@ -79,14 +90,15 @@ object DemoReplay {
     }
 
     /**
-     * Arek's Silesia Ring laps, joined into one loop on the computer (BuiltInReplayTest), with the
-     * track they were timed at, saved first as the demo circuit's is.
+     * Arek's laps at one track built into the app ([name] in assets/demo: Silesia Ring or Jastrząb),
+     * joined into one loop on the computer (BuiltInReplayTest), with the track they were timed at,
+     * saved first as the demo circuit's is.
      */
     @Suppress("TooGenericExceptionCaught") // As for a session: the demo circuit drives instead.
-    private fun silesiaRing(context: Context, now: () -> Long): GnssScript? = try {
-        val asset = { name: String -> context.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
-        val track = TrackJson.decode(asset("silesia-ring.track.json"))
-        val replay = SessionReplay.read(asset("silesia-ring.replay"), now())
+    private fun builtIn(context: Context, name: String, now: () -> Long): GnssScript? = try {
+        val asset = { file: String -> context.assets.open("demo/$file").use { it.readBytes().decodeToString() } }
+        val track = TrackJson.decode(asset("$name.track.json"))
+        val replay = SessionReplay.read(asset("$name.replay"), now())
         val store = TrackStore(tracksDir(context))
         // Arek's edits are kept while they time the laps. A line flipped or removed would not: only the
         // built-in start/finish comes back, his sectors, pit lines and name stay (Codex).
@@ -103,10 +115,10 @@ object DemoReplay {
             )
             store.save(if (replay.timesLaps(mended)) mended else track)
         }
-        DebugLog.i("DemoReplay", "replaying the built-in Silesia Ring laps at ${track.id}")
+        DebugLog.i("DemoReplay", "replaying the built-in ${track.name} laps at ${track.id}")
         replay
     } catch (e: Exception) {
-        DebugLog.w("DemoReplay", "built-in Silesia Ring replay cannot be read: demo circuit instead", e)
+        DebugLog.w("DemoReplay", "built-in $name replay cannot be read: demo circuit instead", e)
         null
     }
 }
