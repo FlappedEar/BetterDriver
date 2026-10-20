@@ -69,11 +69,20 @@ internal class AudioRouteWatch(
      * measured one device. If they did not, the output is measured again; after that, when it changes.
      */
     fun watch(clips: Boolean, live: Probed?, clip: Probed?) {
-        val measured = measuredId(clips, live, clip) != null
+        val measured = isRouted(measuredId(clips, live, clip))
         watched = Watched(clips, if (measured) outputs.device()?.id else NotMeasured)
         handler.removeCallbacks(poll)
         handler.postDelayed(poll, PollMillis)
         if (!measured) settle()
+    }
+
+    /**
+     * Whether [measured] is the device the voice goes to now: as Android's audio policy says from
+     * Android 13 on (else the route changed after the probe); before, which cannot say, any device.
+     */
+    private fun isRouted(measured: Int?): Boolean {
+        val routed = outputs.policyRoute()
+        return measured != null && (routed == null || routed.id == measured)
     }
 
     /** The device both paths the session uses measured, or null if either was not, or they differ. */
@@ -111,9 +120,9 @@ internal class AudioRouteWatch(
             handler.post {
                 // A result for a route already left behind (it changed again meanwhile) is dropped.
                 if (watched === w && w.deviceId == id) {
-                    // A path not measured (still settling, no track), or the paths measured different
-                    // devices: the next check measures it again.
-                    if (measuredId(w.clips, live, clip) == null) w.deviceId = NotMeasured
+                    // A path not measured (still settling, no track), the paths measured different devices,
+                    // or not the one routed now: the next check measures it again.
+                    if (!isRouted(measuredId(w.clips, live, clip))) w.deviceId = NotMeasured
                     onMeasured(Remeasured(now, w.clips, live, clip))
                 }
             }
