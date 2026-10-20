@@ -7,5 +7,7 @@
   and every Codex comment is fixed or answered.
 - Run `./gradlew build detekt` before pushing.
 - CI also runs the emulator smoke tests (app/src/androidTest, FBBD-161) on an
-  Android 14 emulator. To run them locally, start an emulator and run
+  Android 14 emulator, split over two emulators (smoke tests; kill, fault and
+  permission scripts), beside the Replay drive. A change to documentation only
+  (docs/, Markdown outside src/) skips the emulator jobs. To run them locally, start an emulator and run
   `./gradlew :app:connectedDebugAndroidTest`.

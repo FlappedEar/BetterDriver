@@ -5,8 +5,12 @@ done because its code exists. Every release passes two gates.
 
 ## 1. Automatic gate (CI)
 
-`release.yml` signs and publishes only a commit whose whole CI run on main
-succeeded (`ci-green` job). That run includes:
+`release.yml` signs and publishes only a commit whose whole CI run succeeded
+(`ci-green` job): main's run of that commit, or the pull request run that
+checked the very same source tree (its `CI passed (tree …)` job, when the pull
+request was squash-merged while up to date with main). Each main commit keeps
+its own CI run, so a later merge no longer cancels the run a release waits for.
+That run includes:
 
 - unit tests (with the analysis parity tests against FlappedEar Telemetry and
   the screenshot tests), Android lint, detekt and the APK build;
