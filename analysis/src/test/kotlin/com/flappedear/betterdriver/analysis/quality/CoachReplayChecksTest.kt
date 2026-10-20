@@ -67,4 +67,37 @@ class CoachReplayChecksTest {
         val day = listOf(150_000, 150_000, 150_000, 150_000, 110_000, 110_000, 110_000, 110_000, 110_000)
         assertEquals(Verdict.PASS, adviceFromLap3(resumed = false, lapMillis = day).verdict)
     }
+
+    private fun confidence(vararg cues: String): QualityMetric = coachReplayChecks(
+        cues.mapIndexed { i, fields ->
+            RecorderEvent(i * 1_000_000L, "coach_cue", "seq=$i lap=5 kind=Corner $fields text=x")
+        },
+        "pl",
+    ).single { it.id == "coach.confidence" }
+
+    @Test
+    fun `numbers at High and words at Medium pass`() {
+        assertEquals(
+            Verdict.PASS,
+            confidence(
+                "advice=brake_later:10:at=100 conf=HIGH",
+                "advice=brake_later:10:vague:at=100 conf=MEDIUM",
+            ).verdict,
+        )
+    }
+
+    @Test
+    fun `numbers at Medium fail`() {
+        assertEquals(Verdict.FAIL, confidence("advice=brake_later:10:at=100 conf=MEDIUM").verdict)
+    }
+
+    @Test
+    fun `a cue said at Low fails`() {
+        assertEquals(Verdict.FAIL, confidence("advice=brake_later:10:vague:at=100 conf=LOW").verdict)
+    }
+
+    @Test
+    fun `cues logged without a confidence are not measured`() {
+        assertEquals(Verdict.NOT_MEASURED, confidence("advice=brake_later:10").verdict)
+    }
 }

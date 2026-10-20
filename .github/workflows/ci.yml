@@ -190,7 +190,7 @@ jobs:
   # the app (his 27 Sep 2026 sessions), and beside it his Jastrząb laps (29 Aug 2026, FBBD-254), each
   # replayed through the whole app on an emulator for 22 minutes,
   # coach at Full in Polish, then the app's continuous log checked as his shared logs are: the drive
-  # checks and what the coach said lap by lap (FBBD-244, 242, 243, 245). replay-drive.sh; the report
+  # checks and what the coach said lap by lap (FBBD-244, 242, 243, 245, 177). replay-drive.sh; the report
   # is on the run's summary page and in the replay-drive artifact.
   replay:
     # Silesia Ring keeps the job's first name, "Replay drive".
