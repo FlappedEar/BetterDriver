@@ -13,7 +13,6 @@ import com.flappedear.betterdriver.analysis.quality.readLog
 import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
 import com.flappedear.betterdriver.analysis.quality.replayQuiet
-import com.flappedear.betterdriver.analysis.quality.replayResumed
 import com.flappedear.betterdriver.coach.CoachLanguage
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachSettingsStore
@@ -43,9 +42,9 @@ import java.io.File
  * Arek's Demo track drive, done by CI instead of by him (2026-10-19: "you should run these tests on your
  * own"): the Silesia Ring laps built into the app (his 27 Sep 2026 sessions), or the Jastrząb laps (his
  * 29 Aug 2026 sessions, FBBD-254), replayed through the whole app on the emulator, recorder, live timing,
- * coach process and voice, with the coach at Full in the language replay-drive.sh asks for. Then the app's continuous log is checked as his shared logs are:
- * the drive checks (FBBD-183) and what the coach said lap by lap (FBBD-244, FBBD-242, FBBD-243,
- * FBBD-245). Run in phases by .github/scripts/replay-drive.sh, which lets the drive run in between.
+ * coach process and voice, with the coach at Full in the language replay-drive.sh asks for. Then the
+ * app's continuous log is checked as his shared logs are: the drive checks (FBBD-183) and what the coach
+ * said lap by lap (FBBD-244, FBBD-242, FBBD-243, FBBD-245). Run in phases by .github/scripts/replay-drive.sh, which lets the drive run in between.
  *
  * What only his phone and car can show (camera frame rate, RaceBox link, headset delay) is not checked.
  */
@@ -163,13 +162,12 @@ class ReplayDriveTest {
         appendLine()
         val cues = replayCues(events)
         val quiet = replayQuiet(events)
-        val back = replayResumed(events)
         appendLine("| Lap | Kind | Time | Coach quiet | Cues |")
         appendLine("| --- | --- | --- | --- | --- |")
         for (lap in replayLaps(events)) {
             val said = cues.filter { it.lap == lap.number }.joinToString("; ") { it.text }
-            val still = (quiet.filter { it.lap == lap.number }.map { it.reason } +
-                back.filter { it.lap == lap.number }.map { "back" }).joinToString()
+            val still = quiet.filter { it.lap == lap.number }
+                .joinToString { if (it.back) "${it.reason}, back" else it.reason }
             val time = "%.1f".format(lap.timeMillis / MillisPerSecond)
             appendLine("| ${lap.number} | ${lap.kind} | $time s | $still | $said |")
         }

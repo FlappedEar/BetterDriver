@@ -8,7 +8,6 @@ import com.flappedear.betterdriver.analysis.quality.coachReplayChecks
 import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
 import com.flappedear.betterdriver.analysis.quality.replayQuiet
-import com.flappedear.betterdriver.analysis.quality.replayResumed
 import com.flappedear.betterdriver.coach.CoachFix
 import com.flappedear.betterdriver.coach.CoachLanguage
 import com.flappedear.betterdriver.coach.CoachSession
@@ -95,7 +94,6 @@ class DemoDriveReplayTest {
     private fun report(d: Drive, language: CoachLanguage, events: List<RecorderEvent>, metrics: List<QualityMetric>) {
         val cues = replayCues(events)
         val quiet = replayQuiet(events)
-        val back = replayResumed(events)
         val text = buildString {
             appendLine("## Built-in ${d.name} replay on the JVM, coach ${language.name}, Full")
             appendLine()
@@ -109,8 +107,8 @@ class DemoDriveReplayTest {
             appendLine("| --- | --- | --- | --- | --- |")
             for (lap in replayLaps(events)) {
                 val said = cues.filter { it.lap == lap.number }.joinToString("; ") { it.text }
-                val still = (quiet.filter { it.lap == lap.number }.map { it.reason } +
-                    back.filter { it.lap == lap.number }.map { "back" }).joinToString()
+                val still = quiet.filter { it.lap == lap.number }
+                    .joinToString { if (it.back) "${it.reason}, back" else it.reason }
                 val time = "%.1f".format(lap.timeMillis / 1000.0)
                 appendLine("| ${lap.number} | ${lap.kind} | $time s | $still | $said |")
             }

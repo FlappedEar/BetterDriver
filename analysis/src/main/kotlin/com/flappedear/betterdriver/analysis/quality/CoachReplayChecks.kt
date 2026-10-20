@@ -48,17 +48,11 @@ data class ReplayCue(
     val beforeLap: Int?,
 )
 
-/** The coach went quiet on [lap] for [reason]: "cooling_down" or "pit_lane" (FBBD-202). */
-data class ReplayQuiet(val tMicros: Long, val lap: Int, val reason: String)
-
-/** The coach was back on [lap] [after] going quiet for that reason (FBBD-254). */
-data class ReplayResumed(val tMicros: Long, val lap: Int, val after: String)
-
-/** When the coach came back on the lap it went quiet on, in order. */
-fun replayResumed(events: List<RecorderEvent>): List<ReplayResumed> = events.ofKind(ResumedKind).mapNotNull { e ->
-    val f = fields(e.text)
-    ReplayResumed(e.tMicros, f["lap"]?.toIntOrNull() ?: return@mapNotNull null, f["after"].orEmpty())
-}
+/**
+ * The coach went quiet on [lap] for [reason]: "cooling_down" or "pit_lane" (FBBD-202); [back] when it
+ * came back later on that lap (coach_resumed, FBBD-254).
+ */
+data class ReplayQuiet(val tMicros: Long, val lap: Int, val reason: String, val back: Boolean = false)
 
 /** One lap as live timing logged it at the line. */
 data class ReplayLap(val number: Int, val kind: String, val timeMillis: Long)
@@ -75,10 +69,16 @@ fun replayCues(events: List<RecorderEvent>): List<ReplayCue> = events.ofKind(Cue
     )
 }
 
-/** When the coach went quiet in [events], in order. */
-fun replayQuiet(events: List<RecorderEvent>): List<ReplayQuiet> = events.ofKind(QuietKind).mapNotNull { e ->
-    val f = fields(e.text)
-    ReplayQuiet(e.tMicros, f["lap"]?.toIntOrNull() ?: return@mapNotNull null, f["reason"].orEmpty())
+/** When the coach went quiet in [events], in order, and whether it came back on the same lap. */
+fun replayQuiet(events: List<RecorderEvent>): List<ReplayQuiet> {
+    val resumed = events.ofKind(ResumedKind).map { e -> fields(e.text).let { e.tMicros to it } }
+    return events.ofKind(QuietKind).mapNotNull { e ->
+        val f = fields(e.text)
+        val lap = f["lap"]?.toIntOrNull() ?: return@mapNotNull null
+        val reason = f["reason"].orEmpty()
+        val back = resumed.any { (t, r) -> t >= e.tMicros && r["lap"] == lap.toString() && r["after"] == reason }
+        ReplayQuiet(e.tMicros, lap, reason, back)
+    }
 }
 
 /** The laps live timing finished in [events], in order. */
@@ -113,7 +113,7 @@ fun coachReplayChecks(events: List<RecorderEvent>, language: String, minCoachedL
     // A lap driven cooling down: the coach took it as cooling down, and it was slower than race pace. A lap
     // it went quiet on late, after the corners it was driven at pace through, does not count, nor one it
     // came back on (FBBD-252): its passes while quiet are skipped, the rest were at pace.
-    val resumed = replayResumed(events).filter { it.after == "cooling_down" }.map { it.lap }.toSet()
+    val resumed = quiet.filter { it.reason == "cooling_down" && it.back }.map { it.lap }.toSet()
     val cooling = quiet.filter { it.reason == "cooling_down" && it.lap !in atPace && it.lap !in resumed }
         .map { it.lap }.toSet()
     // Coaching starts at the first corner cue; the laps from there on that finished are coached laps.
