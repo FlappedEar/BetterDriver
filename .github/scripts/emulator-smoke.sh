@@ -40,13 +40,20 @@ bash .github/scripts/wait-apk-build.sh || { status=1; built=1; }
 
 # With the APKs built in the background the tests start about a minute after boot, while Android
 # is still busy with its post-boot work, and WideEncoderTest then loses frames (220 of 241). Wait
-# until the emulator's 1-minute load falls below its 2 cores, at most 3 min.
-for _ in $(seq 36); do
-  load=$(adb shell cat /proc/loadavg 2>/dev/null | cut -d' ' -f1)
-  echo "Emulator load: ${load:-?}"
-  awk -v l="${load:-99}" 'BEGIN { exit !(l < 2) }' && break
-  sleep 5
+# until the emulator's CPUs are less than half busy over 3 s (the load average lags by minutes),
+# at most 3 min.
+cpu() { adb shell head -1 /proc/stat 2>/dev/null | awk '{ print $2+$3+$4+$7+$8, $5+$6 }'; }
+started=$SECONDS
+while [ $((SECONDS - started)) -lt 180 ]; do
+  read -r busy1 idle1 <<<"$(cpu)"
+  sleep 3
+  read -r busy2 idle2 <<<"$(cpu)"
+  pct=$(awk -v b=$((${busy2:-0} - ${busy1:-0})) -v i=$((${idle2:-0} - ${idle1:-0})) \
+    'BEGIN { print (b + i > 0) ? int(100 * b / (b + i)) : 100 }')
+  echo "Emulator CPU busy: $pct %"
+  [ "$pct" -lt 50 ] && break
 done
+echo "Emulator settled after $((SECONDS - started)) s."
 
 if [ "$built" -eq 0 ] && [ "$part" != faults ]; then
   ./gradlew :app:connectedDebugAndroidTest --stacktrace || status=1
