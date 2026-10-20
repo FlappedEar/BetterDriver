@@ -54,8 +54,9 @@ class CoachService : Service() {
         /** The delay cues are timed for, of the output they play on now (FBBD-255). */
         var timingMillis = settings.audioDelayMillis
 
-        /** The output type [timingMillis] is of. */
+        /** The output type and path ("live" or "clip") [timingMillis] is of. */
         var timingOutput = ""
+        var timingPath = ""
         var status: CoachStatus = CoachStatus.None
 
         fun now() = (System.nanoTime() - startNanos) / NanosPerMicro
@@ -77,6 +78,7 @@ class CoachService : Service() {
             a.timingMillis = used.millis
             a.timingSource = used.source
             a.timingOutput = output
+            a.timingPath = r.path
             a.coach?.audioDelay(used.millis)
             DebugLog.i(Tag, "cues now timed for an audio delay of ${used.millis} ms (${used.source}) on ${r.output}")
         }
@@ -134,7 +136,10 @@ class CoachService : Service() {
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice, settings.speech, settings.language)
         active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays, delay.source)
-            .also { it.timingOutput = output }
+            .also {
+                it.timingOutput = output
+                it.timingPath = path
+            }
         routes?.watch(clips, live, clip, before)
     }
 
@@ -179,7 +184,7 @@ class CoachService : Service() {
         )
         var asked: Asked? = null
         val out = coach.onFix(fix, a.now()) { text ->
-            val ask = Asked(a.now(), a.timingSource, a.timingOutput).also { asked = it }
+            val ask = Asked(a.now(), a.timingSource, a.timingOutput, a.timingPath).also { asked = it }
             fun micros(nanoTime: Long) = (nanoTime - a.startNanos) / NanosPerMicro
             // Both posted, so they run after this fix: by then the cue's number is known.
             val ended = Ended { nanoTime, end ->
@@ -208,15 +213,25 @@ class CoachService : Service() {
 
     /**
      * A cue asked of the voice at session time [askedMicros], timed for a delay of output [timedOutput]
-     * that was [timedSource] ("measured" or "set"); [seq] is set once the coach has logged it.
+     * on path [timedPath] that was [timedSource] ("measured" or "set"); [seq] is set once the coach has logged it.
      */
-    private class Asked(val askedMicros: Long, val timedSource: String, val timedOutput: String) {
+    private class Asked(
+        val askedMicros: Long,
+        val timedSource: String,
+        val timedOutput: String,
+        val timedPath: String,
+    ) {
         var seq: Int? = null
 
         /** The event text of its sound starting, how it was said and where it went; null if never logged. */
         fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int, outDelaySource: String) = seq?.let {
-            // Its sound went to another output than it was timed for: the route changed meanwhile.
-            val timed = if (start.device == timedOutput) timedSource else OtherOutput
+            // Its sound went another way than it was timed for: the route changed meanwhile, or a clip
+            // was not ready and live speech said it.
+            val timed = when {
+                start.device != timedOutput -> OtherOutput
+                start.path != timedPath -> OtherPath
+                else -> timedSource
+            }
             CoachEvents.voiceText(
                 it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
                 outDelaySource, timed,
@@ -259,6 +274,9 @@ class CoachService : Service() {
 
         /** timed_src of a cue whose sound went to another output than it was timed for (FBBD-255). */
         const val OtherOutput = "other_output"
+
+        /** timed_src of a cue said on another path (live, clip) than it was timed for (FBBD-255). */
+        const val OtherPath = "other_path"
     }
 }
 
