@@ -35,6 +35,8 @@ fail() {
   # Why the app is gone or not in front, in the job log itself: crashes and ANRs since boot.
   adb logcat -b crash -d 2>/dev/null | tail -n 80 || true
   adb logcat -d 2>/dev/null | grep -E "AndroidRuntime|ANR in $app|Process $app.* has died|Force finishing" | tail -n 40 || true
+  adb logcat -d 2>/dev/null | grep -E "ActivityTaskManager|WindowManager|ActivityManager" | grep -iE "$app|START u0|moveTask|finish|pause|stop" | tail -n 60 || true
+  adb shell dumpsys activity activities 2>/dev/null | grep -E "Task\{|ActivityRecord|mResumedActivity|topResumedActivity" | head -n 30 || true
   restore_screen
   exit 1
 }
@@ -52,7 +54,8 @@ pids() {
 }
 
 open_app() {
-  adb shell am start -W -n "$app/.MainActivity" >/dev/null || fail "the app did not open"
+  adb shell am start -W -n "$app/.MainActivity" | tr -d '\r' | grep -E "Status|LaunchState|Activity:|Error|Warning" | tr '\n' ' ' || fail "the app did not open"
+  echo
   sleep 3
 }
 
