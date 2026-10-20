@@ -45,6 +45,9 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         .setOnAudioFocusChangeListener({ }, handler)
         .build()
 
+    /** Whether a phrase is playing or queued: asked for and not yet ended, stopped or failed (FBBD-253). */
+    val busy: Boolean get() = synchronized(lock) { current != null }
+
     /** Asks for focus for phrase [id], which replaces any phrase before it. */
     fun begin(id: String) {
         synchronized(lock) { current = id }

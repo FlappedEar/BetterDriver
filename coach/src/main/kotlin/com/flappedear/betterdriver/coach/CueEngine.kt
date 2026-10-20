@@ -326,6 +326,13 @@ private class SpeechTiming(
     /** The output's own delay; changes when the output does (FBBD-255). */
     var audioDelayMillis = settings.audioDelayMillis
 
+    /**
+     * Whether the voice has finished the last phrase (FBBD-253). The estimate in [needMicros] is only an
+     * estimate, and fixes that waited in a queue run the coach's clock ahead of the sound; a phrase
+     * asked for while one is still playing cuts it off.
+     */
+    var voiceFree = true
+
     fun onSpeed(t: Long, kmh: Double) {
         this.kmh = kmh
         speeds.addLast(t to kmh)
@@ -338,7 +345,7 @@ private class SpeechTiming(
 
     /** Free to speak: not braking and nothing still being said. */
     fun free(now: Long): Boolean {
-        if (now < speakingUntil || speeds.size < 2) return now >= speakingUntil
+        if (!voiceFree || now < speakingUntil || speeds.size < 2) return voiceFree && now >= speakingUntil
         val (t0, v0) = speeds.first()
         val (t1, v1) = speeds.last()
         val dt = (t1 - t0) / MicrosPerSecond
@@ -514,10 +521,15 @@ class CueEngine(
             else -> CoachPhase.Coaching
         }
 
-    fun update(fix: CoachFix): CoachUpdate {
+    /**
+     * The coach at [fix]. [voiceFree] is false while the voice is still saying the last phrase: nothing
+     * is said over it, and a cue waits on its straight while it still fits (FBBD-253).
+     */
+    fun update(fix: CoachFix, voiceFree: Boolean = true): CoachUpdate {
         val events = laps.update(fix)
         speech.onSpeed(fix.tMicros, laps.speedKmh)
         speech.fixAgeMicros = fix.ageMicros
+        speech.voiceFree = voiceFree
         val results = mutableListOf<CueResult>()
         for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, fix.tMicros, results)
         val along = laps.position?.let { p -> cursor?.along(p) }
