@@ -61,15 +61,20 @@ internal class AudioRouteWatch(
     }
 
     /**
-     * Watches a session with pre-rendered [clips] on or off, whose delays were [measured] at its start
-     * on the output routed now. If not (the route changed while measuring), the output is measured again.
+     * Watches a session with pre-rendered [clips] on or off, whose start [live] and [clip] probes
+     * measured one device. If they did not, or it is no longer the one routed, it is measured again.
      */
-    fun watch(clips: Boolean, measured: Boolean) {
-        watched = Watched(clips, if (measured) outputs.device()?.id else NotMeasured)
+    fun watch(clips: Boolean, live: Probed?, clip: Probed?) {
+        val measured = measuredId(clips, live, clip)
+        watched = Watched(clips, measured ?: NotMeasured)
         handler.removeCallbacks(poll)
         handler.postDelayed(poll, PollMillis)
-        if (!measured) settle()
+        if (measured != outputs.device()?.id) settle()
     }
+
+    /** The device both paths the session uses measured, or null if either was not, or they differ. */
+    private fun measuredId(clips: Boolean, live: Probed?, clip: Probed?): Int? =
+        live?.deviceId?.takeIf { !clips || clip?.deviceId == it }
 
     fun shutdown() {
         watched = null
@@ -102,8 +107,8 @@ internal class AudioRouteWatch(
             handler.post {
                 // A result for a route already left behind (it changed again meanwhile) is dropped.
                 if (watched === w && w.deviceId == id) {
-                    // A path not measured (still settling, or no track): the next check measures it again.
-                    if (live == null || (w.clips && clip == null)) w.deviceId = NotMeasured
+                    // A path not measured on this device (still settling, no track): the next check measures it again.
+                    if (measuredId(w.clips, live, clip) != id) w.deviceId = NotMeasured
                     onMeasured(Remeasured(now, w.clips, live, clip))
                 }
             }

@@ -10,8 +10,11 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 /** The output's delay as measured (FBBD-49), the output's type ("bt_a2dp", "speaker", ...) and the headset's name. */
 internal data class MeasuredDelay(val millis: Int, val output: String, val headset: String?)
 
-/** One probe (FBBD-255): the output's type and headset name, and its delay; null [millis] when Android gave none. */
-internal data class Probed(val millis: Int?, val output: String, val headset: String?)
+/**
+ * One probe (FBBD-255): the output's type, headset name and Android device id ([deviceId]), and its
+ * delay; null [millis] when Android gave none.
+ */
+internal data class Probed(val millis: Int?, val output: String, val headset: String?, val deviceId: Int)
 
 /**
  * Measures the audio output's own delay (FBBD-49) with nothing for the driver to do: plays a moment of
@@ -48,7 +51,7 @@ internal object OutputDelayProbe {
                 (routed?.productName?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
         )
         val headset = routed?.productName?.toString()?.takeIf { output != "speaker" }
-        return if (sampled.rerouted || routed == null) null else Probed(millis, output, headset)
+        return if (sampled.rerouted || routed == null) null else Probed(millis, output, headset, routed.id)
     }
 
     /** What one playback gave: its [readings], the device it was [routed] to, and whether that changed. */
