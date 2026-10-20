@@ -547,4 +547,52 @@ class DriveChecksTest {
         assertEquals(Verdict.INFO, before.verdict)
         assertEquals(129.0, before.value)
     }
+
+    @Test
+    fun `a gap before the first fix is reported apart, not judged (FBBD-273)`() {
+        // The pattern of Arek's 2026-10-20 15:22 drive (counts only): 21 samples lost in a row 3.4 s in, an
+        // 880 ms gap, with the first fix 40.2 s in. gnss.max_gap failed on it although nothing the app uses
+        // was lost; after the fix the longest gap was 80 ms.
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
+        val fixAt = 40_200_000L
+        val stop = 300_000_000L
+        val lostBefore = (64L..84L).toSet()
+        val lostAfter = (0 until 10).map { 1_207L + it * 600 }.toSet()
+        var i = 0L
+        var t = 0L
+        while (t <= stop) {
+            val fix = t >= fixAt
+            if (i !in lostBefore && i !in lostAfter) {
+                gnss.onSamples(
+                    SampleSet(
+                        t + 30_000,
+                        listOf(
+                            ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble()),
+                            ChannelValue(GnssChannels.LAT.id, if (fix) 50.0 else 0.0),
+                            ChannelValue(GnssChannels.LON.id, if (fix) 19.0 else 0.0),
+                            ChannelValue(GnssChannels.SPEED_KMH.id, 50.0),
+                        ),
+                    ),
+                )
+            }
+            t += 40_000
+            i++
+        }
+        gnss.onStatus(RecorderStatus.Stopped("user"))
+        lines.replaceAll { l ->
+            val tl = CheckLog.fields(l.message)["t_us"]?.toLong()
+            if (l.tag == CheckLog.GNSS && tl != null) l.copy(utcMillis = start + tl / 1_000) else l
+        }
+        line(stop, CheckLog.SESSION, "stop t_us=$stop reason=user")
+        val r = driveChecks(lines.toList()).single()
+        val gap = r.metric("gnss.max_gap")
+        assertEquals(Verdict.PASS, gap.verdict, gap.how)
+        assertEquals(80.0, gap.value)
+        assertTrue("from the receiver's first fix" in gap.how, gap.how)
+        val before = r.metric("gnss.max_gap_before_fix")
+        assertEquals(Verdict.INFO, before.verdict)
+        assertEquals(880.0, before.value)
+        assertEquals(0.0, r.metric("gnss.long_gaps").value)
+    }
 }

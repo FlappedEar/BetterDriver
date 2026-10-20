@@ -98,7 +98,10 @@ internal fun gnssSection(
         addAll(reconnectMetrics(samples, drops, endMicros, underCover))
         add(stationaryNoise(samples))
     }
-    val gapNotes = gaps.long.take(MaxGapNotes).map { (at, gap) -> QualityNote(at, "gap ${ms(gap)} ms") }
+    val earlyNotes = gaps.beforeFix.filter { it.second > MaxGapMicros }
+        .map { (at, gap) -> QualityNote(at, "gap ${ms(gap)} ms before the first fix, not judged") }
+    val gapNotes = (earlyNotes + gaps.long.map { (at, gap) -> QualityNote(at, "gap ${ms(gap)} ms") })
+        .take(MaxGapNotes)
     val notes = drops.map { d ->
         QualityNote(d.dropMicros, reconnectText(samples, d, endMicros, underCover))
     } + gapNotes
@@ -158,27 +161,48 @@ private fun p1Rate(s: GnssSamples, drops: List<Reconnect>): QualityMetric {
 
 /**
  * Gaps between samples in µs, on the receiver's clock when it has one. [long] are those over 200 ms,
- * each with the session time of the sample after it.
+ * each with the session time of the sample after it. As for dropped samples (FBBD-259), the gaps up to
+ * the one ending on the receiver's first fix are kept apart in [beforeFix] (FBBD-273): [max], [mean]
+ * and [long] are from the first fix on. [firstFixMicros] is null when the receiver had no fix, and
+ * then every gap is judged.
  */
-private class Gaps(val max: Long, val mean: Double, val long: List<Pair<Long, Long>>, val receiverClock: Boolean)
+private class Gaps(
+    val max: Long,
+    val mean: Double,
+    val long: List<Pair<Long, Long>>,
+    val receiverClock: Boolean,
+    val beforeFix: List<Pair<Long, Long>>,
+    val firstFixMicros: Long?,
+)
 
 private fun gaps(s: GnssSamples, acrossDrop: BooleanArray): Gaps {
     val receiverClock = s.utc.count { it != GnssSamples.NoUtc } >= 2
-    val all = mutableListOf<Pair<Long, Long>>()
+    val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && (!receiverClock || s.utc[it] != GnssSamples.NoUtc) }
+    // Each gap with the index of the sample that ends it; without any fix every gap is judged.
+    val (beforeFix, all) = steps(s, acrossDrop, receiverClock)
+        .partition { (to, _) -> firstFix != null && to <= firstFix }
+        .let { (a, b) -> a.map { (to, gap) -> s.t[to] to gap } to b.map { (to, gap) -> s.t[to] to gap } }
+    val max = all.maxOfOrNull { it.second } ?: 0L
+    val mean = if (all.isEmpty()) 0.0 else all.sumOf { it.second }.toDouble() / all.size
+    val firstFixMicros = firstFix?.let { s.t[it] }
+    return Gaps(max, mean, all.filter { it.second > MaxGapMicros }, receiverClock, beforeFix, firstFixMicros)
+}
+
+/** The gaps between consecutive samples (by the receiver's clock when it has one), each with the index ending it. */
+private fun steps(s: GnssSamples, acrossDrop: BooleanArray, receiverClock: Boolean): List<Pair<Int, Long>> {
+    val all = mutableListOf<Pair<Int, Long>>()
     var previous = -1
     var dropBetween = false
     for (i in 0 until s.size) {
         if (!receiverClock || s.utc[i] != GnssSamples.NoUtc) {
             val gap = if (previous < 0 || dropBetween) 0L else gap(s, previous, i, receiverClock)
-            if (gap > 0) all += s.t[i] to gap
+            if (gap > 0) all += i to gap
             previous = i
             dropBetween = false
         }
         if (acrossDrop[i]) dropBetween = true
     }
-    val max = all.maxOfOrNull { it.second } ?: 0L
-    val mean = if (all.isEmpty()) 0.0 else all.sumOf { it.second }.toDouble() / all.size
-    return Gaps(max, mean, all.filter { it.second > MaxGapMicros }, receiverClock)
+    return all
 }
 
 private fun gap(s: GnssSamples, from: Int, to: Int, receiverClock: Boolean) =
@@ -191,15 +215,27 @@ private fun gapMetrics(g: Gaps): List<QualityMetric> {
         "arrival on the phone (the receiver gave no fix times)"
     }
     val how = "between consecutive samples, by $clock"
+    val judgedHow = if (g.firstFixMicros == null) how else "$how, from the receiver's first fix"
     return listOf(
         judged(
             "gnss.max_gap", "Longest gap", millis(g.max), "ms", g.max <= MaxGapMicros, Basis.MEASURED,
-            "<= 200 ms, link drops left out (FBBD-8)", how,
+            "<= 200 ms, link drops left out (FBBD-8)", judgedHow,
         ),
-        info("gnss.mean_gap", "Mean gap", g.mean / MicrosPerMilli, "ms", Basis.MEASURED, how),
+        maxGapBeforeFixInfo(g.beforeFix.maxOfOrNull { it.second }?.let(::millis) ?: 0.0, g.firstFixMicros),
+        info("gnss.mean_gap", "Mean gap", g.mean / MicrosPerMilli, "ms", Basis.MEASURED, judgedHow),
         info(
             "gnss.long_gaps", "Gaps over 200 ms", g.long.size.toDouble(), "", Basis.MEASURED,
-            "$how; each listed with its time",
+            "$judgedHow; each listed with its time",
         ),
+    )
+}
+
+/** The longest gap before the receiver's first fix (at [firstFixMicros], session time), for information (FBBD-273). */
+internal fun maxGapBeforeFixInfo(maxMillis: Double, firstFixMicros: Long?): QualityMetric {
+    val at = firstFixMicros?.let { "first fix ${"%.1f".format(Locale.ROOT, seconds(it))} s in" }
+        ?: "no fix in this session, so every gap is judged"
+    return info(
+        "gnss.max_gap_before_fix", "Longest gap before first fix", maxMillis, "ms", Basis.MEASURED,
+        "between consecutive samples up to the receiver's first fix ($at); not judged (FBBD-273)",
     )
 }

@@ -9,7 +9,8 @@ import kotlinx.serialization.json.Json
 // 5: thermal rows only after an Android thermal shutdown; 6: text-to-speech time for information only (FBBD-47);
 // 7: GNSS dropped samples from the first fix, those before it for information (FBBD-259);
 // 8: 2.7K video frame rate for information only (FBBD-246 Won't do); 9: heart rate (FBBD-225).
-const val QualityFormat = 9
+// 10: GNSS longest gap from the first fix, the one before it for information (FBBD-273).
+const val QualityFormat = 10
 
 /** A value against its pass criterion (FBBD-183). */
 @Serializable
