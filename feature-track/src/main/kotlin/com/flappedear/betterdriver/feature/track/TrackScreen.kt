@@ -74,8 +74,8 @@ data class TrackScreenState(
     val lastMillis: Long?,
     val bestMillis: Long?,
     /**
-     * The main screen's bottom panel (UI-120 C), slot by slot: two rows of [MainColumns]. Null is
-     * an empty slot.
+     * The main screen's bottom panel (UI-120 A, six tiles), slot by slot: one row of [MainColumns].
+     * Null is an empty slot.
      */
     val tiles: List<TrackTile?>,
     val coachCorner: String?,
@@ -88,9 +88,9 @@ data class TrackScreenState(
     val editable: Boolean = false,
 )
 
-/** UI-120 C: two rows of five on the main screen. */
-const val MainColumns = 5
-const val MainRows = 2
+/** UI-120 A with Arek's note "6 in one row": one row of six on the main screen. */
+const val MainColumns = 6
+const val MainRows = 1
 
 /** UI-121 B: three rows of four on the second screen. */
 const val SecondColumns = 4
@@ -166,10 +166,9 @@ fun TrackScreen(
 
 /**
  * In-car track screen, layout UI-10 option A with the data panel of FBBD-262: delta left, lap
- * times right, coach line, then two rows of tiles (UI-120 C). [page] 1 is the second screen: the
+ * times right, coach line, then one row of six tiles (UI-120 A). [page] 1 is the second screen: the
  * status strip, three rows of tiles and the coach line (UI-121 B). Designed on a phone in landscape
- * (914 x 411 dp, a Pixel 6); every slot has a fixed size so values never move. A window too short
- * for two rows of tiles (the system bars shown by a swipe) shows the first row only.
+ * (914 x 411 dp, a Pixel 6); every slot has a fixed size so values never move.
  * [onHoldTile], when set, is called with the page and slot of a tile held for 1 s (UI-123 B).
  */
 @Composable
@@ -192,7 +191,7 @@ fun TrackScreenContent(
             }
             val coach = Modifier.fillMaxWidth().height(CoachHeight).testTag(TrackSlots.Coach)
             if (page == 0) {
-                MainPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } })
+                MainPage(state, coach, onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } })
             } else {
                 SecondPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(1, slot) } })
             }
@@ -200,9 +199,9 @@ fun TrackScreenContent(
     }
 }
 
-/** Delta and lap times, the coach line, then two rows of tiles (UI-120 C). */
+/** Delta and lap times, the coach line, then one row of six tiles (UI-120 A). */
 @Composable
-private fun ColumnScope.MainPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
+private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
     Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(Gap)) {
         DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Delta))
         LapTimes(
@@ -214,16 +213,14 @@ private fun ColumnScope.MainPage(state: TrackScreenState, window: Dp, coach: Mod
         )
     }
     CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
-    val twoRows = window >= TwoRowsMinHeight
-    val height = if (twoRows) PanelHeight else OneRowHeight
     TilePanel(
         state.tiles,
         MainColumns,
-        if (twoRows) MainRows else 1,
-        height,
+        MainRows,
+        PanelHeight,
         MainValueSize,
         TrackSlots::tile,
-        Modifier.fillMaxWidth().height(height).testTag(TrackSlots.Panel),
+        Modifier.fillMaxWidth().height(PanelHeight).testTag(TrackSlots.Panel),
         state.editable,
         onHoldTile,
     )
@@ -254,15 +251,8 @@ private val Gap = 6.dp
 private val TopHeight = 30.dp
 private val CoachHeight = 44.dp
 
-/** UI-120 C: the bottom panel grows from today's 80 dp row to 120 dp for two rows. */
-private val PanelHeight = 120.dp
-private val OneRowHeight = 80.dp
-
-/** Lap times at their smallest (three rows of 31 dp numbers), with the delta beside them. */
-private val MinMiddleHeight = 150.dp
-
-/** The window that fits two rows of tiles: below it, the first row shows alone. */
-private val TwoRowsMinHeight = Gap * 3 + TopHeight + CoachHeight + PanelHeight + MinMiddleHeight
+/** UI-120 A: one row at the height the tiles had before FBBD-262. */
+private val PanelHeight = 80.dp
 
 /** A tile's value is fitted to its row, at most today's tile size on the main screen. */
 private val MainValueSize = 34.dp
@@ -312,10 +302,6 @@ val ExampleTrackState = TrackScreenState(
         TrackTile("Oil", "104", "°C", id = "obd_oil_temp"),
         TrackTile("Heart rate", "142", "bpm", id = "heart_rate"),
         TrackTile("RPM", "5840", "rpm", id = "obd_rpm"),
-        TrackTile("Throttle", "87", "%", id = "obd_throttle"),
-        TrackTile("Intake air", "24", "°C", id = "obd_intake_air_temp"),
-        TrackTile("Battery", "14.1", "V", id = "obd_module_voltage"),
-        TrackTile("Last lap", "1:52.81", "", id = "last_lap"),
     ),
     coachCorner = "T4",
     coachCue = "Brake at 100 m · 10 later",

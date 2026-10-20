@@ -88,7 +88,7 @@ private val TileLabelHeight = 14.dp
 
 /**
  * The largest value size up to [max] whose line fits a [ValueTile] [height] tall with
- * [verticalPadding] above and below (FBBD-262: ten tiles in two rows, UI-120 C). The track screen
+ * [verticalPadding] above and below (FBBD-262: the track screen's tile rows). The track screen
  * works it out once per panel, so the tiles themselves measure nothing.
  */
 @Composable

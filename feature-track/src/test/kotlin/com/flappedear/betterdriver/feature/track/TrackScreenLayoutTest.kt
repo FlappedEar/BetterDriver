@@ -160,7 +160,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         // One row of tiles: every value at least 16′.
         showState(Updates.last())
         small += tooSmall(glanceSlots(TileCount), MinArcMinutes)
-        // Ten tiles fill two rows where the window has room for them.
+        // Six tiles in one row (UI-120 A).
         showState(ExampleTrackState)
         small += tooSmall(listOf(TrackSlots.Delta, TrackSlots.Laps), MinArcMinutes)
         small += tooSmall(ExampleTrackState.tiles.indices.map { TrackSlots.tile(it) }, MinArcMinutes)
@@ -318,26 +318,15 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             Triple(
                 "new_install",
                 ExampleTrackState.copy(
-                    tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g")) + List(8) { null },
+                    tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g")) + List(4) { null },
                     secondTiles = List(12) { null },
                 ),
                 TrackColorsGreenRed,
             ),
-            // No data for oil temperature and the second row's heart rate: left out (UI-126 B).
+            // No data for oil temperature and the second screen's heart rate: left out (UI-126 B).
             Triple("no_data", noData(), TrackColorsGreenRed),
             // Car stopped: the tiles without data show a dash so they can be held (UI-123 B).
             Triple("no_data_stopped", noData().copy(editable = true), TrackColorsGreenRed),
-            // A whole row without data collapses; the other takes the panel.
-            Triple(
-                "one_row_of_data",
-                ExampleTrackState.copy(
-                    tiles = ExampleTrackState.tiles.mapIndexed { i, t ->
-                        if (i < MainColumns) t else t?.copy(hasData = false)
-                    },
-                    secondTiles = ExampleTrackState.secondTiles.map { it?.copy(hasData = false) },
-                ),
-                TrackColorsGreenRed,
-            ),
             // A long lap (Nordschleife) and the widest values a tile shows.
             Triple(
                 "long_lap",

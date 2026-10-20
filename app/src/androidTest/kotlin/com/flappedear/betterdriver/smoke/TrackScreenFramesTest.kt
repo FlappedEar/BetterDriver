@@ -109,7 +109,7 @@ class TrackScreenFramesTest {
             deltaSeconds = delta,
             lapNumber = lap.toInt(),
             lapMillis = lapMs,
-            // The ten tiles of the bottom panel (FBBD-262), most changing on every update.
+            // The six tiles of the bottom panel (FBBD-262, UI-120 A), most changing on every update.
             tiles = listOf(
                 TrackTile("Speed", (90 + (sin(tick / 5.0) * 60).toInt()).toString(), "km/h"),
                 TrackTile("G", String.format(Locale.ROOT, "%.2f", 0.6 + sin(tick / 3.0) * 0.5), "g"),
@@ -117,10 +117,6 @@ class TrackScreenFramesTest {
                 TrackTile("Oil", (100 + tick / 30 % 9).toString(), "°C"),
                 TrackTile("Heart rate", (130 + (sin(tick / 7.0) * 15).toInt()).toString(), "bpm"),
                 TrackTile("RPM", (4000 + (sin(tick / 4.0) * 2500).toInt()).toString(), "rpm"),
-                TrackTile("Throttle", (50 + (sin(tick / 4.0) * 50).toInt()).toString(), "%"),
-                TrackTile("Intake air", "24", "°C"),
-                TrackTile("Battery", String.format(Locale.ROOT, "%.1f", 14.0 + sin(tick / 11.0) * 0.2), "V"),
-                TrackTile("Lap", lap.toString(), ""),
             ),
             coachCorner = if ((tick / 40) % 2 == 0) "T4" else "T7",
             coachCue = if ((tick / 40) % 2 == 0) "Brake at 100 m · 10 later" else "65 at the apex · 10 more",

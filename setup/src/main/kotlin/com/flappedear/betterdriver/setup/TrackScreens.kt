@@ -24,10 +24,15 @@ data class TrackScreens(
         return List(page.slots) { list.getOrNull(it) }
     }
 
-    /** Sets [slot] of [page] to show [id], or to empty for null. A slot out of range changes nothing. */
+    /**
+     * Sets [slot] of [page] to show [id], or to empty for null. A slot out of range changes nothing.
+     * Slots past the layout's (the second row of 1.4.0's ten tiles) are kept.
+     */
     fun choose(page: TrackPage, slot: Int, id: String?): TrackScreens {
         if (slot !in 0 until page.slots) return this
-        val next = tiles(page).toMutableList().also { it[slot] = id?.takeIf { s -> s.isNotBlank() } }
+        val list = if (page == TrackPage.MAIN) main else second
+        val next = List(maxOf(page.slots, list.size)) { list.getOrNull(it) }.toMutableList()
+        next[slot] = id?.takeIf { s -> s.isNotBlank() }
         return if (page == TrackPage.MAIN) copy(main = next) else copy(second = next)
     }
 
@@ -52,8 +57,8 @@ enum class TrackPage(val slots: Int) {
     SECOND(MaxSecondTiles),
 }
 
-/** Most tiles the main screen's layouts show: two rows of five (UI-120 C). */
-const val MaxMainTiles = 10
+/** Most tiles the main screen's layouts show: one row of six (UI-120 A, "6 in one row"). */
+const val MaxMainTiles = 6
 
 /** Most tiles the second screen's layouts show: three rows of four (UI-121 B). */
 const val MaxSecondTiles = 12
