@@ -181,12 +181,16 @@ private class HeadersOff : Assembler() {
                 }
                 nextIndex = (nextIndex + 1) % FRAME_INDICES
                 bytes.forEach { target.add(it) }
+                if (target.size >= length) {
+                    // Complete: kept in arrival order, and any padding frames after it are skipped.
+                    flush()
+                    discarding = true
+                }
                 true
             }
-            else -> {
-                flush()
-                hexBytes(line)?.let { done += EcuMessage(null, it) } != null
-            }
+            // A single-frame answer from another ECU can come between the frames of a multi-frame
+            // one (FBBD-270), so it does not end the block.
+            else -> hexBytes(line)?.let { done += EcuMessage(null, it) } != null
         }
     }
 

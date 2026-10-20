@@ -79,6 +79,29 @@ class PollSchedulerTest {
     }
 
     @Test
+    fun `a group is one request, and each member's rate is its own`() {
+        val group = listOf(StandardPids.Rpm, StandardPids.Speed, StandardPids.Throttle)
+        val groups = listOf(group, listOf(StandardPids.Coolant))
+        val scheduler = PollScheduler(group + StandardPids.Coolant, groups = groups)
+        assertEquals(listOf(StandardPids.Rpm.request, StandardPids.Coolant.request), scheduler.active)
+        var now = 0L
+        while (now < 10_000) {
+            val next = assertNotNull(scheduler.next(now))
+            now = maxOf(now, next.notBeforeMs)
+            // The ECU leaves throttle out of every answer.
+            val answered = if (next.request == StandardPids.Rpm.request) {
+                listOf(StandardPids.Rpm.request, StandardPids.Speed.request)
+            } else {
+                null
+            }
+            scheduler.completed(next.request, now, 50, answered = true, answeredRequests = answered)
+            now += 50
+        }
+        assertTrue(scheduler.achievedHz(StandardPids.Speed, now) > 10.0)
+        assertEquals(0.0, scheduler.achievedHz(StandardPids.Throttle, now))
+    }
+
+    @Test
     fun `a request that never answers is dropped`() {
         val brake = frs.channels.single { it.id == "brake" }
         val scheduler = PollScheduler(listOf(StandardPids.Rpm, brake), dropAfterMisses = 5)
