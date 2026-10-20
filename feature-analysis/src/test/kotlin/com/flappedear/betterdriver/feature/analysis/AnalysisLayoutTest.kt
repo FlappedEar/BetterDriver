@@ -173,6 +173,42 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.onAllNodes(hasText(CoachFocusFirstText)).assertCountEquals(1)
     }
 
+    /**
+     * Heart rate (FBBD-225, UI-107 A): a card under the best lap, and each lap's average and highest
+     * in the laps. A lap without heart rate has an empty cell, never 0 (UI-109).
+     */
+    @Test
+    fun heartRateUnderTheBestLapAndInTheLaps() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        compose.waitForIdle()
+        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val hr = compose.onNode(hasText("HEART RATE · POLAR H10 1234")).fetchSemanticsNode()
+        check(best.positionInRoot.y < hr.positionInRoot.y) {
+            "best lap at ${best.positionInRoot.y}, heart rate at ${hr.positionInRoot.y} on $device"
+        }
+        tab(AnalysisTab.Laps).performClick()
+        compose.waitForIdle()
+        compose.onNode(hasText("BPM AVG · MAX")).assertExists()
+        compose.onNode(hasText("138 · 158")).assertExists()
+        compose.onAllNodes(hasText("0 · 0")).assertCountEquals(0)
+    }
+
+    /** A session without heart rate shows none: no card, no column (UI-109). */
+    @Test
+    fun noHeartRateWithoutIt() {
+        val laps = PreviewUi.laps.map { it.copy(heartRate = null) }
+        val ui = PreviewUi.copy(map = PreviewMap, heartRate = null, laps = laps)
+        compose.setContent {
+            AppScreen { AnalysisScreen(AnalysisState.Ready(ui), onCompare = {}, layout = deviceLayout()) }
+        }
+        compose.waitForIdle()
+        compose.onAllNodes(hasText("HEART RATE", substring = true)).assertCountEquals(0)
+        tab(AnalysisTab.Laps).performClick()
+        compose.waitForIdle()
+        compose.onAllNodes(hasText("BPM", substring = true)).assertCountEquals(0)
+    }
+
     /** Rotating the device recreates the activity: the open tab stays open. */
     @Test
     fun openTabSurvivesRotation() {

@@ -139,12 +139,19 @@ class BleSerialConnection(
     /** Under [lock]: waits for [writeDone]; null when the write went through, else why not. */
     private fun awaitAck(): String? {
         val deadline = System.nanoTime() + writeTimeoutMs * NanosPerMs
-        while (pending && !reported) {
+        var interrupted = false
+        while (pending && !reported && !interrupted) {
             val left = (deadline - System.nanoTime()) / NanosPerMs
             if (left <= 0) return "write not acknowledged in $writeTimeoutMs ms"
-            lock.wait(left)
+            try {
+                lock.wait(left)
+            } catch (_: InterruptedException) {
+                // Stopping a session interrupts the OBD thread; a write then fails, never crashes (FBBD-269).
+                Thread.currentThread().interrupt()
+                interrupted = true
+            }
         }
-        return ended ?: if (failed) "write failed" else null
+        return ended ?: if (interrupted) "interrupted" else if (failed) "write failed" else null
     }
 
     /** The GATT stack finished the last write, [ok] when it succeeded. */

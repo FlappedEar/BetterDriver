@@ -26,14 +26,18 @@ import com.flappedear.betterdriver.core.ble.dragy.scanDragys
 import com.flappedear.betterdriver.core.ble.hr.scanHeartRateMonitors
 import com.flappedear.betterdriver.core.ble.lns.scanLnsDevices
 import com.flappedear.betterdriver.core.ble.nmea.bondedSppDevices
+import com.flappedear.betterdriver.core.ble.obd.pairedObdAdapters
+import com.flappedear.betterdriver.core.ble.obd.scanObdAdapters
 import com.flappedear.betterdriver.core.ble.scanRaceBoxes
 import com.flappedear.betterdriver.core.ble.vbox.bondedVboxSports
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.scanGoPros
 import com.flappedear.betterdriver.recording.RecorderClient
+import com.flappedear.betterdriver.recording.obdConnectionLabel
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
+import com.flappedear.betterdriver.setup.WifiObdAddress
 import com.flappedear.betterdriver.shell.AddEquipmentScreen
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.CarScreen
@@ -107,13 +111,16 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
     var error by remember { mutableStateOf<String?>(null) }
     val setup = repo.setup
     val listed = setup.equipment.mapNotNull { it.address }.toSet()
+    // A paired Bluetooth LE adapter is heard by the scan too; it is listed once, as paired.
+    val pairedAddresses = pairedGps.map { it.address }.toSet()
     val addItem: (EquipmentModel, String, String?, GoProModel?) -> Unit = { model, name, address, goPro ->
         repo.update { it.addEquipment(model, name, address, ::newSetupId, goPro) }
         // A GoPro pairs for a while; Arek may have left this screen meanwhile.
         if (nav.currentDestination?.route == Routes.AddEquipment) nav.popBackStack()
     }
     AddEquipmentScreen(
-        nearby = found.filter { it.address !in listed }.sortedByDescending { it.bars },
+        nearby = found.filter { it.address !in listed && it.address !in pairedAddresses }
+            .sortedByDescending { it.bars },
         searching = searching,
         withoutBluetooth = withoutBluetooth(setup),
         busyAddress = busy,
@@ -140,22 +147,29 @@ internal fun AddEquipmentRoute(nav: NavHostController, prefs: AppPrefs, repo: Se
         onBack = { nav.popBackStack() },
         pairedGps = pairedGps.filter { it.address !in listed },
         onAddWifiGps = { address -> addItem(EquipmentModel.TCP_GNSS, EquipmentModel.TCP_GNSS.label, address, null) },
+        onAddWifiObd = {
+            addItem(EquipmentModel.OBD_WIFI, EquipmentModel.OBD_WIFI.label, WifiObdAddress, null)
+        },
     )
 }
 
 /**
- * Bluetooth GPS receivers paired in Android's settings: VBOX Sports (FBBD-116) and NMEA receivers
- * (FBBD-108). Classic receivers are paired there, so they are listed, not scanned. A VBOX Sport is
- * listed only as one. Read once per screen, and only with the permissions.
+ * Bluetooth devices paired in Android's settings: VBOX Sports (FBBD-116), OBD-II adapters
+ * (FBBD-121, UI-105 C) and NMEA receivers (FBBD-108). Classic devices are paired there, so they are
+ * listed, not scanned. A VBOX Sport or an OBD-II adapter is listed only as one. Read once per
+ * screen, and only with the permissions.
  */
 @Composable
 private fun rememberPairedGps(allowed: Boolean): List<NearbyDevice> {
     val context = LocalContext.current
     return remember(allowed) {
-        val vboxes = if (allowed) bondedVboxSports(context) else emptyList()
-        val vboxAddresses = vboxes.map { it.address }.toSet()
-        val nmea = if (allowed) bondedSppDevices(context).filter { it.address !in vboxAddresses } else emptyList()
+        if (!allowed) return@remember emptyList()
+        val vboxes = bondedVboxSports(context)
+        val obd = pairedObdAdapters(context)
+        val taken = (vboxes.map { it.address } + obd.map { it.address }).toSet()
+        val nmea = bondedSppDevices(context).filter { it.address !in taken }
         vboxes.map { NearbyDevice(EquipmentModel.VBOX_SPORT, it.name, it.address, 0) } +
+            obd.map { NearbyDevice(EquipmentModel.OBD_BLUETOOTH, it.name.ifBlank { it.address }, it.address, 0) } +
             nmea.map { NearbyDevice(EquipmentModel.NMEA_GNSS, it.name, it.address, 0) }
     }
 }
@@ -169,6 +183,7 @@ private fun goProName(goPro: GoProModel): String = when (goPro) {
 /** One equipment item (UI-33 B). Removing it drops it from the session choice too. */
 @Composable
 internal fun EquipmentRoute(nav: NavHostController, entry: NavBackStackEntry, repo: SetupRepo, id: String) {
+    val context = LocalContext.current
     val item = repo.setup.equipment(id)
     if (item == null) {
         // Removed, or a stale back stack: nothing to show.
@@ -187,6 +202,7 @@ internal fun EquipmentRoute(nav: NavHostController, entry: NavBackStackEntry, re
         onChooseVideo = { mode -> repo.update { it.chooseVideo(id, mode) } },
         onChooseGoPro = { m -> repo.update { it.chooseGoPro(id, m) } },
         drives = if (item.model == EquipmentModel.DEMO_TRACK) rememberDemoDrives() else null,
+        connection = remember(item.model, item.address) { obdConnectionLabel(context, item) },
     )
 }
 
@@ -224,23 +240,24 @@ internal fun CarRoute(nav: NavHostController, entry: NavBackStackEntry, repo: Se
 }
 
 /**
- * What can be added without Bluetooth: the phone camera and the demo receiver once, cameras run by
- * hand and Wi-Fi receivers any number of times.
+ * What can be added without Bluetooth: the phone camera, the Wi-Fi OBD-II adapter and the demo
+ * receiver once, cameras run by hand and Wi-Fi receivers any number of times.
  */
 private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
     if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
     add(EquipmentModel.GOPRO_FILES)
     add(EquipmentModel.CAMERA_FILES)
     add(EquipmentModel.TCP_GNSS)
+    if (setup.equipment.none { it.model == EquipmentModel.OBD_WIFI }) add(EquipmentModel.OBD_WIFI)
     if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)
     if (setup.equipment.none { it.model == EquipmentModel.DEMO_TRACK }) add(EquipmentModel.DEMO_TRACK)
 }
 
 /**
  * What a scan hears nearby while [searching]: RaceBoxes, Open GoPro cameras, Bluetooth LE GPS
- * receivers (FBBD-114), RaceChrono DIY devices (FBBD-118), Dragys (FBBD-117) and heart-rate
- * monitors (FBBD-119). Each scanner emits only once it hears its own kind, so each starts empty: a
- * RaceBox shows even with no GoPro nearby.
+ * receivers (FBBD-114), RaceChrono DIY devices (FBBD-118), Dragys (FBBD-117), heart-rate
+ * monitors (FBBD-119) and Bluetooth LE OBD-II adapters (FBBD-121). Each scanner emits only once it
+ * hears its own kind, so each starts empty: a RaceBox shows even with no GoPro nearby.
  */
 @Composable
 private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
@@ -260,8 +277,11 @@ private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
                 scanDragys(context).map { found ->
                     found.map { nearby(EquipmentModel.DRAGY, FoundBleDevice(it.name, it.address, it.rssi)) }
                 },
+                scanObdAdapters(context).map { found ->
+                    found.map { nearby(EquipmentModel.OBD_BLUETOOTH, it) }
+                },
             )
-            // Six scans: more than combine's typed overloads take, so the lists are combined as one.
+            // Seven scans: more than combine's typed overloads take, so the lists are combined as one.
             combine(scans.map { it.onStart { emit(emptyList()) } }) { lists -> lists.flatMap { it } }
         } else {
             flowOf(emptyList())

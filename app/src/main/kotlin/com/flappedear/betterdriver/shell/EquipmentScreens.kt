@@ -44,7 +44,9 @@ internal fun kindLabel(e: Equipment): String = when (e.kind) {
     EquipmentKind.GNSS -> "GNSS"
     EquipmentKind.CAMERA -> "Camera"
     EquipmentKind.SENSOR -> "Sensor"
+    EquipmentKind.CAR_DATA -> CarDataLabel
 }
+
 
 /** What a model does, under its details. */
 private fun modelNote(model: EquipmentModel): String = when (model) {
@@ -56,6 +58,8 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.TCP_GNSS ->
         "Connects over Wi-Fi to the address below. Records position and speed, and G from a RaceChrono DIY device."
     EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."
+    EquipmentModel.OBD_BLUETOOTH, EquipmentModel.OBD_WIFI ->
+        "Reads the car in every session while it is listed. The OBD-II page shows its values."
     EquipmentModel.DEMO_GNSS ->
         "Made-up positions on a circle, for trying the app without a receiver. Sessions with it are not real data."
     EquipmentModel.DEMO_TRACK ->
@@ -85,7 +89,8 @@ internal fun EquipmentList(equipment: List<Equipment>, onOpen: (Equipment) -> Un
  * One item: its name (renamed in a dialog), model and Bluetooth address, the video mode of a
  * camera the app sets (UI-39), and Remove (UI-33). A paired RaceBox also has Diagnostics (FBBD-89).
  * A GoPro's model can be changed (FBBD-105): a paired one reports it, one started by hand is
- * whatever generation Arek picks.
+ * whatever generation Arek picks. An OBD-II adapter (UI-105 C) shows its kind, how it is reached
+ * ([connection], "Paired · Classic" or "Bluetooth LE") or a Wi-Fi one's address.
  */
 @Suppress("LongParameterList") // One callback per thing Arek can change.
 @Composable
@@ -98,6 +103,7 @@ fun EquipmentScreen(
     onDiagnostics: () -> Unit = {},
     onChooseGoPro: (GoProModel) -> Unit = {},
     drives: DemoDrives? = null,
+    connection: String? = null,
 ) {
     var renaming by rememberSaveable { mutableStateOf(false) }
     var choosingDrive by rememberSaveable { mutableStateOf(false) }
@@ -108,9 +114,7 @@ fun EquipmentScreen(
         Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ShellCard {
                 ListRow("Name", item.name, divider = false, onClick = { renaming = true })
-                val pickModel: (() -> Unit)? = if (item.model.isGoPro) ({ choosingGoPro = true }) else null
-                ListRow("Model", item.modelLabel, onClick = pickModel)
-                item.address?.let { ListRow("Bluetooth", "Paired · $it") }
+                ModelRows(item, connection, onPickGoPro = { choosingGoPro = true })
                 if (item.videoMode != null) ListRow("Video", videoLabel(item), onClick = { choosingVideo = true })
                 if (item.model == EquipmentModel.RACEBOX && item.address != null) {
                     ListRow("Diagnostics", "Live", onClick = onDiagnostics)
@@ -168,8 +172,8 @@ private fun NameDialog(title: String, initial: String, onDone: (String) -> Unit,
  * Open GoPro cameras (HERO9 and later) heard nearby, then the models that need no Bluetooth.
  * [nearby] leaves out what is already listed. [searching] is false when the Bluetooth permissions
  * are missing. [busyAddress] is the GoPro being paired, which takes a moment; [error] says why
- * pairing failed. [pairedGps] are Bluetooth GPS receivers paired in Android's settings (FBBD-108),
- * which cannot be found by a scan.
+ * pairing failed. [pairedGps] are Bluetooth GPS receivers and OBD-II adapters (UI-105 C) paired in
+ * Android's settings (FBBD-108), which cannot be found by a scan.
  */
 @Suppress("LongParameterList") // One callback per kind of item.
 @Composable
@@ -184,6 +188,7 @@ fun AddEquipmentScreen(
     onBack: () -> Unit,
     pairedGps: List<NearbyDevice> = emptyList(),
     onAddWifiGps: (address: String) -> Unit = {},
+    onAddWifiObd: () -> Unit = {},
 ) {
     // A Wi-Fi receiver is added by its address, typed in a dialog (FBBD-115).
     var typingAddress by rememberSaveable { mutableStateOf(false) }
@@ -219,17 +224,19 @@ fun AddEquipmentScreen(
             DimText(
                 if (searching) {
                     "Searching for RaceBox, GoPro HERO9 or later, Bluetooth LE GPS, RaceChrono DIY, " +
-                        "Dragy and heart-rate monitors. Put a GoPro in pairing mode first."
+                        "Dragy, heart-rate monitors and Bluetooth LE OBD-II adapters. Put a GoPro in pairing " +
+                        "mode first."
                 } else {
                     "Allow nearby devices (Settings › App › Run setup again) to search for a RaceBox or GoPro."
                 },
             )
             if (error != null) DimText(error, color = MaterialTheme.colorScheme.error)
-            PairedGpsSection(pairedGps, onAddNearby)
+            PairedDevicesSection(pairedGps, onAddNearby)
             WithoutBluetoothSection(withoutBluetooth) { m ->
                 when (m) {
                     EquipmentModel.GOPRO_FILES -> pickingGoPro = true
                     EquipmentModel.TCP_GNSS -> typingAddress = true
+                    EquipmentModel.OBD_WIFI -> onAddWifiObd()
                     else -> onAddModel(m, null)
                 }
             }
@@ -263,7 +270,8 @@ private fun NearbyCard(
 
 @Composable
 private fun NearbyRow(d: NearbyDevice, divider: Boolean, busyAddress: String?, onAdd: (NearbyDevice) -> Unit) {
-    ListRow(d.name, divider = divider) {
+    val note = if (d.model == EquipmentModel.OBD_BLUETOOTH) "OBD-II adapter · Bluetooth LE" else null
+    ListRow(d.name, divider = divider, supporting = note) {
         SignalBars(d.bars)
         FilledTonalButton(onClick = { onAdd(d) }, enabled = busyAddress == null) {
             Text(if (busyAddress == d.address) "Pairing…" else "Add")

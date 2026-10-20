@@ -5,8 +5,9 @@ package com.flappedear.betterdriver.obd
  * in; the reader (FBBD-15) calls [next], sends the request, then reports it with [completed].
  *
  * An ELM327 answers one request at a time, so the adapter's time is shared out. Channels with the same
- * [Request] share one request. Requests are picked by stride scheduling: each request has a pass
- * value that grows by 1/weight when it is sent, and the lowest pass goes next, so a [PollClass.FAST]
+ * [Request] share one request, and [groups] can put several requests into one (FBBD-270: several
+ * mode 01 PIDs asked together, see [MultiPid]); a group is named by its first channel's request.
+ * Requests are picked by stride scheduling: each request has a pass value that grows by 1/weight when it is sent, and the lowest pass goes next, so a [PollClass.FAST]
  * request is sent [fastWeight] times as often as a [PollClass.SLOW] one (a request is fast when any
  * of its channels is). Slow requests are also never sent more than [slowMaxHz] times a second: when
  * the bus is quick, temperatures do not need 5 Hz and that time goes to the fast channels.
@@ -23,19 +24,21 @@ class PollScheduler(
     private val slowMaxHz: Double = DEFAULT_SLOW_MAX_HZ,
     private val dropAfterMisses: Int = DEFAULT_DROP_AFTER_MISSES,
     private val rateWindowMs: Long = DEFAULT_RATE_WINDOW_MS,
+    groups: List<List<PidChannel>> = channels.groupBy { it.request }.values.toList(),
 ) {
-    private class Slot(val request: Request, val fast: Boolean) {
+    private class Slot(val request: Request, val members: Set<Request>, val fast: Boolean) {
         var pass = 0.0
         var lastSentMs = Long.MIN_VALUE
         var misses = 0
         var dropped = false
-        val answers = ArrayDeque<Long>()
+        val answers = members.associateWith { ArrayDeque<Long>() }
     }
 
-    private val slots: List<Slot> = channels.groupBy { it.request }.map { (request, group) ->
-        Slot(request, group.any { it.pollClass == PollClass.FAST })
+    private val slots: List<Slot> = groups.filter { it.isNotEmpty() }.map { group ->
+        val fast = group.any { it.pollClass == PollClass.FAST }
+        Slot(group.first().request, group.mapTo(LinkedHashSet()) { it.request }, fast)
     }
-    private val byRequest = slots.associateBy { it.request }
+    private val byRequest = slots.flatMap { slot -> slot.members.map { it to slot } }.toMap()
     private val slowIntervalMs = (MS_PER_S / slowMaxHz).toLong()
 
     /** The latest per-request latency reported to [completed], smoothed; null before the first. */
@@ -65,16 +68,23 @@ class PollScheduler(
 
     /**
      * [request] was sent at [sentMs] and its answer came back [latencyMs] later; [answered] is true
-     * when at least one of its channels got a value.
+     * when at least one of its channels got a value. For a group, [answeredRequests] are the members
+     * that got a value (all of them when not given).
      */
-    fun completed(request: Request, sentMs: Long, latencyMs: Long, answered: Boolean) {
+    fun completed(
+        request: Request,
+        sentMs: Long,
+        latencyMs: Long,
+        answered: Boolean,
+        answeredRequests: Collection<Request>? = null,
+    ) {
         val slot = byRequest[request] ?: return
         slot.pass += 1.0 / weightOf(slot)
         slot.lastSentMs = sentMs
         this.latencyMs = this.latencyMs?.let { it + LATENCY_SMOOTHING * (latencyMs - it) } ?: latencyMs.toDouble()
         if (answered) {
             slot.misses = 0
-            slot.answers.addLast(sentMs + latencyMs)
+            for (member in answeredRequests ?: slot.members) slot.answers[member]?.addLast(sentMs + latencyMs)
         } else if (++slot.misses >= dropAfterMisses) {
             slot.dropped = true
         }
@@ -82,7 +92,7 @@ class PollScheduler(
 
     /** Answers per second [request] got over the [rateWindowMs] before [nowMs]. */
     fun achievedHz(request: Request, nowMs: Long): Double {
-        val answers = byRequest[request]?.answers ?: return 0.0
+        val answers = byRequest[request]?.answers?.get(request) ?: return 0.0
         while (answers.isNotEmpty() && answers.first() <= nowMs - rateWindowMs) answers.removeFirst()
         return answers.size * MS_PER_S / rateWindowMs
     }

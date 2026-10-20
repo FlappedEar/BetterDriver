@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.NotifyLink
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
+import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
@@ -72,7 +73,11 @@ class SimulatedHeartRateMonitorTest {
     @Test
     fun `a simulated strap records heart rate, reconnects and logs what the drive checks grade`() {
         val store = SessionStore(tmp.newFolder())
-        val rec = Recorder(store, nanoTime = nanos::get).start(
+        // The test feeds two minutes in a burst, far faster than real time. The listener queue drops its
+        // oldest updates when the listener falls behind (by design, FBBD-69), so a slow CI runner lost
+        // strap values from the log; make room for all of them.
+        val config = RecorderConfig(listenerQueueCapacity = 10_000)
+        val rec = Recorder(store, config, nanoTime = nanos::get).start(
             SessionInfo(gnss.startUtcMillis, devices = listOf("fake-gnss"), channels = GnssChannels.ALL),
         )
         rec.listeners.add(HeartRateLog(rec.id) { lines += it })

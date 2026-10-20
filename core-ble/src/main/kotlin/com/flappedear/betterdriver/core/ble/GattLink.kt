@@ -25,7 +25,9 @@ import kotlinx.coroutines.flow.asStateFlow
 private const val RequestedMtu = 517
 private const val WatchdogMs = 1_000L
 private const val SilenceTimeoutMs = 3_000L
-private const val SetupTimeoutMs = 10_000L
+
+/** How long the MTU answer may take before the services are looked up without it (FBBD-272). */
+private const val MtuAnswerMs = 2_000L
 
 /** A fast link is asked for again at most this often while the data says the link is too slow. */
 private const val FastLinkEveryMs = 30_000L
@@ -39,7 +41,9 @@ private const val Tag = "Link"
  * Keeps a BLE link to one device (FBBD-43; generalised from the RaceBox link for the RaceChrono
  * DIY device, FBBD-118): connect, larger MTU, subscribe to the notifications of [profile], answer
  * its [GattHandshake] if it has one (the Dragy, FBBD-117), and reconnect on its own after a drop, a
- * GATT error, 10 s without data after connecting, or 3 s without data. No bonding is needed. Every
+ * GATT error, 10 s without data after connecting, or 3 s without data. Attempts that never bring
+ * data change how the next one connects ([SetupLadder], FBBD-272), and each setup step is logged.
+ * No bonding is needed. Every
  * GATT call runs on one private thread; [onData] is called with the characteristic and its bytes,
  * on Android's binder thread for notifications and on the link's thread for [read] results, and
  * must return quickly.
@@ -61,6 +65,7 @@ class GattLink(
     private val thread = HandlerThread(profile.threadName).apply { start() }
     private val handler = Handler(thread.looper)
     private val policy = ReconnectPolicy()
+    private val ladder = SetupLadder()
     private val _state = MutableStateFlow<LinkState>(LinkState.Idle)
     val state: StateFlow<LinkState> = _state.asStateFlow()
 
@@ -68,6 +73,10 @@ class GattLink(
     private var gatt: BluetoothGatt? = null
     private var running = false
     private var setupStartedAt = 0L
+    private var plan = ladder.plan()
+
+    /** The MTU request is out and its answer, which starts the service lookup, has not come. */
+    private var awaitingMtu = false
 
     /** Characteristics still to subscribe to on this connection; empty once all are on. */
     private val toSubscribe = ArrayDeque<BluetoothGattCharacteristic>()
@@ -168,13 +177,15 @@ class GattLink(
         setupStartedAt = SystemClock.elapsedRealtime()
         lastDataAt = 0L
         gattProbe?.clear()
+        plan = ladder.plan()
+        if (ladder.failures > 0) DebugLog.i(Tag, "$address ${ladder.failures} setup(s) without data: $plan")
         val failure = try {
             val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
             if (adapter == null || !adapter.isEnabled) {
                 "bluetooth off"
             } else {
                 gatt = adapter.getRemoteDevice(address)
-                    .connectGatt(appContext, false, callback, BluetoothDevice.TRANSPORT_LE)
+                    .connectGatt(appContext, plan.autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
                 if (gatt == null) "connectGatt returned null" else null
             }
         } catch (e: SecurityException) {
@@ -187,6 +198,12 @@ class GattLink(
 
     private fun retry(reason: String) {
         if (!running) return
+        val failed = gatt
+        if (failed != null && lastDataAt == 0L) {
+            ladder.failed()
+            // Android may hold a stale copy of the device's services; the next connection finds them again.
+            if (!refreshCache(failed)) DebugLog.i(Tag, "$address service cache could not be cleared")
+        }
         closeGatt()
         val delay = policy.nextDelayMs()
         setState(LinkState.Reconnecting(policy.attempts, delay, reason))
@@ -205,9 +222,10 @@ class GattLink(
         when {
             gatt == null -> Unit
             last != 0L && now - last > SilenceTimeoutMs -> retry("no data for ${now - last} ms")
-            last == 0L && now - setupStartedAt > SetupTimeoutMs -> retry("no data after connecting")
+            last == 0L && now - setupStartedAt > plan.setupTimeoutMs -> retry("no data after connecting")
             last != 0L -> {
                 policy.reset()
+                ladder.streaming()
                 setState(LinkState.Streaming(count))
                 gatt?.let { gattProbe?.tick(it, now) }
             }
@@ -216,6 +234,8 @@ class GattLink(
     }
 
     private fun closeGatt() {
+        handler.removeCallbacks(mtuOverdue)
+        awaitingMtu = false
         toSubscribe.clear()
         handshaking = false
         subscribed = false
@@ -228,6 +248,22 @@ class GattLink(
             // Nothing more to release.
         }
     }
+
+    /** Looks up the device's services, the step after the MTU exchange (or instead of it). */
+    private fun discover(g: BluetoothGatt) {
+        if (!g.discoverServices()) retry("discoverServices failed")
+    }
+
+    private val mtuOverdue = Runnable {
+        val g = gatt
+        if (g != null && awaitingMtu) {
+            awaitingMtu = false
+            DebugLog.i(Tag, "$address no MTU answer in $MtuAnswerMs ms, finding services without it")
+            discover(g)
+        }
+    }
+
+    private fun elapsed() = SystemClock.elapsedRealtime() - setupStartedAt
 
     private fun setState(s: LinkState) {
         if (_state.value == s) return
@@ -278,10 +314,16 @@ class GattLink(
                 if (g != gatt) return@post
                 when {
                     status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED -> {
+                        DebugLog.i(Tag, "$address connected in ${elapsed()} ms ($plan)")
                         g.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
                         // The RaceBox data message is 88 bytes; a larger MTU avoids splitting it.
-                        // Reassembly copes either way.
-                        if (!g.requestMtu(RequestedMtu)) g.discoverServices()
+                        // Reassembly copes either way, so the MTU is skipped when it held setups up.
+                        if (plan.askMtu && g.requestMtu(RequestedMtu)) {
+                            awaitingMtu = true
+                            handler.postDelayed(mtuOverdue, MtuAnswerMs)
+                        } else {
+                            discover(g)
+                        }
                     }
                     else -> retry("connection state $newState, status $status")
                 }
@@ -289,24 +331,31 @@ class GattLink(
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
-            DebugLog.i(Tag, "$address MTU $mtu, status $status")
             handler.post {
-                if (g == gatt && status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
-                if (g == gatt && !g.discoverServices()) retry("discoverServices failed")
+                if (g != gatt) return@post
+                DebugLog.i(Tag, "$address MTU $mtu, status $status, ${elapsed()} ms after connecting began")
+                if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
+                // A late answer, or one the device started, must not look the services up twice.
+                if (awaitingMtu) {
+                    awaitingMtu = false
+                    handler.removeCallbacks(mtuOverdue)
+                    discover(g)
+                }
             }
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                val plan = if (status == BluetoothGatt.GATT_SUCCESS) {
+                DebugLog.i(Tag, "$address services found, status $status, ${elapsed()} ms after connecting began")
+                val subs = if (status == BluetoothGatt.GATT_SUCCESS) {
                     subscriptions(g, profile)
                 } else {
                     SubscriptionPlan(failure = "service discovery status $status")
                 }
                 toSubscribe.clear()
-                toSubscribe.addAll(plan.characteristics)
-                if (plan.failure != null) retry(plan.failure) else subscribeNext(g)
+                toSubscribe.addAll(subs.characteristics)
+                if (subs.failure != null) retry(subs.failure) else subscribeNext(g)
             }
         }
 
@@ -408,6 +457,19 @@ class GattLink(
         }
     }
 }
+
+/**
+ * Clears Android's cached services of the device on [g] with the hidden BluetoothGatt.refresh(),
+ * which has no public equivalent; false when Android refused or does not have it.
+ */
+private fun refreshCache(g: BluetoothGatt): Boolean =
+    try {
+        g.javaClass.getMethod("refresh").invoke(g) as? Boolean ?: false
+    } catch (_: ReflectiveOperationException) {
+        false
+    } catch (_: SecurityException) {
+        false
+    }
 
 @Suppress("DEPRECATION") // The pre-Android 13 descriptor write.
 @SuppressLint("MissingPermission")
