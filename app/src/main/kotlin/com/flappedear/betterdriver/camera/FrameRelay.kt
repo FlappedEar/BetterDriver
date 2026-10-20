@@ -79,7 +79,8 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
     /**
      * Stops handing frames on; call once the camera has been told to stop, before the encoder ends its
      * stream. The camera still completes the captures in flight: frames go on to the encoder until none
-     * has come for [QuietMillis] (at most [CloseMillis]), so the recording's last frames are kept.
+     * has come for [QuietMillis] (at most [CloseMillis]), then the reader is emptied into the encoder,
+     * so the recording's last frames are kept.
      */
     fun close() {
         val until = SystemClock.uptimeMillis() + CloseMillis
@@ -95,11 +96,15 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
                 break
             }
         }
-        closed = true
-        // The relay's thread finishes the frame in hand before the reader and writer go.
+        // A last pass on the relay's thread, after the frame in hand (its queueing may wait on the
+        // encoder), hands on every frame still waiting in the reader before the reader and writer go.
         val done = CountDownLatch(1)
-        Handler(thread.looper).post { done.countDown() }
+        Handler(thread.looper).post {
+            relay(reader)
+            done.countDown()
+        }
         done.await(CloseMillis, TimeUnit.MILLISECONDS)
+        closed = true
         runCatching { reader.close() }
         runCatching { writer.close() }
         thread.quitSafely()
