@@ -102,8 +102,8 @@ internal class AudioRouteWatch(
             handler.post {
                 // A result for a route already left behind (it changed again meanwhile) is dropped.
                 if (watched === w && w.deviceId == id) {
-                    // Not measured (still settling, or no track): the next check measures it again.
-                    if ((if (w.clips) clip else live) == null) w.deviceId = NotMeasured
+                    // A path not measured (still settling, or no track): the next check measures it again.
+                    if (live == null || (w.clips && clip == null)) w.deviceId = NotMeasured
                     onMeasured(Remeasured(now, w.clips, live, clip))
                 }
             }
