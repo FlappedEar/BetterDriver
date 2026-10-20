@@ -30,6 +30,8 @@ logcat=$!
 
 ./gradlew :app:connectedDebugAndroidTest --stacktrace
 status=$?
+# The track screen's time and garbage per update (FBBD-266, TrackScreenFramesTest), to compare builds.
+grep 'TrackFrames' "$log" || true
 
 # The UI-process kill test (FBBD-72), with the APKs Gradle built; logcat still runs.
 bash .github/scripts/ui-kill.sh || status=1
