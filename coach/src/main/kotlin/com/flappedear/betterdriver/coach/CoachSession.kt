@@ -70,6 +70,11 @@ class CoachSession(
             }
         }
 
+    /** The audio output changed (FBBD-255): cues from now on allow for its delay, [millis]. */
+    fun audioDelay(millis: Int) {
+        engine?.audioDelayMillis = millis
+    }
+
     fun onFix(fix: CoachFix, nowMicros: Long, say: (String) -> Boolean): CoachOutput {
         val e = engine ?: return CoachOutput(emptyList(), status)
         val u = e.update(fix)
