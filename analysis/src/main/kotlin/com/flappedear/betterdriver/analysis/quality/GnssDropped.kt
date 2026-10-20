@@ -36,12 +36,14 @@ internal fun droppedMetrics(
     skipsWithoutFix: Boolean,
 ): List<QualityMetric> {
     val steps = receiverSteps(s, acrossDrop)
-    val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)
+    val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && s.utc[it] != GnssSamples.NoUtc }
+    // The usual step from after the first fix, so a cold start's losses do not set it either.
+    val afterFix = steps.filter { it.to > (firstFix ?: Int.MAX_VALUE) }.ifEmpty { steps }
+    val usual = nearestRank(afterFix.map { it.millis.toDouble() }, Median)
     if (usual == null || usual <= 0) {
         val why = "the receiver gave no fix times, so missing samples cannot be told from late ones"
         return listOf(notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why))
     }
-    val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && s.utc[it] != GnssSamples.NoUtc }
     val lost = tally(steps, usual, firstFix ?: Int.MAX_VALUE, raceBox, skipsWithoutFix)
     val missing = lost.missing
     val beforeFix = lost.beforeFix
