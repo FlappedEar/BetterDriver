@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupStore
+import com.flappedear.betterdriver.setup.TrackPage
 import com.flappedear.betterdriver.setup.migrate
 import com.flappedear.betterdriver.sharing.AppDataGate
 import java.io.File
@@ -82,6 +83,19 @@ class SetupRepo private constructor(context: Context) {
         if (next == setup) return
         setup = next
         save(store, next)
+    }
+
+    /**
+     * Sets a track screen tile from the track screen (UI-123 B): in the setup, so every next session
+     * shows it, and in the running session's copy, so it shows now. Main thread only.
+     */
+    fun chooseTile(page: TrackPage, slot: Int, id: String?) {
+        update { it.chooseTile(page, slot, id) }
+        val r = running ?: return
+        val next = r.chooseTile(page, slot, id)
+        if (next == r) return
+        running = next
+        save(runningStore, next)
     }
 
     /**

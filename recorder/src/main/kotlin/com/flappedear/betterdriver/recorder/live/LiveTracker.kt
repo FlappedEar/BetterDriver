@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder.live
 
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
@@ -14,6 +15,28 @@ private const val RateWindowMicros = 3 * MicrosPerSecond
 
 /** The shortest wait for a fix before the GNSS signal counts as lost, whatever the receiver's rate. */
 const val GnssLostMinMicros = MicrosPerSecond
+
+/**
+ * A car or body value is shown at least this long after it arrived, and at least [StalePeriods] of
+ * its own sampling periods: a slow OBD-II PID arrives every 5 s (FBBD-262).
+ */
+private const val StaleMinMicros = 3 * MicrosPerSecond
+private const val StalePeriods = 3
+
+/**
+ * A channel's sampling period is the shortest of its last gaps: one outage is a single long gap,
+ * while a PID polled every 13 s (many slow PIDs on a slow adapter) has every gap that long.
+ */
+private const val PeriodGaps = 4
+
+/** OBD-II channels are named "obd_<id>" with source "obd" (core-ble ObdSource). */
+private const val ObdSource = "obd"
+
+/** The heart-rate monitor's beats per minute (core-ble HeartRateChannels.HEART_RATE). */
+private const val HeartRateName = "heart_rate"
+
+/** The channels whose latest value the track screen can show besides GNSS: every OBD-II value and heart rate. */
+fun isShownLive(def: ChannelDef): Boolean = def.source == ObdSource || def.name == HeartRateName
 
 /** Fix periods to wait: one late NMEA sentence at 1 Hz must not show the banner (FBBD-64). */
 private const val GnssLostPeriods = 3
@@ -62,6 +85,13 @@ data class LiveSnapshot(
      * how long to wait before [GnssState.Lost].
      */
     val receiverRateHz: Int = 0,
+    /**
+     * The latest value of each OBD-II and heart-rate channel, by channel name ("obd_coolant_temp",
+     * "heart_rate"), for the track screen's tiles (FBBD-262). A channel with no value yet is left out,
+     * so its tile is left out (UI-126 B); a value that stopped arriving is NaN, so its tile shows a
+     * dash and never an old reading as current.
+     */
+    val channels: Map<String, Double> = emptyMap(),
 ) {
     val gnss: GnssState
         get() = when {
@@ -114,6 +144,11 @@ class LiveTracker(
     private val standing = StandingBias()
     private var storageLowBytes: Long? = null
     private var stoppedReason: String? = null
+    private val shown = HashMap<Int, ShownValue>()
+
+    override fun onChannel(def: ChannelDef) = synchronized(this) {
+        if (isShownLive(def)) shown[def.id] = ShownValue(def.name)
+    }
 
     override fun onSamples(set: SampleSet) = synchronized(this) {
         var lat = false
@@ -130,6 +165,7 @@ class LiveTracker(
                     accel = true
                 }
                 accelIds?.second -> accelY = v.value
+                else -> shown[v.channelId]?.update(set.tMicros, v.value)
             }
         }
         if (accel) standing.update(speedKmh, accelX, accelY)
@@ -166,6 +202,7 @@ class LiveTracker(
             droppedSamples = droppedSamples(),
             gCombined = accelX?.let { x -> accelY?.let { y -> hypot(x - standing.x, y - standing.y) } },
             receiverRateHz = receiverRateHz,
+            channels = shown.values.mapNotNull { it.current(now) }.toMap(),
         )
     }
 
@@ -184,6 +221,32 @@ class LiveTracker(
     /** Keeps only fixes from the second up to [now]. */
     private fun trim(now: Long) {
         while (recentFixes.isNotEmpty() && recentFixes.first() <= now - MicrosPerSecond) recentFixes.removeFirst()
+    }
+}
+
+/** The latest value of one shown channel and how often it arrives. */
+private class ShownValue(val name: String) {
+    private var value = Double.NaN
+    private var atMicros = Long.MIN_VALUE
+    private val gaps = LongArray(PeriodGaps)
+    private var gapCount = 0
+    private var periodMicros = 0L
+
+    fun update(t: Long, v: Double) {
+        if (!v.isFinite()) return
+        if (atMicros != Long.MIN_VALUE && t > atMicros) {
+            gaps[gapCount++ % PeriodGaps] = t - atMicros
+            periodMicros = (0 until minOf(gapCount, PeriodGaps)).minOf { gaps[it] }
+        }
+        value = v
+        atMicros = maxOf(atMicros, t)
+    }
+
+    /** Name and value, null before the first value, and NaN once it is older than its staleness limit. */
+    fun current(now: Long): Pair<String, Double>? {
+        if (atMicros == Long.MIN_VALUE) return null
+        val limit = maxOf(StaleMinMicros, StalePeriods * periodMicros)
+        return name to if (now - atMicros > limit) Double.NaN else value
     }
 }
 

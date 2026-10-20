@@ -333,6 +333,8 @@ data class SessionChoice(
     val gnssId: String? = null,
     val cameraIds: List<String> = emptyList(),
     val tiles: List<TrackChannel> = listOf(TrackChannel.SPEED),
+    /** The track screen's data tiles (FBBD-262); null in a setup saved before them, see [Setup.trackScreens]. */
+    val screens: TrackScreens? = null,
 )
 
 /** Why a session cannot start with the current choice. */
@@ -512,6 +514,16 @@ data class Setup(
     /** Sets the track-screen tiles, in order; repeats are dropped and at most [MaxTiles] kept. */
     fun chooseTiles(tiles: List<TrackChannel>): Setup =
         copy(session = session.copy(tiles = tiles.distinct().take(MaxTiles)))
+
+    /**
+     * The track screen's tiles: as chosen, or for a setup saved before FBBD-262 built from its
+     * [SessionChoice.tiles].
+     */
+    val trackScreens: TrackScreens get() = session.screens ?: TrackScreens.from(session.tiles)
+
+    /** Sets one track-screen tile (FBBD-262); null empties it. */
+    fun chooseTile(page: TrackPage, slot: Int, id: String?): Setup =
+        copy(session = session.copy(screens = trackScreens.choose(page, slot, id)))
 
     private fun replace(item: Equipment): Setup = copy(equipment = equipment.map { if (it.id == item.id) item else it })
 

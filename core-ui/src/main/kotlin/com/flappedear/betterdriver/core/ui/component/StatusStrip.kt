@@ -71,12 +71,16 @@ private fun vector(name: String, path: String): ImageVector = ImageVector.Builde
 /**
  * Status strip (UI-07 option A): track, GNSS, camera, OBD and heart rate (UI-110 B), and the
  * recording clock on the right. Replaced by [AlertBanner] when an alert is active.
+ * With [pages] above one, dots at the right end, after the clock, show which screen of the track
+ * screen is on (UI-122 A): the lit one is [page].
  */
 @Composable
 fun StatusStrip(
     items: List<StatusItem>,
     recordingTime: String?,
     modifier: Modifier = Modifier,
+    page: Int = 0,
+    pages: Int = 1,
 ) {
     val c = TrackTheme.colors
     Row(
@@ -109,8 +113,16 @@ fun StatusStrip(
                 NumberText(recordingTime, size = 15.dp, color = c.text, weight = FontWeight.SemiBold)
             }
         }
+        if (pages > 1) {
+            Row(horizontalArrangement = Arrangement.spacedBy(5.dp), verticalAlignment = Alignment.CenterVertically) {
+                repeat(pages) { Dot(if (it == page) c.text else c.textDim.copy(alpha = UnlitDotAlpha)) }
+            }
+        }
     }
 }
+
+/** The other screen's dot: there, but plainly not lit. */
+private const val UnlitDotAlpha = 0.35f
 
 @Composable
 private fun Dot(color: Color) {

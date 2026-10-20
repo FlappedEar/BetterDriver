@@ -15,7 +15,6 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flappedear.betterdriver.MainActivity
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
-import com.flappedear.betterdriver.core.ui.component.SectorState
 import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.feature.track.ExampleTrackState
 import com.flappedear.betterdriver.feature.track.TrackScreenContent
@@ -110,14 +109,17 @@ class TrackScreenFramesTest {
             deltaSeconds = delta,
             lapNumber = lap.toInt(),
             lapMillis = lapMs,
-            sectors = listOf(
-                SectorState("S1", -0.21),
-                SectorState("S2", if (lapMs > LapMs / 3) 0.08 else null, current = lapMs in LapMs / 3..LapMs * 2 / 3),
-                SectorState("S3", null, current = lapMs > LapMs * 2 / 3),
-            ),
+            // The ten tiles of the bottom panel (FBBD-262), most changing on every update.
             tiles = listOf(
                 TrackTile("Speed", (90 + (sin(tick / 5.0) * 60).toInt()).toString(), "km/h"),
                 TrackTile("G", String.format(Locale.ROOT, "%.2f", 0.6 + sin(tick / 3.0) * 0.5), "g"),
+                TrackTile("Coolant", (90 + tick / 40 % 6).toString(), "°C"),
+                TrackTile("Oil", (100 + tick / 30 % 9).toString(), "°C"),
+                TrackTile("Heart rate", (130 + (sin(tick / 7.0) * 15).toInt()).toString(), "bpm"),
+                TrackTile("RPM", (4000 + (sin(tick / 4.0) * 2500).toInt()).toString(), "rpm"),
+                TrackTile("Throttle", (50 + (sin(tick / 4.0) * 50).toInt()).toString(), "%"),
+                TrackTile("Intake air", "24", "°C"),
+                TrackTile("Battery", String.format(Locale.ROOT, "%.1f", 14.0 + sin(tick / 11.0) * 0.2), "V"),
                 TrackTile("Lap", lap.toString(), ""),
             ),
             coachCorner = if ((tick / 40) % 2 == 0) "T4" else "T7",

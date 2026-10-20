@@ -44,12 +44,16 @@ import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.obdAdapterLabel
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.lastSessionLine
+import com.flappedear.betterdriver.recording.liveTileChoices
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.SessionAnalysisRoute
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.sessionanalysis.progressionDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.TrackChannel
+import com.flappedear.betterdriver.setup.TrackPage
+import com.flappedear.betterdriver.setup.channelsFor
 import com.flappedear.betterdriver.shell.AboutScreen
 import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.AppPrefs
@@ -285,13 +289,21 @@ private fun Drive(
 private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, recorder: RecorderClient) {
     if (prefs.hasRequiredPermissions()) {
         GnssSound(recorder.state.live?.gnss, enabled = prefs.gnssSound)
+        val session = repo.forSession()
+        val gnss = session.active().gnss
+        val hasG = TrackChannel.G in channelsFor(gnss)
         TrackScreen(
             brightness = prefs.trackBrightness,
             onReport = { DebugLog.i("TrackScreen", it) },
-            state = liveTrackState(recorder.state, repo.forSession().active().tiles),
+            state = liveTrackState(recorder.state, session.trackScreens, hasG),
             onStop = {
                 recorder.stop()
                 nav.popBackStack()
+            },
+            tileChoices = { liveTileChoices(recorder.state, hasG, gnss?.name) },
+            onChooseTile = { page, slot, id ->
+                repo.chooseTile(if (page == 0) TrackPage.MAIN else TrackPage.SECOND, slot, id)
+                DebugLog.i("TrackScreen", "tile page=$page slot=$slot id=${id ?: "empty"}")
             },
         )
     } else {
@@ -433,7 +445,6 @@ private fun Settings(
         onBack = onBack,
         trackCount = tracks.list.size,
         onTracks = { nav.navigate(Routes.Tracks) },
-        onChooseTiles = { tiles -> repo.update { it.chooseTiles(tiles) } },
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
         coach = coach.settings,
         onOpenCoach = { nav.navigate(Routes.CoachSettings) },

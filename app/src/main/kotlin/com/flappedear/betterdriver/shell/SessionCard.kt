@@ -29,7 +29,7 @@ private enum class Picker { Car, Gnss }
 
 /**
  * "This session" on home (UI-36 option A): the car, the GNSS receiver and a switch per camera.
- * Track-screen tiles are set once in Settings › Recording. The last choice is kept, so on a normal
+ * Track-screen tiles are changed on the track screen (UI-123 B). The last choice is kept, so on a normal
  * day Arek only presses START. A camera turned off here does not start. While a session starts or
  * records the card is [locked]: it shows what the running session uses and nothing can change.
  * Without camera access ([cameraAllowed] false) the phone camera says so instead of silently not recording.

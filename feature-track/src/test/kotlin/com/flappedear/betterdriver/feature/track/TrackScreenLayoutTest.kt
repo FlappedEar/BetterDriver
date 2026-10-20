@@ -29,7 +29,6 @@ import com.flappedear.betterdriver.core.ui.TrackColorsGreenRed
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
 import com.flappedear.betterdriver.core.ui.component.DeltaDisplay
 import com.flappedear.betterdriver.core.ui.component.LapTimes
-import com.flappedear.betterdriver.core.ui.component.SectorState
 import com.flappedear.betterdriver.core.ui.component.ValueState
 import com.flappedear.betterdriver.core.ui.component.ValueTile
 import com.flappedear.betterdriver.core.ui.testing.Devices
@@ -59,7 +58,9 @@ import kotlin.math.atan
  * - [valuesFitTheirSlots]: each value's tile is at least as wide as its content needs, so no digit
  *   is drawn outside it (FBBD-62).
  * - [glanceValuesAreLargeEnough]: delta, lap times and tiles are at least 16 arcminutes tall at
- *   70 cm (FBBD-65).
+ *   70 cm (FBBD-65), on both screens.
+ *
+ * The second screen (FBBD-262) is laid out with every state too.
  */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -70,6 +71,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     val rules: RuleChain = RuleChain.outerRule(RegisterComponentActivity()).around(compose)
 
     private var state by mutableStateOf(ExampleTrackState)
+    private var page by mutableStateOf(0)
     private var colors by mutableStateOf<TrackColors>(TrackColorsGreenRed)
 
     /** When set, the content is drawn at its natural width at these slot heights instead of the screen. */
@@ -84,13 +86,14 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     private fun Screen() {
         BetterDriverTheme(track = true, trackColors = colors) {
             val heights = natural
-            if (heights == null) TrackScreenContent(state) else NaturalWidths(state, heights)
+            if (heights == null) TrackScreenContent(state, page = page) else NaturalWidths(state, heights)
         }
     }
 
-    private fun showState(s: TrackScreenState, palette: TrackColors = TrackColorsGreenRed) {
+    private fun showState(s: TrackScreenState, palette: TrackColors = TrackColorsGreenRed, onPage: Int = 0) {
         state = s
         colors = palette
+        page = onPage
         compose.waitForIdle()
     }
 
@@ -102,6 +105,9 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             showState(s, palette)
             compose.saveScreenshot(device, "track_$name")
             problems += compose.layoutProblems().map { "$name: $it" }
+            showState(s, palette, onPage = 1)
+            compose.saveScreenshot(device, "track_${name}_second")
+            problems += compose.layoutProblems().map { "$name, second screen: $it" }
         }
         check(problems.isEmpty()) { "track screen on $device (FBBD-40):\n" + problems.joinToString("\n") }
     }
@@ -130,7 +136,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         (States.map { it.first to it.second } + Updates.mapIndexed { i, s -> "update_$i" to s }).forEach { (name, s) ->
             natural = null
             showState(s)
-            val slots = glanceSlots(minOf(s.tiles.size, TileCount))
+            val slots = (listOf(TrackSlots.Delta, TrackSlots.Laps) + valueTiles(s).map { TrackSlots.tile(it) })
                 .associateWith { compose.onNodeWithTag(it).fetchSemanticsNode().size }
             natural = slots.mapValues { (_, size) -> with(compose.density) { size.height.toDp() } }
             compose.waitForIdle()
@@ -150,25 +156,38 @@ abstract class TrackScreenLayoutTest(private val device: String) {
     @Test
     fun glanceValuesAreLargeEnough() {
         show()
-        showState(ExampleTrackState)
         val small = ArrayList<String>()
-        glanceSlots(ExampleTrackState.tiles.size).forEach { tag ->
-            values(tag).forEach { node ->
-                // The font size its digits are drawn at; capitals and digits are about 0.7 of it.
-                val sizeDp = fontSizeDp(node)
-                val capMm = sizeDp * CapHeightEm * MmPerDp
-                val arcMinutes = Math.toDegrees(atan(capMm / ViewingDistanceMm)) * ArcMinutesPerDegree
-                if (arcMinutes < MinArcMinutes) {
-                    small += "$tag \"${description(node)}\": %.1f dp, %.1f′ at %d cm".format(
-                        sizeDp,
-                        arcMinutes,
-                        (ViewingDistanceMm / MmPerCm).toInt(),
-                    )
-                }
-            }
-        }
+        // One row of tiles: every value at least 16′.
+        showState(Updates.last())
+        small += tooSmall(glanceSlots(TileCount), MinArcMinutes)
+        // Ten tiles fill two rows where the window has room for them.
+        showState(ExampleTrackState)
+        small += tooSmall(listOf(TrackSlots.Delta, TrackSlots.Laps), MinArcMinutes)
+        small += tooSmall(ExampleTrackState.tiles.indices.map { TrackSlots.tile(it) }, MinArcMinutes)
+        showState(ExampleTrackState, onPage = 1)
+        small += tooSmall(ExampleTrackState.secondTiles.indices.map { TrackSlots.secondTile(it) }, MinArcMinutes)
         check(small.isEmpty()) {
-            "glance values under $MinArcMinutes′ on $device (FBBD-65):\n" + small.joinToString("\n")
+            "glance values too small on $device (FBBD-65):\n" + small.joinToString("\n")
+        }
+    }
+
+    /** The values in [tags] (those shown) under [minArcMinutes] tall at the viewing distance. */
+    private fun tooSmall(tags: List<String>, minArcMinutes: Double): List<String> = tags.flatMap { tag ->
+        values(tag).mapNotNull { node ->
+            // The font size its digits are drawn at; capitals and digits are about 0.7 of it.
+            val sizeDp = fontSizeDp(node)
+            val capMm = sizeDp * CapHeightEm * MmPerDp
+            val arcMinutes = Math.toDegrees(atan(capMm / ViewingDistanceMm)) * ArcMinutesPerDegree
+            if (arcMinutes >= minArcMinutes) {
+                null
+            } else {
+                "$tag \"${description(node)}\": %.1f dp, %.1f′ at %d cm, under %.0f′".format(
+                    sizeDp,
+                    arcMinutes,
+                    (ViewingDistanceMm / MmPerCm).toInt(),
+                    minArcMinutes,
+                )
+            }
         }
     }
 
@@ -223,7 +242,7 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         n.config.getOrElse(SemanticsProperties.ContentDescription) { emptyList() }.joinToString(" ")
 
     private companion object {
-        val FixedSlots = listOf(TrackSlots.Top, TrackSlots.Coach, TrackSlots.Sectors)
+        val FixedSlots = listOf(TrackSlots.Top, TrackSlots.Coach, TrackSlots.Panel)
         const val TileCount = 3
         val GlanceSlots = glanceSlots(TileCount)
 
@@ -248,6 +267,10 @@ abstract class TrackScreenLayoutTest(private val device: String) {
 
         /** ISO 15008's minimum character height for in-vehicle displays; 20′ is recommended. */
         const val MinArcMinutes = 16.0
+
+        /** The slots of [s]'s main tiles that show a value, among the first [TileCount]. */
+        fun valueTiles(s: TrackScreenState) =
+            s.tiles.take(TileCount).withIndex().filter { (_, t) -> t != null && t.hasData }.map { it.index }
 
         /** Eye to a windscreen-mounted phone. */
         const val ViewingDistanceMm = 700.0
@@ -290,17 +313,30 @@ abstract class TrackScreenLayoutTest(private val device: String) {
                 ),
                 TrackColorsGreenRed,
             ),
+            Triple("blue_orange", ExampleTrackState, TrackColorsBlueOrange),
+            // A new install (UI-125 B): speed and G, the other slots empty.
             Triple(
-                "blue_orange_four_sectors",
+                "new_install",
                 ExampleTrackState.copy(
-                    sectors = listOf(
-                        SectorState("S1", -0.21),
-                        SectorState("S2", 0.08),
-                        SectorState("S3", -0.05),
-                        SectorState("S4", null, current = true),
-                    ),
+                    tiles = listOf(TrackTile("Speed", "142", "km/h"), TrackTile("G", "1.12", "g")) + List(8) { null },
+                    secondTiles = List(12) { null },
                 ),
-                TrackColorsBlueOrange,
+                TrackColorsGreenRed,
+            ),
+            // No data for oil temperature and the second row's heart rate: left out (UI-126 B).
+            Triple("no_data", noData(), TrackColorsGreenRed),
+            // Car stopped: the tiles without data show a dash so they can be held (UI-123 B).
+            Triple("no_data_stopped", noData().copy(editable = true), TrackColorsGreenRed),
+            // A whole row without data collapses; the other takes the panel.
+            Triple(
+                "one_row_of_data",
+                ExampleTrackState.copy(
+                    tiles = ExampleTrackState.tiles.mapIndexed { i, t ->
+                        if (i < MainColumns) t else t?.copy(hasData = false)
+                    },
+                    secondTiles = ExampleTrackState.secondTiles.map { it?.copy(hasData = false) },
+                ),
+                TrackColorsGreenRed,
             ),
             // A long lap (Nordschleife) and the widest values a tile shows.
             Triple(
@@ -353,14 +389,16 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             lapMillis = null,
             lastMillis = null,
             bestMillis = null,
-            sectors = listOf(
-                SectorState("S1", null, current = true),
-                SectorState("S2", null),
-                SectorState("S3", null),
-            ),
             coachCorner = null,
             coachCue = null,
         )
+
+        fun noData() = ExampleTrackState.copy(
+            tiles = ExampleTrackState.tiles.map { it.withoutDataIf("obd_oil_temp") },
+            secondTiles = ExampleTrackState.secondTiles.map { it.withoutDataIf("heart_rate") },
+        )
+
+        fun TrackTile?.withoutDataIf(id: String) = if (this != null && this.id == id) copy(hasData = false) else this
     }
 }
 
@@ -371,7 +409,9 @@ private fun NaturalWidths(s: TrackScreenState, heights: Map<String, Dp>) {
         Natural(TrackSlots.Delta, heights) { m -> DeltaDisplay(s.deltaSeconds, m) }
         Natural(TrackSlots.Laps, heights) { m -> LapTimes(s.lapNumber, s.lapMillis, s.lastMillis, s.bestMillis, m) }
         s.tiles.take(TrackSlotsTileCount).forEachIndexed { i, t ->
-            Natural(TrackSlots.tile(i), heights) { m -> ValueTile(t.label, t.value, t.unit, m, t.state) }
+            if (t != null && t.hasData) {
+                Natural(TrackSlots.tile(i), heights) { m -> ValueTile(t.label, t.value, t.unit, m, t.state) }
+            }
         }
     }
 }

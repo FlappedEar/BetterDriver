@@ -1,25 +1,23 @@
 package com.flappedear.betterdriver.recording
 
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
-import com.flappedear.betterdriver.core.ui.component.SectorState
 import com.flappedear.betterdriver.core.ui.component.StatusIcon
 import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.feature.track.TrackAlert
 import com.flappedear.betterdriver.feature.track.TrackScreenState
-import com.flappedear.betterdriver.feature.track.TrackTile
+import com.flappedear.betterdriver.feature.track.TileChoiceGroup
 import com.flappedear.betterdriver.feature.track.withTiming
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
-import com.flappedear.betterdriver.setup.TrackChannel
-import com.flappedear.betterdriver.timing.live.LiveTimingState
+import com.flappedear.betterdriver.setup.TrackPage
+import com.flappedear.betterdriver.setup.TrackScreens
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlin.math.roundToInt
 
 private const val MicrosPerSecond = 1_000_000L
 private const val SecondsPerMinute = 60L
@@ -28,10 +26,10 @@ private const val BytesPerMb = 1_000_000L
 private const val NoValue = "–"
 
 /**
- * Track screen values from the recorder. Laps, delta and sectors come from live timing, which runs
+ * Track screen values from the recorder. Laps and delta come from live timing, which runs
  * in the recorder process once the session is at a saved track with lines (FBBD-12); until then
- * those slots show their empty state. The coach line is the coach's last cue (FBBD-98). [tiles] are the
- * tiles set in Settings (UI-38 A), already limited to what the session's receiver can fill.
+ * those slots show their empty state. The coach line is the coach's last cue (FBBD-98). [screens]
+ * are the session's tiles (FBBD-262); [receiverHasG] is whether its receiver gives G.
  */
 /**
  * The rate on the GNSS status: the receiver's, from the spacing of its recent fixes. Fixes counted in
@@ -40,7 +38,7 @@ private const val NoValue = "–"
  */
 internal fun shownRateHz(live: LiveSnapshot): Int = if (live.receiverRateHz > 0) live.receiverRateHz else live.fixRateHz
 
-fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreenState {
+fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Boolean): TrackScreenState {
     val live = state.live
     val gnss = if (live == null) {
         StatusItem("GNSS", NoValue, ok = false)
@@ -52,6 +50,7 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         }
     }
     val timing = state.timing
+    val sources = TileSources(live, timing, receiverHasG)
     // A saved track without timing is amber. A circuit from the built-in list is only where the car is:
     // a road drive can start within its 2 km, so it is shown as neutral information, not a problem.
     val place = state.place?.let {
@@ -73,25 +72,29 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
         lapMillis = null,
         lastMillis = null,
         bestMillis = null,
-        sectors = listOf(SectorState("S1", null, current = true), SectorState("S2", null), SectorState("S3", null)),
-        tiles = tiles.map { ch -> TrackTile(tileLabel(ch, timing), tileValue(ch, live, timing) ?: NoValue, ch.unit) },
+        tiles = screens.tiles(TrackPage.MAIN).map { trackTile(it, sources) },
         coachCorner = state.coach?.corner,
         coachCue = state.coach?.text,
         coachPraise = state.coach?.praise == true,
+        secondTiles = screens.tiles(TrackPage.SECOND).map { trackTile(it, sources) },
+        editable = stopped(live),
     )
     return if (timing == null) screen else screen.withTiming(timing)
 }
 
-/** At a point-to-point track (FBBD-155) the lap tile counts runs. */
-private fun tileLabel(ch: TrackChannel, timing: LiveTimingState?): String =
-    if (ch == TrackChannel.LAP && timing?.pointToPoint == true) "Run" else ch.label
+/**
+ * The car is not moving, so a tile can be changed (UI-123 B): no recording, no fix to tell, or
+ * under [EditMaxKmh].
+ */
+internal fun stopped(live: LiveSnapshot?): Boolean =
+    live == null || live.gnss != GnssState.Ok || (live.speedKmh ?: 0.0) < EditMaxKmh
 
-private fun tileValue(ch: TrackChannel, live: LiveSnapshot?, timing: LiveTimingState?): String? = when (ch) {
-    // The receiver's last speed stays known after the fix is lost; it is not the car's speed now.
-    TrackChannel.SPEED -> live?.takeIf { it.gnss == GnssState.Ok }?.speedKmh?.roundToInt()?.toString()
-    TrackChannel.G -> live?.gCombined?.let { String.format(Locale.ROOT, "%.2f", it) }
-    TrackChannel.LAP -> timing?.lapNumber?.takeIf { it > 0 }?.toString()
-}
+/** Walking pace: a car in the pit lane queue still counts as stopped. */
+private const val EditMaxKmh = 5.0
+
+/** A tile's list on the track screen (UI-124 A), its values from [state]. */
+fun liveTileChoices(state: RecorderState, receiverHasG: Boolean, receiver: String?): List<TileChoiceGroup> =
+    tileChoices(TileSources(state.live, state.timing, receiverHasG), receiver)
 
 /** The one interruption on the track screen (UI-08): only when recording is not as it should be. */
 private fun trackAlert(state: RecorderState): TrackAlert? {
