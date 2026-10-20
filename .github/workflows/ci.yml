@@ -194,7 +194,7 @@ jobs:
   replay:
     name: Replay drive
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
     env:
       AVD_KEY: avd-34-google_apis-x86_64-pixel_6-v1
     steps:

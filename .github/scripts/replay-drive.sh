@@ -45,9 +45,13 @@ finish() {
 # phase NAME [--no-restart]
 phase() {
   echo "== ReplayDriveTest#$1"
-  # A phase that hangs fails the drive instead of the job running out of time.
-  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" < /dev/null 2>&1)
+  # A phase that hangs fails the drive instead of the job running out of time. After the 22-minute
+  # drive the runner waits 5 to 10 min for the app's main thread to go idle before the stop phase
+  # starts (FBBD-258), so a phase gets 18 min.
+  local began=$(date +%s)
+  result=$(timeout 1080 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" < /dev/null 2>&1)
   echo "$result"
+  echo "(phase $1 took $(( $(date +%s) - began )) s)"
   if ! echo "$result" | grep -q "^OK (1 test)"; then
     # What the test runner and the app's processes logged last, for a phase that hung or failed.
     grep -E "TestRunner|AndroidRuntime|ReplayDriveTest" "$log" | tail -40
