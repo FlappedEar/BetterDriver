@@ -63,6 +63,21 @@ class HeartRateDecoder(private val sink: SampleSink) {
     var truncated = 0L
         private set
 
+    /** The last heart rate stored, or null before the first or since a [reset]. */
+    @Volatile
+    var lastBpm: Int? = null
+        private set
+
+    /** When [lastBpm] arrived, on the recorder clock. */
+    @Volatile
+    var lastBpmMicros = 0L
+        private set
+
+    /** The monitor's last notification said it has no skin contact. */
+    @Volatile
+    var noContact = false
+        private set
+
     fun defineChannels() {
         HeartRateChannels.ALL.forEach(sink::defineChannel)
     }
@@ -77,6 +92,11 @@ class HeartRateDecoder(private val sink: SampleSink) {
         }
         decoded++
         contactChanged(m.contact)
+        noContact = m.contact == SensorContact.NOT_DETECTED
+        if (!noContact) {
+            lastBpm = m.bpm
+            lastBpmMicros = arrival
+        }
         rrIntervals(m.rrMs, arrival)
         val values = buildList {
             if (m.contact != SensorContact.NOT_DETECTED) {
@@ -91,6 +111,8 @@ class HeartRateDecoder(private val sink: SampleSink) {
     @Synchronized
     fun reset() {
         contact = null
+        noContact = false
+        lastBpm = null
     }
 
     private fun contactChanged(now: SensorContact) {

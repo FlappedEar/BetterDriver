@@ -84,7 +84,9 @@ class SimulatedHeartRateMonitorTest {
         }
         assertTrue(rec.attach(source))
         assertEquals(1, strap.started)
+        assertEquals(source, HeartRateSource.current)
         strap.state(LinkState.Connecting)
+        assertEquals(HeartRateStatus(HeartRateLink.CONNECTING, null), source.status())
         strap.state(LinkState.Streaming(1))
 
         var fix = 0L
@@ -100,16 +102,27 @@ class SimulatedHeartRateMonitorTest {
                 if (contact) expected++
             }
         }
+        // Streaming, but no value yet: the status strip shows no heart rate (FBBD-268).
+        assertEquals(HeartRateStatus(HeartRateLink.STREAMING, null), source.status())
         (0 until 60).forEach { second(90 + it % 10) }
+        assertEquals(HeartRateStatus(HeartRateLink.STREAMING, 99), source.status())
         // The strap goes out of range for 4 s, then the link comes back on its own.
         strap.state(LinkState.Reconnecting(1, 1_000, "gatt status 8"))
+        assertEquals(HeartRateStatus(HeartRateLink.LOST, null), source.status())
         repeat(4) { second(null) }
         strap.state(LinkState.Streaming(1))
         (0 until 30).forEach { second(120) }
         // The driver adjusts the strap: 3 s without skin contact, no heart rate is stored for them.
         repeat(3) { second(80, contact = false) }
+        assertEquals(HeartRateStatus(HeartRateLink.NO_CONTACT, null), source.status())
         (0 until 30).forEach { second(130) }
+        assertEquals(HeartRateStatus(HeartRateLink.STREAMING, 130), source.status())
+        // A strap that goes quiet without the link noticing: after 5 s its last value is not current.
+        repeat(6) { second(null) }
+        assertEquals(HeartRateStatus(HeartRateLink.STREAMING, null), source.status())
         assertTrue(rec.stop())
+        assertEquals(null, source.status())
+        assertEquals(null, HeartRateSource.current)
         assertEquals(1, strap.stopped)
 
         val data = store.read(rec.id)

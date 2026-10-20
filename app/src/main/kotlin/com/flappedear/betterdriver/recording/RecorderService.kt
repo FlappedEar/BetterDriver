@@ -18,6 +18,7 @@ import com.flappedear.betterdriver.coach.coachSettings
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.nmea.RcChannels
+import com.flappedear.betterdriver.core.ble.hr.HeartRateSource
 import com.flappedear.betterdriver.core.ble.obd.ObdSource
 import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
@@ -365,6 +366,7 @@ class RecorderService : Service() {
             state.putBoolean(RecorderProtocol.KEY_COACH_PRAISE, coachStatus.praise)
         }
         if (a != null) ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
+        if (a != null) HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }
         return state
