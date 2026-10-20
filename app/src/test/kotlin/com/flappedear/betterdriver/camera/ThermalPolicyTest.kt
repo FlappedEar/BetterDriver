@@ -11,13 +11,12 @@ class ThermalPolicyTest {
     @Test
     fun ladderKeepsTheFrameRateAndDropsSizeFirst() {
         // Arek 2026-10-13: frame rate before quality when the phone overheats.
-        assertEquals(listOf("4K · 60", "2.7K · 60", "1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.UHD, 60))
+        assertEquals(listOf("4K · 60", "1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.UHD, 60))
     }
 
     @Test
     fun ladderStartsAtTheChosenModeAndNeverGoesAbove() {
         assertEquals(listOf("1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.FHD, 60))
-        // 2.7K is offered at 60 fps only (UI-83 B), so a ladder at 30 fps skips it.
         assertEquals(listOf("4K · 30", "1080p · 30", "720p · 30"), ladder(VideoSize.UHD, 30))
         assertEquals(listOf("720p · 60", "720p · 30"), ladder(VideoSize.HD, 60))
         assertEquals(listOf("720p · 30"), ladder(VideoSize.HD, 30))
@@ -33,9 +32,9 @@ class ThermalPolicyTest {
     }
 
     @Test
-    fun twoPointSevenKFallsTo1080pAtTheSameRate() {
-        // FBBD-239: 2.7K records through WideRecorder; a phone that cannot falls to 1080p at 60.
-        assertEquals(listOf("2.7K · 60", "1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.QHD, 60))
+    fun aSaved27kStartsAt1080pAtTheSameRate() {
+        // 2.7K dropped (UI-103 A, FBBD-246): a mode saved before starts the ladder at 1080p.
+        assertEquals(listOf("1080p · 60", "720p · 60", "720p · 30"), ladder(VideoSize.QHD, 60))
         assertEquals(listOf("1080p · 30", "720p · 30"), ladder(VideoSize.QHD, 30))
     }
 
