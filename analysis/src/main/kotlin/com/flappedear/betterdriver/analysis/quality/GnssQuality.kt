@@ -95,7 +95,7 @@ internal fun gnssSection(
     val metrics = buildList {
         add(rate(samples, acrossDrop, wholeSecondSkips(samples, acrossDrop, raceBox, skipsWithoutFix)))
         add(p1Rate(samples, drops))
-        add(dropped(samples, acrossDrop, raceBox, skipsWithoutFix))
+        addAll(dropped(samples, acrossDrop, raceBox, skipsWithoutFix))
         addAll(gapMetrics(gaps))
         addAll(reconnectMetrics(samples, drops, endMicros, underCover))
         add(stationaryNoise(samples))
@@ -172,33 +172,68 @@ private const val MillisPerSecond = 1_000L
  * The Micro skips it before its first fix too (2026-10-16 midday: 63 a minute, all on the whole
  * second, through 2 min without a fix): with [skipsWithoutFix] the skip is left out either way.
  * A Mini sends it without a fix, so a loss there stays a loss.
+ *
+ * The verdict counts from the receiver's first fix (FBBD-259): before it the receiver has no data the
+ * app uses, and a cold start's link can lag and lose messages for a minute (2026-10-20 08:59: 124 of
+ * 137 missing before the fix at 114 s, 0.07 % after, yet a FAIL at 0.67 %). The losses before it,
+ * up to the step that ends on the first fix, are reported for information.
  */
 private fun dropped(
     s: GnssSamples,
     acrossDrop: BooleanArray,
     raceBox: Boolean,
     skipsWithoutFix: Boolean,
-): QualityMetric {
+): List<QualityMetric> {
     val steps = receiverSteps(s, acrossDrop)
     val usual = nearestRank(steps.map { it.millis.toDouble() }, Median)
     if (usual == null || usual <= 0) {
         val why = "the receiver gave no fix times, so missing samples cannot be told from late ones"
-        return notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why)
+        return listOf(notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why))
     }
-    val received = s.utc.count { it != GnssSamples.NoUtc }
+    val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && s.utc[it] != GnssSamples.NoUtc }
     var missing = 0L
+    var beforeFix = 0L
     var wholeSecond = 0L
+    var skipsBeforeFix = 0L
     for (step in steps) {
         val lost = maxOf(0L, (step.millis / usual).roundToLong() - 1)
-        if (raceBox && lost == 1L && isWholeSecondSkip(step, usual, skipsWithoutFix)) wholeSecond++ else missing += lost
+        val before = firstFix == null || step.to <= firstFix
+        val skip = raceBox && lost == 1L && isWholeSecondSkip(step, usual, skipsWithoutFix)
+        when {
+            skip && before -> skipsBeforeFix++
+            skip -> wholeSecond++
+            before -> beforeFix += lost
+            else -> missing += lost
+        }
     }
-    val expected = received + missing + wholeSecond
-    val percent = missing * Percent / expected
-    val how = "$missing of $expected expected samples missing from the receiver's fix times " +
-        "(usual step ${usual.roundToLong()} ms), besides $wholeSecond single whole-second messages the RaceBox " +
-        "does not send" + if (skipsWithoutFix) "" else " with a fix"
-    val ok = percent <= MaxDroppedPercent
-    return judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
+    val before = beforeFixInfo(beforeFix, firstFix?.let { s.t[it] })
+    val metric = if (firstFix == null) {
+        notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, NoFixText)
+    } else {
+        val received = (firstFix until s.size).count { s.utc[it] != GnssSamples.NoUtc }
+        val expected = received + missing + wholeSecond
+        val percent = missing * Percent / expected
+        val skips = wholeSecond + skipsBeforeFix
+        val how = "$missing of $expected expected samples missing from the receiver's fix times since its " +
+            "first fix (usual step ${usual.roundToLong()} ms), besides $skips single whole-second messages " +
+            "the RaceBox does not send" + (if (skipsWithoutFix) "" else " with a fix") + "; $beforeFix missing " +
+            "before the first fix, counted apart"
+        val ok = percent <= MaxDroppedPercent
+        judged("gnss.dropped", "Dropped samples", percent, "%", ok, Basis.MEASURED, DroppedCriterion, how)
+    }
+    return listOf(metric, before)
+}
+
+internal const val NoFixText = "the receiver had no fix in this session, so no sample the app uses could be lost"
+
+/** The samples missing before the receiver's first fix (at [firstFixMicros], session time), for information. */
+internal fun beforeFixInfo(missing: Long, firstFixMicros: Long?): QualityMetric {
+    val at = firstFixMicros?.let { "first fix ${"%.1f".format(Locale.ROOT, seconds(it))} s in" }
+        ?: "no fix in this session"
+    return info(
+        "gnss.dropped_before_fix", "Dropped before first fix", missing.toDouble(), "", Basis.MEASURED,
+        "samples missing from the receiver's fix times before its first fix ($at); not judged (FBBD-259)",
+    )
 }
 
 /**
@@ -223,8 +258,11 @@ private fun wholeSecondSkips(
     return if (usual == null) 0L else steps.count { isWholeSecondSkip(it, usual, skipsWithoutFix) }.toLong()
 }
 
-/** A step between consecutive fix times, from [fromUtc], [millis] long; [fixBothSides] when both samples had a fix. */
-private class ReceiverStep(val fromUtc: Long, val millis: Long, val fixBothSides: Boolean)
+/**
+ * A step between consecutive fix times, from [fromUtc], [millis] long, ending on sample [to];
+ * [fixBothSides] when both samples had a fix.
+ */
+private class ReceiverStep(val fromUtc: Long, val millis: Long, val fixBothSides: Boolean, val to: Int)
 
 /** Steps between consecutive fix times of the receiver; steps across a link drop and backwards left out. */
 private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<ReceiverStep> {
@@ -234,7 +272,9 @@ private fun receiverSteps(s: GnssSamples, acrossDrop: BooleanArray): List<Receiv
     for (i in 0 until s.size) {
         if (s.utc[i] != GnssSamples.NoUtc) {
             if (previous >= 0 && !dropBetween && s.utc[i] > s.utc[previous]) {
-                steps += ReceiverStep(s.utc[previous], s.utc[i] - s.utc[previous], s.hasFix(previous) && s.hasFix(i))
+                steps += ReceiverStep(
+                    s.utc[previous], s.utc[i] - s.utc[previous], s.hasFix(previous) && s.hasFix(i), i,
+                )
             }
             previous = i
             dropBetween = false

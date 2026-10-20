@@ -150,8 +150,49 @@ class SessionQualityTest {
         val r = sessionQuality(micro)
         assertEquals(0.0, r.value("gnss.dropped"))
         assertTrue("besides 59 single whole-second messages" in r.metric("gnss.dropped").how)
-        // The 30 losses without a fix on both sides count: 30 of 1500, 2 %.
-        assertEquals(Verdict.FAIL, sessionQuality(mini).verdict("gnss.dropped"))
+        // A Mini's 30 losses without a fix on both sides are real losses, but before the first fix (FBBD-259):
+        // counted apart, not judged.
+        val m = sessionQuality(mini)
+        assertEquals(30.0, m.value("gnss.dropped_before_fix"))
+        assertEquals(Verdict.INFO, m.verdict("gnss.dropped_before_fix"))
+        assertEquals(0.0, m.value("gnss.dropped"))
+    }
+
+    @Test
+    fun `losses before the receiver's first fix are counted apart, not judged (FBBD-259)`() {
+        // The pattern of Arek's 2026-10-20 08:59 drive (counts only): a cold start, first fix 114 s in, with a
+        // lagging link losing 124 samples before it; after it 13 lost in about 17,500 (0.07 %). Before the
+        // fix the whole report said 0.67 % and failed.
+        val position = setOf(GnssChannels.LAT.id, GnssChannels.LON.id)
+        val noFix = { s: SampleSet ->
+            SampleSet(s.tMicros, s.values.map { if (it.channelId in position) ChannelValue(it.channelId, 0.0) else it })
+        }
+        val fixAt = 114_000_000L
+        val end = 814_000_000L
+        val lostBefore = (0 until 124).map { 50 + it * 22 }.toSet()
+        val lostAfter = (0 until 13).map { 3_000 + it * 1_000 + 7 }.toSet()
+        val sets = stream(0, end).mapIndexedNotNull { i, s ->
+            when {
+                i in lostBefore || i in lostAfter -> null
+                s.tMicros < fixAt -> noFix(s)
+                else -> s
+            }
+        }
+        val r = sessionQuality(session(sets))
+        val dropped = r.metric("gnss.dropped")
+        val afterFix = (fixAt / 40_000..end / 40_000).count().toDouble()
+        assertEquals(13 * 100.0 / afterFix, dropped.value!!, 1e-9)
+        assertEquals(Verdict.PASS, dropped.verdict, dropped.how)
+        assertTrue("124 missing before the first fix" in dropped.how, dropped.how)
+        assertEquals(124.0, r.value("gnss.dropped_before_fix"))
+        assertEquals(Verdict.INFO, r.verdict("gnss.dropped_before_fix"))
+        assertTrue("first fix 114.0 s in" in r.metric("gnss.dropped_before_fix").how)
+        // Counted over the whole drive the same losses fail: 137 of 20,351 is 0.67 %.
+        assertEquals(137 * 100.0 / (end / 40_000 + 1), 0.67, 0.01)
+        // A receiver that never gets a fix has nothing the app uses to lose.
+        val never = sessionQuality(session(sets.filter { it.tMicros < fixAt }))
+        assertEquals(Verdict.NOT_MEASURED, never.verdict("gnss.dropped"))
+        assertEquals(124.0, never.value("gnss.dropped_before_fix"))
     }
 
     @Test
