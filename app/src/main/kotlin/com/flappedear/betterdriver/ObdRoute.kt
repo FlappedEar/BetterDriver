@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.core.ble.obd.ObdLink
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.obdAdapterLabel
 import com.flappedear.betterdriver.recording.obdTargets
+import com.flappedear.betterdriver.recording.obdWatch
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SetupRepo
@@ -37,7 +38,7 @@ internal fun ObdRoute(recorder: RecorderClient, onBack: () -> Unit) {
             null
         } else {
             val app = context.applicationContext
-            ObdLink(targets = { obdTargets(app, carData) }, owner = "page")
+            ObdLink(targets = { obdTargets(app, carData) }, owner = "page", watch = { obdWatch(app, it) })
         }
     }
     DisposableEffect(link) {
