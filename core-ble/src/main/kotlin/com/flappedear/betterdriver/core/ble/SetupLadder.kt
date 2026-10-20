@@ -14,11 +14,12 @@ data class ConnectPlan(val autoConnect: Boolean, val askMtu: Boolean, val setupT
 /**
  * Changes how a link connects after attempts that never brought data (FBBD-272). On 20 Oct 2026 a
  * RaceBox Micro was reached 9 times in 97 s, each time without an answer to the MTU request, and
- * Android dropped it about 6 s later with status 147 (GATT_CONNECTION_TIMEOUT); only a restart of
- * the app cleared it. Plain retries changed nothing, so each failed setup moves one step: the same
- * once more (the link also clears Android's cached services), then without the MTU request, then
- * Android's background connection, which has no connection timeout of its own, every other
- * attempt. Once data flows, the next drop starts again from the step that worked.
+ * Android dropped it about 6 s later with status 147 (GATT_CONNECTION_TIMEOUT); other sessions
+ * that day lost the first two attempts the same way. Identical retries can repeat the stall, so each
+ * failed setup moves one step: the same once more (the link also clears Android's cached
+ * services), then without the MTU request, then Android's background connection, which has no
+ * connection timeout of its own, every other attempt. Once data flows, the next drop starts again
+ * from the step that worked.
  */
 class SetupLadder(
     private val directTimeoutMs: Long = 10_000L,
