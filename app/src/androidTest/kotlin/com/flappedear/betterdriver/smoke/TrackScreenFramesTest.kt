@@ -35,7 +35,9 @@ import kotlin.math.sin
  * new state 4 times a second as the recorder sends it, the lap clock, delta, speed and G changing
  * as on a lap. Logs the UI thread's time per frame (JankStats, as the drive's log counts it) and
  * the bytes the app allocates per update, as "TrackFrames" lines the smoke script prints. The
- * emulator's times are not the phone's; the line is for comparing builds on the same runner.
+ * emulator's times are not the phone's; the line is for comparing builds on the same runner. The
+ * garbage per update is the emulator's as much as the phone's, so it is held under a limit: 66 KB
+ * before numbers kept their laid-out characters, 28 KB after.
  */
 @RunWith(AndroidJUnit4::class)
 class TrackScreenFramesTest {
@@ -85,6 +87,10 @@ class TrackScreenFramesTest {
                     if (updates > 0) allocated / 1024.0 / updates else -1.0,
                 ),
             )
+            assertTrue(
+                "the track screen allocates ${allocated / 1024 / updates} KB per update (limit $MaxKbPerUpdate)",
+                allocated < 0 || updates == 0 || allocated / 1024 / updates <= MaxKbPerUpdate,
+            )
         }
     }
 
@@ -128,5 +134,6 @@ class TrackScreenFramesTest {
         const val MeasureMs = 30_000L
         const val NanosPerMs = 1_000_000.0
         const val MicrosPerMs = 1_000L
+        const val MaxKbPerUpdate = 45L
     }
 }
