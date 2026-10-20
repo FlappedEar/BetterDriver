@@ -58,7 +58,11 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
 
     fun value(channel: PidChannel, value: Double, atMs: Long) = synchronized(lock) {
         latest[channel.id] = value
-        arrivals.getOrPut(channel.id) { ArrayDeque() }.addLast(atMs)
+        // Evicted here too: with no one reading snapshots (a background drive) the history stays bounded.
+        arrivals.getOrPut(channel.id) { ArrayDeque() }.apply {
+            addLast(atMs)
+            evict(atMs)
+        }
     }
 
     /** The connection ended with [reason]; the next attempt follows. */
@@ -73,10 +77,14 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
         val readings = channels.mapNotNull { c ->
             val v = latest[c.id] ?: return@mapNotNull null
             val times = arrivals[c.id] ?: ArrayDeque()
-            while (times.isNotEmpty() && times.first() < nowMs - windowMs) times.removeFirst()
+            times.evict(nowMs)
             ObdReading(c.id, c.name, c.unit, v, times.size * MsPerSecond / span.toDouble())
         }
         ObdStatus(state, detail, readings)
+    }
+
+    private fun ArrayDeque<Long>.evict(nowMs: Long) {
+        while (isNotEmpty() && first() < nowMs - windowMs) removeFirst()
     }
 
     private fun clear() {

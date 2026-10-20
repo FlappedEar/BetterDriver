@@ -50,6 +50,14 @@ class ObdStatusTrackerTest {
     }
 
     @Test
+    fun `rate after a long run with no snapshots read`() {
+        val t = ObdStatusTracker(windowMs = 1_000)
+        t.ready("ELM327", "A6", null, listOf(rpm), nowMs = 0)
+        for (i in 1..100_000) t.value(rpm, 900.0, i * 100L)
+        assertEquals(10.0, t.snapshot(10_000_000).readings.single().hz, 0.2)
+    }
+
+    @Test
     fun `value text`() {
         assertEquals("2851 rpm", ObdReading("rpm", "RPM", "rpm", 2851.25, 9.0).valueText())
         assertEquals("34.1 %", ObdReading("throttle", "Throttle", "%", 34.12, 9.0).valueText())
