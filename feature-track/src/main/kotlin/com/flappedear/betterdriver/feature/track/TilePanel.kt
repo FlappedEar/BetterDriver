@@ -32,8 +32,8 @@ const val NoTileValue = "–"
  * Rows of tiles (FBBD-262), [columns] slots a row, slot by slot from [tiles]; null is an empty slot,
  * drawn as a dashed outline (UI-125 B). A tile whose channel has no data in this session is left
  * out and the others in its row widen (UI-126 B); a row left with nothing collapses and the other
- * rows take its height. While [onHold] is set (the car is stopped) every tile is drawn, so each
- * can be held, the ones without data as a dash. [height] is the panel's; its tiles' values are
+ * rows take its height. While [editing] (the car is stopped) every tile is drawn, so each can be
+ * held for [onHold], the ones without data as a dash. [height] is the panel's; its tiles' values are
  * sized once for it, up to [maxValueSize].
  */
 @Composable
@@ -45,9 +45,10 @@ internal fun TilePanel(
     maxValueSize: Dp,
     tag: (Int) -> String,
     modifier: Modifier = Modifier,
+    editing: Boolean = false,
     onHold: ((Int) -> Unit)? = null,
 ) {
-    val shown = shownRows(tiles, columns, rows, editing = onHold != null)
+    val shown = shownRows(tiles, columns, rows, editing)
     if (shown.isEmpty()) return
     val rowHeight = (height - PanelGap * (shown.size - 1)) / shown.size
     val valueSize = tileValueSize(rowHeight, maxValueSize, TileVerticalPadding)

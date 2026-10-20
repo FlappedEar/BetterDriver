@@ -224,6 +224,7 @@ private fun ColumnScope.MainPage(state: TrackScreenState, window: Dp, coach: Mod
         MainValueSize,
         TrackSlots::tile,
         Modifier.fillMaxWidth().height(height).testTag(TrackSlots.Panel),
+        state.editable,
         onHoldTile,
     )
 }
@@ -231,7 +232,7 @@ private fun ColumnScope.MainPage(state: TrackScreenState, window: Dp, coach: Mod
 /** The second screen: the status strip and the coach line stay; the tiles take the rest (UI-121 B). */
 @Composable
 private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
-    if (shownRows(state.secondTiles, SecondColumns, SecondRows, onHoldTile != null).isEmpty()) {
+    if (shownRows(state.secondTiles, SecondColumns, SecondRows, state.editable).isEmpty()) {
         Spacer(Modifier.fillMaxWidth().weight(1f))
     } else {
         TilePanel(
@@ -242,6 +243,7 @@ private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: M
             SecondValueSize,
             TrackSlots::secondTile,
             Modifier.fillMaxWidth().weight(1f).testTag(TrackSlots.Second),
+            state.editable,
             onHoldTile,
         )
     }
