@@ -332,10 +332,10 @@ internal class WideRecorder(
         val r = relay
         val camera = device
         val e = encoder
-        if (ended || r == null || camera == null || e == null) return
-        if (firstNanos.get() > 0 || cameraFrames.get() == 0L) return
+        if (r == null || camera == null || e == null) return
+        val stuck = !ended && firstNanos.get() == 0L && cameraFrames.get() > 0
         // Only from Android 10, where cameraSurface() made the relay.
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        if (!stuck || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
         DebugLog.w(Tag, "no frame through the relay in $RelayCheckMs ms (${r.counts()}): camera to the encoder")
         relay = null
         val s = session
