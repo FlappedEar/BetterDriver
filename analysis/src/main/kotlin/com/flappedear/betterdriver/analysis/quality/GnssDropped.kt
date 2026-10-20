@@ -42,16 +42,17 @@ internal fun droppedMetrics(
         return listOf(notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why))
     }
     val firstFix = (0 until s.size).firstOrNull { s.hasFix(it) && s.utc[it] != GnssSamples.NoUtc }
-    val (missing, beforeFix, wholeSecond, skipsBeforeFix) =
-        tally(steps, usual, firstFix ?: Int.MAX_VALUE, raceBox, skipsWithoutFix)
+    val lost = tally(steps, usual, firstFix ?: Int.MAX_VALUE, raceBox, skipsWithoutFix)
+    val missing = lost.missing
+    val beforeFix = lost.beforeFix
     val before = beforeFixInfo(beforeFix, firstFix?.let { s.t[it] })
     val metric = if (firstFix == null) {
         notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, NoFixText)
     } else {
         val received = (firstFix until s.size).count { s.utc[it] != GnssSamples.NoUtc }
-        val expected = received + missing + wholeSecond
+        val expected = received + missing + lost.wholeSecond
         val percent = missing * Percent / expected
-        val skips = wholeSecond + skipsBeforeFix
+        val skips = lost.wholeSecond + lost.skipsBeforeFix
         val how = "$missing of $expected expected samples missing from the receiver's fix times since its " +
             "first fix (usual step ${usual.roundToLong()} ms), besides $skips single whole-second messages " +
             "the RaceBox does not send" + (if (skipsWithoutFix) "" else " with a fix") + "; $beforeFix missing " +
@@ -63,7 +64,7 @@ internal fun droppedMetrics(
 }
 
 /** Samples lost in [steps], those up to the step ending on sample [firstFix] apart, the RaceBox's skips apart. */
-private data class Tally(val missing: Long, val beforeFix: Long, val wholeSecond: Long, val skipsBeforeFix: Long)
+private class Tally(val missing: Long, val beforeFix: Long, val wholeSecond: Long, val skipsBeforeFix: Long)
 
 private fun tally(
     steps: List<ReceiverStep>,
