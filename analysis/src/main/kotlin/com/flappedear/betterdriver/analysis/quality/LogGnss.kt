@@ -118,7 +118,8 @@ private fun dropped(seconds: List<GnssSecond>, raceBox: Boolean): List<QualityMe
     val firstFix = seconds.getOrNull(fixAt)?.let { it.firstFixMicros ?: it.tMicros }
     val info = beforeFixInfo(beforeFix, firstFix)
     val metric = if (after.isEmpty()) {
-        notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, NoFixText)
+        val why = if (fixAt < 0) NoFixText else "no whole second of GNSS was logged after the first fix"
+        notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why)
     } else {
         val all = after.sumOf { it.missing.toLong() }
         val wholeSecond = skips(after)
