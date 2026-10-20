@@ -3,9 +3,6 @@ package com.flappedear.betterdriver.coach
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.media.AudioDeviceCallback
-import android.media.AudioDeviceInfo
-import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.HandlerThread
@@ -39,19 +36,8 @@ class CoachService : Service() {
     private val messenger = Messenger(handler)
     private var voice: Voice? = null
 
-    /** Measures a new output's delay (FBBD-255) off the coach thread: it blocks for a second or more. */
-    private val probeThread = HandlerThread("coach-probe").apply { start() }
-    private val probeHandler = Handler(probeThread.looper)
-    private val audio by lazy { getSystemService(AudioManager::class.java) }
-    private val outputs by lazy { AudioOutputs(audio) }
-
-    /** Outputs connected or gone (a headset mid-session): the new route's delay is measured (FBBD-255). */
-    private val routeChanged = object : AudioDeviceCallback() {
-        override fun onAudioDevicesAdded(added: Array<out AudioDeviceInfo>) = scheduleProbe()
-
-        override fun onAudioDevicesRemoved(removed: Array<out AudioDeviceInfo>) = scheduleProbe()
-    }
-    private val reprobe = Runnable { reprobe() }
+    /** Measures the output again when it changes mid-session (FBBD-255). */
+    private var routes: AudioRouteWatch? = null
 
     /** The recording being coached. Coach thread only. */
     private class Active(
@@ -60,9 +46,6 @@ class CoachService : Service() {
         val recorder: Messenger?,
         val settings: CoachSettings,
         val delay: SessionDelays,
-        val clips: Boolean,
-        /** The output the delays were last measured on. */
-        var output: String,
     ) {
         var coach: CoachSession? = null
 
@@ -78,14 +61,22 @@ class CoachService : Service() {
     override fun onCreate() {
         super.onCreate()
         voice = Voice(this)
-        audio?.registerAudioDeviceCallback(routeChanged, handler)
+        routes = AudioRouteWatch(this, handler) { r ->
+            val a = active ?: return@AudioRouteWatch
+            r.live?.let { a.delay.measured("live", it.output, it.millis) }
+            r.clip?.let { a.delay.measured("clip", it.output, it.millis) }
+            val used = a.delay.on(r.path, r.timing?.output ?: r.output)
+            a.timingMillis = used.millis
+            a.coach?.audioDelay(used.millis)
+            DebugLog.i(Tag, "cues now timed for an audio delay of ${used.millis} ms (${used.source}) on ${r.output}")
+        }
     }
 
     override fun onBind(intent: Intent): IBinder = messenger.binder
 
     override fun onDestroy() {
-        audio?.unregisterAudioDeviceCallback(routeChanged)
-        probeThread.quitSafely()
+        routes?.shutdown()
+        routes = null
         thread.quitSafely()
         voice?.shutdown()
         voice = null
@@ -124,48 +115,14 @@ class CoachService : Service() {
         clip?.let { delays.measured("clip", it.output, it.millis) }
         // Cues are timed for the path most of them take: the set delay when it was not measured.
         val path = if (clips) "clip" else "live"
-        val output = (if (clips) clip else live)?.output ?: outputs.output()
+        val output = (if (clips) clip else live)?.output ?: routes?.outputs?.output().orEmpty()
         val delay = delays.on(path, output)
         val settings = set.copy(audioDelayMillis = delay.millis)
         DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source} on $output")
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
         voice?.use(settings.voice, settings.speech, settings.language)
-        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays, clips, output)
-    }
-
-    /** Waits for the route to settle (a Bluetooth headset connects in steps), then measures it. */
-    private fun scheduleProbe() {
-        if (active == null) return
-        handler.removeCallbacks(reprobe)
-        handler.postDelayed(reprobe, RouteSettleMillis)
-    }
-
-    /**
-     * The coach voice's output changed during the session (FBBD-255), such as a headset connected after
-     * the start: its delay is measured on each path the cues take, and the cues are timed for it from
-     * then on. Each change goes in the continuous log.
-     */
-    private fun reprobe() {
-        val a = active ?: return
-        val now = outputs.output()
-        if (now == a.output) return
-        a.output = now
-        DebugLog.i(Tag, "audio output now $now${outputs.headset()?.let { " ($it)" }.orEmpty()}, measuring its delay")
-        probeHandler.post {
-            val live = OutputDelayProbe.probe()
-            val clip = if (a.clips) OutputDelayProbe.probe(lowLatency = true) else null
-            handler.post { remeasured(a, live, clip) }
-        }
-    }
-
-    private fun remeasured(a: Active, live: Probed?, clip: Probed?) {
-        if (active !== a) return
-        live?.let { a.delay.measured("live", it.output, it.millis) }
-        clip?.let { a.delay.measured("clip", it.output, it.millis) }
-        val used = a.delay.on(if (a.clips) "clip" else "live", (if (a.clips) clip else live)?.output ?: a.output)
-        a.timingMillis = used.millis
-        a.coach?.audioDelay(used.millis)
-        DebugLog.i(Tag, "cues now timed for an audio delay of ${used.millis} ms (${used.source}) on ${a.output}")
+        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays)
+        routes?.watch(clips, output)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
@@ -185,8 +142,9 @@ class CoachService : Service() {
         // What the last analysed session at the track recommends working on (FBBD-20), primary first.
         val focus = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
             ?.let { sessionFocusOf(this, it, a.id) }
-        a.coach = CoachSession(a.settings, track, reference, picks, sameDay, focus?.picks.orEmpty())
-            .also { it.audioDelay(a.timingMillis) }
+        // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
+        val settings = a.settings.copy(audioDelayMillis = a.timingMillis)
+        a.coach = CoachSession(settings, track, reference, picks, sameDay, focus?.picks.orEmpty())
         // Which recommendation this session works on, for the coaching history (FBBD-180).
         if (focus != null && focus.picks.isNotEmpty()) {
             val corners = focus.record.targets.sortedBy { !it.primary }.mapNotNull { it.cornerId }
@@ -281,8 +239,6 @@ class CoachService : Service() {
     private companion object {
         const val Tag = "CoachService"
 
-        /** A Bluetooth headset connects in steps (A2DP, then SCO): the route is measured once it settles. */
-        const val RouteSettleMillis = 1_500L
     }
 }
 

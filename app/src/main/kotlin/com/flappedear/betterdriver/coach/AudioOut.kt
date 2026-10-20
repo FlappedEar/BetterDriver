@@ -10,6 +10,7 @@ import android.media.AudioTrack
 import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
+import androidx.annotation.RequiresApi
 import com.flappedear.betterdriver.recorder.log.DebugLog
 
 /**
@@ -196,18 +197,18 @@ internal class AudioOutputs(private val audio: AudioManager?) {
 
     /** The device the coach voice is routed to now. */
     fun device(): AudioDeviceInfo? {
-        val a = audio ?: return null
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            @Suppress("TooGenericExceptionCaught") // A policy that cannot answer leaves the connected headset.
-            val routed = try {
-                a.getAudioDevicesForAttributes(AudioOut.Attributes).firstOrNull()
-            } catch (e: RuntimeException) {
-                DebugLog.w("AudioOut", "routed output not known", e)
-                null
-            }
-            if (routed != null) return routed
-        }
-        return a.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.type in HeadsetTypes }
+        val routed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) routed() else null
+        return routed ?: audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
+    }
+
+    /** Where Android's audio policy sends navigation guidance speech now (Android 13 on). */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @Suppress("TooGenericExceptionCaught") // A policy that cannot answer leaves the connected headset.
+    private fun routed(): AudioDeviceInfo? = try {
+        audio?.getAudioDevicesForAttributes(AudioOut.Attributes)?.firstOrNull()
+    } catch (e: RuntimeException) {
+        DebugLog.w("AudioOut", "routed output not known", e)
+        null
     }
 
     companion object {
