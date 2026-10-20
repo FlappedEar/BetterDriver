@@ -10,9 +10,9 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
-import android.os.SystemClock
-import com.flappedear.betterdriver.core.ble.BleScan
+import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.RaceBoxGatt
+import com.flappedear.betterdriver.core.ble.scanBleDevices
 import com.flappedear.betterdriver.obd.BleSerial
 import com.flappedear.betterdriver.obd.BleSerialConnection
 import com.flappedear.betterdriver.obd.BleSerialPair
@@ -26,15 +26,11 @@ import com.flappedear.betterdriver.obd.ObdTransport
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
-import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.flow.Flow
 
 private const val RequestedMtu = 517
 private const val AttHeaderBytes = 3
 private const val SetupTimeoutS = 15L
-
-/** How long the fallback scan listens for a Bluetooth LE adapter that is not paired. */
-private const val ScanMs = 4_000L
 
 /**
  * A Bluetooth LE ELM327 (FBBD-121). [open] connects, asks for a larger MTU, finds the serial pair
@@ -44,9 +40,10 @@ private const val ScanMs = 4_000L
  * that needs it makes Android pair on the descriptor write.
  */
 @SuppressLint("MissingPermission")
-class BleObdTarget(context: Context, val name: String, val address: String) : ObdTarget {
+class BleObdTarget(context: Context, name: String, val address: String) : ObdTarget {
     private val appContext = context.applicationContext
-    override val where = "${name.ifEmpty { address }} (Bluetooth LE)"
+    override val name = name.ifEmpty { address }
+    override val where = "${this.name} (Bluetooth LE)"
     override val transport = ObdTransport.BluetoothLe
 
     override fun open(bytes: ObdBytes): ObdConnection {
@@ -202,51 +199,9 @@ private fun release(g: BluetoothGatt) {
     }
 }
 
-/** At most one fallback scan per this long: a car with no adapter must not keep the radio scanning. */
-private const val ScanEveryMs = 120_000L
-
 /**
- * Bluetooth LE OBD-II adapters advertising nearby that are not paired (FBBD-121): the fallback when
- * no paired or Wi-Fi adapter answers, so a Bluetooth LE adapter needs no setup. It scans for 4 s at
- * most every 2 minutes and in between returns what the last scan found, so a session without any
- * adapter does not keep scanning next to the RaceBox link. Make one per link.
+ * Bluetooth LE OBD-II adapters advertising nearby ([ObdAdapterNames]), for Add equipment (FBBD-121,
+ * UI-105 C): a Bluetooth LE adapter needs no pairing. Emits as [scanBleDevices] does.
  */
-class ObdLeScan(private val context: Context, private val nowMs: () -> Long = SystemClock::elapsedRealtime) {
-    private var last: Long? = null
-    private var found: List<ObdTarget> = emptyList()
-
-    @Synchronized
-    fun targets(): List<ObdTarget> {
-        val now = nowMs()
-        val at = last
-        if (at == null || now - at >= ScanEveryMs) {
-            found = scannedObdTargets(context)
-            last = now
-        }
-        return found
-    }
-}
-
-/**
- * Bluetooth LE OBD-II adapters advertising nearby, found by a 4 s listen on the shared [BleScan].
- * Empty when Bluetooth is off or a permission is missing.
- */
-@SuppressLint("MissingPermission")
-private fun scannedObdTargets(context: Context): List<ObdTarget> {
-    if (bluetooth(context) == null) return emptyList()
-    val found = LinkedHashMap<String, String>()
-    runBlocking {
-        // The scan never ends on its own; the timeout is how it stops.
-        withTimeoutOrNull(ScanMs) {
-            BleScan.results(context).collect { r ->
-                val name = try {
-                    r.scanRecord?.deviceName ?: r.device.name
-                } catch (_: SecurityException) {
-                    null
-                }
-                if (ObdAdapterNames.isCandidate(name)) found[r.device.address] = name.orEmpty()
-            }
-        }
-    }
-    return found.map { (address, name) -> BleObdTarget(context, name, address) }
-}
+fun scanObdAdapters(context: Context): Flow<List<FoundBleDevice>> =
+    scanBleDevices(context) { name, _ -> ObdAdapterNames.isCandidate(name) }
