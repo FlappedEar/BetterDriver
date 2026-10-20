@@ -58,8 +58,11 @@ private const val AccelWindowMicros = 1_000_000L
 /** Acceleration measured over less than this is not used. */
 private const val MinAccelSpanMicros = 500_000L
 
-/** No road car gains speed faster than this on a straight; more is noise. */
-private const val MaxAccelMps2 = 6.0
+/**
+ * More than 1 g of speed gain on a straight is noise. Set above what fast road cars reach, so a real
+ * gain is never capped and the cue never ends late for it.
+ */
+private const val MaxAccelMps2 = 10.0
 
 /** Below this speed (pit lane, spin) no cue is spoken. */
 private const val MinCueSpeedKmh = 20.0
@@ -352,13 +355,13 @@ private class SpeechTiming(
         while (gains.size > 1 && gains.first().first < t - AccelWindowMicros) gains.removeFirst()
     }
 
-    /** How fast the car is gaining speed, m/s², from 0 (steady or slowing, or not known) to [MaxAccelMps2]. */
+    /** How fast the car is gaining speed, m/s², from 0 (steady, slowing or not known) to [MaxAccelMps2]. */
     private fun accelMps2(): Double {
-        if (gains.size < 2) return 0.0
-        val (t0, v0) = gains.first()
+        val (t0, v0) = gains.firstOrNull() ?: return 0.0
         val (t1, v1) = gains.last()
-        if (t1 - t0 < MinAccelSpanMicros) return 0.0
-        return ((v1 - v0) / KmhPerMps / ((t1 - t0) / MicrosPerSecond)).coerceIn(0.0, MaxAccelMps2)
+        val span = t1 - t0
+        val gain = (v1 - v0) / KmhPerMps / (span / MicrosPerSecond)
+        return if (span < MinAccelSpanMicros) 0.0 else gain.coerceIn(0.0, MaxAccelMps2)
     }
 
     /** From asking for [text] until it has been heard. */
