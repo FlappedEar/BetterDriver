@@ -11,6 +11,9 @@ private val HandoverLine = Regex("""^handover (\S+) -> (\S+) gap_us=(-?\d+) fram
 /** WideRecorder's line for a file it could not finish: "phone_0001.mp4: 2688x1512@60 ... error=no valid data". */
 private val UnfinishedLine = Regex("""^(\S+\.mp4): \d+x\d+@\d+ .* error=(.+)$""")
 
+/** WideRecorder's line for any file it finished or failed to: "phone_0001.mp4: 2688x1512@60 ...". */
+private val FileLine = Regex("""^(\S+\.mp4): \d+x\d+@\d+ """)
+
 /** The next file could not be opened: "phone_0002.mp4 not opened". */
 private val UnopenedLine = Regex("""^(\S+\.mp4) not opened""")
 
@@ -55,7 +58,10 @@ internal fun fileHandovers(lines: List<LogLine>): QualityMetric? {
         .filter { it[1] in handedOver }
         .map { "${it[1]} (${it[2]})" } +
         own.filter { UnfinishedAtStopLine.containsMatchIn(it.message) }
-            .map { "a handed-over file still finishing at the stop" }
+            .map { "a handed-over file still finishing at the stop" } +
+        // A file whose end was never logged (the camera's process ended first) is not known to be playable.
+        (handedOver - own.mapNotNull { FileLine.find(it.message)?.groupValues?.get(1) }.toSet())
+            .sorted().map { "$it (no end logged)" }
     val worst = handovers.maxByOrNull { it.gapMicros }
     val how = buildString {
         append("${handovers.size} handover(s), gap from the last frame of each full file to the first of the next")
