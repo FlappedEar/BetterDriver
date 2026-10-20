@@ -33,6 +33,7 @@ import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
+import com.flappedear.betterdriver.recorder.log.HeartRateLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
@@ -406,8 +407,9 @@ class RecorderService : Service() {
         }
 
         /**
-         * Every line of this process now names [recording]; the log holds its events and its GNSS
-         * second by second, so the hardware checks need nothing else (FBBD-183).
+         * Every line of this process now names [recording]; the log holds its events, its GNSS
+         * second by second and any heart rate 10 s at a time, so the hardware checks need nothing
+         * else (FBBD-183, FBBD-225).
          */
         private fun logTo(recording: Recording, receiver: String) {
             DebugLog.session = recording.id
@@ -415,6 +417,7 @@ class RecorderService : Service() {
             recording.listeners.add(LoggingListener(recording.id, receiver, start, recording::nowMicros))
             val micro = receiver.startsWith(RaceBoxGatt.MICRO_PREFIX)
             recording.listeners.add(GnssSecondLog(recording.id, start, skipsWithoutFix = micro))
+            recording.listeners.add(HeartRateLog(recording.id))
         }
 
         /**

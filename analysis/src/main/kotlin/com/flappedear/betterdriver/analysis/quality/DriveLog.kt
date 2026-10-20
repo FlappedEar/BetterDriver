@@ -4,14 +4,15 @@ import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.GnssSecond
+import com.flappedear.betterdriver.recorder.log.HeartRateWindow
 import com.flappedear.betterdriver.recorder.log.LogLine
 
 /**
  * One recording as the app's continuous log tells it (FBBD-183): its start on the phone's wall clock,
- * its end on the session clock, every event with its session time, its GNSS second by second, and
- * the lines of other processes written while it ran ([lines]). [legacy] for a recording an older
- * build logged, without GNSS seconds or session ids; its RaceBox statistics lines ([raceBox]) then
- * stand in for the GNSS seconds.
+ * its end on the session clock, every event with its session time, its GNSS second by second, its
+ * heart rate 10 s at a time ([heartRate], FBBD-225), and the lines of other processes written while
+ * it ran ([lines]). [legacy] for a recording an older build logged, without GNSS seconds or session
+ * ids; its RaceBox statistics lines ([raceBox]) then stand in for the GNSS seconds.
  */
 class LoggedSession(val id: String) {
     var startUtcMillis: Long? = null
@@ -21,6 +22,7 @@ class LoggedSession(val id: String) {
     var legacy: Boolean = false
     val events = mutableListOf<RecorderEvent>()
     val seconds = mutableListOf<GnssSecond>()
+    val heartRate = mutableListOf<HeartRateWindow>()
     val lines = mutableListOf<LogLine>()
 
     /** RaceBox statistics lines of an older build: wall-clock time, messages received and missing. */
@@ -34,7 +36,11 @@ class LoggedSession(val id: String) {
      * process ended) its last GNSS second or event.
      */
     fun inferredEndMicros(): Long =
-        endMicros ?: maxOf(seconds.maxOfOrNull { it.tMicros } ?: 0L, events.maxOfOrNull { it.tMicros } ?: 0L)
+        endMicros ?: maxOf(
+            seconds.maxOfOrNull { it.tMicros } ?: 0L,
+            events.maxOfOrNull { it.tMicros } ?: 0L,
+            heartRate.maxOfOrNull { it.lastMicros } ?: 0L,
+        )
 }
 
 /**
@@ -83,6 +89,7 @@ object DriveLog {
             }
             CheckLog.EVENT -> CheckLog.parseEvent(line.message)?.let { s.events += it }
             CheckLog.GNSS -> GnssSecond.parse(line.message)?.let { s.seconds += it }
+            CheckLog.HEART_RATE -> HeartRateWindow.parse(line.message)?.let { s.heartRate += it }
             else -> s.lines += line
         }
     }

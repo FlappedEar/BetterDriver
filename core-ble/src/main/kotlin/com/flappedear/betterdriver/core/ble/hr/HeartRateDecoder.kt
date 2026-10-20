@@ -4,12 +4,13 @@ import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
+import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 
 /** Heart rate monitor channels. Ids 400 to 499 are reserved for heart rate monitors. */
 object HeartRateChannels {
     const val SOURCE = "heart_rate"
 
-    val HEART_RATE = ChannelDef(400, "heart_rate", "bpm", SOURCE, 0)
+    val HEART_RATE = ChannelDef(HeartRateLogIds.CHANNEL, "heart_rate", "bpm", SOURCE, 0)
 
     /** One value per beat, stamped at the beat (see [HeartRateDecoder]). */
     val RR_INTERVAL = ChannelDef(401, "hr_rr_interval", "ms", SOURCE, 1)
@@ -23,16 +24,16 @@ object HeartRateChannels {
 /** Event kinds the heart rate source writes into the session. */
 object HeartRateEvents {
     /** Text is "address=<address> name=<name>", written once at start. */
-    const val DEVICE = "hr_device"
+    const val DEVICE = HeartRateLogIds.DEVICE
 
     /** Text is the device address. */
     const val CONNECTED = "hr_connected"
 
     /** Text is the reason. */
-    const val DISCONNECTED = "hr_disconnected"
+    const val DISCONNECTED = HeartRateLogIds.DISCONNECTED
 
     /** Skin contact found or lost, for monitors that report it. Text is "detected" or "lost". */
-    const val CONTACT = "hr_contact"
+    const val CONTACT = HeartRateLogIds.CONTACT
 }
 
 private const val MicrosPerMs = 1_000.0
@@ -97,7 +98,8 @@ class HeartRateDecoder(private val sink: SampleSink) {
         contact = now
         if (now == had || now == SensorContact.NOT_SUPPORTED) return
         if (had == null && now == SensorContact.DETECTED) return
-        sink.event(HeartRateEvents.CONTACT, if (now == SensorContact.DETECTED) "detected" else "lost")
+        val text = if (now == SensorContact.DETECTED) "detected" else HeartRateLogIds.CONTACT_LOST
+        sink.event(HeartRateEvents.CONTACT, text)
     }
 
     private fun rrIntervals(rrMs: List<Double>, arrival: Long) {
