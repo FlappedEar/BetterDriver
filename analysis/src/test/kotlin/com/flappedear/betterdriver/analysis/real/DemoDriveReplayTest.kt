@@ -12,6 +12,8 @@ import com.flappedear.betterdriver.coach.CoachFix
 import com.flappedear.betterdriver.coach.CoachLanguage
 import com.flappedear.betterdriver.coach.CoachSession
 import com.flappedear.betterdriver.coach.CoachSettings
+import com.flappedear.betterdriver.coach.DefaultLatencyMicros
+import com.flappedear.betterdriver.coach.PhraseBook
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
@@ -25,6 +27,7 @@ import com.flappedear.betterdriver.timing.track.TrackJson
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Arek's Demo track drive on the computer: the Silesia Ring laps built into the app (his 27 Sep 2026
@@ -40,11 +43,25 @@ import kotlin.test.assertEquals
 class DemoDriveReplayTest {
     private val dir = File(System.getProperty("builtInReplayDir") ?: "../app/src/main/assets/demo")
 
-    /** A built-in drive: its asset's name in assets/demo, its name in the report, and its loop in seconds. */
-    private class Drive(val asset: String, val name: String, val loopSeconds: Long)
+    /**
+     * A built-in drive: its asset's name in assets/demo, its name in the report, its loop in seconds, and
+     * how long every corner cue and half of them end before the braking zone at least ([minSpare],
+     * [minMedianSpare], seconds).
+     */
+    private class Drive(
+        val asset: String,
+        val name: String,
+        val loopSeconds: Long,
+        val minSpare: Double,
+        val minMedianSpare: Double,
+    )
+
+    /** The car's speed at each fix of the drive, km/h, by session time. */
+    private val speeds = mutableListOf<Pair<Long, Double>>()
 
     /** The events one drive round the loop logs, as the recorder stores them. */
     private fun drive(d: Drive, language: CoachLanguage): List<RecorderEvent> {
+        speeds.clear()
         val track = TrackJson.decode(File(dir, "${d.asset}.track.json").readText())
         val replay = SessionReplay.read(File(dir, "${d.asset}.replay").readText(), 0L)
         val coach = CoachSession(CoachSettings(Verbosity.Full, language = language), track, null)
@@ -61,6 +78,7 @@ class DemoDriveReplayTest {
                 events += RecorderEvent(t, EventKinds.LAP_LINE, lapLineText(it, shown))
             }
             val kmh = values.firstOrNull { it.channelId == GnssChannels.SPEED_KMH.id }?.value
+            kmh?.let { speeds += t to it }
             coach.onFix(CoachFix(t, fix.lat, fix.lon, kmh), t) { true }.events
                 .forEach { events += RecorderEvent(it.tMicros, it.kind, it.text) }
         }
@@ -75,6 +93,34 @@ class DemoDriveReplayTest {
         // leave it at 16 and 49 km/h, which DemoReplayCoachTest checks are coached.
         for (m in metrics.filter { it.id != "coach.pit_out" }) {
             assertEquals(Verdict.PASS, m.verdict, "${m.label}: ${m.how}")
+        }
+        // FBBD-47: the coach starts a corner cue a second sooner than before (lead 2.5 s, was 1.5 s), so the
+        // speech engine's delay is absorbed and the cue still ends well before the braking zone.
+        val spare = spareSeconds(events, language).sorted()
+        println("corner cues ${d.asset} ${language.tag}: ${spare.size}, spare before the braking zone " +
+            "min ${"%.2f".format(spare.first())} s, median ${"%.2f".format(spare[spare.size / 2])} s")
+        assertTrue(spare.first() >= d.minSpare, "a cue ends ${spare.first()} s before its braking zone")
+        assertTrue(spare[spare.size / 2] >= d.minMedianSpare, "median spare ${spare[spare.size / 2]} s")
+    }
+
+    /**
+     * For each corner cue: the time from the end of its sound (asked for at its trigger, said after
+     * [DefaultLatencyMicros] for as long as its phrase lasts) to the car reaching the braking zone the
+     * coach logged ahead of it (`zone_m`), by the replay's own speeds.
+     */
+    private fun spareSeconds(events: List<RecorderEvent>, language: CoachLanguage): List<Double> {
+        val book = PhraseBook.of(language)
+        return events.filter { it.kind == "coach_cue" && " kind=Corner" in it.text }.mapNotNull { e ->
+            val zone = ZoneMeters.find(e.text)?.groupValues?.get(1)?.toDouble() ?: return@mapNotNull null
+            val text = e.text.substringAfter(" text=")
+            val ends = e.tMicros + DefaultLatencyMicros + book.durationMicros(text)
+            var driven = 0.0
+            var k = speeds.indexOfFirst { it.first >= e.tMicros }.takeIf { it >= 0 } ?: return@mapNotNull null
+            while (k + 1 < speeds.size && driven < zone) {
+                driven += speeds[k].second / 3.6 * (speeds[k + 1].first - speeds[k].first) / 1e6
+                k++
+            }
+            (speeds[k].first - ends) / 1e6
         }
     }
 
@@ -119,8 +165,24 @@ class DemoDriveReplayTest {
     }
 
     private companion object {
-        /** The built-in replays' loops once round: 2828 s at Silesia Ring, 3230 s at Jastrząb. */
-        val Silesia = Drive("silesia-ring", "Silesia Ring", 2_830L)
-        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_232L)
+        /** The built-in replays once round: 2828 s at Silesia Ring, 3230 s at Jastrząb, within the loop. */
+        val Silesia = Drive("silesia-ring", "Silesia Ring", 2_830L, MinSpareSeconds, MinMedianSpareSeconds)
+
+        /**
+         * Jastrząb's short straights do not hold the longer phrases yet (FBBD-256): its measured spare is the
+         * guard until then, 0.06 s late at worst ("Turn 4, brake at 165"), median 1.66 s English, 2.02 s Polish.
+         */
+        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, -0.1, 1.6)
+
+        val ZoneMeters = Regex(" zone_m=([0-9.]+)")
+
+        /**
+         * Every corner cue ends at least this long before its braking zone. On the shortest straights the cue
+         * goes as soon as the car is on them, so this did not change with the lead (0.26 s in Polish).
+         */
+        const val MinSpareSeconds = 0.2
+
+        /** Half the corner cues end at least this long before it: 2.50 s Polish, 2.54 s English (was 1.54, 1.66). */
+        const val MinMedianSpareSeconds = 2.3
     }
 }
