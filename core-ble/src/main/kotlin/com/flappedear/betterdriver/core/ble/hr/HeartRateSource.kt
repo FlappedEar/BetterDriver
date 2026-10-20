@@ -13,6 +13,15 @@ import com.flappedear.betterdriver.recorder.SampleSink
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
+/** A heart rate older than this is not shown as current: the same 5 s the link allows without a value. */
+private const val FreshMicros = 5_000_000L
+
+/** Where a heart-rate monitor is, for the track screen's status strip (FBBD-268). */
+enum class HeartRateLink { CONNECTING, STREAMING, NO_CONTACT, LOST }
+
+/** A monitor's [link] and its heart rate; [bpm] only while streaming and at most 5 s old. */
+data class HeartRateStatus(val link: HeartRateLink, val bpm: Int?)
+
 /** Monitors notify about once a second, so the default 5 s without a value means the link is gone. */
 private val HeartRateSpec = GattNotifySpec(HeartRateGatt.SERVICE, HeartRateGatt.MEASUREMENT, "hr-link")
 
@@ -46,11 +55,35 @@ class HeartRateSource internal constructor(
     @Volatile
     private var link: NotifyLink? = null
 
+    @Volatile
+    private var decoder: HeartRateDecoder? = null
+
+    @Volatile
+    private var sink: SampleSink? = null
+
     /** The live link state while started, for status displays. Null when stopped. */
     val state: StateFlow<LinkState>? get() = link?.state
 
+    /** The monitor's state for the status strip, or null when stopped. */
+    fun status(): HeartRateStatus? {
+        val l = link
+        val d = decoder
+        val s = sink
+        if (l == null || d == null || s == null) return null
+        val state = when (l.state.value) {
+            is LinkState.Streaming -> if (d.noContact) HeartRateLink.NO_CONTACT else HeartRateLink.STREAMING
+            is LinkState.Reconnecting -> HeartRateLink.LOST
+            else -> HeartRateLink.CONNECTING
+        }
+        val fresh = s.nowMicros() - d.lastBpmMicros <= FreshMicros
+        val bpm = d.lastBpm?.takeIf { state == HeartRateLink.STREAMING && fresh }
+        return HeartRateStatus(state, bpm)
+    }
+
     override fun start(sink: SampleSink) {
         val decoder = HeartRateDecoder(sink)
+        this.decoder = decoder
+        this.sink = sink
         decoder.defineChannels()
         sink.event(HeartRateEvents.DEVICE, "address=$address name=$deviceName")
         // onState runs on the link's one thread, so this needs no lock.
@@ -64,11 +97,21 @@ class HeartRateSource internal constructor(
                 decoder.reset()
             }
             if (streaming || s is LinkState.Reconnecting) wasStreaming = streaming
-        }.also { it.start() }
+        }
+        current = this
+        link?.start()
     }
 
     override fun stop() {
         link?.stop()
         link = null
+        if (current === this) current = null
+    }
+
+    companion object {
+        /** The monitor of the session recording in this process, if it records heart rate. */
+        @Volatile
+        var current: HeartRateSource? = null
+            private set
     }
 }

@@ -1,7 +1,12 @@
 package com.flappedear.betterdriver.recording
 
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
+import com.flappedear.betterdriver.core.ble.hr.HeartRateLink
+import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
+import com.flappedear.betterdriver.core.ui.component.StatusIcon
 import com.flappedear.betterdriver.core.ui.component.StatusItem
+import com.flappedear.betterdriver.obd.ObdLinkState
+import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -159,6 +164,26 @@ class LiveUiTest {
         val outLap = liveTrackState(timed.copy(timing = timing.copy(lapNumber = 0, lapMillis = null)), tiles, true)
         assertNull("no number before the first line crossing", outLap.lapNumber)
         assertEquals("3", s.tiles[2]?.value)
+    }
+
+    @Test
+    fun obdAndHeartRateShowOnlyWhileTheirDataArrives() {
+        fun status(obd: ObdLinkState?, hr: HeartRateStatus?) = liveTrackState(
+            RecorderState(connected = true, live = live, obd = obd?.let { ObdStatus(it, "") }, heartRate = hr),
+            tiles,
+            true,
+        ).status.drop(1)
+        val shown = listOf(
+            StatusItem("OBD", "Connected", icon = StatusIcon.Car),
+            StatusItem("Heart rate", "142", icon = StatusIcon.Heart),
+        )
+        assertEquals(shown, status(ObdLinkState.Connected, HeartRateStatus(HeartRateLink.STREAMING, 142)))
+        // UI-111 B: connecting, searching, lost, no contact or a stale value hide the item.
+        val none = emptyList<StatusItem>()
+        assertEquals(none, status(ObdLinkState.Searching, HeartRateStatus(HeartRateLink.LOST, null)))
+        assertEquals(none, status(ObdLinkState.Connecting, HeartRateStatus(HeartRateLink.NO_CONTACT, null)))
+        assertEquals(none, status(null, HeartRateStatus(HeartRateLink.STREAMING, null)))
+        assertEquals(none, status(null, null))
     }
 
     @Test

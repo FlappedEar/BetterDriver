@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.recording
 
 import android.os.Bundle
+import com.flappedear.betterdriver.core.ble.hr.HeartRateLink
+import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.obd.ObdReading
 import com.flappedear.betterdriver.obd.ObdStatus
@@ -134,6 +136,9 @@ internal object RecorderProtocol {
     private const val OBD_VALUES = "obd.values"
     private const val OBD_HZ = "obd.hz"
 
+    private const val HR_LINK = "hr.link"
+    private const val HR_BPM = "hr.bpm"
+
     private const val SESSION_ID = "sessionId"
     private const val START_UTC = "startUtcMillis"
     private const val ELAPSED = "elapsedMicros"
@@ -235,6 +240,18 @@ internal object RecorderProtocol {
         putStringArray(OBD_UNITS, s.readings.map { it.unit }.toTypedArray())
         putDoubleArray(OBD_VALUES, s.readings.map { it.value }.toDoubleArray())
         putDoubleArray(OBD_HZ, s.readings.map { it.hz }.toDoubleArray())
+    }
+
+    fun putHeartRate(b: Bundle, s: HeartRateStatus) = b.apply {
+        putString(HR_LINK, s.link.name)
+        s.bpm?.let { putInt(HR_BPM, it) }
+    }
+
+    /** The recording's heart-rate monitor (FBBD-268), or null when the recording has none. */
+    fun heartRateFrom(b: Bundle): HeartRateStatus? {
+        val link = b.getString(HR_LINK)?.let { name -> HeartRateLink.entries.firstOrNull { it.name == name } }
+            ?: return null
+        return HeartRateStatus(link, if (b.containsKey(HR_BPM)) b.getInt(HR_BPM) else null)
     }
 
     /** The recording's OBD-II connection, or null when the recording has no OBD source. */

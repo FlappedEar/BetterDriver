@@ -16,6 +16,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.CameraService
 import com.flappedear.betterdriver.coach.CoachStatus
+import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
 import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
@@ -46,6 +47,8 @@ data class RecorderState(
     val coach: CoachStatus? = null,
     /** The recording's OBD-II connection and values (FBBD-261), or null when it records no OBD. */
     val obd: ObdStatus? = null,
+    /** The recording's heart-rate monitor (FBBD-268), or null when it records no heart rate. */
+    val heartRate: HeartRateStatus? = null,
 ) {
     val recording: Boolean get() = live != null && live.stoppedReason == null
 }
@@ -94,6 +97,7 @@ class RecorderClient private constructor(private val context: Context) {
             placeSaved = msg.data.getBoolean(RecorderProtocol.KEY_PLACE_SAVED),
             timing = RecorderProtocol.timingFrom(msg.data),
             obd = RecorderProtocol.obdFrom(msg.data),
+            heartRate = RecorderProtocol.heartRateFrom(msg.data),
             coach = msg.data.getString(RecorderProtocol.KEY_COACH_TEXT)?.let {
                 CoachStatus(
                     msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),
