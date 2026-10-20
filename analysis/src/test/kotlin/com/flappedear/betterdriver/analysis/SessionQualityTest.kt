@@ -197,6 +197,57 @@ class SessionQualityTest {
     }
 
     @Test
+    fun `a gap before the receiver's first fix is reported apart, not judged (FBBD-273)`() {
+        // The pattern of Arek's 2026-10-20 15:22 drive (counts only): 21 samples lost in a row 3.4 s in, an
+        // 880 ms gap, first fix 40.2 s in; after it the longest gap was 80 ms. The report failed max_gap on it.
+        val position = setOf(GnssChannels.LAT.id, GnssChannels.LON.id)
+        val noFix = { s: SampleSet ->
+            SampleSet(s.tMicros, s.values.map { if (it.channelId in position) ChannelValue(it.channelId, 0.0) else it })
+        }
+        val fixAt = 40_200_000L
+        val lost = (64..84).toSet() + (0 until 10).map { 1_207 + it * 600 }
+        val sets = stream(0, 300_000_000).mapIndexedNotNull { i, s ->
+            when {
+                i in lost -> null
+                s.tMicros < fixAt -> noFix(s)
+                else -> s
+            }
+        }
+        val r = sessionQuality(session(sets))
+        val gap = r.metric("gnss.max_gap")
+        assertEquals(80.0, gap.value)
+        assertEquals(Verdict.PASS, gap.verdict, gap.how)
+        assertTrue("from the receiver's first fix" in gap.how, gap.how)
+        assertEquals(880.0, r.value("gnss.max_gap_before_fix"))
+        assertEquals(Verdict.INFO, r.verdict("gnss.max_gap_before_fix"))
+        assertTrue("first fix 40.2 s in" in r.metric("gnss.max_gap_before_fix").how)
+        assertEquals(0.0, r.value("gnss.long_gaps"))
+        val note = r.sections.first { it.title == "GNSS" }.notes.single()
+        assertEquals("gap 880 ms before the first fix, not judged", note.text)
+        // A receiver that never gets a fix still has its gaps judged.
+        val never = sessionQuality(session(sets.filter { it.tMicros < fixAt }))
+        assertEquals(Verdict.FAIL, never.verdict("gnss.max_gap"))
+        assertEquals(880.0, never.value("gnss.max_gap"))
+        // A first fix without the receiver's time is still the first fix (a DIY receiver can send one,
+        // Codex on #260).
+        val utc = GnssChannels.UTC_MS.id
+        val untimed = sets.map { s ->
+            if (s.tMicros != fixAt) s else SampleSet(s.tMicros, s.values.filter { it.channelId != utc })
+        }
+        val u = sessionQuality(session(untimed))
+        assertEquals(Verdict.PASS, u.verdict("gnss.max_gap"), u.metric("gnss.max_gap").how)
+        assertEquals(880.0, u.value("gnss.max_gap_before_fix"))
+        // An outage up to that untimed fix is a gap that starts before it, not judged either.
+        val outage = untimed.filterNot { it.tMicros in 39_600_000L..40_160_000L }
+        assertEquals(Verdict.PASS, sessionQuality(session(outage)).verdict("gnss.max_gap"))
+        // A first fix on the last sample leaves no gap after it to judge (Codex on #260).
+        val last = sets.filter { it.tMicros <= fixAt }
+        val onlyBefore = sessionQuality(session(last))
+        assertEquals(Verdict.NOT_MEASURED, onlyBefore.verdict("gnss.max_gap"))
+        assertNull(onlyBefore.value("gnss.mean_gap"))
+    }
+
+    @Test
     fun `late arrivals with steady fix times are no drops, but gaps without fix times are timed on arrival`() {
         // The phone got samples in pairs (BLE batching): 0 and 80 ms apart, the receiver's times 40 ms apart.
         val batched = (0..1_500).map { i -> fix(t = (i / 2) * 80_000L, utc = start + i * 40L) }
