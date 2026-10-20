@@ -37,7 +37,11 @@ internal class AudioRouteWatch(
     private val probeThread = HandlerThread("coach-probe").apply { start() }
     private val probeHandler = Handler(probeThread.looper)
 
-    /** The session watched and the device last measured for it, by id. [handler]'s thread only. */
+    /**
+     * The session watched and the output it was last measured on, by the id [AudioOutputs.device]
+     * gives it. That is compared only with itself: before Android 13 it is a guess (the first headset
+     * connected), and the device a probe was routed to may differ. [handler]'s thread only.
+     */
     private class Watched(val clips: Boolean, var deviceId: Int?)
 
     private var watched: Watched? = null
@@ -62,14 +66,14 @@ internal class AudioRouteWatch(
 
     /**
      * Watches a session with pre-rendered [clips] on or off, whose start [live] and [clip] probes
-     * measured one device. If they did not, or it is no longer the one routed, it is measured again.
+     * measured one device. If they did not, the output is measured again; after that, when it changes.
      */
     fun watch(clips: Boolean, live: Probed?, clip: Probed?) {
-        val measured = measuredId(clips, live, clip)
-        watched = Watched(clips, measured ?: NotMeasured)
+        val measured = measuredId(clips, live, clip) != null
+        watched = Watched(clips, if (measured) outputs.device()?.id else NotMeasured)
         handler.removeCallbacks(poll)
         handler.postDelayed(poll, PollMillis)
-        if (measured != outputs.device()?.id) settle()
+        if (!measured) settle()
     }
 
     /** The device both paths the session uses measured, or null if either was not, or they differ. */
@@ -107,8 +111,9 @@ internal class AudioRouteWatch(
             handler.post {
                 // A result for a route already left behind (it changed again meanwhile) is dropped.
                 if (watched === w && w.deviceId == id) {
-                    // A path not measured on this device (still settling, no track): the next check measures it again.
-                    if (measuredId(w.clips, live, clip) != id) w.deviceId = NotMeasured
+                    // A path not measured (still settling, no track), or the paths measured different
+                    // devices: the next check measures it again.
+                    if (measuredId(w.clips, live, clip) == null) w.deviceId = NotMeasured
                     onMeasured(Remeasured(now, w.clips, live, clip))
                 }
             }
