@@ -324,6 +324,15 @@ class DriveChecksTest {
     }
 
     @Test
+    fun `a handed-over 2_7K file still finishing when the recording stopped fails the handover`(@TempDir dir: File) {
+        handover(gapUs = 16_666)
+        line(449_000_000L, "WideRecorder", "a handed-over file was still finishing after 60 s", process = "camera")
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
+        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertTrue("still finishing at the stop" in m.how, m.how)
+    }
+
+    @Test
     fun `a next 2_7K file that could not be opened fails the handover`(@TempDir dir: File) {
         line(300_000_000L, "WideRecorder", "phone_0002.mp4 not opened", process = "camera")
         val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
