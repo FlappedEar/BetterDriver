@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.timing.track.Track
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
+import kotlin.math.sqrt
 
 /** A pass at least this much slower than the target over the corner window is worth a cue. */
 const val MinLossMicros = 50_000L
@@ -50,6 +51,15 @@ private const val BrakingMps2 = 2.5
 
 /** Deceleration is measured over this long. */
 private const val DecelWindowMicros = 400_000L
+
+/** The car's acceleration on a straight is measured over this long, so speed noise averages out. */
+private const val AccelWindowMicros = 1_000_000L
+
+/** Acceleration measured over less than this is not used. */
+private const val MinAccelSpanMicros = 500_000L
+
+/** No road car gains speed faster than this on a straight; more is noise. */
+private const val MaxAccelMps2 = 6.0
 
 /** Below this speed (pit lane, spin) no cue is spoken. */
 private const val MinCueSpeedKmh = 20.0
@@ -316,6 +326,7 @@ private class SpeechTiming(
     private val phrases: PhraseBook,
 ) {
     private val speeds = ArrayDeque<Pair<Long, Double>>()
+    private val gains = ArrayDeque<Pair<Long, Double>>()
     var kmh = 0.0
         private set
     var speakingUntil = Long.MIN_VALUE
@@ -337,6 +348,17 @@ private class SpeechTiming(
         this.kmh = kmh
         speeds.addLast(t to kmh)
         while (speeds.size > 1 && speeds.first().first < t - DecelWindowMicros) speeds.removeFirst()
+        gains.addLast(t to kmh)
+        while (gains.size > 1 && gains.first().first < t - AccelWindowMicros) gains.removeFirst()
+    }
+
+    /** How fast the car is gaining speed, m/s², from 0 (steady or slowing, or not known) to [MaxAccelMps2]. */
+    private fun accelMps2(): Double {
+        if (gains.size < 2) return 0.0
+        val (t0, v0) = gains.first()
+        val (t1, v1) = gains.last()
+        if (t1 - t0 < MinAccelSpanMicros) return 0.0
+        return ((v1 - v0) / KmhPerMps / ((t1 - t0) / MicrosPerSecond)).coerceIn(0.0, MaxAccelMps2)
     }
 
     /** From asking for [text] until it has been heard. */
@@ -354,13 +376,18 @@ private class SpeechTiming(
 
     /**
      * Time until the car reaches [zoneStart], or null when it is too slow to tell: the shorter of the
-     * time at its current speed and the reference lap's time between the two points. Out of a corner
-     * the car is still accelerating, so its current speed alone would say it arrives later than it does.
-     * [along] is where the fix was taken, [fixAgeMicros] ago, so that much less time is left.
+     * time at its current speed, still gaining speed as it is now, and the reference lap's time between
+     * the two points. Out of a corner the car is still accelerating, so its current speed alone would say
+     * it arrives later than it does: on Jastrząb's short straights a cue ended at the braking zone
+     * (FBBD-256). Keeping today's gain to the zone errs early, so a cue is shortened or dropped rather than
+     * late. [along] is where the fix was taken, [fixAgeMicros] ago, so that much less time is left.
      */
     fun timeTo(path: LapTrace, along: Double, zoneStart: Double): Long? {
         if (kmh < MinCueSpeedKmh) return null
-        val atSpeed = (zoneStart - along) / (kmh / KmhPerMps) * MicrosPerSecond
+        val v = kmh / KmhPerMps
+        val d = zoneStart - along
+        val a = accelMps2()
+        val atSpeed = (if (a > 0.0) (sqrt(v * v + 2 * a * d) - v) / a else d / v) * MicrosPerSecond
         val byReference = path.timeAt(zoneStart) - path.timeAt(along)
         return min(atSpeed, byReference).roundToLong() - fixAgeMicros
     }

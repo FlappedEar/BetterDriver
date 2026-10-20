@@ -260,10 +260,11 @@ class DemoDriveReplayTest {
         val Silesia = Drive("silesia-ring", "Silesia Ring", 2_830L, MinSpareSeconds, MinMedianSpareSeconds)
 
         /**
-         * Jastrząb's short straights do not hold the longer phrases yet (FBBD-256): its measured spare is the
-         * guard until then, 0.06 s late at worst ("Turn 4, brake at 165"), median 1.66 s English, 2.02 s Polish.
+         * Jastrząb's short straights (FBBD-256): every cue ends [MinSpareSeconds] before its braking zone, as at
+         * Silesia, since the coach times a cue with the car still gaining speed (was 0.06 s late at worst,
+         * "Turn 4, brake at 165"). Fewer cues fit there, so half of them end at least 1.6 s before it.
          */
-        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, -0.1, 1.6)
+        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, MinSpareSeconds, 1.6)
 
         /** The drive check's slowing between two cues on different straights (coach.per_straight). */
         const val BrakingDropKmh = 15.0
