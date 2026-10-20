@@ -20,8 +20,8 @@ data class DemoDrive(val sessionId: String?, val label: String)
 
 /**
  * What the Demo track receiver drives (FBBD-235, Arek picked option A): its "Drives" row on the
- * item's screen, [choices] with the demo circuit first, then the built-in Silesia Ring laps (FBBD-237)
- * and the sessions newest first.
+ * item's screen, [choices] with the demo circuit first, then the built-in Silesia Ring (FBBD-237) and
+ * Jastrząb (FBBD-254) laps and the sessions newest first.
  */
 data class DemoDrives(
     val current: DemoDrive,

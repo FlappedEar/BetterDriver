@@ -47,6 +47,15 @@ object CoachEvents {
 
     fun quietText(lap: Int, reason: String) = "lap=$lap reason=$reason"
 
+    /**
+     * The coach is back on the lap it went quiet on (FBBD-254): after cooling down, two corners in a row
+     * near their best (FBBD-252); after the pit lane, back up to speed. Text "lap=<n> after=<the
+     * [QUIET] reason>". The passes it skipped while quiet are not used, the later ones are.
+     */
+    const val RESUMED = "coach_resumed"
+
+    fun resumedText(lap: Int, after: String) = "lap=$lap after=$after"
+
     /** The text of a [FOCUS] event: the session the focus came from, and its corners' CornerIds, the primary first. */
     fun focusText(sessionId: String, cornerIds: List<String>) =
         "source=$sessionId corners=${cornerIds.joinToString(",")}"

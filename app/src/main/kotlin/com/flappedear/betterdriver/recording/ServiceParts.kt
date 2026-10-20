@@ -31,6 +31,10 @@ private val CoachEventKinds =
         CoachEvents.VOICE,
         CoachEvents.VOICE_END,
         CoachEvents.FOCUS,
+        // When and why the coach went quiet and came back (FBBD-202, FBBD-254): the session and the
+        // continuous log show which laps it took as cool-down, as the replay checks read them.
+        CoachEvents.QUIET,
+        CoachEvents.RESUMED,
     )
 private const val MaxCoachEventChars = 1_000
 

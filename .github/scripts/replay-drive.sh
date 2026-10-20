@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Arek's Demo track drive, done by CI on the emulator that is already running (ReplayDriveTest): the
-# Silesia Ring laps built into the app (his 27 Sep 2026 sessions) replayed through the whole app,
+# Silesia Ring laps built into the app (his 27 Sep 2026 sessions), or with DRIVE=jastrzab his Jastrząb
+# laps (29 Aug 2026, FBBD-254), replayed through the whole app,
 # coach at Full in $LANGUAGE (Polish unless set), for $REPLAY_MINUTES minutes in real time, enough for
 # the coach's 3 learning laps and coached laps after them. Then the continuous log is checked as his
 # shared logs are, and the report goes to the run's summary and build/replay-drive/.
@@ -10,6 +11,7 @@ runner=$app.test/androidx.test.runner.AndroidJUnitRunner
 test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-22}
 language=${LANGUAGE:-Polish}
+drive=${DRIVE:-silesia-ring}
 checkEverySeconds=60
 out=build/replay-drive
 mkdir -p "$out"
@@ -40,7 +42,7 @@ finish() {
 phase() {
   echo "== ReplayDriveTest#$1"
   # A phase that hangs fails the drive instead of the job running out of time.
-  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e class "$test#$1" "$runner" < /dev/null 2>&1)
+  result=$(timeout 600 adb shell am instrument -w ${2:-} -e language "$language" -e drive "$drive" -e class "$test#$1" "$runner" < /dev/null 2>&1)
   echo "$result"
   if ! echo "$result" | grep -q "^OK (1 test)"; then
     # What the test runner and the app's processes logged last, for a phase that hung or failed.

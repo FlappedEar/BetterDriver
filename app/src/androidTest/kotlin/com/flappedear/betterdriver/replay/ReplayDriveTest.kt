@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.analysis.quality.readLog
 import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
 import com.flappedear.betterdriver.analysis.quality.replayQuiet
+import com.flappedear.betterdriver.analysis.quality.replayResumed
 import com.flappedear.betterdriver.coach.CoachLanguage
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachSettingsStore
@@ -40,9 +41,9 @@ import java.io.File
 
 /**
  * Arek's Demo track drive, done by CI instead of by him (2026-10-19: "you should run these tests on your
- * own"): the Silesia Ring laps built into the app (his 27 Sep 2026 sessions) replayed through the whole
- * app on the emulator, recorder, live timing, coach process and voice, with the coach at Full in the
- * language replay-drive.sh asks for. Then the app's continuous log is checked as his shared logs are:
+ * own"): the Silesia Ring laps built into the app (his 27 Sep 2026 sessions), or the Jastrząb laps (his
+ * 29 Aug 2026 sessions, FBBD-254), replayed through the whole app on the emulator, recorder, live timing,
+ * coach process and voice, with the coach at Full in the language replay-drive.sh asks for. Then the app's continuous log is checked as his shared logs are:
  * the drive checks (FBBD-183) and what the coach said lap by lap (FBBD-244, FBBD-242, FBBD-243,
  * FBBD-245). Run in phases by .github/scripts/replay-drive.sh, which lets the drive run in between.
  *
@@ -60,7 +61,11 @@ class ReplayDriveTest {
     private val language = CoachLanguage.entries.firstOrNull { it.name == args.getString("language") }
         ?: CoachLanguage.Polish
 
-    /** A clean phone: no sessions, an empty log, the Demo track on the built-in Silesia Ring laps, coach at Full. */
+    /** The built-in drive replay-drive.sh asks for: "jastrzab", else Silesia Ring. */
+    private val jastrzab = args.getString("drive") == "jastrzab"
+    private val driveName = if (jastrzab) "Autodrom Jastrząb" else "Silesia Ring"
+
+    /** A clean phone: no sessions, an empty log, the Demo track on the built-in laps asked for, coach at Full. */
     @Test
     fun seed() {
         marker.delete()
@@ -73,7 +78,7 @@ class ReplayDriveTest {
         d.app.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).edit()
             .putBoolean("setup_done", true)
             .commit()
-        DemoReplay.choose(d.app, DemoReplay.SilesiaRing)
+        DemoReplay.choose(d.app, if (jastrzab) DemoReplay.Jastrzab else DemoReplay.SilesiaRing)
         // The coach process reads its settings from this file at each session start (CoachProtocol).
         CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties"))
             .write(CoachSettings(Verbosity.Full, language = language))
@@ -150,7 +155,7 @@ class ReplayDriveTest {
                 appendLine("| ${it.label} | $value ${it.unit} | ${it.verdict} | ${it.how.replace('|', '/')} |")
             }
         }
-        appendLine("## Emulator replay of the built-in Silesia Ring laps, coach ${language.name}, Full")
+        appendLine("## Emulator replay of the built-in $driveName laps, coach ${language.name}, Full")
         appendLine()
         appendLine("### Coach, lap by lap")
         appendLine()
@@ -158,11 +163,13 @@ class ReplayDriveTest {
         appendLine()
         val cues = replayCues(events)
         val quiet = replayQuiet(events)
+        val back = replayResumed(events)
         appendLine("| Lap | Kind | Time | Coach quiet | Cues |")
         appendLine("| --- | --- | --- | --- | --- |")
         for (lap in replayLaps(events)) {
             val said = cues.filter { it.lap == lap.number }.joinToString("; ") { it.text }
-            val still = quiet.filter { it.lap == lap.number }.joinToString { it.reason }
+            val still = (quiet.filter { it.lap == lap.number }.map { it.reason } +
+                back.filter { it.lap == lap.number }.map { "back" }).joinToString()
             val time = "%.1f".format(lap.timeMillis / MillisPerSecond)
             appendLine("| ${lap.number} | ${lap.kind} | $time s | $still | $said |")
         }

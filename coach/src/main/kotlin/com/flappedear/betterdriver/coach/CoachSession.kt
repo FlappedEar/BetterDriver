@@ -55,6 +55,9 @@ class CoachSession(
     /** Why the coach was quiet at the last fix (FBBD-202), so each new quiet spell is logged once. */
     private var quiet: String? = null
 
+    /** The lap the coach went quiet on, so its end on that same lap is logged as a resume (FBBD-254). */
+    private var quietLap = 0
+
     /** The last cue said; until there is one, whether the coach is learning or on. */
     val status: CoachStatus
         get() {
@@ -75,8 +78,13 @@ class CoachSession(
         val u = e.update(fix)
         val events = mutableListOf<CoachEvent>()
         val reason = e.quietReason
-        if (reason != null && reason != quiet) {
+        val was = quiet
+        if (reason != null && reason != was) {
             events += CoachEvent(fix.tMicros, CoachEvents.QUIET, CoachEvents.quietText(e.lapNumber, reason))
+            quietLap = e.lapNumber
+        } else if (reason == null && was != null && e.lapNumber == quietLap) {
+            // Quiet ended before the line: back on this lap, not the end of the lap clearing it.
+            events += CoachEvent(fix.tMicros, CoachEvents.RESUMED, CoachEvents.resumedText(quietLap, was))
         }
         quiet = reason
         for (r in u.results) events += CoachEvent(r.tMicros, CoachEvents.RESULT, CoachEvents.resultText(r))
