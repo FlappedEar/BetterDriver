@@ -24,9 +24,6 @@ import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.obd.valueText
 import java.util.Locale
 
-/** What the OBD page shows: whose connection it is, and that connection; null status while starting. */
-data class ObdView(val recording: Boolean, val status: ObdStatus?)
-
 /** Title of the OBD page and its row in Settings › Devices. */
 const val ObdTitle = "OBD-II"
 
