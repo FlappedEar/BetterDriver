@@ -54,10 +54,11 @@ internal fun frameRate(camera: String, events: List<RecorderEvent>, counted: Lis
     val (wideRated, rated) = all.partition { it.file in wide }
     val worst = rated.minByOrNull { it.share }
     val worstWide = wideRated.minByOrNull { it.share }
-    // A file a counter missed is named, not passed over: the verdict covers the counted ones. It may
-    // be a 1080p file after a 2.7K one, so with one missed, 2.7K files alone are not reported.
-    val missed = (set.keys - all.map { it.file }.toSet()).sorted()
-    val notCounted = missed.takeIf { it.isNotEmpty() }?.let { "not counted: ${it.joinToString(", ")}" }
+    // A file without a rate (not counted, or no set rate) is named, not passed over: the verdict
+    // covers the rated ones. It may be a 1080p file after a 2.7K one, so with one, 2.7K files alone
+    // are not reported.
+    val missed = ((set.keys + counted.map { it.file }) - all.map { it.file }.toSet()).sorted()
+    val notCounted = missed.takeIf { it.isNotEmpty() }?.let { "not rated: ${it.joinToString(", ")}" }
     val notJudged = wideRated.takeIf { it.isNotEmpty() }?.let { "${it.size} 2.7K file(s) not judged" }
     return when {
         counted.isEmpty() && set.isEmpty() -> null

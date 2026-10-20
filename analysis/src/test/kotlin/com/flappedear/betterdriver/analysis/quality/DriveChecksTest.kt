@@ -304,7 +304,7 @@ class DriveChecksTest {
         val frames = listOf(FileFrames(CameraIds.PHONE, "phone_0001.mp4", 3_597, 60_000_000, 60))
         val m = frameRate(CameraIds.PHONE, events, frames)!!
         assertEquals(Verdict.PASS, m.verdict, m.how)
-        assertTrue("not counted: phone_0002.mp4" in m.how, m.how)
+        assertTrue("not rated: phone_0002.mp4" in m.how, m.how)
     }
 
     @Test
@@ -316,7 +316,18 @@ class DriveChecksTest {
         val frames = listOf(FileFrames(CameraIds.PHONE, "phone_0001.mp4", 2_900, 60_000_000, 60, wide = true))
         val m = frameRate(CameraIds.PHONE, events, frames)!!
         assertEquals(Verdict.NOT_MEASURED, m.verdict, m.how)
-        assertTrue("not counted: phone_0002.mp4" in m.how && "1 2.7K file(s) not judged" in m.how, m.how)
+        assertTrue("not rated: phone_0002.mp4" in m.how && "1 2.7K file(s) not judged" in m.how, m.how)
+    }
+
+    @Test
+    fun `a counted file without a set rate beside a 2_7K one leaves the frame rate not measured`() {
+        val frames = listOf(
+            FileFrames(CameraIds.PHONE, "phone_0001.mp4", 2_900, 60_000_000, 60, wide = true),
+            FileFrames(CameraIds.PHONE, "phone_0002.mp4", 3_600, 60_000_000),
+        )
+        val m = frameRate(CameraIds.PHONE, emptyList(), frames)!!
+        assertEquals(Verdict.NOT_MEASURED, m.verdict, m.how)
+        assertTrue("not rated: phone_0002.mp4" in m.how, m.how)
     }
 
     @Test
