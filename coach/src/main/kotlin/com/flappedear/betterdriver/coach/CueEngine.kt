@@ -64,6 +64,12 @@ private const val MinAccelSpanMicros = 500_000L
  */
 private const val MaxAccelMps2 = 10.0
 
+/**
+ * The car has left the straight a phrase was said on once its speed fell this much from its highest
+ * since (a braking zone), as the drive check coach.per_straight judges one straight.
+ */
+private const val StraightDropKmh = 15.0
+
 /** Below this speed (pit lane, spin) no cue is spoken. */
 private const val MinCueSpeedKmh = 20.0
 
@@ -347,8 +353,15 @@ private class SpeechTiming(
      */
     var voiceFree = true
 
+    /** The highest speed since the last phrase was asked for; null once the car has braked since. */
+    private var topSinceSaid: Double? = null
+
+    /** Whether the car has braked since the last phrase, so it is on another straight. */
+    val leftStraight get() = topSinceSaid == null
+
     fun onSpeed(t: Long, kmh: Double) {
         this.kmh = kmh
+        topSinceSaid = topSinceSaid?.let { maxOf(it, kmh) }?.takeIf { it - kmh < StraightDropKmh }
         speeds.addLast(t to kmh)
         while (speeds.size > 1 && speeds.first().first < t - DecelWindowMicros) speeds.removeFirst()
         gains.addLast(t to kmh)
@@ -398,12 +411,16 @@ private class SpeechTiming(
     /** [cue] is being said from now: nothing else until it has been heard. Gives it with its language. */
     fun said(cue: Cue): Cue {
         speakingUntil = cue.tMicros + needMicros(cue.text)
+        topSinceSaid = kmh
         return cue.copy(language = settings.language)
     }
 
     /** [cue] was never played, so nothing is being said. */
     fun unsaid(cue: Cue) {
-        if (speakingUntil == cue.tMicros + needMicros(cue.text)) speakingUntil = Long.MIN_VALUE
+        if (speakingUntil == cue.tMicros + needMicros(cue.text)) {
+            speakingUntil = Long.MIN_VALUE
+            topSinceSaid = null
+        }
     }
 
     private companion object {
@@ -675,9 +692,9 @@ class CueEngine(
         val time = speech.timeTo(b.map.path, along, zoneStart)
         val cue = p.cue
         // Praise first, when it and this straight's corner cue both fit (UI-94 A: else the cue wins).
-        // A praise found only after the cue was said (the cue starts early, FBBD-47) waits for no other
-        // straight: the cue won.
-        if (p.said) praises.clear()
+        // A praise found only after the straight's cue or lap time was said (the cue starts early, FBBD-47)
+        // waits for no other straight: one cue per straight (FBBD-27), and the cue won.
+        if (!speech.leftStraight) praises.clear()
         val cueNeed = cue?.let { speech.needMicros(it.text) + MarginMicros } ?: 0L
         val praise = praises.next(now, time, speech.free(now)) { speech.needMicros(it.text) + MarginMicros + cueNeed }
         if (praise != null) return speech.said(praise.copy(seq = ++seq, tMicros = now, zoneMeters = zoneStart - along))
