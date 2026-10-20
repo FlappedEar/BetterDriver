@@ -31,7 +31,21 @@ data class SessionCardActions(
 enum class SettingsTab(val title: String) { Devices("Devices"), Car("Car"), Recording("Recording"), App("App") }
 
 /**
- * What the OBD page shows (FBBD-261): whether a session records, and its OBD-II connection; status is
- * null when the recording has no OBD source (Demo GNSS).
+ * How the OBD page and the Settings row name a listed adapter (FBBD-121, UI-106 A): [name] as
+ * Android shows it and [via] how it is reached, "vLinker MC+ · Bluetooth".
  */
-data class ObdView(val recording: Boolean, val status: ObdStatus?)
+data class ObdAdapterLabel(val name: String, val via: String) {
+    val text: String get() = "$name · $via"
+    val wifi: Boolean get() = via == WifiVia
+
+    companion object {
+        const val WifiVia = "Wi-Fi"
+    }
+}
+
+/**
+ * What the OBD page shows (FBBD-261): whether a session records, and its OBD-II connection; status is
+ * null when nothing reads the car: no adapter is listed ([adapter] null), or the recording has no OBD
+ * source (Demo GNSS). [adapter] is the first listed adapter (UI-105 C).
+ */
+data class ObdView(val recording: Boolean, val status: ObdStatus?, val adapter: ObdAdapterLabel? = null)

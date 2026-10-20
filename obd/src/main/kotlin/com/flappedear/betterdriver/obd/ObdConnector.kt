@@ -84,7 +84,7 @@ class ObdConnector(
         val opened = openFirst(targets(), errors) ?: if (running()) openFirst(fallback(), errors) else null
         if (opened == null) {
             if (errors.isEmpty()) {
-                note("no adapter: no paired Bluetooth adapter and no Wi-Fi network", "Phone not on the adapter's Wi-Fi")
+                note("no adapter: none listed, or the phone is not on the Wi-Fi adapter's network", "No adapter to try")
             } else {
                 note("no adapter answered: ${errors.joinToString("; ")}", "No adapter answered · trying again")
             }
@@ -93,7 +93,7 @@ class ObdConnector(
         val (target, line) = opened
         lastNote = null
         listener.log("connected to ${target.where} over ${target.transport.label}")
-        tracker.connecting(target.where)
+        tracker.connecting(target.name)
         val reason = try {
             ElmPoller(line, profile, Poll(target), running, clock).run()
         } catch (e: IOException) {
