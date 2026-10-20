@@ -463,7 +463,9 @@ class DriveChecksTest {
         val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
         val fixAt = 114_000_000L
         val stop = 814_000_000L
-        val lostBefore = (0 until 124).map { 50L + it * 22 }.toSet()
+        // Five more lost in a row right up to the first fix, the first sample of its second: that line's
+        // losses are from before the fix (Codex on #241).
+        val lostBefore = (0 until 124).map { 50L + it * 22 }.toSet() + (2_845L..2_849L)
         val lostAfter = (0 until 13).map { 3_007L + it * 1_000 }.toSet()
         var i = 0L
         var t = 0L
@@ -495,9 +497,9 @@ class DriveChecksTest {
         val dropped = r.metric("gnss.dropped")
         assertEquals(Verdict.PASS, dropped.verdict, dropped.how)
         assertEquals(0.07, dropped.value!!, 0.005, dropped.how)
-        assertTrue("124 missing before the first fix" in dropped.how, dropped.how)
+        assertTrue("129 missing before the first fix" in dropped.how, dropped.how)
         val before = r.metric("gnss.dropped_before_fix")
         assertEquals(Verdict.INFO, before.verdict)
-        assertEquals(124.0, before.value)
+        assertEquals(129.0, before.value)
     }
 }

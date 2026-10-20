@@ -100,8 +100,9 @@ private fun rate(counts: List<Double>, skips: Long): QualityMetric {
 
 /**
  * As for a session: a RaceBox's single whole-second skip with a fix (FBBD-170) is counted apart, and the
- * verdict counts from the receiver's first fix (FBBD-259). A line counts losses ending in its second, so
- * the second the first fix came in goes with the time before it unless every sample in it had a fix.
+ * verdict counts from the receiver's first fix (FBBD-259). A line counts losses ending in its second, and
+ * the step that ends on the first fix ends in the second the fix came in, so that second goes with the
+ * time before it, even when every sample in it had a fix.
  */
 private fun dropped(seconds: List<GnssSecond>, raceBox: Boolean): List<QualityMetric> {
     if (seconds.none { it.stepMillis != null }) {
@@ -109,11 +110,7 @@ private fun dropped(seconds: List<GnssSecond>, raceBox: Boolean): List<QualityMe
         return listOf(notMeasured("gnss.dropped", "Dropped samples", DroppedCriterion, why))
     }
     val fixAt = seconds.indexOfFirst { it.fixes > 0 }
-    val from = when {
-        fixAt < 0 -> seconds.size
-        seconds[fixAt].fixes == seconds[fixAt].samples -> fixAt
-        else -> fixAt + 1
-    }
+    val from = if (fixAt < 0) seconds.size else fixAt + 1
     val before = seconds.take(from)
     val after = seconds.drop(from)
     fun skips(s: List<GnssSecond>) = if (raceBox) s.sumOf { it.missingOnSecond.toLong() } else 0L
