@@ -21,7 +21,7 @@ import kotlin.math.abs
  * encoder's surface, the Pixel 6 allocated only 4 buffers: with ~170 ms from exposure to encoded
  * frame, the camera waited for a free one and kept ~49 of 60 fps (Arek's 2026-10-20 log on 0.4.3).
  *
- * The camera draws into [surface], an ImageReader of [buffers] encoder-ready buffers; each frame is
+ * The camera draws into [surface], an ImageReader of [Buffers] encoder-ready buffers; each frame is
  * handed on to [encoderSurface] without a copy (PRIVATE format) on the relay's own thread. Frame times
  * go to the encoder on the monotonic clock, as the camera gives them to an encoder surface, so they
  * stay on the sound's clock whichever clock the sensor runs on. [shiftNanos] is boot time less
@@ -37,10 +37,9 @@ internal class FrameRelay(
     private val shiftNanos: Long = 0,
     private val sensorSeen: (Long) -> Boolean = { false },
     softwareEncoder: Boolean = false,
-    buffers: Int = Buffers,
 ) {
     private val reader = ImageReader.newInstance(
-        width, height, ImageFormat.PRIVATE, buffers, relayUsage(softwareEncoder),
+        width, height, ImageFormat.PRIVATE, Buffers, relayUsage(softwareEncoder),
     )
 
     // A writer the encoder's surface refuses leaves nothing open: the caller then draws straight in.
