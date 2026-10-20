@@ -28,10 +28,12 @@ private fun line(f: (Double) -> Double) = listOf((0..176).map { ChartPoint(it * 
 /** A made-up session for previews and the UI review page. */
 internal val PreviewUi = AnalysisUi(
     title = "Silesia Ring · 11 Oct",
+    heartRate = HeartRateUi("Polar H10 1234", 128, 161, 96, 22),
     laps = listOf(
-        LapRow(0, 1, 82_310, 1.07, best = false, note = ""),
-        LapRow(1, 2, 81_240, 0.0, best = true, note = ""),
-        LapRow(2, 3, 81_870, 0.63, best = false, note = ""),
+        LapRow(0, 1, 82_310, 1.07, best = false, note = "", heartRate = LapHeartRate(134, 152)),
+        LapRow(1, 2, 81_240, 0.0, best = true, note = "", heartRate = LapHeartRate(138, 158)),
+        LapRow(2, 3, 81_870, 0.63, best = false, note = "", heartRate = LapHeartRate(140, 161)),
+        // No heart rate recorded during this lap: its cell stays empty (UI-109).
         LapRow(3, 4, 95_020, null, best = false, note = "GPS gap"),
     ),
     bestLapNumber = 2,

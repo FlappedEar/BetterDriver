@@ -4,6 +4,8 @@ import com.flappedear.betterdriver.analysis.AnalysisProvenance
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.LapComparison
+import com.flappedear.betterdriver.analysis.data.TelemetryChannel
+import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.driving.DrivingState
 import com.flappedear.betterdriver.analysis.driving.DrivingStateInterval
 import com.flappedear.betterdriver.analysis.driving.LapDrivingStates
@@ -29,6 +31,7 @@ import com.flappedear.betterdriver.analysis.segments.TimeLossWindow
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
+import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -252,6 +255,33 @@ class AnalysisUiTest {
         val rowsWithToggle = firstCornerRows(ui.copy(coachPickable = setOf("c1", "c2")))
         assertEquals(setOf(0), rowsWithToggle.gains)
         assertEquals(setOf(1), rowsWithToggle.losses)
+    }
+
+    @Test
+    fun `heart rate is the session's and each lap's, and none where none was recorded (FBBD-225)`() {
+        // Laps 1 to 4 run 100-182, 200-281, 300-382 and 400-495 s; the strap stops after lap 2.
+        val times = (100..290).map { it.toDouble() }
+        val bpm = times.map { if (it < 200) 120.0 else 140.0 }
+        val session = TelemetrySession(
+            mapOf(
+                HeartRateLogIds.NAME to TelemetryChannel(
+                    HeartRateLogIds.NAME, times.toDoubleArray(), bpm.toDoubleArray(), "bpm",
+                ),
+            ),
+            emptyMap(),
+        )
+        val ui = withHeartRate(analysisUi("t", analysis, null)!!, analysis, session, "Polar H10 1234")
+        assertEquals(HeartRateUi("Polar H10 1234", 130, 140, 120, 3), ui.heartRate)
+        assertEquals(LapHeartRate(120, 120), ui.laps[0].heartRate)
+        assertEquals(LapHeartRate(140, 140), ui.laps[1].heartRate)
+        assertNull(ui.laps[2].heartRate)
+        assertNull(ui.laps[3].heartRate)
+    }
+
+    @Test
+    fun `a session without heart rate has none (UI-109)`() {
+        val ui = analysisUi("t", analysis, null)!!
+        assertEquals(ui, withHeartRate(ui, analysis, TelemetrySession(emptyMap(), emptyMap()), null))
     }
 
     @Test

@@ -49,7 +49,19 @@ data class LapRow(
     val best: Boolean,
     /** Why the lap is not counted, or empty. */
     val note: String,
+    /** The lap's heart rate (FBBD-225); null when none was recorded during it. */
+    val heartRate: LapHeartRate? = null,
 )
+
+/** A lap's average and highest heart rate, beats per minute (UI-107 A). */
+data class LapHeartRate(val averageBpm: Int, val maxBpm: Int)
+
+/**
+ * The session's heart rate (FBBD-225, UI-107 A): average, highest and lowest, from the strap named
+ * [device] (null when the session does not name it), over [minutes] of heart rate. Only a session
+ * that recorded heart rate has one (UI-109).
+ */
+data class HeartRateUi(val device: String?, val averageBpm: Int, val maxBpm: Int, val minBpm: Int, val minutes: Int)
 
 /** One corner or straight of the theoretical best, with the compared lap's time through it. */
 data class SectorRow(
@@ -229,6 +241,8 @@ data class AnalysisUi(
     val sources: AnalysisProvenance = AnalysisProvenance(),
     /** The whole session's G-G diagram; null without movement. */
     val gForces: GgTrace? = null,
+    /** The session's heart rate; null when it recorded none. */
+    val heartRate: HeartRateUi? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */
