@@ -262,6 +262,18 @@ class LiveTrackerTest {
     }
 
     @Test
+    fun `a value after an outage goes stale at the channel's own rate`() {
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now })
+        tracker.onChannel(ChannelDef(400, "heart_rate", "bpm", "heart_rate", 0))
+        for (s in 0..3L) tracker.onSamples(SampleSet(s * MicrosPerSecond, listOf(ChannelValue(400, 120.0))))
+        // The strap is away for two minutes, sends one beat, and is gone again.
+        tracker.onSamples(SampleSet(123 * MicrosPerSecond, listOf(ChannelValue(400, 130.0))))
+        now = 127 * MicrosPerSecond
+        assertTrue(tracker.snapshot().channels.getValue("heart_rate").isNaN())
+    }
+
+    @Test
     fun `GNSS and other channels are not shown as live values`() {
         val tracker = LiveTracker("s", 0, { 0L })
         GnssChannels.ALL.forEach(tracker::onChannel)

@@ -23,6 +23,9 @@ const val GnssLostMinMicros = MicrosPerSecond
 private const val StaleMinMicros = 3 * MicrosPerSecond
 private const val StalePeriods = 3
 
+/** The longest gap taken as a channel's sampling period: twice a slow OBD-II PID's 5 s. */
+private const val MaxPeriodMicros = 10 * MicrosPerSecond
+
 /** OBD-II channels are named "obd_<id>" with source "obd" (core-ble ObdSource). */
 private const val ObdSource = "obd"
 
@@ -226,7 +229,8 @@ private class ShownValue(val name: String) {
 
     fun update(t: Long, v: Double) {
         if (!v.isFinite()) return
-        if (atMicros != Long.MIN_VALUE && t > atMicros) periodMicros = t - atMicros
+        // A gap longer than the slowest PID's period is an outage, not the channel's rate.
+        if (atMicros != Long.MIN_VALUE && t > atMicros && t - atMicros <= MaxPeriodMicros) periodMicros = t - atMicros
         value = v
         atMicros = maxOf(atMicros, t)
     }
