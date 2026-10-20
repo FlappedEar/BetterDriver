@@ -336,9 +336,10 @@ internal class WideRecorder(
             runCatching { s?.close() }
             runCatching { d?.close() }
             // The relay goes before the encoder's surface does; what it handed on is still encoded.
-            r?.let {
-                it.close()
-                DebugLog.i(Tag, "camera frames ${it.counts()}")
+            // A relay exists only from Android 10, where cameraSurface() made it.
+            if (r != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                r.close()
+                DebugLog.i(Tag, "camera frames ${r.counts()}")
             }
             // Frames still on their way are encoded before the end of the stream.
             val closed = e?.stop()
