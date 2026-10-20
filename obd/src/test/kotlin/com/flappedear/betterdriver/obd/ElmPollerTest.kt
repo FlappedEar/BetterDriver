@@ -143,7 +143,7 @@ class ElmPollerTest {
     fun `an adapter that goes quiet ends the connection`() {
         val elm = FakeElm(car(), silent = setOf("010C", "010D", "0105", "0111"), latencyMs = 0)
         val got = Recorded()
-        val line = ElmLine(elm::write).also { elm.line = it }
+        val line = ElmLine(elm::write, resyncMs = 10).also { elm.line = it }
         val poller = ElmPoller(line, CarProfile.Generic, got, { true }, elm)
         assertEquals("adapter stopped answering", poller.run())
     }
@@ -152,7 +152,7 @@ class ElmPollerTest {
     fun `an adapter that never answers`() {
         val elm = FakeElm(car(), silent = setOf("ATZ") + ElmPoller.SETUP, latencyMs = 0)
         val got = Recorded()
-        val line = ElmLine(elm::write).also { elm.line = it }
+        val line = ElmLine(elm::write, resyncMs = 10).also { elm.line = it }
         assertEquals("adapter not answering", ElmPoller(line, CarProfile.Generic, got, { true }, elm).run())
     }
 
@@ -164,18 +164,35 @@ class ElmPollerTest {
     }
 
     @Test
-    fun `stale bytes from a timed-out command are dropped`() {
+    fun `a late answer after a timeout is not read as the next one`() {
         lateinit var line: ElmLine
         var first = true
-        line = ElmLine {
+        line = ElmLine({
             if (first) {
                 first = false
             } else {
                 line.feed("410D32\r\r>".toByteArray())
             }
-        }
+        }, resyncMs = 1_000)
         assertNull(line.command("010C", 1))
-        line.feed("410C1A".toByteArray()) // The late answer to 010C, with no prompt yet.
+        // The answer to 010C arrives after its timeout, prompt included, while 010D waits to go out.
+        Thread { line.feed("410C1AF8\r\r>".toByteArray()) }.apply { start() }.join()
+        assertEquals("410D32\r\r", line.command("010D", 1_000))
+    }
+
+    @Test
+    fun `a late answer that never ends is dropped after the resync wait`() {
+        lateinit var line: ElmLine
+        var first = true
+        line = ElmLine({
+            if (first) {
+                first = false
+            } else {
+                line.feed("410D32\r\r>".toByteArray())
+            }
+        }, resyncMs = 10)
+        assertNull(line.command("010C", 1))
+        line.feed("410C1A".toByteArray()) // Part of the answer to 010C, never finished.
         assertEquals("410D32\r\r", line.command("010D", 1_000))
     }
 }

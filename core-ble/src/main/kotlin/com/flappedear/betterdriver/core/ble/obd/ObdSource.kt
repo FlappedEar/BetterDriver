@@ -135,6 +135,9 @@ class ObdSource(
         DebugLog.i(Tag, "connected to $where")
         val reason = try {
             ElmPoller(l, profile, Listener(sink, where), { running }, clock).run()
+        } catch (e: IOException) {
+            // The socket dropped or the read failed: the usual way a connection ends.
+            "connection lost: ${e.message}"
         } finally {
             line = null
             socket = null

@@ -10,10 +10,13 @@ import java.io.IOException
  *
  * One command at a time: an ELM327 answers one request before it reads the next.
  */
-class ElmLine(private val write: (ByteArray) -> Unit) {
+class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long = DEFAULT_RESYNC_MS) {
     private val lock = Object()
     private val received = StringBuilder()
     private var closed: String? = null
+
+    /** The last command timed out: the adapter may still print its answer and prompt. */
+    private var outstanding = false
 
     /** Bytes from the adapter. NUL bytes, which some clones send before the prompt, are dropped. */
     fun feed(bytes: ByteArray) {
@@ -33,33 +36,46 @@ class ElmLine(private val write: (ByteArray) -> Unit) {
 
     /**
      * Sends [text] and a carriage return and returns what the adapter printed before its prompt, or
-     * null when no prompt came within [timeoutMs]. Anything left over from an earlier command that
-     * timed out is thrown away first. Throws an [IOException] when the line is [close]d.
+     * null when no prompt came within [timeoutMs]. After a timeout the adapter may still be working
+     * on that command, and a byte sent now would abort it and be lost, or its late answer would be
+     * read as the next one's; so the next command first waits up to [resyncMs] for that late
+     * prompt and throws the late answer away. Throws an [IOException] when the line is [close]d.
      */
     fun command(text: String, timeoutMs: Long): String? {
         synchronized(lock) {
+            if (outstanding) awaitPrompt(resyncMs)
+            outstanding = false
             closed?.let { throw IOException(it) }
             received.setLength(0)
         }
         write((text + "\r").toByteArray(Charsets.US_ASCII))
-        val deadline = System.nanoTime() + timeoutMs * NanosPerMs
         synchronized(lock) {
-            while (true) {
-                val prompt = received.indexOf(">")
-                if (prompt >= 0) {
-                    val answer = received.substring(0, prompt)
-                    received.delete(0, prompt + 1)
-                    return answer
-                }
-                closed?.let { throw IOException(it) }
-                val leftMs = (deadline - System.nanoTime()) / NanosPerMs
-                if (leftMs <= 0) return null
-                lock.wait(leftMs)
-            }
+            val answer = awaitPrompt(timeoutMs)
+            if (answer == null) outstanding = true
+            return answer
         }
     }
 
-    private companion object {
-        const val NanosPerMs = 1_000_000L
+    /** Under [lock]: what came before the next prompt, consumed with it, or null after [timeoutMs]. */
+    private fun awaitPrompt(timeoutMs: Long): String? {
+        val deadline = System.nanoTime() + timeoutMs * NanosPerMs
+        while (true) {
+            val prompt = received.indexOf(">")
+            if (prompt >= 0) {
+                val answer = received.substring(0, prompt)
+                received.delete(0, prompt + 1)
+                return answer
+            }
+            closed?.let { throw IOException(it) }
+            val leftMs = (deadline - System.nanoTime()) / NanosPerMs
+            if (leftMs <= 0) return null
+            lock.wait(leftMs)
+        }
+    }
+
+    companion object {
+        /** How long a command waits for the late prompt of one that timed out. */
+        const val DEFAULT_RESYNC_MS = 2_000L
+        private const val NanosPerMs = 1_000_000L
     }
 }
