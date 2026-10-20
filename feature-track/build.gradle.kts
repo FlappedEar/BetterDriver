@@ -40,6 +40,14 @@ roborazzi {
     outputDir.set(file("src/test/screenshots"))
 }
 
+// The debug and release unit tests share that folder. Roborazzi's finalize step for one variant
+// rewrote it while the other's test task was reading it as an input, and the task failed with
+// NoSuchFileException (track_screen.png on main e5ae8ee, delta_display.png on #260). Run the
+// variants one after the other.
+tasks.matching { it.name == "testReleaseUnitTest" }.configureEach {
+    mustRunAfter(tasks.matching { it.name == "testDebugUnitTest" || it.name == "finalizeTestRoborazziDebug" })
+}
+
 dependencies {
     implementation(project(":core-ui"))
     implementation(project(":timing"))
