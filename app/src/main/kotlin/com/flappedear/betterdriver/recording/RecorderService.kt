@@ -365,8 +365,10 @@ class RecorderService : Service() {
             coachStatus.text?.let { state.putString(RecorderProtocol.KEY_COACH_TEXT, it) }
             state.putBoolean(RecorderProtocol.KEY_COACH_PRAISE, coachStatus.praise)
         }
-        if (a != null) ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
-        if (a != null) HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
+        if (a != null) {
+            ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }
+            HeartRateSource.current?.status()?.let { RecorderProtocol.putHeartRate(state, it) }
+        }
         a?.timing?.state?.let { RecorderProtocol.putTiming(state, it) }
         lastError?.let { state.putString(RecorderProtocol.KEY_ERROR, it) }
         return state
