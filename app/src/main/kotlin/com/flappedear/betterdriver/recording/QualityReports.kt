@@ -4,6 +4,7 @@ import android.content.Context
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import com.flappedear.betterdriver.analysis.quality.FileFrames
+import com.flappedear.betterdriver.analysis.quality.isWide
 import com.flappedear.betterdriver.analysis.quality.PreviousSession
 import com.flappedear.betterdriver.analysis.quality.QualityClip
 import com.flappedear.betterdriver.analysis.quality.QualityReport
@@ -134,7 +135,9 @@ internal class QualityReports(private val store: SessionStore, private val track
             if (frames == null || millis == null) {
                 null
             } else {
-                FileFrames(camera, file.name, frames, millis * MicrosPerMilli)
+                val w = number(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toInt() ?: 0
+                val h = number(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toInt() ?: 0
+                FileFrames(camera, file.name, frames, millis * MicrosPerMilli, wide = isWide(w, h))
             }
         } catch (e: Exception) {
             DebugLog.w(Tag, "frames of ${file.name} not counted", e)

@@ -11,10 +11,12 @@ import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.LogLine
 import com.flappedear.betterdriver.recorder.log.ProcessExit
+import com.flappedear.betterdriver.recorder.video.CameraIds
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /**
@@ -261,28 +263,45 @@ class DriveChecksTest {
     }
 
     @Test
-    fun `a 2_7K file that holds a fifth fewer frames fails the frame rate check`(@TempDir dir: File) {
+    fun `a 2_7K file that holds a fifth fewer frames is reported, not failed`(@TempDir dir: File) {
         // Arek's 2026-10-19 16:18 replay on 0.3.43: 21,603 frames in 446.5 s at 2.7K·60 (FBBD-246).
+        // 2.7K was dropped on 2026-10-20 (FBBD-246 Won't do): its rate is information only.
         val m = wideDrive(dir, frames = 21_603).metric("video.phone.frame_rate")
-        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertEquals(Verdict.INFO, m.verdict, m.how)
         assertEquals(48.38, m.value!!, 0.01)
-        assertEquals(listOf("FBBD-239", "FBBD-246"), m.keys)
+        assertTrue("not judged" in m.how, m.how)
         assertTrue("set to 60 fps" in m.how)
     }
 
     @Test
-    fun `a 2_7K file at the camera's own 59_5 fps passes the frame rate check`(@TempDir dir: File) {
-        // The sensor's 16.814 ms frame time from the same log: 59.47 fps.
-        val m = wideDrive(dir, frames = 26_555).metric("video.phone.frame_rate")
-        assertEquals(Verdict.PASS, m.verdict, m.how)
-        assertEquals(59.47, m.value!!, 0.01)
+    fun `a 1080p file short of its rate still fails beside a 2_7K one`() {
+        val frames = listOf(
+            FileFrames(CameraIds.PHONE, "phone_0001.mp4", 21_603, 446_500_000, 60, wide = true),
+            FileFrames(CameraIds.PHONE, "phone_0002.mp4", 2_400, 60_000_000, 60),
+        )
+        val m = frameRate(CameraIds.PHONE, emptyList(), frames)!!
+        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertEquals(40.0, m.value!!, 0.01)
+        assertTrue("phone_0002.mp4" in m.how && "1 2.7K file(s) not judged" in m.how, m.how)
     }
 
     @Test
-    fun `a file with a set rate but no count is named in the frame rate check`(@TempDir dir: File) {
-        event(460_000_000, EventKinds.VIDEO_START, "camera=phone file=phone_0002.mp4 fps=60")
-        val m = wideDrive(dir, frames = 26_555).metric("video.phone.frame_rate")
-        assertEquals(Verdict.PASS, m.verdict)
+    fun `only a video larger than 1080p either way up is 2_7K`() {
+        assertTrue(isWide(2688, 1512))
+        assertTrue(isWide(1512, 2688))
+        assertFalse(isWide(1920, 1080))
+        assertFalse(isWide(1080, 1920))
+    }
+
+    @Test
+    fun `a file with a set rate but no count is named in the frame rate check`() {
+        val events = listOf(
+            RecorderEvent(500_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4 fps=60"),
+            RecorderEvent(460_000_000, EventKinds.VIDEO_START, "camera=phone file=phone_0002.mp4 fps=60"),
+        )
+        val frames = listOf(FileFrames(CameraIds.PHONE, "phone_0001.mp4", 3_597, 60_000_000, 60))
+        val m = frameRate(CameraIds.PHONE, events, frames)!!
+        assertEquals(Verdict.PASS, m.verdict, m.how)
         assertTrue("not counted: phone_0002.mp4" in m.how, m.how)
     }
 
