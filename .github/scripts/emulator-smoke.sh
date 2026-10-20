@@ -38,6 +38,16 @@ status=0
 built=0
 bash .github/scripts/wait-apk-build.sh || { status=1; built=1; }
 
+# With the APKs built in the background the tests start about a minute after boot, while Android
+# is still busy with its post-boot work, and WideEncoderTest then loses frames (220 of 241). Wait
+# until the emulator's 1-minute load falls below its 2 cores, at most 3 min.
+for _ in $(seq 36); do
+  load=$(adb shell cat /proc/loadavg 2>/dev/null | cut -d' ' -f1)
+  echo "Emulator load: ${load:-?}"
+  awk -v l="${load:-99}" 'BEGIN { exit !(l < 2) }' && break
+  sleep 5
+done
+
 if [ "$built" -eq 0 ] && [ "$part" != faults ]; then
   ./gradlew :app:connectedDebugAndroidTest --stacktrace || status=1
   # The track screen's time and garbage per update (FBBD-266, TrackScreenFramesTest), to compare builds.
