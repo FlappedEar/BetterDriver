@@ -36,7 +36,11 @@ class LoggedSession(val id: String) {
      * process ended) its last GNSS second or event.
      */
     fun inferredEndMicros(): Long =
-        endMicros ?: maxOf(seconds.maxOfOrNull { it.tMicros } ?: 0L, events.maxOfOrNull { it.tMicros } ?: 0L)
+        endMicros ?: maxOf(
+            seconds.maxOfOrNull { it.tMicros } ?: 0L,
+            events.maxOfOrNull { it.tMicros } ?: 0L,
+            heartRate.maxOfOrNull { it.lastMicros } ?: 0L,
+        )
 }
 
 /**

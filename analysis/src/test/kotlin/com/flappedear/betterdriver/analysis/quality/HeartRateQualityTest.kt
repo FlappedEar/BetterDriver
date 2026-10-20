@@ -66,12 +66,22 @@ class HeartRateQualityTest {
     }
 
     @Test
+    fun `a strap that came for the last minute of ten fails the rate`() {
+        val sets = (540 until 600).map { hr(it * second) }
+        val s = section(sets, listOf(device), 600 * second)
+        assertEquals(Verdict.FAIL, s.metric("hr.rate").verdict)
+        assertEquals(0.1, s.metric("hr.rate").value!!, 1e-9)
+        assertEquals(Verdict.PASS, s.metric("hr.gap").verdict)
+    }
+
+    @Test
     fun `a drop that comes back passes and its wait is no gap`() {
         val drop = RecorderEvent(30 * second + 1, HeartRateLogIds.DISCONNECTED, "gatt status 8")
         val sets = (0..30).map { hr(it * second) } + (38..90).map { hr(it * second) }
         val s = section(sets, listOf(device, drop), 90 * second)
         assertEquals(Verdict.PASS, s.metric("hr.reconnect").verdict)
         assertEquals(0.0, s.metric("hr.reconnect").value)
+        assertEquals(Verdict.PASS, s.metric("hr.rate").verdict)
         assertEquals(Verdict.PASS, s.metric("hr.gap").verdict)
         assertEquals(listOf(30 * second + 1), s.notes.map { it.tMicros })
         assertEquals("heart-rate monitor link dropped, back after 8.0 s", s.notes.single().text)

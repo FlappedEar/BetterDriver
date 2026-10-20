@@ -42,7 +42,7 @@ internal fun heartRateSection(
         )
     } else {
         listOf(
-            rate(n, windows.minOf { it.tMicros }, windows.maxOf { it.lastMicros }, name),
+            rate(n, maxOf(endMicros, windows.maxOf { it.lastMicros }), name),
             gap(windows),
             reconnect(drops),
             info(
@@ -54,14 +54,18 @@ internal fun heartRateSection(
     return QualitySection("Heart rate", metrics, notes)
 }
 
-private fun rate(n: Int, first: Long, last: Long, name: String): QualityMetric {
-    if (n < 2 || last <= first) {
-        return notMeasured("hr.rate", "Heart rate samples", HrRateCriterion, "only one heart rate from $name")
+/**
+ * Heart rates per second of the whole session, from its start to [end]: a strap that came late,
+ * stopped early or dropped for long sends too few for its session.
+ */
+private fun rate(n: Int, end: Long, name: String): QualityMetric {
+    if (end <= 0L) {
+        return notMeasured("hr.rate", "Heart rate samples", HrRateCriterion, "session length not known")
     }
-    val hz = (n - 1) / seconds(last - first)
+    val hz = n / seconds(end)
     return judged(
         "hr.rate", "Heart rate samples", hz, "Hz", hz >= MinHrRateHz, Basis.MEASURED, HrRateCriterion,
-        "$n heart rates from $name over ${format(seconds(last - first))} s, first to last",
+        "$n heart rates from $name over the session's ${format(seconds(end))} s",
     )
 }
 
