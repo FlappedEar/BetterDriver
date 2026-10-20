@@ -88,8 +88,11 @@ phase startRecording --no-restart
 # A slow emulator can leave the launcher focused after the start (on main too, 576dd59), so this
 # waits up to 20 s and starts the app once more halfway.
 open_app
+# Window focus can stay on the launcher after the track screen's rotation to landscape although the
+# app is the resumed activity (seen in this job's activity dump), so either counts as in front.
 for i in $(seq 1 20); do
   focus=$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r')
+  focus="$focus $(adb shell dumpsys activity activities | grep -m1 topResumedActivity | tr -d '\r')"
   echo "$focus" | grep -q "$app" && break
   [ "$i" = 10 ] && open_app
   sleep 1
