@@ -105,13 +105,14 @@ class ReplayDriveTest {
      */
     private fun earlierOuting() {
         val asset = { name: String -> d.app.assets.open("demo/$name").use { it.readBytes().decodeToString() } }
-        val track = TrackJson.decode(asset("silesia-ring.track.json"))
+        // Saving a track already on the phone raises its revision, and a reference fits one revision only:
+        // it is built for the track as saved (Codex).
+        val track = TrackStore(File(d.app.filesDir, "tracks")).save(TrackJson.decode(asset("silesia-ring.track.json")))
         val replay = SessionReplay.read(asset("silesia-ring.replay"), 0L)
         val fixes = (0 until LoopSeconds * replay.rateHz).asSequence().mapNotNull { n ->
             SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
         }
         val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
-        TrackStore(File(d.app.filesDir, "tracks")).save(track)
         CoachReferenceStore(File(d.app.filesDir, "coach/references")).save(reference.copy(sessions = emptyList()))
     }
 
