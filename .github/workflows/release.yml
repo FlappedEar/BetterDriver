@@ -76,9 +76,10 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
         run: bash .github/scripts/release-acceptance.sh "$VERSION"
 
-  # The release goes out only for a commit whose own CI run (ci.yml on the
-  # push to main) finished green. A release can start while that run is still
-  # going, so wait for it here.
+  # The release goes out only for a commit whose CI passed: its own run (ci.yml
+  # on the push to main), or the pull request run that checked the very same
+  # source tree (the "CI passed (tree ...)" job of a PR squash-merged while up to
+  # date with main). Otherwise it waits for main's run of this commit.
   ci-green:
     name: CI is green on this commit
     needs: version
@@ -86,9 +87,32 @@ jobs:
     timeout-minutes: 70
     permissions:
       actions: read
+      checks: read
+      pull-requests: read
       contents: read
     steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: A pull request run of this same tree that passed
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tree=$(git rev-parse 'HEAD^{tree}')
+          echo "Tree of $GITHUB_SHA: $tree"
+          for head in $(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[] | select(.merged_at != null) | .head.sha'); do
+            url=$(gh api -X GET "repos/$GITHUB_REPOSITORY/commits/$head/check-runs" -f check_name="CI passed (tree $tree)" \
+              --jq '[.check_runs[] | select(.conclusion == "success")][0].html_url // ""')
+            if [ -n "$url" ]; then
+              echo "CI passed on this exact tree in the pull request run: $url"
+              echo "found=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          done
+          echo "No pull request run passed on this tree; waiting for main's CI run of $GITHUB_SHA."
       - name: Wait for the CI run of this commit
+        if: steps.pr.outputs.found != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

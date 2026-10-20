@@ -2,9 +2,9 @@ name: CI
 
 # Unit tests, Android lint, detekt, the APK build and the emulator smoke tests
 # on every pull request and on main. They run as parallel jobs, so the slowest
-# one sets the wait. Any
-# failing job fails the run, and release.yml only publishes a commit whose
-# whole run succeeded.
+# one sets the wait. Any failing job fails the run, and the last job, "CI passed",
+# names the source tree it checked. release.yml publishes a commit only when a
+# CI run of that commit, or a pull request run of the very same tree, passed.
 on:
   pull_request:
   push:
@@ -14,11 +14,46 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels its older run. On main every commit keeps
+# its own run (grouped by commit): a release may be waiting for it, and a merge
+# must never cancel it.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # What changed, and the source tree this run checks. A change to documentation
+  # only (docs/ and Markdown files outside src/) skips the emulator jobs.
+  changes:
+    name: Changes
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.diff.outputs.app }}
+      tree: ${{ steps.diff.outputs.tree }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Changed files
+        id: diff
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          echo "tree=$(git rev-parse 'HEAD^{tree}')" >> "$GITHUB_OUTPUT"
+          app=true
+          # A manual run, a new branch or an unknown base checks everything.
+          if [ "$GITHUB_EVENT_NAME" != workflow_dispatch ] && [ -n "$BASE" ] \
+            && [ "$BASE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            files=$(git diff --name-only "$BASE" HEAD)
+            echo "$files"
+            if [ -n "$files" ] && ! grep -vE '^docs/|^([^/]+/)*[^/]+\.md$' <<<"$files" | grep -q . \
+              && ! grep -E '\.md$' <<<"$files" | grep -q '/src/'; then
+              app=false
+              echo "::notice title=Docs only::Only documentation changed; the emulator jobs are skipped."
+            fi
+          fi
+          echo "app=$app" >> "$GITHUB_OUTPUT"
+
   check:
     name: ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -122,12 +157,26 @@ jobs:
   # kills the UI process during a recording (FBBD-72, ui-kill.sh), injects
   # faults into a recording (FBBD-34, 69, 43, 64, 63, faults.sh) and runs the
   # permissions flow (FBBD-35, permissions.sh).
+  #
+  # Two emulators side by side (PART in emulator-smoke.sh): the Gradle smoke
+  # tests on one, the kill, fault and permission scripts on the other.
   emulator:
-    name: Emulator smoke tests
+    name: ${{ matrix.name }}
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Emulator smoke tests
+            part: tests
+          - name: Emulator faults and permissions
+            part: faults
     env:
       AVD_KEY: avd-34-google_apis-x86_64-pixel_6-v1
+      APK_BUILD_IN_BACKGROUND: 1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -135,6 +184,12 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
+      # Gradle builds the app and test APKs while the emulator is restored and
+      # boots; the scripts wait for it (wait-apk-build.sh).
+      - name: Build the app and test APKs (in the background)
+        run: |
+          mkdir -p build
+          nohup bash -c './gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace > build/apk-build.log 2>&1; echo $? > build/apk-build.status' >/dev/null 2>&1 &
       # Hardware acceleration for the emulator, as the emulator runner's README says.
       - name: Enable KVM
         run: |
@@ -174,16 +229,17 @@ jobs:
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
-          script: bash .github/scripts/emulator-smoke.sh
+          script: PART=${{ matrix.part }} bash .github/scripts/emulator-smoke.sh
       - name: Upload logcat and test reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: emulator-smoke
+          name: emulator-${{ matrix.part }}
           path: |
             build/emulator/
             app/build/reports/androidTests/
             app/build/outputs/androidTest-results/
+            build/apk-build.log
           retention-days: 7
 
   # Arek's Demo track drive, done by CI instead of by him (FBBD-192): the Silesia Ring laps built into
@@ -193,10 +249,13 @@ jobs:
   # is on the run's summary page and in the replay-drive artifact.
   replay:
     name: Replay drive
+    needs: changes
+    if: needs.changes.outputs.app == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
       AVD_KEY: avd-34-google_apis-x86_64-pixel_6-v1
+      APK_BUILD_IN_BACKGROUND: 1
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -204,9 +263,11 @@ jobs:
           distribution: temurin
           java-version: 17
       - uses: gradle/actions/setup-gradle@v4
-      # Built before the emulator starts, so the drive does not wait for Gradle.
-      - name: Build the app and test APKs
-        run: ./gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace
+      # Built while the emulator is restored and boots; replay-drive.sh waits for it.
+      - name: Build the app and test APKs (in the background)
+        run: |
+          mkdir -p build
+          nohup bash -c './gradlew :app:assembleDebug :app:assembleDebugAndroidTest --stacktrace > build/apk-build.log 2>&1; echo $? > build/apk-build.status' >/dev/null 2>&1 &
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -250,6 +311,27 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: replay-drive
-          path: build/replay-drive/
+          path: |
+            build/replay-drive/
+            build/apk-build.log
           if-no-files-found: ignore
           retention-days: 14
+
+  # One result for the whole run, named after the source tree it checked. A
+  # release of a commit with that same tree (a pull request squash-merged while
+  # up to date with main) reuses this result instead of waiting for main's run
+  # (release.yml, ci-green). Skipped emulator jobs (docs only) count as passed.
+  passed:
+    name: CI passed (tree ${{ needs.changes.outputs.tree }})
+    needs: [changes, check, emulator, replay]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every job passed or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Results: $RESULTS"
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) echo "::error::A CI job ended $r."; exit 1 ;; esac
+          done
