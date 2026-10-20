@@ -118,6 +118,8 @@ class CoachService : Service() {
         // low-latency path too when they are on. The delay set in the settings is used only when
         // Android gives no audio clock.
         val clips = set.voice == VoiceMode.PreRendered
+        // The output as known before measuring: one that changes meanwhile is measured again (FBBD-255).
+        val before = routes?.outputs?.device()?.id
         val live = OutputDelayProbe.probe()
         val clip = if (clips) OutputDelayProbe.probe(lowLatency = true) else null
         val delays = SessionDelays(set.audioDelayMillis)
@@ -133,7 +135,7 @@ class CoachService : Service() {
         voice?.use(settings.voice, settings.speech, settings.language)
         active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays, delay.source)
             .also { it.timingOutput = output }
-        routes?.watch(clips, live, clip)
+        routes?.watch(clips, live, clip, before)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */

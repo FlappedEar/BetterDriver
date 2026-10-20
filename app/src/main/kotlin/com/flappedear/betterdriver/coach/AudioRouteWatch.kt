@@ -66,11 +66,13 @@ internal class AudioRouteWatch(
 
     /**
      * Watches a session with pre-rendered [clips] on or off, whose start [live] and [clip] probes
-     * measured one device. If they did not, the output is measured again; after that, when it changes.
+     * measured one device, the output being [before] when they started. If they did not, or the output
+     * changed since (before Android 13 the probes cannot tell), it is measured again; after that, when it changes.
      */
-    fun watch(clips: Boolean, live: Probed?, clip: Probed?) {
-        val measured = isRouted(measuredId(clips, live, clip))
-        watched = Watched(clips, if (measured) outputs.device()?.id else NotMeasured)
+    fun watch(clips: Boolean, live: Probed?, clip: Probed?, before: Int?) {
+        val now = outputs.device()?.id
+        val measured = isRouted(measuredId(clips, live, clip)) && now == before
+        watched = Watched(clips, if (measured) now else NotMeasured)
         handler.removeCallbacks(poll)
         handler.postDelayed(poll, PollMillis)
         if (!measured) settle()
