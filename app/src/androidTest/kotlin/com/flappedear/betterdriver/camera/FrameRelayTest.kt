@@ -79,7 +79,7 @@ class FrameRelayTest {
         val counts = relay.counts()
         assertTrue(counts, counts.endsWith("relay_failed=0"))
         val files = dir.listFiles().orEmpty().filter { it.length() > 0 }.sortedBy { it.name }
-        assertTrue("several files: ${files.map { it.name }}", files.size >= 2)
+        assertTrue("several files: ${files.map { it.name }} ($counts)", files.size >= 2)
         val times = files.map { frameTimes(it) }
         val frames = times.sumOf { it.size }
         assertTrue("$frames of $drawn frames in the files ($counts)", frames >= drawn - 2)

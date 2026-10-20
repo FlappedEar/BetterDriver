@@ -76,6 +76,9 @@ internal class WideRecorder(
     private var session: CameraCaptureSession? = null
     private var file: File? = null
     private var ended = false
+
+    /** Whether [Listener.started] was called: a session made again after the relay ([checkRelay]) is no new file. */
+    private var announced = false
     private var openRetries = 0
 
     /** The sensor timestamp of the newest frame, and where the current file starts; 0 before any. */
@@ -309,10 +312,48 @@ internal class WideRecorder(
                 set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, advertisedRange())
             }.build()
             s.setRepeatingRequest(request, frames, background)
-            file?.let(listener::started)
+            if (!announced) {
+                announced = true
+                file?.let(listener::started)
+            }
+            if (relay != null) main.postDelayed(::checkRelay, RelayCheckMs)
         } catch (e: Exception) {
             DebugLog.w(Tag, "could not start ${target.label}", e)
             finish(error = "start failed: ${e.javaClass.simpleName}", full = false)
+        }
+    }
+
+    /**
+     * The relay is new on the phone (FBBD-246): if the camera has given frames for [RelayCheckMs] but
+     * none has reached a file, the camera is moved to draw straight into the encoder, as before the
+     * relay, rather than lose the recording.
+     */
+    private fun checkRelay() {
+        val r = relay
+        val camera = device
+        val e = encoder
+        if (ended || r == null || camera == null || e == null) return
+        if (firstNanos.get() > 0 || cameraFrames.get() == 0L) return
+        // Only from Android 10, where cameraSurface() made the relay.
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
+        DebugLog.w(Tag, "no frame through the relay in $RelayCheckMs ms (${r.counts()}): camera to the encoder")
+        relay = null
+        val s = session
+        session = null
+        background.post {
+            runCatching { s?.close() }
+            r.close()
+            main.post { if (!ended) drawStraight(camera, e) }
+        }
+    }
+
+    @Suppress("TooGenericExceptionCaught") // As in onOpened: a refused surface ends the recording.
+    private fun drawStraight(camera: CameraDevice, e: WideEncoder) {
+        try {
+            createSession(camera, e.surface)
+        } catch (x: Exception) {
+            DebugLog.w(Tag, "capture session not created", x)
+            finish(error = "session failed: ${x.javaClass.simpleName}", full = false)
         }
     }
 
@@ -381,6 +422,9 @@ internal class WideRecorder(
         const val Tag = "WideRecorder"
         const val MaxOpenRetries = 3
         const val OpenRetryMs = 500L
+
+        /** A keyframe reaches the encoder's output within a few frames; 2 s is far beyond that. */
+        const val RelayCheckMs = 2_000L
 
         /** About half a second of frames at 60 fps: longer than a frame takes to reach the relay. */
         const val RecentSensorTimes = 32
