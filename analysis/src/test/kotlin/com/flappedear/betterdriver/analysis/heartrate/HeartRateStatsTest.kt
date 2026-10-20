@@ -27,7 +27,7 @@ class HeartRateStatsTest {
     @Test
     fun `the session's heart rate is the average, highest and lowest recorded`() {
         val s = heartRateStats(session(10.0 to 100.0, 11.0 to 120.0, 12.0 to 131.0))!!
-        assertEquals(HeartRateStats(117, 131, 100, 3, 10.0, 12.0), s)
+        assertEquals(HeartRateStats(117, 131, 100, 3, 10.0, 12.0, 2.0), s)
     }
 
     @Test
@@ -39,6 +39,16 @@ class HeartRateStatsTest {
         assertEquals(110, stats[0]!!.maxBpm)
         assertEquals(130, stats[1]!!.averageBpm)
         assertNull(stats[2])
+    }
+
+    @Test
+    fun `a strap that dropped out is covered only while it was sending`() {
+        // A minute at the start, then nothing for 58 minutes, then a minute at the end.
+        val start = (0..60).map { it.toDouble() to 120.0 }
+        val end = (3540..3600).map { it.toDouble() to 130.0 }
+        val s = heartRateStats(session(*(start + end).toTypedArray()))!!
+        assertEquals(120.0, s.coveredSeconds, 1e-9)
+        assertEquals(3600.0, s.lastSeconds - s.firstSeconds, 1e-9)
     }
 
     @Test

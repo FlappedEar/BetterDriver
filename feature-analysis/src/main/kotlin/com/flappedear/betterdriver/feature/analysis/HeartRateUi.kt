@@ -8,12 +8,13 @@ import kotlin.math.roundToInt
 
 /**
  * [ui] with the heart rate [session] recorded (FBBD-225): the whole session's and each lap's.
- * [device] is the strap's name. A session or lap without heart rate shows none (UI-109).
+ * The minutes are how long the strap was sending, gaps left out. [device] is the strap's name.
+ * A session or lap without heart rate shows none (UI-109).
  */
 fun withHeartRate(ui: AnalysisUi, analysis: SessionAnalysis, session: TelemetrySession, device: String?): AnalysisUi {
     val whole = heartRateStats(session) ?: return ui
     val laps = lapHeartRates(session, analysis.laps.timedLaps)
-    val minutes = ((whole.lastSeconds - whole.firstSeconds) / SecondsPerMinute).roundToInt().coerceAtLeast(1)
+    val minutes = (whole.coveredSeconds / SecondsPerMinute).roundToInt().coerceAtLeast(1)
     return ui.copy(
         heartRate = HeartRateUi(device, whole.averageBpm, whole.maxBpm, whole.minBpm, minutes),
         laps = ui.laps.map { row ->
