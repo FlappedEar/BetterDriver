@@ -49,29 +49,31 @@ private fun withoutBluetoothNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.DEMO_GNSS -> "For trying the app"
     EquipmentModel.DEMO_TRACK -> "Laps and coach cues on a made-up circuit"
     EquipmentModel.PHONE_CAMERA -> "Built in"
+    EquipmentModel.OBD_WIFI -> "192.168.0.10 : 35000"
     else -> ""
 }
 
 /**
- * Bluetooth GPS receivers already paired in Android's settings: NMEA receivers (Qstarz, Garmin GLO
- * and the like, FBBD-108) and VBOX Sports (FBBD-116). They speak Bluetooth Classic, which the app
- * does not scan for.
+ * Bluetooth devices already paired in Android's settings: NMEA receivers (Qstarz, Garmin GLO and
+ * the like, FBBD-108), VBOX Sports (FBBD-116) and OBD-II adapters (FBBD-121, UI-105 C). They speak
+ * Bluetooth Classic, which the app does not scan for.
  */
 @Composable
-internal fun PairedGpsSection(pairedGps: List<NearbyDevice>, onAdd: (NearbyDevice) -> Unit) {
-    SectionLabel("Paired Bluetooth GPS")
-    if (pairedGps.isNotEmpty()) {
+internal fun PairedDevicesSection(paired: List<NearbyDevice>, onAdd: (NearbyDevice) -> Unit) {
+    SectionLabel("Paired Bluetooth devices")
+    if (paired.isNotEmpty()) {
         ShellCard {
-            pairedGps.forEachIndexed { i, d ->
-                ListRow(d.name, divider = i > 0) {
+            paired.forEachIndexed { i, d ->
+                val note = if (d.model == EquipmentModel.OBD_BLUETOOTH) "OBD-II adapter" else null
+                ListRow(d.name, divider = i > 0, supporting = note) {
                     FilledTonalButton(onClick = { onAdd(d) }) { Text("Add") }
                 }
             }
         }
     }
     DimText(
-        "Pair a VBOX Sport, or a GPS receiver that sends NMEA such as a Qstarz or Garmin GLO, " +
-            "in Android's Bluetooth settings.",
+        "Pair a VBOX Sport, a GPS receiver that sends NMEA such as a Qstarz or Garmin GLO, or an OBD-II " +
+            "adapter such as a vLinker, in Android's Bluetooth settings.",
     )
 }
 

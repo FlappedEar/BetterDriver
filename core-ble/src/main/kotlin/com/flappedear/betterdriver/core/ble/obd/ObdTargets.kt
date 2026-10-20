@@ -19,8 +19,13 @@ import java.net.InetSocketAddress
 
 private const val WifiConnectTimeoutMs = 3_000
 
-/** A Wi-Fi ELM327 at [host]:[port], connected through [network] (FBBD-15). */
-class WifiObdTarget(val host: String, val port: Int, private val network: TcpNetwork) : ObdTarget {
+/** A Wi-Fi ELM327 [name] at [host]:[port], connected through [network] (FBBD-15). */
+class WifiObdTarget(
+    val host: String,
+    val port: Int,
+    private val network: TcpNetwork,
+    override val name: String = "Wi-Fi adapter",
+) : ObdTarget {
     override val where = "$host:$port"
     override val transport = ObdTransport.Wifi
 
@@ -43,9 +48,10 @@ class WifiObdTarget(val host: String, val port: Int, private val network: TcpNet
  * is cancelled first because it slows a classic connect down a lot.
  */
 @SuppressLint("MissingPermission")
-class SppObdTarget(context: Context, val name: String, val address: String) : ObdTarget {
+class SppObdTarget(context: Context, name: String, val address: String) : ObdTarget {
     private val appContext = context.applicationContext
-    override val where = "$name (Bluetooth)"
+    override val name = name.ifEmpty { address }
+    override val where = "${this.name} (Bluetooth)"
     override val transport = ObdTransport.BluetoothClassic
 
     override fun open(bytes: ObdBytes): ObdConnection {
@@ -80,13 +86,15 @@ class SppObdTarget(context: Context, val name: String, val address: String) : Ob
     }
 }
 
+/** A paired Bluetooth device whose name is an OBD-II adapter's, offered in Add equipment (FBBD-121). */
+data class PairedObdAdapter(val name: String, val address: String)
+
 /**
- * Paired Bluetooth devices whose name is an OBD-II adapter's ([ObdAdapterNames]), as adapters to
- * try (FBBD-121): a Classic or dual-mode one over SPP, a Bluetooth LE only one over GATT. Empty
- * when Bluetooth is off or BLUETOOTH_CONNECT is missing.
+ * Paired Bluetooth devices whose name is an OBD-II adapter's ([ObdAdapterNames]), for Add equipment
+ * (UI-105 C). Empty when Bluetooth is off or BLUETOOTH_CONNECT is missing.
  */
 @SuppressLint("MissingPermission")
-fun pairedObdTargets(context: Context): List<ObdTarget> {
+fun pairedObdAdapters(context: Context): List<PairedObdAdapter> {
     val adapter = bluetooth(context) ?: return emptyList()
     val bonded: Set<BluetoothDevice> = try {
         adapter.bondedDevices.orEmpty()
@@ -96,16 +104,40 @@ fun pairedObdTargets(context: Context): List<ObdTarget> {
     return bonded.mapNotNull { d ->
         try {
             val name: String? = d.name
-            when {
-                !ObdAdapterNames.isCandidate(name) -> null
-                d.type == BluetoothDevice.DEVICE_TYPE_LE -> BleObdTarget(context, name.orEmpty(), d.address)
-                else -> SppObdTarget(context, name.orEmpty(), d.address)
-            }
+            if (ObdAdapterNames.isCandidate(name)) PairedObdAdapter(name.orEmpty(), d.address) else null
         } catch (_: SecurityException) {
             null
         }
-    }.sortedBy { it.where.lowercase() }
+    }.sortedBy { it.name.lowercase() }
 }
+
+/**
+ * How the listed Bluetooth adapter at [address] is reached (FBBD-121): a paired Classic or
+ * dual-mode one over the serial port profile, a Bluetooth LE only one, or one that is not paired
+ * (only a Bluetooth LE adapter works without pairing), over GATT. Null with Bluetooth off.
+ */
+@SuppressLint("MissingPermission")
+fun bluetoothObdTransport(context: Context, address: String): ObdTransport? {
+    val adapter = bluetooth(context) ?: return null
+    val device = try {
+        adapter.bondedDevices.orEmpty().firstOrNull { it.address == address }
+    } catch (_: SecurityException) {
+        null
+    }
+    return if (device == null || device.type == BluetoothDevice.DEVICE_TYPE_LE) {
+        ObdTransport.BluetoothLe
+    } else {
+        ObdTransport.BluetoothClassic
+    }
+}
+
+/** The listed Bluetooth adapter [name] at [address] as a target, over its transport ([bluetoothObdTransport]). */
+fun bluetoothObdTarget(context: Context, name: String, address: String): ObdTarget =
+    when (bluetoothObdTransport(context, address)) {
+        ObdTransport.BluetoothLe -> BleObdTarget(context, name, address)
+        // With Bluetooth off either one fails to open, saying so.
+        else -> SppObdTarget(context, name, address)
+    }
 
 internal fun bluetooth(context: Context): BluetoothAdapter? =
     context.applicationContext.getSystemService(BluetoothManager::class.java)?.adapter?.takeIf {

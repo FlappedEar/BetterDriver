@@ -24,8 +24,10 @@ const val SetupFileFormat = "betterdriver-setup"
 /**
  * The setup file version this build writes. Newer files are refused rather than half read.
  * Version 2 (FBBD-105) lists equipment by family; version 1 files are read through [upgradeV1].
+ * Version 3 (FBBD-121, UI-105 C) lists OBD-II adapters as equipment; older files get the Wi-Fi
+ * adapter the app used to look for by itself ([upgradeV2]).
  */
-const val SetupFileVersion = 2
+const val SetupFileVersion = 3
 
 private val json = Json {
     prettyPrint = true
@@ -56,7 +58,8 @@ object SetupJson {
         val version = root["version"]?.jsonPrimitive?.int ?: throw SetupFormatException("no version")
         if (version > SetupFileVersion) throw SetupFormatException("setup file version $version is newer than this app")
         val setup = root["setup"] ?: throw SetupFormatException("no setup")
-        json.decodeFromJsonElement<Setup>(if (version < SetupFileVersion) upgradeV1(setup) else setup)
+        val v2 = if (version < 2) upgradeV1(setup) else setup
+        json.decodeFromJsonElement<Setup>(if (version < SetupFileVersion) upgradeV2(v2) else v2)
     } catch (e: SerializationException) {
         throw SetupFormatException("unreadable setup file", e)
     } catch (e: IllegalArgumentException) {
@@ -78,6 +81,23 @@ private fun upgradeV1(setup: JsonElement): JsonElement {
     val obj = setup as? JsonObject
     val items = obj?.get("equipment") as? JsonArray ?: return setup
     return JsonObject(obj + ("equipment" to JsonArray(items.map(::upgradeV1Item))))
+}
+
+/** The id of the Wi-Fi OBD-II adapter a version 2 setup gets ([upgradeV2]). */
+internal const val UpgradedWifiObdId = "obd-wifi"
+
+/**
+ * Before version 3 the recorder looked for a Wi-Fi OBD-II adapter in every session without it being
+ * listed (FBBD-15). Now only listed adapters are used (UI-105 C), so an older setup gets that
+ * adapter listed and keeps recording car data as before; Arek can remove it.
+ */
+private fun upgradeV2(setup: JsonElement): JsonElement {
+    val obj = setup as? JsonObject ?: return setup
+    val items = obj["equipment"] as? JsonArray ?: JsonArray(emptyList())
+    val wifi = json.encodeToJsonElement(
+        Equipment(UpgradedWifiObdId, EquipmentModel.OBD_WIFI, EquipmentModel.OBD_WIFI.label, WifiObdAddress),
+    )
+    return JsonObject(obj + ("equipment" to JsonArray(items + wifi)))
 }
 
 private fun upgradeV1Item(item: JsonElement): JsonElement {
