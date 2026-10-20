@@ -424,13 +424,45 @@ class SetupTest {
                 EquipmentModel.GOPRO,
                 EquipmentModel.GOPRO_FILES,
                 EquipmentModel.PHONE_CAMERA,
+                EquipmentModel.OBD_WIFI,
             ),
             s.equipment.map { it.model },
         )
-        assertEquals(listOf(null, GoProModel.HERO11_BLACK, GoProModel.HERO8_BLACK, null), s.equipment.map { it.goPro })
+        assertEquals(
+            listOf(null, GoProModel.HERO11_BLACK, GoProModel.HERO8_BLACK, null, null),
+            s.equipment.map { it.goPro },
+        )
         assertEquals("RaceBox Mini S", s.equipment(s.session.gnssId)?.modelLabel)
         assertEquals(VideoMode(VideoSize.UHD, 60), s.equipment("b")?.videoMode)
-        assertEquals(s, SetupJson.decode(SetupJson.encode(s)), "written back as version 2")
-        assertTrue(SetupJson.encode(s).contains("\"version\": 2"))
+        assertEquals(s, SetupJson.decode(SetupJson.encode(s)), "written back as version 3")
+        assertTrue(SetupJson.encode(s).contains("\"version\": 3"))
+    }
+
+    @Test
+    fun version2FilesGetTheWifiObdAdapterTheRecorderUsedToLookFor() {
+        val v2 = SetupJson.encode(Setup.fresh(ids)).replace("\"version\": 3", "\"version\": 2")
+        val s = SetupJson.decode(v2)
+        val wifi = s.equipment.last()
+        assertEquals(EquipmentModel.OBD_WIFI, wifi.model)
+        assertEquals(WifiObdAddress, wifi.address)
+        assertEquals(listOf(wifi), s.active().carData)
+        // Written back as version 3, it is not added again.
+        assertEquals(s, SetupJson.decode(SetupJson.encode(s)))
+    }
+
+    @Test
+    fun obdAdaptersAreCarDataUsedInEverySessionAndListedOncePerAddress() {
+        val s = Setup.fresh(ids)
+            .addEquipment(EquipmentModel.OBD_BLUETOOTH, "vLinker MC+", "AA:BB", ids)
+            .addEquipment(EquipmentModel.OBD_BLUETOOTH, "vLinker MC+", "AA:BB", ids)
+            .addEquipment(EquipmentModel.OBD_WIFI, address = WifiObdAddress, newId = ids)
+        val active = s.active()
+        assertEquals(listOf("vLinker MC+", "Wi-Fi OBD-II adapter"), active.carData.map { it.name })
+        assertTrue(active.carData.all { it.kind == EquipmentKind.CAR_DATA })
+        assertTrue(active.cameras.none { it.kind == EquipmentKind.CAR_DATA })
+        assertEquals(null, active.gnss, "an adapter is not a receiver")
+        val removed = s.removeEquipment(active.carData.first().id)
+        assertEquals(listOf(EquipmentModel.OBD_WIFI), removed.active().carData.map { it.model })
+        assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.OBD_BLUETOOTH, newId = ids) }
     }
 }

@@ -85,7 +85,11 @@ class ObdConnectorTest {
         assertTrue(Pair("rpm", 1726.0) in seen.values)
         assertTrue(Pair("speed", 50.0) in seen.values)
         assertEquals(ObdLinkState.Connected, status?.state)
-        assertEquals("ELM327 v1.4b · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V", status?.detail)
+        // The page names the adapter first (UI-106 A).
+        assertEquals(
+            "OBDLink MX+ (Bluetooth) · ELM327 v1.4b · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V",
+            status?.detail,
+        )
         // Identity is asked once per connection, after ATI and before the car.
         val cmds = elm.commands.toList()
         val ati = cmds.indexOf("ATI")
@@ -152,7 +156,7 @@ class ObdConnectorTest {
         val (seen, status) = connect({ rounds++; emptyList() }) { rounds >= 5 }
         assertEquals(1, seen.logs.count { it.startsWith("no adapter:") }, seen.logs.toString())
         assertEquals(ObdLinkState.Searching, status?.state)
-        assertEquals("Phone not on the adapter's Wi-Fi", status?.detail)
+        assertEquals("No adapter to try", status?.detail)
     }
 
     @Test

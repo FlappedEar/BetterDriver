@@ -41,6 +41,7 @@ import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionTransferState
 import com.flappedear.betterdriver.shell.SessionsScreen
+import com.flappedear.betterdriver.shell.ObdAdapterLabel
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SettingsScreen
@@ -103,7 +104,7 @@ abstract class MainScreensLayoutTest(private val device: String) {
                 recording = false,
                 status = ObdStatus(
                     ObdLinkState.Connected,
-                    "ELM327 v1.5 · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V",
+                    "vLinker MC+ · ELM327 v2.3 · ISO 15765-4 CAN (11 bit, 500 kbaud) · 12.4V",
                     listOf(
                         ObdReading("rpm", "RPM", "rpm", 2850.0, 9.1),
                         ObdReading("speed", "Speed", "km/h", 92.0, 9.0),
@@ -112,6 +113,7 @@ abstract class MainScreensLayoutTest(private val device: String) {
                         ObdReading("fuel_level", "Fuel level", "%", 62.0, 0.2),
                     ),
                 ),
+                adapter = ObdAdapterLabel("vLinker MC+", "Bluetooth"),
             ),
             onBack = {},
         )
