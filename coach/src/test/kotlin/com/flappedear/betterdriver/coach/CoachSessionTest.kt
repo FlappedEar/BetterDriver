@@ -50,6 +50,30 @@ class CoachSessionTest {
     }
 
     @Test
+    fun `a cue waits for the voice to finish the phrase before it, then is said on its straight`() {
+        fun corner2(busy: LongRange?): Pair<CoachEvent, List<Long>> {
+            val session = CoachSession(CoachSettings(Verbosity.Full), track, reference())
+            val events = mutableListOf<CoachEvent>()
+            val saidAt = mutableListOf<Long>()
+            for (f in sim.drive(List(5) { early2 }).fixes) {
+                val free = busy == null || f.tMicros !in busy
+                events += session.onFix(f, f.tMicros, voiceFree = free) { saidAt.add(f.tMicros) }.events
+            }
+            return events.single { it.kind == CoachEvents.CUE && "kind=Corner" in it.text } to saidAt
+        }
+        val (free, _) = corner2(null)
+        // The voice is still saying something when the cue would go and for half a second after (FBBD-253).
+        val busy = free.tMicros..free.tMicros + 500_000
+        val (waited, saidAt) = corner2(busy)
+        assertTrue(saidAt.none { it in busy }, "said over a phrase still playing: $saidAt")
+        assertTrue(waited.tMicros > busy.last, "cue at ${waited.tMicros}, voice busy until ${busy.last}")
+        assertEquals(
+            CoachEvents.parseCue(free.tMicros, free.text)!!.corner,
+            CoachEvents.parseCue(waited.tMicros, waited.text)!!.corner,
+        )
+    }
+
+    @Test
     fun `with no learning laps and no earlier session it learns one lap, not 0 of 0`() {
         val first = CoachSession(CoachSettings(Verbosity.Full, learningLaps = 0), track, null)
         assertEquals(CoachStatus(null, "Coach learning · 0 of 1 laps"), first.status)
@@ -92,7 +116,7 @@ class CoachSessionTest {
         val events = mutableListOf<CoachEvent>()
         var refused = 0
         val say = { text: String -> !(text.startsWith("Turn 2") && refused++ == 0) }
-        for (f in sim.drive(List(6) { early2 }).fixes) events += session.onFix(f, f.tMicros, say).events
+        for (f in sim.drive(List(6) { early2 }).fixes) events += session.onFix(f, f.tMicros, say = say).events
         assertEquals(1, refused - 1, "the first turn 2 cue was refused, the second said")
         val problem = events.single { it.kind == CoachEvents.PROBLEM }
         assertTrue(problem.text.startsWith("no voice seq="), problem.text)

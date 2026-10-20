@@ -105,7 +105,7 @@ private fun loggedCue(e: RecorderEvent): LoggedCue? {
     return LoggedCue(e.tMicros, seq, f["turn"] ?: f["corner"], f["zone_m"]?.toDoubleOrNull(), f["kind"])
 }
 
-private fun voiced(e: RecorderEvent): Voiced? {
+internal fun voiced(e: RecorderEvent): Voiced? {
     val f = fields(e.text)
     val seq = f["seq"]?.toIntOrNull() ?: return null
     return Voiced(
