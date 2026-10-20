@@ -65,15 +65,19 @@ class DemoDriveReplayTest {
     /** The car's speed at each fix of the drive, km/h, by session time. */
     private val speeds = mutableListOf<Pair<Long, Double>>()
 
+    /** When the voice started each cue's sound, by cue number. */
+    private val starts = HashMap<Int, Long>()
+
     /** The events one drive round the loop logs, as the recorder stores them. */
     private fun drive(d: Drive, language: CoachLanguage): List<RecorderEvent> {
         speeds.clear()
+        starts.clear()
         val track = TrackJson.decode(File(dir, "${d.asset}.track.json").readText())
         val replay = SessionReplay.read(File(dir, "${d.asset}.replay").readText(), 0L)
         val coach = CoachSession(CoachSettings(Verbosity.Full, language = language), track, null)
         val timing = LiveTiming(track)
         val events = mutableListOf<RecorderEvent>()
-        val voice = SimVoice(PhraseBook.of(language))
+        val voice = SimVoice(PhraseBook.of(language), starts)
         for (n in 0 until d.loopSeconds * replay.rateHz) {
             val t = n * 1_000_000L / replay.rateHz
             val values = replay.fix(n)
@@ -114,7 +118,7 @@ class DemoDriveReplayTest {
      * lasts [SlowerThanEstimate] times the coach's estimate; a new phrase cuts off one still playing, as
      * the app's text-to-speech does. Logs each phrase's start and end as CoachService does.
      */
-    private class SimVoice(private val phrases: PhraseBook) {
+    private class SimVoice(private val phrases: PhraseBook, private val starts: MutableMap<Int, Long>) {
         val events = mutableListOf<RecorderEvent>()
         private var seq: Int? = null
         private var asked = 0L
@@ -142,6 +146,7 @@ class DemoDriveReplayTest {
         /** The phrase just asked for is cue [n]: its sound start is logged against it. */
         fun numbered(n: Int) {
             seq = n
+            starts[n] = start
             events += RecorderEvent(start, EventKinds.COACH_VOICE, CoachEvents.voiceText(n, "live", asked, "speaker"))
         }
 
@@ -175,14 +180,17 @@ class DemoDriveReplayTest {
 
     /**
      * Pairs of cues said one after the other with no slowing of [BrakingDropKmh] between their sound
-     * starts (asked for at the trigger, heard after [DefaultLatencyMicros]), praise before a corner cue aside.
+     * starts, praise before a corner cue aside. A sound starts when the voice played it ([starts]): a cue
+     * asked for at the end of a stall is heard [DefaultLatencyMicros] after that, not after its fix.
      */
     private fun sameStraight(events: List<RecorderEvent>, language: CoachLanguage): List<String> {
         val cues = events.filter { it.kind == "coach_cue" }
+        fun heard(e: RecorderEvent) =
+            CoachEvents.parseCue(e.tMicros, e.text)?.seq?.let(starts::get) ?: (e.tMicros + DefaultLatencyMicros)
         return cues.zipWithNext().filter { (a, b) ->
             val praiseThenCue = " kind=Praise" in a.text && " kind=Corner" in b.text
-            val from = a.tMicros + DefaultLatencyMicros
-            val to = b.tMicros + DefaultLatencyMicros
+            val from = heard(a)
+            val to = heard(b)
             var top = Double.NEGATIVE_INFINITY
             val braked = speeds.any { (t, v) ->
                 t in from..to && run {
@@ -260,11 +268,11 @@ class DemoDriveReplayTest {
         val Silesia = Drive("silesia-ring", "Silesia Ring", 2_830L, MinSpareSeconds, MinMedianSpareSeconds)
 
         /**
-         * Jastrząb's short straights (FBBD-256): every cue ends [MinSpareSeconds] before its braking zone, as at
-         * Silesia, since the coach times a cue with the car still gaining speed (was 0.06 s late at worst,
-         * "Turn 4, brake at 165"). Fewer cues fit there, so half of them end at least 1.6 s before it.
+         * Jastrząb's short straights (FBBD-256): since the coach times a cue with the car still gaining speed,
+         * every cue ends before its braking zone (0.06 s at worst in English, 0.2 s or more in Polish; was
+         * 0.06 s late, "Turn 4, brake at 165"). Half of them end at least 1.6 s before it.
          */
-        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, MinSpareSeconds, 1.6)
+        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, 0.0, 1.6)
 
         /** The drive check's slowing between two cues on different straights (coach.per_straight). */
         const val BrakingDropKmh = 15.0
