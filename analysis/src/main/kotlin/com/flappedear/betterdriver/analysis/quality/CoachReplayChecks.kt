@@ -1,12 +1,15 @@
+@file:Suppress("TooManyFunctions") // One function per check.
+
 package com.flappedear.betterdriver.analysis.quality
 
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 
 // What the coach said lap by lap, checked from a recording's events: the checks the drive-log reports
-// made by hand on Arek's Demo track replays (FBBD-244, FBBD-242, FBBD-243, FBBD-245), so the emulator
-// replay of his sessions and the JVM replay make them on every pull request. They read only the
-// events the recorder logs (coach_cue, lap_line), the same in the continuous log and in a session.
+// made by hand on Arek's Demo track replays (FBBD-244, FBBD-242, FBBD-243, FBBD-245), and confidence
+// gating (FBBD-177), so the emulator replay of his sessions and the JVM replay make them on every pull
+// request. They read only the events the recorder logs (coach_cue, lap_line), the same in the
+// continuous log and in a session.
 // Not part of the report the app shows.
 
 private const val MillisPerSecond = 1000.0
@@ -38,6 +41,8 @@ data class ReplayCue(
     val praisedLap: Int?,
     /** For a corner cue, the lap of the pass its advice was measured from. */
     val beforeLap: Int?,
+    /** For a corner cue, how far its evidence could be trusted: HIGH, MEDIUM or LOW (FBBD-177). */
+    val confidence: String? = null,
 )
 
 /** The coach went quiet on [lap] for [reason]: "cooling_down" or "pit_lane" (FBBD-202). */
@@ -55,6 +60,7 @@ fun replayCues(events: List<RecorderEvent>): List<ReplayCue> = events.ofKind(Cue
         e.tMicros, lap, f["kind"].orEmpty(), f["advice"], f["lang"] ?: "en", text,
         f["praised"]?.substringBefore(',')?.toIntOrNull(),
         f["before"]?.substringBefore(',')?.toIntOrNull(),
+        f["conf"],
     )
 }
 
@@ -80,6 +86,7 @@ fun replayLaps(events: List<RecorderEvent>): List<ReplayLap> = events.ofKind(Eve
  * - FBBD-242: corner cues said with numbers give an absolute target.
  * - FBBD-243: praise is said, never for a lap driven cooling down.
  * - FBBD-245: every cue is in [language] ("pl" or "en").
+ * - FBBD-177: a corner cue says its numbers only at High confidence, and nothing is said at Low.
  *
  * A check the recording cannot show (too few coached laps, no cue said with numbers, no praise) is not
  * measured, so a short run does not fail; [minCoachedLaps] is how many coached laps it needs.
@@ -103,6 +110,7 @@ fun coachReplayChecks(events: List<RecorderEvent>, language: String, minCoachedL
         absoluteTargets(cues),
         praise(cues, cooling),
         language(cues, language),
+        confidence(cues),
     )
 }
 
@@ -209,5 +217,24 @@ private fun language(cues: List<ReplayCue>, language: String): QualityMetric {
         id, label, wrong.size.toDouble(), "cues", wrong.isEmpty(), Basis.MEASURED, criterion,
         "${cues.size} cue(s)" + (if (wrong.isEmpty()) "" else ", wrong: ") +
             wrong.take(MaxShown).joinToString { "\"${it.text}\"" },
+    )
+}
+
+/** FBBD-177: no precise advice from weak evidence. */
+private fun confidence(cues: List<ReplayCue>): QualityMetric {
+    val id = "coach.confidence"
+    val label = "Corner cues with numbers only at High confidence"
+    val criterion = "corner cues say numbers only at High confidence, none is said at Low (FBBD-177)"
+    val corner = cues.filter { it.kind == "Corner" && it.confidence != null }
+    if (corner.isEmpty()) return notMeasured(id, label, criterion, "no corner cue with its confidence")
+    val wrong = corner.filter { cue ->
+        val precise = cue.advice != null && ":vague" !in cue.advice
+        cue.confidence == "LOW" || (precise && cue.confidence != "HIGH")
+    }
+    val counts = corner.groupingBy { it.confidence }.eachCount().entries.joinToString { "${it.key}: ${it.value}" }
+    return judged(
+        id, label, wrong.size.toDouble(), "cues", wrong.isEmpty(), Basis.MEASURED, criterion,
+        "${corner.size} corner cue(s) ($counts)" + (if (wrong.isEmpty()) "" else ", wrong: ") +
+            wrong.take(MaxShown).joinToString { "\"${it.text}\" (${it.confidence})" },
     )
 }
