@@ -49,39 +49,45 @@ internal fun frameRate(camera: String, events: List<RecorderEvent>, counted: Lis
     val set = setRates(camera, events)
     val id = "video.$camera.frame_rate"
     val label = "Video frame rate ($camera)"
+    val all = rated(counted, set)
     val wide = counted.filter { it.wide }.map { it.file }.toSet()
-    val all = counted.mapNotNull { c ->
-        val target = c.setFps ?: set[c.file]
-        val fps = recordedFps(c.frames, c.mediaMicros)
-        if (target == null || target <= 0 || fps == null) null else Rated(c.file, fps, target)
-    }
     val (wideRated, rated) = all.partition { it.file in wide }
     val worst = rated.minByOrNull { it.share }
     val worstWide = wideRated.minByOrNull { it.share }
+    // A file a counter missed is named, not passed over: the verdict covers the counted ones. It may
+    // be a 1080p file after a 2.7K one, so with one missed, 2.7K files alone are not reported.
+    val missed = (set.keys - all.map { it.file }.toSet()).sorted()
+    val notCounted = missed.takeIf { it.isNotEmpty() }?.let { "not counted: ${it.joinToString(", ")}" }
+    val notJudged = wideRated.takeIf { it.isNotEmpty() }?.let { "${it.size} 2.7K file(s) not judged" }
     return when {
         counted.isEmpty() && set.isEmpty() -> null
-        worst == null && worstWide != null -> {
+        worst == null && worstWide != null && notCounted == null -> {
             val how = "2.7K only, not judged (2.7K dropped, FBBD-246 Won't do); " +
                 "worst of ${wideRated.size} file(s): ${worstWide.file}, set to ${worstWide.target} fps"
             info(id, label, worstWide.fps, "fps", Basis.MEASURED, how)
         }
         worst == null -> {
-            val why = if (counted.isEmpty()) "no file's frames counted" else "no counted file with a set frame rate"
+            val why = when {
+                counted.isEmpty() -> "no file's frames counted"
+                notJudged != null -> "$notCounted; $notJudged"
+                else -> "no counted file with a set frame rate"
+            }
             notMeasured(id, label, FrameRateCriterion, why)
         }
         else -> {
-            // A file a counter missed is named, not passed over: the verdict covers the counted ones.
-            val missed = (set.keys - all.map { it.file }.toSet()).sorted()
-            val notes = listOfNotNull(
-                missed.takeIf { it.isNotEmpty() }?.let { "not counted: ${it.joinToString(", ")}" },
-                wideRated.takeIf { it.isNotEmpty() }?.let { "${it.size} 2.7K file(s) not judged" },
-            )
             val how = (listOf("frames in each file over its media time; worst of ${rated.size} file(s): " +
-                "${worst.file}, set to ${worst.target} fps") + notes).joinToString("; ")
+                "${worst.file}, set to ${worst.target} fps") + listOfNotNull(notCounted, notJudged)).joinToString("; ")
             val ok = worst.fps >= worst.target * MinFrameRateShare
             judged(id, label, worst.fps, "fps", ok, Basis.MEASURED, FrameRateCriterion, how)
         }
     }
+}
+
+/** The [counted] files with a recorded rate and a rate they were set to: their counter's, else [set]'s. */
+private fun rated(counted: List<FileFrames>, set: Map<String, Int>): List<Rated> = counted.mapNotNull { c ->
+    val target = c.setFps ?: set[c.file]
+    val fps = recordedFps(c.frames, c.mediaMicros)
+    if (target == null || target <= 0 || fps == null) null else Rated(c.file, fps, target)
 }
 
 /** A counted [file]'s recorded [fps] and the rate it was set to ([target]). */

@@ -308,6 +308,18 @@ class DriveChecksTest {
     }
 
     @Test
+    fun `an uncounted file beside a 2_7K one leaves the frame rate not measured`() {
+        val events = listOf(
+            RecorderEvent(500_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4 fps=60"),
+            RecorderEvent(460_000_000, EventKinds.VIDEO_START, "camera=phone file=phone_0002.mp4 fps=60"),
+        )
+        val frames = listOf(FileFrames(CameraIds.PHONE, "phone_0001.mp4", 2_900, 60_000_000, 60, wide = true))
+        val m = frameRate(CameraIds.PHONE, events, frames)!!
+        assertEquals(Verdict.NOT_MEASURED, m.verdict, m.how)
+        assertTrue("not counted: phone_0002.mp4" in m.how && "1 2.7K file(s) not judged" in m.how, m.how)
+    }
+
+    @Test
     fun `phone video with a set rate but no counted file has its frame rate not measured`() {
         line(0, CheckLog.SESSION, "start utc_ms=$start source=Demo_track")
         event(500_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4 fps=60")
