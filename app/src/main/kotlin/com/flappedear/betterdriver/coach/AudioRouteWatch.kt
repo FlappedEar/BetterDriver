@@ -90,7 +90,8 @@ internal class AudioRouteWatch(
         val w = watched ?: return
         val device = outputs.device()
         if (device?.id == w.deviceId) return
-        w.deviceId = device?.id
+        val id = device?.id
+        w.deviceId = id
         val now = AudioOutputs.typeOf(device)
         DebugLog.i(Tag, "audio output now $now${outputs.headset()?.let { " ($it)" }.orEmpty()}, measuring its delay")
         // Until it is measured, cues are timed for what is known of the new output, as their log says.
@@ -99,7 +100,8 @@ internal class AudioRouteWatch(
             val live = OutputDelayProbe.probe()
             val clip = if (w.clips) OutputDelayProbe.probe(lowLatency = true) else null
             handler.post {
-                if (watched === w) {
+                // A result for a route already left behind (it changed again meanwhile) is dropped.
+                if (watched === w && w.deviceId == id) {
                     // Not measured (still settling, or no track): the next check measures it again.
                     if ((if (w.clips) clip else live) == null) w.deviceId = NotMeasured
                     onMeasured(Remeasured(now, w.clips, live, clip))
