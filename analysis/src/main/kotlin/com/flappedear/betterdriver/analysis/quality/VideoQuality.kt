@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.analysis.quality
 
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoEventText
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
@@ -26,7 +27,8 @@ private val PlainStops = setOf("user", "file_full")
 
 /**
  * The video section, one set of values per camera. [from] and [to] are the first and last GNSS
- * sample: the part of the session video should cover. [frames] are the files whose frames were counted.
+ * sample: the part of the session video should cover. [frames] are the files whose frames were counted;
+ * [handover] is the phone's file handover check from the log ([fileHandovers]).
  */
 internal fun videoSection(
     events: List<RecorderEvent>,
@@ -34,6 +36,7 @@ internal fun videoSection(
     from: Long,
     to: Long,
     frames: List<FileFrames> = emptyList(),
+    handover: QualityMetric? = null,
 ): QualitySection {
     val endMicros = to
     val indexed = clips.map { VideoClip(it.camera, it.file, it.startMicros, it.endMicros) }
@@ -50,7 +53,8 @@ internal fun videoSection(
             startSyncError(camera, own, events),
             drift(camera, own, events),
         ) + driftAt(camera, own, events, endMicros) + coverage(camera, own, from, to) +
-            listOfNotNull(frameRate(camera, events, frames.filter { it.camera == camera }))
+            listOfNotNull(frameRate(camera, events, frames.filter { it.camera == camera })) +
+            listOfNotNull(handover.takeIf { camera == CameraIds.PHONE })
     }
     val notes = events.ofKind(EventKinds.VIDEO_STOP).mapNotNull { e ->
         val f = VideoEventText.parse(e.text)

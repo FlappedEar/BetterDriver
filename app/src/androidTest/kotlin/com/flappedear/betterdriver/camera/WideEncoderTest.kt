@@ -2,12 +2,18 @@ package com.flappedear.betterdriver.camera
 
 import android.graphics.Color
 import android.graphics.Paint
+import android.media.MediaCodec
+import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.os.Handler
+import android.os.HandlerThread
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -26,6 +32,9 @@ import kotlin.math.sin
  * - Every frame drawn is in the files, and each file opens with a keyframe.
  * - Files follow each other with no missing frame: the next starts one frame after the last ends.
  * - Each file has sound from its start to its end, and stays under the size limit.
+ * - At 60 fps, the frames and rate the encoder reports for each file (the log's "Video frame rate"
+ *   check reads them) are what the file holds.
+ * - The 2.7K·60 setup asks for real-time priority and twice the frame rate, and the encoder starts.
  */
 @RunWith(AndroidJUnit4::class)
 class WideEncoderTest {
@@ -80,10 +89,110 @@ class WideEncoderTest {
         assertEquals(files.last().name, last.file.name)
     }
 
+    @Test
+    fun atSixtyFpsTheReportedFramesAreWhatEachFileHolds() {
+        val sixty = WideTarget(640, 360, 60, 2_000_000, 0, maxFileBytes = 900_000)
+        val events = Recorded()
+        val encoder = WideEncoder(sixty, null, System::nanoTime, events, cutMarginBytes = 500_000)
+        events.encoder = encoder
+        encoder.start(fileNo(1))
+        val began = System.nanoTime()
+        val drawn = draw(encoder, seconds = 6, fps = 60)
+        val drawnFps = (drawn - 1) * 1e9 / (System.nanoTime() - began)
+        val last = checkNotNull(encoder.stop()) { "no file was opened" }
+        events.stats[last.file.name] = last.stats
+        assertEquals("problems the encoder reported", emptyList<String>(), events.problems.toList())
+
+        val files = dir.listFiles().orEmpty().filter { it.length() > 0 }.sortedBy { it.name }
+        assertTrue("several files: ${files.map { it.name }}", files.size >= 2)
+        val samples = files.map { read(it) }
+        val frames = samples.sumOf { it.videoUs.size }
+        assertTrue("$frames of $drawn frames in the files", frames >= drawn - 1)
+        files.zip(samples).forEach { (f, s) ->
+            val stats = checkNotNull(events.stats[f.name]) { "no stats for ${f.name}" }
+            assertEquals("${f.name}: frames reported", s.videoUs.size.toLong(), stats.frames)
+            val span = s.videoUs.last() - s.videoUs.first()
+            // An MP4 keeps times in its own time scale: a few microseconds off.
+            assertEquals("${f.name}: media time reported", span.toDouble(), stats.mediaMicros.toDouble(), 100.0)
+            // The rate the log's line gives (fpsLine) against the rate the file's own frame times give.
+            val held = (s.videoUs.size - 1) * 1e6 / (s.videoUs.last() - s.videoUs.first())
+            val line = fpsLine(stats.frames, stats.mediaMicros)
+            val logged = line.substringAfter("= ").substringBefore(" fps").toDouble()
+            assertEquals("${f.name}: logged rate", held, logged, 0.06)
+            // The emulator draws slower than 60 at times; whatever it drew, the file keeps.
+            if (drawnFps >= MinFps) assertTrue("${f.name}: $held fps of $drawnFps drawn", held >= MinFps)
+        }
+    }
+
+    @Test
+    fun the27kSetupAsksForRealTimePriorityAndTwiceTheFrameRate() {
+        val wide = WideTarget(2688, 1512, 60, 40_000_000, 90, maxFileBytes = 4_000_000_000L)
+        val format = videoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, wide, operatingRates(wide.fps).first())
+        assertEquals(2688, format.getInteger(MediaFormat.KEY_WIDTH))
+        assertEquals(1512, format.getInteger(MediaFormat.KEY_HEIGHT))
+        assertEquals(60, format.getInteger(MediaFormat.KEY_FRAME_RATE))
+        assertEquals(40_000_000, format.getInteger(MediaFormat.KEY_BIT_RATE))
+        assertEquals(1, format.getInteger(MediaFormat.KEY_I_FRAME_INTERVAL))
+        assertEquals(0, format.getInteger(MediaFormat.KEY_PRIORITY))
+        assertEquals(120, format.getInteger(MediaFormat.KEY_OPERATING_RATE))
+        assertEquals(
+            MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface,
+            format.getInteger(MediaFormat.KEY_COLOR_FORMAT),
+        )
+        // The last try leaves the rate to the codec: no priority or operating rate at all.
+        val plain = videoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, wide, null)
+        assertFalse(plain.containsKey(MediaFormat.KEY_PRIORITY))
+        assertFalse(plain.containsKey(MediaFormat.KEY_OPERATING_RATE))
+
+        // The emulator's encoder starts at 60 fps with one of those rates, as the app logs it.
+        val small = WideTarget(640, 360, 60, 2_000_000, 0, maxFileBytes = 1_000_000)
+        assertStarts(small)
+        // At 2.7K too, where the emulator's own encoder takes that size.
+        if (avcTakes(wide)) assertStarts(wide)
+    }
+
+    private fun assertStarts(target: WideTarget) {
+        val thread = HandlerThread("WideEncoderTest").apply { start() }
+        try {
+            val started = videoEncoder(target, Ignore, Handler(thread.looper))
+            try {
+                assertTrue(started.setup, started.setup.contains(" ${MediaFormat.MIMETYPE_VIDEO_AVC} "))
+                assertTrue(started.setup, Regex("operating_rate=(120|60|-) ").containsMatchIn(started.setup))
+                assertTrue("${target.label}: surface", started.surface.isValid)
+            } finally {
+                runCatching { started.codec.stop() }
+                started.codec.release()
+                started.surface.release()
+            }
+        } finally {
+            thread.quitSafely()
+        }
+    }
+
+    private fun avcTakes(target: WideTarget): Boolean {
+        val avc = MediaFormat.MIMETYPE_VIDEO_AVC
+        return MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos
+            .filter { it.isEncoder && avc in it.supportedTypes }
+            .mapNotNull { runCatching { it.getCapabilitiesForType(avc).videoCapabilities }.getOrNull() }
+            .any { it.areSizeAndRateSupported(target.width, target.height, target.fps.toDouble()) }
+    }
+
+    private object Ignore : MediaCodec.Callback() {
+        override fun onInputBufferAvailable(codec: MediaCodec, index: Int) = Unit
+
+        override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+            runCatching { codec.releaseOutputBuffer(index, false) }
+        }
+
+        override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) = Unit
+
+        override fun onOutputFormatChanged(codec: MediaCodec, format: MediaFormat) = Unit
+    }
+
     private fun fileNo(n: Int) = File(dir, "phone_%04d.mp4".format(n))
 
-    /** Draws numbered frames at [Fps] for [seconds], as the camera would; returns how many. */
-    private fun draw(encoder: WideEncoder, seconds: Int): Int {
+    /** Draws numbered frames at [fps] for [seconds], as the camera would; returns how many. */
+    private fun draw(encoder: WideEncoder, seconds: Int, fps: Int = Fps): Int {
         val paint = Paint().apply { textSize = 120f }
         val start = System.nanoTime()
         var n = 0
@@ -94,7 +203,7 @@ class WideEncoderTest {
             canvas.drawText("$n", 40f, 200f, paint)
             encoder.surface.unlockCanvasAndPost(canvas)
             n++
-            val due = start + n * FrameUs * 1_000
+            val due = start + n * 1_000_000_000L / fps
             val wait = (due - System.nanoTime()) / 1_000_000
             if (wait > 0) Thread.sleep(wait)
         }
@@ -136,6 +245,7 @@ class WideEncoderTest {
         val handovers: MutableList<Handover> = Collections.synchronizedList(mutableListOf())
         val bases: MutableMap<String, Long> = Collections.synchronizedMap(mutableMapOf())
         val problems: MutableList<String> = Collections.synchronizedList(mutableListOf())
+        val stats: MutableMap<String, WideEncoder.FileStats> = Collections.synchronizedMap(mutableMapOf())
 
         override fun nextWanted() {
             index++
@@ -152,6 +262,7 @@ class WideEncoderTest {
         }
 
         override fun closed(file: File, stats: WideEncoder.FileStats, error: String?) {
+            this.stats[file.name] = stats
             if (error != null) problems += "${file.name}: $error"
         }
 
@@ -202,5 +313,8 @@ class WideEncoderTest {
         const val Fps = 30
         const val FrameUs = 1_000_000L / Fps
         const val SoundSlackUs = 60_000L
+
+        /** 95 % of 60 fps, the log's "Video frame rate" limit (FBBD-246). */
+        const val MinFps = 57.0
     }
 }

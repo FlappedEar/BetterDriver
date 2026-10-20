@@ -288,6 +288,9 @@ internal class WideEncoder(
             previous = done
             current = opened
             if (!audioOn()) closePrevious()
+            // The log's handover check (FBBD-248) reads the gap: one frame time when no frame was lost.
+            val gap = "gap_us=${pts - done.lastUs} frame_us=${MicrosPerSecond / target.fps}"
+            DebugLog.i(Tag, "handover ${done.file.name} -> ${file.name} $gap")
             events.handedOver(done.file, done.mediaMicros, file, pts * NanosPerMicro)
         }
     }
@@ -477,6 +480,7 @@ internal class WideEncoder(
         const val Tag = "WideRecorder"
         const val NanosPerMicro = 1_000L
         const val MicrosPerMilli = 1_000L
+        const val MicrosPerSecond = 1_000_000L
         const val LatencyBuckets = 1_000
         const val Half = 0.5
         const val P95 = 0.95
@@ -511,7 +515,7 @@ private fun MediaCodec.BufferInfo.copy() =
     MediaCodec.BufferInfo().also { it.set(0, size, presentationTimeUs, flags) }
 
 /** Operating rates tried in turn: twice the frame rate (room for bursts), the frame rate, none. */
-private fun operatingRates(fps: Int): List<Int?> = listOf(fps * 2, fps, null)
+internal fun operatingRates(fps: Int): List<Int?> = listOf(fps * 2, fps, null)
 
 /** A started video encoder, the surface it takes frames from, and how it was set up (for the log). */
 internal class StartedEncoder(val codec: MediaCodec, val surface: Surface, val setup: String)
@@ -547,7 +551,7 @@ internal fun videoEncoder(target: WideTarget, callback: MediaCodec.Callback, han
     throw checkNotNull(refusal)
 }
 
-private fun videoFormat(mime: String, target: WideTarget, operatingRate: Int?): MediaFormat =
+internal fun videoFormat(mime: String, target: WideTarget, operatingRate: Int?): MediaFormat =
     MediaFormat.createVideoFormat(mime, target.width, target.height).apply {
         setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
         setInteger(MediaFormat.KEY_BIT_RATE, target.bitrate)

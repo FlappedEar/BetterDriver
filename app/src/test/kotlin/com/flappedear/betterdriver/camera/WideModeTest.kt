@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.camera
 
+import android.media.MediaFormat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -56,6 +57,23 @@ class WideModeTest {
     fun fpsLineSaysTheRateRecorded() {
         assertEquals("61 frames in 1.0 s = 60.0 fps", fpsLine(61, 1_000_000))
         assertEquals("0 frames in 0.0 s = 0.0 fps", fpsLine(0, 0))
+    }
+
+    @Test
+    fun theEncoderIsAskedForTwiceTheFrameRateFirst() {
+        // FBBD-246: room above 60 fps for bursts, then the rate itself, then the codec's own choice.
+        assertEquals(listOf(120, 60, null), operatingRates(60))
+    }
+
+    @Test
+    fun hevcOnlyWhenH264IsKnownNotToKeepUp() {
+        val avc = MediaFormat.MIMETYPE_VIDEO_AVC
+        val hevc = MediaFormat.MIMETYPE_VIDEO_HEVC
+        assertEquals(hevc, pickMime(avc = false, hevc = true))
+        assertEquals(avc, pickMime(avc = true, hevc = true))
+        assertEquals(avc, pickMime(avc = null, hevc = true))
+        assertEquals(avc, pickMime(avc = false, hevc = false))
+        assertEquals(avc, pickMime(avc = false, hevc = null))
     }
 
     @Test

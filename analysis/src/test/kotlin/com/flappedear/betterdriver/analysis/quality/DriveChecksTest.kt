@@ -286,6 +286,57 @@ class DriveChecksTest {
         assertTrue("not counted: phone_0002.mp4" in m.how, m.how)
     }
 
+    /** A handover from phone_0001 to phone_0002 [gapUs] after the full file's last frame, as WideEncoder logs it. */
+    private fun handover(gapUs: Long) = line(
+        300_000_000L, "WideRecorder", "handover phone_0001.mp4 -> phone_0002.mp4 gap_us=$gapUs frame_us=16666",
+        process = "camera",
+    )
+
+    @Test
+    fun `a 2_7K handover one frame after the full file's last passes`(@TempDir dir: File) {
+        handover(gapUs = 16_814)
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
+        assertEquals(Verdict.PASS, m.verdict, m.how)
+        assertEquals(16.814, m.value!!, 0.001)
+        assertEquals(listOf("FBBD-248"), m.keys)
+        assertTrue("phone_0001.mp4 to phone_0002.mp4" in m.how, m.how)
+    }
+
+    @Test
+    fun `a 2_7K handover that loses frames fails`(@TempDir dir: File) {
+        handover(gapUs = 16_814)
+        val lost = "handover phone_0002.mp4 -> phone_0003.mp4 gap_us=66664 frame_us=16666"
+        line(301_000_000L, "WideRecorder", lost, process = "camera")
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
+        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertEquals(66.664, m.value!!, 0.001)
+        assertTrue("phone_0002.mp4 to phone_0003.mp4" in m.how, m.how)
+    }
+
+    @Test
+    fun `a handed-over 2_7K file that was not finished fails the handover`(@TempDir dir: File) {
+        handover(gapUs = 16_666)
+        val lost = "phone_0001.mp4: 2688x1512@60 0 frames in 0.0 s = 0.0 fps 0 bytes error=no valid data"
+        line(302_000_000L, "WideRecorder", lost, process = "camera")
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
+        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertTrue("not finished: phone_0001.mp4 (no valid data)" in m.how, m.how)
+    }
+
+    @Test
+    fun `a next 2_7K file that could not be opened fails the handover`(@TempDir dir: File) {
+        line(300_000_000L, "WideRecorder", "phone_0002.mp4 not opened", process = "camera")
+        val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
+        assertEquals(Verdict.FAIL, m.verdict, m.how)
+        assertTrue("next file not opened: phone_0002.mp4" in m.how, m.how)
+    }
+
+    @Test
+    fun `a 2_7K recording with no handover has no handover check`(@TempDir dir: File) {
+        val r = wideDrive(dir, frames = 26_555)
+        assertTrue(r.metrics.none { it.id == "video.phone.handover" })
+    }
+
     @Test
     fun `phone video with a set rate but no counted file has its frame rate not measured`() {
         line(0, CheckLog.SESSION, "start utc_ms=$start source=Demo_track")
