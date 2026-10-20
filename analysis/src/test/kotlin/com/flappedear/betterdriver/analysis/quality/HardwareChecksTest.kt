@@ -89,6 +89,11 @@ class HardwareChecksTest {
         val measured = "out_delay_ms=250 out_delay_src=measured"
         val after = report(sets, cue(1, 10_000_000, measured) + cue(2, 30_000_000, measured))
         assertEquals(Verdict.PASS, after.metric("coach.out_delay").verdict)
+        // Timed for the set delay when asked; the headset was measured before its sound started.
+        val late = "$measured timed_src=set"
+        val raced = report(sets, cue(1, 10_000_000, late) + cue(2, 30_000_000, "$measured timed_src=measured"))
+        assertEquals(50.0, raced.metric("coach.out_delay").value)
+        assertEquals(Verdict.FAIL, raced.metric("coach.out_delay").verdict)
     }
 
     @Test

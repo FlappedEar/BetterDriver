@@ -198,7 +198,10 @@ internal class AudioOutputs(private val audio: AudioManager?) {
     /** The device the coach voice is routed to now. */
     fun device(): AudioDeviceInfo? {
         val routed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) routed() else null
-        return routed ?: audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
+        val all = if (routed == null) audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS).orEmpty() else emptyArray()
+        // The phone speaker too, so it has an id like the device a probe was routed to (FBBD-255).
+        return routed ?: all.firstOrNull { it.type in HeadsetTypes }
+            ?: all.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
     }
 
     /** Where Android's audio policy sends navigation guidance speech now (Android 13 on). */

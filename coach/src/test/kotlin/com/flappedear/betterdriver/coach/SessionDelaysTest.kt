@@ -17,4 +17,16 @@ class SessionDelaysTest {
         d.measured("live", "bt_sco", null)
         assertEquals(AudioDelayUsed(0, AudioDelayUsed.Set), d.on("live", "bt_sco"))
     }
+
+    @Test
+    fun `another headset of the same type does not inherit the first one's delay`() {
+        val d = SessionDelays(setMillis = 0)
+        d.measured("live", "bt_sco", 250)
+        d.measured("clip", "bt_sco", 200)
+        d.measured("live", "speaker", 100)
+        d.forget("bt_sco")
+        assertEquals(AudioDelayUsed(0, AudioDelayUsed.Set), d.on("live", "bt_sco"))
+        assertEquals(AudioDelayUsed(0, AudioDelayUsed.Set), d.on("clip", "bt_sco"))
+        assertEquals(AudioDelayUsed(100, AudioDelayUsed.Measured), d.on("live", "speaker"))
+    }
 }

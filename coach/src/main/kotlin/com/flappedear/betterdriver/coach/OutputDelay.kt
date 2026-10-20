@@ -82,6 +82,11 @@ class SessionDelays(private val setMillis: Int) {
         if (millis == null) measured.remove(path to output) else measured[path to output] = millis
     }
 
+    /** Forgets what was measured on [output], on every path: another device of its type took over. */
+    fun forget(output: String) {
+        measured.keys.removeAll { it.second == output }
+    }
+
     /** The delay of a cue said on [path] to [output]: the one measured there, else the set one. */
     fun on(path: String, output: String): AudioDelayUsed = OutputDelay.effective(setMillis, measured[path to output])
 }

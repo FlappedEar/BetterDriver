@@ -119,13 +119,15 @@ private const val OutDelayCriterion = "100% of cues timed for their output's mea
  */
 private fun outDelayKnown(voiced: List<Voiced>): QualityMetric {
     val label = "Cues with their output's delay measured"
-    val logged = voiced.filter { it.outDelaySource != null }
+    // The delay the cue was timed for when asked; before FBBD-255 only the one its sound started with.
+    fun Voiced.source() = timedSource ?: outDelaySource
+    val logged = voiced.filter { it.source() != null }
     if (logged.isEmpty()) {
         return notMeasured("coach.out_delay", label, OutDelayCriterion, "the delay used is logged from FBBD-49 on")
     }
-    val measured = logged.count { it.outDelaySource == "measured" }
+    val measured = logged.count { it.source() == "measured" }
     val percent = measured * Percent / logged.size
-    val unknown = logged.filter { it.outDelaySource != "measured" }.mapNotNull { it.device }.distinct()
+    val unknown = logged.filter { it.source() != "measured" }.mapNotNull { it.device }.distinct()
     return judged(
         "coach.out_delay", label, percent, "%", measured == logged.size, Basis.MEASURED, OutDelayCriterion,
         "output delay measured on the output each cue went to; ${logged.size} cue(s)" +

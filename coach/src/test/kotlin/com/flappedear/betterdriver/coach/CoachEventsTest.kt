@@ -22,6 +22,12 @@ class CoachEventsTest {
             "seq=6 path=clip asked_us=5 route=headset out_delay_ms=300 out_delay_src=set",
             CoachEvents.voiceText(6, "clip", 5, "headset", outDelayMillis = 300, outDelaySource = "set"),
         )
+        assertEquals(
+            "seq=7 path=live asked_us=5 route=headset out_delay_ms=250 out_delay_src=measured timed_src=set",
+            CoachEvents.voiceText(
+                7, "live", 5, "headset", outDelayMillis = 250, outDelaySource = "measured", timedSource = "set",
+            ),
+        )
         assertEquals("seq=4 end=stopped", CoachEvents.voiceEndText(4, "stopped"))
     }
 }
