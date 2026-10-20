@@ -79,8 +79,15 @@ phase startRecording --no-restart
 
 # The test runner finishes the activities a phase started, so the app is opened again; with the
 # recording running it opens on the track screen.
+# A slow emulator can leave the launcher focused after the start (on main too, 576dd59), so this
+# waits up to 20 s and starts the app once more halfway.
 open_app
-focus=$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r')
+for i in $(seq 1 20); do
+  focus=$(adb shell dumpsys window | grep -m1 mCurrentFocus | tr -d '\r')
+  echo "$focus" | grep -q "$app" && break
+  [ "$i" = 10 ] && open_app
+  sleep 1
+done
 echo "$focus" | grep -q "$app" || fail "the app is not in front for FBBD-63: $focus"
 
 # FBBD-63: with the shortest screen timeout, the screen stays on and bright while recording.

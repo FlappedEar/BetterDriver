@@ -2,11 +2,13 @@ package com.flappedear.betterdriver.recording
 
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
 import com.flappedear.betterdriver.core.ui.component.SectorState
+import com.flappedear.betterdriver.core.ui.component.StatusIcon
 import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.feature.track.TrackAlert
 import com.flappedear.betterdriver.feature.track.TrackScreenState
 import com.flappedear.betterdriver.feature.track.TrackTile
 import com.flappedear.betterdriver.feature.track.withTiming
+import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -57,8 +59,13 @@ fun liveTrackState(state: RecorderState, tiles: List<TrackChannel>): TrackScreen
     }
     // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
     val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok) }
+    // OBD and heart rate (FBBD-268): an icon and a value, shown only while their data arrives (UI-110 B,
+    // UI-111 B, UI-112 A). The heart rate is the strap's last value, never older than 5 s.
+    val obd = state.obd?.takeIf { it.state == ObdLinkState.Connected }
+        ?.let { StatusItem("OBD", "Connected", icon = StatusIcon.Car) }
+    val heart = state.heartRate?.bpm?.let { StatusItem("Heart rate", "$it", icon = StatusIcon.Heart) }
     val screen = TrackScreenState(
-        status = listOfNotNull(place, gnss, camera),
+        status = listOfNotNull(place, gnss, camera, obd, heart),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
         alert = trackAlert(state),
         deltaSeconds = null,
