@@ -24,10 +24,19 @@ import kotlin.math.abs
  * The camera draws into [surface], an ImageReader of [buffers] encoder-ready buffers; each frame is
  * handed on to [encoderSurface] without a copy (PRIVATE format) on the relay's own thread. Frame times
  * go to the encoder on the monotonic clock, as the camera gives them to an encoder surface, so they
- * stay on the sound's clock whichever clock the sensor runs on.
+ * stay on the sound's clock whichever clock the sensor runs on. [shiftNanos] is boot time less
+ * monotonic for a camera that stamps on boot time (0 otherwise); [sensorSeen] tells whether a time is
+ * one of the camera's recent SENSOR_TIMESTAMPs, which shows which clock the reader's frames carry.
  */
 @RequiresApi(Build.VERSION_CODES.Q)
-internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buffers: Int = Buffers) {
+internal class FrameRelay(
+    encoderSurface: Surface,
+    width: Int,
+    height: Int,
+    private val shiftNanos: Long = 0,
+    private val sensorSeen: (Long) -> Boolean = { false },
+    buffers: Int = Buffers,
+) {
     private val reader = ImageReader.newInstance(
         width, height, ImageFormat.PRIVATE, buffers, HardwareBuffer.USAGE_VIDEO_ENCODE,
     )
@@ -48,6 +57,9 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
 
     @Volatile private var closed = false
 
+    /** What is taken off each frame's time, once a frame has shown its clock; null until then. */
+    private var shift: Long? = null
+
     /** The surface the camera draws into. */
     val surface: Surface get() = reader.surface
 
@@ -61,8 +73,7 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
             val image = runCatching { r.acquireNextImage() }.getOrNull() ?: return
             received.incrementAndGet()
             try {
-                val boot = SystemClock.elapsedRealtimeNanos()
-                image.timestamp = monotonic(image.timestamp, boot, System.nanoTime())
+                image.timestamp = toMonotonic(image.timestamp)
                 writer.queueInputImage(image)
                 passed.incrementAndGet()
             } catch (e: Exception) {
@@ -71,6 +82,12 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
                 runCatching { image.close() }
             }
         }
+    }
+
+    private fun toMonotonic(t: Long): Long {
+        val known = shift ?: frameShift(t, shiftNanos, sensorSeen)?.also { shift = it }
+        // Until a frame matches the camera's own times, the nearer clock decides.
+        return if (known != null) t - known else monotonic(t, SystemClock.elapsedRealtimeNanos(), System.nanoTime())
     }
 
     /** Frames the camera gave, handed to the encoder, and lost on the way, for the log. */
@@ -132,3 +149,16 @@ internal class FrameRelay(encoderSurface: Surface, width: Int, height: Int, buff
  */
 internal fun monotonic(frameNanos: Long, bootNanos: Long, monoNanos: Long): Long =
     if (abs(bootNanos - frameNanos) < abs(monoNanos - frameNanos)) frameNanos - (bootNanos - monoNanos) else frameNanos
+
+/**
+ * What to take off a relayed frame's time [t] to put it on the monotonic clock, given the camera's
+ * boot-time shift [shiftNanos] (0 for a monotonic sensor) and its recent sensor times ([sensorSeen]):
+ * the shift when [t] is a sensor time as it is, 0 when it is one moved to monotonic already, null
+ * while it matches neither yet.
+ */
+internal fun frameShift(t: Long, shiftNanos: Long, sensorSeen: (Long) -> Boolean): Long? = when {
+    shiftNanos == 0L -> 0L
+    sensorSeen(t) -> shiftNanos
+    sensorSeen(t + shiftNanos) -> 0L
+    else -> null
+}

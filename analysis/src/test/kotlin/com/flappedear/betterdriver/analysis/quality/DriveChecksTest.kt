@@ -344,10 +344,18 @@ class DriveChecksTest {
 
     @Test
     fun `a next 2_7K file that could not be opened fails the handover`(@TempDir dir: File) {
-        line(300_000_000L, "WideRecorder", "phone_0002.mp4 not opened", process = "camera")
+        val failed = "handover phone_0001.mp4 -> phone_0002.mp4 failed: next file not opened"
+        line(300_000_000L, "WideRecorder", failed, process = "camera")
         val m = wideDrive(dir, frames = 26_555).metric("video.phone.handover")
         assertEquals(Verdict.FAIL, m.verdict, m.how)
         assertTrue("next file not opened: phone_0002.mp4" in m.how, m.how)
+    }
+
+    @Test
+    fun `a first 2_7K file that could not be opened is no handover`(@TempDir dir: File) {
+        line(1_000_000L, "WideRecorder", "phone_0001.mp4 not opened", process = "camera")
+        val r = wideDrive(dir, frames = 26_555)
+        assertTrue(r.metrics.none { it.id == "video.phone.handover" })
     }
 
     @Test

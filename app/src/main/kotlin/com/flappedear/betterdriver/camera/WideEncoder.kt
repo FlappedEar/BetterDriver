@@ -292,6 +292,9 @@ internal class WideEncoder(
             val gap = "gap_us=${pts - done.lastUs} frame_us=${MicrosPerSecond / target.fps}"
             DebugLog.i(Tag, "handover ${done.file.name} -> ${file.name} $gap")
             events.handedOver(done.file, done.mediaMicros, file, pts * NanosPerMicro)
+        } ?: run {
+            DebugLog.w(Tag, "handover ${done.file.name} -> ${file.name} failed: next file not opened")
+            null
         }
     }
 

@@ -14,8 +14,11 @@ private val UnfinishedLine = Regex("""^(\S+\.mp4): \d+x\d+@\d+ .* error=(.+)$"""
 /** WideRecorder's line for any file it finished or failed to: "phone_0001.mp4: 2688x1512@60 ...". */
 private val FileLine = Regex("""^(\S+\.mp4): \d+x\d+@\d+ """)
 
-/** The next file could not be opened: "phone_0002.mp4 not opened". */
-private val UnopenedLine = Regex("""^(\S+\.mp4) not opened""")
+/**
+ * The next file could not be opened at a handover: "handover phone_0001.mp4 -> phone_0002.mp4 failed:
+ * next file not opened". The first file failing to open is no handover: the camera falls back.
+ */
+private val UnopenedLine = Regex("""^handover \S+ -> (\S+) failed: next file not opened""")
 
 /** WideEncoder's stop gave up waiting for a handed-over file to finish: it may never have been. */
 private val UnfinishedAtStopLine = Regex("""^a handed-over file was still finishing after""")

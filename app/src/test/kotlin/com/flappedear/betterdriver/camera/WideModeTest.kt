@@ -87,6 +87,20 @@ class WideModeTest {
     }
 
     @Test
+    fun aRelayedFrameShowsItsClockByMatchingTheCamerasOwnTimes() {
+        val shift = 100_000_000L
+        val sensor = setOf(5_000_000_000L)
+        // Monotonic sensor: nothing to move.
+        assertEquals(0L, frameShift(5_000_000_000L, 0, sensor::contains))
+        // The reader got the sensor's boot time as it is: take the shift off.
+        assertEquals(shift, frameShift(5_000_000_000L, shift, sensor::contains))
+        // The camera already moved it to monotonic, even with the clocks only 100 ms apart.
+        assertEquals(0L, frameShift(5_000_000_000L - shift, shift, sensor::contains))
+        // A frame whose capture result has not come yet decides nothing.
+        assertNull(frameShift(7_000_000_000L, shift, sensor::contains))
+    }
+
+    @Test
     fun skippedSensorFramesAreCountedFromTheGap() {
         // Arek's Pixel 6 at 2.7K·60 (2026-10-19): a 16.814 ms sensor frame time.
         val frame = 16_814_000L

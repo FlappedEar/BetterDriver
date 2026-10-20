@@ -97,6 +97,11 @@ internal class WideRecorder(
     private val fileStarts = ConcurrentHashMap<String, CameraCount>()
     private val fileEnds = ConcurrentHashMap<String, CameraCount>()
 
+    /** The camera's latest sensor timestamps, for the [FrameRelay] to tell which clock its frames carry. */
+    private val recentSensor = ArrayDeque<Long>()
+
+    private fun sensorSeen(t: Long) = synchronized(recentSensor) { t in recentSensor }
+
     /** Sensor timestamp of the newest frame; 0 before the first. */
     val lastFrameNanos: Long get() = lastNanos.get()
 
@@ -106,6 +111,10 @@ internal class WideRecorder(
     private val frames = object : CameraCaptureSession.CaptureCallback() {
         override fun onCaptureCompleted(s: CameraCaptureSession, r: CaptureRequest, result: TotalCaptureResult) {
             val t = result.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
+            synchronized(recentSensor) {
+                recentSensor.addLast(t)
+                if (recentSensor.size > RecentSensorTimes) recentSensor.removeFirst()
+            }
             val previous = lastNanos.getAndSet(t)
             val frame = result.get(CaptureResult.SENSOR_FRAME_DURATION) ?: 0L
             if (previous > 0) skippedFrames.addAndGet(framesSkipped(t - previous, frame))
@@ -263,7 +272,7 @@ internal class WideRecorder(
     private fun cameraSurface(e: WideEncoder): Surface {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return e.surface
         return try {
-            FrameRelay(e.surface, target.width, target.height).also {
+            FrameRelay(e.surface, target.width, target.height, sensorShift, ::sensorSeen).also {
                 relay = it
                 DebugLog.i(Tag, "camera frames through a relay")
             }.surface
@@ -372,6 +381,9 @@ internal class WideRecorder(
         const val Tag = "WideRecorder"
         const val MaxOpenRetries = 3
         const val OpenRetryMs = 500L
+
+        /** About half a second of frames at 60 fps: longer than a frame takes to reach the relay. */
+        const val RecentSensorTimes = 32
     }
 }
 
