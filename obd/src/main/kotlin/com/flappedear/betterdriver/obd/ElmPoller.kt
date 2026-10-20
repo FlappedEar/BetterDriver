@@ -14,6 +14,13 @@ interface ObdListener {
     fun log(text: String)
 }
 
+/** The poller's monotonic clock in ms, and how it waits; passed in for tests. */
+interface ObdClock {
+    fun nowMs(): Long
+
+    fun sleep(ms: Long)
+}
+
 /**
  * Talks to one connected ELM327 (FBBD-15): sets it up, finds the mode 01 PIDs the car has, then
  * polls them with the [PollScheduler] until [running] turns false or the car or adapter stops
@@ -25,15 +32,14 @@ interface ObdListener {
  * channels with no [PidChannel.header] are polled: the generic mode 01 PIDs, and the profile's own
  * mode 01 channels.
  *
- * [clockMs] is a monotonic clock in ms and [sleepMs] waits; both are passed in for tests.
+ * [clock] tells the time and waits.
  */
 class ElmPoller(
     private val line: ElmLine,
     private val profile: CarProfile,
     private val listener: ObdListener,
     private val running: () -> Boolean,
-    private val clockMs: () -> Long,
-    private val sleepMs: (Long) -> Unit,
+    private val clock: ObdClock,
     private val rateLogMs: Long = DEFAULT_RATE_LOG_MS,
 ) {
     /**
@@ -91,43 +97,46 @@ class ElmPoller(
         val scheduler = PollScheduler(channels)
         val byRequest = channels.groupBy { it.request }
         var timeouts = 0
-        var nextRateLog = clockMs() + rateLogMs
-        while (running()) {
-            val now = clockMs()
-            val next = scheduler.next(now) ?: return "car stopped answering"
-            if (next.notBeforeMs > now) {
-                sleepMs(next.notBeforeMs - now)
-                continue
-            }
-            val request = next.request
-            val cmd = hex(request.mode, 2) + hex(request.pid, 2 * request.pidLength)
-            val sent = clockMs()
-            val text = line.command(cmd, REQUEST_TIMEOUT_MS)
-            val done = clockMs()
-            if (text == null) {
-                if (++timeouts >= MAX_TIMEOUTS) return "adapter stopped answering"
-            } else {
-                timeouts = 0
-            }
-            val response = text?.let { ElmParser.parse(it, headers = false, command = cmd) }
-            var answered = false
-            if (response is ElmResponse.Messages) {
-                // The answer is stamped halfway through the request: the ECU read it some time in between.
-                val at = sent + (done - sent) / 2
-                for (channel in byRequest[request].orEmpty()) {
-                    val value = channel.decode(response.messages) ?: continue
-                    if (!value.isFinite()) continue
-                    answered = true
-                    listener.value(channel, value, at)
+        var nextRateLog = clock.nowMs() + rateLogMs
+        var ended: String? = null
+        while (ended == null && running()) {
+            val now = clock.nowMs()
+            val next = scheduler.next(now)
+            when {
+                next == null -> ended = "car stopped answering"
+                next.notBeforeMs > now -> clock.sleep(next.notBeforeMs - now)
+                else -> {
+                    timeouts = if (ask(next.request, byRequest, scheduler)) 0 else timeouts + 1
+                    if (timeouts >= MAX_TIMEOUTS) ended = "adapter stopped answering"
+                    val done = clock.nowMs()
+                    if (done >= nextRateLog) {
+                        nextRateLog = done + rateLogMs
+                        logRates(scheduler, channels, done)
+                    }
                 }
             }
-            scheduler.completed(request, sent, done - sent, answered)
-            if (done >= nextRateLog) {
-                nextRateLog = done + rateLogMs
-                logRates(scheduler, channels, done)
-            }
         }
-        return "stopped"
+        return ended ?: "stopped"
+    }
+
+    /** Sends [request] and reports its channels' values; false when no prompt came back in time. */
+    private fun ask(request: Request, byRequest: Map<Request, List<PidChannel>>, scheduler: PollScheduler): Boolean {
+        val cmd = hex(request.mode, 2) + hex(request.pid, 2 * request.pidLength)
+        val sent = clock.nowMs()
+        val text = line.command(cmd, REQUEST_TIMEOUT_MS)
+        val done = clock.nowMs()
+        val response = text?.let { ElmParser.parse(it, headers = false, command = cmd) }
+        val messages = (response as? ElmResponse.Messages)?.messages.orEmpty()
+        // The answer is stamped halfway through the request: the ECU read it some time in between.
+        val at = sent + (done - sent) / 2
+        var answered = false
+        for (channel in byRequest[request].orEmpty()) {
+            val value = channel.decode(messages)?.takeIf { it.isFinite() } ?: continue
+            answered = true
+            listener.value(channel, value, at)
+        }
+        scheduler.completed(request, sent, done - sent, answered)
+        return text != null
     }
 
     private fun logRates(scheduler: PollScheduler, channels: List<PidChannel>, nowMs: Long) {

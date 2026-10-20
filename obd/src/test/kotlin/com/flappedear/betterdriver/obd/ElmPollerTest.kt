@@ -18,17 +18,23 @@ private class FakeElm(
     val answers: MutableMap<String, String>,
     val silent: Set<String> = emptySet(),
     val latencyMs: Long = 25,
-) {
-    var nowMs = 0L
+) : ObdClock {
+    var now = 0L
     val sent = ArrayList<String>()
     lateinit var line: ElmLine
 
     fun write(bytes: ByteArray) {
         val cmd = String(bytes, Charsets.US_ASCII).trimEnd('\r')
         sent += cmd
-        nowMs += latencyMs
+        now += latencyMs
         if (cmd in silent) return
         line.feed(((answers[cmd] ?: "?") + "\r\r>").toByteArray(Charsets.US_ASCII))
+    }
+
+    override fun nowMs() = now
+
+    override fun sleep(ms: Long) {
+        now += ms
     }
 }
 
@@ -80,8 +86,7 @@ class ElmPollerTest {
         profile = CarProfile.Generic,
         listener = listener,
         running = { elm.sent.size < stopAfter },
-        clockMs = { elm.nowMs },
-        sleepMs = { elm.nowMs += it },
+        clock = elm,
         rateLogMs = 1_000,
     )
 
@@ -139,7 +144,7 @@ class ElmPollerTest {
         val elm = FakeElm(car(), silent = setOf("010C", "010D", "0105", "0111"), latencyMs = 0)
         val got = Recorded()
         val line = ElmLine(elm::write).also { elm.line = it }
-        val poller = ElmPoller(line, CarProfile.Generic, got, { true }, { elm.nowMs }, { elm.nowMs += it })
+        val poller = ElmPoller(line, CarProfile.Generic, got, { true }, elm)
         assertEquals("adapter stopped answering", poller.run())
     }
 
@@ -148,7 +153,7 @@ class ElmPollerTest {
         val elm = FakeElm(car(), silent = setOf("ATZ") + ElmPoller.SETUP, latencyMs = 0)
         val got = Recorded()
         val line = ElmLine(elm::write).also { elm.line = it }
-        assertEquals("adapter not answering", ElmPoller(line, CarProfile.Generic, got, { true }, { 0 }, {}).run())
+        assertEquals("adapter not answering", ElmPoller(line, CarProfile.Generic, got, { true }, elm).run())
     }
 
     @Test

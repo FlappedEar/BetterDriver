@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.core.ble.nmea.TcpNetwork
 import com.flappedear.betterdriver.obd.CarProfile
 import com.flappedear.betterdriver.obd.ElmLine
 import com.flappedear.betterdriver.obd.ElmPoller
+import com.flappedear.betterdriver.obd.ObdClock
 import com.flappedear.betterdriver.obd.ObdListener
 import com.flappedear.betterdriver.obd.PidChannel
 import com.flappedear.betterdriver.obd.StandardPids
@@ -109,6 +110,7 @@ class ObdSource(
     }
 
     /** One connection; null when it never opened (already noted), else why it ended. */
+    @Suppress("ReturnCount") // Each early return is one way no connection opened.
     private fun connectOnce(sink: SampleSink): String? {
         val all = targets()
         if (all.isEmpty()) {
@@ -132,7 +134,7 @@ class ObdSource(
         val where = "${target.host}:${target.port}"
         DebugLog.i(Tag, "connected to $where")
         val reason = try {
-            ElmPoller(l, profile, Listener(sink, where), { running }, SystemClock::elapsedRealtime, ::sleep).run()
+            ElmPoller(l, profile, Listener(sink, where), { running }, clock).run()
         } finally {
             line = null
             socket = null
@@ -145,6 +147,7 @@ class ObdSource(
     }
 
     /** The first target that accepts a connection, or null (noted) when none does. */
+    @Suppress("ReturnCount") // Connected, stopped, or none answered.
     private fun open(all: List<ObdTarget>): Pair<ObdTarget, Socket>? {
         val errors = ArrayList<String>()
         for (t in all) {
@@ -192,6 +195,12 @@ class ObdSource(
         } catch (_: InterruptedException) {
             // Only stop() interrupts, and it has cleared [running].
         }
+    }
+
+    private val clock = object : ObdClock {
+        override fun nowMs() = SystemClock.elapsedRealtime()
+
+        override fun sleep(ms: Long) = this@ObdSource.sleep(ms)
     }
 
     private inner class Listener(private val sink: SampleSink, private val where: String) : ObdListener {
