@@ -191,7 +191,7 @@ class DriveChecksTest {
         check("video.gopro-1.sync_error", Verdict.PASS)
         // Coach (FBBD-27, FBBD-47, FBBD-48, FBBD-49).
         check("coach.delay_live", Verdict.PASS, 300.0)
-        check("coach.tts", Verdict.PASS, 100.0)
+        check("coach.tts", Verdict.INFO, 100.0)
         check("coach.total_live", Verdict.PASS, 380.0)
         assertTrue("80 ms, measured by the app" in r.metric("coach.total_live").how)
         check("coach.overlap", Verdict.PASS, 0.0)
