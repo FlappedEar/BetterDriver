@@ -152,7 +152,11 @@ internal object Sources {
         val phone = if (gnss.demo) emptyList() else listOf(PhoneImuSource(app))
         // OBD-II from the adapters listed when the session started (UI-105 C); none listed, none read.
         val carData = if (gnss.demo) emptyList() else sessionCarData(app)
-        val obd = if (carData.isEmpty()) emptyList() else listOf(ObdSource({ obdTargets(app, carData) }))
+        val obd = if (carData.isEmpty()) {
+            emptyList()
+        } else {
+            listOf(ObdSource({ obdTargets(app, carData) }, watch = { obdWatch(app, it) }))
+        }
         return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }
 }

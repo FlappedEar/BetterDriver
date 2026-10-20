@@ -30,11 +30,13 @@ interface ObdConnectorListener {
  * [targets] for the adapters to try, in order (the app puts paired Bluetooth adapters before the
  * Wi-Fi one), and runs an [ElmPoller] on the first that opens. Only when none of them opens is
  * [fallback] asked (the app scans for a Bluetooth LE adapter there, which takes a few seconds).
- * An ended connection is retried soon; while no adapter answers the wait grows to [retryMs]'s last.
+ * An ended connection is retried soon; while no adapter answers the wait grows to [retryMs]'s last,
+ * and [retryNow] cuts the wait short (the app calls it when Wi-Fi or Bluetooth comes back, FBBD-271).
  *
- * [run] blocks until [running] turns false; [stop] closes the open connection so it returns. The
- * [tracker] follows every step for the OBD page. Pure JVM, so the whole loop is tested against
- * simulated adapters.
+ * [run] blocks until [running] turns false; [stop] closes the open connection so it returns. No
+ * exception ends the loop while [running] holds: a round that fails in an unexpected way is logged
+ * and retried, and an interrupted one ends quietly (FBBD-269). The [tracker] follows every step for
+ * the OBD page. Pure JVM, so the whole loop is tested against simulated adapters.
  */
 @Suppress("LongParameterList") // Collaborators, each replaced in the tests.
 class ObdConnector(
@@ -52,8 +54,14 @@ class ObdConnector(
     @Volatile
     private var open: ObdConnection? = null
 
-    private var lastNote: String? = null
+    @Volatile
+    private var retrySoon = false
 
+    private var lastNote: String? = null
+    private var lastNoteMs = 0L
+    private var searchingSinceMs = 0L
+
+    @Suppress("TooGenericExceptionCaught") // Any failed round is retried, never a crash (FBBD-269).
     fun run(running: () -> Boolean) {
         this.running = running
         var failures = 0
@@ -64,17 +72,43 @@ class ObdConnector(
                 "connection lost: ${e.message}"
             } catch (e: SecurityException) {
                 "no permission: ${e.message}"
+            } catch (_: InterruptedException) {
+                // Only stopping interrupts; the loop condition ends the run.
+                "interrupted"
+            } catch (e: RuntimeException) {
+                // A bug in one round must not end car data for the session, nor the recorder process.
+                listener.log("round failed: $e")
+                "failed: $e"
             }
             if (!running()) break
             // A connection that opened and ended is retried soon; no adapter at all backs off.
             failures = if (reason == null) failures + 1 else 0
-            clock.sleep(retryMs[(failures - 1).coerceIn(0, retryMs.size - 1)])
+            await(retryMs[(failures - 1).coerceIn(0, retryMs.size - 1)])
         }
     }
 
     /** Closes the open connection, so a blocked [run] notices [running] has turned false. */
     fun stop() {
         open?.close()
+    }
+
+    /**
+     * Ends the wait before the next try now (FBBD-271): the app calls it when a Wi-Fi network or a
+     * Bluetooth device comes back, so a lost adapter is tried again at once, not up to 20 s later.
+     */
+    fun retryNow() {
+        retrySoon = true
+    }
+
+    /** Waits [ms] in short steps, ending early on [retryNow] or when [running] turns false. */
+    private fun await(ms: Long) {
+        val end = clock.nowMs() + ms
+        while (running() && !retrySoon) {
+            val left = end - clock.nowMs()
+            if (left <= 0) break
+            clock.sleep(left.coerceAtMost(WAIT_STEP_MS))
+        }
+        retrySoon = false
     }
 
     /** One round; null when no adapter opened (already noted), else why the connection ended. */
@@ -92,6 +126,8 @@ class ObdConnector(
         }
         val (target, line) = opened
         lastNote = null
+        // Wi-Fi or Bluetooth news from before this connection says nothing about the next drop.
+        retrySoon = false
         listener.log("connected to ${target.where} over ${target.transport.label}")
         tracker.connecting(target.name)
         val reason = try {
@@ -136,12 +172,23 @@ class ObdConnector(
         return line
     }
 
-    /** Logs [text] once until it changes, so a missing adapter is not logged every few seconds. */
+    /**
+     * Logs [text] once until it changes, so a missing adapter is not logged every few seconds; while
+     * it stays the same it is logged again every [STILL_LOG_MS] with how long, so a log shows the
+     * search is still running (FBBD-271).
+     */
     private fun note(text: String, shown: String) {
         tracker.searching(shown)
-        if (text == lastNote) return
-        lastNote = text
-        listener.log(text)
+        val now = clock.nowMs()
+        if (text != lastNote) {
+            if (lastNote == null) searchingSinceMs = now
+            lastNote = text
+            lastNoteMs = now
+            listener.log(text)
+        } else if (now - lastNoteMs >= STILL_LOG_MS) {
+            lastNoteMs = now
+            listener.log("still searching after ${(now - searchingSinceMs) / MS_PER_S} s: $text")
+        }
     }
 
     private inner class Poll(private val target: ObdTarget) : ObdListener {
@@ -171,6 +218,13 @@ class ObdConnector(
     companion object {
         /** Retry after an ended connection: 5 s; while no adapter answers: 5 s, 10 s, then every 20 s. */
         val RETRY_MS = listOf(5_000L, 10_000L, 20_000L)
+
+        /** How often a wait checks for [retryNow] and stopping. */
+        const val WAIT_STEP_MS = 250L
+
+        /** How often an unchanged "no adapter" is logged again. */
+        const val STILL_LOG_MS = 60_000L
+        private const val MS_PER_S = 1_000L
     }
 }
 
