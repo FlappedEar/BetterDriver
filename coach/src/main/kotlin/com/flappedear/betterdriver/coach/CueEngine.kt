@@ -323,6 +323,9 @@ private class SpeechTiming(
     /** How old the latest fix was when it arrived ([CoachFix.ageMicros]): the car is that much further on. */
     var fixAgeMicros = 0L
 
+    /** The output's own delay; changes when the output does (FBBD-255). */
+    var audioDelayMillis = settings.audioDelayMillis
+
     fun onSpeed(t: Long, kmh: Double) {
         this.kmh = kmh
         speeds.addLast(t to kmh)
@@ -331,7 +334,7 @@ private class SpeechTiming(
 
     /** From asking for [text] until it has been heard. */
     fun needMicros(text: String) =
-        latencyMicros + settings.audioDelayMillis * MicrosPerMilli + phrases.durationMicros(text)
+        latencyMicros + audioDelayMillis * MicrosPerMilli + phrases.durationMicros(text)
 
     /** Free to speak: not braking and nothing still being said. */
     fun free(now: Long): Boolean {
@@ -427,6 +430,16 @@ class CueEngine(
     private val speech = SpeechTiming(settings, latencyMicros, phrases)
     private val inLap = InLap()
     private val identity = track.identity
+
+    /**
+     * The audio output's own delay the cues allow for, from [CoachSettings.audioDelayMillis]; set anew
+     * when the output changes during the session, such as a headset connected (FBBD-255).
+     */
+    var audioDelayMillis: Int
+        get() = speech.audioDelayMillis
+        set(value) {
+            speech.audioDelayMillis = value.coerceIn(0, CoachSettings.MaxAudioDelayMillis)
+        }
     private val picked: (CornerMap) -> Chosen = { m ->
         fun numbers(p: CornerPick) = pickedCorners(m, laps.frame, listOf(p), identity).sorted()
         Chosen(

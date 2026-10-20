@@ -67,3 +67,21 @@ data class AudioDelayUsed(val millis: Int, val source: String) {
         const val Set = "set"
     }
 }
+
+/**
+ * The output delays measured during a session (FBBD-49, FBBD-255), by path ("live" or "clip") and
+ * output type ("speaker", "bt_sco", ...): at its start, and again each time the output changes, such as
+ * a headset connected mid-session. [setMillis] is the coach settings' delay, used for an output never
+ * measured. Single-threaded.
+ */
+class SessionDelays(private val setMillis: Int) {
+    private val measured = mutableMapOf<Pair<String, String>, Int>()
+
+    /** The delay measured on [path] to [output]; null [millis] when Android gave none forgets it. */
+    fun measured(path: String, output: String, millis: Int?) {
+        if (millis == null) measured.remove(path to output) else measured[path to output] = millis
+    }
+
+    /** The delay of a cue said on [path] to [output]: the one measured there, else the set one. */
+    fun on(path: String, output: String): AudioDelayUsed = OutputDelay.effective(setMillis, measured[path to output])
+}

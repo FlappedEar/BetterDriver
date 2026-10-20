@@ -229,6 +229,20 @@ class CueEngineTest {
         assertOutsideBrakingZones(drive, run.cues, paces, 2_000)
     }
 
+    /** FBBD-255: a delay set once the output changes times the cues as one known from the start. */
+    @Test
+    fun `an audio delay set during the session times the cues`() {
+        val slow3 = SimCircuit.Pace(kmh = listOf(0.0, 0.0, -7.0, 0.0))
+        val paces = listOf(slow3, slow3, slow3, slow3, slow3)
+        val drive = sim.drive(paces)
+        val later = CueEngine(track, CoachSettings(Verbosity.Full, audioDelayMillis = 100), reference())
+        later.audioDelayMillis = 2_000
+        val run = run(later, drive)
+        val known = run(CueEngine(track, CoachSettings(Verbosity.Full, audioDelayMillis = 2_000), reference()), drive)
+        assertEquals(known.cues, run.cues)
+        assertOutsideBrakingZones(drive, run.cues, paces, 2_000)
+    }
+
     /**
      * FBBD-229: each fix arrives 0.8 s after it was taken, and says so. The cue still ends before the
      * braking zone where the car really is when it is heard.

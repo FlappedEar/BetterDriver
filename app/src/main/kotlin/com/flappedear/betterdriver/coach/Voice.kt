@@ -290,7 +290,7 @@ internal class Voice(context: Context) {
         return queued
     }
 
-    /** Where the sound goes: a connected headset (Bluetooth, wired or USB), else the phone speaker. */
+    /** Where the sound is routed (FBBD-255): a headset (Bluetooth, wired or USB), else the phone speaker. */
     private fun route() = if (out.headset() != null) "headset" else "speaker"
 
     /** Logs a live phrase's start and end, and gives the focus back when it ends, stops or fails. */

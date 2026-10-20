@@ -10,6 +10,9 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 /** The output's delay as measured (FBBD-49), the output's type ("bt_a2dp", "speaker", ...) and the headset's name. */
 internal data class MeasuredDelay(val millis: Int, val output: String, val headset: String?)
 
+/** One probe (FBBD-255): the output's type and headset name, and its delay; null [millis] when Android gave none. */
+internal data class Probed(val millis: Int?, val output: String, val headset: String?)
+
 /**
  * Measures the audio output's own delay (FBBD-49) with nothing for the driver to do: plays a moment of
  * silence on the coach voice's path (same audio attributes, so the same output: the helmet headset, the
@@ -20,7 +23,14 @@ internal data class MeasuredDelay(val millis: Int, val output: String, val heads
  * output or the route changed while measuring. Each measurement goes in the continuous log.
  */
 internal object OutputDelayProbe {
-    fun measure(lowLatency: Boolean = false): MeasuredDelay? {
+    fun measure(lowLatency: Boolean = false): MeasuredDelay? =
+        probe(lowLatency)?.let { p -> p.millis?.let { MeasuredDelay(it, p.output, p.headset) } }
+
+    /**
+     * Measures as [measure] does, and also says which output was measured when Android gave no delay.
+     * Null when no track could be made, or the output changed while measuring, so it is unknown which.
+     */
+    fun probe(lowLatency: Boolean = false): Probed? {
         val track = build(lowLatency) ?: return null
         val sampled = try {
             sample(track)
@@ -38,7 +48,7 @@ internal object OutputDelayProbe {
                 (routed?.productName?.let { " ($it)" }.orEmpty()) + ", ${readings.size} reading(s)",
         )
         val headset = routed?.productName?.toString()?.takeIf { output != "speaker" }
-        return millis?.let { MeasuredDelay(it, output, headset) }
+        return if (sampled.rerouted || routed == null) null else Probed(millis, output, headset)
     }
 
     /** What one playback gave: its [readings], the device it was [routed] to, and whether that changed. */
