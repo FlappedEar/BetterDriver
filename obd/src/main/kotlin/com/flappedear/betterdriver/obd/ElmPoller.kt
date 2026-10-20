@@ -75,7 +75,7 @@ class ElmPoller(
 
     private val lastValues = LinkedHashMap<String, Double>()
     private var requests = 0
-    private var requestMsTotal = 0L
+    private var rateStartMs = 0L
 
     /**
      * Sets up the adapter, discovers the car's PIDs and polls until stopped. Returns why it ended,
@@ -128,11 +128,14 @@ class ElmPoller(
         return singles
     }
 
-    /** `AT H1` or `AT H0`; true when the adapter took it. */
+    /**
+     * `AT H1` or `AT H0`; true when the adapter took it. [headers] follows only an acknowledged
+     * change, so the parser keeps reading what the adapter prints.
+     */
     private fun setHeaders(on: Boolean): Boolean {
         val ok = line.command(if (on) "ATH1" else "ATH0", AT_TIMEOUT_MS)?.contains("OK") == true
-        headers = on && ok
-        return ok || !on
+        if (ok) headers = on
+        return ok
     }
 
     /** The ECU messages in [text], the answer to [cmd], read with the current [headers] setting. */
@@ -202,7 +205,8 @@ class ElmPoller(
         val scheduler = PollScheduler(channels, groups = groups)
         val byRequest = groups.associateBy { it.first().request }
         var timeouts = 0
-        var nextRateLog = clock.nowMs() + rateLogMs
+        rateStartMs = clock.nowMs()
+        var nextRateLog = rateStartMs + rateLogMs
         var ended: String? = null
         while (ended == null && running()) {
             val now = clock.nowMs()
@@ -250,7 +254,6 @@ class ElmPoller(
         }
         learn(request, learned, count, text, messages.size, values.size)
         requests++
-        requestMsTotal += done - sent
         val answered = values.keys.mapTo(HashSet()) { it.request }
         scheduler.completed(request, sent, done - sent, answered.isNotEmpty(), answered)
         return text != null
@@ -296,13 +299,15 @@ class ElmPoller(
             "${it.id}=${"%.1f".format(Locale.ROOT, scheduler.achievedHz(it, nowMs))}"
         }
         val latency = scheduler.latencyMs?.let { "%.0f".format(Locale.ROOT, it) } ?: "n/a"
-        val perSecond = if (requestMsTotal > 0) requests * MS_PER_S / requestMsTotal else 0.0
+        // Over the whole interval, idle waits for slow channels included.
+        val elapsed = nowMs - rateStartMs
+        val perSecond = if (elapsed > 0) requests * MS_PER_S / elapsed else 0.0
         listener.log(
             "rates_hz $rates latency_ms=$latency requests_per_s=${"%.1f".format(Locale.ROOT, perSecond)}" +
                 " response_count=${if (countOn) "on" else "off"}",
         )
         requests = 0
-        requestMsTotal = 0
+        rateStartMs = nowMs
         // The latest value of every channel, so slow ones (oil, coolant) can be read from the log.
         if (lastValues.isNotEmpty()) {
             val values = lastValues.entries.joinToString(" ") { (id, v) -> "$id=${"%.1f".format(Locale.ROOT, v)}" }

@@ -35,7 +35,8 @@ private enum class CountSupport {
  * The car has the PIDs it listed in that log, with fixed values. Answers are single-frame or
  * ISO-TP multi-frame, printed with headers on or off as `AT H1`/`AT H0` set. [multiPidEcu] false is
  * an ECU that answers only the first PID of a multi-PID request; [rejectHeaders] an adapter that
- * answers `?` to `AT H1`. [tcm] adds a second ECU (7E9) that
+ * answers `?` to `AT H1`, [rejectHeadersOff] one that answers `?` to `AT H0` once headers
+ * are on. [tcm] adds a second ECU (7E9) that
  * answers speed and coolant too, as a transmission ECU can.
  */
 @Suppress("LongParameterList")
@@ -48,6 +49,7 @@ private class TimedCorolla(
     val frameMs: Long = 3,
     val trailingWaitMs: Long = 200,
     val rejectHeaders: Boolean = false,
+    val rejectHeadersOff: Boolean = false,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -76,6 +78,11 @@ private class TimedCorolla(
         val cmd = String(bytes, Charsets.US_ASCII).trimEnd('\r')
         sent += cmd
         if (cmd == "ATH1" && rejectHeaders) {
+            now += transportMs
+            line.feed("?\r\r>".toByteArray(Charsets.US_ASCII))
+            return
+        }
+        if (cmd == "ATH0" && headers && rejectHeadersOff) {
             now += transportMs
             line.feed("?\r\r>".toByteArray(Charsets.US_ASCII))
             return
@@ -306,6 +313,25 @@ class ObdRatesTest {
         table("multi-PID + count, headers off", after)
         assertTrue(after.rates.getValue("rpm") >= 10.0, "rpm ${after.rates["rpm"]}")
         assertEquals(85.0, after.listener.values.last { it.first == "oil_temp" }.second)
+    }
+
+    @Test
+    fun `an adapter stuck with headers on is still read`() {
+        // The headers-on probe gets one PID back, and AT H0 is then rejected: polling goes on with
+        // single PIDs, still read with headers on as the adapter prints them.
+        val after = run(TimedCorolla(CountSupport.MESSAGES, multiPidEcu = false, rejectHeadersOff = true))
+        table("ECU without multi-PID, stuck on H1", after)
+        assertTrue(after.rates.getValue("rpm") >= 1.5, "rpm ${after.rates["rpm"]}")
+        assertEquals(85.0, after.listener.values.last { it.first == "oil_temp" }.second)
+    }
+
+    @Test
+    fun `requests per second counts the whole interval`() {
+        val after = run(TimedCorolla(CountSupport.MESSAGES))
+        val rate = after.listener.logs.last { it.startsWith("rates_hz ") }
+        val perSecond = Regex("requests_per_s=([0-9.]+)").find(rate)!!.groupValues[1].toDouble()
+        // Two fast requests at 12.8 Hz and the slow one at 2 Hz.
+        assertEquals(2 * 12.75 + 2, perSecond, 1.5)
     }
 
     @Test
