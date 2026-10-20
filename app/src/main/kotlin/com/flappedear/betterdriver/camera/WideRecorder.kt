@@ -25,8 +25,9 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Records the phone's back camera at a frame size CameraX has no preset for, such as 2688×1512 for
  * 2.7K (FBBD-239): Camera2 draws into [WideEncoder]'s video encoder through a [FrameRelay], and the
- * encoder writes the MP4s itself. CameraX must have nothing bound while it runs. Until 0.4.0 a MediaRecorder took the frames;
- * it kept only ~50 of 60 fps (FBBD-246) and failed handing over to the next file at 3.8 GB (FBBD-248).
+ * encoder writes the MP4s itself. CameraX must have nothing bound while it runs. Until 0.4.0 a
+ * MediaRecorder took the frames; it kept only ~50 of 60 fps (FBBD-246) and failed handing over to the
+ * next file at 3.8 GB (FBBD-248).
  *
  * A file that nears [WideTarget.maxFileBytes] hands over to the next one ([Listener.nextFile]) at a
  * keyframe without closing the camera, as the CameraX path does, so video has no gap between files.
