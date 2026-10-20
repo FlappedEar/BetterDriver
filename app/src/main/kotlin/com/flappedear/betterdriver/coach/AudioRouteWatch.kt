@@ -123,9 +123,12 @@ internal class AudioRouteWatch(
                 // A result for a route already left behind (it changed again meanwhile) is dropped.
                 if (watched === w && w.deviceId == id) {
                     // A path not measured (still settling, no track), the paths measured different devices,
-                    // or not the one routed now: the next check measures it again.
-                    if (!isRouted(measuredId(w.clips, live, clip))) w.deviceId = NotMeasured
-                    onMeasured(Remeasured(now, w.clips, live, clip))
+                    // or not the one routed now: nothing of it is used, and the next check measures again.
+                    if (isRouted(measuredId(w.clips, live, clip))) {
+                        onMeasured(Remeasured(now, w.clips, live, clip))
+                    } else {
+                        w.deviceId = NotMeasured
+                    }
                 }
             }
         }
