@@ -454,4 +454,52 @@ class DriveChecksTest {
         assertEquals(9.0, clock.value!!, 1.5, clock.how)
         assertTrue("first minute with a fix" in clock.how, clock.how)
     }
+
+    @Test
+    fun `losses before the first fix are counted apart from dropped samples (FBBD-259)`() {
+        // The pattern of Arek's 2026-10-20 08:59 drive (counts only): first fix 114 s in, 124 samples lost
+        // before it on a lagging link, 13 in about 17,500 after it. Counted over the drive: 0.67 %, a FAIL.
+        line(0, CheckLog.SESSION, "start utc_ms=$start source=RaceBox_Micro")
+        val gnss = GnssSecondLog(id, start) { line(0, CheckLog.GNSS, it) }
+        val fixAt = 114_000_000L
+        val stop = 814_000_000L
+        // Five more lost in a row right up to the first fix, the first sample of its second: that line's
+        // losses are from before the fix (Codex on #241).
+        val lostBefore = (0 until 124).map { 50L + it * 22 }.toSet() + (2_845L..2_849L)
+        val lostAfter = (0 until 13).map { 3_007L + it * 1_000 }.toSet()
+        var i = 0L
+        var t = 0L
+        while (t <= stop) {
+            val fix = t >= fixAt
+            if (i !in lostBefore && i !in lostAfter) {
+                gnss.onSamples(
+                    SampleSet(
+                        t + 30_000,
+                        listOf(
+                            ChannelValue(GnssChannels.UTC_MS.id, (start + t / 1_000).toDouble()),
+                            ChannelValue(GnssChannels.LAT.id, if (fix) 50.0 else 0.0),
+                            ChannelValue(GnssChannels.LON.id, if (fix) 19.0 else 0.0),
+                            ChannelValue(GnssChannels.SPEED_KMH.id, 50.0),
+                        ),
+                    ),
+                )
+            }
+            t += 40_000
+            i++
+        }
+        gnss.onStatus(RecorderStatus.Stopped("user"))
+        lines.replaceAll { l ->
+            val tl = CheckLog.fields(l.message)["t_us"]?.toLong()
+            if (l.tag == CheckLog.GNSS && tl != null) l.copy(utcMillis = start + tl / 1_000) else l
+        }
+        line(stop, CheckLog.SESSION, "stop t_us=$stop reason=user")
+        val r = driveChecks(lines.toList()).single()
+        val dropped = r.metric("gnss.dropped")
+        assertEquals(Verdict.PASS, dropped.verdict, dropped.how)
+        assertEquals(0.07, dropped.value!!, 0.005, dropped.how)
+        assertTrue("129 missing before the first fix" in dropped.how, dropped.how)
+        val before = r.metric("gnss.dropped_before_fix")
+        assertEquals(Verdict.INFO, before.verdict)
+        assertEquals(129.0, before.value)
+    }
 }

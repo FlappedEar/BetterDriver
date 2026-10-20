@@ -6,8 +6,9 @@ import kotlinx.serialization.json.Json
 
 /** Bumped whenever what the report holds or how it is worked out changes; an older stored report is made again. */
 // 2: the Channels section (FBBD-174); 3: the hardware checks of every drive; 4: video frame rate (FBBD-246);
-// 5: thermal rows only after an Android thermal shutdown; 6: text-to-speech time for information only (FBBD-47).
-const val QualityFormat = 6
+// 5: thermal rows only after an Android thermal shutdown; 6: text-to-speech time for information only (FBBD-47);
+// 7: GNSS dropped samples from the first fix, those before it for information (FBBD-259).
+const val QualityFormat = 7
 
 /** A value against its pass criterion (FBBD-183). */
 @Serializable

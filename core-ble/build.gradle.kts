@@ -25,6 +25,8 @@ kotlin {
 dependencies {
     // RaceBoxSource is a recorder DataSource and writes recorder channels.
     api(project(":recorder"))
+    // ObdSource drives the ELM327 reader and decodes PIDs (FBBD-15).
+    implementation(project(":obd"))
     // The scanner and link state are Flows.
     api(libs.kotlinx.coroutines.android)
     testImplementation(libs.junit)
