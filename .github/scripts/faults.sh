@@ -32,6 +32,9 @@ restore_screen() {
 
 fail() {
   echo "::error title=Fault injection test::$*"
+  # Why the app is gone or not in front, in the job log itself: crashes and ANRs since boot.
+  adb logcat -b crash -d 2>/dev/null | tail -n 80 || true
+  adb logcat -d 2>/dev/null | grep -E "AndroidRuntime|ANR in $app|Process $app.* has died|Force finishing" | tail -n 40 || true
   restore_screen
   exit 1
 }
