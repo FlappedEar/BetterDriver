@@ -7,8 +7,10 @@ import android.media.AudioFocusRequest
 import android.media.AudioFormat
 import android.media.AudioManager
 import android.media.AudioTrack
+import android.os.Build
 import android.os.Handler
 import android.os.SystemClock
+import androidx.annotation.RequiresApi
 import com.flappedear.betterdriver.recorder.log.DebugLog
 
 /**
@@ -110,10 +112,10 @@ internal class AudioOut(context: Context, private val handler: Handler) {
         cutOff(old)
     }
 
-    /** The type of output the sound goes to (FBBD-47): the headset's, else "speaker". */
+    /** The type of output the sound is routed to (FBBD-47, FBBD-255): "bt_sco", ..., else "speaker". */
     fun output(): String = outputs.output()
 
-    /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
+    /** The headset the sound is routed to, by name, or null if it goes to the phone. */
     fun headset(): String? = outputs.headset()
 
     fun shutdown() {
@@ -181,16 +183,40 @@ internal class AudioOut(context: Context, private val handler: Handler) {
     }
 }
 
-/** The audio outputs connected (FBBD-47), for the coach voice and the output delay (FBBD-49). */
+/**
+ * The audio output the coach voice goes to (FBBD-47, FBBD-255), for its log and the output delay
+ * (FBBD-49): the device Android routes navigation guidance speech to, as its audio policy says; on
+ * Android before 13, which cannot say, the headset connected, else the phone speaker.
+ */
 internal class AudioOutputs(private val audio: AudioManager?) {
-    /** The type of output the sound goes to: the headset's, else "speaker". */
+    /** The type of output the sound goes to: "bt_sco", "bt_a2dp", ..., else "speaker". */
     fun output(): String = typeOf(device())
 
-    /** The Bluetooth or wired headset connected, by name, or null if sound goes to the phone. */
-    fun headset(): String? = device()?.productName?.toString()
+    /** The headset the sound goes to, by name, or null if it goes to the phone. */
+    fun headset(): String? = device()?.takeIf { typeOf(it) != Speaker }?.productName?.toString()
 
-    private fun device(): AudioDeviceInfo? =
-        audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS)?.firstOrNull { it.type in HeadsetTypes }
+    /** The device the coach voice is routed to now. */
+    fun device(): AudioDeviceInfo? {
+        val routed = policyRoute()
+        val all = if (routed == null) audio?.getDevices(AudioManager.GET_DEVICES_OUTPUTS).orEmpty() else emptyArray()
+        // The phone speaker too, so it has an id like the device a probe was routed to (FBBD-255).
+        return routed ?: all.firstOrNull { it.type in HeadsetTypes }
+            ?: all.firstOrNull { it.type == AudioDeviceInfo.TYPE_BUILTIN_SPEAKER }
+    }
+
+    /** Where Android's audio policy sends navigation guidance speech now; null before Android 13. */
+    fun policyRoute(): AudioDeviceInfo? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) routed() else null
+
+    /** Where Android's audio policy sends navigation guidance speech now (Android 13 on). */
+    @RequiresApi(Build.VERSION_CODES.TIRAMISU)
+    @Suppress("TooGenericExceptionCaught") // A policy that cannot answer leaves the connected headset.
+    private fun routed(): AudioDeviceInfo? = try {
+        audio?.getAudioDevicesForAttributes(AudioOut.Attributes)?.firstOrNull()
+    } catch (e: RuntimeException) {
+        DebugLog.w("AudioOut", "routed output not known", e)
+        null
+    }
 
     companion object {
         /** A device's output type as the coach logs it: a headset's, else "speaker" (FBBD-47). */
@@ -200,8 +226,10 @@ internal class AudioOutputs(private val audio: AudioManager?) {
             AudioDeviceInfo.TYPE_BLE_HEADSET, AudioDeviceInfo.TYPE_BLE_SPEAKER -> "ble"
             AudioDeviceInfo.TYPE_USB_HEADSET -> "usb"
             AudioDeviceInfo.TYPE_WIRED_HEADSET, AudioDeviceInfo.TYPE_WIRED_HEADPHONES -> "wired"
-            else -> "speaker"
+            else -> Speaker
         }
+
+        private const val Speaker = "speaker"
 
         private val HeadsetTypes = setOf(
             AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,

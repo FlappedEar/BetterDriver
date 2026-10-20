@@ -92,7 +92,8 @@ object CoachEvents {
      * ([readyMicros], session time), the output [device] type, whether audio focus was granted
      * ([focus]), and the output's own delay ([outDelayMillis], FBBD-49): with [outDelaySource]
      * "measured" when it was measured at the session's start, even if 0; else the one set in the
-     * coach settings, "none" when that is 0.
+     * coach settings, "none" when that is 0. [timedSource] is where the delay the cue was timed for
+     * came from when it was asked (FBBD-255): the output may have changed, and been measured, since.
      */
     @Suppress("LongParameterList")
     fun voiceText(
@@ -105,6 +106,7 @@ object CoachEvents {
         focus: Boolean? = null,
         outDelayMillis: Int? = null,
         outDelaySource: String? = null,
+        timedSource: String? = null,
     ) = buildString {
         append("seq=$seq path=$path asked_us=$askedMicros route=$route")
         readyMicros?.let { append(" ready_us=").append(it) }
@@ -113,6 +115,7 @@ object CoachEvents {
         val measured = outDelaySource == AudioDelayUsed.Measured
         append(" out_delay_ms=").append(outDelayMillis?.takeIf { measured || it > 0 }?.toString() ?: "none")
         outDelaySource?.let { append(" out_delay_src=").append(it) }
+        timedSource?.let { append(" timed_src=").append(it) }
     }
 
     /** The text of a [VOICE_END] event: cue [seq]'s sound [end]ed: "done", "stopped" (cut off) or "error". */

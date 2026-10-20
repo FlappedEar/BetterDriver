@@ -66,6 +66,36 @@ class HardwareChecksTest {
         assertEquals(100.0, r.metric("coach.clips").value)
     }
 
+    /**
+     * Arek's 2026-10-20 07:18 drive (FBBD-255): the delay was measured on the phone speaker at the start,
+     * the headset connected later, and its cues went out with only the set delay. Once the new output is
+     * measured, the check passes.
+     */
+    @Test
+    fun `cues to an output whose delay was never measured fail`() {
+        val sets = stream(0, 60_000_000)
+        fun cue(seq: Int, at: Long, delay: String) = listOf(
+            RecorderEvent(at, "coach_cue", "seq=$seq lap=1 kind=Corner corner=1 zone_m=300.0 text=Turn 1"),
+            RecorderEvent(
+                at + 20_000, EventKinds.COACH_VOICE,
+                "seq=$seq path=live asked_us=$at route=headset device=bt_sco focus=granted $delay",
+            ),
+        )
+        val unmeasured = "out_delay_ms=none out_delay_src=set"
+        val before = report(sets, cue(1, 10_000_000, unmeasured) + cue(2, 30_000_000, unmeasured))
+        assertEquals(Verdict.FAIL, before.metric("coach.out_delay").verdict)
+        assertEquals(0.0, before.metric("coach.out_delay").value)
+        assertTrue("not measured on bt_sco" in before.metric("coach.out_delay").how)
+        val measured = "out_delay_ms=250 out_delay_src=measured"
+        val after = report(sets, cue(1, 10_000_000, measured) + cue(2, 30_000_000, measured))
+        assertEquals(Verdict.PASS, after.metric("coach.out_delay").verdict)
+        // Timed for the set delay when asked; the headset was measured before its sound started.
+        val late = "$measured timed_src=set"
+        val raced = report(sets, cue(1, 10_000_000, late) + cue(2, 30_000_000, "$measured timed_src=measured"))
+        assertEquals(50.0, raced.metric("coach.out_delay").value)
+        assertEquals(Verdict.FAIL, raced.metric("coach.out_delay").verdict)
+    }
+
     @Test
     fun `praise then the straight's corner cue is not an extra cue`() {
         // Arek's 2026-10-19 evening replay: "Jedynka, to zadziałało", then the T2 cue on the same straight (UI-94 A).

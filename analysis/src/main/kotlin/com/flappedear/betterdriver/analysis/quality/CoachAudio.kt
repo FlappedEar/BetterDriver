@@ -25,6 +25,7 @@ internal fun audioMetrics(
     overlap(played.map { it.second }, ends),
     perStraight(played, samples),
     focus(played.map { it.second }),
+    outDelayKnown(played.map { it.second }),
     clipShare(played.map { it.second }),
 )
 
@@ -106,6 +107,31 @@ private fun overlap(voiced: List<Voiced>, ends: List<RecorderEvent>): QualityMet
         "coach.overlap", label, overlaps.size.toDouble(), "", overlaps.isEmpty(), Basis.MEASURED, OverlapCriterion,
         "cues whose sound started before the one before it ended, or cut it off; ${sorted.size} cue(s)" +
             (if (shown.isEmpty()) "" else ": $shown"),
+    )
+}
+
+private const val OutDelayCriterion = "100% of cues timed for their output's measured delay (FBBD-49, FBBD-255)"
+
+/**
+ * Cues whose output's own delay was measured by the app, on the output each was said to: at the
+ * session's start, or again when the output changed mid-session, such as a headset connected later.
+ * A cue with the set delay was timed without knowing how late its output plays it.
+ */
+private fun outDelayKnown(voiced: List<Voiced>): QualityMetric {
+    val label = "Cues with their output's delay measured"
+    // The delay the cue was timed for when asked; before FBBD-255 only the one its sound started with.
+    fun Voiced.source() = timedSource ?: outDelaySource
+    val logged = voiced.filter { it.source() != null }
+    if (logged.isEmpty()) {
+        return notMeasured("coach.out_delay", label, OutDelayCriterion, "the delay used is logged from FBBD-49 on")
+    }
+    val measured = logged.count { it.source() == "measured" }
+    val percent = measured * Percent / logged.size
+    val unknown = logged.filter { it.source() != "measured" }.mapNotNull { it.device }.distinct()
+    return judged(
+        "coach.out_delay", label, percent, "%", measured == logged.size, Basis.MEASURED, OutDelayCriterion,
+        "output delay measured on the output each cue went to; ${logged.size} cue(s)" +
+            (if (unknown.isEmpty()) "" else ", not measured on ${unknown.joinToString()}"),
     )
 }
 
