@@ -214,6 +214,12 @@ Heart Rate Service `0x180D`.
 - `HeartRateSource(context, address, name)`: a recorder `DataSource` named
   `heart_rate`; subscribes to Heart Rate Measurement `0x2A37`.
 - `HeartRateMeasurement`, `HeartRateDecoder`: pure Kotlin, unit tested.
+- The recorder logs the heart rate 10 s at a time (`HeartRateLog`, FBBD-225);
+  the drive checks grade a listed strap from it: rate >= 0.9 Hz, longest gap
+  <= 5 s while connected and in skin contact, heart rate back after every link
+  drop. `SimulatedHeartRateMonitorTest` runs a simulated strap (its own
+  measurement bytes, a link drop, a lost skin contact) through a real
+  recording, the VBO export and the log.
 
 **Heart Rate Measurement**: flags u8; the value u8, or u16 when bit 0 is set
 (bpm); Energy Expended u16 kJ when bit 3; then RR-Intervals u16 in 1/1024 s,

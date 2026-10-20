@@ -39,6 +39,15 @@ data class GattNotifySpec(
     val silenceTimeoutMs: Long = 5_000L,
 )
 
+/** A link that streams one device's notifications until stopped: [GattNotifyLink], or a simulated device in tests. */
+interface NotifyLink {
+    val state: StateFlow<LinkState>
+
+    fun start()
+
+    fun stop()
+}
+
 /**
  * Keeps a BLE link to one device that notifies a standard characteristic (Location and Speed,
  * Heart Rate Measurement, ...): connect, larger MTU, subscribe, and reconnect on its own after a
@@ -60,13 +69,13 @@ class GattNotifyLink(
     private val spec: GattNotifySpec,
     private val onData: (ByteArray) -> Unit,
     private val onState: (LinkState) -> Unit = {},
-) {
+) : NotifyLink {
     private val appContext = context.applicationContext
     private val thread = HandlerThread(spec.threadName).apply { start() }
     private val handler = Handler(thread.looper)
     private val policy = ReconnectPolicy(FirstRetryMs, MaxRetryMs)
     private val _state = MutableStateFlow<LinkState>(LinkState.Idle)
-    val state: StateFlow<LinkState> = _state.asStateFlow()
+    override val state: StateFlow<LinkState> = _state.asStateFlow()
 
     // Touched only on [thread], except the counters written by the binder thread.
     private var gatt: BluetoothGatt? = null
@@ -78,7 +87,7 @@ class GattNotifyLink(
 
     private val received = AtomicInteger()
 
-    fun start() {
+    override fun start() {
         handler.post {
             if (running) return@post
             running = true
@@ -88,7 +97,7 @@ class GattNotifyLink(
     }
 
     /** Disconnects and ends the link's thread. The link cannot be started again. */
-    fun stop() {
+    override fun stop() {
         handler.post {
             running = false
             handler.removeCallbacksAndMessages(null)

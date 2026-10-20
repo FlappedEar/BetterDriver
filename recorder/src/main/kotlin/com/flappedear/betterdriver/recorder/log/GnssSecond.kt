@@ -249,6 +249,6 @@ class GnssSecondLog(
 
         /** Link drops of the GNSS sources end so (core-ble's `*_disconnected`); heart rate is no GNSS source. */
         const val DisconnectedSuffix = "_disconnected"
-        const val HeartRateDrop = "hr_disconnected"
+        const val HeartRateDrop = HeartRateLogIds.DISCONNECTED
     }
 }

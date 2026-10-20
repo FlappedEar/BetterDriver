@@ -8,8 +8,8 @@ import kotlinx.serialization.json.Json
 // 2: the Channels section (FBBD-174); 3: the hardware checks of every drive; 4: video frame rate (FBBD-246);
 // 5: thermal rows only after an Android thermal shutdown; 6: text-to-speech time for information only (FBBD-47);
 // 7: GNSS dropped samples from the first fix, those before it for information (FBBD-259);
-// 8: 2.7K video frame rate for information only (FBBD-246 Won't do).
-const val QualityFormat = 8
+// 8: 2.7K video frame rate for information only (FBBD-246 Won't do); 9: heart rate (FBBD-225).
+const val QualityFormat = 9
 
 /** A value against its pass criterion (FBBD-183). */
 @Serializable

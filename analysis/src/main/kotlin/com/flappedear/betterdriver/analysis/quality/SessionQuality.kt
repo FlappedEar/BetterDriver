@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.analysis.quality
 
 import com.flappedear.betterdriver.recorder.Provenance
+import com.flappedear.betterdriver.recorder.log.HeartRateWindow
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.track.Track
 
@@ -79,6 +80,7 @@ fun sessionQuality(
         videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end, frames),
         goProSection(data.events, clips, end),
         coachSection(data.events, samples),
+        heartRateSection(HeartRateWindow.of(data.sampleSets, data.events), data.events, end),
         thermalSection(data.events),
         screenSection(data.events, outages(samples, end), end, underCoverFrom(samples)),
         exportSection(data.events, end),

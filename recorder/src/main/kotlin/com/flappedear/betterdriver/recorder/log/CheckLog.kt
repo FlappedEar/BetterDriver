@@ -10,12 +10,14 @@ import com.flappedear.betterdriver.recorder.RecorderEvent
  *   ("stop t_us=<session time> reason=<why>").
  * - [EVENT]: an event of a recording, as stored in it: "t_us=<session time> <kind> <text>".
  * - [GNSS]: the GNSS samples of one second of a recording ([GnssSecond]).
+ * - [HEART_RATE]: the heart rate samples of up to 10 s of a recording ([HeartRateWindow]).
  * - [QUALITY]: the session's own report at its end, one line per value.
  */
 object CheckLog {
     const val SESSION = "Session"
     const val EVENT = "Event"
     const val GNSS = "Gnss"
+    const val HEART_RATE = "Hr"
     const val QUALITY = "Quality"
 
     /** Event kinds the UI process logs itself, so the recorder does not log them a second time. */
