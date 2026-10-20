@@ -35,6 +35,14 @@ class TrackScreensTest {
     }
 
     @Test
+    fun `tiles past the six shown, saved by 1_4_0's ten, are kept when a slot changes`() {
+        val ten = TrackScreens(main = List(10) { "c$it" })
+        assertEquals(List(MaxMainTiles) { "c$it" }, ten.tiles(TrackPage.MAIN))
+        val next = ten.choose(TrackPage.MAIN, 1, "speed")
+        assertEquals(listOf("c0", "speed") + (2 until 10).map { "c$it" }, next.main)
+    }
+
+    @Test
     fun `short or unknown lists read as full screens and survive a save`() {
         val screens = TrackScreens(main = listOf("speed", "some_future_channel"), second = emptyList())
         assertEquals(
