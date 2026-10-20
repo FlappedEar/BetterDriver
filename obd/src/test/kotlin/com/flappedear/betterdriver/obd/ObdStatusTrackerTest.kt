@@ -54,7 +54,7 @@ class ObdStatusTrackerTest {
         val t = ObdStatusTracker(windowMs = 1_000)
         t.ready("ELM327", "A6", null, listOf(rpm), nowMs = 0)
         for (i in 1..100_000) t.value(rpm, 900.0, i * 100L)
-        assertEquals(10.0, t.snapshot(10_000_000).readings.single().hz, 0.2)
+        assertEquals(10.0, t.snapshot(10_000_050).readings.single().hz, 0.01)
     }
 
     @Test
