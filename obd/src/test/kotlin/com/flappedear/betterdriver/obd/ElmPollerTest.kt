@@ -158,7 +158,7 @@ class ElmPollerTest {
 
     @Test
     fun `a closed line throws`() {
-        val line = ElmLine {}
+        val line = ElmLine(write = {})
         line.close("socket closed")
         assertFailsWith<IOException> { line.command("ATZ", 10) }
     }

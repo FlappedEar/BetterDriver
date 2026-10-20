@@ -119,12 +119,12 @@ class ObdSource(
         }
         val (target, s) = open(all) ?: return null
         socket = s
-        val l = ElmLine { bytes ->
+        val l = ElmLine(write = { bytes ->
             s.getOutputStream().apply {
                 write(bytes)
                 flush()
             }
-        }
+        })
         line = l
         val reader = Thread({ read(s.getInputStream(), l) }, "obd-socket").apply {
             isDaemon = true
