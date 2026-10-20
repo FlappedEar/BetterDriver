@@ -124,7 +124,7 @@ fun telemetrySessionOf(
     val aliases = positions + mapOf(
         Aliases.LONGITUDINAL_ACCELERATION to ForwardAcceleration,
         Aliases.LATERAL_ACCELERATION to LeftAcceleration,
-    ).filterValues { it in channels }
+    ).filterValues { it in channels } + pedalAliases(channels.values)
     val gates = listOfNotNull(
         startFinish?.let { gate(TimingGateType.Start, "Start/finish", it) },
         finish?.let { gate(TimingGateType.Finish, "Finish", it) },

@@ -86,7 +86,13 @@ class VboWriter(private val out: Writer) {
         fun longitude(deg: Double) = String.format(Locale.ROOT, "%+012.5f", -deg * 60.0)
 
         fun velocity(kmh: Double) = String.format(Locale.ROOT, "%07.3f", kmh)
-        fun heading(deg: Double) = String.format(Locale.ROOT, "%06.2f", ((deg % 360.0) + 360.0) % 360.0)
+
+        fun heading(deg: Double): String {
+            // Rounded before wrapping: 359.996° is written 000.00, not 360.00 (FBBD-203).
+            val rounded = Math.round((((deg % 360.0) + 360.0) % 360.0) * 100.0) / 100.0
+            return String.format(Locale.ROOT, "%06.2f", if (rounded >= 360.0) 0.0 else rounded)
+        }
+
         fun height(m: Double) = String.format(Locale.ROOT, "%+09.2f", m)
         /** 1-based video file number, 4 digits as in Racelogic's example. */
         fun aviFileIndex(v: Double) = String.format(Locale.ROOT, "%04d", v.toLong().coerceIn(0, 9_999))
