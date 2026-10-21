@@ -34,12 +34,13 @@ class LateMtu(private val afterMs: Long = 5_000L, private val tries: Int = 5) {
 
     /** Data flows at [nowMs]; true when the link should ask for the MTU now. */
     fun ask(nowMs: Long): Boolean {
-        if (!due) return false
         val since = streamingSince ?: nowMs.also { streamingSince = it }
-        if (nowMs - since < afterMs) return false
-        due = false
-        waiting = true
-        return true
+        val now = due && nowMs - since >= afterMs
+        if (now) {
+            due = false
+            waiting = true
+        }
+        return now
     }
 
     /** Android refused to send the request (another one is running): try again on a later tick. */
