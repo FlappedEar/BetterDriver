@@ -40,7 +40,7 @@ private const val SetupTimeoutS = 15L
  * that needs it makes Android pair on the descriptor write.
  */
 @SuppressLint("MissingPermission")
-class BleObdTarget(context: Context, name: String, val address: String) : ObdTarget {
+class BleObdTarget(context: Context, name: String, override val address: String) : ObdTarget {
     private val appContext = context.applicationContext
     override val name = name.ifEmpty { address }
     override val where = "${this.name} (Bluetooth LE)"

@@ -48,7 +48,7 @@ class WifiObdTarget(
  * is cancelled first because it slows a classic connect down a lot.
  */
 @SuppressLint("MissingPermission")
-class SppObdTarget(context: Context, name: String, val address: String) : ObdTarget {
+class SppObdTarget(context: Context, name: String, override val address: String) : ObdTarget {
     private val appContext = context.applicationContext
     override val name = name.ifEmpty { address }
     override val where = "${this.name} (Bluetooth)"

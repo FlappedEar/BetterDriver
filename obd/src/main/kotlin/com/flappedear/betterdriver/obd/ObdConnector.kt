@@ -128,7 +128,8 @@ class ObdConnector(
         lastNote = null
         // Wi-Fi or Bluetooth news from before this connection says nothing about the next drop.
         retrySoon = false
-        listener.log("connected to ${target.where} over ${target.transport.label}")
+        val at = target.address?.let { " at $it" }.orEmpty()
+        listener.log("connected to ${target.where}$at over ${target.transport.label}")
         tracker.connecting(target.name)
         val reason = try {
             ElmPoller(line, profile, Poll(target), running, clock).run()
