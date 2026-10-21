@@ -3,6 +3,12 @@ package com.flappedear.betterdriver.camera
 import java.util.Locale
 import kotlin.math.roundToLong
 
+/** Camera2's FAST value for noise reduction and edge modes. */
+private const val FastMode = 1
+
+/** FAST when the camera lists it among its [available] noise-reduction or edge modes, else null (FBBD-278). */
+internal fun fastMode(available: IntArray?): Int? = FastMode.takeIf { available?.contains(it) == true }
+
 /**
  * What the phone camera delivered over the last minute, for the debug log (FBBD-278): Arek's
  * 2026-10-21 1080p·60 file held 56.6 fps, and the log could not say whether the camera slowed down,
@@ -31,6 +37,9 @@ class CameraFrames(fps: Int) {
     private var maxExposureNanos = 0L
     private var aeRange: String? = null
 
+    /** The camera's processing modes last seen ([processing]); null before the first frame. */
+    private var lastModes: IntArray? = null
+
     /**
      * A capture finished with sensor timestamp [sensorNanos], its frame duration and exposure time
      * when the result has them, and the auto-exposure frame-rate range it ran with.
@@ -53,6 +62,23 @@ class CameraFrames(fps: Int) {
         }
         exposureNanos?.let { maxExposureNanos = maxOf(maxExposureNanos, it) }
         ae?.let { (lower, upper) -> aeRange = "[$lower,$upper]" }
+    }
+
+    /**
+     * The processing a capture ran with: noise reduction [noise], [edge] enhancement, video
+     * stabilization [stabilization] and optical stabilization [ois], as Camera2 result values (null
+     * when the result has none). Returns a line when they differ from the last capture's, else null.
+     * Arek's 2026-10-21 12:52 drive skipped single frames for its first 11 minutes and none after,
+     * at the same exposure and frame duration (FBBD-278); a mode the camera switches on its own
+     * would show here at the minute the skips stop.
+     */
+    @Synchronized
+    fun processing(noise: Int?, edge: Int?, stabilization: Int?, ois: Int?): String? {
+        val modes = intArrayOf(code(noise), code(edge), code(stabilization), code(ois))
+        if (modes.contentEquals(lastModes)) return null
+        lastModes = modes
+        return "camera processing: noise_reduction=${name(noise, NoiseModes)} edge=${name(edge, EdgeModes)} " +
+            "video_stabilization=${name(stabilization, StabilizationModes)} ois=${name(ois, OisModes)}"
     }
 
     /** A capture failed: Camera2's onCaptureFailed. */
@@ -99,6 +125,11 @@ class CameraFrames(fps: Int) {
         return text
     }
 
+    /** A mode's value, with "none" apart from every value a camera may report. */
+    private fun code(mode: Int?) = mode ?: Int.MIN_VALUE
+
+    private fun name(mode: Int?, names: List<String>) = mode?.let { names.getOrNull(it) ?: "mode$it" } ?: "n/a"
+
     private fun ms(nanos: Long) = String.format(Locale.US, "%.1f", nanos / NanosPerMilli)
 
     private fun seconds(nanos: Long) = String.format(Locale.US, "%.1f", nanos / NanosPerSecond.toDouble())
@@ -106,5 +137,11 @@ class CameraFrames(fps: Int) {
     private companion object {
         const val NanosPerSecond = 1_000_000_000L
         const val NanosPerMilli = 1_000_000.0
+
+        // Camera2's value order for each control (CaptureRequest constants).
+        val NoiseModes = listOf("OFF", "FAST", "HIGH_QUALITY", "MINIMAL", "ZERO_SHUTTER_LAG")
+        val EdgeModes = listOf("OFF", "FAST", "HIGH_QUALITY", "ZERO_SHUTTER_LAG")
+        val StabilizationModes = listOf("OFF", "ON", "PREVIEW_STABILIZATION")
+        val OisModes = listOf("OFF", "ON")
     }
 }

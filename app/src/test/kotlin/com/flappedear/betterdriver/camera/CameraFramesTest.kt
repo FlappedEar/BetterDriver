@@ -51,4 +51,28 @@ class CameraFramesTest {
         assertEquals("60 in 1.0 s = 60.0 fps", Regex("""\d+ in [\d.]+ s = [\d.]+ fps""").find(frames.line()!!)?.value)
         assertNull("a minute without frames", frames.line())
     }
+
+    @Test
+    fun processingIsLoggedOnlyWhenItChanges() {
+        val frames = CameraFrames(60)
+        assertEquals(
+            "camera processing: noise_reduction=HIGH_QUALITY edge=FAST video_stabilization=ON ois=ON",
+            frames.processing(2, 1, 1, 1),
+        )
+        assertNull("same modes", frames.processing(2, 1, 1, 1))
+        assertEquals(
+            "camera processing: noise_reduction=FAST edge=FAST video_stabilization=OFF ois=n/a",
+            frames.processing(1, 1, 0, null),
+        )
+        assertEquals("unknown value", true, frames.processing(7, 1, 0, null)?.contains("noise_reduction=mode7"))
+        assertEquals("vendor value", true, frames.processing(null, 63, null, null)?.contains("edge=mode63"))
+        assertEquals("no collision", true, frames.processing(0, null, null, null)?.contains("noise_reduction=OFF"))
+    }
+
+    @Test
+    fun fastOnlyWhenListed() {
+        assertEquals(1, fastMode(intArrayOf(0, 1, 2)))
+        assertNull(fastMode(intArrayOf(0, 2)))
+        assertNull(fastMode(null))
+    }
 }
