@@ -13,8 +13,11 @@ import android.view.Surface
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /**
@@ -22,6 +25,11 @@ import java.util.concurrent.TimeUnit
  * draws into [surface], a MediaCodec video encoder run at real-time priority with room above the
  * frame rate, sound from [pcm] goes through an AAC encoder, and [FileCuts] decides which MP4 each
  * sample goes to, so a full file hands over to the next at a keyframe with no frame or sound lost.
+ *
+ * Each encoded sample is copied and its buffer handed back to the encoder at once; a writer thread
+ * puts the copies into the MP4s (FBBD-278). Until 1.6.3 the encoder's callback wrote the sample under
+ * the muxer lock first, so a slow write held the encoder's buffer, and with it the camera's frames.
+ * [timing] says how long each step takes.
  *
  * [events] are called on the encoder's own threads. [stop] blocks; call it off the main thread.
  * A file asks for the keyframe that starts the next one [cutMarginBytes] before its size limit.
@@ -33,6 +41,11 @@ internal class WideEncoder(
     private val clockNanos: () -> Long,
     private val events: Events,
     cutMarginBytes: Long = CutMarginBytes,
+    /**
+     * False for the test without MP4 (FBBD-278): both encoders run as when recording, and each sample's
+     * buffer goes back to its encoder at once, with no copy, writer or muxer. No file is opened.
+     */
+    private val mux: Boolean = true,
 ) {
     /** What the encoder reports, on its own threads. */
     interface Events {
@@ -55,12 +68,20 @@ internal class WideEncoder(
         fun failed(error: String)
     }
 
-    /** What went into one file. [encodeMs]: time from frame to encoded sample, p50/p95/max. */
+    /** What went into one file. [encodeMs]: time from frame to the encoder's callback for it, p50/p95/max. */
     data class FileStats(val frames: Long, val mediaMicros: Long, val audio: Boolean, val encodeMs: String)
 
     private val videoThread = HandlerThread("WideVideo").apply { start() }
     private val audioThread = HandlerThread("WideAudio").apply { start() }
     private val closer = Executors.newSingleThreadExecutor { Thread(it, "WideMuxerClose") }
+    private val writer = Executors.newSingleThreadExecutor { Thread(it, "WideWriter") }
+    private val pool = ConcurrentLinkedQueue<ByteBuffer>()
+
+    /** Room for samples waiting for the writer, in KiB: the encoder waits only when it is all taken. */
+    private val room = Semaphore(MaxBacklogKib)
+
+    /** Video samples' time from encoder to MP4, logged once a minute ([SampleTiming.line]). */
+    val timing = SampleTiming()
     private val lock = Any()
     private val cuts = FileCuts(target.maxFileBytes - cutMarginBytes)
     private val videoDone = CountDownLatch(1)
@@ -88,6 +109,12 @@ internal class WideEncoder(
     /** Sound newer than the latest video while a cut is pending: it goes to whichever file the cut puts it in. */
     private val heldSound = ArrayDeque<Waiting>()
     private var videoUs = Long.MIN_VALUE
+
+    /** Time in writeSampleData for the video sample being written (a held one may be written with it). */
+    private var writeNanos = 0L
+
+    /** When the encoder's callback for the newest video sample began ([clockNanos]). */
+    private var enteredNanos = 0L
 
     init {
         // A refusal leaves no encoder for the caller to stop, so the threads end here.
@@ -151,6 +178,7 @@ internal class WideEncoder(
             next = null
             c to n
         }
+        writer.shutdown()
         closer.shutdown()
         // The file handed over last may still be finishing; the end is reported only once it is.
         if (!closer.awaitTermination(CloseSeconds, TimeUnit.SECONDS)) {
@@ -170,6 +198,7 @@ internal class WideEncoder(
     }
 
     private fun quitThreads() {
+        writer.shutdown()
         closer.shutdown()
         videoThread.quitSafely()
         audioThread.quitSafely()
@@ -272,7 +301,8 @@ internal class WideEncoder(
             FileCuts.Video.Write -> current
         } ?: return
         write(out, Track.Video, buffer, info)
-        out.encoded(clockNanos() / NanosPerMicro - pts)
+        // From the frame to the encoder's callback for it: not the queue or the write after (FBBD-278).
+        out.encoded((enteredNanos - pts * NanosPerMicro) / NanosPerMicro)
         if (step.askKeyframe) events.nextWanted()
         if (out.bytes >= target.maxFileBytes) events.full()
     }
@@ -332,7 +362,9 @@ internal class WideEncoder(
         if (index < 0 || pts < 0 || out.failed) return
         val shifted = MediaCodec.BufferInfo().apply { set(info.offset, info.size, pts, info.flags) }
         try {
+            val begin = System.nanoTime()
             out.muxer.writeSampleData(index, buffer, shifted)
+            if (track == Track.Video) writeNanos += System.nanoTime() - begin
         } catch (e: RuntimeException) {
             out.failed = true
             DebugLog.w(Tag, "${out.file.name}: sample not written", e)
@@ -420,7 +452,10 @@ internal class WideEncoder(
         }
     }
 
-    /** One encoded sample out of [codec]: into a file, unless it is codec setup; [done] at the end. */
+    /**
+     * One encoded sample out of [codec]: copied and handed back at once, then into a file on the writer
+     * thread, unless it is codec setup; [done] once the writer has everything before the end.
+     */
     private fun drained(
         codec: MediaCodec,
         index: Int,
@@ -428,12 +463,70 @@ internal class WideEncoder(
         track: Track,
         done: CountDownLatch,
     ) {
+        val begin = clockNanos()
         val setupOnly = info.flags and MediaCodec.BUFFER_FLAG_CODEC_CONFIG != 0
-        if (!setupOnly && info.size > 0) {
-            runCatching { codec.getOutputBuffer(index) }.getOrNull()?.let { sample(track, it, info) }
+        val sample = !setupOnly && info.size > 0
+        if (sample && track == Track.Video) timing.encoded(begin - info.presentationTimeUs * NanosPerMicro)
+        if (!mux) {
+            runCatching { codec.releaseOutputBuffer(index, false) }
+            if (sample && track == Track.Video) timing.released(clockNanos() - begin)
+            if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) done.countDown()
+            return
+        }
+        val copy = if (sample) {
+            runCatching { codec.getOutputBuffer(index) }.getOrNull()?.let { pooledCopy(it, info) }
+        } else {
+            null
         }
         runCatching { codec.releaseOutputBuffer(index, false) }
-        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) done.countDown()
+        if (copy != null) queue(track, copy, info.copy(), begin, clockNanos() - begin)
+        if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) onWriter { done.countDown() }
+    }
+
+    /** [data] to the writer thread; waits only while the writer is [MaxBacklogKib] behind. */
+    private fun queue(track: Track, data: ByteBuffer, info: MediaCodec.BufferInfo, entered: Long, heldNanos: Long) {
+        val kib = kibOf(info.size)
+        var taken = room.tryAcquire(kib)
+        if (!taken) {
+            if (track == Track.Video) timing.fullWait()
+            // A writer that stopped must not stop the encoder for good: past the wait it goes on regardless.
+            taken = room.tryAcquire(kib, BacklogWaitMs, TimeUnit.MILLISECONDS)
+        }
+        if (track == Track.Video) timing.held(heldNanos, info.size)
+        val queued = System.nanoTime()
+        onWriter {
+            val begin = System.nanoTime()
+            synchronized(lock) {
+                val locked = System.nanoTime()
+                writeNanos = 0L
+                if (track == Track.Video) enteredNanos = entered
+                sample(track, data, info)
+                if (track == Track.Video) timing.written(info.size, begin - queued, locked - begin, writeNanos)
+            }
+            if (taken) room.release(kib)
+            if (pool.size < PoolSize) pool.offer(data)
+        }
+    }
+
+    /** Runs [task] on the writer thread, after every sample before it; dropped once the writer is shut down. */
+    private fun onWriter(task: () -> Unit) {
+        try {
+            writer.execute(task)
+        } catch (_: RejectedExecutionException) {
+            DebugLog.w(Tag, "writer already stopped: a sample after the end is dropped")
+        }
+    }
+
+    /** A copy of [info]'s bytes of [buffer], in a buffer from [pool] when one is big enough. */
+    private fun pooledCopy(buffer: ByteBuffer, info: MediaCodec.BufferInfo): ByteBuffer {
+        val target = pool.poll()?.takeIf { it.capacity() >= info.size }
+            ?: ByteBuffer.allocateDirect(maxOf(info.size, MinPooledBytes))
+        val view = buffer.duplicate().apply {
+            position(info.offset)
+            limit(info.offset + info.size)
+        }
+        target.clear()
+        return target.put(view).apply { flip() }
     }
 
     private enum class Track { Video, Audio }
@@ -495,6 +588,20 @@ internal class WideEncoder(
 
         /** ~21 ms of 48 kHz mono per read, so each sound sample is timed closely. */
         const val PcmChunkBytes = 2_048
+
+        /** Samples waiting for the writer: 64 MiB, about 15 s of 1080p · 60 or 6 s of 2.7K · 60. */
+        const val MaxBacklogKib = 65_536
+
+        /** How long the encoder waits for room before it queues a sample regardless. */
+        const val BacklogWaitMs = 2_000L
+
+        /** Copies kept for reuse, and their least size: a 1080p · 60 frame is mostly well under it. */
+        const val PoolSize = 64
+        const val MinPooledBytes = 256 * 1_024
+
+        const val BytesPerKib = 1_024
+
+        fun kibOf(bytes: Int) = ((bytes + BytesPerKib - 1) / BytesPerKib).coerceIn(1, MaxBacklogKib)
     }
 }
 

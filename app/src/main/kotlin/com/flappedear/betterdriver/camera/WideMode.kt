@@ -23,6 +23,7 @@ import kotlin.math.roundToLong
  */
 private const val GoPro27kWidth = 2704
 private const val FhdWidth = 1920
+private const val FhdHeight = 1080
 private const val UhdWidth = 3840
 private const val WideW = 16
 private const val WideH = 9
@@ -60,11 +61,12 @@ private const val FallbackBitrate = 40_000_000
 private const val FallbackFps = 60
 
 /**
- * The 2.7K frame size the back camera [info] records at [fps]: null when it has no 16:9 size between
- * 1080p and 4K that it can stream at [fps], or the H.264 encoder cannot take that size and rate.
+ * The 2.7K frame size the back camera [info] records at [fps], or 1920×1080 when [fhd] (FBBD-278): null
+ * when it has no such size (for 2.7K, a 16:9 size between 1080p and 4K) that it can stream to an
+ * encoder at [fps], or the H.264 encoder cannot take that size and rate.
  */
 @OptIn(ExperimentalCamera2Interop::class)
-internal fun wideFrame(info: CameraInfo, fps: Int): Pair<Int, Int>? {
+internal fun wideFrame(info: CameraInfo, fps: Int, fhd: Boolean = false): Pair<Int, Int>? {
     val camera = Camera2CameraInfo.from(info)
     val ranges = camera.getCameraCharacteristic(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
     val streams = camera.getCameraCharacteristic(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
@@ -73,8 +75,9 @@ internal fun wideFrame(info: CameraInfo, fps: Int): Pair<Int, Int>? {
     val fast = streams.getOutputSizes(MediaCodec::class.java).orEmpty().filter { size ->
         val nanos = runCatching { streams.getOutputMinFrameDuration(MediaCodec::class.java, size) }.getOrNull()
         nanos == null || nanos <= 0 || nanos <= NanosPerSecond / fps
-    }
-    return wideSize(fast.map { it.width to it.height })?.takeIf { (w, h) -> encoderTakes(w, h, fps) }
+    }.map { it.width to it.height }
+    val frame = if (fhd) (FhdWidth to FhdHeight).takeIf { it in fast } else wideSize(fast)
+    return frame?.takeIf { (w, h) -> encoderTakes(w, h, fps) }
 }
 
 /**
@@ -85,10 +88,13 @@ internal fun wideFrame(info: CameraInfo, fps: Int): Pair<Int, Int>? {
 internal fun aeRange(ranges: List<Pair<Int, Int>>, fps: Int): Pair<Int, Int>? =
     ranges.filter { (_, upper) -> upper == fps }.maxByOrNull { (lower, _) -> lower }
 
-/** What [WideRecorder] records for 2.7K at [fps] on the back camera [info]; null when [wideFrame] is. */
+/**
+ * What [WideRecorder] records at [fps] on the back camera [info]: 2.7K when [wide] ([wideFrame]), else
+ * 1080p (FBBD-278); null when the camera or the encoder cannot.
+ */
 @OptIn(ExperimentalCamera2Interop::class)
-internal fun wideTarget(context: Context, info: CameraInfo, fps: Int, maxFileBytes: Long): WideTarget? {
-    val (w, h) = wideFrame(info, fps) ?: return null
+internal fun ownTarget(context: Context, info: CameraInfo, wide: Boolean, fps: Int, maxFileBytes: Long): WideTarget? {
+    val (w, h) = wideFrame(info, fps, fhd = !wide) ?: return null
     val camera = Camera2CameraInfo.from(info)
     val sensor = camera.getCameraCharacteristic(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
     val rotation = orientationHint(sensor, displayDegrees(context))

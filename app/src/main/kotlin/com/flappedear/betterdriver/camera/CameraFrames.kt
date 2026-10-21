@@ -37,16 +37,34 @@ class CameraFrames(fps: Int) {
     private var maxExposureNanos = 0L
     private var aeRange: String? = null
 
+    /**
+     * Camera2 frame numbers with no completed result between two that have one (failed or never
+     * delivered), apart from [skipped]: a sensor time gap with no frame number missing had no capture.
+     */
+    private var numbersMissing = 0L
+    private var lastNumber = -1L
+
     /** The camera's processing modes last seen ([processing]); null before the first frame. */
     private var lastModes: IntArray? = null
 
     /**
      * A capture finished with sensor timestamp [sensorNanos], its frame duration and exposure time
-     * when the result has them, and the auto-exposure frame-rate range it ran with.
+     * when the result has them, the auto-exposure frame-rate range it ran with, and its Camera2
+     * [frameNumber] when known.
      */
     @Synchronized
-    fun completed(sensorNanos: Long, frameNanos: Long?, exposureNanos: Long?, ae: Pair<Int, Int>?) {
+    fun completed(
+        sensorNanos: Long,
+        frameNanos: Long?,
+        exposureNanos: Long?,
+        ae: Pair<Int, Int>?,
+        frameNumber: Long? = null,
+    ) {
         completed++
+        frameNumber?.let { n ->
+            if (lastNumber >= 0 && n > lastNumber + 1) numbersMissing += n - lastNumber - 1
+            if (n > lastNumber) lastNumber = n
+        }
         if (lastNanos > 0 && sensorNanos > lastNanos) {
             val gap = sensorNanos - lastNanos
             spanNanos += gap
@@ -96,8 +114,9 @@ class CameraFrames(fps: Int) {
     /**
      * The minute's line, and a fresh minute; null when the camera delivered nothing since the last one.
      * "camera frames: 3392 in 60.0 s = 56.5 fps, skipped=208 failed=0 buffer_lost=0 max_gap_ms=50.0
-     * frame_ms=16.7-16.7 exposure_max_ms=8.3 ae=[60,60]": captures completed, their sensor time span,
-     * frames missing from the sensor timestamps, failed captures, frames lost before the encoder.
+     * frame_ms=16.7-16.7 exposure_max_ms=8.3 ae=[60,60] frame_numbers_missing=0": captures completed,
+     * their sensor time span, frames missing from the sensor timestamps, failed captures, frames lost
+     * before the encoder, and frame numbers with no result.
      */
     @Synchronized
     fun line(): String? {
@@ -110,8 +129,10 @@ class CameraFrames(fps: Int) {
         val frame = if (maxFrameNanos > 0) "${ms(minFrameNanos)}-${ms(maxFrameNanos)}" else "n/a"
         val text = "camera frames: $completed in ${seconds(spanNanos)} s = $rate fps, skipped=$skipped " +
             "failed=$failed buffer_lost=$bufferLost max_gap_ms=${ms(maxGapNanos)} frame_ms=$frame " +
-            "exposure_max_ms=${ms(maxExposureNanos)} ae=${aeRange ?: "n/a"}"
+            "exposure_max_ms=${ms(maxExposureNanos)} ae=${aeRange ?: "n/a"} " +
+            "frame_numbers_missing=$numbersMissing"
         completed = 0
+        numbersMissing = 0
         failed = 0
         bufferLost = 0
         skipped = 0

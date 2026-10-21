@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLong
  * arrive on the main thread. [realtime]: the camera's sensor timestamps are boot time, not monotonic;
  * the frames it draws into the encoder are monotonic either way, as are the encoder's times.
  */
-@Suppress("TooManyFunctions") // One function per camera and encoder step.
+@Suppress("TooManyFunctions", "LongParameterList") // One function per camera and encoder step; one recording's setup.
 internal class WideRecorder(
     private val context: Context,
     private val cameraId: String,
@@ -41,6 +41,8 @@ internal class WideRecorder(
     private val audio: Boolean,
     private val realtime: Boolean,
     private val listener: Listener,
+    /** Also hears every capture, as CameraX's session callback does, for the camera's log lines (FBBD-278). */
+    private val captures: CameraCaptureSession.CaptureCallback? = null,
 ) {
     /** How the recording reports its files. All calls arrive on the main thread. */
     interface Listener {
@@ -94,6 +96,9 @@ internal class WideRecorder(
     private val fileStarts = ConcurrentHashMap<String, CameraCount>()
     private val fileEnds = ConcurrentHashMap<String, CameraCount>()
 
+    /** The encoder's sample timing since the last call ([SampleTiming.line]); null with none. */
+    fun timingLine(): String? = encoder?.timing?.line()
+
     /** Sensor timestamp of the newest frame; 0 before the first. */
     val lastFrameNanos: Long get() = lastNanos.get()
 
@@ -107,14 +112,17 @@ internal class WideRecorder(
             val frame = result.get(CaptureResult.SENSOR_FRAME_DURATION) ?: 0L
             if (previous > 0) skippedFrames.addAndGet(framesSkipped(t - previous, frame))
             cameraFrames.incrementAndGet()
+            captures?.onCaptureCompleted(s, r, result)
         }
 
         override fun onCaptureFailed(s: CameraCaptureSession, r: CaptureRequest, failure: CaptureFailure) {
             failedFrames.incrementAndGet()
+            captures?.onCaptureFailed(s, r, failure)
         }
 
         override fun onCaptureBufferLost(s: CameraCaptureSession, r: CaptureRequest, target: Surface, frame: Long) {
             lostBuffers.incrementAndGet()
+            captures?.onCaptureBufferLost(s, r, target, frame)
         }
     }
 
@@ -273,10 +281,18 @@ internal class WideRecorder(
     @Suppress("TooGenericExceptionCaught") // MediaCodec and Camera2 report refusals as runtime exceptions.
     private fun begin(camera: CameraDevice, s: CameraCaptureSession, surface: Surface) {
         try {
+            val characteristics = context.getSystemService(CameraManager::class.java).getCameraCharacteristics(cameraId)
             val request = camera.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                 addTarget(surface)
                 set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
                 set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, advertisedRange())
+                // FAST processing, as the CameraX path asks for it (FBBD-278).
+                val asked = FastControls.joinToString(" ") { (name, key, available) ->
+                    val fast = fastMode(characteristics.get(available))
+                    fast?.let { set(key, it) }
+                    "$name=${if (fast == null) "default" else "FAST"}"
+                }
+                DebugLog.i(Tag, "asked for $asked")
             }.build()
             s.setRepeatingRequest(request, frames, background)
             file?.let(listener::started)

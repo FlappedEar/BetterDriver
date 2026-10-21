@@ -65,10 +65,16 @@ private fun frameMicros(nowMicros: Long, frameNanos: Long, realtime: Boolean): L
 }
 private const val CheckIntervalMs = 5_000L
 
+/**
+ * 1080p at this rate records through [WideRecorder] (FBBD-278): CameraX's own recorder kept 55-58 of
+ * 60 fps on Arek's Pixel 6, and its muxing cannot be measured or changed from the app.
+ */
+private const val OwnFhdFps = 60
+
 /** How often the camera's frame counts go to the debug log (FBBD-278). */
 private const val FrameLogMs = 60_000L
 
-/** How often a 2.7K recording reports progress; [syncDue] keeps it to about once a second. */
+/** How often an own-encoder recording reports progress; [syncDue] keeps it to about once a second. */
 private const val WideSyncMs = 250L
 private const val RetryDelayMs = 3_000L
 private const val MaxRestarts = 3
@@ -92,7 +98,8 @@ private const val MaxFileBytes = 4_000_000_000L
  * on (FBBD-21). No preview: only a VideoCapture use case is bound.
  *
  * 2.7K has no CameraX preset, so that mode records through [WideRecorder] (Camera2 and MediaCodec)
- * with nothing bound to CameraX (FBBD-239); files, sync reports and stops work the same way.
+ * with nothing bound to CameraX (FBBD-239); so does 1080p·60 since 1.6.4 (FBBD-278, [OwnFhdFps]).
+ * Files, sync reports and stops work the same way.
  *
  * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
  * after an error ends the file and starts the next one, so a file always has one resolution and frame
@@ -131,8 +138,11 @@ class PhoneCamera(
 
     private var recording: Recording? = null
 
-    /** The 2.7K recording, when the current step is 2.7K; [recording] is null then. */
+    /** The own-encoder recording (2.7K, 1080p·60), when the current step uses it; [recording] is null then. */
     private var wide: WideRecorder? = null
+
+    /** The own encoder failed 1080p this session: CameraX records it from then on. */
+    private var ownRefused = false
     private var fileIndex = 0
     private var restarts = 0
     private var stopping = false
@@ -183,6 +193,7 @@ class PhoneCamera(
                 result.get(CaptureResult.SENSOR_FRAME_DURATION),
                 result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
                 result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE)?.let { it.lower to it.upper },
+                result.frameNumber,
             )
             cameraFrames?.processing(
                 result.get(CaptureResult.NOISE_REDUCTION_MODE),
@@ -314,10 +325,7 @@ class PhoneCamera(
         val step = steps[stepIndex]
         policy.moveTo(stepIndex)
         try {
-            if (step.size == VideoSize.QHD) {
-                beginWide(p, stepIndex, step)
-                return
-            }
+            if (ownEncoder(step) && beginOwn(p, stepIndex, step)) return
             // A full file at the same step keeps the camera open: closing and reopening it left about
             // 2 s without video between files. Only a new step (or the first file) binds again.
             val capture = bound?.takeIf { boundStep == stepIndex } ?: run {
@@ -372,26 +380,57 @@ class PhoneCamera(
     }
 
     /**
-     * Starts 2.7K at [step] through [WideRecorder], with nothing bound to CameraX. Throws when the
-     * camera has no 2.7K size at this rate or the recorder refuses it, so [begin] falls down the ladder.
+     * Whether [step] records through [WideRecorder]: 2.7K, which CameraX has no preset for, and 1080p·60
+     * (FBBD-278), unless the encoder refused it this session ([ownRefused]).
+     */
+    private fun ownEncoder(step: VideoMode) =
+        step.size == VideoSize.QHD || (step.size == VideoSize.FHD && step.fps == OwnFhdFps && !ownRefused)
+
+    /**
+     * Starts [step] through [WideRecorder]; true once started. For 2.7K a refusal throws, so [begin]
+     * falls down the ladder; 1080p goes on with CameraX at the same step instead ([ownRefused]).
+     */
+    @Suppress("TooGenericExceptionCaught") // Any refusal of the own encoder hands 1080p back to CameraX.
+    private fun beginOwn(p: ProcessCameraProvider, stepIndex: Int, step: VideoMode): Boolean {
+        if (step.size == VideoSize.QHD) {
+            beginWide(p, stepIndex, step)
+            return true
+        }
+        return try {
+            beginWide(p, stepIndex, step)
+            true
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "own encoder refused ${step.label}: CameraX records it", e)
+            ownRefused = true
+            false
+        }
+    }
+
+    /**
+     * Starts [step] through [WideRecorder], with nothing bound to CameraX. Throws when the camera has
+     * no stream for it at this rate or the recorder refuses it.
      */
     private fun beginWide(p: ProcessCameraProvider, stepIndex: Int, step: VideoMode) {
         val info = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
             ?: error("no back camera")
-        val target = wideTarget(context, info, step.fps, MaxFileBytes) ?: error("no 2.7K size at ${step.fps} fps")
+        val target = ownTarget(context, info, step.size == VideoSize.QHD, step.fps, MaxFileBytes)
+            ?: error("no ${step.label} stream")
         unbindOwn(p, bound)
         bound = null
         boundStep = -1
         logFrames()
-        cameraFrames = null // 2.7K counts its own frames (WideRecorder)
-        resultChanges = null
+        // The same camera lines as the CameraX path, so the two can be compared (FBBD-278).
+        cameraFrames = CameraFrames(step.fps)
+        resultChanges = ResultChanges()
+        threadCpu.line(SystemClock.elapsedRealtime())
         realtimeFrames = realtimeTimestamps(info)
         fileIndex++
         val file = File(dir, VideoFiles.liveName(camera, fileIndex))
         endReason = "user"
         fileStarted = false
-        DebugLog.i(Tag, "2.7K: ${target.label}, ${target.bitrate} bit/s, rotation ${target.orientation}")
-        val w = WideRecorder(context, cameraIdOf(info), target, audio, realtimeFrames, WideFiles(step, stepIndex))
+        DebugLog.i(Tag, "own encoder: ${target.label}, ${target.bitrate} bit/s, rotation ${target.orientation}")
+        val listener = WideFiles(step, stepIndex)
+        val w = WideRecorder(context, cameraIdOf(info), target, audio, realtimeFrames, listener, frames)
         w.start(file)
         wide = w
     }
@@ -429,7 +468,7 @@ class PhoneCamera(
         }
 
         override fun lost(file: File, error: String) {
-            DebugLog.w(Tag, "2.7K: ${file.name} lost: $error")
+            DebugLog.w(Tag, "own encoder: ${file.name} lost: $error")
             clips.lost(file.name)
         }
 
@@ -438,20 +477,30 @@ class PhoneCamera(
             wide = null
             val announced = name == file.name
             if (announced) clips.finished(file.name, mediaMicros)
-            if (error != null) DebugLog.w(Tag, "2.7K: $error")
+            if (error != null) DebugLog.w(Tag, "own encoder: $error")
             when {
-                // A mode that records no frame at all is not tried again: the next step takes over.
-                error != null && !hadData && !stopping && endReason == "user" -> {
-                    if (announced) sink.stopped(file.name, sink.nowMicros(), "error_wide")
-                    policy.failed(stepIndex)
-                    if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
-                }
+                error != null && !hadData && !stopping && endReason == "user" -> refused(file, announced)
                 announced -> fileEnded(file.name, full, error?.let { "error_wide" }, null)
                 stopping -> Unit
                 // Stopped while still opening (thermal shutdown): the stop's reason, not a camera fault.
                 endReason != "user" -> fail(stoppedText(endReason))
                 else -> fail("Camera error")
             }
+        }
+
+        /**
+         * The own encoder recorded no frame of [file]. 1080p goes on with CameraX at the same step; any
+         * other mode is not tried again, and the next step takes over.
+         */
+        private fun refused(file: File, announced: Boolean) {
+            if (announced) sink.stopped(file.name, sink.nowMicros(), "error_wide")
+            if (step.size == VideoSize.FHD) {
+                ownRefused = true
+                begin(stepIndex)
+                return
+            }
+            policy.failed(stepIndex)
+            if (stepIndex + 1 < steps.size) begin(stepIndex + 1) else fail("Camera error")
         }
 
         /** About once a second, as CameraX's status events: media recorded so far and the newest frame. */
@@ -518,6 +567,7 @@ class PhoneCamera(
         val line = cameraFrames?.line() ?: return
         DebugLog.i(Tag, line)
         threadCpu.line(SystemClock.elapsedRealtime())?.let { DebugLog.i(Tag, it) }
+        wide?.timingLine()?.let { DebugLog.i(Tag, it) }
     }
 
     private fun fail(text: String) {
@@ -718,8 +768,8 @@ private fun bindPhoneCapture(
     return capture to realtimeTimestamps(back.cameraInfo)
 }
 
-/** The controls [bindPhoneCapture] asks to run FAST: log name, request key, the camera's list of modes. */
-private val FastControls = listOf(
+/** The controls both recording paths ask to run FAST: log name, request key, the camera's list of modes. */
+internal val FastControls = listOf(
     Triple(
         "noise_reduction",
         CaptureRequest.NOISE_REDUCTION_MODE,

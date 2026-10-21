@@ -18,7 +18,7 @@ class CameraFramesTest {
         repeat(3_601) { frames.completed(1_000L + it * frameNanos, frameNanos, 8_000_000L, 60 to 60) }
         assertEquals(
             "camera frames: 3601 in 60.0 s = 60.0 fps, skipped=0 failed=0 buffer_lost=0 max_gap_ms=16.7 " +
-                "frame_ms=16.7-16.7 exposure_max_ms=8.0 ae=[60,60]",
+                "frame_ms=16.7-16.7 exposure_max_ms=8.0 ae=[60,60] frame_numbers_missing=0",
             frames.line(),
         )
     }
@@ -40,6 +40,20 @@ class CameraFramesTest {
         assertEquals("failed=1", Regex("""failed=\d+""").find(line)?.value)
         assertEquals("max_gap_ms=33.3", Regex("""max_gap_ms=[\d.]+""").find(line)?.value)
         assertEquals("57.0 fps", Regex("""[\d.]+ fps""").find(line)?.value)
+    }
+
+    @Test
+    fun frameNumbersWithNoResultAreCountedApartFromSkips() {
+        val frames = CameraFrames(60)
+        // Frame numbers 0..9 with 4 and 7 missing; the sensor time also skips one frame at 7.
+        var t = 0L
+        listOf(0L, 1, 2, 3, 5, 6, 8, 9).forEach { n ->
+            t += if (n == 8L) 2 * frameNanos else frameNanos
+            frames.completed(t, frameNanos, null, null, n)
+        }
+        val line = frames.line()!!
+        assertEquals("frame_numbers_missing=2", Regex("frame_numbers_missing=\\d+").find(line)?.value)
+        assertEquals("skipped=1", Regex("skipped=\\d+").find(line)?.value)
     }
 
     @Test
