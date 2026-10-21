@@ -92,6 +92,9 @@ class CoachService : Service() {
         thread.quitSafely()
         voice?.shutdown()
         voice = null
+        // The process may stay cached after the recording; its later lines, load ones too (FBBD-281),
+        // are not the session's.
+        DebugLog.session = null
         super.onDestroy()
     }
 
