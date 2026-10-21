@@ -101,6 +101,9 @@ class GattLink(
     private var lastFastLinkAt = 0L
 
     fun start() {
+        // Counted as connecting at once, before the post: a Bluetooth LE OBD adapter started right
+        // after this link must see it and wait ([BleSetups], FBBD-282).
+        setups.started(address)
         handler.post {
             if (running) return@post
             running = true
