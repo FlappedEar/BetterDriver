@@ -58,6 +58,11 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
             since = nowMs
         }
 
+    /** Polling switched to [channels] on the same connection (FBBD-283). */
+    fun polling(channels: List<PidChannel>) = synchronized(lock) {
+        this.channels = channels
+    }
+
     fun value(channel: PidChannel, value: Double, atMs: Long) = synchronized(lock) {
         latest[channel.id] = value
         // Evicted here too: with no one reading snapshots (a background drive) the history stays bounded.

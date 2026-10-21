@@ -17,6 +17,9 @@ interface ObdLinkListener {
     /** The adapter [target] set up and the car answered: [channels] are polled from now. */
     fun ready(target: ObdTarget, adapter: String, protocol: String, supported: Set<Int>, channels: List<PidChannel>) {}
 
+    /** Polling switched to [channels] on the same connection (FBBD-283). */
+    fun polling(target: ObdTarget, channels: List<PidChannel>) {}
+
     /** [channel] read [value] at [atMs] on SystemClock.elapsedRealtime(). */
     fun value(channel: PidChannel, value: Double, atMs: Long) {}
 
@@ -48,7 +51,7 @@ class ObdLink(
     private val owner: String = "recorder",
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
-    private val pollSet: PollSet = PollSet.All,
+    private val pollSet: () -> PollSet = { PollSet.All },
 ) {
     private val tracker = ObdStatusTracker()
 
@@ -123,6 +126,8 @@ class ObdLink(
             supported: Set<Int>,
             channels: List<PidChannel>,
         ) = listener.ready(target, adapter, protocol, supported, channels)
+
+        override fun polling(target: ObdTarget, channels: List<PidChannel>) = listener.polling(target, channels)
 
         override fun value(channel: PidChannel, value: Double, atMs: Long) = listener.value(channel, value, atMs)
 

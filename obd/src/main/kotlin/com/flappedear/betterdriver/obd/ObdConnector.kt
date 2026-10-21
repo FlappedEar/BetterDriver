@@ -15,6 +15,9 @@ interface ObdConnectorListener {
         channels: List<PidChannel>,
     ) {}
 
+    /** Polling switched to [channels] on the same connection (FBBD-283). */
+    fun polling(target: ObdTarget, channels: List<PidChannel>) {}
+
     /** [channel] read [value] at [atMs] on the connector's clock. */
     fun value(channel: PidChannel, value: Double, atMs: Long) {}
 
@@ -48,7 +51,7 @@ class ObdConnector(
     private val profile: CarProfile = CarProfile.Generic,
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val retryMs: List<Long> = RETRY_MS,
-    private val pollSet: PollSet = PollSet.All,
+    private val pollSet: () -> PollSet = { PollSet.All },
 ) {
     @Volatile
     private var running: () -> Boolean = { false }
@@ -208,6 +211,12 @@ class ObdConnector(
             listener.log("car answered: protocol $protocol, PIDs $pids, polling $polled")
             tracker.ready(clean, protocol, voltage, channels, clock.nowMs())
             listener.ready(target, clean, protocol, voltage, supported, channels)
+        }
+
+        override fun polling(channels: List<PidChannel>) {
+            listener.log("polling now ${channels.joinToString(",") { it.id }}")
+            tracker.polling(channels)
+            listener.polling(target, channels)
         }
 
         override fun value(channel: PidChannel, value: Double, atMs: Long) {

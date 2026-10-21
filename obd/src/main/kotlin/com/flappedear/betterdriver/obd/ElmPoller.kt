@@ -10,6 +10,12 @@ interface ObdListener {
      */
     fun ready(adapter: String, protocol: String, voltage: String?, supported: Set<Int>, channels: List<PidChannel>)
 
+    /**
+     * Polling switched to [channels] on the same connection, because the poll set changed (a tile
+     * chosen during the session, FBBD-283). [channels] may hold channels [ready] did not.
+     */
+    fun polling(channels: List<PidChannel>) {}
+
     /** [channel] read [value] at [atMs] on the poller's clock. */
     fun value(channel: PidChannel, value: Double, atMs: Long)
 
@@ -49,6 +55,8 @@ interface ObdClock {
  *   every [RESAMPLE_EVERY] counted requests one goes without, so a late ECU is still seen.
  *
  * Only the channels in [pollSet] are polled (FBBD-283); the others the car has are logged as skipped.
+ * It is asked again every [POLL_SET_CHECK_MS], and when it changed (a tile chosen during the session)
+ * polling switches to the new set on the same connection.
  *
  * [clock] tells the time and waits.
  */
@@ -62,7 +70,7 @@ class ElmPoller(
     private val rateLogMs: Long = DEFAULT_RATE_LOG_MS,
     private val multiPid: Boolean = true,
     private val responseCount: Boolean = true,
-    private val pollSet: PollSet = PollSet.All,
+    private val pollSet: () -> PollSet = { PollSet.All },
 ) {
     /** What each group's request got without a count, by its lead request. */
     private class Learned {
@@ -112,20 +120,29 @@ class ElmPoller(
         val supported = discover() ?: return "car not answering"
         val protocol = line.command("ATDPN", AT_TIMEOUT_MS)?.trim().orEmpty()
         val available = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
-        val channels = pollSet.select(available)
-        val skipped = available - channels.toSet()
-        if (skipped.isNotEmpty()) listener.log("not polled (not used): " + skipped.joinToString(" ") { it.id })
-        listener.ready(adapter, protocol, voltage, supported, channels)
-        if (channels.isEmpty()) return "no channels to poll"
         val can = isCan(protocol)
-        countOn = responseCount && can
-        val groups = groupsFor(channels, combine = multiPid && can)
-        listener.log(
-            "polling " + groups.joinToString(" ") { g -> g.joinToString("+") { it.id } } +
-                " multi_pid=${if (groups.any { g -> g.distinctBy { it.pid }.size > 1 }) "on" else "off"}" +
-                " response_count=${if (countOn) "on" else "off"}",
-        )
-        return poll(channels, groups)
+        var set = pollSet()
+        var first = true
+        while (true) {
+            val channels = set.select(available)
+            val skipped = available - channels.toSet()
+            if (skipped.isNotEmpty()) listener.log("not polled (not used): " + skipped.joinToString(" ") { it.id })
+            if (first) listener.ready(adapter, protocol, voltage, supported, channels) else listener.polling(channels)
+            first = false
+            if (channels.isEmpty()) return "no channels to poll"
+            countOn = responseCount && can
+            expected.clear()
+            val groups = groupsFor(channels, combine = multiPid && can)
+            listener.log(
+                "polling " + groups.joinToString(" ") { g -> g.joinToString("+") { it.id } } +
+                    " multi_pid=${if (groups.any { g -> g.distinctBy { it.pid }.size > 1 }) "on" else "off"}" +
+                    " response_count=${if (countOn) "on" else "off"}",
+            )
+            val ended = poll(channels, groups, set)
+            if (ended != null) return ended
+            set = pollSet()
+            listener.log("poll set changed")
+        }
     }
 
     /**
@@ -249,20 +266,26 @@ class ElmPoller(
         return supported.takeIf { it.isNotEmpty() }
     }
 
-    private fun poll(channels: List<PidChannel>, groups: List<List<PidChannel>>): String {
+    /** Polls [groups] until stopped (why, for the log) or until [pollSet] is no longer [set] (null). */
+    private fun poll(channels: List<PidChannel>, groups: List<List<PidChannel>>, set: PollSet): String? {
         val scheduler = PollScheduler(
             channels,
-            fastWeight = pollSet.fastWeight,
-            slowMaxHz = pollSet.slowMaxHz,
+            fastWeight = set.fastWeight,
+            slowMaxHz = set.slowMaxHz,
             groups = groups,
         )
         val byRequest = groups.associateBy { it.first().request }
         var timeouts = 0
         rateStartMs = clock.nowMs()
         var nextRateLog = rateStartMs + rateLogMs
+        var nextSetCheck = rateStartMs + POLL_SET_CHECK_MS
         var ended: String? = null
         while (ended == null && running()) {
             val now = clock.nowMs()
+            if (now >= nextSetCheck) {
+                nextSetCheck = now + POLL_SET_CHECK_MS
+                if (pollSet() != set) return null
+            }
             val next = scheduler.next(now)
             when {
                 next == null -> ended = "car stopped answering"
@@ -399,6 +422,9 @@ class ElmPoller(
         const val MAX_TIMEOUTS = 5
 
         const val DEFAULT_RATE_LOG_MS = 60_000L
+
+        /** How often [pollSet] is asked again during polling. */
+        const val POLL_SET_CHECK_MS = 5_000L
 
         /** A headers-off multi-frame answer starts with its length in three hex digits (`00E`). */
         private const val LENGTH_LINE = 3

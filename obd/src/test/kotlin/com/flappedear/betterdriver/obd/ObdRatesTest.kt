@@ -220,7 +220,7 @@ class ObdRatesTest {
         car: TimedCorolla,
         multiPid: Boolean = true,
         responseCount: Boolean = true,
-        pollSet: PollSet = PollSet.All,
+        pollSet: () -> PollSet = { PollSet.All },
     ): Run {
         val got = Timed()
         val poller = ElmPoller(
@@ -450,7 +450,7 @@ class ObdRatesTest {
     fun `only what is used on the Wi-Fi clone of 21 Oct, single PIDs`() {
         // FBBD-283: rpm, pedal and four temperatures instead of 14 channels, on the clone's 230 ms
         // single-PID requests. Before: 0.40 Hz fast, 0.08 Hz slow (test above).
-        val clone = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2), pollSet = PollSet.Driver)
+        val clone = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2), pollSet = { PollSet.Driver })
         table("FBBD-283 clone, single PIDs", clone)
         val read = setOf("rpm", "pedal_d", "coolant_temp", "oil_temp", "intake_air_temp", "ambient_temp")
         assertEquals(read, clone.rates.keys)
@@ -465,7 +465,7 @@ class ObdRatesTest {
 
     @Test
     fun `only what is used on a clone that takes two PIDs a request`() {
-        val clone = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 3), pollSet = PollSet.Driver)
+        val clone = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 3), pollSet = { PollSet.Driver })
         table("FBBD-283 clone, two PIDs", clone)
         // The four temperatures' request is the probe: refused, so two PIDs a request for all.
         assertTrue(clone.car.sent.any { it == "010C49" }, clone.car.sent.take(40).toString())
@@ -480,7 +480,7 @@ class ObdRatesTest {
         // Vgate vLinker MC (STN1151), log of 2026-10-21 12:52: 6-PID groups, latency_ms 47-64, fast
         // 8.7 Hz with all 14 channels. Simulated here with the count honoured (no trailing wait).
         val all = run(TimedCorolla(CountSupport.MESSAGES, transportMs = 20))
-        val vgate = run(TimedCorolla(CountSupport.MESSAGES, transportMs = 20), pollSet = PollSet.Driver)
+        val vgate = run(TimedCorolla(CountSupport.MESSAGES, transportMs = 20), pollSet = { PollSet.Driver })
         table("Vgate-like, all channels", all)
         table("FBBD-283 Vgate-like", vgate)
         assertTrue(vgate.car.sent.any { it.startsWith("010C49") }, vgate.car.sent.take(40).toString())
@@ -488,6 +488,27 @@ class ObdRatesTest {
         assertTrue(vgate.rates.getValue("pedal_d") >= 15.0, "pedal ${vgate.rates["pedal_d"]}")
         assertEquals(PollSet.DRIVER_SLOW_MAX_HZ, vgate.rates.getValue("oil_temp"), 0.05)
         assertEquals(85.0, vgate.listener.values.last { it.first == "oil_temp" }.second)
+    }
+
+    @Test
+    fun `a tile chosen during the session is read from the next check on`() {
+        // FBBD-283, Codex on #281: the driver puts MAF on a tile 30 s into the drive.
+        val car = TimedCorolla(CountSupport.MESSAGES, transportMs = 20)
+        val got = Timed()
+        val set = { if (car.now < 30_000) PollSet.Driver else PollSet.Driver.plus(listOf("maf")) }
+        ElmPoller(
+            line = ElmLine(car::write).also { car.line = it },
+            profile = CarProfile.Generic,
+            listener = got,
+            running = { car.now < END_MS },
+            clock = car,
+            pollSet = set,
+        ).run()
+        val maf = got.values.filter { it.first == "maf" }
+        assertTrue(maf.isNotEmpty() && maf.first().third in 30_000L..(30_000L + ElmPoller.POLL_SET_CHECK_MS + 500))
+        assertTrue(got.logs.any { it == "poll set changed" }, got.logs.toString())
+        assertEquals(1, got.logs.count { it.startsWith("identity ") }, "same connection, no new setup")
+        assertTrue(got.values.any { it.first == "oil_temp" && it.third > 40_000 }, "the rest goes on")
     }
 
     @Test

@@ -31,11 +31,22 @@ internal fun sessionCarData(context: Context): List<Equipment> = sessionSetup(co
 
 /**
  * What the running session reads from the car (FBBD-283): [PollSet.Driver] plus every OBD-II channel
- * the track screen's tiles show, on the main screen or the second one, from the setup saved at START.
+ * the track screen's tiles show, on the main screen or the second one, from the setup saved at START
+ * and updated when a tile is chosen during the session. The file is read again only when it changed.
  */
-internal fun sessionPollSet(context: Context): PollSet {
-    val screens = sessionSetup(context)?.trackScreens ?: return PollSet.Driver
-    return PollSet.Driver.plus(obdTileChannels(screens))
+internal fun sessionPollSet(context: Context): () -> PollSet {
+    val file = File(context.filesDir, SetupRepo.SessionSetupFile)
+    var stamp = Long.MIN_VALUE
+    var set = PollSet.Driver
+    return {
+        val modified = file.lastModified()
+        if (modified != stamp) {
+            stamp = modified
+            val screens = sessionSetup(context)?.trackScreens
+            set = if (screens == null) PollSet.Driver else PollSet.Driver.plus(obdTileChannels(screens))
+        }
+        set
+    }
 }
 
 /** The OBD-II channel ids ("coolant_temp") of the tiles on [screens] ("obd_coolant_temp"). */
