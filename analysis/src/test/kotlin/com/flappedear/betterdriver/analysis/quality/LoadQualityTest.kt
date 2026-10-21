@@ -12,20 +12,20 @@ class LoadQualityTest {
     private fun line(process: String, message: String, tag: String = LoadLine.TAG) =
         LogLine(1_760_000_000_000L, null, process, 1, "load", 'I', tag, "s", message)
 
-    private fun load(process: String, cpuMs: Long, gc: Int, gcMs: Int, allocMb: Double, heapMb: Int, threads: Int) =
+    private fun load(process: String, cpuMs: Long, gc: Int, gcMs: Int, allocMb: Double) =
         line(
             process,
             "load: cpu_pct=${cpuMs / 600.0} cpu_ms=$cpuMs wall_ms=60000 gc=$gc gc_ms=$gcMs alloc_mb=$allocMb " +
-                "heap_mb=$heapMb/256 threads=$threads",
+                "heap_mb=20/256 threads=30",
         )
 
     @Test
     fun `each process gets its mean CPU over its minutes`() {
         val section = loadSection(
             listOf(
-                load("recorder", cpuMs = 6_000, gc = 1, gcMs = 5, allocMb = 3.0, heapMb = 20, threads = 30),
-                load("recorder", cpuMs = 12_000, gc = 2, gcMs = 7, allocMb = 5.0, heapMb = 22, threads = 31),
-                load("main", cpuMs = 21_000, gc = 4, gcMs = 40, allocMb = 80.0, heapMb = 60, threads = 60),
+                load("recorder", cpuMs = 6_000, gc = 1, gcMs = 5, allocMb = 3.0),
+                load("recorder", cpuMs = 12_000, gc = 2, gcMs = 7, allocMb = 5.0),
+                load("main", cpuMs = 21_000, gc = 4, gcMs = 40, allocMb = 80.0),
                 line("camera", "camera frames: 3600 in 60.0 s = 60.0 fps", tag = "PhoneCamera"),
             ),
         )!!

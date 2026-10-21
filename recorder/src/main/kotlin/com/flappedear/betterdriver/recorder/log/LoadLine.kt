@@ -71,16 +71,13 @@ data class LoadLine(
 
         /** A logged line's message as a [LoadLine]; null for any other message. */
         fun parse(message: String): LoadLine? {
-            val f = CheckLog.fields(message.removePrefix(Prefix)).takeIf { message.startsWith(Prefix) }
-            val cpuPercent = f?.get("cpu_pct")?.toDoubleOrNull()
-            val cpuMillis = f?.get("cpu_ms")?.toLongOrNull()
-            val wallMillis = f?.get("wall_ms")?.toLongOrNull()
-            if (f == null || cpuPercent == null || cpuMillis == null || wallMillis == null) return null
+            val f = CheckLog.fields(message.removePrefix(Prefix))
+            if (!message.startsWith(Prefix) || Required.any { f[it]?.toDoubleOrNull() == null }) return null
             val heap = f["heap_mb"]?.split('/')
             return LoadLine(
-                cpuPercent = cpuPercent,
-                cpuMillis = cpuMillis,
-                wallMillis = wallMillis,
+                cpuPercent = f.getValue("cpu_pct").toDouble(),
+                cpuMillis = f.getValue("cpu_ms").toDouble().toLong(),
+                wallMillis = f.getValue("wall_ms").toDouble().toLong(),
                 gcCount = f["gc"]?.toLongOrNull() ?: 0,
                 gcMillis = f["gc_ms"]?.toLongOrNull() ?: 0,
                 allocatedMb = f["alloc_mb"]?.toDoubleOrNull() ?: 0.0,
@@ -89,5 +86,8 @@ data class LoadLine(
                 threads = f["threads"]?.toIntOrNull() ?: 0,
             )
         }
+
+        /** The fields a line cannot be read without. */
+        private val Required = listOf("cpu_pct", "cpu_ms", "wall_ms")
     }
 }
