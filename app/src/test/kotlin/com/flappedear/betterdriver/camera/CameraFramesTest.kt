@@ -56,17 +56,20 @@ class CameraFramesTest {
     fun processingIsLoggedOnlyWhenItChanges() {
         val frames = CameraFrames(60)
         assertEquals(
-            "camera processing: noise_reduction=HIGH_QUALITY edge=FAST video_stabilization=ON ois=ON",
-            frames.processing(2, 1, 1, 1),
+            "camera processing: noise_reduction=HIGH_QUALITY edge=FAST video_stabilization=ON ois=ON " +
+                "tonemap=HIGH_QUALITY aberration=FAST shading=FAST hot_pixel=HIGH_QUALITY",
+            frames.processing(2, 1, 1, 1, 2, 1, 1, 2),
         )
-        assertNull("same modes", frames.processing(2, 1, 1, 1))
+        assertNull("same modes", frames.processing(2, 1, 1, 1, 2, 1, 1, 2))
         assertEquals(
-            "camera processing: noise_reduction=FAST edge=FAST video_stabilization=OFF ois=n/a",
-            frames.processing(1, 1, 0, null),
+            "camera processing: noise_reduction=FAST edge=FAST video_stabilization=OFF ois=n/a " +
+                "tonemap=FAST aberration=OFF shading=n/a hot_pixel=FAST",
+            frames.processing(1, 1, 0, null, 1, 0, null, 1),
         )
         assertEquals("unknown value", true, frames.processing(7, 1, 0, null)?.contains("noise_reduction=mode7"))
         assertEquals("vendor value", true, frames.processing(null, 63, null, null)?.contains("edge=mode63"))
         assertEquals("no collision", true, frames.processing(0, null, null, null)?.contains("noise_reduction=OFF"))
+        assertEquals("missing values", true, frames.processing(0, null)?.endsWith("hot_pixel=n/a"))
     }
 
     @Test

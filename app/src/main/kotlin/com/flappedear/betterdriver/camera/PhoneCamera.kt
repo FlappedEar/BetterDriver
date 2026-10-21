@@ -189,6 +189,10 @@ class PhoneCamera(
                 result.get(CaptureResult.EDGE_MODE),
                 result.get(CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE),
                 result.get(CaptureResult.LENS_OPTICAL_STABILIZATION_MODE),
+                result.get(CaptureResult.TONEMAP_MODE),
+                result.get(CaptureResult.COLOR_CORRECTION_ABERRATION_MODE),
+                result.get(CaptureResult.SHADING_MODE),
+                result.get(CaptureResult.HOT_PIXEL_MODE),
             )?.let { DebugLog.i(Tag, it) }
         }
 
@@ -209,6 +213,9 @@ class PhoneCamera(
     /** What the bound camera delivers, logged once a minute (FBBD-278); null while nothing is bound. */
     @Volatile
     private var cameraFrames: CameraFrames? = null
+
+    /** This process's busiest threads, logged with each frames line (FBBD-278). */
+    private val threadCpu = ThreadCpu()
 
     private val frameLog = object : Runnable {
         override fun run() {
@@ -309,6 +316,7 @@ class PhoneCamera(
                 lastFrameNanos = 0L
                 logFrames()
                 cameraFrames = CameraFrames(step.fps)
+                threadCpu.line(SystemClock.elapsedRealtime()) // the threads' first minute starts here
                 val (fresh, realtime) = bindPhoneCapture(p, lifecycle, step, frames)
                 realtimeFrames = realtime
                 bound = fresh
@@ -493,9 +501,11 @@ class PhoneCamera(
         }
     }
 
-    /** The camera's frames since the last line, if it delivered any (FBBD-278). */
+    /** The camera's frames since the last line, if it delivered any, and the busiest threads (FBBD-278). */
     private fun logFrames() {
-        cameraFrames?.line()?.let { DebugLog.i(Tag, it) }
+        val line = cameraFrames?.line() ?: return
+        DebugLog.i(Tag, line)
+        threadCpu.line(SystemClock.elapsedRealtime())?.let { DebugLog.i(Tag, it) }
     }
 
     private fun fail(text: String) {
@@ -674,25 +684,43 @@ private fun bindPhoneCapture(
     val builder = VideoCapture.Builder(recorder)
         .setTargetFrameRate(Range(step.fps, step.fps))
     val extender = Camera2Interop.Extender(builder).setSessionCaptureCallback(frames)
-    // FAST noise reduction and edges from the first frame (FBBD-278): Arek's drives skipped single
-    // frames at capture early on and none later, as if the camera dropped heavier processing on its
-    // own partway through. Only modes the camera lists are set; the log's "camera processing" line
-    // shows what it ran with.
+    // FAST processing from the first frame (FBBD-278): Arek's drives skipped single frames at capture
+    // early on and none later, as if the camera dropped heavier processing on its own partway through.
+    // FAST noise reduction and edges alone (1.6.0) did not stop the skips, so tonemap, aberration
+    // correction, lens shading and hot-pixel correction run FAST too. Only modes the camera lists are
+    // set; the log's "camera processing" line shows what it ran with.
     CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()?.let { info ->
         val camera = Camera2CameraInfo.from(info)
-        val noiseModes = CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES
-        val noise = fastMode(camera.getCameraCharacteristic(noiseModes))
-        val edge = fastMode(camera.getCameraCharacteristic(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES))
-        noise?.let { extender.setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, it) }
-        edge?.let { extender.setCaptureRequestOption(CaptureRequest.EDGE_MODE, it) }
-        val asked = { mode: Int? -> if (mode == null) "default" else "FAST" }
-        DebugLog.i("PhoneCamera", "asked for noise_reduction=${asked(noise)} edge=${asked(edge)}")
+        val asked = FastControls.joinToString(" ") { (name, request, available) ->
+            val fast = fastMode(camera.getCameraCharacteristic(available))
+            fast?.let { extender.setCaptureRequestOption(request, it) }
+            "$name=${if (fast == null) "default" else "FAST"}"
+        }
+        DebugLog.i("PhoneCamera", "asked for $asked")
     }
     val capture = builder.build()
     p.unbindAll()
     val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
     return capture to realtimeTimestamps(back.cameraInfo)
 }
+
+/** The controls [bindPhoneCapture] asks to run FAST: log name, request key, the camera's list of modes. */
+private val FastControls = listOf(
+    Triple(
+        "noise_reduction",
+        CaptureRequest.NOISE_REDUCTION_MODE,
+        CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES,
+    ),
+    Triple("edge", CaptureRequest.EDGE_MODE, CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES),
+    Triple("tonemap", CaptureRequest.TONEMAP_MODE, CameraCharacteristics.TONEMAP_AVAILABLE_TONE_MAP_MODES),
+    Triple(
+        "aberration",
+        CaptureRequest.COLOR_CORRECTION_ABERRATION_MODE,
+        CameraCharacteristics.COLOR_CORRECTION_AVAILABLE_ABERRATION_MODES,
+    ),
+    Triple("shading", CaptureRequest.SHADING_MODE, CameraCharacteristics.SHADING_AVAILABLE_MODES),
+    Triple("hot_pixel", CaptureRequest.HOT_PIXEL_MODE, CameraCharacteristics.HOT_PIXEL_AVAILABLE_HOT_PIXEL_MODES),
+)
 
 /** Whether the camera's frame timestamps are on elapsedRealtime (else on System.nanoTime). */
 @OptIn(ExperimentalCamera2Interop::class)

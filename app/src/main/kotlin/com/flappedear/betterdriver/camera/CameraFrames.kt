@@ -3,10 +3,10 @@ package com.flappedear.betterdriver.camera
 import java.util.Locale
 import kotlin.math.roundToLong
 
-/** Camera2's FAST value for noise reduction and edge modes. */
+/** Camera2's FAST value for noise reduction, edge, tonemap, aberration, shading and hot-pixel modes. */
 private const val FastMode = 1
 
-/** FAST when the camera lists it among its [available] noise-reduction or edge modes, else null (FBBD-278). */
+/** FAST when the camera lists it among its [available] modes for a control, else null (FBBD-278). */
 internal fun fastMode(available: IntArray?): Int? = FastMode.takeIf { available?.contains(it) == true }
 
 /**
@@ -65,20 +65,20 @@ class CameraFrames(fps: Int) {
     }
 
     /**
-     * The processing a capture ran with: noise reduction [noise], [edge] enhancement, video
-     * stabilization [stabilization] and optical stabilization [ois], as Camera2 result values (null
-     * when the result has none). Returns a line when they differ from the last capture's, else null.
+     * The processing a capture ran with, as Camera2 result values in [Controls] order (null when the
+     * result has none). Returns a line when they differ from the last capture's, else null.
      * Arek's 2026-10-21 12:52 drive skipped single frames for its first 11 minutes and none after,
      * at the same exposure and frame duration (FBBD-278); a mode the camera switches on its own
      * would show here at the minute the skips stop.
      */
     @Synchronized
-    fun processing(noise: Int?, edge: Int?, stabilization: Int?, ois: Int?): String? {
-        val modes = intArrayOf(code(noise), code(edge), code(stabilization), code(ois))
-        if (modes.contentEquals(lastModes)) return null
-        lastModes = modes
-        return "camera processing: noise_reduction=${name(noise, NoiseModes)} edge=${name(edge, EdgeModes)} " +
-            "video_stabilization=${name(stabilization, StabilizationModes)} ois=${name(ois, OisModes)}"
+    fun processing(vararg modes: Int?): String? {
+        val codes = IntArray(modes.size) { code(modes[it]) }
+        if (codes.contentEquals(lastModes)) return null
+        lastModes = codes
+        return "camera processing: " + Controls.mapIndexed { i, (control, names) ->
+            "$control=${name(modes.getOrNull(i), names)}"
+        }.joinToString(" ")
     }
 
     /** A capture failed: Camera2's onCaptureFailed. */
@@ -139,9 +139,19 @@ class CameraFrames(fps: Int) {
         const val NanosPerMilli = 1_000_000.0
 
         // Camera2's value order for each control (CaptureRequest constants).
-        val NoiseModes = listOf("OFF", "FAST", "HIGH_QUALITY", "MINIMAL", "ZERO_SHUTTER_LAG")
-        val EdgeModes = listOf("OFF", "FAST", "HIGH_QUALITY", "ZERO_SHUTTER_LAG")
-        val StabilizationModes = listOf("OFF", "ON", "PREVIEW_STABILIZATION")
-        val OisModes = listOf("OFF", "ON")
+        val OffFastHigh = listOf("OFF", "FAST", "HIGH_QUALITY")
+        val OffOn = listOf("OFF", "ON")
+
+        /** The controls [processing] takes, in its order, with their value names. */
+        val Controls = listOf(
+            "noise_reduction" to OffFastHigh + listOf("MINIMAL", "ZERO_SHUTTER_LAG"),
+            "edge" to OffFastHigh + "ZERO_SHUTTER_LAG",
+            "video_stabilization" to OffOn + "PREVIEW_STABILIZATION",
+            "ois" to OffOn,
+            "tonemap" to listOf("CONTRAST_CURVE", "FAST", "HIGH_QUALITY", "GAMMA_VALUE", "PRESET_CURVE"),
+            "aberration" to OffFastHigh,
+            "shading" to OffFastHigh,
+            "hot_pixel" to OffFastHigh,
+        )
     }
 }
