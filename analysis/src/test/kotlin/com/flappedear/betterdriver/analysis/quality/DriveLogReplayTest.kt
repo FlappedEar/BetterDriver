@@ -68,6 +68,26 @@ class DriveLogReplayTest {
         assertEquals(9.0, r.metric("gnss.long_gaps").value)
     }
 
+    @Test
+    fun `the 1_6_1 drives at MTU 247 lose one burst of 0_68 s and nothing else (FBBD-282)`() {
+        // Arek's two drives of 21 Oct 2026, 15:40 (6 min) and 15:50 (3 min), on 1.6.1 with the Vgate
+        // over BLE: the RaceBox streamed at MTU 247 from its first setup, 1500 messages in 1500
+        // notifications. The first lost 16 fixes in one 680 ms gap (one banner for 0.5 s) besides
+        // single misses; the second lost 2. Same lines as the 12:52 copy, without positions.
+        val reports = driveChecks(File(javaClass.getResource("/drive-log/1.6.1-1555")!!.toURI()))
+        assertEquals(listOf("20261021-154053-286ff822", "20261021-155033-ccaf0125"), reports.map { it.sessionId })
+        val (first, second) = reports
+        assertEquals(Verdict.FAIL, first.metric("gnss.dropped").verdict, first.metric("gnss.dropped").how)
+        assertEquals(0.65, first.metric("gnss.dropped").value!!, 0.05)
+        assertEquals(680.0, first.metric("gnss.max_gap").value)
+        assertEquals(1.0, first.metric("gnss.long_gaps").value)
+        assertEquals(Verdict.PASS, first.metric("ui.false_banners").verdict, first.metric("ui.false_banners").how)
+        assertEquals(Verdict.PASS, second.metric("gnss.dropped").verdict, second.metric("gnss.dropped").how)
+        assertEquals(0.04, second.metric("gnss.dropped").value!!, 0.02)
+        assertEquals(Verdict.PASS, second.metric("gnss.max_gap").verdict)
+        assertEquals(0.0, second.metric("gnss.long_gaps").value)
+    }
+
     /** The VBO's rows as the recorder would have logged them: one [GnssSecondLog] line per second. */
     private fun vboLog(): List<LogLine> {
         val start = LogLine.parse("2026-10-12T10:36:07.979Z 2646 recorder-control I Recording: x")!!.utcMillis
