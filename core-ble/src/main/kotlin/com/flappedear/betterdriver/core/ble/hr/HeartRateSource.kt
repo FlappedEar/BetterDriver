@@ -81,9 +81,8 @@ class HeartRateSource internal constructor(
     /** The live link state while started, for status displays. Null when stopped. */
     val state: StateFlow<LinkState>? get() = link?.state
 
-    /** The monitor's state for the status strip, or null when stopped or switched off. */
+    /** The monitor's state for the status strip, or null when stopped or switched off (no link). */
     fun status(): HeartRateStatus? {
-        if (off) return null
         val l = link
         val d = decoder
         val s = sink
