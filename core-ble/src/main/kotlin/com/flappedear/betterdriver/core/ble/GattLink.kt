@@ -29,6 +29,13 @@ private const val SilenceTimeoutMs = 3_000L
 /** How long the MTU answer may take before the services are looked up without it (FBBD-272). */
 private const val MtuAnswerMs = 2_000L
 
+/**
+ * How long a service lookup may go unanswered before it is cleared and asked again on the same
+ * connection (FBBD-272): on 21 Oct 2026 12:27 a RaceBox's lookup never answered while another BLE
+ * link was connecting; good lookups that day answered within 1.2 s of starting.
+ */
+private const val DiscoveryAnswerMs = 3_000L
+
 /** A fast link is asked for again at most this often while the data says the link is too slow. */
 private const val FastLinkEveryMs = 30_000L
 
@@ -43,7 +50,8 @@ private const val Tag = "Link"
  * its [GattHandshake] if it has one (the Dragy, FBBD-117), and reconnect on its own after a drop, a
  * GATT error, 10 s without data after connecting, or 3 s without data. Attempts that never bring
  * data change how the next one connects ([SetupLadder], FBBD-272), a lookup that misses the
- * profile's service is repeated once on the same connection ([ServiceRecheck]), and each setup step
+ * profile's service or does not answer in 3 s is repeated once on the same connection
+ * ([ServiceRecheck]), and each setup step
  * is logged.
  * No bonding is needed. Every
  * GATT call runs on one private thread; [onData] is called with the characteristic and its bytes,
@@ -83,6 +91,9 @@ class GattLink(
 
     /** The MTU request is out and its answer, which starts the service lookup, has not come. */
     private var awaitingMtu = false
+
+    /** A service lookup is out and has not answered; a late answer to an earlier one is ignored. */
+    private var awaitingServices = false
 
     /** Characteristics still to subscribe to on this connection; empty once all are on. */
     private val toSubscribe = ArrayDeque<BluetoothGattCharacteristic>()
@@ -244,7 +255,9 @@ class GattLink(
     private fun closeGatt() {
         handler.removeCallbacks(mtuOverdue)
         handler.removeCallbacks(lookAgain)
+        handler.removeCallbacks(discoveryOverdue)
         awaitingMtu = false
+        awaitingServices = false
         toSubscribe.clear()
         handshaking = false
         subscribed = false
@@ -260,18 +273,38 @@ class GattLink(
 
     /** Looks up the device's services, the step after the MTU exchange (or instead of it). */
     private fun discover(g: BluetoothGatt) {
-        if (!g.discoverServices()) retry("discoverServices failed")
+        if (!g.discoverServices()) {
+            retry("discoverServices failed")
+            return
+        }
+        awaitingServices = true
+        handler.removeCallbacks(discoveryOverdue)
+        handler.postDelayed(discoveryOverdue, DiscoveryAnswerMs)
+    }
+
+    /** A lookup that never answers is treated like one that missed the service (FBBD-272). */
+    private val discoveryOverdue = Runnable {
+        val g = gatt
+        if (g != null && awaitingServices) {
+            DebugLog.i(Tag, "$address no answer to the service lookup in $DiscoveryAnswerMs ms")
+            if (!lookAgainForService(g, foundAny = false)) {
+                DebugLog.i(Tag, "$address looked twice on this connection, waiting for the setup timeout")
+            }
+        }
     }
 
     private val lookAgain = Runnable { gatt?.let(::discover) }
 
     /**
-     * The lookup succeeded but [profile]'s service is missing (FBBD-272): logs what was found, then
-     * clears Android's cached services and looks again on this connection; true when it will.
+     * The lookup succeeded but [profile]'s service is missing, or it never answered ([foundAny] false)
+     * (FBBD-272): logs what was found, then clears Android's cached services and looks again on this
+     * connection, once per connection; true when it will.
      */
-    private fun lookAgainForService(g: BluetoothGatt): Boolean {
-        val found = g.services.joinToString { it.uuid.toString() }
-        DebugLog.i(Tag, "$address services without ${profile.service}: [$found]")
+    private fun lookAgainForService(g: BluetoothGatt, foundAny: Boolean = true): Boolean {
+        if (foundAny) {
+            val found = g.services.joinToString { it.uuid.toString() }
+            DebugLog.i(Tag, "$address services without ${profile.service}: [$found]")
+        }
         val deadline = recheck.recheck(SystemClock.elapsedRealtime(), setupDeadlineAt) ?: return false
         if (!refreshCache(g)) DebugLog.i(Tag, "$address service cache could not be cleared")
         setupDeadlineAt = deadline
@@ -374,6 +407,11 @@ class GattLink(
             handler.post {
                 if (g != gatt) return@post
                 DebugLog.i(Tag, "$address services found, status $status, ${elapsed()} ms after connecting began")
+                // A second answer, to a lookup asked again after the first went quiet, changes nothing.
+                if (!awaitingServices) return@post
+                awaitingServices = false
+                handler.removeCallbacks(discoveryOverdue)
+                handler.removeCallbacks(lookAgain)
                 val ok = status == BluetoothGatt.GATT_SUCCESS
                 if (ok && g.getService(profile.service) == null && lookAgainForService(g)) return@post
                 val subs = if (ok) {
