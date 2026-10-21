@@ -436,6 +436,7 @@ class GattLink(
                 DebugLog.i(Tag, "$address MTU $mtu, status $status, ${elapsed()} ms after connecting began")
                 if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
                 lateMtu.answered()
+                mtuUnanswered = false
                 // A late answer, or one the device started, must not look the services up twice.
                 if (awaitingMtu) {
                     awaitingMtu = false
