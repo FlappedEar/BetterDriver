@@ -93,6 +93,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
         thermalSection(events),
         screenSection(events, logOutages(seconds, end), end, logUnderCoverFrom(seconds)),
         exportSection(events, end),
+        loadSection(s.lines),
         startupSection(
             life, sinceUtc, s.startUtcMillis ?: 0L, endUtcMillis(s),
             unfinishedUntilUtc = if (s.endMicros == null) nextStartUtc ?: Long.MAX_VALUE else null,

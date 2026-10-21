@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.analysis.quality.QualityMetric
 import com.flappedear.betterdriver.analysis.quality.Verdict
 import com.flappedear.betterdriver.analysis.quality.coachReplayChecks
 import com.flappedear.betterdriver.analysis.quality.driveChecks
+import com.flappedear.betterdriver.analysis.quality.loadCpuId
 import com.flappedear.betterdriver.analysis.quality.readLog
 import com.flappedear.betterdriver.analysis.quality.replayCues
 import com.flappedear.betterdriver.analysis.quality.replayLaps
@@ -177,7 +178,25 @@ class ReplayDriveTest {
         }
         val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
         check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
+        checkCpuBudget(report.metrics)
         d.checkNoAppErrors()
+    }
+
+    /**
+     * The performance budget (FBBD-281): each process's mean CPU over the drive, from its load lines,
+     * within [CpuBudget], so work added to a recording shows up here before it reaches Arek's phone.
+     */
+    private fun checkCpuBudget(metrics: List<QualityMetric>) {
+        val cpu = CpuBudget.mapValues { (process, _) -> metrics.firstOrNull { it.id == loadCpuId(process) } }
+        val missing = cpu.filterValues { it?.value == null }.keys
+        check(missing.isEmpty()) { "no load lines from the ${missing.joinToString()} process (FBBD-281)" }
+        val over = cpu.filter { (process, m) -> (m?.value ?: 0.0) > CpuBudget.getValue(process) }
+        check(over.isEmpty()) {
+            over.entries.joinToString("\n") { (process, m) ->
+                "CPU budget (FBBD-281): $process process %.1f %% > %.1f %%; ${m?.how}"
+                    .format(m?.value, CpuBudget.getValue(process))
+            }
+        }
     }
 
     private fun markdown(
@@ -246,5 +265,15 @@ class ReplayDriveTest {
 
         /** Frame times, and the cue delays per sound path (coach.delay_live, coach.total_live, ...). */
         val EmulatorPrefixes = listOf("ui.", "coach.delay", "coach.total")
+
+        /**
+         * Mean CPU each process may use over the replay drive, in % of one emulator core (FBBD-281):
+         * the drive's measured value with room for the CI machines' spread.
+         */
+        val CpuBudget = mapOf(
+            "main" to 100.0,
+            "recorder" to 100.0,
+            "coach" to 100.0,
+        )
     }
 }
