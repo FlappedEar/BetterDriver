@@ -151,8 +151,14 @@ fun SessionsScreen(
                     .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
                     .navigationBarsPadding(),
             ) {
+                // A file export closes the sheet: the save dialog comes next, and the row shows how it went.
                 SessionActions(
-                    shown, exports[shown.id], shown.id in withVideo, onExport, goPro, deleting, transfer,
+                    shown, exports[shown.id], shown.id in withVideo,
+                    onExport = { s, format ->
+                        actionsFor = null
+                        onExport(s, format)
+                    },
+                    goPro, deleting, transfer,
                     onAnalyse = { s ->
                         actionsFor = null
                         onAnalyse(s)
