@@ -196,6 +196,16 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The emulator runner installs the system image itself, with no retry, and Google's download now and
+      # then arrives broken ("Error on ZipFile unknown archive"). Installed here first, up to four tries;
+      # the runner then finds it in place.
+      - name: System image
+        run: |
+          for i in 1 2 3 4; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'system-images;android-34;google_apis;x86_64' > /dev/null && break
+            echo "System image download failed (try $i)"
+            sleep $((i * 10))
+          done
       # The AVD and its booted snapshot, so later runs skip the cold boot.
       - name: AVD cache
         uses: actions/cache@v4
@@ -273,6 +283,16 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+      # The emulator runner installs the system image itself, with no retry, and Google's download now and
+      # then arrives broken ("Error on ZipFile unknown archive"). Installed here first, up to four tries;
+      # the runner then finds it in place.
+      - name: System image
+        run: |
+          for i in 1 2 3 4; do
+            yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install 'system-images;android-34;google_apis;x86_64' > /dev/null && break
+            echo "System image download failed (try $i)"
+            sleep $((i * 10))
+          done
       - name: AVD cache
         uses: actions/cache@v4
         id: avd-cache
