@@ -8,8 +8,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
-private val Accent = Color(0xFF0B6E8A)
-private val AccentDark = Color(0xFF4FB8D6)
+/** FlappedEar amber, the ears' colour in the app icon (UI-144 B): buttons, links, the selected tab and START. */
+private val Accent = Color(0xFF8A5F00)
+private val AccentDark = Color(0xFFFCB203)
 
 internal val LightScheme = lightColorScheme(
     primary = Accent,
@@ -25,7 +26,7 @@ internal val LightScheme = lightColorScheme(
  */
 internal val DarkScheme = darkColorScheme(
     primary = AccentDark,
-    onPrimary = Color(0xFF06141A),
+    onPrimary = Color(0xFF1A1200),
     background = Color(0xFF000000),
     surface = Color(0xFF151B20),
     surfaceVariant = Color(0xFF1C242A),

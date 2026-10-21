@@ -47,6 +47,9 @@ class TrackScreenScreenshotTest {
     @Test
     fun secondScreen() = snap("track_screen_second") { TrackScreenContent(ExampleTrackState, page = 1) }
 
+    @Test
+    fun coachOff() = snap("track_screen_coach_off") { TrackScreenContent(ExampleTrackState.copy(coachOn = false)) }
+
     /** UI-125 B: a new install shows speed and G, the other slots empty. */
     @Test
     fun newInstall() = snap("track_screen_new_install") {

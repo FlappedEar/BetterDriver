@@ -15,8 +15,9 @@ import org.junit.runner.RunWith
 
 /**
  * The app's other screens on the emulator (FBBD-161): Drive, the bottom bar between every pair of
- * top-level destinations, every Settings tab, adding equipment without Bluetooth, the spoken coach
- * settings, a new car, the track list and the track editor of both kinds, and the backup dialog.
+ * top-level destinations, every Settings topic (UI-137 B), adding equipment without Bluetooth, the
+ * spoken coach settings, a new car, the track list and the track editor of both kinds, and the
+ * backup dialog.
  */
 @RunWith(AndroidJUnit4::class)
 class ShellSmokeTest {
@@ -45,9 +46,10 @@ class ShellSmokeTest {
         val shows = mapOf(
             "Drive" to hasText("START"),
             "Sessions" to hasText("Import session"),
-            "Settings" to tab("Devices"),
+            "Car" to hasText("No cars yet", substring = true),
+            "Settings" to (hasText("Equipment") and hasClickAction()),
         )
-        for (to in listOf("Sessions", "Settings", "Drive", "Settings", "Sessions", "Drive")) {
+        for (to in listOf("Sessions", "Settings", "Car", "Drive", "Settings", "Sessions", "Car", "Drive")) {
             app.openTab(to)
             app.waitFor(tab(to)).assertIsSelected()
             app.waitFor(shows.getValue(to)).assertIsDisplayed()
@@ -61,8 +63,7 @@ class ShellSmokeTest {
 
     @Test
     fun devicesAddEquipmentWithoutBluetooth() {
-        app.openTab("Settings")
-        app.openTab("Devices")
+        app.openSettingsTopic("Equipment")
         app.waitForText("+ Add equipment").performClick()
         // The Bluetooth search finds nothing on the emulator; the rest is added without it.
         app.waitForText("FOUND NEARBY").assertIsDisplayed()
@@ -88,24 +89,31 @@ class ShellSmokeTest {
     }
 
     @Test
-    fun everySettingsTab() {
+    fun everySettingsTopic() {
         app.openTab("Settings")
-        app.openTab("Devices")
-        app.openTab("Car")
+        app.waitForText("2 tracks and their lines").assertIsDisplayed()
+        app.openSettingsTopic("Equipment")
+        app.waitForText("+ Add equipment").assertIsDisplayed()
+        app.openSettingsTopic("Cars")
         app.waitForText("Units").assertIsDisplayed()
-        app.openTab("Recording")
-        app.waitForText("Tracks and timing lines").assertIsDisplayed()
-        app.waitForText("2 tracks").assertIsDisplayed()
-        app.openTab("App")
+        app.openSettingsTopic("Track screen")
+        app.waitForText("Sound when GNSS is lost").assertIsDisplayed()
+        app.openSettingsTopic("Video")
+        app.waitForText("Storage").assertIsDisplayed()
+        app.openSettingsTopic("App")
         app.waitForText("Version").assertIsDisplayed()
         app.waitForText("Back up").performScrollTo().assertIsDisplayed()
         app.waitForText("Restore").performScrollTo().assertIsDisplayed()
+        app.openSettingsTopic("Diagnostics")
+        app.waitForText("Share log", substring = true).assertIsDisplayed()
+        // Tracks and Spoken coach open their own pages.
+        app.openSettingsTopic("Tracks")
+        app.waitForText("MY TRACKS").assertIsDisplayed()
     }
 
     @Test
     fun spokenCoachSettings() {
-        app.openTab("Settings")
-        app.openTab("App")
+        app.openSettingsTopic("App")
         app.waitForText("Spoken coach").performScrollTo().performClick()
         app.waitForText("Picked corners").assertIsDisplayed()
         app.waitForText("Learning laps").performScrollTo().assertIsDisplayed()
@@ -115,8 +123,7 @@ class ShellSmokeTest {
 
     @Test
     fun newCar() {
-        app.openTab("Settings")
-        app.openTab("Car")
+        app.openSettingsTopic("Cars")
         app.waitForText("+ Add car").performScrollTo().performClick()
         app.waitForText("The name goes into each session and its VBO export.").assertIsDisplayed()
         app.back()
@@ -125,9 +132,7 @@ class ShellSmokeTest {
 
     @Test
     fun trackListAndEditorOfBothKinds() {
-        app.openTab("Settings")
-        app.openTab("Recording")
-        app.waitForText("Tracks and timing lines").performClick()
+        app.openSettingsTopic("Tracks")
         app.waitForText("MY TRACKS").assertIsDisplayed()
         app.waitForText("Point to point · 1 sector").assertIsDisplayed()
 
@@ -154,8 +159,7 @@ class ShellSmokeTest {
 
     @Test
     fun backupDialogOpensAndCancels() {
-        app.openTab("Settings")
-        app.openTab("App")
+        app.openSettingsTopic("App")
         app.waitForText("Back up").performScrollTo().performClick()
         app.waitForText("Include sessions (without video)").assertIsDisplayed()
         app.waitForText("3 sessions", substring = true, timeoutMs = LoadTimeoutMs)

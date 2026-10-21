@@ -38,6 +38,7 @@ import com.flappedear.betterdriver.core.ui.component.AlertLevel
 import com.flappedear.betterdriver.core.ui.component.CoachLine
 import com.flappedear.betterdriver.core.ui.component.DeltaDisplay
 import com.flappedear.betterdriver.core.ui.component.LapTimes
+import com.flappedear.betterdriver.core.ui.component.StatusIcon
 import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.core.ui.component.StatusStrip
 import com.flappedear.betterdriver.core.ui.component.ValueState
@@ -86,6 +87,11 @@ data class TrackScreenState(
     val secondTiles: List<TrackTile?> = emptyList(),
     /** The car is stopped: a 1 s hold on a tile opens its list (UI-123 B). */
     val editable: Boolean = false,
+    /**
+     * The coach speaks in this session (UI-142 B). Off, the coach line is left out and the tiles
+     * take its place. Set once for the session, so nothing moves while the car does.
+     */
+    val coachOn: Boolean = true,
 )
 
 /** UI-120 A with Arek's note "6 in one row": one row of six on the main screen. */
@@ -212,23 +218,29 @@ private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHol
             Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
         )
     }
-    CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    if (state.coachOn) CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    // Without the coach line the tiles grow into its place (UI-142 B).
+    val height = if (state.coachOn) PanelHeight else PanelHeight + CoachHeight + Gap
     TilePanel(
         state.tiles,
         MainColumns,
         MainRows,
-        PanelHeight,
-        MainValueSize,
+        height,
+        if (state.coachOn) MainValueSize else MainValueSizeNoCoach,
         TrackSlots::tile,
-        Modifier.fillMaxWidth().height(PanelHeight).testTag(TrackSlots.Panel),
+        Modifier.fillMaxWidth().height(height).testTag(TrackSlots.Panel),
         state.editable,
         onHoldTile,
     )
 }
 
-/** The second screen: the status strip and the coach line stay; the tiles take the rest (UI-121 B). */
+/**
+ * The second screen: the status strip and the coach line stay, the line only when the coach speaks
+ * (UI-142 B); the tiles take the rest (UI-121 B).
+ */
 @Composable
 private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
+    val coachSpace = if (state.coachOn) CoachHeight + Gap else 0.dp
     if (shownRows(state.secondTiles, SecondColumns, SecondRows, state.editable).isEmpty()) {
         Spacer(Modifier.fillMaxWidth().weight(1f))
     } else {
@@ -236,7 +248,7 @@ private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: M
             state.secondTiles,
             SecondColumns,
             SecondRows,
-            window - TopHeight - CoachHeight - Gap * 2,
+            window - TopHeight - Gap - coachSpace,
             SecondValueSize,
             TrackSlots::secondTile,
             Modifier.fillMaxWidth().weight(1f).testTag(TrackSlots.Second),
@@ -244,7 +256,7 @@ private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: M
             onHoldTile,
         )
     }
-    CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    if (state.coachOn) CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
 }
 
 private val Gap = 6.dp
@@ -256,6 +268,9 @@ private val PanelHeight = 80.dp
 
 /** A tile's value is fitted to its row, at most today's tile size on the main screen. */
 private val MainValueSize = 34.dp
+
+/** With the coach off the row is taller, and so are its values (UI-142 B). */
+private val MainValueSizeNoCoach = 50.dp
 private val SecondValueSize = 46.dp
 
 /** Test tags of the track screen's fixed slots, for the layout tests (FBBD-40, FBBD-62). */
@@ -284,9 +299,10 @@ object TrackSlots {
 /** Example values matching the review mockups (round 31). Not real data. */
 val ExampleTrackState = TrackScreenState(
     status = listOf(
-        StatusItem("Track", "Silesia Ring"),
         StatusItem("GNSS", "25 Hz · 18 sats"),
         StatusItem("Camera", "1080p · 60"),
+        StatusItem("OBD", "Connected", icon = StatusIcon.Car),
+        StatusItem("Heart rate", "142", icon = StatusIcon.Heart, keepValue = true),
     ),
     recordingTime = "18:42",
     alert = null,
@@ -361,6 +377,12 @@ private fun TrackScreenEmptyPreview() {
             ),
         )
     }
+}
+
+@Preview(name = "Track screen, coach off", widthDp = 914, heightDp = 411)
+@Composable
+private fun TrackScreenCoachOffPreview() {
+    BetterDriverTheme(track = true) { TrackScreenContent(ExampleTrackState.copy(coachOn = false)) }
 }
 
 @Preview(name = "Track screen, second screen", widthDp = 914, heightDp = 411)

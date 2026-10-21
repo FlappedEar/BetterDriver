@@ -29,11 +29,19 @@ import com.flappedear.betterdriver.core.ui.textStyle
 enum class StatusIcon { Car, Heart }
 
 /**
- * One source in the status strip. [ok] false shows a warning-coloured dot. With an [icon], the icon
- * in the dot's colour replaces the dot and the label; the label is then only read out by TalkBack.
+ * One source in the status strip. [ok] false shows a warning-coloured dot and the value in amber.
+ * With an [icon], the icon in the dot's colour replaces the dot and the label; the label is then only
+ * read out by TalkBack. While [ok], the quiet strip (UI-141 B) leaves out the value unless
+ * [keepValue], as for the heart rate.
  */
 @Immutable
-data class StatusItem(val label: String, val value: String, val ok: Boolean = true, val icon: StatusIcon? = null)
+data class StatusItem(
+    val label: String,
+    val value: String,
+    val ok: Boolean = true,
+    val icon: StatusIcon? = null,
+    val keepValue: Boolean = false,
+)
 
 /** Material Icons, Round style (UI-19 option B): directions_car and favorite. */
 private fun statusIcon(icon: StatusIcon): ImageVector = when (icon) {
@@ -69,8 +77,10 @@ private fun vector(name: String, path: String): ImageVector = ImageVector.Builde
 ).build()
 
 /**
- * Status strip (UI-07 option A): track, GNSS, camera, OBD and heart rate (UI-110 B), and the
- * recording clock on the right. Replaced by [AlertBanner] when an alert is active.
+ * Status strip (UI-07 option A): GNSS, camera, OBD and heart rate (UI-110 B), and the recording
+ * clock on the right. Quiet while fine (UI-141 B): a green dot and a name, with values only for the
+ * heart rate, the recording time and anything wrong, which shows in amber; so a value on the strip
+ * means look. Replaced by [AlertBanner] when an alert is active.
  * With [pages] above one, dots at the right end, after the clock, show which screen of the track
  * screen is on (UI-122 A): the lit one is [page].
  */
@@ -102,7 +112,14 @@ fun StatusStrip(
                     Dot(tint)
                     Text(item.label, style = textStyle(13.dp, FontWeight.Medium), color = c.textDim, maxLines = 1)
                 }
-                NumberText(item.value, size = 15.dp, color = c.text, weight = FontWeight.SemiBold)
+                if (!item.ok || item.keepValue) {
+                    NumberText(
+                        item.value,
+                        size = 15.dp,
+                        color = if (item.ok) c.text else c.warning,
+                        weight = FontWeight.SemiBold,
+                    )
+                }
             }
         }
         Spacer(Modifier.weight(1f))

@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -59,14 +58,16 @@ internal fun ShellTopBar(title: String, onBack: (() -> Unit)? = null, actions: @
     }
 }
 
-/** Rounded surface card used on every shell screen. */
+/**
+ * One group on a shell screen. A plain list on the black background, without a card behind it
+ * (UI-143 B): calmer, and it lights fewer pixels. Its rows bring their own thin dividers.
+ */
 @Composable
 internal fun ShellCard(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Column(
         modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
     )

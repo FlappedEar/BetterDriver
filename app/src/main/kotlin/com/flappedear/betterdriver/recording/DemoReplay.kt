@@ -14,7 +14,7 @@ import java.io.File
 
 /**
  * What the Demo track receiver drives (FBBD-235): the made-up demo circuit, or a session on the phone
- * replayed lap after lap, Arek's Silesia Ring outing for example (Settings › Devices › Demo track ›
+ * replayed lap after lap, Arek's Silesia Ring outing for example (Settings › Equipment › Demo track ›
  * Drives). The choice is the session id in a small file, so the recorder process reads the current
  * one at each session start; no file means the demo circuit. [SilesiaRing] and [Jastrzab] are chosen
  * the same way: Arek's laps there, built into the app (FBBD-237, FBBD-254).

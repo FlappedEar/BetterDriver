@@ -18,11 +18,14 @@ import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasClickAction
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -38,6 +41,7 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.shell.ActionsLabel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.SetupRepo
 import com.flappedear.betterdriver.timing.track.Track
@@ -259,6 +263,24 @@ fun tab(title: String): SemanticsMatcher =
 fun SmokeRule.openTab(title: String) {
     waitFor(tab(title)).performClick()
     waitForIdle()
+}
+
+/**
+ * Opens Settings, then its topic [title] (UI-137 B). Settings is picked twice: the first may bring
+ * back the topic last open there, the second goes to the list of topics.
+ */
+fun SmokeRule.openSettingsTopic(title: String) {
+    openTab("Settings")
+    openTab("Settings")
+    waitFor(hasText(title) and hasClickAction()).performClick()
+    waitForIdle()
+}
+
+/** Opens the ⋮ sheet of the newest session in Sessions (UI-139 C), unless it is open already. */
+fun SmokeRule.openNewestSessionActions() {
+    if (showsText("Export ▾")) return
+    onAllNodes(hasContentDescription(ActionsLabel)).onFirst().performClick()
+    waitForText("Export ▾")
 }
 
 /** Opens Sessions from the bottom bar and waits for the seeded sessions. */

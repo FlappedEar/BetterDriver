@@ -314,6 +314,8 @@ abstract class TrackScreenLayoutTest(private val device: String) {
                 TrackColorsGreenRed,
             ),
             Triple("blue_orange", ExampleTrackState, TrackColorsBlueOrange),
+            // The spoken coach off for the session: no coach line, taller tiles (UI-142 B).
+            Triple("coach_off", ExampleTrackState.copy(coachOn = false), TrackColorsGreenRed),
             // A new install (UI-125 B): speed and G, the other slots empty.
             Triple(
                 "new_install",

@@ -141,7 +141,7 @@ class AnalysisSmokeTest {
         // The lap review runs a frame loop, so the clock is advanced by hand while it shows.
         app.withManualClock {
             app.onNode(hasText("Compare") and hasClickAction()).performClick()
-            app.pumpUntilText("Compare laps", timeoutMs = LoadTimeoutMs)
+            // Sessions has read the laps already, so the review opens on the two laps with no loading page.
             app.pumpUntilText("Change laps", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
             // Back goes to the review's lap picker, which has no frame loop.
             app.pumpBack()

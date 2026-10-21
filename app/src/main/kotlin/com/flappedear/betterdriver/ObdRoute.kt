@@ -21,13 +21,25 @@ import kotlinx.coroutines.delay
 private const val RefreshMs = 500L
 
 /**
- * The OBD-II page (FBBD-261, UI-104 B). While a session records it shows the recorder's OBD
- * connection. Otherwise it opens its own [ObdLink] to the listed adapters (FBBD-121, UI-105 C)
+ * The car data page (FBBD-261, UI-104 B), titled with the next session's car (UI-134 B), or "Car
+ * data" when none is chosen. Its view comes from [rememberObdView].
+ */
+@Composable
+internal fun ObdRoute(recorder: RecorderClient, onBack: () -> Unit) {
+    val repo = SetupRepo.get(LocalContext.current)
+    val recording = recorder.state.recording || recorder.state.starting
+    val car = (if (recording) repo.forSession() else repo.setup).active().car
+    ObdScreen(rememberObdView(recorder), car?.name ?: "Car data", onBack)
+}
+
+/**
+ * What the car data page and the car's page show (FBBD-261, UI-133 B). While a session records it
+ * shows the recorder's OBD connection. Otherwise it opens its own [ObdLink] to the listed adapters (FBBD-121, UI-105 C)
  * while it is shown, and lets go as soon as a session starts: the adapter takes one connection at
  * a time. With none listed it connects to nothing.
  */
 @Composable
-internal fun ObdRoute(recorder: RecorderClient, onBack: () -> Unit) {
+internal fun rememberObdView(recorder: RecorderClient): ObdView {
     val context = LocalContext.current
     val recording = recorder.state.recording || recorder.state.starting
     val repo = SetupRepo.get(context)
@@ -52,5 +64,5 @@ internal fun ObdRoute(recorder: RecorderClient, onBack: () -> Unit) {
             delay(RefreshMs)
         }
     }
-    ObdScreen(view, onBack)
+    return view
 }

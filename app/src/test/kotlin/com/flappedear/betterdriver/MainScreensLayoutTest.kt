@@ -32,20 +32,23 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.ExportState
+import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.shell.AppNavigation
+import com.flappedear.betterdriver.shell.CarPage
 import com.flappedear.betterdriver.shell.HomeScreen
 import com.flappedear.betterdriver.shell.SessionCardActions
+import com.flappedear.betterdriver.shell.SessionFacts
 import com.flappedear.betterdriver.shell.SessionTransferState
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.ObdAdapterLabel
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SettingsScreen
-import com.flappedear.betterdriver.shell.SettingsTab
+import com.flappedear.betterdriver.shell.SettingsTopic
 import com.flappedear.betterdriver.shell.SetupScreen
 import com.flappedear.betterdriver.shell.TracksScreen
 import com.flappedear.betterdriver.shell.appNavigation
@@ -69,8 +72,8 @@ import java.io.File
  * clipped, overlapping or out of the window, nothing scrolling sideways (see assertLayoutClean). A
  * picture of each is saved to build/outputs/roborazzi/layout/<device>/ for a look.
  *
- * And state that must survive a rotation (the activity recreated) does: the Settings tab here,
- * the name typed into New track here in [NewTrackRotationTest].
+ * And state that must survive a rotation (the activity recreated) does: the name typed into New
+ * track here in [NewTrackRotationTest].
  *
  * The plain Application runs: BetterDriverApplication installs the app log and StrictMode, which
  * have nothing to do with layout.
@@ -90,7 +93,6 @@ abstract class MainScreensLayoutTest(private val device: String) {
             setup = configured(),
             recording = false,
             trackName = "Tor Poznań",
-            lastSession = "Yesterday · 14 laps · best 1:52.41",
             actions = SessionCardActions(),
             onStart = {},
             onAddReceiver = {},
@@ -115,7 +117,20 @@ abstract class MainScreensLayoutTest(private val device: String) {
                 ),
                 adapter = ObdAdapterLabel("vLinker MC+", "Bluetooth"),
             ),
+            title = "Track car",
             onBack = {},
+        )
+    }
+
+    @Test
+    fun carPage() = checkScreen("car", Routes.Car) {
+        CarPage(
+            car = CarProfile("c", "Track car", "2013 Scion FR-S"),
+            chosen = true,
+            obd = ObdView(recording = false, status = null, adapter = null),
+            onEdit = {},
+            onChoose = {},
+            onBack = null,
         )
     }
 
@@ -125,7 +140,6 @@ abstract class MainScreensLayoutTest(private val device: String) {
             setup = Setup.fresh { "phone" },
             recording = false,
             trackName = null,
-            lastSession = null,
             actions = SessionCardActions(),
             onStart = {},
             onAddReceiver = {},
@@ -139,6 +153,7 @@ abstract class MainScreensLayoutTest(private val device: String) {
             exports = mapOf("a" to ExportState.Done),
             onExport = { _, _ -> },
             withVideo = setOf("a"),
+            facts = mapOf("a" to SessionFacts(laps = 14, bestMillis = 112_410, obd = true, heartRate = true)),
             transfer = SessionTransferState(
                 outgoing = mapOf("b" to TransferState("Preparing…", Progress, running = true)),
                 incoming = TransferState("Imported the session of 11 Oct 10:42. Added track Tor Poznań."),
@@ -152,16 +167,19 @@ abstract class MainScreensLayoutTest(private val device: String) {
     }
 
     @Test
-    fun settingsDevices() = settings(SettingsTab.Devices)
+    fun settings() = checkScreen("settings", Routes.Settings) { SettingsAt(null) }
 
     @Test
-    fun settingsCar() = settings(SettingsTab.Car)
+    fun settingsEquipment() = settings(SettingsTopic.Equipment)
 
     @Test
-    fun settingsRecording() = settings(SettingsTab.Recording)
+    fun settingsCars() = settings(SettingsTopic.Cars)
 
     @Test
-    fun settingsApp() = settings(SettingsTab.App)
+    fun settingsVideo() = settings(SettingsTopic.Video)
+
+    @Test
+    fun settingsApp() = settings(SettingsTopic.App)
 
     @Test
     fun tracks() = checkScreen("tracks", null) { TracksNearKielce() }
@@ -178,20 +196,9 @@ abstract class MainScreensLayoutTest(private val device: String) {
         )
     }
 
-    /** Rotating the device recreates the activity: the tab picked in Settings stays picked. */
-    @Test
-    fun settingsTabSurvivesRotation() {
-        compose.edgeToEdge()
-        val restoration = StateRestorationTester(compose)
-        restoration.setContent { AppScreen { SettingsAt(SettingsTab.Devices) } }
-        compose.onNodeWithText("App").performClick()
-        compose.onNodeWithText("Run setup again").assertExists()
-        restoration.emulateSavedInstanceStateRestore()
-        compose.onNodeWithText("Run setup again").assertExists()
-    }
-
-    private fun settings(tab: SettingsTab) = checkScreen("settings_${tab.name.lowercase()}", Routes.Settings) {
-        SettingsAt(tab)
+    /** A topic's page, as opened from the Settings page (UI-137 B). */
+    private fun settings(topic: SettingsTopic) = checkScreen("settings_${topic.name.lowercase()}", null) {
+        SettingsAt(topic)
     }
 
     /**
@@ -264,11 +271,13 @@ private fun Chrome(route: String?, screen: @Composable () -> Unit) {
 }
 
 @Composable
-private fun SettingsAt(tab: SettingsTab) {
+private fun SettingsAt(topic: SettingsTopic?) {
     SettingsScreen(
         setup = Setup.fresh { "phone" },
         version = "0.3.2",
-        initialTab = tab,
+        topic = topic,
+        onOpenTopic = {},
+        onBack = if (topic == null) null else ({}),
         onOpenEquipment = {},
         onAddEquipment = {},
         onOpenCar = {},

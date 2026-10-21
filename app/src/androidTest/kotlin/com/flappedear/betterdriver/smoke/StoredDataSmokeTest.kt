@@ -42,9 +42,7 @@ class StoredDataSmokeTest {
         app.back()
 
         // The old track file reads as a circuit, with its line.
-        app.openTab("Settings")
-        app.openTab("Recording")
-        app.waitForText("Tracks and timing lines").performClick()
+        app.openSettingsTopic("Tracks")
         app.waitFor(hasText(SmokeFixtures.OldTrackName) and hasClickAction()).performClick()
         app.waitForText("Kind", timeoutMs = LoadTimeoutMs)
         app.waitFor(hasText("Circuit") and hasClickAction()).assertIsSelected()

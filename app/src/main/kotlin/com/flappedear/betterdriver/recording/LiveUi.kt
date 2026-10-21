@@ -10,7 +10,6 @@ import com.flappedear.betterdriver.feature.track.withTiming
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
-import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.setup.TrackPage
 import com.flappedear.betterdriver.setup.TrackScreens
@@ -51,18 +50,16 @@ fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Bo
     }
     val timing = state.timing
     val sources = TileSources(live, timing, receiverHasG)
-    // A saved track without timing is amber. A circuit from the built-in list is only where the car is:
-    // a road drive can start within its 2 km, so it is shown as neutral information, not a problem.
-    val place = state.place?.let {
-        if (state.placeSaved) StatusItem("Track", it, ok = timing != null) else StatusItem("Near", it)
-    }
+    // The quiet strip (UI-141 B) names the track only when something is wrong there: a saved track
+    // without timing, in amber. A circuit from the built-in list is only where the car is, not a problem.
+    val place = state.place?.takeIf { state.placeSaved && timing == null }?.let { StatusItem("Track", it, ok = false) }
     // Phone video, when a camera reports (UI-07): green while at full quality, amber once stepped down or stopped.
     val camera = state.camera?.let { StatusItem("Camera", it.text, it.ok) }
     // OBD and heart rate (FBBD-268): an icon and a value, shown only while their data arrives (UI-110 B,
     // UI-111 B, UI-112 A). The heart rate is the strap's last value, never older than 5 s.
     val obd = state.obd?.takeIf { it.state == ObdLinkState.Connected }
         ?.let { StatusItem("OBD", "Connected", icon = StatusIcon.Car) }
-    val heart = state.heartRate?.bpm?.let { StatusItem("Heart rate", "$it", icon = StatusIcon.Heart) }
+    val heart = state.heartRate?.bpm?.let { StatusItem("Heart rate", "$it", icon = StatusIcon.Heart, keepValue = true) }
     val screen = TrackScreenState(
         status = listOfNotNull(place, gnss, camera, obd, heart),
         recordingTime = live?.let { formatClock(it.elapsedMicros) },
@@ -144,9 +141,3 @@ fun sessionDetail(s: SessionSummary): String =
         s.durationMicros?.let(::formatDuration),
     ).joinToString(" · ")
 
-/** The home screen's last-session line. */
-fun lastSessionLine(sessions: List<SessionSummary>): String? {
-    val s = sessions.firstOrNull { it.state != SessionState.RECORDING } ?: return null
-    val recovered = if (s.state == SessionState.RECOVERED) " · recovered" else ""
-    return listOfNotNull(sessionTitle(s), s.durationMicros?.let(::formatDuration)).joinToString(" · ") + recovered
-}

@@ -27,8 +27,38 @@ data class SessionCardActions(
     val onAddReceiver: () -> Unit = {},
 )
 
-/** Settings tabs (UI-15 option B). */
-enum class SettingsTab(val title: String) { Devices("Devices"), Car("Car"), Recording("Recording"), App("App") }
+/**
+ * Settings topics (UI-137 B): one short page lists them, each opens a page of its own. [Tracks] and
+ * [Coach] open their existing pages.
+ */
+enum class SettingsTopic(val title: String) {
+    Equipment("Equipment"),
+    Cars("Cars"),
+    Tracks("Tracks"),
+    TrackScreen("Track screen"),
+    Video("Video"),
+    Coach("Spoken coach"),
+    App("App"),
+    Diagnostics("Diagnostics"),
+}
+
+/**
+ * Whether an equipment item can be reached now (UI-138 B), as Settings › Equipment shows it while
+ * it looks for Bluetooth devices. Only what the app can tell: a Bluetooth Classic device is not
+ * heard by a scan, so it is only [Paired]; a Wi-Fi one is not looked for.
+ */
+enum class Reach(val label: String, val state: DeviceState?) {
+    InRange("In range", DeviceState.Ready),
+    NotSeen("Not seen", DeviceState.Off),
+    BuiltIn("Built in", DeviceState.Ready),
+    ByHand("Start by hand", DeviceState.Off),
+    Paired("Paired", null),
+    WiFi("Over Wi-Fi", null),
+    MadeUp("Made-up data", null),
+
+    /** While a session records the page does not look: the recorder holds the connections. */
+    InSession("In this session", DeviceState.Ready),
+}
 
 /**
  * How the OBD page and the Settings row name a listed adapter (FBBD-121, UI-106 A): [name] as
@@ -49,3 +79,15 @@ data class ObdAdapterLabel(val name: String, val via: String) {
  * source (Demo GNSS). [adapter] is the first listed adapter (UI-105 C).
  */
 data class ObdView(val recording: Boolean, val status: ObdStatus?, val adapter: ObdAdapterLabel? = null)
+
+/**
+ * What a session row in Sessions says about it (UI-139 C), read with its laps (ReviewLaps): its timed
+ * laps and the best one at the saved track it was recorded at, and whether car data (OBD-II) and heart
+ * rate were recorded. Unknown until the session has been read.
+ */
+data class SessionFacts(
+    val laps: Int = 0,
+    val bestMillis: Long? = null,
+    val obd: Boolean = false,
+    val heartRate: Boolean = false,
+)

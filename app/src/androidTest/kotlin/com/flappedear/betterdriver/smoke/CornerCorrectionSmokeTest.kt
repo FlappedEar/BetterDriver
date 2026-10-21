@@ -67,9 +67,7 @@ class CornerCorrectionSmokeTest {
         app.waitForText("Compare laps")
 
         // The track editor lists them under the lines; the first one is named.
-        app.openTab("Settings")
-        app.openTab("Recording")
-        app.waitForText("Tracks and timing lines").performClick()
+        app.openSettingsTopic("Tracks")
         app.waitFor(hasText(SmokeFixtures.CircuitName) and hasClickAction()).performClick()
         app.waitForText("Kind", timeoutMs = LoadTimeoutMs)
         app.waitFor(hasTestTag(SegmentRowTag + corner.id)).performScrollTo().performClick()
