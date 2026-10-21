@@ -21,16 +21,18 @@ import java.util.zip.ZipFile
 /**
  * The reports of every recording in [lines], in the order they started. The app's cold starts and
  * ANRs (FBBD-41) belong to no recording: each report grades the cold starts logged since the
- * recording before it ended, and the ANRs while it ran.
+ * recording before it ended, and the ANRs while it ran. Nor does what Settings › Equipment showed
+ * (FBBD-280): each report judges what it last showed before the recording started.
  */
 fun driveChecks(lines: List<LogLine>): List<QualityReport> {
     val life = AppLife.of(lines)
+    val reach = reachSpans(lines)
     var since: Long? = null
     val sessions = DriveLog.sessions(lines)
     return sessions.mapIndexed { i, s ->
         val nextStart = sessions.getOrNull(i + 1)?.startUtcMillis
         // The end of a recording without a stop line is inferred, as its report infers it.
-        driveChecks(s, life, since, nextStart).also { since = maxOf(since ?: Long.MIN_VALUE, endUtcMillis(s)) }
+        driveChecks(s, life, since, nextStart, reach).also { since = maxOf(since ?: Long.MIN_VALUE, endUtcMillis(s)) }
     }
 }
 
@@ -60,10 +62,16 @@ fun driveChecks(s: LoggedSession): QualityReport =
     driveChecks(s, AppLife(emptyList(), emptyList(), emptyList()), null, null)
 
 /**
- * The report of one recording; [life] and [sinceUtc] as [driveChecks] of the whole log gives them,
- * [nextStartUtc] the start of the recording after it, if any.
+ * The report of one recording; [life], [sinceUtc] and [reach] as [driveChecks] of the whole log gives
+ * them, [nextStartUtc] the start of the recording after it, if any.
  */
-private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextStartUtc: Long?): QualityReport {
+private fun driveChecks(
+    s: LoggedSession,
+    life: AppLife,
+    sinceUtc: Long?,
+    nextStartUtc: Long?,
+    reach: List<ReachSpan> = emptyList(),
+): QualityReport {
     val seconds = s.seconds.sortedBy { it.tMicros }
     val events = s.events.sortedBy { it.tMicros }
     val sets = seconds.map(::sampleSet)
@@ -90,6 +98,7 @@ private fun driveChecks(s: LoggedSession, life: AppLife, sinceUtc: Long?, nextSt
         goProSection(events, clips, end),
         coachSection(events, samples),
         heartRateSection(s.heartRate, events, end),
+        reachSection(reach, s, sinceUtc),
         thermalSection(events),
         screenSection(events, logOutages(seconds, end), end, logUnderCoverFrom(seconds)),
         exportSection(events, end),
