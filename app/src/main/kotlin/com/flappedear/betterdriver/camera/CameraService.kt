@@ -120,7 +120,7 @@ class CameraService : LifecycleService() {
                 if (ending || camera != null || test != null) startAgain = true else waitForSession()
             }
             ACTION_TEST -> startTest()
-            ACTION_TEST_STOP -> test?.stop("stopped on the test screen")
+            ACTION_TEST_STOP -> stopTest()
             else -> {
                 startAgain = false
                 // A session's stop leaves a camera test alone; the test ends the service when it is done.
@@ -145,6 +145,24 @@ class CameraService : LifecycleService() {
                 finish()
             }.also { it.start() }
         }
+    }
+
+    /**
+     * Ends the camera test. With none running here (the camera's process ended mid-test), a state
+     * still saying running is closed, and a service started only for this stop ends.
+     */
+    private fun stopTest() {
+        val running = test
+        if (running != null) {
+            running.stop("stopped")
+            return
+        }
+        val state = CameraTestState.read(this)
+        if (state?.status == CameraTestState.Status.Running) {
+            val stopped = state.copy(status = CameraTestState.Status.Stopped, note = "the test ended early")
+            CameraTestState.write(this, stopped)
+        }
+        if (camera == null && !bound && !ending) stopSelf()
     }
 
     /** Binds to the recorder, whose state names the session to record ([onState]); gives up after a while. */

@@ -49,6 +49,7 @@ import java.io.IOException
 private const val PollMs = 1_000L
 private const val MillisPerSecond = 1_000L
 private const val SecondsPerMinute = 60L
+private const val StaleMs = 60_000L
 private const val MillisPerPart = CameraTestState.PartMinutes * SecondsPerMinute * MillisPerSecond
 
 /**
@@ -67,7 +68,7 @@ fun CameraTestScreen(onBack: () -> Unit) {
     var watching by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         while (true) {
-            state = withContext(Dispatchers.IO) { CameraTestState.read(context) }
+            state = withContext(Dispatchers.IO) { CameraTestState.read(context) }?.let(::unlessStale)
             now = System.currentTimeMillis()
             if (state?.status == Status.Running) watching = true
             delay(PollMs)
@@ -102,9 +103,11 @@ fun CameraTestScreen(onBack: () -> Unit) {
 private fun Start(starting: Boolean, onStart: () -> Unit) {
     val context = LocalContext.current
     val camera = remember { context.allGranted(listOf(Manifest.permission.CAMERA)) }
+    val sound = remember { context.allGranted(listOf(Manifest.permission.RECORD_AUDIO)) }
     val minutes = CameraTestState.PartMinutes
     DimText(
-        "Records 1080p · 60 twice with the same settings, sound included. Part 1 writes the MP4 as " +
+        "Records 1080p · 60 twice with the same settings, ${if (sound) "sound included" else "without sound"}. " +
+            "Part 1 writes the MP4 as " +
             "normal. Part 2 runs both encoders but writes no file. Every step is timed in the log.",
     )
     ShellCard {
@@ -117,6 +120,8 @@ private fun Start(starting: Boolean, onStart: () -> Unit) {
             "deleted afterwards.",
     )
     if (!camera) DimText("The camera permission is off.", color = TrackTheme.colors.loss)
+    // As in a session: without the microphone permission neither part records sound.
+    if (!sound) DimText("The microphone permission is off, so neither part records sound.")
     Button(onClick = onStart, enabled = camera && !starting, modifier = Modifier.fillMaxWidth()) {
         Text(if (starting) "Starting…" else "Start test")
     }
@@ -200,6 +205,17 @@ private fun KeepScreenOn(on: Boolean) {
         onDispose { view.keepScreenOn = false }
     }
 }
+
+/**
+ * A test still marked running a minute after its part should have ended: the camera's process ended
+ * without finishing it (parts follow each other within seconds). Shown as stopped, so a new one can start.
+ */
+private fun unlessStale(state: CameraTestState): CameraTestState =
+    if (state.status == Status.Running && System.currentTimeMillis() > state.partEndsAtMillis + StaleMs) {
+        state.copy(status = Status.Stopped, note = "the test ended early")
+    } else {
+        state
+    }
 
 private fun startTest(context: Context) {
     try {

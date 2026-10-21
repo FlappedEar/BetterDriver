@@ -15,6 +15,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import com.flappedear.betterdriver.camera.CameraService
+import com.flappedear.betterdriver.camera.CameraTestState
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
 import com.flappedear.betterdriver.gopro.GoPros
@@ -204,7 +205,17 @@ class RecorderClient private constructor(private val context: Context) {
             state = state.copy(starting = false, error = "Could not start recording: ${e.message}")
             return
         }
-        if (phoneVideo != null) startCamera(phoneVideo)
+        if (phoneVideo != null) startCamera(phoneVideo) else stopCameraTest()
+    }
+
+    /** A session without phone video still ends a running camera test (FBBD-278): no session records during one. */
+    private fun stopCameraTest() {
+        if (CameraTestState.read(context)?.status != CameraTestState.Status.Running) return
+        try {
+            context.startService(Intent(context, CameraService::class.java).setAction(CameraService.ACTION_TEST_STOP))
+        } catch (e: IllegalStateException) {
+            DebugLog.w("RecorderClient", "camera test not stopped", e)
+        }
     }
 
     /** A failure here only means no phone video; the recording is already running. */
