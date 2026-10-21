@@ -270,7 +270,7 @@ class GattLink(
      * clears Android's cached services and looks again on this connection; true when it will.
      */
     private fun lookAgainForService(g: BluetoothGatt): Boolean {
-        val found = g.services.joinToString { it.uuid.toString().substring(0, 8) }
+        val found = g.services.joinToString { it.uuid.toString() }
         DebugLog.i(Tag, "$address services without ${profile.service}: [$found]")
         val deadline = recheck.recheck(SystemClock.elapsedRealtime(), setupDeadlineAt) ?: return false
         if (!refreshCache(g)) DebugLog.i(Tag, "$address service cache could not be cleared")
