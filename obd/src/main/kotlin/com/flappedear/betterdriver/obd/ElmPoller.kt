@@ -58,9 +58,18 @@ interface ObdClock {
  * It is asked again every [POLL_SET_CHECK_MS], and when it changed (a tile chosen during the session)
  * polling switches to the new set on the same connection.
  *
+ * Listening to the car's own CAN frames (FBBD-263). Some values are not asked for but broadcast by
+ * the car, steering angle among them ([CanBroadcasts]). On 11-bit CAN, right after discovery, a
+ * probe monitors the bus (`AT MA`) for [probeMs] and logs which ids the OBD port shows and how often,
+ * then counts the ids [CanBroadcasts] needs with a filter on each (`AT CRA`). The signals whose ids
+ * came are recorded like polled channels: every [listenIntervalMs] polling pauses for one listen,
+ * `AT CRA <id>`, `AT CAF0` (frames as sent, not read as ISO-TP), `AT MA` for [listenWindowMs], then
+ * `AT CAF1` and `AT CRA` back. The adapter does one thing at a time, so a listen takes the place of
+ * a few requests; continuous monitoring would stop polling altogether (FBBD-206).
+ *
  * [clock] tells the time and waits.
  */
-@Suppress("TooManyFunctions", "LongParameterList") // The two FBBD-270 switches are for tests.
+@Suppress("TooManyFunctions", "LongParameterList") // The FBBD-270 and FBBD-263 switches are for tests.
 class ElmPoller(
     private val line: ElmLine,
     private val profile: CarProfile,
@@ -71,6 +80,10 @@ class ElmPoller(
     private val multiPid: Boolean = true,
     private val responseCount: Boolean = true,
     private val pollSet: () -> PollSet = { PollSet.All },
+    private val canListen: Boolean = true,
+    private val probeMs: Long = DEFAULT_PROBE_MS,
+    private val listenIntervalMs: Long = DEFAULT_LISTEN_INTERVAL_MS,
+    private val listenWindowMs: Long = DEFAULT_LISTEN_WINDOW_MS,
 ) {
     /** What each group's request got without a count, by its lead request. */
     private class Learned {
@@ -110,6 +123,15 @@ class ElmPoller(
     private var requests = 0
     private var rateStartMs = 0L
 
+    /** The broadcast signals listened for, and frames each got since the last rates line. */
+    private var listens: List<CanSignal> = emptyList()
+    private val listenFrames = HashMap<String, Int>()
+    private var listenMs = 0L
+    private var emptyListens = 0
+
+    /** The adapter took a receive filter but would not drop it: no more listening on it. */
+    private var filterStuck = false
+
     /**
      * Sets up the adapter, discovers the car's PIDs and polls until stopped. Returns why it ended,
      * for the log; throws an [java.io.IOException] when the line closes.
@@ -120,6 +142,7 @@ class ElmPoller(
         val supported = discover() ?: return "car not answering"
         val protocol = line.command("ATDPN", AT_TIMEOUT_MS)?.trim().orEmpty()
         val available = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
+        listens = broadcastsOn(protocol)
         val can = isCan(protocol)
         var set = pollSet()
         var first = true
@@ -127,7 +150,8 @@ class ElmPoller(
             val channels = set.select(available)
             val skipped = available - channels.toSet()
             if (skipped.isNotEmpty()) listener.log("not polled (not used): " + skipped.joinToString(" ") { it.id })
-            if (first) listener.ready(adapter, protocol, voltage, supported, channels) else listener.polling(channels)
+            val all = channels + listens.map { it.channel }
+            if (first) listener.ready(adapter, protocol, voltage, supported, all) else listener.polling(all)
             first = false
             if (channels.isEmpty()) return "no channels to poll"
             countOn = responseCount && can
@@ -246,6 +270,113 @@ class ElmPoller(
         listener.log("identity $text")
     }
 
+    /** The broadcasts to listen for: probed on 11-bit CAN when [canListen], else none (FBBD-263). */
+    private fun broadcastsOn(protocol: String): List<CanSignal> =
+        if (canListen && isCan11(protocol)) probe() else emptyList()
+
+    /** Whether a listen is due at [nowMs], the next one being at [nextListenMs]. */
+    private fun listenDue(nowMs: Long, nextListenMs: Long): Boolean = listens.isNotEmpty() && nowMs >= nextListenMs
+
+    /** When a wait for a request due at [requestMs] ends: no later than the next listen. */
+    private fun wakeAt(requestMs: Long, nextListenMs: Long): Long =
+        if (listens.isEmpty()) requestMs else minOf(requestMs, nextListenMs)
+
+    /**
+     * Which CAN ids the OBD port shows (FBBD-263), for the log, and the [CanBroadcasts] signals whose
+     * required ids came. Headers on and CAN formatting off for the monitor; both back afterwards.
+     */
+    @Suppress("ReturnCount") // Each early return is one way the adapter cannot monitor.
+    private fun probe(): List<CanSignal> {
+        if (line.command("ATCAF0", AT_TIMEOUT_MS)?.contains("OK") != true) {
+            listener.log("can_probe off: ATCAF0 not taken")
+            return emptyList()
+        }
+        if (!setHeaders(true)) {
+            line.command("ATCAF1", AT_TIMEOUT_MS)
+            listener.log("can_probe off: ATH1 not taken")
+            return emptyList()
+        }
+        val text = line.monitor("ATMA", probeMs, MONITOR_STOP_MS)
+        val seen = CanMonitor.count(text)
+        val full = if (text?.contains("BUFFER FULL") == true) " buffer_full" else ""
+        val top = seen.entries.sortedByDescending { it.value }.take(PROBE_LOG_IDS)
+            .joinToString(" ") { (id, n) -> "${hex(id, CAN_ID_DIGITS)}:$n" }
+        listener.log("can_probe ms=$probeMs frames=${seen.values.sum()} ids=${seen.size}$full $top".trimEnd())
+        // The open monitor can fill the adapter's buffer on a busy bus and miss ids: count the needed
+        // ones again, each behind its own filter.
+        val needed = CanBroadcasts.all.flatMap { it.requires }.distinct()
+        val filtered = LinkedHashMap<Int, Int>()
+        for (id in needed) {
+            filtered[id] = listenFor(id, PROBE_FILTER_MS).size
+            if (filterStuck) break
+        }
+        line.command("ATCAF1", AT_TIMEOUT_MS)
+        setHeaders(false)
+        val matched = if (filterStuck) emptyList() else CanBroadcasts.matching(filtered)
+        val counts = filtered.entries.joinToString(" ") { (id, n) -> "${hex(id, CAN_ID_DIGITS)}:$n" }
+        val listening = matched.joinToString(" ") { "${it.id}=${hex(it.canId, CAN_ID_DIGITS)}" }.ifEmpty { "none" }
+        listener.log("can_ids $counts listen $listening")
+        return matched
+    }
+
+    /**
+     * The data of the frames with [canId] that came in [windowMs] of monitoring behind a filter on
+     * it; restores the default filters after. Expects CAN formatting off; reads with the current
+     * [headers] setting.
+     */
+    @Suppress("ReturnCount") // Each early return is a filter the adapter would not set or drop.
+    private fun listenFor(canId: Int, windowMs: Long): List<ByteArray> {
+        val filter = line.command("ATCRA" + hex(canId, CAN_ID_DIGITS), AT_TIMEOUT_MS)
+        if (filter == null || '?' in filter) return emptyList()
+        val text = line.monitor("ATMA", windowMs, MONITOR_STOP_MS)
+        if (!restoreFilter()) return emptyList()
+        return if (headers) {
+            CanMonitor.frames(text).filter { it.first == canId }.map { it.second }
+        } else {
+            CanMonitor.dataLines(text)
+        }
+    }
+
+    /**
+     * Puts the default receive filter back after a listen: `AT CRA` without an id, which an ELM327
+     * older than v1.4b does not know, else `AT AR` (automatic receive). When neither is taken the
+     * filter would hide every answer to a request, so listening is switched off for good.
+     */
+    private fun restoreFilter(): Boolean {
+        val restored = line.command("ATCRA", AT_TIMEOUT_MS)?.contains("OK") == true ||
+            line.command("ATAR", AT_TIMEOUT_MS)?.contains("OK") == true
+        if (!restored) {
+            listener.log("can_listen off: receive filter not restored (AT CRA and AT AR refused)")
+            filterStuck = true
+            listens = emptyList()
+        }
+        return restored
+    }
+
+    /**
+     * One listen for [signal] between polls: reports each frame's value, stamped back from the end of
+     * the monitor at the signal's period. Listening stops after [MAX_EMPTY_LISTENS] without a frame.
+     */
+    private fun listen(signal: CanSignal) {
+        val start = clock.nowMs()
+        line.command("ATCAF0", AT_TIMEOUT_MS)
+        val frames = listenFor(signal.canId, listenWindowMs)
+        val end = clock.nowMs()
+        line.command("ATCAF1", AT_TIMEOUT_MS)
+        listenMs += clock.nowMs() - start
+        val values = frames.mapNotNull { signal.decode(it) }
+        values.forEachIndexed { i, v ->
+            lastValues[signal.id] = v
+            listener.value(signal.channel, v, end - (values.size - 1 - i) * signal.periodMs)
+        }
+        listenFrames[signal.id] = (listenFrames[signal.id] ?: 0) + values.size
+        emptyListens = if (values.isEmpty()) emptyListens + 1 else 0
+        if (emptyListens >= MAX_EMPTY_LISTENS) {
+            listener.log("can_listen off: no ${hex(signal.canId, CAN_ID_DIGITS)} frames in $MAX_EMPTY_LISTENS listens")
+            listens = emptyList()
+        }
+    }
+
     /** The mode 01 PIDs the car has, from the `01 00`, `01 20`, … bitmasks; null when none answered. */
     private fun discover(): Set<Int>? {
         val supported = sortedSetOf<Int>()
@@ -279,6 +410,8 @@ class ElmPoller(
         rateStartMs = clock.nowMs()
         var nextRateLog = rateStartMs + rateLogMs
         var nextSetCheck = rateStartMs + POLL_SET_CHECK_MS
+        var nextListen = rateStartMs
+        var turn = 0
         var ended: String? = null
         while (ended == null && running()) {
             val now = clock.nowMs()
@@ -286,10 +419,16 @@ class ElmPoller(
                 nextSetCheck = now + POLL_SET_CHECK_MS
                 if (pollSet() != set) return null
             }
+            if (listenDue(now, nextListen)) {
+                listen(listens[turn++ % listens.size])
+                nextListen = clock.nowMs() + listenIntervalMs
+                continue
+            }
             val next = scheduler.next(now)
             when {
                 next == null -> ended = "car stopped answering"
-                next.notBeforeMs > now -> clock.sleep(next.notBeforeMs - now)
+                // Only slow requests left and none due: wait, but not past the next listen.
+                next.notBeforeMs > now -> clock.sleep(wakeAt(next.notBeforeMs, nextListen) - now)
                 else -> {
                     timeouts = if (ask(next.request, byRequest, scheduler)) 0 else timeouts + 1
                     if (timeouts >= MAX_TIMEOUTS) ended = "adapter stopped answering"
@@ -387,6 +526,14 @@ class ElmPoller(
             "rates_hz $rates latency_ms=$latency requests_per_s=${"%.1f".format(Locale.ROOT, perSecond)}" +
                 " response_count=${if (countOn) "on" else "off"}",
         )
+        if (listenFrames.isNotEmpty() && elapsed > 0) {
+            val can = listenFrames.entries.joinToString(" ") { (id, n) ->
+                "$id=${"%.1f".format(Locale.ROOT, n * MS_PER_S / elapsed)}"
+            }
+            listener.log("can_hz $can listen_share=${"%.2f".format(Locale.ROOT, listenMs.toDouble() / elapsed)}")
+            listenFrames.clear()
+            listenMs = 0
+        }
         requests = 0
         rateStartMs = nowMs
         // The latest value of every channel, so slow ones (oil, coolant) can be read from the log.
@@ -395,6 +542,9 @@ class ElmPoller(
             listener.log("values $values")
         }
     }
+
+    /** ATDPN `6` or `8` (or `A6`, `A8`): ISO 15765-4 CAN with 11-bit ids, where FBBD-263 listens. */
+    private fun isCan11(protocol: String): Boolean = protocol.trim().removePrefix("A").let { it == "6" || it == "8" }
 
     /** ATDPN `6`..`9` (or `A6`.. when found automatically): ISO 15765-4 CAN, where FBBD-270 applies. */
     private fun isCan(protocol: String): Boolean =
@@ -425,6 +575,22 @@ class ElmPoller(
 
         /** How often [pollSet] is asked again during polling. */
         const val POLL_SET_CHECK_MS = 5_000L
+
+        /** FBBD-263: the open probe at connect, and each filtered count after it. */
+        const val DEFAULT_PROBE_MS = 2_000L
+        private const val PROBE_FILTER_MS = 300L
+        private const val PROBE_LOG_IDS = 60
+
+        /** FBBD-263: a listen every 400 ms, 100 ms of frames each (5 steering frames at 50 Hz). */
+        const val DEFAULT_LISTEN_INTERVAL_MS = 400L
+        const val DEFAULT_LISTEN_WINDOW_MS = 100L
+
+        /** How long a stopped monitor may take to print its prompt. */
+        private const val MONITOR_STOP_MS = 1_000L
+        private const val MAX_EMPTY_LISTENS = 10
+
+        /** An 11-bit CAN id in hex, as `AT CRA` takes it and the log shows it. */
+        private const val CAN_ID_DIGITS = 3
 
         /** A headers-off multi-frame answer starts with its length in three hex digits (`00E`). */
         private const val LENGTH_LINE = 3

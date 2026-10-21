@@ -57,6 +57,34 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
         }
     }
 
+    /**
+     * Sends [text] (`AT MA`: monitor the bus) and returns everything the adapter printed in the next
+     * [windowMs] and until its prompt (FBBD-263). The monitor runs until the adapter gets a byte, so
+     * when no prompt came in the window a space is sent to stop it: the ELM327 stops at any character
+     * and ignores spaces in a command, so a space that arrives after the adapter stopped by itself
+     * (`BUFFER FULL`) cannot start a command, as a carriage return would by repeating the last one.
+     * Null when no prompt came [timeoutMs] after that; the next command then resyncs as after
+     * [command].
+     */
+    fun monitor(text: String, windowMs: Long, timeoutMs: Long): String? {
+        synchronized(lock) {
+            if (outstanding) awaitPrompt(resyncMs)
+            outstanding = false
+            closed?.let { throw IOException(it) }
+            received.setLength(0)
+        }
+        write((text + "\r").toByteArray(Charsets.US_ASCII))
+        synchronized(lock) {
+            awaitPrompt(windowMs)?.let { return it }
+        }
+        write(STOP_MONITOR)
+        synchronized(lock) {
+            val answer = awaitPrompt(timeoutMs)
+            if (answer == null) outstanding = true
+            return answer
+        }
+    }
+
     /** Under [lock]: what came before the next prompt, consumed with it, or null after [timeoutMs]. */
     private fun awaitPrompt(timeoutMs: Long): String? {
         val deadline = System.nanoTime() + timeoutMs * NanosPerMs
@@ -83,6 +111,7 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
     companion object {
         /** How long a command waits for the late prompt of one that timed out. */
         const val DEFAULT_RESYNC_MS = 2_000L
+        private val STOP_MONITOR = " ".toByteArray(Charsets.US_ASCII)
         private const val NanosPerMs = 1_000_000L
     }
 }
