@@ -24,17 +24,23 @@ private const val BannerSlackMicros = 1_000_000L
 
 /**
  * A time without a GNSS fix: from the last fix before ([lastFix]) to the first after ([nextFix], null
- * when none came). Only outages longer than the banner's own threshold (1 s at 25 Hz) are listed.
+ * when none came). Gaps over 200 ms are listed; only those longer than the banner's own threshold
+ * (1 s at 25 Hz) are outages the banner must show for.
  */
-internal class Outage(val lastFix: Long, val nextFix: Long?)
+internal class Outage(val lastFix: Long, val nextFix: Long?) {
+    fun micros(endMicros: Long) = (nextFix ?: endMicros) - lastFix
+}
 
 /** The banner shows after this long without a fix (`:recorder`'s gnssLostAfterMicros at 25 Hz). */
 internal const val BannerThresholdMicros = 1_000_000L
 
-/** The outages of [samples]: waits between fixes longer than the banner's threshold, and none after the last fix. */
+/**
+ * The gaps of [samples]: waits between fixes over 200 ms, and the time after the last fix when it is
+ * longer than the banner's threshold.
+ */
 internal fun outages(samples: GnssSamples, endMicros: Long): List<Outage> {
     val fixes = (0 until samples.size).filter { samples.hasFix(it) }.map { samples.t[it] }
-    val out = fixes.zipWithNext().filter { (a, b) -> b - a > BannerThresholdMicros }.map { (a, b) -> Outage(a, b) }
+    val out = fixes.zipWithNext().filter { (a, b) -> b - a > MaxGapMicros }.map { (a, b) -> Outage(a, b) }
     val last = fixes.lastOrNull()
     return if (last != null && endMicros - last > BannerThresholdMicros) out + Outage(last, null) else out
 }
@@ -139,12 +145,16 @@ private const val ShowCriterion = "banner within 2 s of the GNSS drop (FBBD-64)"
 private const val ClearCriterion = "banner cleared within 2 s of the reconnect (FBBD-64)"
 
 /**
- * The banner against the outages the session's fixes show: a banner shown with no outage around it
- * is false; for each outage, how long after its last fix the banner showed and after its first fix
- * again it cleared.
+ * The banner against the gaps the session's fixes show: a banner shown with no outage around it is
+ * false; for each outage, how long after its last fix the banner showed and after its first fix
+ * again it cleared. The fixes' times are the receiver's, but the banner goes by when they reach the
+ * phone (FBBD-282): on 21 Oct 2026 the RaceBox link stalled for ~1.3 s and lost a second of
+ * messages, so the receiver's times showed gaps of 0.88 to 1.04 s while the phone waited over 1 s.
+ * So a banner that logged a fix age over its own threshold, with a gap over 200 ms around it, is
+ * right too.
  */
-private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicros: Long): List<QualityMetric> {
-    val banners = events.ofKind(EventKinds.GNSS_BANNER).map { it.tMicros to fields(it.text)["state"] }
+private fun banners(events: List<RecorderEvent>, gaps: List<Outage>, endMicros: Long): List<QualityMetric> {
+    val banners = events.ofKind(EventKinds.GNSS_BANNER).map { it.tMicros to fields(it.text) }
     if (banners.isEmpty() && events.ofKind(EventKinds.UI_FRAMES).isEmpty()) {
         val why = "the banner's changes are logged while the track screen is open, from this version on"
         return listOf(
@@ -153,10 +163,18 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
             notMeasured("ui.banner_clear", "GNSS banner clear delay", ClearCriterion, why),
         )
     }
-    val shown = banners.filter { it.second == "shown" }.map { it.first }
-    val cleared = banners.filter { it.second == "cleared" }.map { it.first }
+    val outages = gaps.filter { it.micros(endMicros) > BannerThresholdMicros }
+    val shownAt = banners.filter { it.second["state"] == "shown" }
+    val shown = shownAt.map { it.first }
+    val cleared = banners.filter { it.second["state"] == "cleared" }.map { it.first }
     fun during(o: Outage, t: Long) = o.lastFix < t && (o.nextFix ?: endMicros) + BannerSlackMicros >= t
-    val wrong = shown.count { b -> outages.none { o -> during(o, b) } }
+    fun late(t: Long, age: Long?) = age != null && age > BannerThresholdMicros && gaps.any { during(it, t) }
+    val wrong = shownAt.count { (b, f) ->
+        outages.none { o -> during(o, b) } && !late(b, f["fix_age_us"]?.toLongOrNull())
+    }
+    val lateOnly = shownAt.count { (b, f) ->
+        outages.none { o -> during(o, b) } && late(b, f["fix_age_us"]?.toLongOrNull())
+    }
     // Null for an outage the banner should have reacted to and never did: one longer than the limit
     // that it never showed for, or one it showed for and never cleared after the fixes came back.
     val showDelays = outages.mapNotNull { o ->
@@ -174,7 +192,9 @@ private fun banners(events: List<RecorderEvent>, outages: List<Outage>, endMicro
         add(
             judged(
                 "ui.false_banners", "False GNSS banners", wrong.toDouble(), "", wrong == 0, Basis.MEASURED,
-                FalseBannerCriterion, "$how; ${shown.size} banner(s), ${outages.size} outage(s)",
+                FalseBannerCriterion,
+                "$how; ${shown.size} banner(s), ${outages.size} outage(s), " +
+                    "$lateOnly for a shorter gap with the fixes late on the phone",
             ),
         )
         add(delayMetric("ui.banner_show", "GNSS banner delay", showDelays, ShowCriterion, "$how; from the last fix"))

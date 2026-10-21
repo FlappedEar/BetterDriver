@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
 import android.content.Context
 import android.os.Build
+import com.flappedear.betterdriver.core.ble.BleSetups
 import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.scanBleDevices
@@ -23,6 +24,7 @@ import com.flappedear.betterdriver.obd.ObdBytes
 import com.flappedear.betterdriver.obd.ObdConnection
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.ObdTransport
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -30,14 +32,21 @@ import kotlinx.coroutines.flow.Flow
 
 private const val RequestedMtu = 517
 private const val AttHeaderBytes = 3
+private const val NanosPerMs = 1_000_000L
+private const val Tag = "Link"
 private const val SetupTimeoutS = 15L
+
+/** How long the adapter lets another Bluetooth LE link (the RaceBox) finish connecting first (FBBD-282). */
+private const val QuietWaitMs = 5_000L
 
 /**
  * A Bluetooth LE ELM327 (FBBD-121). [open] connects, asks for a larger MTU, finds the serial pair
  * ([BleSerial.choose]) and turns its notifications on, then hands the line to a
  * [BleSerialConnection]; it blocks until that is done or fails, at most 15 s. GATT callbacks come on
  * a binder thread and drive the next step straight from there. No bonding is asked for; an adapter
- * that needs it makes Android pair on the descriptor write.
+ * that needs it makes Android pair on the descriptor write. While another link of the app (the
+ * RaceBox) is still connecting, [open] first waits up to 5 s for it ([BleSetups], FBBD-282): on
+ * 21 Oct 2026 the two connected at the same moment and the RaceBox's service lookup never answered.
  */
 @SuppressLint("MissingPermission")
 class BleObdTarget(context: Context, name: String, override val address: String) : ObdTarget {
@@ -48,6 +57,14 @@ class BleObdTarget(context: Context, name: String, override val address: String)
 
     override fun open(bytes: ObdBytes): ObdConnection {
         val adapter = bluetooth(appContext) ?: throw IOException("Bluetooth off")
+        val began = System.nanoTime()
+        val busy = BleSetups.Shared.awaitQuiet(address, QuietWaitMs)
+        val waited = (System.nanoTime() - began) / NanosPerMs
+        if (busy.isNotEmpty()) {
+            DebugLog.i(Tag, "$address connecting while ${busy.joinToString()} still connects, after $waited ms")
+        } else if (waited > 0) {
+            DebugLog.i(Tag, "$address waited $waited ms for another Bluetooth LE link to connect first")
+        }
         val setup = Setup(bytes)
         val gatt = remote(adapter, address).connectGatt(appContext, false, setup, BluetoothDevice.TRANSPORT_LE)
             ?: throw IOException("connectGatt returned null")

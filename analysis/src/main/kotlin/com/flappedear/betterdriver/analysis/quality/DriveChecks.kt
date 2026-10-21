@@ -143,12 +143,12 @@ private fun importedClips(events: List<com.flappedear.betterdriver.recorder.Reco
         }
     }
 
-/** Waits between fixes over the banner's threshold: each ends at the first fix of the second that logged it. */
+/** Waits between fixes over 200 ms: each ends at the first fix of the second that logged it. */
 private fun logOutages(seconds: List<GnssSecond>, endMicros: Long): List<Outage> {
     val out = seconds.mapNotNull { g ->
         val gap = g.maxGapMicros
         val back = g.firstFixMicros
-        if (gap != null && back != null && gap > BannerThresholdMicros) Outage(back - gap, back) else null
+        if (gap != null && back != null && gap > MaxGapMicros) Outage(back - gap, back) else null
     }
     val lastFix = seconds.lastOrNull { it.fixes > 0 }?.let { it.tMicros }
     return if (lastFix != null && endMicros - lastFix > BannerThresholdMicros) out + Outage(lastFix, null) else out
