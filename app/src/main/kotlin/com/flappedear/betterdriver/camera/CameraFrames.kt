@@ -37,8 +37,8 @@ class CameraFrames(fps: Int) {
     private var maxExposureNanos = 0L
     private var aeRange: String? = null
 
-    /** The camera's processing modes last seen ([processing]); -1 before the first frame. */
-    private var lastModes = -1
+    /** The camera's processing modes last seen ([processing]); null before the first frame. */
+    private var lastModes: IntArray? = null
 
     /**
      * A capture finished with sensor timestamp [sensorNanos], its frame duration and exposure time
@@ -74,9 +74,13 @@ class CameraFrames(fps: Int) {
      */
     @Synchronized
     fun processing(noise: Int?, edge: Int?, stabilization: Int?, ois: Int?): String? {
-        val modes = ((code(noise) * ModeBase + code(edge)) * ModeBase + code(stabilization)) * ModeBase + code(ois)
-        if (modes == lastModes) return null
-        lastModes = modes
+        val last = lastModes
+        if (last != null && last[0] == code(noise) && last[1] == code(edge) &&
+            last[2] == code(stabilization) && last[3] == code(ois)
+        ) {
+            return null
+        }
+        lastModes = intArrayOf(code(noise), code(edge), code(stabilization), code(ois))
         return "camera processing: noise_reduction=${name(noise, NoiseModes)} edge=${name(edge, EdgeModes)} " +
             "video_stabilization=${name(stabilization, StabilizationModes)} ois=${name(ois, OisModes)}"
     }
@@ -125,7 +129,8 @@ class CameraFrames(fps: Int) {
         return text
     }
 
-    private fun code(mode: Int?) = (mode ?: -1) + 1
+    /** A mode's value, with "none" apart from every value a camera may report. */
+    private fun code(mode: Int?) = mode ?: Int.MIN_VALUE
 
     private fun name(mode: Int?, names: List<String>) = mode?.let { names.getOrNull(it) ?: "mode$it" } ?: "n/a"
 
@@ -136,9 +141,6 @@ class CameraFrames(fps: Int) {
     private companion object {
         const val NanosPerSecond = 1_000_000_000L
         const val NanosPerMilli = 1_000_000.0
-
-        /** Room for each mode value (Camera2 uses 0 to 4, vendors may add more) and "none" in one key. */
-        const val ModeBase = 64
 
         // Camera2's value order for each control (CaptureRequest constants).
         val NoiseModes = listOf("OFF", "FAST", "HIGH_QUALITY", "MINIMAL", "ZERO_SHUTTER_LAG")

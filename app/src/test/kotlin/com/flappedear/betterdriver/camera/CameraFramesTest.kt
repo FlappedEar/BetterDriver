@@ -65,6 +65,8 @@ class CameraFramesTest {
             frames.processing(1, 1, 0, null),
         )
         assertEquals("unknown value", true, frames.processing(7, 1, 0, null)?.contains("noise_reduction=mode7"))
+        assertEquals("vendor value", true, frames.processing(null, 63, null, null)?.contains("edge=mode63"))
+        assertEquals("no collision", true, frames.processing(0, null, null, null)?.contains("noise_reduction=OFF"))
     }
 
     @Test
