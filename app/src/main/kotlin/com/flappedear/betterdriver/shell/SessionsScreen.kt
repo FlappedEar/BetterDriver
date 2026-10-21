@@ -143,29 +143,50 @@ fun SessionsScreen(
             }
         }
     }
-    val shown = sessions.firstOrNull { it.id == actionsFor }
-    if (shown != null) {
-        ModalBottomSheet(onDismissRequest = { actionsFor = null }) {
-            Column(
-                Modifier.verticalScroll(rememberScrollState())
-                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
-                    .navigationBarsPadding(),
-            ) {
-                // A file export closes the sheet: the save dialog comes next, and the row shows how it went.
-                SessionActions(
-                    shown, exports[shown.id], shown.id in withVideo,
-                    onExport = { s, format ->
-                        actionsFor = null
-                        onExport(s, format)
-                    },
-                    goPro, deleting, transfer,
-                    onAnalyse = { s ->
-                        actionsFor = null
-                        onAnalyse(s)
-                    },
-                    coach, videoExport,
-                )
-            }
+    sessions.firstOrNull { it.id == actionsFor }?.let { shown ->
+        ActionsSheet(shown, exports, withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach, videoExport) {
+            actionsFor = null
+        }
+    }
+}
+
+/** The sheet of [shown]'s actions. Opening its lap analysis or a file export closes it ([onClose]). */
+@Suppress("LongParameterList") // What the actions need, passed on from the rows.
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ActionsSheet(
+    shown: SessionSummary,
+    exports: Map<String, ExportState>,
+    withVideo: Set<String>,
+    onExport: (SessionSummary, ExportFormat) -> Unit,
+    goPro: GoProCardState,
+    deleting: SessionDeleting,
+    transfer: SessionTransferState,
+    onAnalyse: (SessionSummary) -> Unit,
+    coach: SessionCoach,
+    videoExport: SessionVideoExport,
+    onClose: () -> Unit,
+) {
+    ModalBottomSheet(onDismissRequest = onClose) {
+        Column(
+            Modifier.verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                .navigationBarsPadding(),
+        ) {
+            SessionActions(
+                shown, exports[shown.id], shown.id in withVideo,
+                // The save dialog comes next, and the row shows how the export went.
+                onExport = { s, format ->
+                    onClose()
+                    onExport(s, format)
+                },
+                goPro, deleting, transfer,
+                onAnalyse = { s ->
+                    onClose()
+                    onAnalyse(s)
+                },
+                coach, videoExport,
+            )
         }
     }
 }
