@@ -11,7 +11,7 @@ import com.flappedear.betterdriver.feature.review.ReviewLoad
 import com.flappedear.betterdriver.feature.review.ReviewSession
 import com.flappedear.betterdriver.feature.review.ReviewTrack
 import com.flappedear.betterdriver.feature.review.SessionVideo
-import com.flappedear.betterdriver.core.ble.hr.HeartRateDecoder
+import com.flappedear.betterdriver.core.ble.hr.HeartRateChannels
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -103,7 +103,7 @@ class ReviewLaps private constructor(context: Context) {
         // The track the session recorded at, else the nearest one (as the lap analysis picks it).
         val track = trackFor(data, saved)
         val recorded = recordedSources(data)
-        val facts = SessionFacts(obd = ObdSource in recorded, heartRate = HeartRateDecoder.SOURCE in recorded)
+        val facts = SessionFacts(obd = ObdSource in recorded, heartRate = HeartRateChannels.SOURCE in recorded)
         if (track == null) {
             Cached(null, null, revisions(saved), videoStamp(s.dir), facts)
         } else {
@@ -134,7 +134,7 @@ class ReviewLaps private constructor(context: Context) {
     /** The sources ([ObdSource], heart rate) that recorded at least one value in the session. */
     private fun recordedSources(data: SessionData): Set<String> {
         val sourceOf = data.channels.values
-            .filter { it.source == ObdSource || it.source == HeartRateDecoder.SOURCE }
+            .filter { it.source == ObdSource || it.source == HeartRateChannels.SOURCE }
             .associate { it.id to it.source }
         val found = HashSet<String>()
         val wanted = sourceOf.values.toSet()
