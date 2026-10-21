@@ -268,12 +268,13 @@ class ReplayDriveTest {
 
         /**
          * Mean CPU each process may use over the replay drive, in % of one emulator core (FBBD-281):
-         * the drive's measured value with room for the CI machines' spread.
+         * about 1.6 times the first measured drive (PR #275: main 8.2, recorder 2.8, coach 1.7), room for
+         * the CI machines' spread but not for a new busy loop.
          */
         val CpuBudget = mapOf(
-            "main" to 100.0,
-            "recorder" to 100.0,
-            "coach" to 100.0,
+            "main" to 13.0,
+            "recorder" to 5.0,
+            "coach" to 4.0,
         )
     }
 }
