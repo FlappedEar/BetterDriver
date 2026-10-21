@@ -49,3 +49,29 @@ class SetupLadder(
         const val NoMtuFrom = 2
     }
 }
+
+/**
+ * A second service lookup on the same connection when a lookup succeeds without the profile's
+ * service (FBBD-272). On 21 Oct 2026 a RaceBox Micro twice answered with status 0 but without its
+ * UART service (6e400001); closing the link then cost a new connection and MTU wait each time. So
+ * the link clears Android's cached services, waits [delayMs] and looks again, once per connection,
+ * with [windowMs] more for that lookup before the watchdog gives the setup up.
+ */
+class ServiceRecheck(val delayMs: Long = 500L, private val windowMs: Long = 6_000L) {
+    private var used = false
+
+    /** A new connection may look again once. */
+    fun newConnection() {
+        used = false
+    }
+
+    /**
+     * The setup deadline for a second look at [nowMs], given the current [deadlineMs]; null when
+     * this connection already looked twice, and the link should reconnect as before.
+     */
+    fun recheck(nowMs: Long, deadlineMs: Long): Long? {
+        if (used) return null
+        used = true
+        return maxOf(deadlineMs, nowMs + delayMs + windowMs)
+    }
+}
