@@ -48,6 +48,8 @@ interface ObdClock {
  *   without it from then on; a request that then gets no value is learned again without it, and
  *   every [RESAMPLE_EVERY] counted requests one goes without, so a late ECU is still seen.
  *
+ * Only the channels in [pollSet] are polled (FBBD-283); the others the car has are logged as skipped.
+ *
  * [clock] tells the time and waits.
  */
 @Suppress("TooManyFunctions", "LongParameterList") // The two FBBD-270 switches are for tests.
@@ -60,6 +62,7 @@ class ElmPoller(
     private val rateLogMs: Long = DEFAULT_RATE_LOG_MS,
     private val multiPid: Boolean = true,
     private val responseCount: Boolean = true,
+    private val pollSet: PollSet = PollSet.All,
 ) {
     /** What each group's request got without a count, by its lead request. */
     private class Learned {
@@ -108,7 +111,10 @@ class ElmPoller(
         val (adapter, voltage) = setUp() ?: return "adapter not answering"
         val supported = discover() ?: return "car not answering"
         val protocol = line.command("ATDPN", AT_TIMEOUT_MS)?.trim().orEmpty()
-        val channels = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
+        val available = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
+        val channels = pollSet.select(available)
+        val skipped = available - channels.toSet()
+        if (skipped.isNotEmpty()) listener.log("not polled (not used): " + skipped.joinToString(" ") { it.id })
         listener.ready(adapter, protocol, voltage, supported, channels)
         if (channels.isEmpty()) return "no channels to poll"
         val can = isCan(protocol)
@@ -123,10 +129,10 @@ class ElmPoller(
     }
 
     /**
-     * The requests to poll: [MultiPid] groups when [combine] and the first multi-PID group gets more
-     * than one of its PIDs back, with headers on or, when the adapter's headers-on answer cannot be
-     * read, off; else one PID per request. An adapter that answers `?` to the request itself refuses
-     * its length, not the car (Arek's Wi-Fi ELM327 v1.5 clone, log of 2026-10-21, answered `?` to
+     * The requests to poll: [MultiPid] groups when [combine] and the multi-PID group with the most
+     * PIDs gets more than one of them back, with headers on or, when the adapter's headers-on answer
+     * cannot be read, off; else one PID per request. An adapter that answers `?` to the request itself
+     * refuses its length, not the car (Arek's Wi-Fi ELM327 v1.5 clone, log of 2026-10-21, answered `?` to
      * `010C0D11494A04`), so smaller groups ([GROUP_SIZES]) are tried before single PIDs. An ECU
      * that answered only one PID would not answer more with fewer, so that goes straight to singles.
      */
@@ -136,7 +142,10 @@ class ElmPoller(
         if (!combine) return singles
         for ((i, size) in GROUP_SIZES.withIndex()) {
             val groups = MultiPid.groups(channels, maxPids = size)
-            val probe = groups.firstOrNull { g -> g.distinctBy { it.pid }.size > 1 } ?: return singles
+            // The longest request is the one an adapter may refuse: with only rpm and a pedal fast
+            // (FBBD-283) the first group has two PIDs and the temperatures' group four.
+            val probe = groups.filter { g -> g.distinctBy { it.pid }.size > 1 }
+                .maxByOrNull { g -> g.distinctBy { it.pid }.size } ?: return singles
             val cmd = MultiPid.command(probe)
             var answer = ""
             var refused = true
@@ -241,7 +250,12 @@ class ElmPoller(
     }
 
     private fun poll(channels: List<PidChannel>, groups: List<List<PidChannel>>): String {
-        val scheduler = PollScheduler(channels, groups = groups)
+        val scheduler = PollScheduler(
+            channels,
+            fastWeight = pollSet.fastWeight,
+            slowMaxHz = pollSet.slowMaxHz,
+            groups = groups,
+        )
         val byRequest = groups.associateBy { it.first().request }
         var timeouts = 0
         rateStartMs = clock.nowMs()

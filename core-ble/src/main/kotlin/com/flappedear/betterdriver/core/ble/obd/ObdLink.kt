@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.obd.ObdStatusTracker
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.PidChannel
+import com.flappedear.betterdriver.obd.PollSet
 import com.flappedear.betterdriver.recorder.log.DebugLog
 
 /** What an [ObdLink] reports, on its own threads. */
@@ -36,7 +37,8 @@ private const val Tag = "Obd"
  *
  * While started, [watch] tells it when the phone's Wi-Fi or Bluetooth comes back ([obdWatch]), and
  * the next try starts at once (FBBD-271). Nothing the connection throws reaches the process: an
- * uncaught exception on this thread killed the recorder at Stop (FBBD-269).
+ * uncaught exception on this thread killed the recorder at Stop (FBBD-269). [pollSet] is which
+ * channels it reads (FBBD-283).
  */
 @Suppress("LongParameterList") // Collaborators, each with a default.
 class ObdLink(
@@ -46,6 +48,7 @@ class ObdLink(
     private val owner: String = "recorder",
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
+    private val pollSet: PollSet = PollSet.All,
 ) {
     private val tracker = ObdStatusTracker()
 
@@ -59,7 +62,7 @@ class ObdLink(
 
     fun start() {
         running = true
-        val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback)
+        val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback, pollSet = pollSet)
         connector = c
         thread = Thread({ read(c) }, "obd-$owner").apply {
             isDaemon = true

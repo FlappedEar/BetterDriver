@@ -36,7 +36,8 @@ interface ObdConnectorListener {
  * [run] blocks until [running] turns false; [stop] closes the open connection so it returns. No
  * exception ends the loop while [running] holds: a round that fails in an unexpected way is logged
  * and retried, and an interrupted one ends quietly (FBBD-269). The [tracker] follows every step for
- * the OBD page. Pure JVM, so the whole loop is tested against simulated adapters.
+ * the OBD page. [pollSet] is what each connection reads (FBBD-283). Pure JVM, so the whole loop
+ * is tested against simulated adapters.
  */
 @Suppress("LongParameterList") // Collaborators, each replaced in the tests.
 class ObdConnector(
@@ -47,6 +48,7 @@ class ObdConnector(
     private val profile: CarProfile = CarProfile.Generic,
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val retryMs: List<Long> = RETRY_MS,
+    private val pollSet: PollSet = PollSet.All,
 ) {
     @Volatile
     private var running: () -> Boolean = { false }
@@ -132,7 +134,7 @@ class ObdConnector(
         listener.log("connected to ${target.where}$at over ${target.transport.label}")
         tracker.connecting(target.name)
         val reason = try {
-            ElmPoller(line, profile, Poll(target), running, clock).run()
+            ElmPoller(line, profile, Poll(target), running, clock, pollSet = pollSet).run()
         } catch (e: IOException) {
             // The link dropped or a write failed: the usual way a connection ends.
             "connection lost: ${e.message}"

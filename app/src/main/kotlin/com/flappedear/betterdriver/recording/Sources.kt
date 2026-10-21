@@ -155,7 +155,10 @@ internal object Sources {
         val obd = if (carData.isEmpty()) {
             emptyList()
         } else {
-            listOf(ObdSource({ obdTargets(app, carData) }, watch = { obdWatch(app, it) }))
+            // Only what is used: the pedals, rpm, temperatures and the tiles' channels (FBBD-283).
+            listOf(
+                ObdSource({ obdTargets(app, carData) }, watch = { obdWatch(app, it) }, pollSet = sessionPollSet(app)),
+            )
         }
         return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
     }

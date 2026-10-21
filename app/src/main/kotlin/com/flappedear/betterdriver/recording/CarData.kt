@@ -7,12 +7,16 @@ import com.flappedear.betterdriver.core.ble.obd.bluetoothObdTarget
 import com.flappedear.betterdriver.core.ble.obd.bluetoothObdTransport
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.ObdTransport
+import com.flappedear.betterdriver.obd.PollSet
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupFormatException
 import com.flappedear.betterdriver.setup.SetupJson
 import com.flappedear.betterdriver.setup.TcpAddress
+import com.flappedear.betterdriver.setup.TileIds
+import com.flappedear.betterdriver.setup.TrackScreens
 import com.flappedear.betterdriver.shell.ObdAdapterLabel
 import com.flappedear.betterdriver.shell.SetupRepo
 import java.io.File
@@ -23,16 +27,34 @@ import java.io.IOException
  * recorder's process from the setup the UI saved at START ([SetupRepo.sessionStarted]). Empty when
  * none is listed or the file cannot be read; a recording never waits for car data.
  */
-internal fun sessionCarData(context: Context): List<Equipment> {
+internal fun sessionCarData(context: Context): List<Equipment> = sessionSetup(context)?.active()?.carData.orEmpty()
+
+/**
+ * What the running session reads from the car (FBBD-283): [PollSet.Driver] plus every OBD-II channel
+ * the track screen's tiles show, on the main screen or the second one, from the setup saved at START.
+ */
+internal fun sessionPollSet(context: Context): PollSet {
+    val screens = sessionSetup(context)?.trackScreens ?: return PollSet.Driver
+    return PollSet.Driver.plus(obdTileChannels(screens))
+}
+
+/** The OBD-II channel ids ("coolant_temp") of the tiles on [screens] ("obd_coolant_temp"). */
+internal fun obdTileChannels(screens: TrackScreens): Set<String> =
+    (screens.main + screens.second).filterNotNull()
+        .filter { it.startsWith(TileIds.OBD_PREFIX) }
+        .mapTo(LinkedHashSet()) { it.removePrefix(TileIds.OBD_PREFIX) }
+
+/** The setup saved at START, or null when there is none or it cannot be read. */
+private fun sessionSetup(context: Context): Setup? {
     val file = File(context.filesDir, SetupRepo.SessionSetupFile)
     return try {
-        if (file.isFile) SetupJson.decode(file.readText()).active().carData else emptyList()
+        if (file.isFile) SetupJson.decode(file.readText()) else null
     } catch (e: IOException) {
         DebugLog.w("Obd", "session setup unreadable: ${e.message}")
-        emptyList()
+        null
     } catch (e: SetupFormatException) {
         DebugLog.w("Obd", "session setup unreadable: ${e.message}")
-        emptyList()
+        null
     }
 }
 
