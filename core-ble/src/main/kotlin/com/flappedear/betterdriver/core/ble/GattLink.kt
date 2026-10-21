@@ -51,7 +51,8 @@ private const val Tag = "Link"
  * GATT error, 10 s without data after connecting, or 3 s without data. Attempts that never bring
  * data change how the next one connects ([SetupLadder], FBBD-272), a lookup that misses the
  * profile's service or does not answer in 3 s is repeated once on the same connection
- * ([ServiceRecheck]), and each setup step
+ * ([ServiceRecheck]) unless the connection gave nothing to work with (no services at all, or neither
+ * the MTU nor the lookup answered), which starts a new connection at once; each setup step
  * is logged.
  * No bonding is needed. Every
  * GATT call runs on one private thread; [onData] is called with the characteristic and its bytes,
@@ -96,6 +97,9 @@ class GattLink(
 
     /** A service lookup is out and has not answered; a late answer to an earlier one is ignored. */
     private var awaitingServices = false
+
+    /** This connection left the MTU request unanswered for [MtuAnswerMs]. */
+    private var mtuUnanswered = false
 
     /** Characteristics still to subscribe to on this connection; empty once all are on. */
     private val toSubscribe = ArrayDeque<BluetoothGattCharacteristic>()
@@ -291,6 +295,7 @@ class GattLink(
         handler.removeCallbacks(discoveryOverdue)
         awaitingMtu = false
         awaitingServices = false
+        mtuUnanswered = false
         toSubscribe.clear()
         handshaking = false
         subscribed = false
@@ -320,7 +325,9 @@ class GattLink(
         val g = gatt
         if (g != null && awaitingServices) {
             DebugLog.i(Tag, "$address no answer to the service lookup in $DiscoveryAnswerMs ms")
-            if (!lookAgainForService(g, foundAny = false)) {
+            if (recheck.startOver(servicesFound = null, mtuUnanswered = mtuUnanswered)) {
+                retry("no answer to the MTU request or the service lookup")
+            } else if (!lookAgainForService(g, foundAny = false)) {
                 DebugLog.i(Tag, "$address looked twice on this connection, waiting for the setup timeout")
             }
         }
@@ -350,6 +357,7 @@ class GattLink(
         val g = gatt
         if (g != null && awaitingMtu) {
             awaitingMtu = false
+            mtuUnanswered = true
             DebugLog.i(Tag, "$address no MTU answer in $MtuAnswerMs ms, finding services without it")
             discover(g)
         }
@@ -428,6 +436,7 @@ class GattLink(
                 DebugLog.i(Tag, "$address MTU $mtu, status $status, ${elapsed()} ms after connecting began")
                 if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
                 lateMtu.answered()
+                mtuUnanswered = false
                 // A late answer, or one the device started, must not look the services up twice.
                 if (awaitingMtu) {
                     awaitingMtu = false
@@ -447,6 +456,10 @@ class GattLink(
                 handler.removeCallbacks(discoveryOverdue)
                 handler.removeCallbacks(lookAgain)
                 val ok = status == BluetoothGatt.GATT_SUCCESS
+                if (ok && recheck.startOver(g.services.size, mtuUnanswered)) {
+                    retry("the service lookup found no services")
+                    return@post
+                }
                 if (ok && g.getService(profile.service) == null && lookAgainForService(g)) return@post
                 val subs = if (ok) {
                     subscriptions(g, profile)

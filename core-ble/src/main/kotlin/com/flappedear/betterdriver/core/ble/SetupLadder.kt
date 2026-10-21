@@ -56,7 +56,8 @@ class SetupLadder(
  * UART service (6e400001); closing the link then cost a new connection and MTU wait each time. So
  * the link clears Android's cached services, waits [delayMs] and looks again, once per connection,
  * also when a lookup does not answer at all (12:27 that day, while another BLE link was connecting),
- * with [windowMs] more for that lookup before the watchdog gives the setup up.
+ * with [windowMs] more for that lookup before the watchdog gives the setup up. A connection that
+ * gives nothing to look at again goes straight to a new one instead ([startOver]).
  */
 class ServiceRecheck(val delayMs: Long = 500L, private val windowMs: Long = 6_000L) {
     private var used = false
@@ -75,4 +76,14 @@ class ServiceRecheck(val delayMs: Long = 500L, private val windowMs: Long = 6_00
         used = true
         return maxOf(deadlineMs, nowMs + delayMs + windowMs)
     }
+
+    /**
+     * True when a failed lookup should end this connection now rather than look again on it: the
+     * lookup answered with no services at all ([servicesFound] 0), or it never answered
+     * ([servicesFound] null) on a connection that also left the MTU request unanswered. On 21 Oct
+     * 2026 15:47 (1.6.1) such a connection answered the second look with an empty list 8 s after
+     * connecting began, and the new connection that followed streamed 1.4 s after it began.
+     */
+    fun startOver(servicesFound: Int?, mtuUnanswered: Boolean): Boolean =
+        servicesFound == 0 || (servicesFound == null && mtuUnanswered)
 }
