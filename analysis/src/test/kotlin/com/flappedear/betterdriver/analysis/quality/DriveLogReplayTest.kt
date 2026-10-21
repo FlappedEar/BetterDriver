@@ -88,6 +88,21 @@ class DriveLogReplayTest {
         assertEquals(0.0, second.metric("gnss.long_gaps").value)
     }
 
+    @Test
+    fun `the 1_6_2 parked recording loses no sample beyond the whole-second skip (FBBD-272, FBBD-282)`() {
+        // Arek's recording of 21 Oct 2026, 19:42 (10 min, parked), on 1.6.2: the RaceBox connected at
+        // its first setup, MTU 247 after 0.85 s, and streamed 1.1 s after Start; 1500 messages in 1500
+        // notifications every minute, only the whole-second message missing. Without positions.
+        val r = driveChecks(File(javaClass.getResource("/drive-log/1.6.2-1953")!!.toURI())).single()
+        assertEquals("20261021-194257-d6288c97", r.sessionId)
+        assertEquals(Verdict.PASS, r.metric("gnss.dropped").verdict, r.metric("gnss.dropped").how)
+        assertEquals(0.0, r.metric("gnss.dropped").value!!, 0.01)
+        assertEquals(80.0, r.metric("gnss.max_gap").value!!, 1.0)
+        assertEquals(0.0, r.metric("gnss.long_gaps").value)
+        assertEquals(Verdict.PASS, r.metric("gnss.rate").verdict, r.metric("gnss.rate").how)
+        assertEquals(Verdict.PASS, r.metric("ui.false_banners").verdict, r.metric("ui.false_banners").how)
+    }
+
     /** The VBO's rows as the recorder would have logged them: one [GnssSecondLog] line per second. */
     private fun vboLog(): List<LogLine> {
         val start = LogLine.parse("2026-10-12T10:36:07.979Z 2646 recorder-control I Recording: x")!!.utcMillis
