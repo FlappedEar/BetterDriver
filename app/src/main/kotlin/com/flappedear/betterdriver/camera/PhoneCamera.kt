@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CaptureFailure
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
@@ -21,6 +22,7 @@ import android.os.StatFs
 import android.os.SystemClock
 import android.util.Range
 import android.util.Size
+import android.view.Surface
 import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
@@ -62,6 +64,9 @@ private fun frameMicros(nowMicros: Long, frameNanos: Long, realtime: Boolean): L
     return nowMicros - (clock - frameNanos) / NanosPerMicro
 }
 private const val CheckIntervalMs = 5_000L
+
+/** How often the camera's frame counts go to the debug log (FBBD-278). */
+private const val FrameLogMs = 60_000L
 
 /** How often a 2.7K recording reports progress; [syncDue] keeps it to about once a second. */
 private const val WideSyncMs = 250L
@@ -171,7 +176,38 @@ class PhoneCamera(
             request: CaptureRequest,
             result: TotalCaptureResult,
         ) {
-            result.get(CaptureResult.SENSOR_TIMESTAMP)?.let { lastFrameNanos = it }
+            val sensor = result.get(CaptureResult.SENSOR_TIMESTAMP) ?: return
+            lastFrameNanos = sensor
+            cameraFrames?.completed(
+                sensor,
+                result.get(CaptureResult.SENSOR_FRAME_DURATION),
+                result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
+                result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE)?.let { it.lower to it.upper },
+            )
+        }
+
+        override fun onCaptureFailed(session: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
+            cameraFrames?.failed()
+        }
+
+        override fun onCaptureBufferLost(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            target: Surface,
+            frameNumber: Long,
+        ) {
+            cameraFrames?.bufferLost()
+        }
+    }
+
+    /** What the bound camera delivers, logged once a minute (FBBD-278); null while nothing is bound. */
+    @Volatile
+    private var cameraFrames: CameraFrames? = null
+
+    private val frameLog = object : Runnable {
+        override fun run() {
+            logFrames()
+            if (!stopping) main.postDelayed(this, FrameLogMs)
         }
     }
 
@@ -208,6 +244,7 @@ class PhoneCamera(
                     power.addThermalStatusListener(executor, listener)
                 }
                 main.postDelayed(checker, CheckIntervalMs)
+                main.postDelayed(frameLog, FrameLogMs)
                 // A phone already at thermal shutdown does not start video at all.
                 if (thermalAction() == ThermalAction.StopVideo) {
                     shutdown = true
@@ -227,6 +264,7 @@ class PhoneCamera(
         if (stopping) return
         stopping = true
         main.removeCallbacks(checker)
+        main.removeCallbacks(frameLog)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) thermalListener?.let(power::removeThermalStatusListener)
         endReason = "user"
         val r = recording
@@ -263,6 +301,8 @@ class PhoneCamera(
                 bound = null
                 boundStep = -1
                 lastFrameNanos = 0L
+                logFrames()
+                cameraFrames = CameraFrames(step.fps)
                 val (fresh, realtime) = bindPhoneCapture(p, lifecycle, step, frames)
                 realtimeFrames = realtime
                 bound = fresh
@@ -317,6 +357,8 @@ class PhoneCamera(
         unbindOwn(p, bound)
         bound = null
         boundStep = -1
+        logFrames()
+        cameraFrames = null // 2.7K counts its own frames (WideRecorder)
         realtimeFrames = realtimeTimestamps(info)
         fileIndex++
         val file = File(dir, VideoFiles.liveName(camera, fileIndex))
@@ -422,6 +464,8 @@ class PhoneCamera(
 
     /** A file ended with [error] (its reason) or none: what comes next, for either recording path. */
     private fun fileEnded(name: String, full: Boolean, error: String?, cause: Throwable?) {
+        // The part-minute before the end, so every frame the file should hold is counted.
+        logFrames()
         val reason = error ?: if (full && endReason == "user") "file_full" else endReason
         sink.stopped(name, sink.nowMicros(), reason)
         DebugLog.log(if (error != null) DebugLog.WARN else DebugLog.INFO, Tag, "$name ended: $reason", cause)
@@ -441,6 +485,11 @@ class PhoneCamera(
             }
             else -> fail("Camera error")
         }
+    }
+
+    /** The camera's frames since the last line, if it delivered any (FBBD-278). */
+    private fun logFrames() {
+        cameraFrames?.line()?.let { DebugLog.i(Tag, it) }
     }
 
     private fun fail(text: String) {
