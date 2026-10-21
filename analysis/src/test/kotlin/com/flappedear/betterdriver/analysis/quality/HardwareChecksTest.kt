@@ -159,6 +159,27 @@ class HardwareChecksTest {
     }
 
     @Test
+    fun `a banner for a gap under 1 s that reached the phone over 1 s late is not false`() {
+        // Arek's 2026-10-21 12:52 drive (FBBD-282): the receiver's times skip 0.96 s, but the link
+        // stalled ~1.3 s, so the banner showed with the last fix 1.02 s old and cleared on the next.
+        val frames = RecorderEvent(1_000_000, EventKinds.UI_FRAMES, "frames=100 janky=0 frozen=0 worst_ms=10 hist=100")
+        val sets = stream(0, 60_000_000, gap = 20_040_000L..20_960_000L)
+        val late = listOf(
+            frames,
+            RecorderEvent(21_100_000, EventKinds.GNSS_BANNER, "state=shown fix_age_us=1024080"),
+            RecorderEvent(21_250_000, EventKinds.GNSS_BANNER, "state=cleared fix_age_us=42983"),
+        )
+        val r = report(sets, late)
+        assertEquals(0.0, r.metric("ui.false_banners").value)
+        assertEquals(Verdict.PASS, r.metric("ui.false_banners").verdict)
+        assertTrue("1 for a shorter gap" in r.metric("ui.false_banners").how)
+        // The same banner with fixes arriving all along is still false, and one with a short fix age too.
+        assertEquals(1.0, report(stream(0, 60_000_000), late).metric("ui.false_banners").value)
+        val young = listOf(frames, RecorderEvent(21_100_000, EventKinds.GNSS_BANNER, "state=shown fix_age_us=900000"))
+        assertEquals(1.0, report(sets, young).metric("ui.false_banners").value)
+    }
+
+    @Test
     fun `a GoPro that started late, and a clip placed by its clock, fail`() {
         val sets = stream(0, 60_000_000)
         val events = listOf(

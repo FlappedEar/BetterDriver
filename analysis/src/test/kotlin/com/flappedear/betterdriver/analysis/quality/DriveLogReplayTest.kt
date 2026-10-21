@@ -51,6 +51,23 @@ class DriveLogReplayTest {
         }
     }
 
+    @Test
+    fun `the 1_5_2 drive's banners for late fixes are not false (FBBD-282)`() {
+        // Arek's drive of 21 Oct 2026, 12:27 to 12:50 local: the RaceBox at the default MTU stalled
+        // 9 times for ~1.3 s. 3 gaps in the receiver's times were over 1 s, 6 were 0.88 to 1 s, and
+        // each of the 9 banners logged a fix age over 1 s. The phone's report counted those 6 false.
+        // The copy keeps the recording's Session, Gnss and banner, frame and RaceBox lines, without positions.
+        val r = driveChecks(File(javaClass.getResource("/drive-log/1.5.2-1252")!!.toURI())).single()
+        assertEquals("20261021-122716-e013e1c3", r.sessionId)
+        val banners = r.metric("ui.false_banners")
+        assertEquals(Verdict.PASS, banners.verdict, banners.how)
+        assertEquals(0.0, banners.value)
+        assertTrue("9 banner(s), 3 outage(s), 6 for a shorter gap" in banners.how, banners.how)
+        assertEquals(Verdict.PASS, r.metric("ui.banner_show").verdict)
+        assertEquals(Verdict.PASS, r.metric("ui.banner_clear").verdict)
+        assertEquals(9.0, r.metric("gnss.long_gaps").value)
+    }
+
     /** The VBO's rows as the recorder would have logged them: one [GnssSecondLog] line per second. */
     private fun vboLog(): List<LogLine> {
         val start = LogLine.parse("2026-10-12T10:36:07.979Z 2646 recorder-control I Recording: x")!!.utcMillis

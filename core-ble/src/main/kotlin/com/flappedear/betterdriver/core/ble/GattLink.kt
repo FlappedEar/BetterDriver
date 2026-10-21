@@ -77,6 +77,8 @@ class GattLink(
     private val policy = ReconnectPolicy()
     private val ladder = SetupLadder()
     private val recheck = ServiceRecheck()
+    private val lateMtu = LateMtu()
+    private val setups = BleSetups.Shared
     private val _state = MutableStateFlow<LinkState>(LinkState.Idle)
     val state: StateFlow<LinkState> = _state.asStateFlow()
 
@@ -110,6 +112,9 @@ class GattLink(
     private var lastFastLinkAt = 0L
 
     fun start() {
+        // Counted as connecting at once, before the post: a Bluetooth LE OBD adapter started right
+        // after this link must see it and wait ([BleSetups], FBBD-282).
+        setups.started(address)
         handler.post {
             if (running) return@post
             running = true
@@ -124,6 +129,7 @@ class GattLink(
             running = false
             handler.removeCallbacksAndMessages(null)
             closeGatt()
+            setups.ended(address)
             setState(LinkState.Idle)
             thread.quitSafely()
         }
@@ -197,6 +203,8 @@ class GattLink(
         plan = ladder.plan()
         setupDeadlineAt = setupStartedAt + plan.setupTimeoutMs
         recheck.newConnection()
+        lateMtu.newConnection(plan.askMtu)
+        setups.started(address)
         if (ladder.failures > 0) DebugLog.i(Tag, "$address ${ladder.failures} setup(s) without data: $plan")
         val failure = try {
             val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
@@ -245,14 +253,39 @@ class GattLink(
             last != 0L -> {
                 policy.reset()
                 ladder.streaming()
+                setups.ended(address)
                 setState(LinkState.Streaming(count))
-                gatt?.let { gattProbe?.tick(it, now) }
+                gatt?.let { g ->
+                    gattProbe?.tick(g, now)
+                    if (subscribed && lateMtu.ask(now)) askMtuAgain(g)
+                }
             }
         }
         handler.postDelayed(::watchdog, WatchdogMs)
     }
 
+    /**
+     * The link came up without the MTU request and streams: asks for the larger MTU now ([LateMtu],
+     * FBBD-282), as at the default MTU every RaceBox message takes 5 notifications.
+     */
+    private fun askMtuAgain(g: BluetoothGatt) {
+        val sent = try {
+            g.requestMtu(RequestedMtu)
+        } catch (_: SecurityException) {
+            false
+        }
+        if (sent) {
+            DebugLog.i(Tag, "$address streaming without the MTU request: MTU asked for again")
+        } else {
+            lateMtu.notSent()
+        }
+    }
+
     private fun closeGatt() {
+        if (gatt != null && lateMtu.waiting) {
+            DebugLog.i(Tag, "$address no answer to the late MTU request: not asked again")
+        }
+        lateMtu.closed()
         handler.removeCallbacks(mtuOverdue)
         handler.removeCallbacks(lookAgain)
         handler.removeCallbacks(discoveryOverdue)
@@ -394,6 +427,7 @@ class GattLink(
                 if (g != gatt) return@post
                 DebugLog.i(Tag, "$address MTU $mtu, status $status, ${elapsed()} ms after connecting began")
                 if (status == BluetoothGatt.GATT_SUCCESS) gattProbe?.mtu(mtu)
+                lateMtu.answered()
                 // A late answer, or one the device started, must not look the services up twice.
                 if (awaitingMtu) {
                     awaitingMtu = false
