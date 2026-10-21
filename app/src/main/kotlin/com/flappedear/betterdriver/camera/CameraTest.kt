@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.camera.CameraTestState.Companion.PartMinutes
 import com.flappedear.betterdriver.camera.CameraTestState.Companion.Parts
 import com.flappedear.betterdriver.camera.CameraTestState.Status
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.setup.VideoSize
 import java.io.File
 
 /**
@@ -68,7 +69,7 @@ internal class CameraTest(private val context: Context, private val audio: Boole
             if (over) return@addListener
             try {
                 val info = CameraSelector.DEFAULT_BACK_CAMERA.filter(future.get().availableCameraInfos).firstOrNull()
-                target = info?.let { ownTarget(context, it, wide = false, fps = Fps, maxFileBytes = MaxFileBytes) }
+                target = info?.let { ownTarget(context, it, VideoSize.FHD, Fps, MaxFileBytes) }
                 if (info == null || target == null) {
                     end(Status.Failed, "this phone has no 1080p · 60 stream for the encoder")
                 } else {
