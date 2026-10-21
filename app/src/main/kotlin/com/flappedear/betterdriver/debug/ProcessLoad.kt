@@ -13,9 +13,10 @@ import java.io.IOException
  * Logs how hard this process works, once a minute while a session records (FBBD-281): CPU, garbage
  * collections, allocations, heap and threads, as a [LoadLine]. Every process runs one (UI, recorder,
  * camera, coach), so a shared log says which of them takes the phone's time, and the CI replay drive
- * holds each to a budget. Outside a recording ([DebugLog.session] null) it only takes the sample.
+ * holds each to a budget. Outside a recording ([DebugLog.session] null) it logs nothing.
  *
- * One daemon thread asleep between samples; a sample reads a few counters and /proc/self/status.
+ * One daemon thread, awake once a second for a volatile read; a sample reads a few counters and
+ * /proc/self/status.
  */
 object ProcessLoad {
     @Volatile
@@ -31,18 +32,35 @@ object ProcessLoad {
         }
     }
 
+    /**
+     * Each line covers one recording only: a recording that starts or ends mid-minute starts a fresh
+     * minute, and its last part-minute is logged for it when it ends (Codex).
+     */
     private fun run() {
-        var last = sample()
+        var session = DebugLog.session
+        var base = sample()
         while (true) {
             try {
-                Thread.sleep(PeriodMs)
+                Thread.sleep(CheckMs)
             } catch (_: InterruptedException) {
                 return
             }
-            val now = sample()
-            if (DebugLog.session != null) LoadLine.between(last, now)?.let { DebugLog.i(LoadLine.TAG, it.text()) }
-            last = now
+            val now = DebugLog.session
+            if (now != session) {
+                if (session != null) log(session, base, sample(), MinPartMs)
+                session = now
+                base = sample()
+            } else if (now != null && SystemClock.elapsedRealtime() - base.uptimeMillis >= PeriodMs) {
+                val next = sample()
+                log(now, base, next, PeriodMs)
+                base = next
+            }
         }
+    }
+
+    private fun log(session: String, from: LoadSample, to: LoadSample, minMs: Long) {
+        val line = LoadLine.between(from, to)?.takeIf { it.wallMillis >= minMs } ?: return
+        DebugLog.forSession(session, LoadLine.TAG, line.text())
     }
 
     private fun sample(): LoadSample {
@@ -71,4 +89,10 @@ object ProcessLoad {
     }
 
     private const val PeriodMs = 60_000L
+
+    /** How often the thread looks whether a recording started or ended: one volatile read. */
+    private const val CheckMs = 1_000L
+
+    /** A recording's last part-minute shorter than this is not logged: too short to say anything. */
+    private const val MinPartMs = 5_000L
 }
