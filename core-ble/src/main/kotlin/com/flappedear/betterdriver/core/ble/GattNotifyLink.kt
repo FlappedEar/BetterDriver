@@ -321,7 +321,7 @@ class GattNotifyLink(
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             handler.post {
                 if (g != gatt) return@post
-                DebugLog.i(Tag, "$address notification switch-on, status $status, ${elapsed()} ms after connecting began")
+                DebugLog.i(Tag, "$address notifications on, status $status, ${elapsed()} ms after connecting began")
                 if (status == BluetoothGatt.GATT_SUCCESS) {
                     step = NotifyStep.FIRST_VALUE
                 } else {
