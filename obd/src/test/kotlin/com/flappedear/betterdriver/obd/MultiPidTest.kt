@@ -31,6 +31,18 @@ class MultiPidTest {
     }
 
     @Test
+    fun `smaller groups for an adapter that refuses six PIDs a request`() {
+        val three = MultiPid.groups(corolla, maxPids = 3)
+        assertEquals(listOf("rpm", "speed", "throttle"), three.first().map { it.id })
+        assertEquals("010C0D11", MultiPid.command(three.first()))
+        assertTrue(three.all { g -> g.size <= 3 }, three.toString())
+        val two = MultiPid.groups(corolla, maxPids = 2)
+        assertEquals("010C0D", MultiPid.command(two.first()))
+        assertTrue(two.all { g -> g.size <= 2 }, two.toString())
+        assertEquals(corolla.toSet(), two.flatten().toSet())
+    }
+
+    @Test
     fun `channels with a header or another mode are asked on their own`() {
         val frs = CarProfiles.ScionFrs2013.channels
         val groups = MultiPid.groups(frs + StandardPids.Rpm + StandardPids.Speed)

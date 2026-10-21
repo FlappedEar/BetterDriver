@@ -37,7 +37,16 @@ private enum class CountSupport {
  * an ECU that answers only the first PID of a multi-PID request; [rejectHeaders] an adapter that
  * answers `?` to `AT H1`, [rejectHeadersOff] one that answers `?` to `AT H0` once headers
  * are on; [tcmSilentFor] keeps the TCM quiet for that many first requests. [tcm] adds a second ECU (7E9) that
- * answers speed and coolant too, as a transmission ECU can.
+ * answers speed and coolant too, as a transmission ECU can. [maxRequestBytes] is the longest mode 01
+ * request (in data bytes, a count digit not included) the adapter takes; a longer one is answered
+ * `?` at once, as the adapter itself refuses it. [echo] prints each mode 01 request before its answer
+ * (AT commands are not echoed, so ATDPN still reads as CAN).
+ *
+ * The same clone on 2026-10-21 (1.4.1, Arek's 08:04 log) showed what the model above got wrong for it:
+ * the 6-PID probe `010C0D11494A04` was answered `?` with headers on and off, within the 41 ms
+ * the whole probe took, and the response count was taken (no `?`) but did not shorten anything:
+ * latency_ms 226-241 with the count on, as without it. So this clone is [CountSupport.IGNORED]
+ * with a [maxRequestBytes] below 7; which shorter request it takes is not in the log.
  */
 @Suppress("LongParameterList")
 private class TimedCorolla(
@@ -51,6 +60,8 @@ private class TimedCorolla(
     val rejectHeaders: Boolean = false,
     val rejectHeadersOff: Boolean = false,
     val tcmSilentFor: Int = 0,
+    val maxRequestBytes: Int = Int.MAX_VALUE,
+    val echo: Boolean = false,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -92,7 +103,8 @@ private class TimedCorolla(
         if (cmd == "ATH1") headers = true
         if (cmd == "ATH0") headers = false
         val answer = at[cmd]?.also { now += transportMs } ?: if (cmd.startsWith("01")) mode01(cmd) else "?"
-        line.feed((answer + "\r\r>").toByteArray(Charsets.US_ASCII))
+        val echoed = if (echo && cmd.startsWith("01")) cmd + "\r" + answer else answer
+        line.feed((echoed + "\r\r>").toByteArray(Charsets.US_ASCII))
     }
 
     @Suppress("ReturnCount", "CyclomaticComplexMethod")
@@ -104,6 +116,10 @@ private class TimedCorolla(
             return "?"
         }
         val pids = digits.take(digits.length / 2 * 2).chunked(2).map { it.toInt(16) }
+        if (1 + pids.size > maxRequestBytes) {
+            now += transportMs
+            return "?"
+        }
         val asked = if (multiPidEcu) pids else pids.take(1)
         val messages = listOfNotNull(
             ecuAnswer(asked) { it in supported || it == 0x00 }?.let { 0x7E8 to it },
@@ -286,10 +302,70 @@ class ObdRatesTest {
         table("ECU without multi-PID, count", after)
         val logs = after.listener.logs
         assertTrue(logs.any { it.startsWith("multi_pid off: 010C0D11494A04") }, logs.toString())
+        // The ECU answered, so fewer PIDs would not help: no smaller group is tried.
+        assertTrue(after.car.sent.none { it == "010C0D11" || it == "010C0D" }, after.car.sent.take(40).toString())
         assertTrue(after.car.sent.any { it == "010C1" })
         // Every channel still read, faster than the log thanks to the count.
         assertTrue(after.rates.getValue("rpm") >= 1.5, "rpm ${after.rates["rpm"]}")
         assertTrue(after.rates.getValue("oil_temp") > 0.0)
+    }
+
+    @Test
+    fun `the Wi-Fi clone of 21 Oct gives the logged rates when it takes no multi-PID request`() {
+        // Worst case for that clone: it takes nothing longer than a single PID. Session report
+        // 2026-10-21: fast 0.400-0.403 Hz, slow 0.079-0.081 Hz; rates_hz latency_ms 226-241.
+        val clone = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2))
+        table("Wi-Fi clone 21 Oct, single PIDs", clone)
+        val logs = clone.listener.logs
+        assertTrue(logs.any { it == "multi_pid 010C0D11494A04 answered ?, trying 3 PIDs a request" }, logs.toString())
+        assertTrue(logs.any { it == "multi_pid 010C0D11 answered ?, trying 2 PIDs a request" }, logs.toString())
+        assertTrue(logs.any { it == "multi_pid off: 010C0D answered ?" }, logs.toString())
+        for (id in listOf("rpm", "speed", "throttle", "pedal_d")) {
+            assertEquals(0.40, clone.rates.getValue(id), 0.04, id)
+        }
+        for (id in listOf("coolant_temp", "oil_temp")) {
+            assertEquals(0.08, clone.rates.getValue(id), 0.008, id)
+        }
+        val latency = Regex("latency_ms=([0-9]+)").find(logs.last { it.startsWith("rates_hz ") })!!
+            .groupValues[1].toInt()
+        assertTrue(latency in 226..241, "latency_ms $latency")
+    }
+
+    @Test
+    fun `an adapter that refuses six PIDs a request is asked three`() {
+        val after = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 4))
+        table("six refused, three a request", after)
+        assertTrue(after.car.sent.any { it == "010C0D11" }, after.car.sent.take(40).toString())
+        assertTrue(after.car.sent.none { it.startsWith("01") && it.length > 9 && it != "010C0D11494A04" })
+        assertTrue(
+            after.listener.logs.any { it.startsWith("polling rpm+speed+throttle pedal_d+pedal_e+engine_load ") },
+            after.listener.logs.toString(),
+        )
+        // Three PIDs for one request's wait: about three times the clone's 0.4 Hz.
+        for (id in listOf("rpm", "speed", "throttle", "pedal_d")) {
+            assertTrue(after.rates.getValue(id) >= 1.0, "$id ${after.rates[id]}")
+        }
+        assertTrue(after.rates.getValue("oil_temp") >= 0.2, "oil ${after.rates["oil_temp"]}")
+        assertEquals(85.0, after.listener.values.last { it.first == "oil_temp" }.second)
+    }
+
+    @Test
+    fun `a refusal after the echoed command still tries smaller groups`() {
+        val after = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 4, echo = true))
+        assertTrue(after.car.sent.any { it == "010C0D11" }, after.car.sent.take(40).toString())
+        assertTrue(after.rates.getValue("rpm") >= 1.0, "rpm ${after.rates["rpm"]}")
+    }
+
+    @Test
+    fun `an adapter that refuses three PIDs a request is asked two`() {
+        val after = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 3))
+        table("three refused, two a request", after)
+        assertTrue(after.car.sent.any { it == "010C0D" }, after.car.sent.take(40).toString())
+        assertTrue(after.listener.logs.any { it.startsWith("polling rpm+speed throttle+pedal_d ") })
+        for (id in listOf("rpm", "speed", "throttle", "pedal_d")) {
+            assertTrue(after.rates.getValue(id) >= 0.7, "$id ${after.rates[id]}")
+        }
+        assertEquals(1726.0, after.listener.values.last { it.first == "rpm" }.second)
     }
 
     @Test

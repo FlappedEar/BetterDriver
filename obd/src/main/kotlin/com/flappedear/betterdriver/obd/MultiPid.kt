@@ -33,10 +33,10 @@ object MultiPid {
 
     /**
      * [channels] as requests: channels with the same [Request] always share one; [groupable] ones of
-     * the same [PollClass] are packed, driver inputs first, up to [MAX_PIDS] to a request. With
+     * the same [PollClass] are packed, driver inputs first, up to [maxPids] to a request. With
      * [combine] false every request is a single PID, as before FBBD-270.
      */
-    fun groups(channels: List<PidChannel>, combine: Boolean = true): List<List<PidChannel>> {
+    fun groups(channels: List<PidChannel>, combine: Boolean = true, maxPids: Int = MAX_PIDS): List<List<PidChannel>> {
         val byRequest = channels.groupBy { it.request }.values.toList()
         if (!combine) return byRequest
         val ordered = byRequest.sortedBy { group ->
@@ -50,7 +50,7 @@ object MultiPid {
                 continue
             }
             val poll = if (group.any { it.pollClass == PollClass.FAST }) PollClass.FAST else PollClass.SLOW
-            val target = out.firstOrNull { it.poll == poll && it.pids < MAX_PIDS }
+            val target = out.firstOrNull { it.poll == poll && it.pids < maxPids }
             if (target != null) {
                 target.channels += group
                 target.pids++

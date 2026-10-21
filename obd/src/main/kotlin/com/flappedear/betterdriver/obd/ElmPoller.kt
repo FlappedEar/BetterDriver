@@ -39,7 +39,8 @@ interface ObdClock {
  * answer, about 200 of the 230 ms per request in Arek's Corolla log of 2026-10-20 (Wi-Fi clone), so:
  * - [multiPid]: up to six mode 01 PIDs go in one request ([MultiPid]). Polling switches headers on
  *   (`AT H1`) so that answers of several frames from several ECUs can be told apart. Checked once
- *   with the first group; when the car answers only one of its PIDs, every PID is asked on its own.
+ *   with the first group; an adapter that refuses it (`?`) is tried with three, then two PIDs a
+ *   request; when the car answers only one of its PIDs, every PID is asked on its own.
  * - [responseCount]: once a request has had [LEARN_SAMPLES] full answers, it is sent with the most
  *   answers they got (`010C0D11494A042`), so the adapter returns as soon as they are in instead of waiting out
  *   its timeout. Whether an adapter counts messages or CAN frames is learned: messages first, and
@@ -124,30 +125,47 @@ class ElmPoller(
     /**
      * The requests to poll: [MultiPid] groups when [combine] and the first multi-PID group gets more
      * than one of its PIDs back, with headers on or, when the adapter's headers-on answer cannot be
-     * read, off; else one PID per request.
+     * read, off; else one PID per request. An adapter that answers `?` to the request itself refuses
+     * its length, not the car (Arek's Wi-Fi ELM327 v1.5 clone, log of 2026-10-21, answered `?` to
+     * `010C0D11494A04`), so smaller groups ([GROUP_SIZES]) are tried before single PIDs. An ECU
+     * that answered only one PID would not answer more with fewer, so that goes straight to singles.
      */
     @Suppress("ReturnCount") // Each early return is one way multi-PID requests are not used.
     private fun groupsFor(channels: List<PidChannel>, combine: Boolean): List<List<PidChannel>> {
         val singles = MultiPid.groups(channels, combine = false)
         if (!combine) return singles
-        val groups = MultiPid.groups(channels)
-        val probe = groups.firstOrNull { g -> g.distinctBy { it.pid }.size > 1 } ?: return singles
-        val cmd = MultiPid.command(probe)
-        var answer = ""
-        for (withHeaders in listOf(true, false)) {
-            if (!setHeaders(withHeaders)) continue
-            val text = line.command(cmd, REQUEST_TIMEOUT_MS)
-            val messages = messagesOf(text, cmd)
-            val got = decode(probe, messages)
-            if (got.keys.distinctBy { it.pid }.size > 1) {
-                expected.getOrPut(probe.first().request) { Learned() }.sample(messages.size, frameCount(text), got.size)
-                return groups
+        for ((i, size) in GROUP_SIZES.withIndex()) {
+            val groups = MultiPid.groups(channels, maxPids = size)
+            val probe = groups.firstOrNull { g -> g.distinctBy { it.pid }.size > 1 } ?: return singles
+            val cmd = MultiPid.command(probe)
+            var answer = ""
+            var refused = true
+            for (withHeaders in listOf(true, false)) {
+                if (!setHeaders(withHeaders)) continue
+                val text = line.command(cmd, REQUEST_TIMEOUT_MS)
+                val messages = messagesOf(text, cmd)
+                val got = decode(probe, messages)
+                if (got.keys.distinctBy { it.pid }.size > 1) {
+                    expected.getOrPut(probe.first().request) { Learned() }
+                        .sample(messages.size, frameCount(text), got.size)
+                    return groups
+                }
+                answer = text?.trim()?.replace('\r', ' ') ?: "nothing"
+                if (!refusal(text, cmd)) refused = false
             }
-            answer = text?.trim()?.replace('\r', ' ') ?: "nothing"
+            val smaller = GROUP_SIZES.getOrNull(i + 1)
+            if (!refused || answer.isEmpty() || smaller == null) {
+                listener.log("multi_pid off: $cmd answered ${answer.ifEmpty { "nothing" }}")
+                return singles
+            }
+            listener.log("multi_pid $cmd answered ?, trying $smaller PIDs a request")
         }
-        listener.log("multi_pid off: $cmd answered $answer")
         return singles
     }
+
+    /** Whether [text] is the adapter's `?` to [cmd], with or without the command echoed before it. */
+    private fun refusal(text: String?, cmd: String): Boolean =
+        text.orEmpty().split('\r', '\n').map { it.trim() }.filter { it.isNotEmpty() && it != cmd } == listOf("?")
 
     /**
      * `AT H1` or `AT H0`; true when the adapter took it. [headers] follows only an acknowledged
@@ -346,6 +364,12 @@ class ElmPoller(
         protocol.trim().removePrefix("A").let { it.length == 1 && it[0] in '6'..'9' }
 
     companion object {
+        /**
+         * PIDs a multi-PID request is tried with, largest first: six fill one CAN frame (J1979's
+         * limit), three and two are for adapters that refuse a longer request with `?`.
+         */
+        val GROUP_SIZES = listOf(MultiPid.MAX_PIDS, 3, 2)
+
         /** Echo, line feeds, spaces and headers off; adaptive timing; automatic protocol. */
         val SETUP = listOf("ATE0", "ATL0", "ATS0", "ATH0", "ATAT1", "ATSP0")
 
