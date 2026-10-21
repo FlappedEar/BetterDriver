@@ -11,7 +11,9 @@ import com.flappedear.betterdriver.feature.review.ReviewLoad
 import com.flappedear.betterdriver.feature.review.ReviewSession
 import com.flappedear.betterdriver.feature.review.ReviewTrack
 import com.flappedear.betterdriver.feature.review.SessionVideo
+import com.flappedear.betterdriver.core.ble.hr.HeartRateDecoder
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -24,6 +26,8 @@ import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sessionanalysis.trackFor
+import com.flappedear.betterdriver.shell.SessionFacts
+import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
@@ -53,6 +57,10 @@ class ReviewLaps private constructor(context: Context) {
     var state by mutableStateOf<ReviewLoad>(ReviewLoad.Loading(0, 0))
         private set
 
+    /** What each read session's row in Sessions says (UI-139 C), by session id. */
+    var facts by mutableStateOf<Map<String, SessionFacts>>(emptyMap())
+        private set
+
     /**
      * Reads new and changed sessions, then publishes every track with laps. Sessions [include]d are
      * read even when older than the newest [MaxSessions]: the laps another screen opens the review
@@ -71,6 +79,8 @@ class ReviewLaps private constructor(context: Context) {
             if ((state as? ReviewLoad.Ready)?.tracks.isNullOrEmpty()) post(ReviewLoad.Loading(i + 1, sessions.size))
         }
         post(ReviewLoad.Ready(group(sessions, saved)))
+        val read = cache.mapValues { it.value.facts }
+        main.post { facts = read }
     }
 
     private fun post(load: ReviewLoad) = main.post { state = load }
@@ -92,8 +102,10 @@ class ReviewLaps private constructor(context: Context) {
         val data = store.read(s.id)
         // The track the session recorded at, else the nearest one (as the lap analysis picks it).
         val track = trackFor(data, saved)
+        val recorded = recordedSources(data)
+        val facts = SessionFacts(obd = ObdSource in recorded, heartRate = HeartRateDecoder.SOURCE in recorded)
         if (track == null) {
-            Cached(null, null, revisions(saved), videoStamp(s.dir))
+            Cached(null, null, revisions(saved), videoStamp(s.dir), facts)
         } else {
             val laps = replayLaps(s.id, data.sampleSets, track)
             val video = sessionVideo(s.dir, VideoTimeline.from(data.events, indexedClips(s.dir)))
@@ -105,11 +117,32 @@ class ReviewLaps private constructor(context: Context) {
                 laps = laps.laps.map { ReviewLap(it, title, video) },
                 bestNumber = laps.best?.lap?.number,
             )
-            Cached(track.id, session.takeIf { it.laps.isNotEmpty() }, revisions(saved), videoStamp(s.dir))
+            val timed = laps.laps.filter { it.lap.kind == LapKind.Timed }
+            Cached(
+                track.id,
+                session.takeIf { it.laps.isNotEmpty() },
+                revisions(saved),
+                videoStamp(s.dir),
+                facts.copy(laps = timed.size, bestMillis = laps.best?.lap?.timeMillis),
+            )
         }
     } catch (e: Exception) {
         DebugLog.w(Tag, "reading session ${s.id} failed", e)
-        Cached(null, null, revisions(saved), videoStamp(s.dir))
+        Cached(null, null, revisions(saved), videoStamp(s.dir), SessionFacts())
+    }
+
+    /** The sources ([ObdSource], heart rate) that recorded at least one value in the session. */
+    private fun recordedSources(data: SessionData): Set<String> {
+        val sourceOf = data.channels.values
+            .filter { it.source == ObdSource || it.source == HeartRateDecoder.SOURCE }
+            .associate { it.id to it.source }
+        val found = HashSet<String>()
+        val wanted = sourceOf.values.toSet()
+        for (set in data.sampleSets) {
+            for (v in set.values) sourceOf[v.channelId]?.let(found::add)
+            if (found.size == wanted.size) break
+        }
+        return found
     }
 
     /**
@@ -121,12 +154,16 @@ class ReviewLaps private constructor(context: Context) {
         val session: ReviewSession?,
         val tracks: Map<String, Int>,
         val video: Long,
+        val facts: SessionFacts,
     ) {
         fun stale(saved: List<Track>, videoNow: Long) = tracks != revisions(saved) || video != videoNow
     }
 
     companion object {
         private const val Tag = "ReviewLaps"
+
+        /** The source of OBD-II channels (core-ble ObdSource). */
+        private const val ObdSource = "obd"
 
         /** Newest sessions read for review; bounds memory (each keeps its laps' paths). */
         private const val MaxSessions = 30

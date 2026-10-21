@@ -46,8 +46,7 @@ class RecordingSmokeTest {
     fun recordsWithEveryProcess() {
         SmokeData.saveTrack(SmokeFixtures.demoRing)
         val before = SmokeData.sessions().map { it.id }.toSet()
-        app.openTab("Settings")
-        app.openTab("Devices")
+        app.openSettingsTopic("Equipment")
         app.waitForText("+ Add equipment").performClick()
         app.waitForText("For trying the app").performScrollTo().performClick()
         app.waitFor(hasText("Demo GNSS") and hasClickAction())

@@ -8,16 +8,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,13 +31,16 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
+import com.flappedear.betterdriver.core.ui.NumberFont
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -41,10 +48,13 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.DeleteState
 import com.flappedear.betterdriver.recording.ExportFormat
 import com.flappedear.betterdriver.recording.ExportState
-import com.flappedear.betterdriver.recording.sessionDetail
-import com.flappedear.betterdriver.recording.sessionTitle
+import com.flappedear.betterdriver.recording.formatDuration
 import com.flappedear.betterdriver.sharing.TransferState
 import java.io.File
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
@@ -70,8 +80,14 @@ import java.util.Locale
  * A session with video also exports Video with data (FBBD-152): a lap or all of it with the data drawn
  * in. Its progress shows on the card with Cancel; meanwhile the card's other actions wait.
  *
- * On a tablet the list sits beside the lap analysis of the session [selectedId], whose card is outlined (FBBD-40).
+ * The list is one row per session, grouped by day (UI-139 C): when and where, the car, how long, its
+ * timed laps and what was recorded ([facts], once read), and its best lap in purple. A tap opens lap
+ * analysis; ⋮ opens a sheet with everything else the session offers (SessionActions). A row says
+ * while something runs for it, such as an export or a GoPro download.
+ *
+ * On a tablet the list sits beside the lap analysis of the session [selectedId], whose row is outlined (FBBD-40).
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionsScreen(
     sessions: List<SessionSummary>,
@@ -86,8 +102,10 @@ fun SessionsScreen(
     videoExport: SessionVideoExport = SessionVideoExport(),
     onAnalyse: (SessionSummary) -> Unit = {},
     selectedId: String? = null,
+    facts: Map<String, SessionFacts> = emptyMap(),
     header: @Composable () -> Unit = {},
 ) {
+    var actionsFor by rememberSaveable { mutableStateOf<String?>(null) }
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Sessions") {
             TextButton(onClick = transfer.onImport, enabled = transfer.importEnabled) { Text("Import session") }
@@ -102,18 +120,45 @@ fun SessionsScreen(
         if (sessions.isEmpty()) {
             Box(Modifier.padding(horizontal = 16.dp)) { ShellCard { DimText("No sessions yet") } }
         } else {
-            LazyColumn(
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(sessions, key = { it.id }) { s ->
-                    // The card whose analysis shows beside the list on a tablet is outlined (FBBD-40).
-                    val outline = if (s.id == selectedId) MaterialTheme.colorScheme.primary else Color.Transparent
-                    SessionCard(
-                        s, exports[s.id], s.id in withVideo, onExport, goPro, deleting, transfer, onAnalyse, coach,
-                        videoExport, outline,
-                    )
+            LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                byDay(sessions).forEach { (day, list) ->
+                    item(key = "day-$day") {
+                        SectionLabel(dayLabel(day), Modifier.padding(top = 12.dp, start = 4.dp))
+                    }
+                    items(list, key = { it.id }) { s ->
+                        SessionRow(
+                            s,
+                            facts[s.id],
+                            video = s.id in withVideo,
+                            // With its sheet open, the sheet says it: a text shows once.
+                            status = rowStatus(s, exports[s.id], goPro, deleting, transfer, videoExport)
+                                .takeUnless { actionsFor == s.id },
+                            selected = s.id == selectedId,
+                            opens = opensAnalysis(s, deleting.states[s.id]),
+                            onAnalyse = { onAnalyse(s) },
+                            onActions = { actionsFor = s.id },
+                        )
+                    }
                 }
+            }
+        }
+    }
+    val shown = sessions.firstOrNull { it.id == actionsFor }
+    if (shown != null) {
+        ModalBottomSheet(onDismissRequest = { actionsFor = null }) {
+            Column(
+                Modifier.verticalScroll(rememberScrollState())
+                    .padding(start = 16.dp, end = 16.dp, bottom = 16.dp)
+                    .navigationBarsPadding(),
+            ) {
+                SessionActions(
+                    shown, exports[shown.id], shown.id in withVideo, onExport, goPro, deleting, transfer,
+                    onAnalyse = { s ->
+                        actionsFor = null
+                        onAnalyse(s)
+                    },
+                    coach, videoExport,
+                )
             }
         }
     }
@@ -127,184 +172,122 @@ data class SessionDeleting(
     val onDelete: (SessionSummary) -> Unit = {},
 )
 
+/** Sessions by the day they started on, in the phone's time zone, newest first as listed. */
+internal fun byDay(
+    sessions: List<SessionSummary>,
+    zone: ZoneId = ZoneId.systemDefault(),
+): List<Pair<LocalDate, List<SessionSummary>>> =
+    sessions.groupBy { Instant.ofEpochMilli(it.info.startUtcMillis).atZone(zone).toLocalDate() }.toList()
+
+/** "Today", "Yesterday", else "Sun 19 Oct". */
+internal fun dayLabel(day: LocalDate, today: LocalDate = LocalDate.now()): String = when (day) {
+    today -> "Today"
+    today.minusDays(1) -> "Yesterday"
+    else -> DayFormat.format(day)
+}
+
+private val DayFormat = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())
+private val TimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
+
+/** "16:23 · Silesia Ring": when the session started, and where. */
+internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault()): String {
+    val time = TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
+    return listOf(time, s.info.track).filter { it.isNotBlank() }.joinToString(" · ")
+}
+
+/** "Corolla · 22 min · 14 laps · Video · OBD · HR": the car, how long, and what was recorded. */
+internal fun rowDetail(s: SessionSummary, facts: SessionFacts?, video: Boolean): String = listOfNotNull(
+    s.info.car.ifBlank { null },
+    s.durationMicros?.let(::formatDuration),
+    facts?.laps?.takeIf { it > 0 }?.let { if (it == 1) "1 lap" else "$it laps" },
+    "Video".takeIf { video },
+    "OBD".takeIf { facts?.obd == true },
+    "HR".takeIf { facts?.heartRate == true },
+).joinToString(" · ")
+
+/** What runs for a session now, for its row; null when nothing does. */
 @Suppress("LongParameterList")
-@Composable
-private fun SessionCard(
+private fun rowStatus(
     s: SessionSummary,
     export: ExportState?,
-    video: Boolean,
-    onExport: (SessionSummary, ExportFormat) -> Unit,
     goPro: GoProCardState,
     deleting: SessionDeleting,
     transfer: SessionTransferState,
-    onAnalyse: (SessionSummary) -> Unit,
-    coach: SessionCoach,
     videoExport: SessionVideoExport,
-    outline: Color,
-) {
-    val c = TrackTheme.colors
-    val delete = deleting.states[s.id]
-    val sending = transfer.outgoing[s.id]
-    var asking by rememberSaveable(s.id) { mutableStateOf(false) }
-    // A video with data being rendered reads the session's files: nothing else may change them meanwhile.
-    val rendering = videoExport.running == s.id
-    val idle = s.state != SessionState.RECORDING && export != ExportState.Running && delete != DeleteState.Running &&
-        !rendering
-    // The whole card opens lap analysis (UI-61 B), except while it records or is being deleted.
-    val opens = s.state != SessionState.RECORDING && delete != DeleteState.Running
-    ShellCard(
-        Modifier
-            .border(2.dp, outline, CardShape)
-            .clip(CardShape)
-            .clickable(enabled = opens, onClickLabel = "Lap analysis") { onAnalyse(s) },
-    ) {
-        CardTitle(s, opens)
-        val detail = sessionDetail(s)
-        if (detail.isNotEmpty()) DimText(detail)
-        ImportedLine(s.info)
-        val busy = sending?.running == true || rendering
-        if (s.state != SessionState.RECORDING) GoProSection(s, export, goPro, sharing = busy)
-        SessionCoachRow(s, coach)
-        val (status, bad) = cardStatus(delete, export)
-        // A share copies the session folder, so it must not run while GoPro video is being added, and the
-        // other way round (GoProSection).
-        val free = idle && goPro.work[s.id] == null && sending?.running != true
-        if (status.isNotEmpty()) DimText(status, color = if (bad) c.loss else Color.Unspecified)
-        TransferLine(sending)
-        if (free) SaveInstead(sending) { transfer.onSave(s) }
-        VideoExportLine(videoExport.states[s.id], rendering) { videoExport.onCancel(s) }
-        CardButtons(
-            video = video,
-            idle = free,
-            canDelete = free,
-            onDelete = { asking = true },
-            onShare = { transfer.onSend(s) },
-            onExport = { format -> onExport(s, format) },
-            dataVideo = videoExport.menuItem { videoExport.onExport(s) },
-        )
-    }
-    if (asking) {
-        DeleteDialog(
-            s,
-            deleting.sizes[s.id],
-            video,
-            onDelete = {
-                asking = false
-                deleting.onDelete(s)
-            },
-            onDismiss = { asking = false },
-        )
-    }
+): String? = when {
+    deleting.states[s.id] == DeleteState.Running -> "Deleting…"
+    export == ExportState.Running -> "Exporting…"
+    transfer.outgoing[s.id]?.running == true -> "Sending…"
+    videoExport.running == s.id -> "Rendering video with data…"
+    goPro.work[s.id] != null -> "Getting GoPro video…"
+    goPro.sessions[s.id]?.cameras?.any { it.onCamera } == true -> "GoPro video still on the camera"
+    else -> null
 }
 
-private val CardShape = RoundedCornerShape(16.dp)
-
-/** The session's title, its state and, when the card opens lap analysis, a chevron. */
-@Composable
-private fun CardTitle(s: SessionSummary, opens: Boolean) {
-    val c = TrackTheme.colors
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            sessionTitle(s),
-            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-            modifier = Modifier.weight(1f),
-        )
-        when (s.state) {
-            SessionState.RECORDING -> DimText("Recording", color = c.loss)
-            SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
-            SessionState.FINISHED -> if (s.info.imported != null) DimText("Imported")
-        }
-        if (opens) DimText("›")
-    }
-}
-
-/** Delete, Share and Export at the bottom of a session card. */
 @Suppress("LongParameterList")
 @Composable
-private fun CardButtons(
-    video: Boolean,
-    idle: Boolean,
-    canDelete: Boolean,
-    onDelete: () -> Unit,
-    onShare: () -> Unit,
-    onExport: (ExportFormat) -> Unit,
-    dataVideo: DataVideoItem,
-) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        TextButton(onClick = onDelete, enabled = canDelete) {
-            Text("Delete", color = if (canDelete) TrackTheme.colors.loss else Color.Unspecified)
-        }
-        ShareButton(enabled = idle, onShare = onShare)
-        Spacer(Modifier.weight(1f))
-        ExportMenu(video = video, enabled = idle, onExport = onExport, dataVideo = dataVideo)
-    }
-}
-
-/** The card's status line and whether it reports a failure; a delete outranks an export. */
-private fun cardStatus(delete: DeleteState?, export: ExportState?): Pair<String, Boolean> = when (delete) {
-    DeleteState.Running -> "Deleting…" to false
-    DeleteState.Recording -> "Recording, not deleted" to true
-    DeleteState.Failed -> "Delete failed" to true
-    null -> when (export) {
-        ExportState.Running -> "Exporting…" to false
-        ExportState.Done -> "Saved" to false
-        ExportState.Failed -> "Export failed" to true
-        null -> "" to false
-    }
-}
-
-/** Confirms a delete, naming the session and what it frees (UI-48 option A). */
-@Composable
-private fun DeleteDialog(
+private fun SessionRow(
     s: SessionSummary,
-    bytes: Long?,
+    facts: SessionFacts?,
     video: Boolean,
-    onDelete: () -> Unit,
-    onDismiss: () -> Unit,
+    status: String?,
+    selected: Boolean,
+    opens: Boolean,
+    onAnalyse: () -> Unit,
+    onActions: () -> Unit,
 ) {
-    val name = listOf(sessionTitle(s), s.info.track).filter { it.isNotBlank() }.joinToString(" · ")
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Delete session?") },
-        text = { Text(deleteText(name, bytes, video)) },
-        confirmButton = { TextButton(onClick = onDelete) { Text("Delete", color = TrackTheme.colors.loss) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
+    val c = TrackTheme.colors
+    // The row whose analysis shows beside the list on a tablet is outlined (FBBD-40).
+    val outline = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .border(2.dp, outline, RowShape)
+            .clickable(enabled = opens, onClickLabel = "Lap analysis", onClick = onAnalyse),
+    ) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        Row(
+            Modifier.padding(start = 4.dp, top = 10.dp, bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(rowTitle(s), style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
+                val detail = rowDetail(s, facts, video)
+                if (detail.isNotEmpty()) DimText(detail)
+                ImportedLine(s.info)
+                when (s.state) {
+                    SessionState.RECORDING -> DimText("Recording", color = c.loss)
+                    SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
+                    SessionState.FINISHED -> Unit
+                }
+                status?.let { DimText(it) }
+            }
+            facts?.bestMillis?.let { best ->
+                Text(
+                    formatLapTime(best),
+                    color = c.best,
+                    style = MaterialTheme.typography.bodyLarge.copy(
+                        fontFamily = NumberFont,
+                        fontWeight = FontWeight.SemiBold,
+                    ),
+                )
+            }
+            IconButton(onClick = onActions, modifier = Modifier.semantics { contentDescription = ActionsLabel }) {
+                Text(
+                    "⋮",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
 }
 
-/** The delete question's text: what goes and how much space it frees. */
-internal fun deleteText(title: String, bytes: Long?, video: Boolean): String {
-    val what = if (video) "its data and video" else "its data"
-    val size = bytes?.let { " (${sizeText(it)})" }.orEmpty()
-    return "$title: $what$size will be removed from this phone. " +
-        "Files still on a GoPro stay there. This can't be undone."
-}
+private val RowShape = RoundedCornerShape(8.dp)
 
-/** "820 KB", "350 MB", "2.4 GB". */
-internal fun sizeText(bytes: Long): String = when {
-    bytes >= GB -> String.format(Locale.ROOT, "%.1f GB", bytes / GB.toDouble())
-    bytes >= MB -> "${bytes / MB} MB"
-    else -> "${maxOf(1, bytes / KB)} KB"
-}
-
-private const val KB = 1_000L
-private const val MB = 1_000_000L
-private const val GB = 1_000_000_000L
-
-@Composable
-private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState, sharing: Boolean) {
-    val work = goPro.work[s.id]
-    GoProLines(
-        goPro = goPro.sessions[s.id] ?: SessionGoPro(),
-        work = work,
-        problems = goPro.problems[s.id].orEmpty(),
-        enabled = goPro.enabled && work == null && export != ExportState.Running && !sharing,
-        listed = goPro.listed,
-        nameOf = goPro.nameOf,
-        onDownload = { id -> goPro.onDownload(s, id) },
-        onAddFiles = { id -> goPro.onAddFiles(s, id) },
-    )
-}
+/** What TalkBack and the tests call a row's ⋮. */
+const val ActionsLabel = "Session actions"
 
 @Preview(widthDp = 411, heightDp = 860)
 @Composable

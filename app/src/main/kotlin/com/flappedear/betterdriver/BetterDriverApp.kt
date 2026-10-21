@@ -31,6 +31,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
+import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.debug.DebugLogRows
 import com.flappedear.betterdriver.feature.track.TrackScreen
@@ -43,7 +44,6 @@ import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.obdAdapterLabel
 import com.flappedear.betterdriver.recording.Sessions
-import com.flappedear.betterdriver.recording.lastSessionLine
 import com.flappedear.betterdriver.recording.liveTileChoices
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.rememberSessionExport
@@ -69,7 +69,7 @@ import com.flappedear.betterdriver.shell.SessionsListDetail
 import com.flappedear.betterdriver.shell.SessionsScreen
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.obdRowValue
-import com.flappedear.betterdriver.shell.SettingsTab
+import com.flappedear.betterdriver.shell.SettingsTopic
 import com.flappedear.betterdriver.shell.appNavigation
 import com.flappedear.betterdriver.shell.shownSession
 import com.flappedear.betterdriver.shell.SetupRepo
@@ -120,7 +120,10 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     FollowUpdates(updates, recorder, sessions)
     val updateDot = hasUpdate(updates.state) && !updatesBlocked(recorder, sessions)
     val layout = windowLayout()
-    val navigation = appNavigation(layout, topLevel = route != null && route in Routes.TopLevel)
+    // A Settings topic opened from Settings keeps the bar, with Settings picked (UI-137 B).
+    val inSettings = route == Routes.SettingsTopicPattern &&
+        nav.previousBackStackEntry?.destination?.route == Routes.Settings
+    val navigation = appNavigation(layout, topLevel = route != null && (route in Routes.TopLevel || inSettings))
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         bottomBar = { if (navigation == AppNavigation.Bar && route != null) BottomBar(nav, route, updateDot) },
@@ -157,7 +160,7 @@ private fun AppNavHost(
             Box(Modifier.padding(padding)) { Setup(nav, prefs, repo) }
         }
         composable(Routes.Drive) {
-            Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, sessions, tracks) }
+            Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, tracks) }
         }
         composable(Routes.Sessions) {
             Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo, layout) }
@@ -167,19 +170,18 @@ private fun AppNavHost(
         progressionDestination(nav, padding)
         cueReview(nav, padding, layout)
         composable(Routes.Settings) {
-            Box(Modifier.padding(padding)) {
-                Settings(nav, prefs, repo, tracks, SettingsTab.Devices, onBack = null)
-            }
+            Box(Modifier.padding(padding)) { Settings(nav, prefs, repo, tracks, topic = null, onBack = null) }
         }
         composable(
-            Routes.SettingsTabPattern,
-            arguments = listOf(navArgument(Routes.TabArg) { type = NavType.StringType }),
+            Routes.SettingsTopicPattern,
+            arguments = listOf(navArgument(Routes.TopicArg) { type = NavType.StringType }),
         ) { e ->
-            val tab = SettingsTab.entries.firstOrNull { it.name == e.arguments?.getString(Routes.TabArg) }
+            val topic = SettingsTopic.entries.firstOrNull { it.name == e.arguments?.getString(Routes.TopicArg) }
             Box(Modifier.padding(padding)) {
-                Settings(nav, prefs, repo, tracks, tab ?: SettingsTab.Devices, onBack = { nav.popBackStack() })
+                Settings(nav, prefs, repo, tracks, topic ?: SettingsTopic.Equipment, onBack = { nav.popBackStack() })
             }
         }
+        carDestinations(nav, repo, padding)
         settingsPages(nav, padding)
         setupDestinations(nav, prefs, repo, padding)
         composable(Routes.Track) { Track(nav, prefs, repo, recorder) }
@@ -236,7 +238,6 @@ private fun Drive(
     prefs: AppPrefs,
     repo: SetupRepo,
     recorder: RecorderClient,
-    sessions: Sessions,
     tracks: Tracks,
 ) {
     LaunchedEffect(Unit) { tracks.locate() }
@@ -247,7 +248,6 @@ private fun Drive(
         setup = if (recording) repo.forSession() else repo.setup,
         recording = recording,
         trackName = tracks.here?.detection?.placeName,
-        lastSession = lastSessionLine(sessions.list),
         actions = SessionCardActions(
             update = repo::update,
             onAddCar = { nav.navigate(Routes.car(Routes.NewCar)) },
@@ -292,10 +292,13 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
         val session = repo.forSession()
         val gnss = session.active().gnss
         val hasG = TrackChannel.G in channelsFor(gnss)
+        // Read once as the track screen opens: the coach line does not come and go while driving (UI-142 B).
+        val context = LocalContext.current
+        val coachOn = remember { CoachPrefs.get(context).settings.verbosity != Verbosity.Off }
         TrackScreen(
             brightness = prefs.trackBrightness,
             onReport = { DebugLog.i("TrackScreen", it) },
-            state = liveTrackState(recorder.state, session.trackScreens, hasG),
+            state = liveTrackState(recorder.state, session.trackScreens, hasG).copy(coachOn = coachOn),
             onStop = {
                 recorder.stop()
                 nav.popBackStack()
@@ -356,6 +359,7 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
                     }
                 },
                 selectedId = shown.takeIf { layout.tablet },
+                facts = rememberSessionFacts(sessions),
                 onExport = export,
                 goPro = GoProCardState(
                     sessions = sessions.goPro,
@@ -401,8 +405,8 @@ private fun Setup(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo) {
     SetupScreen(
         setup = repo.setup,
         onAddReceiver = { nav.navigate(Routes.AddEquipment) },
-        onCameras = { nav.navigate(Routes.settingsTab(SettingsTab.Devices.name)) },
-        onCar = { nav.navigate(Routes.settingsTab(SettingsTab.Car.name)) },
+        onCameras = { nav.navigate(Routes.settingsTopic(SettingsTopic.Equipment.name)) },
+        onCar = { nav.navigate(Routes.settingsTopic(SettingsTopic.Cars.name)) },
         onAddCar = { nav.navigate(Routes.car(Routes.NewCar)) },
         onDone = {
             prefs.updateSetupDone(true)
@@ -418,7 +422,7 @@ private fun Settings(
     prefs: AppPrefs,
     repo: SetupRepo,
     tracks: Tracks,
-    tab: SettingsTab,
+    topic: SettingsTopic?,
     onBack: (() -> Unit)?,
 ) {
     val context = LocalContext.current
@@ -433,10 +437,19 @@ private fun Settings(
         backupRows = { BackupRows() },
         setup = repo.setup,
         version = Version,
-        initialTab = tab,
+        topic = topic,
+        onOpenTopic = { t ->
+            nav.navigate(
+                when (t) {
+                    SettingsTopic.Tracks -> Routes.Tracks
+                    SettingsTopic.Coach -> Routes.CoachSettings
+                    else -> Routes.settingsTopic(t.name)
+                },
+            )
+        },
         onOpenEquipment = { e -> nav.navigate(Routes.equipment(e.id)) },
         onAddEquipment = { nav.navigate(Routes.AddEquipment) },
-        onOpenCar = { c -> nav.navigate(Routes.car(c.id)) },
+        onOpenCar = { c -> nav.navigate(Routes.carPage(c.id)) },
         onAddCar = { nav.navigate(Routes.car(Routes.NewCar)) },
         onRunSetup = {
             prefs.updateSetupDone(false)
@@ -444,7 +457,6 @@ private fun Settings(
         },
         onBack = onBack,
         trackCount = tracks.list.size,
-        onTracks = { nav.navigate(Routes.Tracks) },
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
         coach = coach.settings,
         onOpenCoach = { nav.navigate(Routes.CoachSettings) },
@@ -455,7 +467,7 @@ private fun Settings(
         },
         onOpenAbout = { nav.navigate(Routes.About) },
         obdRow = obdRowValue(RecorderClient.get(context).state.obd, obdAdapter),
-        obdAdapter = obdAdapter,
         onOpenObd = { nav.navigate(Routes.Obd) },
+        reach = if (topic == SettingsTopic.Equipment) rememberEquipmentReach(prefs, repo) else emptyMap(),
     )
 }

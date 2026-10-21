@@ -155,8 +155,8 @@ class LiveUiTest {
         val timed =
             RecorderState(connected = true, live = live, place = "Tor Poznań", placeSaved = true, timing = timing)
         val s = liveTrackState(timed, tiles, true)
-        assertEquals(listOf("Track", "GNSS"), s.status.map { it.label })
-        assertEquals("Tor Poznań", s.status.first().value)
+        // The quiet strip (UI-141 B): a timed track is fine, so it is not on the strip.
+        assertEquals(listOf("GNSS"), s.status.map { it.label })
         assertEquals(-0.34, requireNotNull(s.deltaSeconds), 1e-9)
         assertEquals(112_410L, s.bestMillis)
         assertEquals(3, s.lapNumber)
@@ -175,7 +175,7 @@ class LiveUiTest {
         ).status.drop(1)
         val shown = listOf(
             StatusItem("OBD", "Connected", icon = StatusIcon.Car),
-            StatusItem("Heart rate", "142", icon = StatusIcon.Heart),
+            StatusItem("Heart rate", "142", icon = StatusIcon.Heart, keepValue = true),
         )
         assertEquals(shown, status(ObdLinkState.Connected, HeartRateStatus(HeartRateLink.STREAMING, 142)))
         // UI-111 B: connecting, searching, lost, no contact or a stale value hide the item.
@@ -187,9 +187,9 @@ class LiveUiTest {
     }
 
     @Test
-    fun circuitFromTheListIsNeutralAndASavedTrackWithoutLinesIsAmber() {
+    fun circuitFromTheListIsLeftOutAndASavedTrackWithoutLinesIsAmber() {
         val road = liveTrackState(RecorderState(connected = true, live = live, place = "Tor Kielce"), tiles, true)
-        assertEquals(StatusItem("Near", "Tor Kielce", ok = true), road.status.first())
+        assertEquals(listOf("GNSS"), road.status.map { it.label })
         val untimed = RecorderState(connected = true, live = live, place = "Tor Kielce", placeSaved = true)
         assertEquals(StatusItem("Track", "Tor Kielce", ok = false), liveTrackState(untimed, tiles, true).status.first())
     }
@@ -224,8 +224,6 @@ class LiveUiTest {
             18 * 60_000_000L,
         )
         assertEquals("2023 Toyota Corolla · 18 min", sessionDetail(s))
-        assertNull(lastSessionLine(listOf(s.copy(state = SessionState.RECORDING))))
-        assertEquals(true, lastSessionLine(listOf(s))?.endsWith("18 min · recovered"))
         assertEquals("BetterDriver-id.vbo", exportFileName(s, ExportFormat.Vbo))
         assertEquals("BetterDriver-id.csv", exportFileName(s, ExportFormat.Csv))
         assertEquals("BetterDriver-id.gpx", exportFileName(s, ExportFormat.Gpx))

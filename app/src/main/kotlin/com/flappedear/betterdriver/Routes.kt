@@ -9,13 +9,16 @@ object Routes {
     const val Sessions = "sessions"
     const val Settings = "settings"
 
+    /** The next session's car and its live values, in the bottom bar (UI-136 B, UI-133 B). */
+    const val Car = "car"
+
     /** Spoken coach settings, a page of their own (FBBD-98, UI-64 B). */
     const val CoachSettings = "settings/coach"
 
     /** The coach's voice, a list of the phone's voices (FBBD-240, UI-90 A). */
     const val CoachVoice = "settings/coach/voice"
 
-    /** The OBD-II adapter's connection and live values, from Settings › Devices (FBBD-261, UI-104 B). */
+    /** The OBD-II adapter's connection and live values, from Settings › Equipment (FBBD-261, UI-104 B). */
     const val Obd = "settings/obd"
 
     /** About and credits, opened from Settings › App (FBBD-79). */
@@ -35,7 +38,12 @@ object Routes {
 
     fun diagnostics(id: String) = "equipment/$id/diagnostics"
 
-    /** A car (UI-35 B); [NewCar] adds one. */
+    /** A car's page (UI-133 B): its live values when it is the next session's. */
+    const val CarPagePattern = "car/{id}"
+
+    fun carPage(id: String) = "car/$id"
+
+    /** Editing a car's name and notes (UI-35 B); [NewCar] adds one. */
     const val CarPattern = "cars/{id}"
     const val CarIdArg = "id"
     const val NewCar = "new"
@@ -83,12 +91,12 @@ object Routes {
 
     fun trackProgression(id: String) = "tracks/$id/progression"
 
-    /** Settings opened on one tab, with a back button (from the first-run checklist). */
-    const val SettingsTabPattern = "settings/{tab}"
-    const val TabArg = "tab"
+    /** One Settings topic's page (UI-137 B), from Settings and the first-run checklist. */
+    const val SettingsTopicPattern = "settings/{topic}"
+    const val TopicArg = "topic"
 
-    fun settingsTab(tab: String) = "settings/$tab"
+    fun settingsTopic(topic: String) = "settings/$topic"
 
-    /** Destinations that show the bottom bar (UI-11 option A). */
-    val TopLevel = setOf(Drive, Sessions, Settings)
+    /** Destinations that show the bottom bar (UI-11 option A, UI-136 B). */
+    val TopLevel = setOf(Drive, Sessions, Car, Settings)
 }

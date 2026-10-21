@@ -63,7 +63,7 @@ class DemoTrackSmokeTest {
         app.waitForText("Silesia Ring", substring = true).performClick()
         app.waitUntilGone("Cancel")
         app.waitForText("Silesia Ring", substring = true)
-        // The Demo track's own screen has no tabs: back to Devices first.
+        // The Demo track's own screen has no bottom bar: back to Equipment first.
         app.back()
         val id = driveASession()
 
@@ -86,17 +86,15 @@ class DemoTrackSmokeTest {
     }
 
     private fun addDemoTrack() {
-        app.openTab("Settings")
-        app.openTab("Devices")
+        app.openSettingsTopic("Equipment")
         app.waitForText("+ Add equipment").performClick()
         app.waitForText("Laps and coach cues on a made-up circuit").performScrollTo().performClick()
         app.waitFor(hasText("Demo track") and hasClickAction())
     }
 
-    /** Settings › Devices › Demo track › Drives, the dialog open. */
+    /** Settings › Equipment › Demo track › Drives, the dialog open. */
     private fun openDrives() {
-        app.openTab("Settings")
-        app.openTab("Devices")
+        app.openSettingsTopic("Equipment")
         app.waitFor(hasText("Demo track") and hasClickAction()).performClick()
         app.waitForText("Drives").performClick()
     }

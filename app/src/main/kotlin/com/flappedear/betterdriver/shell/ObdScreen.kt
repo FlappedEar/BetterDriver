@@ -24,42 +24,46 @@ import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.obd.valueText
 import java.util.Locale
 
-/** Title of the OBD page and its row in Settings › Devices. */
-const val ObdTitle = "OBD-II"
-
 /**
- * The OBD-II page (FBBD-261, UI-104 B): the listed adapter's connection (FBBD-121, UI-105 C) and every
- * value the car sends, with how often each arrives. During a session it shows what the recorder
- * receives; with no session recording the page holds its own connection, so the adapter can be
- * checked before driving. Texts name the adapter (UI-106 A).
+ * The car data page (FBBD-261, UI-104 B), titled with the next session's car (UI-134 B, [title]):
+ * the listed adapter's connection (FBBD-121, UI-105 C) and every value the car sends, with how often
+ * each arrives. During a session it shows what the recorder receives; with no session recording the
+ * page holds its own connection, so the adapter can be checked before driving. Texts name the
+ * adapter (UI-106 A).
  */
 @Composable
-fun ObdScreen(view: ObdView, onBack: () -> Unit) {
+fun ObdScreen(view: ObdView, title: String, onBack: () -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        ShellTopBar(ObdTitle, onBack = onBack)
+        ShellTopBar(title, onBack = onBack)
         Column(
             Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            val status = view.status
-            val adapter = view.adapter
-            when {
-                adapter == null -> {
-                    Header(DeviceState.Off, "No adapter added", "Settings › Devices › Add equipment")
-                    DimText(NoAdapterNote, Modifier.padding(top = 8.dp, start = 4.dp))
-                }
-                status == null -> Header(DeviceState.Off, "Not recorded", NotRecordedNote)
-                else -> {
-                    Header(dotState(status), obdHeaderTitle(view.recording, status), detail(status, adapter))
-                    if (status.readings.isNotEmpty()) {
-                        SectionLabel("Values from the car", Modifier.padding(top = 8.dp, start = 4.dp))
-                        ShellCard {
-                            status.readings.forEachIndexed { i, r -> ReadingRow(r, divider = i > 0) }
-                        }
-                    }
-                    DimText(note(view.recording, status, adapter), Modifier.padding(top = 8.dp, start = 4.dp))
+            ObdContent(view)
+        }
+    }
+}
+
+/** The adapter's state and the car's values, on the car data page and on the car's page (UI-133 B). */
+@Composable
+internal fun ObdContent(view: ObdView) {
+    val status = view.status
+    val adapter = view.adapter
+    when {
+        adapter == null -> {
+            Header(DeviceState.Off, "No adapter added", "Settings › Equipment › Add equipment")
+            DimText(NoAdapterNote, Modifier.padding(top = 8.dp, start = 4.dp))
+        }
+        status == null -> Header(DeviceState.Off, "Not recorded", NotRecordedNote)
+        else -> {
+            Header(dotState(status), obdHeaderTitle(view.recording, status), detail(status, adapter))
+            if (status.readings.isNotEmpty()) {
+                SectionLabel("Values from the car", Modifier.padding(top = 8.dp, start = 4.dp))
+                ShellCard {
+                    status.readings.forEachIndexed { i, r -> ReadingRow(r, divider = i > 0) }
                 }
             }
+            DimText(note(view.recording, status, adapter), Modifier.padding(top = 8.dp, start = 4.dp))
         }
     }
 }
@@ -135,7 +139,7 @@ private fun note(recording: Boolean, s: ObdStatus, adapter: ObdAdapterLabel): St
 }
 
 /**
- * The OBD row's value in Settings › Devices: the recording's OBD state, "Not connected" when idle,
+ * The Live values row's value in Settings › Equipment: the recording's OBD state, "Not connected" when idle,
  * or "None added" with no adapter listed (UI-105 C). The adapter itself shows under the row's title.
  */
 fun obdRowValue(recording: ObdStatus?, adapter: ObdAdapterLabel?): String = when {
@@ -164,6 +168,7 @@ private fun ObdScreenPreview() {
                 ),
                 adapter = ObdAdapterLabel("vLinker MC+", "Bluetooth"),
             ),
+            title = "Corolla",
             onBack = {},
         )
     }

@@ -24,7 +24,7 @@ private const val BackToneMs = 200
 
 /**
  * A short sound when [gnss] goes from OK to lost, and another when it comes back (FBBD-64). Only
- * while [enabled] (Settings › Recording, off by default). It plays here in the UI process, on the
+ * while [enabled] (Settings › Track screen, off by default). It plays here in the UI process, on the
  * notification stream, so the recorder never waits on audio; the banner shows the state either way.
  */
 @Composable

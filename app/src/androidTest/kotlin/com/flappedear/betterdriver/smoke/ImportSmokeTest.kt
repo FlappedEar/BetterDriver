@@ -99,9 +99,7 @@ class ImportSmokeTest {
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.back()
 
-        app.openTab("Settings")
-        app.openTab("Recording")
-        app.waitForText("Tracks and timing lines").performClick()
+        app.openSettingsTopic("Tracks")
         app.waitForText("MY TRACKS")
         app.waitForText(SmokeFixtures.LoopName).assertIsDisplayed()
     }

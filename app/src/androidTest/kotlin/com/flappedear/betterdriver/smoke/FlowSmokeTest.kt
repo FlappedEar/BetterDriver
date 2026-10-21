@@ -156,8 +156,7 @@ class FlowSmokeTest {
         val file = File(cache, "smoke.betterdriver-backup").apply { delete() }
         intending(hasAction(Intent.ACTION_CREATE_DOCUMENT)).respondWith(picked(file))
         intending(hasAction(Intent.ACTION_OPEN_DOCUMENT)).respondWith(picked(file))
-        app.openTab("Settings")
-        app.openTab("App")
+        app.openSettingsTopic("App")
 
         // Back up, with the sessions, to the file.
         app.waitForText("Back up").performScrollTo().performClick()
@@ -180,8 +179,9 @@ class FlowSmokeTest {
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
     }
 
-    /** Opens the Export menu of the newest session, the one with video. */
+    /** Opens the Export menu of the newest session, the one with video, in its ⋮ sheet (UI-139 C). */
     private fun openExportMenu() {
+        app.openNewestSessionActions()
         app.waitForText("Export ▾").performClick()
         app.waitForText("CSV")
     }

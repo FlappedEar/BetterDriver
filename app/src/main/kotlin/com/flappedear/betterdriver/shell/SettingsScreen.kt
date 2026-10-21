@@ -7,18 +7,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Switch
-import androidx.compose.material3.Tab
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -44,17 +41,18 @@ data class TrackScreenPrefs(
 )
 
 /**
- * Settings (UI-15 option B): tabs for Devices, Car, Recording and App. The track screen's tiles are
- * changed on the track screen itself (UI-123 B).
- * [initialTab] lets the first-run checklist open a tab directly.
+ * Settings (UI-137 B): with no [topic], one short page of topics, each saying what is set; a topic
+ * opens its own page ([onOpenTopic]), shown here with [topic] and a back button. The rows inside
+ * each page are the ones the tabs had. The track screen's tiles are changed on the track screen
+ * itself (UI-123 B).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Suppress("LongParameterList") // One callback per place Settings links to.
 @Composable
 fun SettingsScreen(
     setup: Setup,
     version: String,
-    initialTab: SettingsTab,
+    topic: SettingsTopic?,
+    onOpenTopic: (SettingsTopic) -> Unit,
     onOpenEquipment: (Equipment) -> Unit,
     onAddEquipment: () -> Unit,
     onOpenCar: (CarProfile) -> Unit,
@@ -63,7 +61,6 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     trackCount: Int = 0,
-    onTracks: () -> Unit = {},
     onChooseVideo: (Equipment, VideoMode) -> Unit = { _, _ -> },
     updateRow: @Composable () -> Unit = {},
     debugRows: @Composable () -> Unit = {},
@@ -74,78 +71,71 @@ fun SettingsScreen(
     onTrackScreen: (TrackScreenPrefs) -> Unit = {},
     onOpenAbout: () -> Unit = {},
     obdRow: String = obdRowValue(null, null),
-    obdAdapter: ObdAdapterLabel? = null,
     onOpenObd: () -> Unit = {},
+    reach: Map<String, Reach> = emptyMap(),
 ) {
-    var tab by rememberSaveable { mutableIntStateOf(initialTab.ordinal) }
     Column(modifier.fillMaxSize()) {
-        ShellTopBar("Settings", onBack = onBack)
-        PrimaryTabRow(
-            selectedTabIndex = tab,
-            containerColor = MaterialTheme.colorScheme.background,
-        ) {
-            SettingsTab.entries.forEach { t ->
-                Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }, text = { Text(t.title) })
-            }
-        }
+        ShellTopBar(topic?.title ?: "Settings", onBack = onBack)
         Column(
-            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(16.dp),
+            Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 4.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            when (SettingsTab.entries[tab]) {
-                SettingsTab.Devices -> {
-                    EquipmentList(setup.equipment, onOpenEquipment, onAddEquipment)
-                    // UI-105 C: OBD-II adapters are equipment; this row opens the page of the listed one.
-                    SectionLabel("Car data", Modifier.padding(top = 8.dp, start = 4.dp))
-                    ShellCard {
-                        ListRow(ObdTitle, obdRow, divider = false, supporting = obdAdapter?.text, onClick = onOpenObd)
+            when (topic) {
+                null -> ShellCard {
+                    val freeGb = rememberFreeGb()
+                    SettingsTopic.entries.forEachIndexed { i, t ->
+                        val summary = topicSummary(t, setup, trackCount, trackScreen, coach, version, freeGb)
+                        ListRow(t.title, divider = i > 0, supporting = summary, onClick = { onOpenTopic(t) }) {
+                            Chevron()
+                        }
                     }
                 }
-                SettingsTab.Car -> CarTab(setup, onOpenCar, onAddCar, obdRow, onOpenObd)
-                SettingsTab.Recording -> {
-                    RecordingTab(setup, onChooseVideo, trackCount, onTracks)
-                    TrackScreenCard(trackScreen, onTrackScreen)
+                SettingsTopic.Equipment ->
+                    EquipmentGroups(setup.equipment, reach, onOpenEquipment, onAddEquipment, obdRow, onOpenObd)
+                SettingsTopic.Cars -> {
+                    CarList(setup.cars, setup.session.carId, onOpenCar, onAddCar)
+                    ShellCard { ListRow("Units", "km/h, °C", divider = false) }
                 }
-                SettingsTab.App ->
-                    AppTab(version, onRunSetup, updateRow, debugRows, backupRows, coach, onOpenCoach, onOpenAbout)
+                SettingsTopic.TrackScreen -> TrackScreenCard(trackScreen, onTrackScreen)
+                SettingsTopic.Video -> VideoPage(setup, onChooseVideo)
+                SettingsTopic.App ->
+                    AppPage(version, onRunSetup, updateRow, backupRows, coach, onOpenCoach, onOpenAbout)
+                // Settings › Diagnostics: the app's one log, to share after a drive or clear (FBBD-183).
+                SettingsTopic.Diagnostics -> ShellCard { debugRows() }
+                // Their own pages, opened by onOpenTopic.
+                SettingsTopic.Tracks, SettingsTopic.Coach -> Unit
             }
         }
     }
 }
 
 @Composable
-private fun CarTab(
-    setup: Setup,
-    onOpenCar: (CarProfile) -> Unit,
-    onAddCar: () -> Unit,
-    obdRow: String,
-    onOpenObd: () -> Unit,
-) {
-    CarCards(setup.cars, setup.session.carId, onOpenCar, onAddCar)
-    ShellCard {
-        ListRow("Units", "km/h, °C", divider = false)
-        ListRow("Car data (OBD-II)", obdRow, onClick = onOpenObd)
-    }
+private fun Chevron() {
+    Icon(
+        ShellIcons.Chevron,
+        contentDescription = null,
+        modifier = Modifier.size(20.dp),
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
-/** Recording settings: tracks, one Video row per camera the app sets (UI-39), and storage. */
 @Composable
-private fun RecordingTab(
-    setup: Setup,
-    onChooseVideo: (Equipment, VideoMode) -> Unit,
-    trackCount: Int,
-    onTracks: () -> Unit,
-) {
+private fun rememberFreeGb(): Double {
     val context = LocalContext.current
-    val freeGb = remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
+    return remember { StatFs(context.filesDir.path).availableBytes / BytesPerGb }
+}
+
+/** Settings › Video: one row per camera the app sets (UI-39), and storage. */
+@Composable
+private fun VideoPage(setup: Setup, onChooseVideo: (Equipment, VideoMode) -> Unit) {
+    val freeGb = rememberFreeGb()
     var choosingVideo by rememberSaveable { mutableStateOf<String?>(null) }
     ShellCard {
-        val tracks = if (trackCount == 1) "1 track" else "$trackCount tracks"
-        ListRow("Tracks and timing lines", tracks, divider = false, onClick = onTracks)
-        setup.equipment.filter { it.videoMode != null }.forEach { cam ->
-            ListRow("Video · ${cam.name}", videoLabel(cam), onClick = { choosingVideo = cam.id })
+        val cams = setup.equipment.filter { it.videoMode != null }
+        cams.forEachIndexed { i, cam ->
+            ListRow(cam.name, videoLabel(cam), divider = i > 0, onClick = { choosingVideo = cam.id })
         }
-        ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb))
+        ListRow("Storage", String.format(Locale.ROOT, "%.0f GB free", freeGb), divider = cams.isNotEmpty())
     }
     setup.equipment(choosingVideo)?.let { cam ->
         VideoModeDialog(cam, rememberVideoModes(cam), { onChooseVideo(cam, it) }, onClose = { choosingVideo = null })
@@ -171,12 +161,12 @@ private fun TrackScreenCard(prefs: TrackScreenPrefs, onChange: (TrackScreenPrefs
 }
 
 /** Permissions lists what each one that is off stops (FBBD-35); About and credits is a page of its own (FBBD-79). */
+@Suppress("LongParameterList")
 @Composable
-private fun AppTab(
+private fun AppPage(
     version: String,
     onRunSetup: () -> Unit,
     updateRow: @Composable () -> Unit,
-    debugRows: @Composable () -> Unit,
     backupRows: @Composable () -> Unit,
     coach: CoachSettings,
     onOpenCoach: () -> Unit,
@@ -193,9 +183,6 @@ private fun AppTab(
         ListRow("Run setup again", onClick = onRunSetup)
         ListRow("About and credits", onClick = onOpenAbout)
     }
-    // Settings › Diagnostics: the app's one log, to share after a drive or clear (FBBD-183).
-    SectionLabel("Diagnostics")
-    ShellCard { debugRows() }
 }
 
 @Preview(widthDp = 411, heightDp = 700)
@@ -206,7 +193,8 @@ private fun SettingsScreenPreview() {
             SettingsScreen(
                 setup = Setup.fresh { "phone" },
                 version = "0.1.4",
-                initialTab = SettingsTab.Devices,
+                topic = null,
+                onOpenTopic = {},
                 onOpenEquipment = {},
                 onAddEquipment = {},
                 onOpenCar = {},

@@ -35,6 +35,7 @@ private data class TopLevelItem(val route: String, val label: String, val icon: 
 private val TopLevelItems = listOf(
     TopLevelItem(Routes.Drive, "Drive", ShellIcons.Drive),
     TopLevelItem(Routes.Sessions, "Sessions", ShellIcons.Sessions),
+    TopLevelItem(Routes.Car, "Car", ShellIcons.Car),
     TopLevelItem(Routes.Settings, "Settings", ShellIcons.Settings),
 )
 
@@ -76,7 +77,7 @@ internal fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
         TopLevelItems.forEach { item ->
             NavigationBarItem(
-                selected = route == item.route,
+                selected = sectionOf(route) == item.route,
                 onClick = { openTopLevel(nav, item.route) },
                 icon = { TopLevelIcon(item, updateDot) },
                 label = { Text(item.label) },
@@ -92,7 +93,7 @@ internal fun SideRail(nav: NavHostController, route: String, updateDot: Boolean)
         Spacer(Modifier.weight(1f))
         TopLevelItems.forEach { item ->
             NavigationRailItem(
-                selected = route == item.route,
+                selected = sectionOf(route) == item.route,
                 onClick = { openTopLevel(nav, item.route) },
                 icon = { TopLevelIcon(item, updateDot) },
                 label = { Text(item.label) },
@@ -102,7 +103,16 @@ internal fun SideRail(nav: NavHostController, route: String, updateDot: Boolean)
     }
 }
 
+/** The bar's item a destination belongs to: a Settings topic is part of Settings (UI-137 B). */
+private fun sectionOf(route: String): String = if (route == Routes.SettingsTopicPattern) Routes.Settings else route
+
 private fun openTopLevel(nav: NavHostController, route: String) {
+    val current = nav.currentDestination?.route
+    // The picked item again goes to its top: from a Settings topic back to the topics.
+    if (current != null && current != route && sectionOf(current) == route) {
+        nav.popBackStack(route, inclusive = false)
+        return
+    }
     nav.navigate(route) {
         // Drive is the root once setup is done, the only time the bar or the rail shows.
         popUpTo(Routes.Drive) { saveState = true }

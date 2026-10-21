@@ -397,7 +397,7 @@ class RecorderService : Service() {
         private const val KeySession = "session"
 
         /** Shown on the track screen when a start has no GNSS receiver; nothing is recorded. */
-        const val NoReceiver = "No GNSS receiver. Add one in Settings › Devices."
+        const val NoReceiver = "No GNSS receiver. Add one in Settings › Equipment."
         private const val KeyTrack = "track"
 
         /**

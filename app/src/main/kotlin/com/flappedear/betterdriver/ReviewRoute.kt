@@ -17,7 +17,9 @@ import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.review.LapKey
 import com.flappedear.betterdriver.feature.review.ReviewScreen
 import com.flappedear.betterdriver.feature.review.ReviewStart
+import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.review.ReviewLaps
+import com.flappedear.betterdriver.shell.SessionFacts
 import com.flappedear.betterdriver.shell.ShellIcons
 
 /**
@@ -57,4 +59,13 @@ private fun ReviewRoute(nav: NavHostController, padding: PaddingValues, layout: 
     Box(Modifier.padding(padding)) {
         ReviewScreen(laps.state, ShellIcons.Back, onBack = { nav.popBackStack() }, start = start, layout = layout)
     }
+}
+
+/** Each row's laps, best lap and what was recorded (UI-139 C), read with the laps the review uses. */
+@Composable
+internal fun rememberSessionFacts(sessions: Sessions): Map<String, SessionFacts> {
+    val context = LocalContext.current
+    val laps = remember(context) { ReviewLaps.get(context) }
+    LaunchedEffect(sessions.list) { laps.load() }
+    return laps.facts
 }

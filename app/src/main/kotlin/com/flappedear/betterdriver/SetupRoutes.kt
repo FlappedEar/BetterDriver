@@ -260,7 +260,7 @@ private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
  * hears its own kind, so each starts empty: a RaceBox shows even with no GoPro nearby.
  */
 @Composable
-private fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
+internal fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
     val context = LocalContext.current
     return remember(context) {
         if (searching) {

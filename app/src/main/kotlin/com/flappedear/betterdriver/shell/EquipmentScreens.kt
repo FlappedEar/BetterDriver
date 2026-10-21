@@ -39,7 +39,7 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.VideoMode
 
-/** "GNSS" or "Camera", the value next to an item in the equipment list. */
+/** "GNSS" or "Camera", under an item in the equipment list while its reach is not known. */
 internal fun kindLabel(e: Equipment): String = when (e.kind) {
     EquipmentKind.GNSS -> "GNSS"
     EquipmentKind.CAMERA -> "Camera"
@@ -70,19 +70,6 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.GOPRO_FILES -> "Start it by hand. Add its videos to the session afterwards."
     EquipmentModel.CAMERA_FILES ->
         "Start it by hand. Add its MP4 videos to the session afterwards; they are lined up by the camera's clock."
-}
-
-/**
- * Settings › Devices (UI-33 option B): everything Arek added, in one list with one Add. Nothing
- * else is listed; a fresh install has only the phone camera.
- */
-@Composable
-internal fun EquipmentList(equipment: List<Equipment>, onOpen: (Equipment) -> Unit, onAdd: () -> Unit) {
-    ShellCard {
-        equipment.forEachIndexed { i, e -> ListRow(e.name, kindLabel(e), divider = i > 0, onClick = { onOpen(e) }) }
-        AddRow("Add equipment", onAdd, divider = equipment.isNotEmpty())
-    }
-    DimText("Tap an item to rename or remove it.")
 }
 
 /**
