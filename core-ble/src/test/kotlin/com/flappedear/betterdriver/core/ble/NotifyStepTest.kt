@@ -31,3 +31,23 @@ class NotifyStepTest {
         assertEquals(NotifyStep.entries.size, reasons.toSet().size)
     }
 }
+
+/**
+ * The quiet wait (FBBD-281): an unworn strap on 21 Oct 2026 cost 55 setups in 18 minutes. After
+ * [QuietAfterSetups] setups without data the link holds one background connection with no limit.
+ */
+class NotifyPlanTest {
+    @Test
+    fun ladderUntilTheQuietWaitThenOneBackgroundConnectionWithoutLimit() {
+        val ladder = SetupLadder(15_000L, 30_000L)
+        repeat(QuietAfterSetups) { n ->
+            assertEquals(ladder.plan(), notifyPlan(n, ladder))
+            assertTrue(notifyPlan(n, ladder).setupTimeoutMs <= 30_000L)
+            ladder.failed()
+        }
+        val quiet = notifyPlan(QuietAfterSetups, ladder)
+        assertTrue(quiet.autoConnect)
+        assertEquals(Long.MAX_VALUE, quiet.setupTimeoutMs)
+        assertEquals(quiet, notifyPlan(QuietAfterSetups + 10, ladder))
+    }
+}

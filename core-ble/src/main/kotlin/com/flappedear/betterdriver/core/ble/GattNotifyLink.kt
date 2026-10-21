@@ -30,6 +30,13 @@ private const val BackgroundSetupTimeoutMs = 30_000L
 private const val MtuAnswerMs = 2_000L
 private const val Tag = "Link"
 
+/**
+ * Setups in a row without data (about 2 minutes) after which the link stops its rounds and waits
+ * quietly for the device (FBBD-281). On 21 Oct 2026 an unworn heart rate strap cost 55 rounds in
+ * 18 minutes; a strap sends nothing until it is worn, and that is no fault (Arek).
+ */
+internal const val QuietAfterSetups = 6
+
 /** Retries as for an NMEA receiver: 1 s, 2 s, 4 s, then every 5 s. */
 private const val FirstRetryMs = 1_000L
 private const val MaxRetryMs = 5_000L
@@ -53,6 +60,19 @@ interface NotifyLink {
 
     fun stop()
 }
+
+/**
+ * How the next setup connects after [setupsWithoutData] setups in a row brought nothing: the
+ * [ladder]'s plan, or from [QuietAfterSetups] on one background connection with no time limit
+ * (FBBD-281). Android then connects on its own once the device advertises (a strap put on, a
+ * receiver switched on), with no rounds, no log lines and no retries until then.
+ */
+internal fun notifyPlan(setupsWithoutData: Int, ladder: SetupLadder): ConnectPlan =
+    if (setupsWithoutData >= QuietAfterSetups) {
+        ConnectPlan(autoConnect = true, askMtu = false, setupTimeoutMs = Long.MAX_VALUE)
+    } else {
+        ladder.plan()
+    }
 
 /**
  * How far a [GattNotifyLink] setup got (FBBD-279): the reason given when it brings no data names
@@ -79,8 +99,10 @@ internal enum class NotifyStep(private val waitingFor: String) {
  * [RaceBoxLink], without the RaceBox's diagnostics probe. Each setup step is logged (FBBD-279);
  * setups that bring no data change how the next one connects ([SetupLadder]: without the MTU
  * request, then Android's background connection every other attempt), and an MTU request without
- * an answer in 2 s is skipped. No bonding is asked for; a device that needs it for the
- * notification descriptor makes Android pair on the descriptor write. Every GATT call runs on one
+ * an answer in 2 s is skipped. After [QuietAfterSetups] setups without data the link waits on one
+ * background connection until the device advertises, without further rounds (FBBD-281). No
+ * bonding is asked for; a device that needs it for the notification descriptor makes Android pair
+ * on the descriptor write. Every GATT call runs on one
  * private thread; [onData] is called on Android's binder thread with each notification's bytes and
  * must return quickly. [onState] gets each new [LinkState]; [LinkState.Streaming] carries the
  * notifications in the last second.
@@ -110,6 +132,10 @@ class GattNotifyLink(
     private var running = false
     private var setupStartedAt = 0L
     private var plan = ladder.plan()
+    private var setupsWithoutData = 0
+
+    /** When the current setup is given up without data; moved on connecting after a quiet wait. */
+    private var setupDeadlineAt = 0L
     private var step = NotifyStep.CONNECT
     private var awaitingMtu = false
 
@@ -144,8 +170,13 @@ class GattNotifyLink(
         setState(LinkState.Connecting)
         setupStartedAt = SystemClock.elapsedRealtime()
         lastDataAt = 0L
-        plan = ladder.plan()
+        plan = notifyPlan(setupsWithoutData, ladder)
+        val timeout = plan.setupTimeoutMs
+        setupDeadlineAt = if (timeout == Long.MAX_VALUE) timeout else setupStartedAt + timeout
         step = NotifyStep.CONNECT
+        if (setupsWithoutData == QuietAfterSetups) {
+            DebugLog.i(Tag, "$address $setupsWithoutData setups without data: waiting quietly until it advertises")
+        }
         val failure = try {
             val adapter = appContext.getSystemService(BluetoothManager::class.java)?.adapter
             if (adapter == null || !adapter.isEnabled) {
@@ -169,6 +200,7 @@ class GattNotifyLink(
         val failed = gatt
         if (failed != null && lastDataAt == 0L) {
             ladder.failed()
+            setupsWithoutData++
             // Android may hold a stale copy of the device's services; the next connection finds them again.
             if (!refreshCache(failed)) DebugLog.i(Tag, "$address service cache could not be cleared")
         }
@@ -190,10 +222,11 @@ class GattNotifyLink(
         when {
             gatt == null -> Unit
             last != 0L && now - last > spec.silenceTimeoutMs -> retry("no data for ${now - last} ms")
-            last == 0L && now - setupStartedAt > plan.setupTimeoutMs -> retry(step.noDataReason(now - setupStartedAt))
+            last == 0L && now > setupDeadlineAt -> retry(step.noDataReason(now - setupStartedAt))
             last != 0L -> {
                 policy.reset()
                 ladder.streaming()
+                setupsWithoutData = 0
                 setState(LinkState.Streaming(count))
             }
         }
@@ -281,6 +314,10 @@ class GattNotifyLink(
                 if (g != gatt) return@post
                 if (status == BluetoothGatt.GATT_SUCCESS && newState == BluetoothProfile.STATE_CONNECTED) {
                     DebugLog.i(Tag, "$address connected in ${elapsed()} ms ($plan)")
+                    // After a quiet wait of any length, the rest of the setup gets the usual time.
+                    if (setupDeadlineAt == Long.MAX_VALUE) {
+                        setupDeadlineAt = SystemClock.elapsedRealtime() + SetupTimeoutMs
+                    }
                     // A Location and Speed value with every field is 28 bytes, more than the default
                     // MTU carries; without a larger one the device splits it over notifications.
                     // Skipped when it held setups up: a split value is lost, the link is not.
