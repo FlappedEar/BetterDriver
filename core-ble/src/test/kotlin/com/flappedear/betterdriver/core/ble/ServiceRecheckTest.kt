@@ -10,7 +10,8 @@ import org.junit.Test
 /**
  * The second service lookup of FBBD-272 against Arek's log of 21 Oct 2026 08:00 (1.4.1): the
  * RaceBox's services were found with status 0 but without the UART service 8,636 ms and 6,816 ms
- * after the setup began, each time with the 10 s setup timeout of a direct connection.
+ * after the setup began, each time with the 10 s setup timeout of a direct connection. The log of
+ * 12:52 adds a lookup that never answered.
  */
 class ServiceRecheckTest {
     private val setupTimeoutMs = 10_000L
@@ -23,6 +24,20 @@ class ServiceRecheckTest {
         val lookupMs = 8_636L - 2_564L - 2_000L
         assertTrue(8_636L + recheck.delayMs + lookupMs < deadline)
         assertTrue("the timeout alone would end it", 8_636L + recheck.delayMs + lookupMs > setupTimeoutMs)
+    }
+
+    /**
+     * 21 Oct 2026 12:27 (1.5.2): setup 1 connected 4.7 s in, waited the 2 s for the MTU answer, then
+     * the lookup never answered. GattLink gives a lookup 3 s, so the second look starts at 9.7 s,
+     * before the 10 s setup timeout; setup 3's lookup took 950 ms.
+     */
+    @Test
+    fun `a lookup that never answers gets its second look before the setup timeout`() {
+        val recheck = ServiceRecheck()
+        val overdueAt = 4_700L + 2_000L + 3_000L
+        assertTrue(overdueAt < setupTimeoutMs)
+        val deadline = requireNotNull(recheck.recheck(nowMs = overdueAt, deadlineMs = setupTimeoutMs))
+        assertTrue(overdueAt + recheck.delayMs + 950L < deadline)
     }
 
     @Test

@@ -55,6 +55,7 @@ class SetupLadder(
  * service (FBBD-272). On 21 Oct 2026 a RaceBox Micro twice answered with status 0 but without its
  * UART service (6e400001); closing the link then cost a new connection and MTU wait each time. So
  * the link clears Android's cached services, waits [delayMs] and looks again, once per connection,
+ * also when a lookup does not answer at all (12:27 that day, while another BLE link was connecting),
  * with [windowMs] more for that lookup before the watchdog gives the setup up.
  */
 class ServiceRecheck(val delayMs: Long = 500L, private val windowMs: Long = 6_000L) {
