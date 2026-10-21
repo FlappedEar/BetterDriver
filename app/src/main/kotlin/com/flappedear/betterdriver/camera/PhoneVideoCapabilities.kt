@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.camera
 
+import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraManager
 import android.media.CamcorderProfile
 import android.media.MediaCodec
 import android.media.MediaCodecList
@@ -19,6 +21,29 @@ import kotlin.math.roundToInt
 internal val MiddleSizes = listOf(2704 to 1520, 2560 to 1440)
 
 private val logged = AtomicBoolean(false)
+private val vendorLogged = AtomicBoolean(false)
+
+/**
+ * Writes, once per run, the request and result keys the back camera offers beyond Android's own
+ * (vendor keys, FBBD-278): a phone's camera may hold a control for the processing that costs 1080p · 60
+ * its skipped frames, and "camera result switched" lines name keys by these names. Never throws.
+ */
+@OptIn(ExperimentalCamera2Interop::class)
+@Suppress("TooGenericExceptionCaught") // Diagnostics only: a failing query must not stop video.
+internal fun logVendorKeys(context: Context, info: CameraInfo) {
+    if (!vendorLogged.compareAndSet(false, true)) return
+    try {
+        val id = Camera2CameraInfo.from(info).cameraId
+        val characteristics = context.getSystemService(CameraManager::class.java).getCameraCharacteristics(id)
+        val vendor = { keys: List<String> -> keys.filterNot { it.startsWith("android.") }.sorted().joinToString(" ") }
+        val requests = vendor(characteristics.availableCaptureRequestKeys.map { it.name })
+        val results = vendor(characteristics.availableCaptureResultKeys.map { it.name })
+        DebugLog.i("VideoCaps", "vendor request keys: $requests")
+        DebugLog.i("VideoCaps", "vendor result keys: $results")
+    } catch (e: Exception) {
+        DebugLog.w("VideoCaps", "vendor keys unavailable: ${e.javaClass.simpleName}")
+    }
+}
 
 /**
  * Writes the back camera's video capabilities to the debug log once per run (FBBD-239): every frame
