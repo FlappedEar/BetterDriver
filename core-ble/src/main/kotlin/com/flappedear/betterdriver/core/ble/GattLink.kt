@@ -490,7 +490,7 @@ class GattLink(
  * Clears Android's cached services of the device on [g] with the hidden BluetoothGatt.refresh(),
  * which has no public equivalent; false when Android refused or does not have it.
  */
-private fun refreshCache(g: BluetoothGatt): Boolean =
+internal fun refreshCache(g: BluetoothGatt): Boolean =
     try {
         g.javaClass.getMethod("refresh").invoke(g) as? Boolean ?: false
     } catch (_: ReflectiveOperationException) {

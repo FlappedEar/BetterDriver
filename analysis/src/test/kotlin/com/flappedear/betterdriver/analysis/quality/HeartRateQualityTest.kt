@@ -50,10 +50,12 @@ class HeartRateQualityTest {
     }
 
     @Test
-    fun `a listed strap that sent nothing fails`() {
+    fun `a listed strap that never sent anything is not measured, not failed`() {
+        // Arek's drives of 21 Oct 2026 08:00 and 08:13: the strap was listed but not worn.
         val s = section(emptyList(), listOf(device), 60 * second)
-        assertEquals(Verdict.FAIL, s.metric("hr.rate").verdict)
-        assertEquals(0.0, s.metric("hr.rate").value)
+        assertEquals(Verdict.NOT_MEASURED, s.metric("hr.rate").verdict)
+        assertNull(s.metric("hr.rate").value)
+        assertEquals(1, s.metrics.size)
     }
 
     @Test

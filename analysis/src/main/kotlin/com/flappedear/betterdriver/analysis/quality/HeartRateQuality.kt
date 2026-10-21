@@ -7,6 +7,7 @@ import java.util.Locale
 
 // The heart-rate monitor part of the session validation report (FBBD-225): whether a listed strap
 // sent its heart rate about once a second, without long gaps, and came back after each link drop.
+// A listed strap that never sent anything is not measured, not failed (FBBD-279).
 // Worked out from the 10 s windows the continuous log holds, so a stored session and a shared log
 // give the same values.
 
@@ -34,10 +35,12 @@ internal fun heartRateSection(
     val n = windows.sumOf { it.samples }
     val (drops, notes) = drops(windows, events, endMicros)
     val metrics = if (n == 0) {
+        // A strap only sends while worn, so one that never sent was not worn or not in range:
+        // not a fault, and the strap needs no switching off for drives without it (Arek, 21 Oct 2026).
         listOf(
-            judged(
-                "hr.rate", "Heart rate samples", 0.0, "Hz", false, Basis.MEASURED, HrRateCriterion,
-                "$name was listed for the session but sent no heart rate",
+            notMeasured(
+                "hr.rate", "Heart rate samples", HrRateCriterion,
+                "$name was listed but never sent a heart rate (not worn or not in range)",
             ),
         )
     } else {
