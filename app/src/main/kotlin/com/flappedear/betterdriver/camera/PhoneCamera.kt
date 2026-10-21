@@ -184,6 +184,12 @@ class PhoneCamera(
                 result.get(CaptureResult.SENSOR_EXPOSURE_TIME),
                 result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE)?.let { it.lower to it.upper },
             )
+            cameraFrames?.processing(
+                result.get(CaptureResult.NOISE_REDUCTION_MODE),
+                result.get(CaptureResult.EDGE_MODE),
+                result.get(CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE),
+                result.get(CaptureResult.LENS_OPTICAL_STABILIZATION_MODE),
+            )?.let { DebugLog.i(Tag, it) }
         }
 
         override fun onCaptureFailed(session: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
