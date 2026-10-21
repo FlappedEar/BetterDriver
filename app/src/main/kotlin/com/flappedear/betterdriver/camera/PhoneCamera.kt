@@ -66,10 +66,13 @@ private fun frameMicros(nowMicros: Long, frameNanos: Long, realtime: Boolean): L
 private const val CheckIntervalMs = 5_000L
 
 /**
- * 1080p at this rate records through [WideRecorder] (FBBD-278): CameraX's own recorder kept 55-58 of
- * 60 fps on Arek's Pixel 6, and its muxing cannot be measured or changed from the app.
+ * 1080p and 4K at this rate record through [WideRecorder] (FBBD-278): CameraX's own recorder kept 55-58
+ * of 60 fps on Arek's Pixel 6 (4K: 53.7), the own path 59.5 with no skipped frame (camera test, 1.7.0).
  */
-private const val OwnFhdFps = 60
+private const val OwnFps = 60
+
+/** The CameraX presets the own path also records at [OwnFps]; CameraX takes them back on a refusal. */
+private val OwnSizes = setOf(VideoSize.FHD, VideoSize.UHD)
 
 /** How often the camera's frame counts go to the debug log (FBBD-278). */
 private const val FrameLogMs = 60_000L
@@ -98,7 +101,8 @@ internal const val MaxFileBytes = 4_000_000_000L
  * on (FBBD-21). No preview: only a VideoCapture use case is bound.
  *
  * 2.7K has no CameraX preset, so that mode records through [WideRecorder] (Camera2 and MediaCodec)
- * with nothing bound to CameraX (FBBD-239); so does 1080p·60 since 1.6.4 (FBBD-278, [OwnFhdFps]).
+ * with nothing bound to CameraX (FBBD-239); so does 1080p·60 since 1.6.4 and 4K·60 since 1.7.1
+ * (FBBD-278, [OwnFps]).
  * Files, sync reports and stops work the same way.
  *
  * Each recording is one file in the session's video directory (phone_0001.mp4 and on). A restart
@@ -141,7 +145,7 @@ class PhoneCamera(
     /** The own-encoder recording (2.7K, 1080p·60), when the current step uses it; [recording] is null then. */
     private var wide: WideRecorder? = null
 
-    /** The own encoder failed 1080p this session: CameraX records it from then on. */
+    /** The own encoder failed 1080p or 4K this session: CameraX records them from then on. */
     private var ownRefused = false
     private var fileIndex = 0
     private var restarts = 0
@@ -381,16 +385,16 @@ class PhoneCamera(
 
     /**
      * Whether [step] records through [WideRecorder]: 2.7K, which CameraX has no preset for, and 1080p·60
-     * (FBBD-278), unless the encoder refused it this session ([ownRefused]).
+     * and 4K·60 (FBBD-278), unless the encoder refused one this session ([ownRefused]).
      */
     private fun ownEncoder(step: VideoMode) =
-        step.size == VideoSize.QHD || (step.size == VideoSize.FHD && step.fps == OwnFhdFps && !ownRefused)
+        step.size == VideoSize.QHD || (step.size in OwnSizes && step.fps == OwnFps && !ownRefused)
 
     /**
      * Starts [step] through [WideRecorder]; true once started. For 2.7K a refusal throws, so [begin]
-     * falls down the ladder; 1080p goes on with CameraX at the same step instead ([ownRefused]).
+     * falls down the ladder; 1080p and 4K go on with CameraX at the same step instead ([ownRefused]).
      */
-    @Suppress("TooGenericExceptionCaught") // Any refusal of the own encoder hands 1080p back to CameraX.
+    @Suppress("TooGenericExceptionCaught") // Any refusal of the own encoder hands 1080p or 4K back to CameraX.
     private fun beginOwn(p: ProcessCameraProvider, stepIndex: Int, step: VideoMode): Boolean {
         if (step.size == VideoSize.QHD) {
             beginWide(p, stepIndex, step)
@@ -413,7 +417,7 @@ class PhoneCamera(
     private fun beginWide(p: ProcessCameraProvider, stepIndex: Int, step: VideoMode) {
         val info = CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()
             ?: error("no back camera")
-        val target = ownTarget(context, info, step.size == VideoSize.QHD, step.fps, MaxFileBytes)
+        val target = ownTarget(context, info, step.size, step.fps, MaxFileBytes)
             ?: error("no ${step.label} stream")
         unbindOwn(p, bound)
         bound = null
@@ -489,12 +493,12 @@ class PhoneCamera(
         }
 
         /**
-         * The own encoder recorded no frame of [file]. 1080p goes on with CameraX at the same step; any
-         * other mode is not tried again, and the next step takes over.
+         * The own encoder recorded no frame of [file]. 1080p and 4K go on with CameraX at the same step;
+         * 2.7K is not tried again, and the next step takes over.
          */
         private fun refused(file: File, announced: Boolean) {
             if (announced) sink.stopped(file.name, sink.nowMicros(), "error_wide")
-            if (step.size == VideoSize.FHD) {
+            if (step.size in OwnSizes) {
                 ownRefused = true
                 begin(stepIndex)
                 return

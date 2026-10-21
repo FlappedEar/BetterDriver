@@ -16,9 +16,12 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.roundToInt
 
-/** Frame sizes between 1080p and 4K that a 2.7K or 1440p phone mode would use (FBBD-239). */
+/**
+ * Frame sizes whose 60 fps encoder support goes to the log: between 1080p and 4K, which a 2.7K or 1440p
+ * phone mode would use (FBBD-239), and 4K, which the own encoder records at 60 fps since 1.7.1 (FBBD-278).
+ */
 @Suppress("MagicNumber") // The frame sizes themselves.
-internal val MiddleSizes = listOf(2704 to 1520, 2560 to 1440)
+internal val MiddleSizes = listOf(2704 to 1520, 2560 to 1440, 3840 to 2160)
 
 private val logged = AtomicBoolean(false)
 private val vendorLogged = AtomicBoolean(false)
