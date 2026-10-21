@@ -9,12 +9,16 @@ import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.obd.ObdStatusTracker
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.PidChannel
+import com.flappedear.betterdriver.obd.PollSet
 import com.flappedear.betterdriver.recorder.log.DebugLog
 
 /** What an [ObdLink] reports, on its own threads. */
 interface ObdLinkListener {
     /** The adapter [target] set up and the car answered: [channels] are polled from now. */
     fun ready(target: ObdTarget, adapter: String, protocol: String, supported: Set<Int>, channels: List<PidChannel>) {}
+
+    /** Polling switched to [channels] on the same connection (FBBD-283). */
+    fun polling(target: ObdTarget, channels: List<PidChannel>) {}
 
     /** [channel] read [value] at [atMs] on SystemClock.elapsedRealtime(). */
     fun value(channel: PidChannel, value: Double, atMs: Long) {}
@@ -36,7 +40,8 @@ private const val Tag = "Obd"
  *
  * While started, [watch] tells it when the phone's Wi-Fi or Bluetooth comes back ([obdWatch]), and
  * the next try starts at once (FBBD-271). Nothing the connection throws reaches the process: an
- * uncaught exception on this thread killed the recorder at Stop (FBBD-269).
+ * uncaught exception on this thread killed the recorder at Stop (FBBD-269). [pollSet] is which
+ * channels it reads (FBBD-283).
  */
 @Suppress("LongParameterList") // Collaborators, each with a default.
 class ObdLink(
@@ -46,6 +51,7 @@ class ObdLink(
     private val owner: String = "recorder",
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
+    private val pollSet: () -> PollSet = { PollSet.All },
 ) {
     private val tracker = ObdStatusTracker()
 
@@ -59,7 +65,7 @@ class ObdLink(
 
     fun start() {
         running = true
-        val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback)
+        val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback, pollSet = pollSet)
         connector = c
         thread = Thread({ read(c) }, "obd-$owner").apply {
             isDaemon = true
@@ -120,6 +126,8 @@ class ObdLink(
             supported: Set<Int>,
             channels: List<PidChannel>,
         ) = listener.ready(target, adapter, protocol, supported, channels)
+
+        override fun polling(target: ObdTarget, channels: List<PidChannel>) = listener.polling(target, channels)
 
         override fun value(channel: PidChannel, value: Double, atMs: Long) = listener.value(channel, value, atMs)
 

@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.obd.CarProfile
 import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.PidChannel
+import com.flappedear.betterdriver.obd.PollSet
 import com.flappedear.betterdriver.obd.StandardPids
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
@@ -34,7 +35,8 @@ private const val ObdDecimals = 2
 /**
  * An ELM327 OBD-II adapter as a recorder [DataSource] (FBBD-15 Wi-Fi, FBBD-121 Bluetooth Classic and
  * LE). While the session runs an [ObdLink] keeps trying [targets] (then [fallback]), sets the adapter up,
- * discovers the car's mode 01 PIDs and records every one it answers as a channel "obd_<id>" with
+ * discovers the car's mode 01 PIDs and records the ones in [pollSet] it answers (FBBD-283; asked
+ * again while polling, so a tile chosen during the session is read) as a channel "obd_<id>" with
  * source "obd" (so its provenance is measured OBD). A lost adapter or a car switched off never
  * touches the rest of the session.
  *
@@ -47,6 +49,7 @@ class ObdSource(
     private val profile: CarProfile = CarProfile.Generic,
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
+    private val pollSet: () -> PollSet = { PollSet.Driver },
 ) : DataSource {
     override val name = "obd"
 
@@ -56,7 +59,7 @@ class ObdSource(
     fun status(): ObdStatus? = link?.status()
 
     override fun start(sink: SampleSink) {
-        val l = ObdLink(targets, Listener(sink), profile, fallback = fallback, watch = watch)
+        val l = ObdLink(targets, Listener(sink), profile, fallback = fallback, watch = watch, pollSet = pollSet)
         link = l
         current = this
         l.start()
@@ -80,6 +83,10 @@ class ObdSource(
             val how = target.transport.label
             val text = "host=${target.where} transport=$how adapter=$adapter protocol=$protocol pids=$pids"
             sink.event(ObdEvents.CONNECTED, text)
+            for (c in channels) defineOnce(c)
+        }
+
+        override fun polling(target: ObdTarget, channels: List<PidChannel>) {
             for (c in channels) defineOnce(c)
         }
 
