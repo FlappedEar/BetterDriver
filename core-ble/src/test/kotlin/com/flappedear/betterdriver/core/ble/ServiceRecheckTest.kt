@@ -19,8 +19,8 @@ class ServiceRecheckTest {
     fun `the second look at 8,636 ms gets time the 10 s setup timeout would not have left`() {
         val recheck = ServiceRecheck()
         val deadline = requireNotNull(recheck.recheck(nowMs = 8_636L, deadlineMs = setupTimeoutMs))
-        // The good fifth setup of that log found the services 814 ms after connecting.
-        val lookupMs = 814L
+        // That setup's lookup started when the MTU wait ended (2,564 + 2,000 ms) and took 4,072 ms.
+        val lookupMs = 8_636L - 2_564L - 2_000L
         assertTrue(8_636L + recheck.delayMs + lookupMs < deadline)
         assertTrue("the timeout alone would end it", 8_636L + recheck.delayMs + lookupMs > setupTimeoutMs)
     }
