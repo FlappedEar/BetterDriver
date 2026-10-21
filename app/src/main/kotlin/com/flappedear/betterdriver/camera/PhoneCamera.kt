@@ -194,6 +194,12 @@ class PhoneCamera(
                 result.get(CaptureResult.SHADING_MODE),
                 result.get(CaptureResult.HOT_PIXEL_MODE),
             )?.let { DebugLog.i(Tag, it) }
+            resultChanges?.takeIf { it.due(sensor) }?.let { changes ->
+                val values = result.keys.associate { key ->
+                    key.name to ResultChanges.text(runCatching { result.get(key) }.getOrNull())
+                }
+                changes.snapshot(values).forEach { DebugLog.i(Tag, it) }
+            }
         }
 
         override fun onCaptureFailed(session: CameraCaptureSession, request: CaptureRequest, failure: CaptureFailure) {
@@ -213,6 +219,10 @@ class PhoneCamera(
     /** What the bound camera delivers, logged once a minute (FBBD-278); null while nothing is bound. */
     @Volatile
     private var cameraFrames: CameraFrames? = null
+
+    /** The camera's own result values that switch partway through a file (FBBD-278); null while nothing is bound. */
+    @Volatile
+    private var resultChanges: ResultChanges? = null
 
     /** This process's busiest threads, logged with each frames line (FBBD-278). */
     private val threadCpu = ThreadCpu()
@@ -317,13 +327,14 @@ class PhoneCamera(
                 logFrames()
                 cameraFrames = CameraFrames(step.fps)
                 threadCpu.line(SystemClock.elapsedRealtime()) // the threads' first minute starts here
-                val (fresh, realtime) = bindPhoneCapture(p, lifecycle, step, frames)
+                val (fresh, realtime) = bindPhoneCapture(context, p, lifecycle, step, frames)
                 realtimeFrames = realtime
                 bound = fresh
                 boundStep = stepIndex
                 fresh
             }
             val recorder = capture.output
+            resultChanges = ResultChanges() // per file: a file that follows a full one starts fresh
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
             val output = FileOutputOptions.Builder(File(dir, name)).setFileSizeLimit(MaxFileBytes).build()
@@ -373,6 +384,7 @@ class PhoneCamera(
         boundStep = -1
         logFrames()
         cameraFrames = null // 2.7K counts its own frames (WideRecorder)
+        resultChanges = null
         realtimeFrames = realtimeTimestamps(info)
         fileIndex++
         val file = File(dir, VideoFiles.liveName(camera, fileIndex))
@@ -673,6 +685,7 @@ internal fun phoneQuality(size: VideoSize): Quality = when (size) {
  */
 @OptIn(ExperimentalCamera2Interop::class)
 private fun bindPhoneCapture(
+    context: Context,
     p: ProcessCameraProvider,
     lifecycle: LifecycleOwner,
     step: VideoMode,
@@ -701,6 +714,7 @@ private fun bindPhoneCapture(
     val capture = builder.build()
     p.unbindAll()
     val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)
+    logVendorKeys(context, back.cameraInfo)
     return capture to realtimeTimestamps(back.cameraInfo)
 }
 
