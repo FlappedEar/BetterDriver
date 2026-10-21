@@ -21,6 +21,9 @@ object Routes {
     /** The OBD-II adapter's connection and live values, from Settings › Equipment (FBBD-261, UI-104 B). */
     const val Obd = "settings/obd"
 
+    /** The camera test, opened from Settings › Diagnostics (FBBD-278, UI-150 A). */
+    const val CameraTest = "settings/camera-test"
+
     /** About and credits, opened from Settings › App (FBBD-79). */
     const val About = "settings/about"
 

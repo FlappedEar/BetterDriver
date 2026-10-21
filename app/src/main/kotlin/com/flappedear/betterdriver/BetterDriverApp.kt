@@ -33,6 +33,7 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
+import com.flappedear.betterdriver.debug.CameraTestScreen
 import com.flappedear.betterdriver.debug.DebugLogRows
 import com.flappedear.betterdriver.feature.track.TrackScreen
 import com.flappedear.betterdriver.gopro.GoPros
@@ -199,6 +200,9 @@ private fun AppNavHost(
 /** Pages opened from Settings › App: the spoken coach (FBBD-98) and About and credits (FBBD-79). */
 private fun NavGraphBuilder.settingsPages(nav: NavHostController, padding: PaddingValues) {
     coachSettings(nav, padding)
+    composable(Routes.CameraTest) {
+        Box(Modifier.padding(padding)) { CameraTestScreen(onBack = { nav.popBackStack() }) }
+    }
     composable(Routes.About) {
         Box(Modifier.padding(padding)) { AboutScreen(Version, onBack = { nav.popBackStack() }) }
     }
@@ -433,7 +437,7 @@ private fun Settings(
     val obdAdapter = remember(firstAdapter) { obdAdapterLabel(context, firstAdapter) }
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
-        debugRows = { DebugLogRows() },
+        debugRows = { DebugLogRows(onCameraTest = { nav.navigate(Routes.CameraTest) }) },
         backupRows = { BackupRows() },
         setup = repo.setup,
         version = Version,

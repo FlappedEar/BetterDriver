@@ -32,7 +32,7 @@ private fun mb(bytes: Long?) = bytes?.let { String.format(Locale.ROOT, "%.1f MB"
  * confirmation that shows its size. Sizes, the zip and the delete run off the main thread (FBBD-41).
  */
 @Composable
-fun DebugLogRows() {
+fun DebugLogRows(onCameraTest: (() -> Unit)? = null) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf(false) }
@@ -59,6 +59,11 @@ fun DebugLogRows() {
         }
     })
     ListRow("Clear log", onClick = { if (!busy) confirmClear = true })
+    // The camera test (FBBD-278, UI-150 A): its results go into this log.
+    onCameraTest?.let { open ->
+        // An empty value still brings the chevron, as on the other rows that open a page.
+        ListRow("Camera test", "", onClick = open, supporting = "1080p · 60, with and without MP4")
+    }
     DimText("Kept until you clear it. After a drive, share it once: the app's checks are worked out from it.")
     problem?.let { DimText(it) }
     if (confirmClear) {

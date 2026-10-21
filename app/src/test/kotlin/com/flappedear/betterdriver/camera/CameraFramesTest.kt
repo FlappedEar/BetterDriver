@@ -92,4 +92,19 @@ class CameraFramesTest {
         assertNull(fastMode(intArrayOf(0, 2)))
         assertNull(fastMode(null))
     }
+
+    @Test
+    fun theTestTotalSpansEveryMinute() {
+        val frames = CameraFrames(60)
+        assertNull("no total before two frames", frames.total())
+        // Every 20th frame is missing, over two minute lines: the total counts both.
+        var t = 0L
+        repeat(1_140) { i ->
+            t += if (i > 0 && i % 19 == 0) 2 * frameNanos else frameNanos
+            frames.completed(t, frameNanos, null, null)
+            if (i == 600) frames.line()
+        }
+        frames.line()
+        assertEquals("camera 57.0 fps · skipped 4.9 %", frames.total()?.text)
+    }
 }
