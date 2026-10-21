@@ -6,7 +6,7 @@ package com.flappedear.betterdriver.camera
  * can ask for already FAST (2026-10-21 19:53 log); the camera changes something of its own at that
  * minute. Fed a snapshot of every result key every [SnapshotNanos], this names each key whose value
  * held for [stableSnapshots] snapshots in a row and then changed, so values that move every frame
- * (exposure, gains, timestamps) never show and a switch does. At most [maxLines] lines per file.
+ * (exposure, gains, timestamps) never show and a switch does. One per file, at most [maxLines] lines.
  */
 class ResultChanges(private val stableSnapshots: Int = 6, private val maxLines: Int = 40) {
     private val last = HashMap<String, String>()
@@ -22,11 +22,16 @@ class ResultChanges(private val stableSnapshots: Int = 6, private val maxLines: 
         return true
     }
 
-    /** Takes [values] (key name to its value as text) as the next snapshot; returns a line per switch. */
+    /**
+     * Takes [values] (key name to its value as text) as the next snapshot; returns a line per switch.
+     * A key present with a null value (too long to compare, [text]) leaves that key's history as it was;
+     * only a key missing from [values] counts as absent.
+     */
     @Synchronized
-    fun snapshot(values: Map<String, String>): List<String> {
+    fun snapshot(values: Map<String, String?>): List<String> {
         val switched = mutableListOf<String>()
         for (key in values.keys + last.keys) {
+            if (key in values && values[key] == null) continue
             val now = values[key] ?: Absent
             val before = last.put(key, now)
             when {

@@ -195,9 +195,9 @@ class PhoneCamera(
                 result.get(CaptureResult.HOT_PIXEL_MODE),
             )?.let { DebugLog.i(Tag, it) }
             resultChanges?.takeIf { it.due(sensor) }?.let { changes ->
-                val values = result.keys.mapNotNull { key ->
-                    ResultChanges.text(runCatching { result.get(key) }.getOrNull())?.let { key.name to it }
-                }.toMap()
+                val values = result.keys.associate { key ->
+                    key.name to ResultChanges.text(runCatching { result.get(key) }.getOrNull())
+                }
                 changes.snapshot(values).forEach { DebugLog.i(Tag, it) }
             }
         }
@@ -326,7 +326,6 @@ class PhoneCamera(
                 lastFrameNanos = 0L
                 logFrames()
                 cameraFrames = CameraFrames(step.fps)
-                resultChanges = ResultChanges()
                 threadCpu.line(SystemClock.elapsedRealtime()) // the threads' first minute starts here
                 val (fresh, realtime) = bindPhoneCapture(context, p, lifecycle, step, frames)
                 realtimeFrames = realtime
@@ -335,6 +334,7 @@ class PhoneCamera(
                 fresh
             }
             val recorder = capture.output
+            resultChanges = ResultChanges() // per file: a file that follows a full one starts fresh
             fileIndex++
             val name = VideoFiles.liveName(camera, fileIndex)
             val output = FileOutputOptions.Builder(File(dir, name)).setFileSizeLimit(MaxFileBytes).build()

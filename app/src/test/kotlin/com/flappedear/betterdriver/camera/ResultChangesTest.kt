@@ -35,6 +35,15 @@ class ResultChangesTest {
     }
 
     @Test
+    fun aValueTooLongToCompareIsNotASwitch() {
+        val changes = ResultChanges(stableSnapshots = 1)
+        changes.snapshot(mapOf("faces" to "[]"))
+        changes.snapshot(mapOf("faces" to "[]"))
+        assertEquals(emptyList<String>(), changes.snapshot(mapOf("faces" to null)))
+        assertEquals(emptyList<String>(), changes.snapshot(mapOf("faces" to "[]")))
+    }
+
+    @Test
     fun linesAreCapped() {
         val changes = ResultChanges(stableSnapshots = 0, maxLines = 2)
         changes.snapshot(mapOf("a" to "1", "b" to "1", "c" to "1"))
