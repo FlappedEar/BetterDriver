@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
  * `AT CRA` id when a filter is set), `STOPPED` and the prompt, with headers as `AT H1`/`AT H0` set. With
  * [monitor] false the adapter answers `?` to `AT CAF0` and `AT MA`. [bareCra] false is an ELM327 older
  * than v1.4b, which answers `?` to `AT CRA` without an id; [autoReceive] false refuses `AT AR` too.
- * Mode 01: RPM (0C) only.
+ * Mode 01: RPM (0C) only. [vin] is the `09 02` answer (FBBD-284), none for null.
  */
 @Suppress("LongParameterList")
 private class BusElm(
@@ -21,6 +21,7 @@ private class BusElm(
     val repeats: Int = 5,
     val bareCra: Boolean = true,
     val autoReceive: Boolean = true,
+    val vin: String? = FrsVin,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -45,6 +46,7 @@ private class BusElm(
         when {
             monitor && cmd == "ATMA" -> monitoring = true
             monitor && (cmd == "ATCAF0" || cmd == "ATCAF1" || cmd.startsWith("ATCRA") || cmd == "ATAR") -> feed("OK")
+            cmd == "0902" -> feed(vin?.let(::vinAnswer) ?: "NO DATA")
             else -> feed(answers[cmd] ?: "?")
         }
     }
@@ -71,6 +73,14 @@ private class BusElm(
         feed(frames.joinToString("\r") + "\rSTOPPED")
     }
 
+    /** A VIN answer as an ELM327 prints it with headers off: 20 bytes in three ISO-TP frames. */
+    private fun vinAnswer(vin: String): String {
+        val bytes = "490201" + vin.map { "%02X".format(it.code) }.joinToString("")
+        val pairs = bytes.chunked(2)
+        return "014\r0:" + pairs.take(6).joinToString("") + "\r1:" + pairs.drop(6).take(7).joinToString("") +
+            "\r2:" + pairs.drop(13).joinToString("")
+    }
+
     private fun feed(answer: String) = line.feed((answer + "\r\r>").toByteArray(Charsets.US_ASCII))
 
     override fun nowMs() = now
@@ -79,6 +89,9 @@ private class BusElm(
         now += ms
     }
 }
+
+/** A made-up first-generation FR-S VIN: the real prefix, a zero serial. */
+private const val FrsVin = "JF1ZNAA1XD1700000"
 
 private class CanHeard : ObdListener {
     var channels: List<PidChannel> = emptyList()
@@ -116,7 +129,7 @@ class CanListenTest {
         0x7E8 to "03410C1AF8000000",
     )
 
-    private fun run(elm: BusElm, stopAfterMs: Long = 3_000): CanHeard {
+    private fun run(elm: BusElm, stopAfterMs: Long = 3_000, pollSet: PollSet = PollSet.All): CanHeard {
         val got = CanHeard()
         ElmPoller(
             line = ElmLine(elm::write).also { elm.line = it },
@@ -127,8 +140,19 @@ class CanListenTest {
             rateLogMs = 1_000,
             probeMs = 5,
             listenWindowMs = 5,
+            pollSet = { pollSet },
         ).run()
         return got
+    }
+
+    @Test
+    fun `only first-generation VINs are listened to`() {
+        // FBBD-284, Codex on #284: model year (VIN position 10) 2012-2021 only; GR86 / BRZ from 2022
+        // have JF1Z VINs too but other CAN frames.
+        assertTrue(CanBroadcasts.wantedFor(FrsVin))
+        assertTrue(CanBroadcasts.wantedFor("JF1ZCAC10M9600000"))
+        assertTrue(!CanBroadcasts.wantedFor("JF1ZNBE10N9700000"), "2022 GR86")
+        assertTrue(!CanBroadcasts.wantedFor("JTDBCMFE0PJ000000"), "Corolla")
     }
 
     @Test
@@ -162,11 +186,42 @@ class CanListenTest {
             0x0B4 to "0000000000000000",
             0x7E8 to "03410C1AF8000000",
         )
-        val got = run(BusElm(toyota))
+        // Listened for only when the session's car says so: by VIN a Toyota is never (FBBD-284).
+        val got = run(BusElm(toyota, vin = null), pollSet = PollSet.All.copy(broadcastCar = true))
         val steering = got.values.filter { it.first == "steering_angle" }.map { it.second }
         assertTrue(steering.isNotEmpty(), got.logs.toString())
         assertTrue(steering.all { kotlin.math.abs(it - -29.7) < 1e-9 }, "steering $steering")
         assertTrue(got.logs.any { it.endsWith("listen steering_angle=025") }, got.logs.toString())
+    }
+
+    @Test
+    fun `the Corolla is never probed or listened to`() {
+        // FBBD-284, Arek 2026-10-21: "w Corolli mnie to nie interesuje". A 2023 Corolla's VIN starts
+        // JTD (made-up serial); even if it showed 0x025 at the port, nothing is monitored.
+        val toyota = mapOf(0x025 to "0FEC000030000000", 0x0AA to "1A6F1A6F1A6F1A6F", 0x0B4 to "0", 0x7E8 to "0")
+        val elm = BusElm(toyota, vin = "JTDBCMFE0PJ000000")
+        val got = run(elm)
+        assertEquals(listOf("rpm"), got.channels.map { it.id })
+        assertTrue("can_listen off: vin JTDBCMFE" in got.logs, got.logs.toString())
+        assertTrue(elm.sent.none { it == "ATMA" || it.startsWith("ATCRA") || it == "ATCAF0" }, elm.sent.toString())
+    }
+
+    @Test
+    fun `without a VIN only the session's car turns listening on`() {
+        val elm = BusElm(frs, vin = null)
+        val got = run(elm)
+        assertTrue("can_listen off: vin not read" in got.logs, got.logs.toString())
+        assertTrue(elm.sent.none { it == "ATMA" })
+        val named = run(BusElm(frs, vin = null), pollSet = PollSet.All.copy(broadcastCar = true))
+        assertTrue(named.values.any { it.first == "steering_angle" }, named.logs.toString())
+    }
+
+    @Test
+    fun `an FR-S VIN turns listening on`() {
+        val got = run(BusElm(frs))
+        assertTrue("can_listen on: vin JF1ZNAA1" in got.logs, got.logs.toString())
+        assertEquals("JF1ZNAA1XD1700000", Vin.of(byteArrayOf(0x49, 0x02, 0x01) + FrsVin.toByteArray()))
+        assertEquals(null, Vin.of(byteArrayOf(0x41, 0x0C, 0x1A)))
     }
 
     @Test

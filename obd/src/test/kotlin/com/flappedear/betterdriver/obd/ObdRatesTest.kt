@@ -62,12 +62,18 @@ private class TimedCorolla(
     val tcmSilentFor: Int = 0,
     val maxRequestBytes: Int = Int.MAX_VALUE,
     val echo: Boolean = false,
+    val takesSt: Boolean = false,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
     lateinit var line: ElmLine
     private var headers = false
     private var mode01Requests = 0
+
+    /** FBBD-284: `AT ST` as an ELM327 takes it with [takesSt]: the wait for an answer, in 4.096 ms units. */
+    var stMs: Long? = null
+        private set
+    private val trailing get() = stMs?.let { minOf(it, trailingWaitMs) } ?: trailingWaitMs
 
     private val supported: Set<Int> = (
         "01,03,04,05,06,07,0C,0D,0E,0F,10,11,13,1C,1F,20,21,2E,30,31,33,34,35,3C,3E,40,41,42,43,44,45,46,47," +
@@ -87,6 +93,7 @@ private class TimedCorolla(
         "AT@1" to "OBDII to RS232 Interpreter", "ATRV" to "12.9V", "ATDPN" to "A6",
     )
 
+    @Suppress("CyclomaticComplexMethod", "ReturnCount") // One branch per kind of command the adapter takes.
     fun write(bytes: ByteArray) {
         val cmd = String(bytes, Charsets.US_ASCII).trimEnd('\r')
         sent += cmd
@@ -98,6 +105,12 @@ private class TimedCorolla(
         if (cmd == "ATH0" && headers && rejectHeadersOff) {
             now += transportMs
             line.feed("?\r\r>".toByteArray(Charsets.US_ASCII))
+            return
+        }
+        if (takesSt && cmd.length == 6 && cmd.startsWith("ATST")) {
+            stMs = cmd.drop(4).toInt(16) * 4096L / 1000
+            now += transportMs
+            line.feed("OK\r\r>".toByteArray(Charsets.US_ASCII))
             return
         }
         if (cmd == "ATH1") headers = true
@@ -120,6 +133,13 @@ private class TimedCorolla(
             now += transportMs
             return "?"
         }
+        stMs?.let { st ->
+            // The ECU answers after the adapter stopped waiting: as if it had nothing.
+            if (ecuMs > st) {
+                now += transportMs + st
+                return "NO DATA"
+            }
+        }
         val asked = if (multiPidEcu) pids else pids.take(1)
         val messages = listOfNotNull(
             ecuAnswer(asked) { it in supported || it == 0x00 }?.let { 0x7E8 to it },
@@ -130,7 +150,7 @@ private class TimedCorolla(
             },
         ).map { (id, data) -> frames(id, data) }
         if (messages.isEmpty()) {
-            now += transportMs + ecuMs + trailingWaitMs
+            now += transportMs + ecuMs + trailing
             return "NO DATA"
         }
         now += transportMs + ecuMs + frameMs * (messages.sumOf { it.size } - 1)
@@ -142,7 +162,7 @@ private class TimedCorolla(
             count == CountSupport.FRAMES && lines.size >= countDigit -> lines.take(countDigit)
             else -> null
         }
-        if (shown == null) now += trailingWaitMs
+        if (shown == null) now += trailing
         return (shown ?: lines).joinToString("\r")
     }
 
@@ -509,6 +529,64 @@ class ObdRatesTest {
         assertTrue(got.logs.any { it == "poll set changed" }, got.logs.toString())
         assertEquals(1, got.logs.count { it.startsWith("identity ") }, "same connection, no new setup")
         assertTrue(got.values.any { it.first == "oil_temp" && it.third > 40_000 }, "the rest goes on")
+    }
+
+    /** The longest time between two values of [id] from [fromMs] to the end of the rate window, in ms. */
+    private fun maxGapMs(run: Run, id: String, fromMs: Long = START_MS): Long =
+        run.listener.values.filter { it.first == id && it.third in fromMs until END_MS }
+            .map { it.third }.zipWithNext { x, y -> y - x }.max()
+
+    @Test
+    fun `a shorter adapter timeout speeds up the Wi-Fi clone`() {
+        // FBBD-284: the clone waits out its timeout (about 200 ms) after the Corolla's one ECU has
+        // answered. AT ST 0F (61 ms) is still above the ECU's 25 ms here.
+        val before = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2), pollSet = { PollSet.Driver })
+        val clone = run(
+            TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2, takesSt = true),
+            pollSet = { PollSet.Driver },
+        )
+        table("FBBD-284 clone, single PIDs, ST", clone)
+        val logs = clone.listener.logs
+        assertEquals(61L, clone.car.stMs, logs.toString())
+        assertTrue(logs.any { it == "timeout ATST0F kept" }, logs.toString())
+        assertTrue(clone.rates.getValue("rpm") >= 2.2 * before.rates.getValue("rpm"), "rpm ${clone.rates["rpm"]}")
+        assertTrue(clone.rates.getValue("oil_temp") >= 0.3, "oil ${clone.rates["oil_temp"]}")
+        // Steady: one temperature at most between two engine speed readings, so no stall while the
+        // four come due together. Before: rpm, pedal and one temperature at 230 ms each.
+        assertTrue(maxGapMs(before, "rpm") <= 750, "rpm gap before ${maxGapMs(before, "rpm")} ms")
+        assertTrue(maxGapMs(clone, "rpm", fromMs = 20_000) <= 300, "rpm gap ${maxGapMs(clone, "rpm", 20_000)} ms")
+    }
+
+    @Test
+    fun `a slow ECU puts the timeout back to the last one that worked`() {
+        // An ECU 90 ms to answer: ATST19 (102 ms) works, ATST13 (77 ms) gets NO DATA.
+        val car = TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2, ecuMs = 90, takesSt = true)
+        val slow = run(car, pollSet = { PollSet.Driver })
+        val logs = slow.listener.logs
+        assertTrue(logs.any { it == "timeout ATST19 kept" }, logs.toString())
+        assertTrue(logs.any { it == "timeout ATST13 lost an answer: back to ATST19" }, logs.toString())
+        assertEquals(102L, car.stMs)
+        assertTrue(car.sent.none { it == "ATST0F" }, "no shorter step after the loss")
+        assertTrue(slow.listener.values.any { it.first == "oil_temp" && it.third > END_MS - 10_000 })
+    }
+
+    @Test
+    fun `an adapter that refuses AT ST keeps its own timeout`() {
+        val clone = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 2), pollSet = { PollSet.Driver })
+        assertTrue(clone.listener.logs.any { it == "timeout: ATST19 not taken" }, clone.listener.logs.toString())
+        assertEquals(1, clone.car.sent.count { it.startsWith("ATST") })
+    }
+
+    @Test
+    fun `the Vgate's fast answers leave its timeout alone`() {
+        val vgate = run(
+            TimedCorolla(CountSupport.MESSAGES, transportMs = 20, takesSt = true),
+            pollSet = { PollSet.Driver },
+        )
+        assertTrue(vgate.car.sent.none { it.startsWith("ATST") }, "latency under 120 ms")
+        // One fast request (45 ms) or a temperature request in between (93 ms); the temperatures'
+        // request without the count, every 50th, 145 ms. The fast one keeps its count (FBBD-284).
+        assertTrue(maxGapMs(vgate, "rpm") <= 150, "rpm gap ${maxGapMs(vgate, "rpm")} ms")
     }
 
     @Test

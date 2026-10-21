@@ -10,7 +10,10 @@ package com.flappedear.betterdriver.obd
  * Requests are picked by stride scheduling: each request has a pass value that grows by 1/weight when it is sent, and the lowest pass goes next, so a [PollClass.FAST]
  * request is sent [fastWeight] times as often as a [PollClass.SLOW] one (a request is fast when any
  * of its channels is). Slow requests are also never sent more than [slowMaxHz] times a second: when
- * the bus is quick, temperatures do not need 5 Hz and that time goes to the fast channels.
+ * the bus is quick, temperatures do not need 5 Hz and that time goes to the fast channels. After a
+ * slow request, every fast one goes before the next slow one (FBBD-284): temperatures that come due
+ * together would otherwise hold engine speed back for all of them, 0.56 s every 2 s on a single-PID
+ * adapter.
  *
  * A request that gets no usable answer [dropAfterMisses] times in a row (NO DATA, a negative response,
  * an equation with no value) is dropped, so a profile channel the car does not have stops costing time.
@@ -31,6 +34,9 @@ class PollScheduler(
         var lastSentMs = Long.MIN_VALUE
         var misses = 0
         var dropped = false
+
+        /** A fast request sent since the last slow one; every fast one is before the next slow one goes. */
+        var sentSinceSlow = true
         val answers = members.associateWith { ArrayDeque<Long>() }
     }
 
@@ -57,7 +63,8 @@ class PollScheduler(
     fun next(nowMs: Long): Next? {
         val live = slots.filter { !it.dropped }
         if (live.isEmpty()) return null
-        val due = live.filter { it.fast || dueAt(it) <= nowMs }
+        val fastWaiting = live.any { it.fast && !it.sentSinceSlow }
+        val due = live.filter { it.fast || dueAt(it) <= nowMs && !fastWaiting }
         if (due.isEmpty()) {
             val soonest = live.minBy { dueAt(it) }
             return Next(soonest.request, dueAt(soonest))
@@ -81,6 +88,11 @@ class PollScheduler(
         val slot = byRequest[request] ?: return
         slot.pass += 1.0 / weightOf(slot)
         slot.lastSentMs = sentMs
+        if (slot.fast) {
+            slot.sentSinceSlow = true
+        } else {
+            slots.forEach { it.sentSinceSlow = false }
+        }
         this.latencyMs = this.latencyMs?.let { it + LATENCY_SMOOTHING * (latencyMs - it) } ?: latencyMs.toDouble()
         if (answered) {
             slot.misses = 0

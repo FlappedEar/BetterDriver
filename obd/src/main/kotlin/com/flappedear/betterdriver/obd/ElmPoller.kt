@@ -52,7 +52,10 @@ interface ObdClock {
  *   its timeout. Whether an adapter counts messages or CAN frames is learned: messages first, and
  *   when that cuts an answer short, frames from then on. An adapter that rejects it (`?`) is asked
  *   without it from then on; a request that then gets no value is learned again without it, and
- *   every [RESAMPLE_EVERY] counted requests one goes without, so a late ECU is still seen.
+ *   every [RESAMPLE_EVERY] counted requests one goes without, so a late ECU is still seen. A request
+ *   with a fast channel does so only every [RESAMPLE_EVERY_FAST] (FBBD-284): each one waits out the
+ *   adapter's timeout, a gap in engine speed (the Vgate's longest fast gap on 2026-10-21 12:52 was
+ *   0.23-0.39 s at 0.115 s a reading).
  *
  * Only the channels in [pollSet] are polled (FBBD-283); the others the car has are logged as skipped.
  * It is asked again every [POLL_SET_CHECK_MS], and when it changed (a tile chosen during the session)
@@ -66,6 +69,11 @@ interface ObdClock {
  * `AT CRA <id>`, `AT CAF0` (frames as sent, not read as ISO-TP), `AT MA` for [listenWindowMs], then
  * `AT CAF1` and `AT CRA` back. The adapter does one thing at a time, so a listen takes the place of
  * a few requests; continuous monitoring would stop polling altogether (FBBD-206).
+ *
+ * Only on a car whose broadcasts are wanted (FBBD-284): the FR-S / 86 / BRZ of the first generation,
+ * told by [PollSet.broadcastCar] (the session's car) or by its VIN (`09 02`, read once at connect). On any
+ * other car (Arek's Corolla: "w Corolli mnie to nie interesuje") there is no probe and no listen, so
+ * every moment of the adapter goes to the requests.
  *
  * [clock] tells the time and waits.
  */
@@ -86,7 +94,7 @@ class ElmPoller(
     private val listenWindowMs: Long = DEFAULT_LISTEN_WINDOW_MS,
 ) {
     /** What each group's request got without a count, by its lead request. */
-    private class Learned {
+    private class Learned(private val resampleEvery: Int) {
         /** The most messages, frames and values any answer without a count got. */
         var messages = 0
         var frames = 0
@@ -97,7 +105,7 @@ class ElmPoller(
         var counted = 0
 
         /** Whether the count can be used: learned from enough answers, and not due a fresh one. */
-        val ready: Boolean get() = samples >= LEARN_SAMPLES && counted < RESAMPLE_EVERY
+        val ready: Boolean get() = samples >= LEARN_SAMPLES && counted < resampleEvery
 
         fun sample(messages: Int, frames: Int, values: Int) {
             this.messages = maxOf(this.messages, messages)
@@ -109,6 +117,8 @@ class ElmPoller(
     }
 
     private val expected = HashMap<Request, Learned>()
+
+    private fun learnedFor(fast: Boolean) = Learned(if (fast) RESAMPLE_EVERY_FAST else RESAMPLE_EVERY)
 
     /** Whether the adapter takes a response count; off on non-CAN protocols and after a `?`. */
     private var countOn = false
@@ -129,6 +139,12 @@ class ElmPoller(
     private var listenMs = 0L
     private var emptyListens = 0
 
+    /** FBBD-284: the [ST_STEPS] step in use (-1: the adapter's own), requests left in its trial, done. */
+    private var stStep = -1
+    private var stLeft = 0
+    private var stWarmup = 0
+    private var stDone = false
+
     /** The adapter took a receive filter but would not drop it: no more listening on it. */
     private var filterStuck = false
 
@@ -144,6 +160,7 @@ class ElmPoller(
         val available = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
         listens = broadcastsOn(protocol)
         val can = isCan(protocol)
+        resetTimeout(can)
         var set = pollSet()
         var first = true
         while (true) {
@@ -196,7 +213,8 @@ class ElmPoller(
                 val messages = messagesOf(text, cmd)
                 val got = decode(probe, messages)
                 if (got.keys.distinctBy { it.pid }.size > 1) {
-                    expected.getOrPut(probe.first().request) { Learned() }
+                    val fast = probe.any { it.pollClass == PollClass.FAST }
+                    expected.getOrPut(probe.first().request) { learnedFor(fast) }
                         .sample(messages.size, frameCount(text), got.size)
                     return groups
                 }
@@ -271,8 +289,24 @@ class ElmPoller(
     }
 
     /** The broadcasts to listen for: probed on 11-bit CAN when [canListen], else none (FBBD-263). */
-    private fun broadcastsOn(protocol: String): List<CanSignal> =
-        if (canListen && isCan11(protocol)) probe() else emptyList()
+    @Suppress("ReturnCount") // Each early return is one reason not to listen.
+    private fun broadcastsOn(protocol: String): List<CanSignal> {
+        if (!canListen || !isCan11(protocol)) return emptyList()
+        if (!pollSet().broadcastCar) {
+            val vin = readVin()
+            val wanted = vin != null && CanBroadcasts.wantedFor(vin)
+            listener.log("can_listen ${if (wanted) "on" else "off"}: vin ${vin?.take(VIN_LOGGED) ?: "not read"}")
+            if (!wanted) return emptyList()
+        }
+        return probe()
+    }
+
+    /** The car's VIN from `09 02`, or null when no ECU gives one (FBBD-284). */
+    private fun readVin(): String? {
+        val text = line.command("0902", REQUEST_TIMEOUT_MS)
+        val response = text?.let { ElmParser.parse(it, headers = headers, command = "0902") }
+        return (response as? ElmResponse.Messages)?.messages.orEmpty().firstNotNullOfOrNull { Vin.of(it.bytes) }
+    }
 
     /** Whether a listen is due at [nowMs], the next one being at [nextListenMs]. */
     private fun listenDue(nowMs: Long, nextListenMs: Long): Boolean = listens.isNotEmpty() && nowMs >= nextListenMs
@@ -467,22 +501,80 @@ class ElmPoller(
             lastValues[channel.id] = value
             listener.value(channel, value, at)
         }
-        learn(request, learned, count, text, messages.size, values.size)
+        learn(request, learned, count, text, messages.size, values.size, group.any { it.pollClass == PollClass.FAST })
         requests++
         val answered = values.keys.mapTo(HashSet()) { it.request }
         scheduler.completed(request, sent, done - sent, answered.isNotEmpty(), answered)
+        if (text != null) tuneTimeout(learned?.values, values.size, scheduler.latencyMs)
         return text != null
+    }
+
+    /**
+     * Shortens the adapter's wait for more answers (`AT ST`, FBBD-284) when requests stay slow: an
+     * adapter that takes no response count, like Arek's Wi-Fi clone (latency_ms 226-241 with the count
+     * "on"), waits out its timeout, about 200 ms, after the one ECU has answered. Each of [ST_STEPS] is
+     * tried for [ST_TRIAL] requests; when one of them gets fewer values than the request got before
+     * ([want], null when not known yet), the step before is put back and kept. [latencyMs] is the
+     * scheduler's smoothed latency; nothing is tried while it is under [ST_TUNE_ABOVE_MS].
+     */
+    /** A new connection starts at the adapter's own timeout; only CAN answers are timed by [ST_STEPS]. */
+    private fun resetTimeout(can: Boolean) {
+        stStep = -1
+        stLeft = 0
+        stWarmup = 0
+        stDone = !can
+    }
+
+    @Suppress("ReturnCount") // Each early return is one state of the tuning.
+    private fun tuneTimeout(want: Int?, got: Int, latencyMs: Double?) {
+        if (stDone) return
+        if (stLeft > 0) {
+            if (want != null && got < want) {
+                val back = ST_STEPS.getOrNull(stStep - 1) ?: ST_DEFAULT
+                line.command("ATST" + hex(back, 2), AT_TIMEOUT_MS)
+                listener.log("timeout ATST${hex(ST_STEPS[stStep], 2)} lost an answer: back to ATST${hex(back, 2)}")
+                stDone = true
+                return
+            }
+            if (--stLeft == 0) listener.log("timeout ATST${hex(ST_STEPS[stStep], 2)} kept")
+            return
+        }
+        if (stStep < 0) {
+            val slow = latencyMs != null && latencyMs >= ST_TUNE_ABOVE_MS
+            if (!slow || ++stWarmup < ST_TRIAL) return
+        }
+        val next = stStep + 1
+        if (next >= ST_STEPS.size) {
+            stDone = true
+            return
+        }
+        if (line.command("ATST" + hex(ST_STEPS[next], 2), AT_TIMEOUT_MS)?.contains("OK") != true) {
+            listener.log("timeout: ATST${hex(ST_STEPS[next], 2)} not taken")
+            stDone = true
+            return
+        }
+        stStep = next
+        stLeft = ST_TRIAL
     }
 
     /**
      * Updates what [request] is expected to get after an answer [text] of [messages] messages and
      * [values] values, sent with [count] (null: none) while [learned] was known.
      */
-    private fun learn(request: Request, learned: Learned?, count: Int?, text: String?, messages: Int, values: Int) {
+    @Suppress("LongParameterList")
+    private fun learn(
+        request: Request,
+        learned: Learned?,
+        count: Int?,
+        text: String?,
+        messages: Int,
+        values: Int,
+        fast: Boolean,
+    ) {
         if (count == null || learned == null) {
             // Without a count every ECU had its time to answer: the most seen over a few answers,
             // and again now and then, is what the count waits for, so a slower ECU is not cut off.
-            if (messages > 0) expected.getOrPut(request) { Learned() }.sample(messages, frameCount(text), values)
+            if (messages > 0) expected.getOrPut(request) { learnedFor(fast) }.sample(messages, frameCount(text), values)
             return
         }
         learned.counted++
@@ -589,6 +681,19 @@ class ElmPoller(
         private const val MONITOR_STOP_MS = 1_000L
         private const val MAX_EMPTY_LISTENS = 10
 
+        /**
+         * FBBD-284: `AT ST` values tried in turn, in units of 4.096 ms: about 102, 78 and 61 ms, each
+         * still above the 50 ms an ECU has to answer a mode 01 request (SAE J1979 P2). 0x32 (205 ms)
+         * is the ELM327's default, put back when the first step loses an answer.
+         */
+        val ST_STEPS = listOf(0x19, 0x13, 0x0F)
+        private const val ST_DEFAULT = 0x32
+        private const val ST_TRIAL = 20
+        private const val ST_TUNE_ABOVE_MS = 120.0
+
+        /** Characters of the VIN in the log: the maker and model, not the car's serial. */
+        private const val VIN_LOGGED = 8
+
         /** An 11-bit CAN id in hex, as `AT CRA` takes it and the log shows it. */
         private const val CAN_ID_DIGITS = 3
 
@@ -601,6 +706,7 @@ class ElmPoller(
         /** Answers without a count before one is sent, and counted requests between such answers. */
         private const val LEARN_SAMPLES = 3
         private const val RESAMPLE_EVERY = 50
+        private const val RESAMPLE_EVERY_FAST = 1_000
 
         /** The ELM327 response count is one hex digit. */
         private const val MAX_COUNT = 0xF
