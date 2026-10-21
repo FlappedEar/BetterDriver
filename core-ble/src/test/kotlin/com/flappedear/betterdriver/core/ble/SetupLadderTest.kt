@@ -182,6 +182,34 @@ class SetupLadderTest {
         assertTrue(kotlin.math.abs(requireNotNull(run.streamingAtMs) - 10_034L) <= 100L)
     }
 
+    /**
+     * The RaceBox of 21 Oct 2026 12:27 (1.5.2, ladder and service recheck on, Vgate connecting over
+     * BLE at the same time): setup 1 got no MTU answer and its service lookup never answered, so the
+     * watchdog gave it up; setup 2 dropped with status 147; setup 3, without the MTU request, streamed.
+     * It then ran at the default MTU all drive (FBBD-282).
+     */
+    private fun loggedOct21At1227(): SimulatedDevice {
+        val outcomes = ArrayDeque(
+            listOf(
+                Outcome(streams = false, ms = 10_030L), // MTU asked, no answer, lookup never answered
+                Outcome(streams = false, ms = 1_995L), // MTU asked, status 147
+                Outcome(streams = true, ms = 2_508L), // no MTU request, Streaming(hz=80)
+            ),
+        )
+        return SimulatedDevice { outcomes.removeFirst() }
+    }
+
+    @Test
+    fun `the 12_27 drive of 21 Oct replays, streaming at the third setup without the MTU request`() {
+        val run = run(loggedOct21At1227(), SetupLadder())
+        assertEquals(listOf(true, true, false), run.attempts.map { it.plan.askMtu })
+        // Connecting at 0, 10532 and 13528 ms after the first, Streaming at 16036 ms.
+        run.attempts.map { it.startMs }.zip(listOf(0L, 10_532L, 13_528L)).forEach { (simulated, log) ->
+            assertTrue("start $simulated vs $log", kotlin.math.abs(simulated - log) <= 100L)
+        }
+        assertTrue(kotlin.math.abs(requireNotNull(run.streamingAtMs) - 16_036L) <= 100L)
+    }
+
     @Test
     fun `after a drop the next setup starts from the step that worked`() {
         val ladder = SetupLadder()

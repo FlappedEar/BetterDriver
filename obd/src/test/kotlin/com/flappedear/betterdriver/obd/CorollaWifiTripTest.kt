@@ -11,7 +11,8 @@ import kotlin.test.assertTrue
  * FBBD-15 on real data: Arek's 2023 Corolla through a Wi-Fi ELM327 v1.5 clone (protocol A6, CAN
  * 11-bit 500k), from his log of 2026-10-20 16:23 (two drives, 60 min). Only what the adapter and car
  * answered and the rates the session report measured; no positions. The logs of 2026-10-21 08:04 and
- * 08:33 add two cases: the clone refuses multi-PID requests, so the single-PID rates hold.
+ * 08:33 add two cases: the clone refuses multi-PID requests, so the single-PID rates hold. The log of
+ * 12:52 that day is the first with the Vgate vLinker MC over Bluetooth LE, which takes 6-PID requests.
  */
 class CorollaWifiTripTest {
     /** `car answered: ... PIDs ...` from the log: the union of the car's bitmask answers. */
@@ -65,8 +66,32 @@ class CorollaWifiTripTest {
         assertSchedulerGives(measuredFastHz = 0.395, measuredSlowHz = 0.079, latencyMs = 253L)
     }
 
-    private fun assertSchedulerGives(measuredFastHz: Double, measuredSlowHz: Double, latencyMs: Long) {
-        val scheduler = PollScheduler(channels, rateWindowMs = 600_000)
+    @Test
+    fun `the Vgate of 21 Oct 12_52 takes the groups the log polled, and the scheduler gives its rates`() {
+        // Log of 2026-10-21 12:52 (1.5.2, vLinker MC-IOS over BLE, ELM327 v2.2 / STN1151): `polling
+        // rpm+speed+throttle+pedal_d+pedal_e+engine_load coolant_temp+intake_air_temp+module_voltage+
+        // ambient_temp+oil_temp timing_advance+maf+commanded_lambda multi_pid=on`, no "?".
+        val groups = MultiPid.groups(channels)
+        assertEquals(
+            listOf(
+                listOf("rpm", "speed", "throttle", "pedal_d", "pedal_e", "engine_load"),
+                listOf("coolant_temp", "intake_air_temp", "module_voltage", "ambient_temp", "oil_temp"),
+                listOf("timing_advance", "maf", "commanded_lambda"),
+            ),
+            groups.map { group -> group.map { it.id } },
+        )
+        // requests_per_s 18.6-20.0 a minute (latency_ms 47-64), about 52 ms a request. Session report
+        // (23 min): fast channels 8.69-8.70 Hz, slow 1.74 Hz (FBBD-270 met: was 0.395 / 0.079 Hz).
+        assertSchedulerGives(measuredFastHz = 8.70, measuredSlowHz = 1.74, latencyMs = 52L, groups = groups)
+    }
+
+    private fun assertSchedulerGives(
+        measuredFastHz: Double,
+        measuredSlowHz: Double,
+        latencyMs: Long,
+        groups: List<List<PidChannel>> = channels.groupBy { it.request }.values.toList(),
+    ) {
+        val scheduler = PollScheduler(channels, rateWindowMs = 600_000, groups = groups)
         var now = 0L
         while (now < 600_000) {
             val next = assertNotNull(scheduler.next(now))
