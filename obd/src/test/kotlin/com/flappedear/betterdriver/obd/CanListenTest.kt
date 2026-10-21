@@ -21,7 +21,7 @@ private class BusElm(
     val repeats: Int = 5,
     val bareCra: Boolean = true,
     val autoReceive: Boolean = true,
-    val vin: String? = FRS_VIN,
+    val vin: String? = FrsVin,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -91,7 +91,7 @@ private class BusElm(
 }
 
 /** A made-up first-generation FR-S VIN: the real prefix, a zero serial. */
-private const val FRS_VIN = "JF1ZNAA1XD1700000"
+private const val FrsVin = "JF1ZNAA1XD1700000"
 
 private class CanHeard : ObdListener {
     var channels: List<PidChannel> = emptyList()
@@ -210,7 +210,7 @@ class CanListenTest {
     fun `an FR-S VIN turns listening on`() {
         val got = run(BusElm(frs))
         assertTrue("can_listen on: vin JF1ZNAA1" in got.logs, got.logs.toString())
-        assertEquals("JF1ZNAA1XD1700000", Vin.of(byteArrayOf(0x49, 0x02, 0x01) + FRS_VIN.toByteArray()))
+        assertEquals("JF1ZNAA1XD1700000", Vin.of(byteArrayOf(0x49, 0x02, 0x01) + FrsVin.toByteArray()))
         assertEquals(null, Vin.of(byteArrayOf(0x41, 0x0C, 0x1A)))
     }
 

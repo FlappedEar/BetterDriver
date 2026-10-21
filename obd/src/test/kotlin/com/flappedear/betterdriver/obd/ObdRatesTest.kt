@@ -93,6 +93,7 @@ private class TimedCorolla(
         "AT@1" to "OBDII to RS232 Interpreter", "ATRV" to "12.9V", "ATDPN" to "A6",
     )
 
+    @Suppress("CyclomaticComplexMethod", "ReturnCount") // One branch per kind of command the adapter takes.
     fun write(bytes: ByteArray) {
         val cmd = String(bytes, Charsets.US_ASCII).trimEnd('\r')
         sent += cmd

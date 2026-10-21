@@ -539,7 +539,10 @@ class ElmPoller(
             if (--stLeft == 0) listener.log("timeout ATST${hex(ST_STEPS[stStep], 2)} kept")
             return
         }
-        if (stStep < 0 && (latencyMs == null || latencyMs < ST_TUNE_ABOVE_MS || ++stWarmup < ST_TRIAL)) return
+        if (stStep < 0) {
+            val slow = latencyMs != null && latencyMs >= ST_TUNE_ABOVE_MS
+            if (!slow || ++stWarmup < ST_TRIAL) return
+        }
         val next = stStep + 1
         if (next >= ST_STEPS.size) {
             stDone = true

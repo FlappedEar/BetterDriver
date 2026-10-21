@@ -134,11 +134,15 @@ object Vin {
      * count of data items CAN adds), or null when it is not a VIN answer.
      */
     fun of(message: ByteArray): String? {
-        if (message.size < 2 || message[0].toInt() and ByteMask != 0x49 || message[1].toInt() != 0x02) return null
+        val vinAnswer = message.size >= 2 && message[0].toInt() and ByteMask == MODE_09_ANSWER &&
+            message[1].toInt() == VIN_PID
+        if (!vinAnswer) return null
         val text = message.drop(2).map { (it.toInt() and ByteMask).toChar() }
             .filter { it in '0'..'9' || it in 'A'..'Z' }
         return text.takeLast(LENGTH).joinToString("").takeIf { it.length == LENGTH }
     }
 
     private const val LENGTH = 17
+    private const val MODE_09_ANSWER = 0x49
+    private const val VIN_PID = 0x02
 }
