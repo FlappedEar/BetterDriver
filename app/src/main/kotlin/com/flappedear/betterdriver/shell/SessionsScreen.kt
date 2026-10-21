@@ -248,7 +248,8 @@ private fun rowStatus(
     videoExport.running == s.id -> "Rendering video with data…"
     goPro.work[s.id] != null -> "Getting GoPro video…"
     goPro.sessions[s.id]?.cameras?.any { it.onCamera } == true -> "GoPro video still on the camera"
-    else -> null
+    // How the last export or delete ended ("Saved", "Export failed"), as the sheet says it.
+    else -> cardStatus(deleting.states[s.id], export).first.ifEmpty { null }
 }
 
 @Suppress("LongParameterList")
