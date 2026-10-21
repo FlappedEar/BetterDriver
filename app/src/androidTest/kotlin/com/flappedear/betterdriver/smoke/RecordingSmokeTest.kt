@@ -11,7 +11,7 @@ import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.rule.GrantPermissionRule
 import com.flappedear.betterdriver.recorder.store.SessionState
-import com.flappedear.betterdriver.recording.sessionTitle
+import com.flappedear.betterdriver.shell.rowTitle
 import org.junit.After
 import org.junit.Rule
 import org.junit.Test
@@ -77,7 +77,7 @@ class RecordingSmokeTest {
 
         val session = SmokeData.sessions().single { it.id !in before }
         app.openSessions()
-        app.openSession(sessionTitle(session))
+        app.openSession(rowTitle(session))
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         app.openTab("Laps")
         app.waitForText("Lap 2")
