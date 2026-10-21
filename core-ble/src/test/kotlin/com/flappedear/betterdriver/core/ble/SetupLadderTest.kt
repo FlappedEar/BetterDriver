@@ -14,7 +14,7 @@ import org.junit.Test
  * delays between attempts and the plan's setup timeout. The stuck RaceBox replays Arek's log of
  * 20 Oct 2026 15:19-15:21: connected, no MTU answer, dropped with status 147 about 8.5 s after the
  * attempt began, nine times in 97 s. The log of 21 Oct 2026 08:00 replays the ladder itself: five
- * setups, streaming after 45 s.
+ * setups, streaming after 45 s; the drive of 08:13 the same morning streamed at the second setup.
  */
 class SetupLadderTest {
     /** What one attempt brings: data after [ms], or a drop after [ms]. */
@@ -156,6 +156,30 @@ class SetupLadderTest {
         }
         // Streaming 45.05 s after the first Connecting: the baseline a FBBD-272 fix has to beat.
         assertTrue(kotlin.math.abs(requireNotNull(run.streamingAtMs) - 45_049L) <= 100L)
+    }
+
+    /**
+     * The RaceBox of 21 Oct 2026 08:13 (1.5.0, ladder on): the first setup again found the services
+     * without the UART one (MTU asked, no answer), the second got MTU 247 and streamed.
+     */
+    private fun loggedOct21At0813(): SimulatedDevice {
+        val outcomes = ArrayDeque(
+            listOf(
+                Outcome(streams = false, ms = 7_648L), // MTU asked, no answer, service 6e400001 not found
+                Outcome(streams = true, ms = 1_884L), // MTU asked, MTU 247, Streaming
+            ),
+        )
+        return SimulatedDevice { outcomes.removeFirst() }
+    }
+
+    @Test
+    fun `the 08_13 drive of 21 Oct replays, streaming at the second setup about 10 s in`() {
+        val run = run(loggedOct21At0813(), SetupLadder())
+        val plan = ConnectPlan(autoConnect = false, askMtu = true, setupTimeoutMs = 10_000L)
+        assertEquals(listOf(plan, plan), run.attempts.map { it.plan })
+        // Second Connecting 8150 ms after the first, Streaming at 10034 ms.
+        assertTrue(kotlin.math.abs(run.attempts[1].startMs - 8_150L) <= 100L)
+        assertTrue(kotlin.math.abs(requireNotNull(run.streamingAtMs) - 10_034L) <= 100L)
     }
 
     @Test

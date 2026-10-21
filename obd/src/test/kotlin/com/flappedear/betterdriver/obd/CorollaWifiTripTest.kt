@@ -10,8 +10,8 @@ import kotlin.test.assertTrue
 /**
  * FBBD-15 on real data: Arek's 2023 Corolla through a Wi-Fi ELM327 v1.5 clone (protocol A6, CAN
  * 11-bit 500k), from his log of 2026-10-20 16:23 (two drives, 60 min). Only what the adapter and car
- * answered and the rates the session report measured; no positions. The log of 2026-10-21 08:04 adds
- * a second case: the clone refuses multi-PID requests, so the single-PID rates hold.
+ * answered and the rates the session report measured; no positions. The logs of 2026-10-21 08:04 and
+ * 08:33 add two cases: the clone refuses multi-PID requests, so the single-PID rates hold.
  */
 class CorollaWifiTripTest {
     /** `car answered: ... PIDs ...` from the log: the union of the car's bitmask answers. */
@@ -55,6 +55,14 @@ class CorollaWifiTripTest {
         // one PID per request; response_count=on, yet latency_ms 241 and 226, as without the count.
         // Session report (4 min): fast channels 0.400-0.403 Hz, slow 0.079-0.081 Hz (FBBD-270).
         assertSchedulerGives(measuredFastHz = 0.401, measuredSlowHz = 0.080, latencyMs = 241L)
+    }
+
+    @Test
+    fun `on the 18-min drive of 21 Oct 08_13 the single-PID rates hold again`() {
+        // Log of 2026-10-21 08:33 (1.5.0, same clone): multi-PID refused again, response_count=on;
+        // latency_ms per minute 214-295 (one minute 424), mean 253. Session report (18 min): fast
+        // channels 0.393-0.396 Hz, slow 0.079 Hz (FBBD-270).
+        assertSchedulerGives(measuredFastHz = 0.395, measuredSlowHz = 0.079, latencyMs = 253L)
     }
 
     private fun assertSchedulerGives(measuredFastHz: Double, measuredSlowHz: Double, latencyMs: Long) {
