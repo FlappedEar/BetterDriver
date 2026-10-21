@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.core.ble.NotifyLink
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderConfig
+import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
@@ -59,7 +60,8 @@ class SimulatedHeartRateMonitorTest {
         /** A Heart Rate Measurement: uint8 bpm with skin contact supported and [contact], one RR-Interval. */
         fun notify(bpm: Int, contact: Boolean = true) {
             val flags = (if (contact) 0x06 else 0x04) or 0x10
-            val rr = 60_000 * 1024 / bpm / 1000
+            // A strap that is not worn may send 0 bpm; its RR-Interval is then 0 too.
+            val rr = if (bpm > 0) 60_000 * 1024 / bpm / 1000 else 0
             onData(byteArrayOf(flags.toByte(), bpm.toByte(), (rr and 0xFF).toByte(), (rr shr 8).toByte()))
         }
     }
@@ -184,5 +186,116 @@ class SimulatedHeartRateMonitorTest {
         assertTrue(rec.stop())
         assertEquals(null, status())
         assertEquals(null, HeartRateSource.current)
+    }
+
+    private fun session(): Pair<Recording, SessionStore> {
+        val store = SessionStore(tmp.newFolder())
+        val rec = Recorder(store, nanoTime = nanos::get).start(
+            SessionInfo(gnss.startUtcMillis, devices = listOf("fake-gnss"), channels = GnssChannels.ALL),
+        )
+        return rec to store
+    }
+
+    private fun attach(rec: Recording): Pair<Strap, HeartRateSource> {
+        val strap = Strap()
+        val source = HeartRateSource("CB:EE:3B:68:BA:55", "8054-1") { onData, onState ->
+            strap.onData = onData
+            strap.onState = onState
+            strap
+        }
+        assertTrue(rec.attach(source))
+        return strap to source
+    }
+
+    private val noAnswer = "no data after connecting: no answer to the connection in 15028 ms"
+
+    private fun seconds(s: Int) = nanos.addAndGet(s * 1_000_000_000L)
+
+    @Test
+    fun `a strap not found at the session start is off for the whole session`() {
+        // Arek's drives of 21 Oct 2026 15:40 and 15:50: the strap was not worn, every setup timed out
+        // (15 s, 15 s, 15 s), then the link waited in the background for the rest of the session.
+        // FBBD-285: off after the first 45 s instead, so a strap that wakes later is never used.
+        val (rec, store) = session()
+        val (strap, source) = attach(rec)
+        strap.state(LinkState.Connecting)
+        seconds(15)
+        strap.state(LinkState.Reconnecting(1, 1_000, noAnswer))
+        seconds(16)
+        strap.state(LinkState.Reconnecting(2, 2_000, noAnswer))
+        assertEquals(HeartRateStatus(HeartRateLink.LOST, null), source.status())
+        assertEquals(0, strap.stopped)
+        seconds(17)
+        strap.state(LinkState.Reconnecting(3, 4_000, noAnswer))
+        assertEquals(1, strap.stopped)
+        assertEquals(null, source.status())
+        assertEquals(null, HeartRateSource.current)
+        // The strap, lying on a cable, wakes and sends noise and even a plausible-looking value: none is used.
+        strap.notify(24)
+        strap.notify(80)
+        assertEquals(null, source.status())
+        assertTrue(rec.stop())
+        assertEquals(1, strap.stopped)
+
+        val data = store.read(rec.id)
+        assertTrue(data.sampleSets.none { set -> set.values.any { it.channelId in 400..499 } })
+        val off = data.events.single { it.kind == HeartRateEvents.OFF }
+        assertEquals("sent nothing in the first 45 s: off for this session", off.text)
+    }
+
+    @Test
+    fun `a strap sending only noise from the start is never shown or recorded, then off`() {
+        // FBBD-285, Arek's session of 21 Oct 2026 19:32 on 1.6.1: the strap lay on a cable, not worn,
+        // and sent 0 to 37 bpm (mean 21.7) about twice a second; the track screen showed 24.
+        val (rec, store) = session()
+        val (strap, source) = attach(rec)
+        strap.state(LinkState.Connecting)
+        seconds(2)
+        strap.state(LinkState.Streaming(2))
+        val noise = intArrayOf(0, 24, 37, 12, 31, 0, 22, 36, 18, 30)
+        repeat(86) { i ->
+            strap.notify(noise[i % noise.size])
+            assertEquals(HeartRateStatus(HeartRateLink.NO_CONTACT, null), source.status())
+            nanos.addAndGet(500_000_000L)
+        }
+        nanos.addAndGet(500_000_000L)
+        strap.notify(24)
+        assertEquals(1, strap.stopped)
+        assertEquals(null, source.status())
+        assertTrue(rec.stop())
+
+        val data = store.read(rec.id)
+        assertTrue(data.sampleSets.none { set -> set.values.any { it.channelId in 400..499 } })
+        assertEquals(1, data.events.count { it.kind == HeartRateEvents.IMPLAUSIBLE })
+        val off = data.events.single { it.kind == HeartRateEvents.OFF }
+        assertEquals("sent no plausible heart rate (86 left out) in the first 45 s: off for this session", off.text)
+    }
+
+    @Test
+    fun `a worn strap stays on after the start window, through a later drop`() {
+        // Arek's drives of 20 Oct 2026: the worn strap streamed 2 s after the start, 76 to 118 bpm.
+        val (rec, store) = session()
+        val (strap, source) = attach(rec)
+        strap.state(LinkState.Connecting)
+        seconds(2)
+        strap.state(LinkState.Streaming(1))
+        listOf(92, 94, 95, 93, 92).forEach { bpm ->
+            strap.notify(bpm)
+            seconds(1)
+        }
+        seconds(60)
+        strap.state(LinkState.Reconnecting(1, 1_000, "gatt status 8"))
+        seconds(30)
+        strap.state(LinkState.Streaming(1))
+        strap.notify(118)
+        assertEquals(HeartRateStatus(HeartRateLink.STREAMING, 118), source.status())
+        assertTrue(rec.stop())
+        assertEquals(1, strap.stopped)
+        val data = store.read(rec.id)
+        assertTrue(data.events.none { it.kind == HeartRateEvents.OFF })
+        val bpm = data.sampleSets.mapNotNull { set ->
+            set.values.firstOrNull { it.channelId == HeartRateChannels.HEART_RATE.id }?.value
+        }
+        assertEquals(listOf(92.0, 94.0, 95.0, 93.0, 92.0, 118.0), bpm)
     }
 }

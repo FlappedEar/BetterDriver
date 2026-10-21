@@ -23,6 +23,12 @@ object HeartRateLogIds {
     /** core-ble's HeartRateEvents.CONTACT: "detected" or "lost". */
     const val CONTACT = "hr_contact"
     const val CONTACT_LOST = "lost"
+
+    /** core-ble's HeartRateEvents.IMPLAUSIBLE: a heart rate outside what a driver can have, left out. */
+    const val IMPLAUSIBLE = "hr_implausible"
+
+    /** core-ble's HeartRateEvents.OFF: no plausible heart rate early in the session, monitor off. */
+    const val OFF = "hr_off"
 }
 
 /**

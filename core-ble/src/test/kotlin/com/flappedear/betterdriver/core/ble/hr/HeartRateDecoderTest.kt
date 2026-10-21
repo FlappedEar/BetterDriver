@@ -168,6 +168,42 @@ class HeartRateDecoderTest {
     }
 
     @Test
+    fun `a heart rate no driver can have is left out like one without contact`() {
+        // FBBD-285: a strap lying on a cable, not worn, sent 0 to 37 bpm (21 Oct 2026 19:32).
+        // Worn drives were 76 to 118 bpm.
+        val sink = Sink()
+        val decoder = HeartRateDecoder(sink)
+        decoder.feed(Value().u8(ContactDetected or Rr).u8(24).u16(2560).bytes())
+        decoder.feed(Value().u8(Rr).u8(24).u16(2560).bytes())
+        decoder.feed(byteArrayOf(0, 0))
+        decoder.feed(byteArrayOf(0, 37))
+        decoder.feed(byteArrayOf(0, 39))
+        assertTrue(sink.sets.isEmpty())
+        assertTrue(decoder.noContact)
+        assertNull(decoder.lastBpm)
+        assertFalse(decoder.everMeasured)
+        assertEquals(5L, decoder.implausible)
+        assertEquals(
+            listOf(HeartRateEvents.IMPLAUSIBLE to "bpm=24 flags=0x16", HeartRateEvents.CONTACT to "lost"),
+            sink.events,
+        )
+        decoder.feed(byteArrayOf(0, 40))
+        decoder.feed(Value().u8(ContactDetected).u8(230).bytes())
+        assertEquals(listOf(40.0, 230.0), sink.sets.map { it.value(HeartRateChannels.HEART_RATE) })
+        assertFalse(decoder.noContact)
+        decoder.feed(Value().u8(ContactDetected).u8(231).bytes())
+        assertEquals(2, sink.sets.size)
+        assertEquals(HeartRateEvents.IMPLAUSIBLE to "bpm=231 flags=0x06", sink.events[sink.events.size - 2])
+        assertEquals(HeartRateEvents.CONTACT to "lost", sink.events.last())
+        // Noise between plausible values starts the count again: worn only after 5 in a row.
+        assertFalse(decoder.everMeasured)
+        repeat(4) { decoder.feed(byteArrayOf(0, 90)) }
+        assertFalse(decoder.everMeasured)
+        decoder.feed(byteArrayOf(0, 90))
+        assertTrue(decoder.everMeasured)
+    }
+
+    @Test
     fun `scan filter matches the Heart Rate Service only`() {
         assertTrue(isHeartRateAdvertisement(listOf(sigUuid(0x180F), sigUuid(0x180D))))
         assertFalse(isHeartRateAdvertisement(listOf(sigUuid(0x1819))))

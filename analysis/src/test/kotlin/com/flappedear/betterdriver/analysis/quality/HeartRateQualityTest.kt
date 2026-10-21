@@ -59,6 +59,20 @@ class HeartRateQualityTest {
     }
 
     @Test
+    fun `a strap switched off at the session start says why`() {
+        // FBBD-285: no plausible heart rate in the first 45 s, the monitor is off for the session.
+        val off = RecorderEvent(
+            48 * second, HeartRateLogIds.OFF, "sent nothing in the first 45 s: off for this session",
+        )
+        val s = section(emptyList(), listOf(device, off), 60 * second)
+        assertEquals(Verdict.NOT_MEASURED, s.metric("hr.rate").verdict)
+        assertEquals(
+            "Polar H10 1234 was listed but sent nothing in the first 45 s: off for this session (not worn)",
+            s.metric("hr.rate").how,
+        )
+    }
+
+    @Test
     fun `a strap sending every other second and an 8 s gap fail`() {
         val sets = (0 until 100).map { hr(it * 2 * second) } + hr(206 * second)
         val s = section(sets, listOf(device), 210 * second)
