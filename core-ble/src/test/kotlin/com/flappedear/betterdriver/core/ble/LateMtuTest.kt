@@ -48,7 +48,7 @@ class LateMtuTest {
     }
 
     @Test
-    fun `Android busy with another request: asked again on the next ticks, at most 5 times`() {
+    fun `Android busy with another request, asked again on the next ticks, at most 5 times`() {
         val late = LateMtu()
         late.newConnection(askedInSetup = false)
         val asked = mutableListOf<Long>()
