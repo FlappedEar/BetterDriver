@@ -106,7 +106,8 @@ class HeartRateSource internal constructor(
         sink.event(HeartRateEvents.DEVICE, "address=$address name=$deviceName")
         // onState runs on the link's one thread, so this needs no lock.
         var wasStreaming = false
-        val onData = { bytes: ByteArray -> if (!offIfNotFound()) decoder.feed(bytes) }
+        // One lock with the off check, so no value is stored after the monitor was switched off.
+        val onData = { bytes: ByteArray -> synchronized(this) { if (!offIfNotFound()) decoder.feed(bytes) } }
         link = connect(onData) { s ->
             if (offIfNotFound()) return@connect
             logLink(address, s, wasStreaming)
