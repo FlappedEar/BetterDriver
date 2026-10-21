@@ -28,10 +28,14 @@ class ThreadCpuTest {
             4 to ("GLThread" to 600L),
             5 to ("idle" to 0L),
         )
+        // The process used 2,100 ticks: 1,920 by live threads, 180 by threads that ended.
         assertEquals(
-            "camera threads: CameraX-core_camera_0=20.0% GLThread=10.0% binder:4815_1=2.0%",
-            ThreadCpu.busiest(before, now, wallMillis = 60_000, ticksPerSecond = 100),
+            "camera threads: CameraX-core_camera_0=20.0% GLThread=10.0% binder:4815_1=2.0% exited=3.0%",
+            ThreadCpu.busiest(before, now, totalTicks = 2_100, wallMillis = 60_000, ticksPerSecond = 100),
         )
-        assertEquals("camera threads: none", ThreadCpu.busiest(emptyMap(), mapOf(5 to ("idle" to 0L)), 60_000, 100))
+        assertEquals(
+            "camera threads: none exited=0.0%",
+            ThreadCpu.busiest(emptyMap(), mapOf(5 to ("idle" to 0L)), 0, 60_000, 100),
+        )
     }
 }
