@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.core.ble
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -53,5 +54,26 @@ class ServiceRecheckTest {
         assertNull(recheck.recheck(13_000L, 13_316L))
         recheck.newConnection()
         assertTrue(recheck.recheck(1_000L, setupTimeoutMs) != null)
+    }
+
+    /**
+     * 21 Oct 2026 15:47 (1.6.1): neither the MTU request nor the lookup answered, the second look
+     * came back with an empty list at 8.0 s, and a new connection streamed 1.4 s after it began.
+     */
+    @Test
+    fun `a connection that answered neither the MTU nor the lookup starts over`() {
+        assertTrue(ServiceRecheck().startOver(servicesFound = null, mtuUnanswered = true))
+    }
+
+    @Test
+    fun `an empty service list starts over, with or without the MTU`() {
+        assertTrue(ServiceRecheck().startOver(servicesFound = 0, mtuUnanswered = false))
+        assertTrue(ServiceRecheck().startOver(servicesFound = 0, mtuUnanswered = true))
+    }
+
+    @Test
+    fun `a silent lookup after an answered MTU, or services without the UART one, look again`() {
+        assertFalse(ServiceRecheck().startOver(servicesFound = null, mtuUnanswered = false))
+        assertFalse(ServiceRecheck().startOver(servicesFound = 3, mtuUnanswered = true))
     }
 }
