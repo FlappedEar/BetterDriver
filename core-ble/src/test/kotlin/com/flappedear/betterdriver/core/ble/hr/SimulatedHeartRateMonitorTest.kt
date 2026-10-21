@@ -60,7 +60,8 @@ class SimulatedHeartRateMonitorTest {
         /** A Heart Rate Measurement: uint8 bpm with skin contact supported and [contact], one RR-Interval. */
         fun notify(bpm: Int, contact: Boolean = true) {
             val flags = (if (contact) 0x06 else 0x04) or 0x10
-            val rr = 60_000 * 1024 / bpm / 1000
+            // A strap that is not worn may send 0 bpm; its RR-Interval is then 0 too.
+            val rr = if (bpm > 0) 60_000 * 1024 / bpm / 1000 else 0
             onData(byteArrayOf(flags.toByte(), bpm.toByte(), (rr and 0xFF).toByte(), (rr shr 8).toByte()))
         }
     }
