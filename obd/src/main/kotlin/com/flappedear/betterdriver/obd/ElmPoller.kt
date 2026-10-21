@@ -151,7 +151,7 @@ class ElmPoller(
                     return groups
                 }
                 answer = text?.trim()?.replace('\r', ' ') ?: "nothing"
-                if (answer != "?") refused = false
+                if (!refusal(text, cmd)) refused = false
             }
             val smaller = GROUP_SIZES.getOrNull(i + 1)
             if (!refused || answer.isEmpty() || smaller == null) {
@@ -162,6 +162,10 @@ class ElmPoller(
         }
         return singles
     }
+
+    /** Whether [text] is the adapter's `?` to [cmd], with or without the command echoed before it. */
+    private fun refusal(text: String?, cmd: String): Boolean =
+        text.orEmpty().split('\r', '\n').map { it.trim() }.filter { it.isNotEmpty() && it != cmd } == listOf("?")
 
     /**
      * `AT H1` or `AT H0`; true when the adapter took it. [headers] follows only an acknowledged

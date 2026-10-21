@@ -39,7 +39,8 @@ private enum class CountSupport {
  * are on; [tcmSilentFor] keeps the TCM quiet for that many first requests. [tcm] adds a second ECU (7E9) that
  * answers speed and coolant too, as a transmission ECU can. [maxRequestBytes] is the longest mode 01
  * request (in data bytes, a count digit not included) the adapter takes; a longer one is answered
- * `?` at once, as the adapter itself refuses it.
+ * `?` at once, as the adapter itself refuses it. [echo] prints each mode 01 request before its answer
+ * (AT commands are not echoed, so ATDPN still reads as CAN).
  *
  * The same clone on 2026-10-21 (1.4.1, Arek's 08:04 log) showed what the model above got wrong for it:
  * the 6-PID probe `010C0D11494A04` was answered `?` with headers on and off, within the 41 ms
@@ -60,6 +61,7 @@ private class TimedCorolla(
     val rejectHeadersOff: Boolean = false,
     val tcmSilentFor: Int = 0,
     val maxRequestBytes: Int = Int.MAX_VALUE,
+    val echo: Boolean = false,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -101,7 +103,8 @@ private class TimedCorolla(
         if (cmd == "ATH1") headers = true
         if (cmd == "ATH0") headers = false
         val answer = at[cmd]?.also { now += transportMs } ?: if (cmd.startsWith("01")) mode01(cmd) else "?"
-        line.feed((answer + "\r\r>").toByteArray(Charsets.US_ASCII))
+        val echoed = if (echo && cmd.startsWith("01")) cmd + "\r" + answer else answer
+        line.feed((echoed + "\r\r>").toByteArray(Charsets.US_ASCII))
     }
 
     @Suppress("ReturnCount", "CyclomaticComplexMethod")
@@ -344,6 +347,13 @@ class ObdRatesTest {
         }
         assertTrue(after.rates.getValue("oil_temp") >= 0.2, "oil ${after.rates["oil_temp"]}")
         assertEquals(85.0, after.listener.values.last { it.first == "oil_temp" }.second)
+    }
+
+    @Test
+    fun `a refusal after the echoed command still tries smaller groups`() {
+        val after = run(TimedCorolla(CountSupport.IGNORED, maxRequestBytes = 4, echo = true))
+        assertTrue(after.car.sent.any { it == "010C0D11" }, after.car.sent.take(40).toString())
+        assertTrue(after.rates.getValue("rpm") >= 1.0, "rpm ${after.rates["rpm"]}")
     }
 
     @Test
