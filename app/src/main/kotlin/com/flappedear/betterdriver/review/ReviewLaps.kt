@@ -54,6 +54,9 @@ class ReviewLaps private constructor(context: Context) {
     /** By session id. io thread only. */
     private val cache = HashMap<String, Cached>()
 
+    /** Row facts of the sessions past [MaxSessions], which the review does not read. */
+    private val older = HashMap<String, Cached>()
+
     var state by mutableStateOf<ReviewLoad>(ReviewLoad.Loading(0, 0))
         private set
 
@@ -79,8 +82,21 @@ class ReviewLaps private constructor(context: Context) {
             if ((state as? ReviewLoad.Ready)?.tracks.isNullOrEmpty()) post(ReviewLoad.Loading(i + 1, sessions.size))
         }
         post(ReviewLoad.Ready(group(sessions, saved)))
-        val read = cache.mapValues { it.value.facts }
-        main.post { facts = read }
+        readOlder(all.filter { s -> s.id !in cache }, saved)
+        val rows = cache.mapValues { it.value.facts } + older.mapValues { it.value.facts }
+        main.post { facts = rows }
+    }
+
+    /**
+     * Sessions shows every session, so the ones past [MaxSessions] are read for their row's facts
+     * too, after the review has its laps; only the facts are kept, not the laps' paths.
+     */
+    private fun readOlder(rest: List<SessionSummary>, saved: List<Track>) {
+        older.keys.retainAll(rest.map { it.id }.toSet())
+        for (s in rest) {
+            val known = older[s.id]
+            if (known == null || known.stale(saved, videoStamp(s.dir))) older[s.id] = read(s, saved).withoutLaps()
+        }
     }
 
     private fun post(load: ReviewLoad) = main.post { state = load }
@@ -157,6 +173,8 @@ class ReviewLaps private constructor(context: Context) {
         val facts: SessionFacts,
     ) {
         fun stale(saved: List<Track>, videoNow: Long) = tracks != revisions(saved) || video != videoNow
+
+        fun withoutLaps() = Cached(trackId, null, tracks, video, facts)
     }
 
     companion object {
