@@ -43,6 +43,8 @@ internal class WideRecorder(
     private val listener: Listener,
     /** Also hears every capture, as CameraX's session callback does, for the camera's log lines (FBBD-278). */
     private val captures: CameraCaptureSession.CaptureCallback? = null,
+    /** False for the camera test's part without MP4 ([WideEncoder]'s mux): no file is written. */
+    private val mux: Boolean = true,
 ) {
     /** How the recording reports its files. All calls arrive on the main thread. */
     interface Listener {
@@ -183,7 +185,7 @@ internal class WideRecorder(
         file = first
         try {
             sensorShift = if (realtime) SystemClock.elapsedRealtimeNanos() - System.nanoTime() else 0L
-            val e = WideEncoder(target, if (audio) MicSource() else null, System::nanoTime, encoded)
+            val e = WideEncoder(target, if (audio) MicSource() else null, System::nanoTime, encoded, mux = mux)
             encoder = e
             DebugLog.i(Tag, "encoder ${e.setup}")
             e.start(first)

@@ -44,6 +44,11 @@ class CameraFrames(fps: Int) {
     private var numbersMissing = 0L
     private var lastNumber = -1L
 
+    /** Since this object began, for the camera test's result ([total]); [line] leaves them. */
+    private var allSpanNanos = 0L
+    private var allSteps = 0L
+    private var allSkipped = 0L
+
     /** The camera's processing modes last seen ([processing]); null before the first frame. */
     private var lastModes: IntArray? = null
 
@@ -72,6 +77,9 @@ class CameraFrames(fps: Int) {
             maxGapNanos = maxOf(maxGapNanos, gap)
             val intervals = (gap.toDouble() / intervalNanos).roundToLong()
             if (intervals > 1) skipped += intervals - 1
+            allSpanNanos += gap
+            allSteps++
+            if (intervals > 1) allSkipped += intervals - 1
         }
         if (sensorNanos > lastNanos) lastNanos = sensorNanos
         frameNanos?.takeIf { it > 0 }?.let {
@@ -146,6 +154,17 @@ class CameraFrames(fps: Int) {
         return text
     }
 
+    /**
+     * Everything since this object began, for the camera test (FBBD-278): the rate the camera
+     * delivered, and the share of frames its timestamps skip. Null before two frames.
+     */
+    @Synchronized
+    fun total(): TestPart? {
+        if (allSteps == 0L || allSpanNanos <= 0) return null
+        val fps = allSteps * NanosPerSecond.toDouble() / allSpanNanos
+        return TestPart(fps, allSkipped * Percent / (allSteps + allSkipped))
+    }
+
     /** A mode's value, with "none" apart from every value a camera may report. */
     private fun code(mode: Int?) = mode ?: Int.MIN_VALUE
 
@@ -158,6 +177,7 @@ class CameraFrames(fps: Int) {
     private companion object {
         const val NanosPerSecond = 1_000_000_000L
         const val NanosPerMilli = 1_000_000.0
+        const val Percent = 100.0
 
         // Camera2's value order for each control (CaptureRequest constants).
         val OffFastHigh = listOf("OFF", "FAST", "HIGH_QUALITY")

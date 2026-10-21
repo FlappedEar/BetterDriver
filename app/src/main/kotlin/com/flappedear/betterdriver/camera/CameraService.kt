@@ -73,6 +73,9 @@ class CameraService : LifecycleService() {
     private var sessionId: String? = null
     private var ending = false
 
+    /** The camera test (FBBD-278), when one runs instead of a session's video. */
+    private var test: CameraTest? = null
+
     /**
      * A start came while the last session's video was still ending, or while it still records (the
      * stop never arrived): once that is done, the service waits for the new session instead of ending.
@@ -112,15 +115,36 @@ class CameraService : LifecycleService() {
         when (intent?.action) {
             ACTION_START -> if (goForeground()) {
                 videoMode(intent)?.let { mode = it }
-                if (ending || camera != null) startAgain = true else waitForSession()
+                // A session's video comes first: a camera test that runs ends, then the session records.
+                test?.stop("a session started")
+                if (ending || camera != null || test != null) startAgain = true else waitForSession()
             }
+            ACTION_TEST -> startTest()
+            ACTION_TEST_STOP -> test?.stop("stopped on the test screen")
             else -> {
                 startAgain = false
-                end()
+                // A session's stop leaves a camera test alone; the test ends the service when it is done.
+                if (test == null) end()
             }
         }
         // Not restarted by the system: a restarted camera service cannot know which session it belongs to.
         return START_NOT_STICKY
+    }
+
+    /** Starts the camera test, unless a session's video has the camera ([CameraTestState] says why not). */
+    private fun startTest() {
+        if (test != null) return
+        // A session's video has the camera, or is about to; or the service could not take the camera.
+        val busy = camera != null || ending || bound
+        if (busy || !goForeground()) {
+            val note = if (busy) "a session is recording video" else "the camera could not start"
+            CameraTestState.write(this, CameraTestState(CameraTestState.Status.Failed, 1, note = note))
+        } else {
+            test = CameraTest(this, audioGranted()) {
+                test = null
+                finish()
+            }.also { it.start() }
+        }
     }
 
     /** Binds to the recorder, whose state names the session to record ([onState]); gives up after a while. */
@@ -235,6 +259,7 @@ class CameraService : LifecycleService() {
 
     override fun onDestroy() {
         camera?.stop()
+        test?.stop("the camera service ended")
         if (bound) unbindService(connection)
         bound = false
         super.onDestroy()
@@ -298,6 +323,10 @@ class CameraService : LifecycleService() {
     companion object {
         const val ACTION_START = "com.flappedear.betterdriver.camera.START"
         const val ACTION_STOP = "com.flappedear.betterdriver.camera.STOP"
+
+        /** The camera test (FBBD-278): start it, or end it early. */
+        const val ACTION_TEST = "com.flappedear.betterdriver.camera.TEST"
+        const val ACTION_TEST_STOP = "com.flappedear.betterdriver.camera.TEST_STOP"
 
         /** The chosen video mode: [VideoSize] name and frames per second. */
         const val EXTRA_VIDEO_SIZE = "com.flappedear.betterdriver.camera.VIDEO_SIZE"

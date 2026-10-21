@@ -91,7 +91,7 @@ private const val MinFreeBytes = 1L shl 30
  * 1080p, 10 min at 4K. A crash or a phone switching off loses only the open file, which has no index
  * yet, rather than the whole drive; and no file gets near the 4 GB limit of 32-bit MP4 offsets.
  */
-private const val MaxFileBytes = 4_000_000_000L
+internal const val MaxFileBytes = 4_000_000_000L
 
 /**
  * The phone's back camera, recording with CameraX in the background while the track screen stays
@@ -788,7 +788,7 @@ internal val FastControls = listOf(
 
 /** Whether the camera's frame timestamps are on elapsedRealtime (else on System.nanoTime). */
 @OptIn(ExperimentalCamera2Interop::class)
-private fun realtimeTimestamps(info: CameraInfo): Boolean =
+internal fun realtimeTimestamps(info: CameraInfo): Boolean =
     Camera2CameraInfo.from(info).getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
         CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
 
