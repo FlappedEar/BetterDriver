@@ -103,7 +103,9 @@ class CorollaWifiTripTest {
         for (channel in channels) {
             val measured = if (channel.pollClass == PollClass.FAST) measuredFastHz else measuredSlowHz
             val achieved = scheduler.achievedHz(channel, now)
-            val expected = predicted.getValue(channel.request)
+            // A group's prediction is under its first channel's request.
+            val lead = groups.first { group -> group.any { it.request == channel.request } }.first().request
+            val expected = predicted.getValue(lead)
             // FBBD-15: the scheduler's rate within 10 % of the rate measured from the responses.
             assertTrue(kotlin.math.abs(expected - measured) <= 0.1 * measured, "${channel.id} $expected vs $measured")
             assertTrue(kotlin.math.abs(achieved - measured) <= 0.1 * measured, "${channel.id} $achieved vs $measured")
