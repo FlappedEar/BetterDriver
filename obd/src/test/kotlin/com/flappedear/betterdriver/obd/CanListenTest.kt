@@ -146,6 +146,16 @@ class CanListenTest {
     }
 
     @Test
+    fun `only first-generation VINs are listened to`() {
+        // FBBD-284, Codex on #284: model year (VIN position 10) 2012-2021 only; GR86 / BRZ from 2022
+        // have JF1Z VINs too but other CAN frames.
+        assertTrue(CanBroadcasts.wantedFor(FrsVin))
+        assertTrue(CanBroadcasts.wantedFor("JF1ZCAC10M9600000"))
+        assertTrue(!CanBroadcasts.wantedFor("JF1ZNBE10N9700000"), "2022 GR86")
+        assertTrue(!CanBroadcasts.wantedFor("JTDBCMFE0PJ000000"), "Corolla")
+    }
+
+    @Test
     fun `the FR-S steering angle is heard between polls`() {
         val elm = BusElm(frs)
         val got = run(elm)

@@ -76,12 +76,20 @@ object CanBroadcasts {
      * VINs of the cars whose broadcasts are listened for (FBBD-284): the first-generation Scion FR-S,
      * Toyota 86 / GT86 and Subaru BRZ, all built by Subaru with VINs from `JF1Z` (FR-S `JF1ZNAA1…`,
      * for example https://decodethis.com/web/vin/JF1ZNAA1XD1722071). Arek does not want listening on
-     * the Corolla (2026-10-21), so no Toyota VIN is here.
+     * the Corolla (2026-10-21), so no Toyota VIN is here. The second generation (GR86 / BRZ from
+     * model year 2022) has `JF1Z` VINs too but other CAN frames, so only model years [Gen1Years]
+     * (VIN position 10, `C` 2012 to `M` 2021) are taken.
      */
     val VinPrefixes = listOf("JF1Z")
+    const val Gen1Years = "CDEFGHJKLM"
 
     /** Whether the car with [vin] is one whose broadcasts are listened for. */
-    fun wantedFor(vin: String): Boolean = VinPrefixes.any { vin.uppercase().startsWith(it) }
+    fun wantedFor(vin: String): Boolean {
+        val upper = vin.uppercase()
+        return VinPrefixes.any { upper.startsWith(it) } && upper.getOrNull(YEAR_AT)?.let { it in Gen1Years } == true
+    }
+
+    private const val YEAR_AT = 9
 
     /**
      * The signals to listen for on a car whose OBD port showed [seen] (id to frames in the probe), one

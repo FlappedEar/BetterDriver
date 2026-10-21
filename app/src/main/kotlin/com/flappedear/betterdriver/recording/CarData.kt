@@ -54,9 +54,16 @@ internal fun sessionPollSet(context: Context): () -> PollSet {
 
 /**
  * Whether a car named [name] is an FR-S / 86 / BRZ of the first generation, whose CAN broadcasts the
- * recorder listens for (FBBD-263, FBBD-284). The car's VIN decides too, when the adapter reads it.
+ * recorder listens for (FBBD-263, FBBD-284). A GR86 or a model year from 2022 on (the second
+ * generation, other CAN frames) is not. The car's VIN decides too, when the adapter reads it.
  */
-internal fun isBroadcastCar(name: String): Boolean = BroadcastCarName.containsMatchIn(name)
+internal fun isBroadcastCar(name: String): Boolean =
+    BroadcastCarName.containsMatchIn(name) && !Gen2Name.containsMatchIn(name) &&
+        Year.findAll(name).none { it.value.toInt() >= FirstGen2Year }
+
+private const val FirstGen2Year = 2022
+private val Gen2Name = Regex("""\bGR ?86\b""", RegexOption.IGNORE_CASE)
+private val Year = Regex("""\b(19|20)\d\d\b""")
 
 private val BroadcastCarName =
     Regex("""\bFR-?S\b|\bGT ?86\b|\bFT ?86\b|\bToyota 86\b|\bBRZ\b""", RegexOption.IGNORE_CASE)
