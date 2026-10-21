@@ -37,12 +37,14 @@ internal fun heartRateSection(
     val metrics = if (n == 0) {
         // A strap only sends while worn, so one that never sent was not worn or not in range:
         // not a fault, and the strap needs no switching off for drives without it (Arek, 21 Oct 2026).
-        listOf(
-            notMeasured(
-                "hr.rate", "Heart rate samples", HrRateCriterion,
-                "$name was listed but never sent a heart rate (not worn or not in range)",
-            ),
-        )
+        // Without a plausible heart rate early on, the app switches it off for the session (FBBD-285).
+        val off = events.ofKind(HeartRateLogIds.OFF).firstOrNull()
+        val detail = if (off != null) {
+            "$name was listed but ${off.text} (not worn)"
+        } else {
+            "$name was listed but never sent a heart rate (not worn or not in range)"
+        }
+        listOf(notMeasured("hr.rate", "Heart rate samples", HrRateCriterion, detail))
     } else {
         listOf(
             rate(n, maxOf(endMicros, windows.maxOf { it.lastMicros }), name),

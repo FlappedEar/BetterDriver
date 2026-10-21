@@ -168,6 +168,34 @@ class HeartRateDecoderTest {
     }
 
     @Test
+    fun `a heart rate no driver can have is left out like one without contact`() {
+        // FBBD-285: a strap lying on a cable, not worn, showed 24 bpm. Worn drives were 76 to 118.
+        val sink = Sink()
+        val decoder = HeartRateDecoder(sink)
+        decoder.feed(Value().u8(ContactDetected or Rr).u8(24).u16(2560).bytes())
+        decoder.feed(Value().u8(Rr).u8(24).u16(2560).bytes())
+        decoder.feed(byteArrayOf(0, 0))
+        assertTrue(sink.sets.isEmpty())
+        assertTrue(decoder.noContact)
+        assertNull(decoder.lastBpm)
+        assertFalse(decoder.everMeasured)
+        assertEquals(3L, decoder.implausible)
+        assertEquals(
+            listOf(HeartRateEvents.IMPLAUSIBLE to "bpm=24 flags=0x16", HeartRateEvents.CONTACT to "lost"),
+            sink.events,
+        )
+        decoder.feed(byteArrayOf(0, 31))
+        decoder.feed(Value().u8(ContactDetected).u8(230).bytes())
+        assertEquals(listOf(31.0, 230.0), sink.sets.map { it.value(HeartRateChannels.HEART_RATE) })
+        assertTrue(decoder.everMeasured)
+        assertFalse(decoder.noContact)
+        decoder.feed(Value().u8(ContactDetected).u8(231).bytes())
+        assertEquals(2, sink.sets.size)
+        assertEquals(HeartRateEvents.IMPLAUSIBLE to "bpm=231 flags=0x06", sink.events[sink.events.size - 2])
+        assertEquals(HeartRateEvents.CONTACT to "lost", sink.events.last())
+    }
+
+    @Test
     fun `scan filter matches the Heart Rate Service only`() {
         assertTrue(isHeartRateAdvertisement(listOf(sigUuid(0x180F), sigUuid(0x180D))))
         assertFalse(isHeartRateAdvertisement(listOf(sigUuid(0x1819))))
