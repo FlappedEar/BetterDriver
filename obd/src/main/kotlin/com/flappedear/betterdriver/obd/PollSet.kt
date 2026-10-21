@@ -9,12 +9,15 @@ package com.flappedear.betterdriver.obd
  * [ids] are the channels read, by [PidChannel.id]; null reads every channel the car has. With
  * [pedal] the first of [Pedals] the car has is read too, so the driver's accelerator input is
  * there whichever PID the car reports it on. [fastWeight] and [slowMaxHz] go to the [PollScheduler].
+ * [broadcastCar] says the session's car is one whose CAN broadcasts are listened for (the FR-S,
+ * FBBD-263, FBBD-284); when false the poller asks the car's VIN.
  */
 data class PollSet(
     val ids: Set<String>?,
     val pedal: Boolean = false,
     val fastWeight: Int = PollScheduler.DEFAULT_FAST_WEIGHT,
     val slowMaxHz: Double = PollScheduler.DEFAULT_SLOW_MAX_HZ,
+    val broadcastCar: Boolean = false,
 ) {
     /** The channels of [channels] (what the car has) this set reads, in the order given. */
     fun select(channels: List<PidChannel>): List<PidChannel> {

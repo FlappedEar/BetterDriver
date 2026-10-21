@@ -33,6 +33,7 @@ internal fun sessionCarData(context: Context): List<Equipment> = sessionSetup(co
  * What the running session reads from the car (FBBD-283): [PollSet.Driver] plus every OBD-II channel
  * the track screen's tiles show, on the main screen or the second one, from the setup saved at START
  * and updated when a tile is chosen during the session. The file is read again only when it changed.
+ * [PollSet.broadcastCar] follows the session's car (FBBD-284).
  */
 internal fun sessionPollSet(context: Context): () -> PollSet {
     val file = File(context.filesDir, SetupRepo.SessionSetupFile)
@@ -42,12 +43,23 @@ internal fun sessionPollSet(context: Context): () -> PollSet {
         val modified = file.lastModified()
         if (modified != stamp) {
             stamp = modified
-            val screens = sessionSetup(context)?.trackScreens
-            set = if (screens == null) PollSet.Driver else PollSet.Driver.plus(obdTileChannels(screens))
+            val setup = sessionSetup(context)
+            val tiles = setup?.trackScreens?.let(::obdTileChannels).orEmpty()
+            val ft86 = setup?.active()?.car?.name?.let(::isBroadcastCar) == true
+            set = PollSet.Driver.plus(tiles).copy(broadcastCar = ft86)
         }
         set
     }
 }
+
+/**
+ * Whether a car named [name] is an FR-S / 86 / BRZ of the first generation, whose CAN broadcasts the
+ * recorder listens for (FBBD-263, FBBD-284). The car's VIN decides too, when the adapter reads it.
+ */
+internal fun isBroadcastCar(name: String): Boolean = BroadcastCarName.containsMatchIn(name)
+
+private val BroadcastCarName =
+    Regex("""\bFR-?S\b|\bGT ?86\b|\bFT ?86\b|\bToyota 86\b|\bBRZ\b""", RegexOption.IGNORE_CASE)
 
 /** The OBD-II channel ids ("coolant_temp") of the tiles on [screens] ("obd_coolant_temp"). */
 internal fun obdTileChannels(screens: TrackScreens): Set<String> =

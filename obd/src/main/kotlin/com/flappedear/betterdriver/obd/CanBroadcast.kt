@@ -73,6 +73,17 @@ object CanBroadcasts {
     val all: List<CanSignal> = listOf(FrsSteering, ToyotaSteering)
 
     /**
+     * VINs of the cars whose broadcasts are listened for (FBBD-284): the first-generation Scion FR-S,
+     * Toyota 86 / GT86 and Subaru BRZ, all built by Subaru with VINs from `JF1Z` (FR-S `JF1ZNAA1…`,
+     * for example https://decodethis.com/web/vin/JF1ZNAA1XD1722071). Arek does not want listening on
+     * the Corolla (2026-10-21), so no Toyota VIN is here.
+     */
+    val VinPrefixes = listOf("JF1Z")
+
+    /** Whether the car with [vin] is one whose broadcasts are listened for. */
+    fun wantedFor(vin: String): Boolean = VinPrefixes.any { vin.uppercase().startsWith(it) }
+
+    /**
      * The signals to listen for on a car whose OBD port showed [seen] (id to frames in the probe), one
      * per channel id: a signal counts when every id it requires came at least [minFrames] times.
      */
@@ -114,4 +125,20 @@ object CanMonitor {
     /** Three hex digits of 11-bit id, then 1 to 8 whole data bytes. */
     private val FRAME = Regex("""[0-7][0-9A-F]{2}([0-9A-F]{2}){1,8}""")
     private val DATA = Regex("""([0-9A-F]{2}){1,8}""")
+}
+
+/** The VIN in a `09 02` answer (FBBD-284). */
+object Vin {
+    /**
+     * The 17 characters in [message], the whole answer (`49 02 01 4A 46 31 …`, the `01` being the
+     * count of data items CAN adds), or null when it is not a VIN answer.
+     */
+    fun of(message: ByteArray): String? {
+        if (message.size < 2 || message[0].toInt() and ByteMask != 0x49 || message[1].toInt() != 0x02) return null
+        val text = message.drop(2).map { (it.toInt() and ByteMask).toChar() }
+            .filter { it in '0'..'9' || it in 'A'..'Z' }
+        return text.takeLast(LENGTH).joinToString("").takeIf { it.length == LENGTH }
+    }
+
+    private const val LENGTH = 17
 }

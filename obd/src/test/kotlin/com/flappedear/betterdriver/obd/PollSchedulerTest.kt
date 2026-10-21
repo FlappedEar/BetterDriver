@@ -34,6 +34,29 @@ class PollSchedulerTest {
     }
 
     @Test
+    fun `temperatures due together go one at a time between the fast requests`() {
+        // FBBD-284: four slow requests due at once on a single-PID adapter.
+        val scheduler = PollScheduler(fast + slow, fastWeight = 10, slowMaxHz = 0.5, rateWindowMs = 30_000)
+        val sent = ArrayList<Request>()
+        var now = 0L
+        while (now < 30_000) {
+            val next = assertNotNull(scheduler.next(now))
+            now = maxOf(now, next.notBeforeMs)
+            scheduler.completed(next.request, now, 90, answered = true)
+            sent += next.request
+            now += 90
+        }
+        val isSlow = slow.map { it.request }.toSet()
+        val runs = sent.indices.filter { i -> sent[i] in isSlow && i > 0 && sent[i - 1] in isSlow }
+        assertTrue(runs.isEmpty(), "slow requests back to back at ${runs.take(5)}")
+        // Every fast request between two slow ones, so engine speed waits for one temperature at most.
+        val rpm = sent.indices.filter { sent[it] == StandardPids.Rpm.request }
+        assertTrue(rpm.zipWithNext { x, y -> y - x }.max() <= fast.size + 1, sent.take(40).toString())
+        // Their share is still set by the weight: one slow request for ten of each fast one.
+        for (channel in slow) assertTrue(scheduler.achievedHz(channel, now) >= 0.25, channel.id)
+    }
+
+    @Test
     fun `fast channels are polled fastWeight times as often as slow ones`() {
         // Slow cap out of the way: pure weights.
         val scheduler = PollScheduler(fast + slow, fastWeight = 5, slowMaxHz = 100.0, rateWindowMs = 60_000)
