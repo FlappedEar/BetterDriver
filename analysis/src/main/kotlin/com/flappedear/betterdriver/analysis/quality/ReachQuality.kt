@@ -77,32 +77,41 @@ internal fun reachSpans(lines: List<LogLine>): List<ReachSpan> {
  * recording's connection agreed. Null when the page showed nothing between the two recordings.
  */
 internal fun reachSection(spans: List<ReachSpan>, s: LoggedSession, sinceUtc: Long?): QualitySection? {
-    val start = s.startUtcMillis ?: return null
-    val before = spans.filter { it.fromUtc < start && (sinceUtc == null || it.untilUtc > sinceUtc) }
-    if (before.isEmpty()) return null
+    val start = s.startUtcMillis
+    val before = spans.filter { start != null && it.fromUtc < start && (sinceUtc == null || it.untilUtc > sinceUtc) }
+    return if (start == null || before.isEmpty()) {
+        null
+    } else {
+        QualitySection("Equipment", listOf(reachMetric(before, s, start)))
+    }
+}
+
+/** The judged items of [before], the page's states before recording [s] started at [start]. */
+private fun reachMetric(before: List<ReachSpan>, s: LoggedSession, start: Long): QualityMetric {
     val last = before.groupBy { it.item }.values.map { it.maxBy { span -> span.fromUtc } }
     val checked = last.filter { it.address != null && (it.reach == InRange || it.reach == NotSeen) }
         .mapNotNull { judge(it, s, start) }
     if (checked.isEmpty()) {
         val why = "Settings › Equipment was open before this recording, but it showed no Bluetooth item " +
             "In range up to 5 min before Start, or Not seen up to 1 min before, that the recording then used"
-        return QualitySection("Equipment", listOf(notMeasured("equipment.reach", Label, Criterion, why)))
+        return notMeasured("equipment.reach", Label, Criterion, why)
     }
     val wrong = checked.count { !it.first }
-    val metric = judged(
+    return judged(
         "equipment.reach", Label, wrong.toDouble(), "", wrong == 0, Basis.MEASURED, Criterion,
         "items shown wrongly, of ${checked.size}: " + checked.joinToString("; ") { it.second } +
             " (In range: connected within 60 s of Start; Not seen: not connected within 20 s)",
     )
-    return QualitySection("Equipment", listOf(metric))
 }
 
 /** Whether [span]'s state agreed with recording [s], and how; null when it is not judged. */
 private fun judge(span: ReachSpan, s: LoggedSession, start: Long): Pair<Boolean, String>? {
-    val address = span.address ?: return null
+    val address = span.address.orEmpty()
     val age = start - minOf(span.untilUtc, start)
     val maxAge = if (span.reach == InRange) InRangeMaxAgeMillis else NotSeenMaxAgeMillis
-    val links = s.lines.filter { it.tag in LinkTags && it.message.contains(address, ignoreCase = true) }
+    val links = s.lines.filter {
+        address.isNotEmpty() && it.tag in LinkTags && it.message.contains(address, ignoreCase = true)
+    }
     if (age > maxAge || links.isEmpty()) return null
     val connected = links.filter { Connected.containsMatchIn(it.message) }.minOfOrNull { it.utcMillis }
     val after = connected?.let { it - start }

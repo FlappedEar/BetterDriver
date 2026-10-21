@@ -62,7 +62,9 @@ class ReachQualityTest {
         assertEquals(Verdict.PASS, metric.verdict)
         assertEquals(0.0, metric.value)
         assertEquals(listOf("FBBD-280"), metric.keys)
-        assertTrue("RACEBOX $raceBox shown In range 30.0 s before Start, connected 2.6 s after it: agrees" in metric.how)
+        assertTrue(
+            "RACEBOX $raceBox shown In range 30.0 s before Start, connected 2.6 s after it: agrees" in metric.how,
+        )
         assertTrue("HEART_RATE $strap shown Not seen 30.0 s before Start, never connected: agrees" in metric.how)
         assertTrue("OBD_BLUETOOTH $obd shown In range 30.0 s before Start, connected 3.0 s after it" in metric.how)
         assertTrue("of 3:" in metric.how, metric.how)
