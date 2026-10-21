@@ -66,4 +66,11 @@ class CameraFramesTest {
         )
         assertEquals("unknown value", true, frames.processing(7, 1, 0, null)?.contains("noise_reduction=mode7"))
     }
+
+    @Test
+    fun fastOnlyWhenListed() {
+        assertEquals(1, fastMode(intArrayOf(0, 1, 2)))
+        assertNull(fastMode(intArrayOf(0, 2)))
+        assertNull(fastMode(null))
+    }
 }

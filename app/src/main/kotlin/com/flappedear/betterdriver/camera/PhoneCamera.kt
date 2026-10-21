@@ -673,7 +673,21 @@ private fun bindPhoneCapture(
         .build()
     val builder = VideoCapture.Builder(recorder)
         .setTargetFrameRate(Range(step.fps, step.fps))
-    Camera2Interop.Extender(builder).setSessionCaptureCallback(frames)
+    val extender = Camera2Interop.Extender(builder).setSessionCaptureCallback(frames)
+    // FAST noise reduction and edges from the first frame (FBBD-278): Arek's drives skipped single
+    // frames at capture early on and none later, as if the camera dropped heavier processing on its
+    // own partway through. Only modes the camera lists are set; the log's "camera processing" line
+    // shows what it ran with.
+    CameraSelector.DEFAULT_BACK_CAMERA.filter(p.availableCameraInfos).firstOrNull()?.let { info ->
+        val camera = Camera2CameraInfo.from(info)
+        val noiseModes = CameraCharacteristics.NOISE_REDUCTION_AVAILABLE_NOISE_REDUCTION_MODES
+        val noise = fastMode(camera.getCameraCharacteristic(noiseModes))
+        val edge = fastMode(camera.getCameraCharacteristic(CameraCharacteristics.EDGE_AVAILABLE_EDGE_MODES))
+        noise?.let { extender.setCaptureRequestOption(CaptureRequest.NOISE_REDUCTION_MODE, it) }
+        edge?.let { extender.setCaptureRequestOption(CaptureRequest.EDGE_MODE, it) }
+        val asked = { mode: Int? -> if (mode == null) "default" else "FAST" }
+        DebugLog.i("PhoneCamera", "asked for noise_reduction=${asked(noise)} edge=${asked(edge)}")
+    }
     val capture = builder.build()
     p.unbindAll()
     val back = p.bindToLifecycle(lifecycle, CameraSelector.DEFAULT_BACK_CAMERA, capture)

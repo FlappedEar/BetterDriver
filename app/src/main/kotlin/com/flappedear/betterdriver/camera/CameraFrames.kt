@@ -3,6 +3,12 @@ package com.flappedear.betterdriver.camera
 import java.util.Locale
 import kotlin.math.roundToLong
 
+/** Camera2's FAST value for noise reduction and edge modes. */
+private const val FastMode = 1
+
+/** FAST when the camera lists it among its [available] noise-reduction or edge modes, else null (FBBD-278). */
+internal fun fastMode(available: IntArray?): Int? = FastMode.takeIf { available?.contains(it) == true }
+
 /**
  * What the phone camera delivered over the last minute, for the debug log (FBBD-278): Arek's
  * 2026-10-21 1080p·60 file held 56.6 fps, and the log could not say whether the camera slowed down,
