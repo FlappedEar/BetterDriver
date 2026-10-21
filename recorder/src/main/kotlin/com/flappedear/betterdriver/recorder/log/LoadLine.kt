@@ -71,13 +71,16 @@ data class LoadLine(
 
         /** A logged line's message as a [LoadLine]; null for any other message. */
         fun parse(message: String): LoadLine? {
-            if (!message.startsWith(Prefix)) return null
-            val f = CheckLog.fields(message.removePrefix(Prefix))
+            val f = CheckLog.fields(message.removePrefix(Prefix)).takeIf { message.startsWith(Prefix) }
+            val cpuPercent = f?.get("cpu_pct")?.toDoubleOrNull()
+            val cpuMillis = f?.get("cpu_ms")?.toLongOrNull()
+            val wallMillis = f?.get("wall_ms")?.toLongOrNull()
+            if (f == null || cpuPercent == null || cpuMillis == null || wallMillis == null) return null
             val heap = f["heap_mb"]?.split('/')
             return LoadLine(
-                cpuPercent = f["cpu_pct"]?.toDoubleOrNull() ?: return null,
-                cpuMillis = f["cpu_ms"]?.toLongOrNull() ?: return null,
-                wallMillis = f["wall_ms"]?.toLongOrNull() ?: return null,
+                cpuPercent = cpuPercent,
+                cpuMillis = cpuMillis,
+                wallMillis = wallMillis,
                 gcCount = f["gc"]?.toLongOrNull() ?: 0,
                 gcMillis = f["gc_ms"]?.toLongOrNull() ?: 0,
                 allocatedMb = f["alloc_mb"]?.toDoubleOrNull() ?: 0.0,

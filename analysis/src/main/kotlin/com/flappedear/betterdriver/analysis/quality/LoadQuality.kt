@@ -30,8 +30,8 @@ private fun cpu(process: String, minutes: List<LoadLine>): QualityMetric {
     val alloc = minutes.sumOf { it.allocatedMb } * MillisPerMinute / wall
     val how = String.format(
         Locale.ROOT,
-        "mean of %d logged minutes, %% of one core; busiest minute %.1f %%; %d GC (%d ms); %.1f MB allocated a minute; " +
-            "up to %d MB heap, %d threads",
+        "mean of %d logged minutes, %% of one core; busiest minute %.1f %%; %d GC (%d ms); " +
+            "%.1f MB allocated a minute; up to %d MB heap, %d threads",
         minutes.size, peak, gc, gcMs, alloc, minutes.maxOf { it.heapUsedMb }, minutes.maxOf { it.threads },
     )
     return info(loadCpuId(process), "CPU, $process process", mean, "%", Basis.MEASURED, how)
