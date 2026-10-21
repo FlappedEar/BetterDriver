@@ -244,19 +244,20 @@ class SimulatedHeartRateMonitorTest {
 
     @Test
     fun `a strap sending only noise from the start is never shown or recorded, then off`() {
-        // FBBD-285: an unworn strap on a cable showed 24 bpm on the track screen.
+        // FBBD-285, Arek's session of 21 Oct 2026 19:32 on 1.6.1: the strap lay on a cable, not worn,
+        // and sent 0 to 37 bpm (mean 21.7) about twice a second; the track screen showed 24.
         val (rec, store) = session()
         val (strap, source) = attach(rec)
         strap.state(LinkState.Connecting)
         seconds(2)
-        strap.state(LinkState.Streaming(1))
-        repeat(40) {
-            strap.notify(24)
+        strap.state(LinkState.Streaming(2))
+        val noise = intArrayOf(0, 24, 37, 12, 31, 0, 22, 36, 18, 30)
+        repeat(86) { i ->
+            strap.notify(noise[i % noise.size])
             assertEquals(HeartRateStatus(HeartRateLink.NO_CONTACT, null), source.status())
-            seconds(1)
+            nanos.addAndGet(500_000_000L)
         }
-        strap.notify(24)
-        seconds(4)
+        nanos.addAndGet(500_000_000L)
         strap.notify(24)
         assertEquals(1, strap.stopped)
         assertEquals(null, source.status())
@@ -266,7 +267,7 @@ class SimulatedHeartRateMonitorTest {
         assertTrue(data.sampleSets.none { set -> set.values.any { it.channelId in 400..499 } })
         assertEquals(1, data.events.count { it.kind == HeartRateEvents.IMPLAUSIBLE })
         val off = data.events.single { it.kind == HeartRateEvents.OFF }
-        assertEquals("sent no plausible heart rate (41 left out) in the first 45 s: off for this session", off.text)
+        assertEquals("sent no plausible heart rate (86 left out) in the first 45 s: off for this session", off.text)
     }
 
     @Test
@@ -277,7 +278,10 @@ class SimulatedHeartRateMonitorTest {
         strap.state(LinkState.Connecting)
         seconds(2)
         strap.state(LinkState.Streaming(1))
-        strap.notify(92)
+        listOf(92, 94, 95, 93, 92).forEach { bpm ->
+            strap.notify(bpm)
+            seconds(1)
+        }
         seconds(60)
         strap.state(LinkState.Reconnecting(1, 1_000, "gatt status 8"))
         seconds(30)
@@ -291,6 +295,6 @@ class SimulatedHeartRateMonitorTest {
         val bpm = data.sampleSets.mapNotNull { set ->
             set.values.firstOrNull { it.channelId == HeartRateChannels.HEART_RATE.id }?.value
         }
-        assertEquals(listOf(92.0, 118.0), bpm)
+        assertEquals(listOf(92.0, 94.0, 95.0, 93.0, 92.0, 118.0), bpm)
     }
 }

@@ -47,10 +47,14 @@ object HeartRateEvents {
 
 /**
  * Heart rates a driver can have. A strap that is not worn can still send: one lying on a cable
- * showed 24 bpm on 21 Oct 2026 (FBBD-285), while worn drives on 20 Oct ranged 76 to 118 bpm.
- * Values outside are noise, handled like a value without skin contact.
+ * sent 0 to 37 bpm, mean 21.7, twice a second for 9 min on 21 Oct 2026 19:32 (FBBD-285), while
+ * worn drives on 20 Oct ranged 76 to 118 bpm. Values outside are noise, handled like a value
+ * without skin contact.
  */
-val PlausibleBpm = 30..230
+val PlausibleBpm = 40..230
+
+/** Plausible heart rates in a row that show the strap is worn (about 2.5 s at 2 Hz). */
+const val WornAfterValues = 5
 
 private const val MicrosPerMs = 1_000.0
 private const val HexRadix = 16
@@ -71,6 +75,7 @@ class HeartRateDecoder(private val sink: SampleSink) {
     private var contact: SensorContact? = null
     private var lastRrMicros = Long.MIN_VALUE
     private var inNoise = false
+    private var inRow = 0
 
     /** Values decoded since the decoder was created. */
     @Volatile
@@ -102,7 +107,7 @@ class HeartRateDecoder(private val sink: SampleSink) {
     var implausible = 0L
         private set
 
-    /** A plausible heart rate with skin contact arrived at least once, reconnects included. */
+    /** [WornAfterValues] plausible heart rates with skin contact arrived in a row at least once. */
     @Volatile
     var everMeasured = false
         private set
@@ -131,10 +136,13 @@ class HeartRateDecoder(private val sink: SampleSink) {
         val contact = if (noise) SensorContact.NOT_DETECTED else m.contact
         contactChanged(contact)
         noContact = contact == SensorContact.NOT_DETECTED
-        if (!noContact) {
+        if (noContact) {
+            inRow = 0
+        } else {
             lastBpm = m.bpm
             lastBpmMicros = arrival
-            everMeasured = true
+            inRow++
+            if (inRow >= WornAfterValues) everMeasured = true
             rrIntervals(m.rrMs, arrival)
         }
         val values = buildList {

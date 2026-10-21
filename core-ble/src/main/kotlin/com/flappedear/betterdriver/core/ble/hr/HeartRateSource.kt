@@ -18,8 +18,9 @@ private const val FreshMicros = 5_000_000L
 
 /**
  * A strap that is worn streams within 2 to 7 s of the session start (drives of 20 Oct 2026). One
- * with no plausible heart rate by this time is not worn, and is off until the session ends (Arek,
- * 21 Oct 2026: "jak nie wykryjesz na starcie sesji - nie włączasz po prostu", FBBD-285).
+ * without [WornAfterValues] plausible heart rates in a row by this time is not worn, and is off
+ * until the session ends (Arek, 21 Oct 2026: "jak nie wykryjesz na starcie sesji - nie włączasz
+ * po prostu", FBBD-285).
  */
 private const val StartWindowMicros = 45_000_000L
 private const val MicrosPerSecond = 1_000_000L
