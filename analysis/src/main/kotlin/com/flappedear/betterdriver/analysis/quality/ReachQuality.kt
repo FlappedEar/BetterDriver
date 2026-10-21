@@ -30,7 +30,10 @@ private const val NotSeenMaxAgeMillis = 60_000L
 /** ...and then it was wrong if the recording connected to the item within this long of Start. */
 private const val NotSeenConnectMillis = 20_000L
 
-/** A connection the recorder logged: GattLink's "<address> connected in", ObdConnector's "connected to <address>". */
+/**
+ * A connection the recorder logged: GattLink's "<address> connected in", ObdConnector's "connected to
+ * <adapter> at <address>", or data streaming.
+ */
 private val Connected = Regex("""\bconnected (in|to) |\bStreaming\b""")
 
 /** Tags of the recorder's connection lines. */
@@ -48,26 +51,37 @@ internal class ReachSpan(
 
 /**
  * What Settings › Equipment showed, item by item, from its [ReachLog] lines: a state lasts until the
- * item's next state or until the page stopped looking. One still shown when the log ends lasts on.
+ * item's next state, until the page stopped looking, or, when the process that showed it was ended
+ * (a later line from the same process has another pid; a killed page logs no "look off"), until
+ * that process's last line. One still shown when the log ends lasts on.
  */
 internal fun reachSpans(lines: List<LogLine>): List<ReachSpan> {
     val out = mutableListOf<ReachSpan>()
     val open = LinkedHashMap<String, Pair<Long, ReachLog.Entry.Item>>()
+    var shownBy: LogLine? = null
     fun close(id: String, at: Long) {
         open.remove(id)?.let { (from, e) -> out += ReachSpan(from, at, e.id, e.model, e.address, e.reach) }
     }
-    for (line in lines.filter { it.tag == ReachLog.TAG }.sortedBy { it.utcMillis }) {
+    fun closeAll(at: Long) = open.keys.toList().forEach { close(it, at) }
+    for (line in lines.sortedBy { it.utcMillis }) {
+        val by = shownBy
+        if (by != null && line.process == by.process) {
+            // Its process ended some time after its last line: the state is not known to last longer.
+            if (line.pid != by.pid) closeAll(by.utcMillis) else shownBy = line
+        }
+        if (line.tag != ReachLog.TAG) continue
+        shownBy = line
         when (val e = ReachLog.parse(line.message)) {
             is ReachLog.Entry.Item -> {
                 close(e.id, line.utcMillis)
                 open[e.id] = line.utcMillis to e
             }
             // A page that starts looking again without a "look off" was ended with its process.
-            is ReachLog.Entry.Look -> open.keys.toList().forEach { close(it, line.utcMillis) }
+            is ReachLog.Entry.Look -> closeAll(line.utcMillis)
             null -> Unit
         }
     }
-    open.keys.toList().forEach { close(it, Long.MAX_VALUE) }
+    closeAll(Long.MAX_VALUE)
     return out.sortedBy { it.fromUtc }
 }
 

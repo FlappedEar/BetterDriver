@@ -55,7 +55,7 @@ class ReachQualityTest {
         link(45_000, "Link", "$raceBox Streaming(hz=25)")
         link(50, "Link", "$strap Connecting")
         link(15_000, "Link", "$strap Reconnecting(attempt=1, delayMs=1000, reason=no data after connecting)")
-        link(3_000, "Obd", "recorder: connected to $obd over Bluetooth LE")
+        link(3_000, "Obd", "recorder: connected to vLinker MC+ (Bluetooth LE) at $obd over Bluetooth LE")
 
         val metric = section()!!.metrics.single()
         assertEquals("equipment.reach", metric.id)
@@ -123,5 +123,18 @@ class ReachQualityTest {
         val metric = section()!!.metrics.single()
         assertEquals(Verdict.PASS, metric.verdict)
         assertTrue("shown In range 0.0 s before Start" in metric.how, metric.how)
+    }
+
+    @Test
+    fun `a page whose process was killed shows nothing after that process ended`() {
+        page(-3 * 60 * 60_000L, ReachLog.look(true, 1))
+        shown(-3 * 60 * 60_000L, "rb", "RACEBOX", raceBox, "InRange")
+        // Killed with the page open: no "look off". The app starts again later in a new process.
+        lines += LogLine(start - 60_000, null, "main", 2, "t", 'I', "Startup", null, "cold ms=900")
+        recording()
+        link(50, "Link", "$raceBox Connecting")
+
+        val metric = section()!!.metrics.single()
+        assertEquals(Verdict.NOT_MEASURED, metric.verdict, metric.how)
     }
 }

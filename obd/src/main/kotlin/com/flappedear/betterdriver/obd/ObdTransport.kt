@@ -35,12 +35,15 @@ enum class ObdTransport(val label: String) {
  * Bluetooth LE one with a serial characteristic. [open] connects, blocking until the line is ready,
  * and throws an [IOException] when it cannot; bytes then go to the [ObdBytes] on the transport's
  * thread. [where] names the adapter in the log, [name] on the OBD page (UI-106 A: the name Android
- * shows for a Bluetooth adapter), [transport] says how it is reached.
+ * shows for a Bluetooth adapter), [transport] says how it is reached. [address] is a Bluetooth
+ * adapter's, logged with its connection so the drive checks can tell which listed adapter it was
+ * (FBBD-280); null for Wi-Fi.
  */
 interface ObdTarget {
     val where: String
     val transport: ObdTransport
     val name: String get() = where
+    val address: String? get() = null
 
     fun open(bytes: ObdBytes): ObdConnection
 }
