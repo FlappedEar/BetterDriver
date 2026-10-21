@@ -74,13 +74,9 @@ class CameraFrames(fps: Int) {
      */
     @Synchronized
     fun processing(noise: Int?, edge: Int?, stabilization: Int?, ois: Int?): String? {
-        val last = lastModes
-        if (last != null && last[0] == code(noise) && last[1] == code(edge) &&
-            last[2] == code(stabilization) && last[3] == code(ois)
-        ) {
-            return null
-        }
-        lastModes = intArrayOf(code(noise), code(edge), code(stabilization), code(ois))
+        val modes = intArrayOf(code(noise), code(edge), code(stabilization), code(ois))
+        if (modes.contentEquals(lastModes)) return null
+        lastModes = modes
         return "camera processing: noise_reduction=${name(noise, NoiseModes)} edge=${name(edge, EdgeModes)} " +
             "video_stabilization=${name(stabilization, StabilizationModes)} ois=${name(ois, OisModes)}"
     }
