@@ -343,6 +343,40 @@ private fun findGatePasses(
             armed = false
         }
 
+        /**
+         * The line crossed inside a GPS gap still ends the lap, as live timing counts it (audit A11):
+         * a straight chord across the gap that crosses the line within the gate, fast enough and
+         * across rather than along it. Both laps then hold the gap, so neither is a reference.
+         */
+        fun passAcrossGap(before: GpsSample, current: GpsSample) {
+            val interval = current.time - before.time
+            val firstSide = sideOf(before.point)
+            val lastSide = sideOf(current.point)
+            if (firstSide == 0 || lastSide == firstSide || !reachesLineInSpan(before.point, current.point)) return
+            val last = lastAcceptedTime
+            if (last != null && current.time - last < options.refractorySeconds) return
+            val displacement = current.point - before.point
+            val groundSpeed = displacement.length / interval
+            val normalSpeed = displacement.dot(gateNormal) / interval
+            val normalRatio = if (groundSpeed > 0.0) abs(normalSpeed) / groundSpeed else 0.0
+            if (!groundSpeed.isFinite() || groundSpeed < options.minimumGroundSpeedMetersPerSecond ||
+                !normalSpeed.isFinite() || abs(normalSpeed) < options.minimumNormalSpeedMetersPerSecond ||
+                normalRatio < options.minimumNormalMotionRatio
+            ) {
+                return
+            }
+            val direction = if (normalSpeed > 0.0) 1 else -1
+            if (acceptedDirection != 0 && direction != acceptedDirection) {
+                oppositeRejected++
+                return
+            }
+            if (acceptedDirection == 0) acceptedDirection = direction
+            val closest = closestSegments(before.point, current.point, gateA, gateB)
+            val time = before.time + closest.vehicleFraction * interval
+            passes += GatePass(time, closest.distanceMeters, direction, closest.gateFraction, groundSpeed, normalSpeed)
+            lastAcceptedTime = time
+        }
+
         for (index in 0 until sampleCount) {
             val current = gpsSampleAt(latitude, longitude, index, origin)
             if (current == null) {
@@ -357,6 +391,7 @@ private fun findGatePasses(
             val interval = current.time - before.time
             if (!interval.isFinite() || interval <= 0.0 || gapThreshold <= 0.0 || interval > gapThreshold) {
                 discardContinuity()
+                if (interval.isFinite() && interval > 0.0 && gapThreshold > 0.0) passAcrossGap(before, current)
                 previous = current
                 continue
             }

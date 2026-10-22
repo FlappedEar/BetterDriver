@@ -23,9 +23,9 @@ import kotlin.test.assertTrue
 
 /**
  * One GNSS continuity rule for live timing, the replay of saved laps and the analysis (audit A11). A
- * 25 Hz session whose fixes stop around the end of lap 3: across 2 s, no lap timed through the hole
- * can be the best lap or a reference in any of the three; across a third of a second (FBBD-215's
- * floor) every lap stays valid in all three.
+ * 25 Hz session whose fixes stop around the end of lap 3: across 2 s, all three count the line in
+ * the hole, so they find the same laps, and neither lap through the hole can be the best lap or a
+ * reference; across a third of a second (FBBD-215's floor) every lap stays valid in all three.
  */
 class GnssGapParityTest {
     private val sim = SimTrack.rectangle()
@@ -72,8 +72,13 @@ class GnssGapParityTest {
         val replayBest = assertNotNull(h.replay.best).lap
         assertFalse(h.overlaps(replayBest.startMicros, replayBest.endMicros))
 
-        assertTrue(h.analysisAcross.isNotEmpty())
+        // The analysis counts the line in the hole too: the same two laps, ending where live timing ends them.
+        assertEquals(2, h.analysisAcross.size, "analysis: ${h.analysisAcross}")
         assertTrue(h.analysisAcross.none { it.referenceEligible }, "analysis: ${h.analysisAcross}")
+        h.analysisAcross.zip(liveAcross).forEach { (a, l) ->
+            assertEquals(l.startMicros / 1e6, a.startTelemetryTime, 0.05)
+            assertEquals(l.endMicros / 1e6, a.endTelemetryTime, 0.05)
+        }
     }
 
     @Test
