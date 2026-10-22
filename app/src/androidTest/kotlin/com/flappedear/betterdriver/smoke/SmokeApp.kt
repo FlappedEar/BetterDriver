@@ -18,8 +18,10 @@ import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasScrollAction
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
@@ -263,8 +265,10 @@ fun tab(title: String): SemanticsMatcher =
 
 /** Opens the tab or bottom-bar destination [title]. */
 fun SmokeRule.openTab(title: String) {
-    // The analysis's six tabs scroll on a phone (UI-157 B): a tab off the screen is scrolled to first.
-    waitFor(tab(title)).performScrollTo().performClick()
+    val node = waitFor(tab(title))
+    // The analysis's six tabs scroll on a phone (UI-157 B): a tab in a scrolling row is scrolled to first.
+    if (exists(tab(title) and hasAnyAncestor(hasScrollAction()))) node.performScrollTo()
+    node.performClick()
     waitForIdle()
 }
 
