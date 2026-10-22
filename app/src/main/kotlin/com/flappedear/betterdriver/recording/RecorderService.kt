@@ -9,7 +9,6 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
-import android.os.Messenger
 import androidx.core.app.ServiceCompat
 import com.flappedear.betterdriver.analysis.quality.logLines
 import com.flappedear.betterdriver.coach.CoachLink
@@ -105,14 +104,6 @@ private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
     GnssType.NMEA, GnssType.TCP -> RcChannels.ACCEL_X.id to RcChannels.ACCEL_Y.id
     else -> null
 }
-
-/** The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started. */
-private fun Context.coachFor(recording: Recording, timing: SessionTiming, gnss: GnssRef, reportTo: Messenger) =
-    if (coachSettings(this).read().verbosity == Verbosity.Off) {
-        null
-    } else {
-        CoachLink(this, recording.id, recording.startNanos, timing, reportTo, fixAgeFor(gnss))
-    }
 
 /** How old the receiver's fixes are, so cues allow for it (FBBD-229); logged as it is measured. */
 private fun fixAgeFor(gnss: GnssRef): LiveFixAge? = accelIdsFor(gnss)?.let { (x, y) ->
@@ -254,11 +245,8 @@ class RecorderService : Service() {
 
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
     private fun startRecording(car: String, track: String, gnss: GnssRef?, sensors: List<SensorRef>) = control.execute {
-        active?.let {
-            // Running, or still finishing after a stop (Audit A03): one writer at a time.
-            DebugLog.i(Tag, "start ignored: recording ${it.recording.id} has not ended")
-            return@execute
-        }
+        // Running, or still finishing after a stop (Audit A03): one writer at a time.
+        active?.let { return@execute DebugLog.i(Tag, "start ignored: recording ${it.recording.id} has not ended") }
         if (gnss == null) {
             // Only reachable from an older app build or a stale restart; home needs a receiver to start.
             lastError = NoReceiver
@@ -296,7 +284,12 @@ class RecorderService : Service() {
                 recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
             }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
             recording.listeners.add(timing)
-            val coach = coachFor(recording, timing, gnss, clients.messenger)
+            // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
+            val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
+                null
+            } else {
+                CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
+            }
             coach?.let(recording.listeners::add)
             // Ends the recording here only when its writer has stopped, also for stops the recorder makes
             // itself (storage full, write error), with the writer's reason (Audit A03).
