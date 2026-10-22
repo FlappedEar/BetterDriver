@@ -101,9 +101,13 @@ class LineRealTest {
         val store = LinePlanStore(File(tmp, "lines"))
         assertTrue(store.save(plan))
         assertEquals(plan, store.get("jastrzab"))
-        // An older session analysed again leaves the later one's plan.
-        assertTrue(!store.save(plan.copy(sessionId = "older", sessionStartUtcMillis = 0L)))
+        assertTrue(!store.save(plan), "the same plan is not written again")
+        // An older session analysed again keeps its own plan; the track's is still the latest session's.
+        assertTrue(store.save(plan.copy(sessionId = "older", sessionStartUtcMillis = 0L)))
         assertEquals("s1606", store.get("jastrzab")!!.sessionId)
+        assertEquals(listOf("older", "s1606"), store.plans("jastrzab").map { it.sessionId })
+        // Each corner knows this session's fastest pass through it, never slower than its best lap's.
+        plan.corners.forEach { assertTrue(it.sessionBestSeconds!! <= it.reference.seconds + 1e-9, it.name) }
         // The same numbers as the analysis, corner by corner.
         assertEquals(line.totalGainSeconds, plan.totalGainSeconds, 1e-9)
         assertEquals(line.ranked.first().name, plan.focus().first().name)

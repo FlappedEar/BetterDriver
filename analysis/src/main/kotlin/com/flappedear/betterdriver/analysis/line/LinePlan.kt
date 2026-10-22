@@ -71,6 +71,8 @@ data class PlanCorner(
     /** The road the laps used, left and right edge, where enough laps went. */
     val roadLeft: List<PlanPoint> = emptyList(),
     val roadRight: List<PlanPoint> = emptyList(),
+    /** The session's fastest pass through the corner from any of its laps: what the next one is measured against. */
+    val sessionBestSeconds: Double? = null,
 )
 
 /** [CornerAdvice] as kept: along-track metres target minus reference (positive later), tighter positive. */
@@ -229,16 +231,18 @@ fun linePlan(
                 advice = PlanAdvice(a.brakeMeters, a.apexMeters, a.tighterMeters, a.minimumSpeedKmh, a.pickupMeters),
                 roadLeft = c.road.map { edge(it.leftMeters, it.left, it.progressMeters) },
                 roadRight = c.road.map { edge(it.rightMeters, it.right, it.progressMeters) },
+                sessionBestSeconds = c.sessionBestSeconds,
             )
         },
     )
 }
 
 /**
- * The line plan of each track, one `<track id>.json` in [dir], kept with the coach's files so a
- * backup carries it (FBBD-156). A track's plan comes from its latest analysed session: an older
- * session analysed again does not replace it. Writes are synced and renamed into place; a file
- * that cannot be read counts as none. It holds positions, so it goes with its track.
+ * The line plans of each track, one `<track id>/<session id>.json` in [dir] per analysed session,
+ * kept with the coach's files so a backup carries them (FBBD-156). The track's plan is its latest
+ * session's ([get]); the earlier ones are what the next session is measured against (FBBD-310).
+ * Writes are synced and renamed into place; a file that cannot be read counts as none. They hold
+ * positions, so they go with their track.
  */
 class LinePlanStore(private val dir: File) {
     private val json = Json {
@@ -246,13 +250,36 @@ class LinePlanStore(private val dir: File) {
         encodeDefaults = true
     }
 
+    /** The plan of [trackId]'s latest analysed session, or null without one. */
+    fun get(trackId: String): LinePlan? = plans(trackId).lastOrNull()
+
+    /** Every session's plan at [trackId], in the order they were driven. */
+    fun plans(trackId: String): List<LinePlan> =
+        File(dir, checkedId(trackId)).listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
+            .mapNotNull { f -> read(f)?.takeIf { it.trackId == trackId && f.name == it.sessionId + Suffix } }
+            .sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))
+
+    /** Saves [plan] as its session's unless the same is saved already; returns whether it wrote. */
+    fun save(plan: LinePlan): Boolean {
+        val f = fileFor(plan.trackId, plan.sessionId)
+        if (read(f) == plan) return false
+        writeAtomically(f, json.encodeToString(LinePlan.serializer(), plan))
+        return true
+    }
+
+    /** Deletes every plan of [trackId], with its track; returns whether none is left. */
+    fun delete(trackId: String): Boolean {
+        val d = File(dir, checkedId(trackId))
+        d.deleteRecursively()
+        return !d.exists()
+    }
+
     @Suppress("SwallowedException") // A file that cannot be read is no plan; the next analysis writes it again.
-    fun get(trackId: String): LinePlan? {
-        val f = fileFor(trackId)
+    private fun read(f: File): LinePlan? {
         if (!f.isFile) return null
         return try {
             json.decodeFromString(LinePlan.serializer(), f.readText())
-                .takeIf { it.format == LinePlan.Format && it.version == LinePlan.Version && it.trackId == trackId }
+                .takeIf { it.format == LinePlan.Format && it.version == LinePlan.Version }
         } catch (_: SerializationException) {
             null
         } catch (_: IllegalArgumentException) {
@@ -262,24 +289,8 @@ class LinePlanStore(private val dir: File) {
         }
     }
 
-    /** Saves [plan] unless the track's plan is from a later session or the same; returns whether it wrote. */
-    fun save(plan: LinePlan): Boolean {
-        val now = get(plan.trackId)
-        val later = now != null && now.sessionId != plan.sessionId &&
-            now.sessionStartUtcMillis > plan.sessionStartUtcMillis
-        if (now == plan || later) return false
-        writeAtomically(fileFor(plan.trackId), json.encodeToString(LinePlan.serializer(), plan))
-        return true
-    }
-
-    /** Deletes [trackId]'s plan, with its track; returns whether none is left. */
-    fun delete(trackId: String): Boolean {
-        val f = fileFor(trackId)
-        f.delete()
-        return !f.exists()
-    }
-
-    private fun fileFor(trackId: String) = File(dir, checkedId(trackId) + Suffix)
+    private fun fileFor(trackId: String, sessionId: String) =
+        File(File(dir, checkedId(trackId)), checkedId(sessionId) + Suffix)
 
     private companion object {
         const val Suffix = ".json"

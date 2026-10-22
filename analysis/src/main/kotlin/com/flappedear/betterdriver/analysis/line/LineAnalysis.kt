@@ -156,6 +156,8 @@ data class CornerLine(
     val gainSeconds: Double,
     val road: List<RoadBand>,
     val advice: CornerAdvice,
+    /** The analysed session's fastest pass through the window, from any of its laps (FBBD-310). */
+    val sessionBestSeconds: Double? = null,
 )
 
 /** A session's fastest lap against the target pass through each corner of every lap at the track. */
@@ -213,6 +215,7 @@ fun analyzeLine(
             w.corner.id, w.corner.name, turnsLeft, w.window.startProgressMeters, w.window.endProgressMeters,
             refPass, target, max(0.0, refPass.seconds - target.seconds), reader.band(k, read.map { it.road[k] }),
             if (ahead) advise(refPass, target, turnsLeft, axis.lengthMeters, thresholds) else CornerAdvice(),
+            own.fastest[k].firstOrNull()?.seconds,
         )
     }
     return LineAnalysis(referenceNumber, reference.lapSeconds, corners, read.sumOf { it.laps }, read.size)
