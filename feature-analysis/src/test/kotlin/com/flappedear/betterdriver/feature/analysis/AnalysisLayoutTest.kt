@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.feature.analysis
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getOrNull
@@ -274,7 +275,8 @@ abstract class AnalysisLayoutTest(private val device: String) {
     private fun tab(t: AnalysisTab) = compose.onNode(hasText(t.title) and IsTab)
 
     private companion object {
-        val IsTab = SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
+        // By role: the Map tab's view chips (Laps, Where to find time) are selectable too.
+        val IsTab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
     }
 }
 
