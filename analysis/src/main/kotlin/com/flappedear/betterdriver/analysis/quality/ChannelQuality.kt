@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.analysis.recorded.HorizontalAccuracy
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
@@ -18,8 +19,8 @@ private const val CmPerMetre = 100.0
 /** Accuracies are counted to this many centimetres (100 m); any worse counts as this. */
 private const val MaxAccuracyCm = 10_000
 
-/** Receivers' horizontal accuracy channels in metres, by preference (as analysis.recorded reads them). */
-private val AccuracyChannels = listOf("gnss_hacc", "dragy_hacc")
+/** Receivers' horizontal accuracy channels in metres, by preference, as analysis.recorded reads them. */
+private val AccuracyChannels = HorizontalAccuracy
 
 /** Positions, whose confidence includes the receiver's accuracy. */
 private val PositionIds = setOf(GnssChannels.LAT.id, GnssChannels.LON.id)

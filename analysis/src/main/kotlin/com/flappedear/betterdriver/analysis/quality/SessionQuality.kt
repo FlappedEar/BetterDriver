@@ -73,8 +73,13 @@ fun sessionQuality(
         samples.t[it] to samples.t[it] - (samples.utc[it] - data.info.startUtcMillis) * MicrosPerMilli
     }
     val demo = Provenance.DemoDevice in data.info.devices
+    val measured = gnss.copy(metrics = gnss.metrics + clockDrift(lags, end))
     val sections = listOfNotNull(
-        if (demo) demoGnssSection() else gnss.copy(metrics = gnss.metrics + clockDrift(lags, end)),
+        when {
+            demo -> demoGnssSection()
+            Provenance.PhoneGnssDevice in data.info.devices -> phoneGnssSection(measured)
+            else -> measured
+        },
         timingSection(data, track),
         recordingSection(data, samples, previous),
         videoSection(data.events, clips, samples.t.firstOrNull() ?: 0L, samples.t.lastOrNull() ?: end, frames),
@@ -99,6 +104,25 @@ internal fun demoGnssSection(): QualitySection {
     val why = "demo receiver: the positions are made up by the app, so the receiver checks need a real one"
     return QualitySection("GNSS", listOf(notMeasured("gnss.rate", "Average sample rate", criterion, why)))
 }
+
+/**
+ * The GNSS section of a session on the phone's own GPS (FBBD-275): [measured] as for a receiver, but
+ * shown for information only. The receiver criteria (25 Hz, gaps up to 200 ms) do not apply to a
+ * phone's GPS at about one position a second, and such a session is never receiver evidence.
+ */
+internal fun phoneGnssSection(measured: QualitySection): QualitySection = measured.copy(
+    metrics = measured.metrics.map { m ->
+        if (m.verdict != Verdict.PASS && m.verdict != Verdict.FAIL) {
+            m
+        } else {
+            val criterion = m.criterion?.let { " (receiver criterion: $it)" }.orEmpty()
+            m.copy(verdict = Verdict.INFO, criterion = null, how = "$PhoneGnssWhy$criterion; ${m.how}")
+        }
+    },
+)
+
+/** Why a phone GPS session's GNSS values are not judged. */
+internal const val PhoneGnssWhy = "phone GPS, not judged against a receiver's criteria"
 
 /** [sections] with the soak (FBBD-46) after them, judged from their values. */
 internal fun withSoak(sections: List<QualitySection>, durationMicros: Long): List<QualitySection> =

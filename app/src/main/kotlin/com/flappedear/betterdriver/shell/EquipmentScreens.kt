@@ -55,6 +55,9 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
         "Records position and speed for each session it is chosen for."
     EquipmentModel.VBOX_SPORT, EquipmentModel.DRAGY ->
         "Records position and speed for each session it is chosen for. Not yet tested with a real ${model.label}."
+    EquipmentModel.PHONE_GPS ->
+        "Records position and speed from this phone's own GPS, about one position a second, for each session " +
+            "it is chosen for. A RaceBox gives 25 and exact lap times."
     EquipmentModel.TCP_GNSS ->
         "Connects over Wi-Fi to the address below. Records position and speed, and G from a RaceChrono DIY device."
     EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."

@@ -240,13 +240,14 @@ internal fun CarRoute(nav: NavHostController, entry: NavBackStackEntry, repo: Se
 }
 
 /**
- * What can be added without Bluetooth: the phone camera, the Wi-Fi OBD-II adapter and the demo
- * receiver once, cameras run by hand and Wi-Fi receivers any number of times.
+ * What can be added without Bluetooth: the phone camera, the phone's GPS (UI-153 B), the Wi-Fi OBD-II
+ * adapter and the demo receivers once, cameras run by hand and Wi-Fi receivers any number of times.
  */
 private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
     if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
     add(EquipmentModel.GOPRO_FILES)
     add(EquipmentModel.CAMERA_FILES)
+    if (setup.equipment.none { it.model == EquipmentModel.PHONE_GPS }) add(EquipmentModel.PHONE_GPS)
     add(EquipmentModel.TCP_GNSS)
     if (setup.equipment.none { it.model == EquipmentModel.OBD_WIFI }) add(EquipmentModel.OBD_WIFI)
     if (setup.equipment.none { it.model == EquipmentModel.DEMO_GNSS }) add(EquipmentModel.DEMO_GNSS)

@@ -45,6 +45,7 @@ private fun ModelGroup(label: String, models: List<EquipmentModel>, onAdd: (Equi
 private fun withoutBluetoothNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.GOPRO_FILES -> "HERO8 or older, MAX"
     EquipmentModel.CAMERA_FILES -> "DJI Action, Insta360, Garmin and others"
+    EquipmentModel.PHONE_GPS -> "This phone's own GPS, about 1 position a second"
     EquipmentModel.TCP_GNSS -> "NMEA or RaceChrono DIY over Wi-Fi"
     EquipmentModel.DEMO_GNSS -> "For trying the app"
     EquipmentModel.DEMO_TRACK -> "Laps and coach cues on a made-up circuit"

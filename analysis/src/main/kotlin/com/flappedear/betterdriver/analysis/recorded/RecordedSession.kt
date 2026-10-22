@@ -30,9 +30,10 @@ private const val MicrosPerSecond = 1_000_000.0
 
 /**
  * Receivers' horizontal position accuracy in metres, by preference: the RaceBox's
- * (RaceBoxChannels.H_ACC) and the Dragy's (DragyChannels.H_ACC). Other receivers report none in metres.
+ * (RaceBoxChannels.H_ACC), the Dragy's (DragyChannels.H_ACC) and the phone's GPS (PhoneGnssChannels.ACCURACY,
+ * FBBD-275). Other receivers report none in metres.
  */
-internal val HorizontalAccuracy = listOf("gnss_hacc", "dragy_hacc")
+internal val HorizontalAccuracy = listOf("gnss_hacc", "dragy_hacc", "phone_gps_accuracy")
 
 /** The RaceBox's acceleration along its X axis, which the mount points forward (RaceBoxChannels.ACCEL_X). */
 private const val AccelerationX = "accel_x"

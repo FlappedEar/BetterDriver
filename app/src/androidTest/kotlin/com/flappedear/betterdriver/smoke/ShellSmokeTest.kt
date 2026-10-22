@@ -79,6 +79,15 @@ class ShellSmokeTest {
         app.waitForText("Cancel").performClick()
         app.waitUntilGone("Which GoPro")
 
+        // Phone GPS (FBBD-275, UI-153 B): added like a receiver, opened from the list, removed.
+        app.waitForText("This phone's own GPS, about 1 position a second").performScrollTo().performClick()
+        app.waitFor(hasText("Phone GPS") and hasClickAction()).performClick()
+        app.waitForText("from this phone's own GPS", substring = true)
+        app.waitForText("Remove").performClick()
+        app.waitUntilGone("Phone GPS")
+        app.waitForText("+ Add equipment").performClick()
+        app.waitForText("ADD WITHOUT BLUETOOTH").performScrollTo()
+
         // Demo GNSS: added, opened from the list, removed.
         app.waitForText("For trying the app").performScrollTo().performClick()
         app.waitFor(hasText("Demo GNSS") and hasClickAction()).performClick()

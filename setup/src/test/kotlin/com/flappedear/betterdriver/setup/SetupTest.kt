@@ -45,6 +45,22 @@ class SetupTest {
     }
 
     @Test
+    fun phoneGpsIsAddedOnceAndChosenLikeAnyReceiver() {
+        // FBBD-275, UI-153 B: no address, listed once, the session's receiver when it is the first.
+        val s = Setup.fresh(ids)
+            .addEquipment(EquipmentModel.PHONE_GPS, newId = ids)
+            .addEquipment(EquipmentModel.PHONE_GPS, newId = ids)
+        assertEquals(1, s.equipment.count { it.model == EquipmentModel.PHONE_GPS })
+        assertEquals("Phone GPS", s.active().gnss?.name)
+        assertNull(s.active().startProblem)
+        // A RaceBox added later does not take over; chosen, it does.
+        val box = s.addEquipment(EquipmentModel.RACEBOX, "RaceBox Micro 3241", "AA", ids)
+        assertEquals(EquipmentModel.PHONE_GPS, box.active().gnss?.model)
+        val id = box.equipment.single { it.model == EquipmentModel.RACEBOX }.id
+        assertEquals(EquipmentModel.RACEBOX, box.chooseGnss(id).active().gnss?.model)
+    }
+
+    @Test
     fun pairedModelsNeedAnAddressAndAreNotListedTwice() {
         assertFailsWith<IllegalArgumentException> { Setup().addEquipment(EquipmentModel.GOPRO, newId = ids) }
         val s = Setup()
