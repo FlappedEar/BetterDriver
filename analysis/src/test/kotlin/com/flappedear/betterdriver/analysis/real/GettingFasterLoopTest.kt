@@ -255,6 +255,7 @@ class GettingFasterLoopTest {
                 when {
                     a == null -> problems += "$turn: ${c.target.name} not measured"
                     a.verdict == FocusVerdict.NotComparable -> problems += "$turn: ${c.target.name} not comparable"
+                    a.verdict == FocusVerdict.NotDriven -> problems += "$turn: ${c.target.name} has no counted pass"
                     !a.coached -> problems += "$turn: ${c.target.name} not known as coached"
                 }
             }
