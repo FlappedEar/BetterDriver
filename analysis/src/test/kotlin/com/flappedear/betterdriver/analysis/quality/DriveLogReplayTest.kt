@@ -145,6 +145,32 @@ class DriveLogReplayTest {
         assertEquals(Verdict.PASS, r.metric("hr.reconnect").verdict, r.metric("hr.reconnect").how)
     }
 
+    @Test
+    fun `the 1_8_0 motorway drives lose 2_4 to 12 % of the RaceBox's messages and keep 1080p60 at 60 fps`() {
+        // Arek's three drives of 22 Oct 2026, 15:07 to 16:41, on 1.8.0, mostly on the motorway: RaceBox at
+        // MTU 247, Vgate vLinker over BLE, HR strap worn, 1080p60 through the own encoder. In town the
+        // RaceBox lost almost nothing beyond its whole-second skip; on the motorway it lost 20 to 450
+        // messages a minute, most in a jam at walking pace, with OBD steady. One engine-off stop
+        // (16:08 to 16:12). Session, Gnss, Hr, RaceBox, event and file lines, without positions.
+        val reports = driveChecks(File(javaClass.getResource("/drive-log/1.8.0-1641")!!.toURI()))
+        val ids = listOf("20261022-150703-4f2cdce9", "20261022-160118-dc30a0f4", "20261022-161518-7e79d322")
+        assertEquals(ids, reports.map { it.sessionId })
+        // The phone said 2.36, 3.60 and 12.07 %. The third drive's RaceBox link dropped 5 s after the start,
+        // and the replay counts those first seconds a little differently (about 11.75 %), hence its margin.
+        for ((r, dropped) in reports.zip(listOf(2.36 to 0.1, 3.60 to 0.1, 11.9 to 0.4))) {
+            val m = r.metric("gnss.dropped")
+            assertEquals(Verdict.FAIL, m.verdict, m.how)
+            assertEquals(dropped.first, m.value!!, dropped.second, m.how)
+            val video = r.metric("video.phone.frame_rate")
+            assertEquals(Verdict.PASS, video.verdict, video.how)
+            assertTrue(video.value!! >= 59.85, video.how)
+            assertEquals(Verdict.PASS, r.metric("hr.rate").verdict, r.metric("hr.rate").how)
+        }
+        // The 53-min drive: many single messages missing, never a gap over 120 ms.
+        assertEquals(Verdict.PASS, reports[0].metric("gnss.max_gap").verdict, reports[0].metric("gnss.max_gap").how)
+        assertEquals(120.0, reports[0].metric("gnss.max_gap").value!!, 1.0)
+    }
+
     /** The VBO's rows as the recorder would have logged them: one [GnssSecondLog] line per second. */
     private fun vboLog(): List<LogLine> {
         val start = LogLine.parse("2026-10-12T10:36:07.979Z 2646 recorder-control I Recording: x")!!.utcMillis
