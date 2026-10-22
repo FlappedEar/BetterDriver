@@ -60,6 +60,19 @@ class GoProImporter(
         files: List<File>,
         source: Source,
         recording: GoProRecording? = null,
+    ): Result = place(session, files, source, recording).also { result ->
+        if (result.clips.isNotEmpty()) VideoIndex(sessionDir).putAll(result.clips)
+    }
+
+    /**
+     * Places [files] as [import] does, without adding them to the session's index: they may still be
+     * in a staging folder, under the names they will have in the session's video directory.
+     */
+    fun place(
+        session: SessionData,
+        files: List<File>,
+        source: Source,
+        recording: GoProRecording? = null,
     ): Result {
         val speeds = sessionSpeeds(session)
         val durationUs = sessionEndUs(session)
@@ -68,7 +81,7 @@ class GoProImporter(
         var previous: VideoClip? = null
         for ((index, file) in files.withIndex()) {
             val placed = try {
-                place(file, index + 1, source, previous, recording, session, speeds)
+                placeFile(file, index + 1, source, previous, recording, session, speeds)
             } catch (e: IOException) {
                 problems += "${file.name}: ${e.message}"
                 null
@@ -97,12 +110,11 @@ class GoProImporter(
             }
             previous = fitted ?: clip
         }
-        if (clips.isNotEmpty()) VideoIndex(sessionDir).putAll(clips)
         return Result(clips, problems)
     }
 
     @Suppress("LongParameterList")
-    private fun place(
+    private fun placeFile(
         file: File,
         chapter: Int,
         source: Source,

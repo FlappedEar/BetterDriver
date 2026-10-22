@@ -24,9 +24,8 @@ import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Recorder
-import com.flappedear.betterdriver.recorder.RecorderListener
-import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
+import com.flappedear.betterdriver.recorder.RecordingEnd
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveFixAge
@@ -140,6 +139,7 @@ class RecorderService : Service() {
 
     private class Active(
         val recording: Recording,
+        val end: RecordingEnd,
         val tracker: LiveTracker,
         val timing: SessionTiming,
         val coach: CoachLink?,
@@ -245,7 +245,8 @@ class RecorderService : Service() {
 
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
     private fun startRecording(car: String, track: String, gnss: GnssRef?, sensors: List<SensorRef>) = control.execute {
-        if (active != null) return@execute
+        // Running, or still finishing after a stop (Audit A03): one writer at a time.
+        active?.let { return@execute DebugLog.i(Tag, "start ignored: recording ${it.recording.id} has not ended") }
         if (gnss == null) {
             // Only reachable from an older app build or a stale restart; home needs a receiver to start.
             lastError = NoReceiver
@@ -290,13 +291,10 @@ class RecorderService : Service() {
                 CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
             }
             coach?.let(recording.listeners::add)
-            // Covers stops the recorder makes itself (storage full, write error).
-            recording.listeners.add(object : RecorderListener {
-                override fun onStatus(status: RecorderStatus) {
-                    if (status is RecorderStatus.Stopped) main.post { onEnded(recording, status.reason) }
-                }
-            })
-            active = Active(recording, tracker, timing, coach, DeviceChecks(this, recording).also { it.start() })
+            // Ends the recording here only when its writer has stopped, also for stops the recorder makes
+            // itself (storage full, write error), with the writer's reason (Audit A03).
+            val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
+            active = Active(recording, end, tracker, timing, coach, DeviceChecks(this, recording).also { it.start() })
             carryOn(wanted, recording, restartOf.also { restartOf = null })
             sources.forEach(recording::attach)
             main.post {
@@ -323,9 +321,10 @@ class RecorderService : Service() {
             val a = active
             if (a == null) {
                 main.post { endForeground() }
-            } else {
-                a.recording.stop(UserStop)
-                main.post { onEnded(a.recording, UserStop) }
+            } else if (!a.end.stop(UserStop)) {
+                // Still finishing (Audit A03): the service, its wake lock and the session stay until the
+                // writer has stopped, and no new recording starts meanwhile.
+                DebugLog.w(Tag, "recording ${a.recording.id} still finishing after ${RecordingEnd.StopWaitMs} ms")
             }
         }
     }

@@ -21,6 +21,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -44,6 +45,7 @@ import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.ActionsLabel
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.SetupRepo
+import com.flappedear.betterdriver.shell.sessionRowTag
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.tracks.Tracks
@@ -294,6 +296,16 @@ fun SmokeRule.openSession(car: String) {
     onNode(hasScrollToNodeAction()).performScrollToNode(hasText(car, substring = true))
     // The card's detail line; a tap there opens the card.
     onNodeWithText(car, substring = true, useUnmergedTree = true).performClick()
+    waitForText("Lap analysis")
+}
+
+/**
+ * Scrolls the Sessions list to the row of session [id] and opens its lap analysis. Found by its tag:
+ * the row's time text ("09:00") can also stand in a notice elsewhere on the screen.
+ */
+fun SmokeRule.openSessionRow(id: String) {
+    onNode(hasScrollToNodeAction()).performScrollToNode(hasTestTag(sessionRowTag(id)))
+    onNode(hasTestTag(sessionRowTag(id))).performClick()
     waitForText("Lap analysis")
 }
 
