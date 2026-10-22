@@ -38,7 +38,7 @@ class GnssGapTimingTest {
     }
 
     @Test
-    fun `25 Hz with 2 s missing across the line: both laps counted, neither the best, live and replayed`() {
+    fun `25 Hz with 2 s missing across the line, both laps counted, neither the best, live and replayed`() {
         val drive = circuit.drive(paces)
         val passes = drive.lineTimesMicros.getValue(0.0)
         // Lap 3, the fastest, ends in the hole.

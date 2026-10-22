@@ -59,7 +59,7 @@ class GnssGapParityTest {
     }
 
     @Test
-    fun `2 s without fixes across the line: no valid lap through the hole, live, replayed or analysed`() {
+    fun `2 s without fixes across the line, no valid lap through the hole, live, replayed or analysed`() {
         val h = holed(2.0)
         val liveAcross = h.live.laps.filter { h.overlaps(it.startMicros, it.endMicros) }
         assertEquals(2, liveAcross.size, "the lap into the hole and the lap out of it are both counted")
