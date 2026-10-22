@@ -133,16 +133,29 @@ private fun TemperatureCard(car: CarUi, modifier: Modifier) {
             Dim("Not recorded in this session")
             return@Card
         }
-        val unit = car.rows.flatMap { it.temperatures }.firstOrNull()?.unit ?: "°C"
+        // One unit over the table when every temperature has it, else each column names its own.
+        val units = car.rows.flatMap { it.temperatures }.groupBy({ it.kind }, { it.unit })
+            .mapValues { (_, u) -> u.first() }
+        val shared = units.values.distinct().singleOrNull()
         Row(verticalAlignment = Alignment.CenterVertically) {
-            TrackLabel(unit, Modifier.weight(1f))
+            TrackLabel(shared.orEmpty(), Modifier.weight(1f))
             for (k in kinds) {
-                TrackLabel(TemperatureNames.getValue(k), Modifier.width(TemperatureWidth).padding(start = 4.dp))
+                val name = TemperatureNames.getValue(k)
+                TrackLabel(
+                    if (shared == null) "$name ${units.getValue(k)}" else name,
+                    Modifier.width(TemperatureWidth).padding(start = 4.dp),
+                )
             }
         }
         for (row in car.rows) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically) { RowName(row) }
+                // Only the lap's number: four columns of temperatures leave no room for its time on a phone.
+                Text(
+                    row.lapNumber?.let { "Lap $it" } ?: "Whole drive",
+                    color = if (row.best) TrackTheme.colors.best else TrackTheme.colors.textDim,
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.weight(1f),
+                )
                 for (k in kinds) {
                     val r = row.temperatures.firstOrNull { it.kind == k }
                     Text(
@@ -280,4 +293,4 @@ private val LineWidth = 1.5.dp
 private val LapNameWidth = 48.dp
 private val LapTimeWidth = 72.dp
 private val WholeDriveWidth = 120.dp
-private val TemperatureWidth = 64.dp
+private val TemperatureWidth = 66.dp

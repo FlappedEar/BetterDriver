@@ -141,8 +141,8 @@ abstract class AnalysisLayoutTest(private val device: String) {
     }
 
     /**
-     * The Car tab (FBBD-176, UI-157 B) shows the pedals by lap, the temperatures by lap with the one
-     * not recorded named, and the heart rate chart; a lap without pedals says so instead of a bar.
+     * The Car tab (FBBD-176, UI-157 B) shows the pedals by lap, all four temperatures by lap (a lap
+     * without one shows a dash) and the heart rate chart; a lap without pedals says so instead of a bar.
      */
     @Test
     fun carTabShowsPedalsTemperaturesAndHeartRate() {
@@ -153,7 +153,8 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.onNodeWithTag(PedalCardTag).performScrollTo().assertIsDisplayed()
         compose.onNode(hasText("Not recorded")).assertExists()
         compose.onNodeWithTag(TemperatureCardTag).performScrollTo().assertIsDisplayed()
-        compose.onNode(hasText("Not recorded: intake")).assertExists()
+        // The third lap's gearbox was not recorded: a dash, never a zero.
+        compose.onAllNodes(hasText("—")).assertCountEquals(1)
         compose.onNodeWithTag(HeartRateChartTag).performScrollTo().assertIsDisplayed()
     }
 
