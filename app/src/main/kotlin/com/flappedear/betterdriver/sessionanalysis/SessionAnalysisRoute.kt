@@ -46,12 +46,15 @@ import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
+import com.flappedear.betterdriver.feature.analysis.CarUi
 import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.mapUi
 import com.flappedear.betterdriver.feature.analysis.qualityUi
+import com.flappedear.betterdriver.feature.analysis.wholeDriveCar
+import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.feature.analysis.withQuality
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
@@ -74,10 +77,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The cards of a session that need no laps: its acceleration runs (FBBD-154) and its G-forces, each
- * null when it has none.
+ * The cards of a session that need no laps: its acceleration runs (FBBD-154), its G-forces and its
+ * car values and heart rate over the whole drive (FBBD-176), each null when it has none.
  */
-private class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?)
+private class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?, val car: CarUi? = null)
 
 /** A session read and analysed once; comparing another lap reuses it. */
 @Suppress("LongParameterList") // What one read of the session gives.
@@ -277,10 +280,12 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
     }
     val ui = analysisUi(loaded.title, analysis, comparison)
         ?.let { withHeartRate(it, analysis, loaded.session, loaded.heartRateDevice) }
+        ?.let { withCar(it, analysis, loaded.session, loaded.heartRateDevice) }
         ?: return AnalysisState.Unavailable(
             "No lap counts: every lap has a GPS gap or is not a full lap.",
             acceleration = loaded.whole.acceleration,
             gForces = loaded.whole.gForces,
+            car = loaded.whole.car,
         )
     // The map and G-G diagram read every sample of two laps; this runs on Dispatchers.Default.
     val map = mapUi(analysis, loaded.session, comparison)
@@ -354,9 +359,13 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
     val acceleration = accelerationUi(findAccelerationRuns(session))
     // So do the session's G-forces.
     val gForces = sessionGg(session)
+    val strap = data.events.firstOrNull { it.kind == HeartRateLogIds.DEVICE }
+        ?.text?.substringAfter("name=", "")?.ifEmpty { null }
+    // And the car's values and the heart rate over the whole drive (UI-162 A).
+    val car = wholeDriveCar(session, strap)
     if (track == null) {
         val failed = noTrack(data, saved, circuits)
-        return failed.copy(state = failed.state.copy(acceleration = acceleration, gForces = gForces))
+        return failed.copy(state = failed.state.copy(acceleration = acceleration, gForces = gForces, car = car))
     }
     // Analysed through the track's corners and straights (FBBD-172); the first analysis there makes them.
     val analysis = analyzeAtTrack(tracks, track, session, data.info.startUtcMillis)
@@ -366,13 +375,11 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         } else {
             "No complete lap at ${track.displayName}: the car has to cross the start/finish line at least twice."
         }
-        return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces))
+        return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces, car = car))
     }
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
     val coached = CoachedSession(CoachEvents.focusSource(data.events), CoachEvents.cuesByCorner(data.events))
-    val whole = WholeSession(acceleration, gForces)
-    val strap = data.events.firstOrNull { it.kind == HeartRateLogIds.DEVICE }
-        ?.text?.substringAfter("name=", "")?.ifEmpty { null }
+    val whole = WholeSession(acceleration, gForces, car)
     val loaded = Loaded(
         session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info), strap,
     )

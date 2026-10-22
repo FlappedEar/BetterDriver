@@ -1,7 +1,10 @@
 package com.flappedear.betterdriver.analysis.heartrate
 
+import com.flappedear.betterdriver.analysis.data.SamplePoint
+import com.flappedear.betterdriver.analysis.data.TelemetryChannel
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.TimedLap
+import com.flappedear.betterdriver.analysis.vehicle.bucketedSegments
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import kotlin.math.roundToInt
 
@@ -32,7 +35,7 @@ fun heartRateStats(
     from: Double = Double.NEGATIVE_INFINITY,
     to: Double = Double.POSITIVE_INFINITY,
 ): HeartRateStats? {
-    val channel = session.channel(HeartRateLogIds.NAME) ?: return null
+    val channel = heartRateChannel(session) ?: return null
     val recorded = channel.timestamps.indices
         .filter { channel.timestamps[it] in from..to && isBeat(channel.values[it]) }
     if (recorded.isEmpty()) return null
@@ -53,6 +56,36 @@ fun heartRateStats(
 
 /** A heart rate the strap sent: a gap or a zero is none. */
 private fun isBeat(bpm: Double) = bpm.isFinite() && bpm > 0.0
+
+/** RaceChrono's export of a strap's heart rate ("heart_rate-hrm"), FBBD-176. */
+private const val RaceChronoName = "heart_rate-hrm"
+
+/**
+ * The heart rate channel of [session]: the app's own ([HeartRateLogIds.NAME]) or, in an imported
+ * RaceChrono session, its "heart_rate-hrm" column; null without one.
+ */
+fun heartRateChannel(session: TelemetrySession): TelemetryChannel? =
+    session.channel(HeartRateLogIds.NAME) ?: session.channel(RaceChronoName)
+
+/** How long each point of the heart rate chart averages (UI-160 A). */
+const val HeartRateChartStepSeconds = 10.0
+
+/**
+ * The heart rate of [session] for a chart over the whole session (UI-160 A): [HeartRateChartStepSeconds]
+ * averages, split where the strap sent nothing for over [MaxBeatGapSeconds] so a dropout stays blank.
+ * Empty without heart rate.
+ */
+fun heartRateSeries(session: TelemetrySession): List<List<SamplePoint>> {
+    val channel = heartRateChannel(session)?.takeIf { it.sampleCount > 0 } ?: return emptyList()
+    return bucketedSegments(
+        channel,
+        channel.timestamps.first(),
+        channel.timestamps.last(),
+        HeartRateChartStepSeconds,
+        MaxBeatGapSeconds,
+        ::isBeat,
+    )
+}
 
 /** The heart rate of each of [laps] in [session], in their order; null for a lap without any. */
 fun lapHeartRates(session: TelemetrySession, laps: List<TimedLap>): List<HeartRateStats?> =

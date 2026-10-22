@@ -25,6 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Icon
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
@@ -39,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -89,7 +91,12 @@ fun AnalysisScreen(
             AnalysisState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is AnalysisState.Unavailable -> WithAcceleration(state.acceleration, state.quality, state.gForces) {
+            is AnalysisState.Unavailable -> WithAcceleration(
+                state.acceleration,
+                state.quality,
+                state.gForces,
+                state.car,
+            ) {
                 Card {
                     Text(state.message, style = MaterialTheme.typography.bodyLarge)
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
@@ -101,12 +108,15 @@ fun AnalysisScreen(
 }
 
 /** The sections of the analysis, one per tab (UI-62 B). */
-internal enum class AnalysisTab(val title: String) {
-    Summary("Summary"),
-    Compare("Compare"),
-    Map("Map"),
-    Laps("Laps"),
-    Corners("Corners"),
+internal enum class AnalysisTab(val title: String, val icon: ImageVector) {
+    Summary("Summary", AnalysisIcons.Summary),
+    Compare("Compare", AnalysisIcons.Compare),
+    Map("Map", AnalysisIcons.Map),
+    Laps("Laps", AnalysisIcons.Laps),
+    Corners("Corners", AnalysisIcons.Corners),
+
+    /** The car's values and the heart rate (FBBD-176, UI-157 B). */
+    Car("Car", AnalysisIcons.Car),
 }
 
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
@@ -126,9 +136,18 @@ private fun Ready(
         onCompare(it)
         tab = AnalysisTab.Compare.ordinal
     }
+    // Six tabs fit a phone's width as icons with small names, like the bottom bar (UI-163 C).
     PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
         AnalysisTab.entries.forEach { t ->
-            Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }, text = { Text(t.title) })
+            Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }) {
+                Column(
+                    Modifier.padding(vertical = TabPadding),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Icon(t.icon, contentDescription = null, Modifier.size(TabIconSize))
+                    Text(t.title, style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false)
+                }
+            }
         }
     }
     // Each tab opens at its top: a new scroll state whenever the tab changes.
@@ -169,6 +188,7 @@ private fun Ready(
                     Sectors(ui, width)
                     CornerDetails(ui, width)
                 }
+                AnalysisTab.Car -> CarCards(ui.car, width)
             }
         }
     }
@@ -514,3 +534,6 @@ private fun AnalysisScreenPreview() {
         }
     }
 }
+
+private val TabPadding = 8.dp
+private val TabIconSize = 20.dp

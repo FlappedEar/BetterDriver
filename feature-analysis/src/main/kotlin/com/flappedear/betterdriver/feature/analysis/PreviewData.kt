@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
+import com.flappedear.betterdriver.analysis.data.SamplePoint
 import com.flappedear.betterdriver.analysis.driving.DrivingState
 import com.flappedear.betterdriver.analysis.driving.DrivingStateRun
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
@@ -15,6 +16,9 @@ import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.summary.SegmentChange
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.analysis.vehicle.PedalShares
+import com.flappedear.betterdriver.analysis.vehicle.TemperatureRange
+import com.flappedear.betterdriver.analysis.vehicle.VehicleChannel
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
 import kotlin.math.PI
@@ -25,10 +29,55 @@ private const val PreviewLength = 1767.0
 
 private fun line(f: (Double) -> Double) = listOf((0..176).map { ChartPoint(it * 10.0, f(it * 10.0)) })
 
+private fun previewTemps(oil: Pair<Double, Double>, coolant: Pair<Double, Double>, gearbox: Pair<Double, Double>?) =
+    listOfNotNull(
+        TemperatureRange(VehicleChannel.OilTemp, oil.first, oil.second, "°C"),
+        TemperatureRange(VehicleChannel.CoolantTemp, coolant.first, coolant.second, "°C"),
+        gearbox?.let { TemperatureRange(VehicleChannel.GearboxTemp, it.first, it.second, "°C") },
+        TemperatureRange(VehicleChannel.IntakeTemp, 30.0, 36.0, "°C"),
+    )
+
+/** The Car tab of [PreviewUi]: all four temperatures, the third lap's gearbox not recorded, no pedals on lap 4. */
+internal val PreviewCar = CarUi(
+    rows = listOf(
+        CarRow(
+            1, 82_310, false,
+            PedalShares(0.33, 0.30, 0.10, 0.27, 80.0),
+            previewTemps(105.0 to 115.0, 94.0 to 100.0, 93.0 to 99.0),
+        ),
+        CarRow(
+            2, 81_240, true,
+            PedalShares(0.36, 0.30, 0.07, 0.27, 79.0),
+            previewTemps(115.0 to 123.0, 98.0 to 100.0, 99.0 to 104.0),
+        ),
+        CarRow(
+            3, 81_870, false,
+            PedalShares(0.28, 0.43, 0.08, 0.21, 80.0),
+            previewTemps(122.0 to 128.0, 99.0 to 103.0, null),
+        ),
+        CarRow(
+            4, 95_020, false,
+            null,
+            previewTemps(120.0 to 127.0, 98.0 to 101.0, 104.0 to 110.0),
+        ),
+    ),
+    heartRate = HeartRateChartUi(
+        HeartRateUi("Polar H10 1234", 128, 161, 96, 22),
+        segments = listOf(
+            (0..30).map { SamplePoint(it * 10.0, 110.0 + it) },
+            (40..80).map { SamplePoint(it * 10.0, 140.0 + (it % 7) * 3) },
+        ),
+        laps = listOf(300.0 to 382.0, 382.0 to 463.0, 463.0 to 545.0, 545.0 to 640.0),
+        fromSeconds = 0.0,
+        toSeconds = 800.0,
+    ),
+)
+
 /** A made-up session for previews and the UI review page. */
 internal val PreviewUi = AnalysisUi(
     title = "Silesia Ring · 11 Oct",
     heartRate = HeartRateUi("Polar H10 1234", 128, 161, 96, 22),
+    car = PreviewCar,
     laps = listOf(
         LapRow(0, 1, 82_310, 1.07, best = false, note = "", heartRate = LapHeartRate(134, 152)),
         LapRow(1, 2, 81_240, 0.0, best = true, note = "", heartRate = LapHeartRate(138, 158)),

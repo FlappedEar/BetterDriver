@@ -141,6 +141,24 @@ abstract class AnalysisLayoutTest(private val device: String) {
     }
 
     /**
+     * The Car tab (FBBD-176, UI-157 B) shows the pedals by lap, all four temperatures by lap (a lap
+     * without one shows a dash) and the heart rate chart; a lap without pedals says so instead of a bar.
+     */
+    @Test
+    fun carTabShowsPedalsTemperaturesAndHeartRate() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        tab(AnalysisTab.Car).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(PedalCardTag).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Not recorded")).assertExists()
+        compose.onNodeWithTag(TemperatureCardTag).performScrollTo().assertIsDisplayed()
+        // The third lap's gearbox was not recorded: a dash, never a zero.
+        compose.onAllNodes(hasText("—")).assertCountEquals(1)
+        compose.onNodeWithTag(HeartRateChartTag).performScrollTo().assertIsDisplayed()
+    }
+
+    /**
      * The Compare tab shows what each lap's car was doing along the lap and how long each coasted
      * (FBBD-175), marked as inferred; the Corners tab shows each corner's coasting, marked too.
      */
