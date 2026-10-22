@@ -383,7 +383,7 @@ class GettingFasterLoopTest {
     fun `the loop runs through Arek's six sessions at Jastrząb (29 Aug 2026)`() =
         check(
             "Jastrząb 29 Aug", RealCorpus.JASTRZAB_DAY, RealCorpus.jastrzabTrack(),
-            Known(uncoachable = 2, silent = 4, otherTarget = 53, unspoken = 10),
+            Known(uncoachable = 1, silent = 4, otherTarget = 50, unspoken = 10),
         )
 
     @Test

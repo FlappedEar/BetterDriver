@@ -35,6 +35,9 @@ internal object CoachProtocol {
     /** How long before [T_US] the fix was taken, in µs; 0 or absent when not known (FBBD-229). */
     const val FIX_AGE_US = "fixAge"
 
+    /** The pedal in percent at the fix (FBBD-307); NaN without a recent one. */
+    const val THROTTLE = "throttle"
+
     /** In a coach report: event time on the session clock, kind and text. */
     const val EVENT_KIND = "kind"
     const val EVENT_TEXT = "text"
