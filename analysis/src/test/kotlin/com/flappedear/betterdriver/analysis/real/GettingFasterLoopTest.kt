@@ -117,8 +117,8 @@ class GettingFasterLoopTest {
     }
 
     /** A corner of [from]'s line plan and the lap the coach of the next session aims at there. */
-    private class Target(val name: String, val plan: String, val coach: String?) {
-        val same: Boolean get() = plan == coach
+    private class Target(val name: String, val plan: String?, val coach: String?) {
+        val same: Boolean get() = plan != null && plan == coach
     }
 
     /**
@@ -270,7 +270,8 @@ class GettingFasterLoopTest {
     /**
      * For every corner of [plan], the session and lap of its target, and of the coach's target there
      * (its second fastest pass, FBBD-177) in a reference from [earlier]: the plan's sessions. A lap is
-     * known by its session and its time, since the coach and the analysis number laps each their own way.
+     * known by the coach's number for it: the analysis's lap is the coach's lap of the same session
+     * with the same time, since the two number laps each their own way.
      */
     private fun targets(at: Track, reference: CoachReference?, earlier: List<Step>, plan: LinePlan?): List<Target> {
         val map = reference?.let { r -> lapFrame(at)?.let { identified(r.map(), it, at.identity) } }
@@ -281,7 +282,7 @@ class GettingFasterLoopTest {
                 val target = reference.targets.filter { it.corner == corner.number }.getOrNull(1)
                 target?.let { t -> source(map, laps, t.lap, t.timeMicros, corner.number) } ?: "none"
             }.distinct().singleOrNull()
-            Target(c.name, "${c.target.sessionId} ${lapTime(c.target.lapSeconds)}", coach)
+            Target(c.name, lapOf(laps, c.target.sessionId, c.target.lapSeconds), coach)
         }
     }
 
@@ -299,12 +300,20 @@ class GettingFasterLoopTest {
     ): String? = laps.filter { it.second.lap.number == lap }
         .mapNotNull { (s, t) ->
             map.passes(t.trace, t.lap.number).firstOrNull { it.corner == corner }
-                ?.let { abs(it.timeMicros - micros) to "${s.data.id} ${lapTime(t.lap.timeMicros / 1e6)}" }
+                ?.let { abs(it.timeMicros - micros) to "${s.data.id} lap ${t.lap.number}" }
         }
         .filter { it.first <= SamePassMicros }
         .minByOrNull { it.first }?.second
 
-    private fun lapTime(seconds: Double) = String.format(Locale.ROOT, "%.1f", seconds)
+    /**
+     * The coach's lap of session [sessionId] that the analysis timed at [seconds]: the one closest in
+     * time, within [SameLapSeconds], as each times laps from its own fixes.
+     */
+    private fun lapOf(laps: List<Pair<Step, TracedLap>>, sessionId: String, seconds: Double): String? =
+        laps.filter { it.first.data.id == sessionId }
+            .map { (_, t) -> abs(t.lap.timeMicros / 1e6 - seconds) to t.lap.number }
+            .filter { it.first <= SameLapSeconds }
+            .minByOrNull { it.first }?.let { "$sessionId lap ${it.second}" }
 
     /** Every link of the loop on one day, and the shortfalls against [known]. */
     private fun check(name: String, files: List<String>, track: Track, known: Known) {
@@ -354,6 +363,8 @@ class GettingFasterLoopTest {
         }
         if (silent > known.silent) problems += "$silent silent focus corners, was ${known.silent}"
         // 4. One target everywhere: the coach aims at the plan's lap in every corner.
+        turns.flatMap { t -> t.targets.filter { it.plan == null }.map { "${t.from.label}: ${it.name}" } }
+            .forEach { problems += "$it: the plan's target lap is none of the coach's laps" }
         val otherTarget = turns.sumOf { t -> t.targets.count { !it.same } }
         if (otherTarget > known.otherTarget) {
             problems += "$otherTarget corners where the coach aims at another lap than the plan, " +
@@ -444,5 +455,6 @@ class GettingFasterLoopTest {
 
     private companion object {
         const val SamePassMicros = 5_000L
+        const val SameLapSeconds = 0.05
     }
 }
