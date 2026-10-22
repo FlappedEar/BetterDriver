@@ -95,6 +95,8 @@ class PhoneGnssSource(private val context: Context) : DataSource {
 
     @Volatile private var satellites: Int? = null
 
+    @Volatile private var lastFixNanos = 0L
+
     @SuppressLint("MissingPermission") // Checked first.
     override fun start(sink: SampleSink) {
         val manager = context.getSystemService(LocationManager::class.java)
@@ -111,22 +113,43 @@ class PhoneGnssSource(private val context: Context) : DataSource {
         PhoneGnssChannels.ALL.forEach(sink::defineChannel)
         val worker = HandlerThread("phone-gnss").apply { start() }
         val handler = Handler(worker.looper)
-        val l = LocationListener { location -> sink.submit(phoneFixSet(stamp(sink, location), location.toFix())) }
+        val l = LocationListener { location ->
+            lastFixNanos = SystemClock.elapsedRealtimeNanos()
+            sink.submit(phoneFixSet(stamp(sink, location), location.toFix()))
+        }
         val status = object : GnssStatus.Callback() {
             override fun onSatelliteStatusChanged(s: GnssStatus) {
                 satellites = (0 until s.satelliteCount).count(s::usedInFix)
             }
         }
+        thread = worker
+        listener = l
+        statusCallback = status
+        lastFixNanos = SystemClock.elapsedRealtimeNanos()
+        register(manager, handler)
+        handler.postDelayed(object : Runnable {
+            override fun run() {
+                // A restart in the background may get no location (Codex on #295): asked again until it does.
+                if (SystemClock.elapsedRealtimeNanos() - lastFixNanos > StaleNanos) register(manager, handler)
+                handler.postDelayed(this, RetryMillis)
+            }
+        }, RetryMillis)
+    }
+
+    @SuppressLint("MissingPermission") // Checked in start; a later refusal is caught.
+    @Synchronized // Never after stop has removed it.
+    private fun register(manager: LocationManager, handler: Handler) {
+        val l = listener ?: return
+        val status = statusCallback ?: return
         try {
+            manager.removeUpdates(l)
+            manager.unregisterGnssStatusCallback(status)
             manager.registerGnssStatusCallback(status, handler)
-            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, l, worker.looper)
+            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0L, 0f, l, handler.looper)
             DebugLog.i(Tag, "recording, GPS enabled: ${manager.isProviderEnabled(LocationManager.GPS_PROVIDER)}")
         } catch (e: SecurityException) {
             DebugLog.i(Tag, "refused: ${e.message}")
         }
-        thread = worker
-        listener = l
-        statusCallback = status
     }
 
     private fun stamp(sink: SampleSink, location: Location): Long =
@@ -150,6 +173,7 @@ class PhoneGnssSource(private val context: Context) : DataSource {
         null
     }
 
+    @Synchronized
     override fun stop() {
         val manager = context.getSystemService(LocationManager::class.java)
         listener?.let { manager?.removeUpdates(it) }
@@ -162,5 +186,9 @@ class PhoneGnssSource(private val context: Context) : DataSource {
 
     private companion object {
         const val Tag = "PhoneGnss"
+
+        /** Without a position for this long, location updates are asked for again. */
+        const val RetryMillis = 10_000L
+        const val StaleNanos = RetryMillis * 1_000_000L
     }
 }
