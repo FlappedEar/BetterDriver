@@ -44,6 +44,8 @@ data class CoachReference(
     val sessions: List<String>,
     /** The line plan the [aims] come from: the session it was made from (FBBD-306); null without one. */
     val planSession: String? = null,
+    /** That plan's [PlannedTargets.key], so a plan rewritten for the same session rebuilds the reference. */
+    val planKey: String? = null,
     /**
      * Per corner, the pass the line plan aims at there (FBBD-307): the plan's target lap measured by
      * the coach's own meter, so the coach asks for what the Map tab shows. Corners without one aim at
@@ -80,7 +82,11 @@ fun CoachReference.aim(corner: Int): CornerPass? =
 class PlannedTarget(val cornerId: String, val sessionId: String, val lapSeconds: Double)
 
 /** The targets of a track's line plan, made from session [sessionId] (FBBD-306). */
-class PlannedTargets(val sessionId: String, val targets: List<PlannedTarget>)
+class PlannedTargets(val sessionId: String, val targets: List<PlannedTarget>) {
+    /** The same for the same session and targets. */
+    val key: String
+        get() = sessionId + targets.joinToString("") { "|${it.cornerId}=${it.sessionId}@${it.lapSeconds}" }
+}
 
 /** The analysis and the coach time a lap from the same fixes, apart by at most this. */
 private const val SameLapSeconds = 0.06
@@ -119,6 +125,7 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
         targets = targets,
         sessions = sessions.map { it.sessionId },
         planSession = plan?.sessionId,
+        planKey = plan?.key,
         aims = aims,
     )
 }

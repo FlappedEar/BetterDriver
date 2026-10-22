@@ -91,7 +91,7 @@ class LibraryTest {
     }
 
     @Test
-    fun `a reference is rebuilt when the track's line plan is made from another session`() {
+    fun `a reference is rebuilt when the track's line plan changes`() {
         val store = SessionStore(File(tmp, "sessions"))
         var plan: PlannedTargets? = null
         val library = CoachLibrary(store, File(tmp, "coach"), plans = { plan }) { listOf(track) }
@@ -101,6 +101,9 @@ class LibraryTest {
         assertEquals("p1", assertNotNull(library.reference(track)).planSession)
         plan = PlannedTargets("p2", emptyList())
         assertEquals("p2", assertNotNull(library.reference(track)).planSession)
+        // The same session's plan made again with other targets (corner identity fixed, more sessions).
+        plan = PlannedTargets("p2", listOf(PlannedTarget("c1", "p1", 61.0)))
+        assertEquals(plan?.key, assertNotNull(library.reference(track)).planKey)
     }
 
     @Test

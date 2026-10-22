@@ -218,7 +218,7 @@ class CoachLibrary(
         val current = references.get(track.id)
         val plan = plans(track.id)
         val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
-            current.planSession == plan?.sessionId
+            current.planKey == plan?.key
         val laps = if (upToDate) null else lapsAt(track, here, found, stop)
         if (laps == null) return current
         val built = buildReference(track, laps, plan)
