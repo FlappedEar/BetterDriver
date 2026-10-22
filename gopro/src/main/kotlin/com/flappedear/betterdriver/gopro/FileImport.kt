@@ -106,14 +106,9 @@ class FileImport(
             taken += name
             val target = File(staging, name)
             try {
-                picked.open().use { src ->
-                    target.outputStream().use { out ->
-                        copyStream(src, out) { n ->
-                            copied += n
-                            onCopied(copied)
-                        }
-                        out.fd.sync()
-                    }
+                copy(picked, target) { n ->
+                    copied += n
+                    onCopied(copied)
                 }
                 staged += target
             } catch (e: IOException) {
@@ -190,6 +185,15 @@ private fun move(from: File, to: File) {
         Files.move(from.toPath(), to.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
     } catch (_: AtomicMoveNotSupportedException) {
         Files.move(from.toPath(), to.toPath(), StandardCopyOption.REPLACE_EXISTING)
+    }
+}
+
+private fun copy(picked: PickedFile, target: File, onBytes: (Long) -> Unit) {
+    picked.open().use { src ->
+        target.outputStream().use { out ->
+            copyStream(src, out, onBytes)
+            out.fd.sync()
+        }
     }
 }
 

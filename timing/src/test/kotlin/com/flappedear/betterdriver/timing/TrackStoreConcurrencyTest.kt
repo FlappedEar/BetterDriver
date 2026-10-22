@@ -84,7 +84,8 @@ class TrackStoreConcurrencyTest {
         repeat(rounds) { round ->
             val saved = together(dir) { store, i -> store.save(first.copy(name = "Edit $round.$i")) }
             // Each save is the next revision after the one before it: none read a revision another had replaced.
-            assertEquals((revision + 1..revision + writers).toList(), saved.map { it.revision }.sorted(), "round $round")
+            val revisions = saved.map { it.revision }.sorted()
+            assertEquals((revision + 1..revision + writers).toList(), revisions, "round $round")
             revision += writers
             val stored = readable(dir, first.id)
             assertEquals(revision, stored.revision)
