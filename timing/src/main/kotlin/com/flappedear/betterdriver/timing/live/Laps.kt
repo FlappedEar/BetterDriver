@@ -67,9 +67,8 @@ class LapBook(val sectorCount: Int) {
             val b = bestSectorTimes[i]
             if (t != null && (b == null || t < b)) bestSectorTimes[i] = t
         }
-        if (!lap.countsForBest) return false
         val previous = best
-        val isBest = previous == null || lap.timeMicros < previous.timeMicros
+        val isBest = lap.countsForBest && (previous == null || lap.timeMicros < previous.timeMicros)
         if (isBest) best = lap
         return isBest
     }
