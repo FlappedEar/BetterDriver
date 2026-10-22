@@ -17,7 +17,6 @@ import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
-import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
 
 /**
@@ -34,7 +33,7 @@ import java.util.concurrent.TimeUnit
  * [events] are called on the encoder's own threads. [stop] blocks; call it off the main thread.
  * A file asks for the keyframe that starts the next one [cutMarginBytes] before its size limit.
  */
-@Suppress("TooManyFunctions") // One function per encoder, muxer and file step.
+@Suppress("TooManyFunctions", "LongParameterList") // One function per encoder, muxer and file step; test hooks.
 internal class WideEncoder(
     private val target: WideTarget,
     private val pcm: PcmSource?,
@@ -46,6 +45,11 @@ internal class WideEncoder(
      * buffer goes back to its encoder at once, with no copy, writer or muxer. No file is opened.
      */
     private val mux: Boolean = true,
+    /** Room for copies waiting for the writer, and how long the encoder waits for it ([WriterBacklog]). */
+    backlogKib: Int = MaxBacklogKib,
+    private val backlogWaitMs: Long = BacklogWaitMs,
+    /** Runs on the writer thread before each sample is written: tests make the writer slow or stuck with it. */
+    private val beforeWrite: (() -> Unit)? = null,
 ) {
     /** What the encoder reports, on its own threads. */
     interface Events {
@@ -77,8 +81,15 @@ internal class WideEncoder(
     private val writer = Executors.newSingleThreadExecutor { Thread(it, "WideWriter") }
     private val pool = ConcurrentLinkedQueue<ByteBuffer>()
 
-    /** Room for samples waiting for the writer, in KiB: the encoder waits only when it is all taken. */
-    private val room = Semaphore(MaxBacklogKib)
+    /** Copies of sound samples, which are small: a video-sized copy for each would hold 256 KiB (audit A15). */
+    private val soundPool = ConcurrentLinkedQueue<ByteBuffer>()
+
+    /**
+     * Room for copies waiting for the writer, by their capacity: the encoder waits only when it is all
+     * taken, and a writer still behind after the wait ends the recording instead of growing the queue.
+     */
+    private val backlog = WriterBacklog(backlogKib, backlogWaitMs)
+    private val videoFull = { timing.fullWait() }
 
     /** Video samples' time from encoder to MP4, logged once a minute ([SampleTiming.line]). */
     val timing = SampleTiming()
@@ -473,8 +484,9 @@ internal class WideEncoder(
             if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) done.countDown()
             return
         }
-        val copy = if (sample) {
-            runCatching { codec.getOutputBuffer(index) }.getOrNull()?.let { pooledCopy(it, info) }
+        // A stalled writer gets nothing more: the buffer goes back at once, as without MP4, while the file ends.
+        val copy = if (sample && !backlog.stalled) {
+            runCatching { codec.getOutputBuffer(index) }.getOrNull()?.let { pooledCopy(track, it, info) }
         } else {
             null
         }
@@ -483,18 +495,25 @@ internal class WideEncoder(
         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) onWriter { done.countDown() }
     }
 
-    /** [data] to the writer thread; waits only while the writer is [MaxBacklogKib] behind. */
+    /**
+     * [data] to the writer thread; waits only while the writer's [backlog] is full. A writer still
+     * behind after [backlogWaitMs] fails the recording: the copy is dropped, nothing more is queued, and
+     * the file is finished with what the writer has (audit A15). Until 1.7.1 the copy was queued
+     * regardless, past the budget.
+     */
     private fun queue(track: Track, data: ByteBuffer, info: MediaCodec.BufferInfo, entered: Long, heldNanos: Long) {
-        val kib = kibOf(info.size)
-        var taken = room.tryAcquire(kib)
-        if (!taken) {
-            if (track == Track.Video) timing.fullWait()
-            // A writer that stopped must not stop the encoder for good: past the wait it goes on regardless.
-            taken = room.tryAcquire(kib, BacklogWaitMs, TimeUnit.MILLISECONDS)
+        val capacity = data.capacity()
+        if (!backlog.reserve(capacity, if (track == Track.Video) videoFull else null)) {
+            if (backlog.claimStallReport()) {
+                DebugLog.w(Tag, "writer stalled: ${backlog.takenKib} KiB waiting after $backlogWaitMs ms")
+                events.failed("writer stalled")
+            }
+            return
         }
         if (track == Track.Video) timing.held(heldNanos, info.size)
         val queued = System.nanoTime()
         onWriter {
+            beforeWrite?.invoke()
             val begin = System.nanoTime()
             synchronized(lock) {
                 val locked = System.nanoTime()
@@ -503,8 +522,9 @@ internal class WideEncoder(
                 sample(track, data, info)
                 if (track == Track.Video) timing.written(info.size, begin - queued, locked - begin, writeNanos)
             }
-            if (taken) room.release(kib)
-            if (pool.size < PoolSize) pool.offer(data)
+            backlog.release(capacity)
+            val spare = if (track == Track.Video) pool else soundPool
+            if (spare.size < PoolSize) spare.offer(data)
         }
     }
 
@@ -517,10 +537,11 @@ internal class WideEncoder(
         }
     }
 
-    /** A copy of [info]'s bytes of [buffer], in a buffer from [pool] when one is big enough. */
-    private fun pooledCopy(buffer: ByteBuffer, info: MediaCodec.BufferInfo): ByteBuffer {
-        val target = pool.poll()?.takeIf { it.capacity() >= info.size }
-            ?: ByteBuffer.allocateDirect(maxOf(info.size, MinPooledBytes))
+    /** A copy of [info]'s bytes of [buffer], in a buffer from [track]'s pool when one is big enough. */
+    private fun pooledCopy(track: Track, buffer: ByteBuffer, info: MediaCodec.BufferInfo): ByteBuffer {
+        val video = track == Track.Video
+        val target = (if (video) pool else soundPool).poll()?.takeIf { it.capacity() >= info.size }
+            ?: ByteBuffer.allocateDirect(maxOf(info.size, if (video) MinPooledBytes else MinPooledSoundBytes))
         val view = buffer.duplicate().apply {
             position(info.offset)
             limit(info.offset + info.size)
@@ -589,19 +610,21 @@ internal class WideEncoder(
         /** ~21 ms of 48 kHz mono per read, so each sound sample is timed closely. */
         const val PcmChunkBytes = 2_048
 
-        /** Samples waiting for the writer: 64 MiB, about 15 s of 1080p · 60 or 6 s of 2.7K · 60. */
+        /**
+         * Copies waiting for the writer, by capacity: 64 MiB, at least 4 s of video at 60 fps (a video copy
+         * holds 256 KiB or more). The camera test's writer was at most 2 behind (FBBD-278).
+         */
         const val MaxBacklogKib = 65_536
 
-        /** How long the encoder waits for room before it queues a sample regardless. */
+        /** How long the encoder waits for room before it takes the writer as stalled and ends the file. */
         const val BacklogWaitMs = 2_000L
 
         /** Copies kept for reuse, and their least size: a 1080p · 60 frame is mostly well under it. */
         const val PoolSize = 64
         const val MinPooledBytes = 256 * 1_024
 
-        const val BytesPerKib = 1_024
-
-        fun kibOf(bytes: Int) = ((bytes + BytesPerKib - 1) / BytesPerKib).coerceIn(1, MaxBacklogKib)
+        /** An AAC frame at 192 kbit/s is about 0.5 KB. */
+        const val MinPooledSoundBytes = 4 * 1_024
     }
 }
 

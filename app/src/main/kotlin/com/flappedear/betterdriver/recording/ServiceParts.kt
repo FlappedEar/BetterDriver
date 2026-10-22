@@ -161,8 +161,15 @@ internal class LiveClients(
     fun close() = main.removeCallbacks(ticker)
 }
 
+/**
+ * How long the camera service waits, after a stop, for its last file to be finished before it ends
+ * anyway (audit A13): the own encoder may take 10 s for each of its two encoders, 60 s for a file
+ * handed over just before, then the last file's index.
+ */
+internal const val CameraFinishWaitMs = 90_000L
+
 /** How long the stop's report waits for the camera to close its last file: longer than the camera gives it. */
-internal const val VideoCloseWaitMs = 8_000L
+internal const val VideoCloseWaitMs = CameraFinishWaitMs + 5_000L
 
 /** The stop reason of a file that filled up and handed over to the next (PhoneCamera). */
 private const val FullFile = "file_full"

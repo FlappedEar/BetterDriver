@@ -151,6 +151,9 @@ class PhoneCamera(
     private var restarts = 0
     private var stopping = false
 
+    /** Called once after a [stop] with nothing left to finish (audit A13). */
+    private var whenStopped: (() -> Unit)? = null
+
     /** What the file being finalized ends with: why it stops, and the step to start next (if any). */
     private var endReason = "user"
 
@@ -312,6 +315,23 @@ class PhoneCamera(
             w != null -> w.stop()
             else -> unbindOwn(provider, bound)
         }
+    }
+
+    /**
+     * Stops, then calls [finished] once the last file is finished and nothing records any more: at once
+     * when nothing was recording. The camera service holds its foreground until then (audit A13).
+     */
+    fun stop(finished: () -> Unit) {
+        whenStopped = finished
+        stop()
+        stoppedIfIdle()
+    }
+
+    private fun stoppedIfIdle() {
+        if (!stopping || recording != null || wide != null) return
+        val finished = whenStopped ?: return
+        whenStopped = null
+        finished()
     }
 
     /** The ladder steps the back camera supports. */
@@ -490,6 +510,7 @@ class PhoneCamera(
                 endReason != "user" -> fail(stoppedText(endReason))
                 else -> fail("Camera error")
             }
+            stoppedIfIdle()
         }
 
         /**
@@ -539,6 +560,7 @@ class PhoneCamera(
         val full = e.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED
         val error = !full && e.hasError() && e.error != VideoRecordEvent.Finalize.ERROR_NONE
         fileEnded(name, full, if (error) "error_${e.error}" else null, e.cause)
+        stoppedIfIdle()
     }
 
     /** A file ended with [error] (its reason) or none: what comes next, for either recording path. */

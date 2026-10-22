@@ -15,6 +15,7 @@ import org.junit.runner.RunWith
 import java.io.File
 import java.nio.ByteBuffer
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
 import kotlin.math.PI
 import kotlin.math.sin
 
@@ -81,6 +82,41 @@ class WideEncoderTest {
         }
         assertTrue(last.stats.audio)
         assertEquals(files.last().name, last.file.name)
+    }
+
+    /**
+     * Audit A15: a writer stuck on I/O while the camera keeps drawing. The copies waiting for it stay in
+     * the budget, the encoder reports the stalled writer instead of queueing on, and once the writer
+     * comes back the file is finished and plays.
+     */
+    @Test
+    fun stuckWriterEndsTheRecordingWithinTheBudget() {
+        val events = Recorded()
+        val stuck = CountDownLatch(1)
+        val budgetKib = 2_048 // eight video copies of at least 256 KiB each
+        val encoder = WideEncoder(
+            target,
+            Tone(),
+            System::nanoTime,
+            events,
+            backlogKib = budgetKib,
+            backlogWaitMs = 200,
+            beforeWrite = { stuck.await() },
+        )
+        events.encoder = encoder
+        encoder.start(fileNo(1))
+        try {
+            draw(encoder, seconds = 3)
+        } finally {
+            stuck.countDown()
+        }
+        val last = encoder.stop()
+        val reported = events.problems.toList()
+        assertEquals("the stalled writer is reported once", listOf("encoder failed: writer stalled"), reported)
+        val file = checkNotNull(last) { "the file was opened before the writer stalled" }
+        assertEquals(null, file.error)
+        assertTrue("the file holds the frames written before the stall", read(file.file).videoUs.isNotEmpty())
+        assertTrue("${file.stats.frames} frames: no more than the budget held", file.stats.frames <= budgetKib / 256)
     }
 
     private fun fileNo(n: Int) = File(dir, "phone_%04d.mp4".format(n))
