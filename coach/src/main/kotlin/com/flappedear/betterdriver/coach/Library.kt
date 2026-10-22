@@ -63,7 +63,8 @@ fun SessionData.coachFixes(): Sequence<CoachFix> {
  *
  * What is known about each session is kept in [dir] ([SessionPlaces]), so a session is opened again
  * only when it or the tracks around it change: the events once, for the track recorded, and the
- * samples only for a session that needs matching by position. [tracks] gives the saved tracks.
+ * samples only for a session that needs matching by position. [tracks] gives the saved tracks, and
+ * [plans] each track's line plan targets (FBBD-307), which the reference aims at.
  *
  * Run it off the main thread; it reads whole sessions. The coach and the UI process can both use it:
  * a lock file in [dir] keeps them from working on the same files at once.
@@ -71,13 +72,14 @@ fun SessionData.coachFixes(): Sequence<CoachFix> {
 class CoachLibrary(
     private val sessions: SessionStore,
     private val dir: File,
+    private val plans: (trackId: String) -> PlannedTargets? = { null },
     private val tracks: () -> List<Track>,
 ) {
     val references = CoachReferenceStore(dir)
     private val places = SessionPlaces(File(dir, PlacesFile))
 
     /**
-     * The reference for [track], rebuilt first if sessions or lines changed since it was saved.
+     * The reference for [track], rebuilt first if sessions, lines or the line plan changed since it was saved.
      * Sessions still recording, and [exclude], are left out.
      */
     fun reference(track: Track, exclude: String? = null): CoachReference? = locked {
@@ -214,10 +216,12 @@ class CoachLibrary(
         val usable = sessions.list().filter { it.state != SessionState.RECORDING && it.id != exclude }
         val here = usable.filter { found.trackOf[it.id] == track.id }.map { it.id }
         val current = references.get(track.id)
-        val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet()
+        val plan = plans(track.id)
+        val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
+            current.planSession == plan?.sessionId
         val laps = if (upToDate) null else lapsAt(track, here, found, stop)
         if (laps == null) return current
-        val built = buildReference(track, laps)
+        val built = buildReference(track, laps, plan)
         if (built == null) references.delete(track.id) else references.save(built)
         return built
     }

@@ -91,6 +91,19 @@ class LibraryTest {
     }
 
     @Test
+    fun `a reference is rebuilt when the track's line plan is made from another session`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        var plan: PlannedTargets? = null
+        val library = CoachLibrary(store, File(tmp, "coach"), plans = { plan }) { listOf(track) }
+        record(store, track, List(3) { SimCircuit.Pace() }, 1_000L)
+        assertNull(assertNotNull(library.reference(track)).planSession)
+        plan = PlannedTargets("p1", emptyList())
+        assertEquals("p1", assertNotNull(library.reference(track)).planSession)
+        plan = PlannedTargets("p2", emptyList())
+        assertEquals("p2", assertNotNull(library.reference(track)).planSession)
+    }
+
+    @Test
     fun `a reference counts as the same day for 12 hours after its last session ended`() {
         val store = SessionStore(File(tmp, "sessions"))
         val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }

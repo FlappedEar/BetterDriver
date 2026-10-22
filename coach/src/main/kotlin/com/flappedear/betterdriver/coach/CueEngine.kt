@@ -107,14 +107,17 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
  * stopped (FBBD-202).
  *
  * Cues aim at the [confirmed] target (FBBD-177): the second fastest pass, so what they ask for has
- * been done on two laps at least; a corner improved on one lap only gets no cue for it. Passes too
- * weak to coach from ([unusable]) are never targets.
+ * been done on two laps at least; a corner improved on one lap only gets no cue for it. Where the
+ * line plan has a target ([aims], FBBD-307) the cues aim at it instead, so the coach asks for what the
+ * Map tab shows, until two passes of this session beat it. Passes too weak to coach from
+ * ([unusable]) are never targets.
  */
 private class CornerBook(
     val map: CornerMap,
     initialTargets: List<CornerPass>,
     val chosen: Chosen,
     private val stoppedBefore: List<Double?> = emptyList(),
+    aims: List<CornerPass> = emptyList(),
 ) {
     private val n = map.corners.size
     private val fastest = Array(n) { mutableListOf<CornerPass>() }
@@ -125,9 +128,13 @@ private class CornerBook(
     /** Each corner's recent losses against its target, oldest first. */
     val losses = Array(n) { ArrayDeque<Long>() }
     val cuedOnLap = IntArray(n) { NeverCued }
+    private val aim = arrayOfNulls<CornerPass>(n)
+    /** Each corner's two fastest passes of this session that beat its [aim]. */
+    private val beaten = Array(n) { mutableListOf<CornerPass>() }
 
     init {
         initialTargets.forEach { t -> if (t.corner in 1..n) consider(t) }
+        aims.forEach { a -> if (a.corner in 1..n && !a.unusable()) aim[a.corner - 1] = a }
     }
 
     /** [p] is one of the corner's two fastest passes if it is faster than one of them. */
@@ -141,8 +148,12 @@ private class CornerBook(
         targets[i] = best.first()
     }
 
-    /** The fastest time through corner [i] seen on two passes at least: the cue's target. */
-    fun confirmed(i: Int): CornerPass? = fastest[i].getOrNull(ConfirmingPasses - 1)
+    /**
+     * The cue's target at corner [i]: the line plan's, until this session beat it twice; without one,
+     * the fastest time seen on two passes at least.
+     */
+    fun confirmed(i: Int): CornerPass? = aim[i]?.let { a -> beaten[i].getOrNull(ConfirmingPasses - 1) ?: a }
+        ?: fastest[i].getOrNull(ConfirmingPasses - 1)
 
 
     /** [pass] is the corner's latest; [cruising] when driven after lifting off to cool down. */
@@ -160,6 +171,15 @@ private class CornerBook(
     /** A timed lap's passes become targets where they are faster. */
     fun onTimedLap(passes: List<CornerPass>) {
         passes.forEach(::consider)
+        // Those that beat the corner's aim count towards a new one.
+        for (p in passes) {
+            val a = aim.getOrNull(p.corner - 1)
+            if (a == null || p.unusable() || p.timeMicros >= a.timeMicros) continue
+            val best = beaten[p.corner - 1]
+            best += p
+            best.sortBy { it.timeMicros }
+            while (best.size > ConfirmingPasses) best.removeAt(best.lastIndex)
+        }
     }
 
     val picked: Set<Int> get() = chosen.picked
@@ -503,7 +523,7 @@ class CueEngine(
         )
     }
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
-        identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m)) }
+        identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m), aims = r.aims) }
     }
     private val learningLaps =
         if (sameDay && book != null) minOf(settings.learningLaps, WarmUpLaps) else settings.learningLaps
