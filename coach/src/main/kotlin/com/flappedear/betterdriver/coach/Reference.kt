@@ -51,8 +51,11 @@ data class CoachReference(
 
     companion object {
         const val Format = "betterdriver-coach-reference"
-        /** 2: two targets per corner (FBBD-177); a version 1 file is rebuilt from the sessions. */
-        const val Version = 2
+        /**
+         * 2: two targets per corner (FBBD-177). 3: passes carry their line at the apex and their
+         * throttle point (FBBD-307). An older file is rebuilt from the sessions.
+         */
+        const val Version = 3
     }
 }
 

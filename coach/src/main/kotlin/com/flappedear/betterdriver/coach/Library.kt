@@ -47,8 +47,11 @@ private fun lastSampleMicros(dir: File): Long? = try {
     null
 }
 
-/** The session's fixes, in time order. */
-fun SessionData.coachFixes(): Sequence<CoachFix> = sampleSets.asSequence().mapNotNull { it.toCoachFix() }
+/** The session's fixes, in time order, with the pedal where it recorded one (FBBD-307). */
+fun SessionData.coachFixes(): Sequence<CoachFix> {
+    val reader = CoachFixReader(pedalChannelId(channels.values))
+    return sampleSets.asSequence().mapNotNull(reader::read)
+}
 
 /**
  * Keeps each track's coach reference up to date with the recorded sessions (FBBD-26, FBBD-96, FBBD-168).

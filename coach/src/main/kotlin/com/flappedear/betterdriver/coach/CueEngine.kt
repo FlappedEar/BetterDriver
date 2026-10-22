@@ -579,11 +579,13 @@ class CueEngine(
         speech.voiceFree = voiceFree
         val results = mutableListOf<CueResult>()
         for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, fix.tMicros, results)
-        val along = laps.position?.let { p -> cursor?.along(p) }
+        val position = laps.position
+        val along = position?.let { p -> cursor?.along(p) }
         if (along == null) meters.forEach(PassMeter::lost)
         if (along != null) {
+            val reading = PassReading(book?.map?.offset(position!!, along), laps.throttlePct)
             for (m in meters) {
-                val pass = m.add(along, fix.tMicros, laps.speedKmh, laps.speedMeasured)
+                val pass = m.add(along, fix.tMicros, laps.speedKmh, laps.speedMeasured, reading)
                 pass?.let { onPass(it, fix.tMicros)?.let(results::add) }
             }
         }
@@ -786,7 +788,8 @@ class CueEngine(
  */
 fun advise(pass: CornerPass, target: CornerPass, corner: Corner? = null): Advice? {
     if (pass.timeMicros - target.timeMicros < MinLossMicros) return null
-    val brake = pass.brakeAt - target.brakeAt // Negative: braked earlier than the target.
+    // A corner taken on a lift (FBBD-307) has no braking to move.
+    val brake = if (corner?.braked == false) 0.0 else pass.brakeAt - target.brakeAt // Negative: braked earlier.
     val speed = pass.minKmh - target.minKmh
     return when {
         brake <= -BrakeToleranceMeters -> {

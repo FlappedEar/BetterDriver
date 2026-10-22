@@ -25,6 +25,27 @@ private const val PeakToleranceKmh = 0.5
 /** A position this close along the path to the one before is the receiver holding it, not a new one. */
 private const val HeldMeters = 0.01
 
+/** The pedal is back on when it rises to this, in percent, as the lap analysis reads a pickup (FBBD-307). */
+const val PickupOnPct = 20.0
+
+/** ... after it was at or below this; a fall below it within [PickupHoldMicros] is a blip, not a pickup. */
+const val PickupOffPct = 10.0
+
+/**
+ * In a corner braked for, a pickup is looked for from this far before the apex (not before braking
+ * starts): a blip of the pedal while braking (heel and toe) is no pickup.
+ */
+const val PickupSearchBeforeApexMeters = 30.0
+
+/** A pickup holds the pedal at or above [PickupOffPct] this long (or to the end of the window). */
+const val PickupHoldMicros = 200_000L
+
+/**
+ * What else is known of the car at one position (FBBD-307): [offsetMeters] beside the reference
+ * path, positive left ([CornerMap.offset]), and the pedal in percent; null where not known.
+ */
+data class PassReading(val offsetMeters: Double? = null, val throttlePct: Double? = null)
+
 /**
  * The reference lap's path with its corners (FBBD-96): what every pass is measured against. Positions
  * are placed on the path by distance along it, so passes on different lines still compare.
@@ -38,6 +59,29 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
         val start = maxOf(0.0, c.brakeAt - ApproachMeters, previousApex?.plus(AfterPreviousApexMeters) ?: 0.0)
         val end = minOf(path.lengthMeters, c.apexAt + ExitMeters)
         start..end
+    }
+
+    /**
+     * How far [p] is beside the path at [along] metres (FBBD-307), positive left of the direction of
+     * travel, negative right: where the car is across the road against the reference lap's line.
+     */
+    fun offset(p: Xy, along: Double): Double? {
+        val a = path.along
+        val m = along.coerceIn(0.0, path.lengthMeters)
+        var lo = 0
+        var hi = a.size - 1
+        while (hi - lo > 1) {
+            val mid = (lo + hi) / 2
+            if (a[mid] <= m) lo = mid else hi = mid
+        }
+        val p0 = path.points[lo]
+        val d = path.points[hi] - p0
+        val length = d.length()
+        if (length <= 0.0) return null
+        val u = (m - a[lo]) / length
+        val ex = p.x - (p0.x + d.x * u)
+        val ey = p.y - (p0.y + d.y * u)
+        return (d.x * ey - d.y * ex) / length
     }
 
     /** Places positions of one lap on the path. Use a new one for each lap. */
@@ -60,7 +104,10 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
             // A pass keeps whether its speeds were measured (FBBD-177), so a reference built from
             // worked-out speeds never gives a precise speed cue.
             val measured = trace.speedsMeasured?.get(i) ?: true
-            for (m in meters) m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured)?.let { passes += it }
+            val reading = PassReading(offset(trace.points[i], along), trace.throttlesPct?.get(i))
+            for (m in meters) {
+                m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured, reading)?.let { passes += it }
+            }
         }
         meters.mapNotNullTo(passes) { it.finish() }
         return passes
@@ -86,13 +133,17 @@ class PassMeter(
     /** Where the finish line is along the path. */
     private val lineAt: Double = window.endInclusive,
 ) {
-    /** [fresh]: a new position, not the receiver holding its last one through a dropout (FBBD-177). */
+    /**
+     * [fresh]: a new position, not the receiver holding its last one through a dropout (FBBD-177).
+     * [reading]: where it was across the road and the pedal, when known.
+     */
     private class Sample(
         val along: Double,
         val tMicros: Long,
         val kmh: Double,
         val measured: Boolean = true,
         val fresh: Boolean = true,
+        val reading: PassReading = PassReading(),
     )
 
     private var previous: Sample? = null
@@ -110,11 +161,20 @@ class PassMeter(
         line = Sample(0.0, lineMicros, lineKmh)
     }
 
-    /** The car is [along] the path at [tMicros] at [kmh], which the receiver [measured] or was worked out. */
-    fun add(along: Double, tMicros: Long, kmh: Double, measured: Boolean = true): CornerPass? {
+    /**
+     * The car is [along] the path at [tMicros] at [kmh], which the receiver [measured] or was worked
+     * out, with what else is known of the car there ([reading]).
+     */
+    fun add(
+        along: Double,
+        tMicros: Long,
+        kmh: Double,
+        measured: Boolean = true,
+        reading: PassReading = PassReading(),
+    ): CornerPass? {
         if (finished) return null
         val p = previous
-        val s = Sample(along, tMicros, kmh, measured, fresh = p == null || abs(along - p.along) >= HeldMeters)
+        val s = Sample(along, tMicros, kmh, measured, fresh = p == null || abs(along - p.along) >= HeldMeters, reading)
         val first = !started
         previous = s
         started = true
@@ -211,6 +271,8 @@ class PassMeter(
             gapMicros = steps.last(),
             intervalMicros = steps[steps.size / 2],
             speedMeasured = inside.all { it.measured },
+            apexOffsetMeters = inside[apex].reading.offsetMeters,
+            pickupAt = pickup(pickupFrom(brake, apex)),
         )
     }
 
@@ -231,9 +293,64 @@ class PassMeter(
         return if (braked >= 0) braked else min
     }
 
+    /**
+     * Where the pedal first rose, from index [from] on, to [PickupOnPct] after
+     * being at or below [PickupOffPct], and stayed at or above [PickupOffPct] for [PickupHoldMicros]
+     * (or to the end of the window), as the lap analysis reads a pickup; the crossing is interpolated
+     * between the two positions around it.
+     */
+    /** Where to look for the pickup from: in a corner taken on a lift there is no braking to blip in. */
+    private fun pickupFrom(brake: Int, apex: Int): Int = if (!corner.braked) {
+        brake
+    } else {
+        (brake..apex).firstOrNull { inside[it].along >= inside[apex].along - PickupSearchBeforeApexMeters } ?: apex
+    }
+
+    @Suppress("ReturnCount")
+    private fun pickup(from: Int): Double? {
+        var lifted = false
+        var start: Int? = null
+        var at = 0.0
+        for (i in from until inside.size) {
+            val v = inside[i].reading.throttlePct
+            if (v == null) {
+                // No pedal here: nothing is bridged.
+                start = null
+                lifted = false
+                continue
+            }
+            val s = start
+            when {
+                s != null && v < PickupOffPct -> {
+                    if (inside[i].tMicros - inside[s].tMicros >= PickupHoldMicros) return at
+                    start = null
+                }
+                s != null -> if (inside[i].tMicros - inside[s].tMicros >= PickupHoldMicros) return at
+                !lifted -> lifted = v <= PickupOffPct
+                v >= PickupOnPct -> {
+                    start = i
+                    val before = inside.getOrNull(i - 1)
+                    at = crossing(before?.along, before?.reading?.throttlePct, inside[i].along, v)
+                }
+            }
+        }
+        return if (start != null) at else null
+    }
+
     private fun timeAt(a: Sample, b: Sample, along: Double): Double {
         val span = b.along - a.along
         val u = if (span <= 0.0) 0.0 else ((along - a.along) / span).coerceIn(0.0, 1.0)
         return a.tMicros + u * (b.tMicros - a.tMicros)
     }
 }
+
+/**
+ * Where the pedal crossed [PickupOnPct] between the position [fromAlong] (pedal [fromPct]) and the
+ * one at [along] (pedal [pct]); [along] itself without the one before or when it was on already.
+ */
+private fun crossing(fromAlong: Double?, fromPct: Double?, along: Double, pct: Double): Double =
+    if (fromAlong != null && fromPct != null && fromPct < PickupOnPct) {
+        fromAlong + (along - fromAlong) * (PickupOnPct - fromPct) / (pct - fromPct)
+    } else {
+        along
+    }
