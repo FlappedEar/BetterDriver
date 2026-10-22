@@ -24,6 +24,13 @@ private const val StaleMinMicros = 3 * MicrosPerSecond
 private const val StalePeriods = 3
 
 /**
+ * A car or body value is shown as the mean of its readings this far back from the newest one
+ * (FBBD-303): the screen refreshes every 250 ms, and RPM at 15-20 Hz showed one reading in four and
+ * jumped. A channel read less often than this shows its latest reading, as before.
+ */
+private const val MeanWindowMicros = 300_000L
+
+/**
  * A channel's sampling period is the shortest of its last gaps: one outage is a single long gap,
  * while a PID polled every 13 s (many slow PIDs on a slow adapter) has every gap that long.
  */
@@ -231,9 +238,10 @@ class LiveTracker(
     }
 }
 
-/** The latest value of one shown channel and how often it arrives. */
+/** The recent values of one shown channel and how often it arrives. */
 private class ShownValue(val name: String) {
-    private var value = Double.NaN
+    /** Readings in the [MeanWindowMicros] up to the newest, as time and value. */
+    private val recent = ArrayDeque<Pair<Long, Double>>()
     private var atMicros = Long.MIN_VALUE
     private val gaps = LongArray(PeriodGaps)
     private var gapCount = 0
@@ -245,15 +253,19 @@ private class ShownValue(val name: String) {
             gaps[gapCount++ % PeriodGaps] = t - atMicros
             periodMicros = (0 until minOf(gapCount, PeriodGaps)).minOf { gaps[it] }
         }
-        value = v
         atMicros = maxOf(atMicros, t)
+        recent.addLast(t to v)
+        recent.removeAll { it.first < atMicros - MeanWindowMicros }
     }
 
-    /** Name and value, null before the first value, and NaN once it is older than its staleness limit. */
+    /**
+     * Name and the mean of the readings in the [MeanWindowMicros] up to the newest; null before the
+     * first value, and NaN once the newest is older than its staleness limit.
+     */
     fun current(now: Long): Pair<String, Double>? {
         if (atMicros == Long.MIN_VALUE) return null
         val limit = maxOf(StaleMinMicros, StalePeriods * periodMicros)
-        return name to if (now - atMicros > limit) Double.NaN else value
+        return name to if (now - atMicros > limit) Double.NaN else recent.sumOf { it.second } / recent.size
     }
 }
 

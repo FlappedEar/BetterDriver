@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -303,6 +304,36 @@ class LiveTrackerTest {
         for (i in 0..3L) tracker.onSamples(SampleSet(i * 13 * MicrosPerSecond, listOf(ChannelValue(300, 90.0))))
         now = 51 * MicrosPerSecond
         assertEquals(90.0, tracker.snapshot().channels.getValue("obd_coolant_temp"))
+    }
+
+    @Test
+    fun `fast RPM shows the mean of the last 0,3 s, not the one reading that came last`() {
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now })
+        tracker.onChannel(ChannelDef(300, "obd_rpm", "rpm", "obd", 0))
+        // 20 Hz readings that alternate by 100 rpm around 3050, as a jittery adapter reads them.
+        val shown = mutableListOf<Double>()
+        for (i in 0 until 40L) {
+            now = i * 50_000
+            tracker.onSamples(SampleSet(now, listOf(ChannelValue(300, if (i % 2 == 0L) 3000.0 else 3100.0))))
+            if (i % 5 == 4L) shown += tracker.snapshot().channels.getValue("obd_rpm")
+        }
+        // Seven readings in each 0.3 s window: within 100/7 rpm of 3050 every time, never a 100 rpm jump.
+        assertTrue(shown.all { abs(it - 3050.0) <= 100.0 / 7 + 1e-9 }, "$shown")
+    }
+
+    @Test
+    fun `a reading on its own is shown as it is, and an old one leaves the mean`() {
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now })
+        tracker.onChannel(ChannelDef(300, "obd_rpm", "rpm", "obd", 0))
+        tracker.onSamples(SampleSet(0, listOf(ChannelValue(300, 900.0))))
+        assertEquals(900.0, tracker.snapshot().channels.getValue("obd_rpm"))
+        tracker.onSamples(SampleSet(200_000, listOf(ChannelValue(300, 1100.0))))
+        assertEquals(1000.0, tracker.snapshot().channels.getValue("obd_rpm"))
+        // 0.4 s after the first reading it is out of the window.
+        tracker.onSamples(SampleSet(400_000, listOf(ChannelValue(300, 1300.0))))
+        assertEquals(1200.0, tracker.snapshot().channels.getValue("obd_rpm"))
     }
 
     @Test
