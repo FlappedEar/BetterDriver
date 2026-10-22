@@ -77,7 +77,10 @@ data class LiveSnapshot(
     /** Why the recording stopped, or null while it runs. */
     val stoppedReason: String?,
     val droppedSamples: Long,
-    /** Combined horizontal acceleration in g from the receiver's accelerometer; null without one. */
+    /**
+     * Combined horizontal acceleration in g from the receiver's accelerometer, its X and Y each
+     * averaged over the last [GSmoothingMicros] (FBBD-302); null without one.
+     */
     val gCombined: Double? = null,
     /**
      * The receiver's rate, from the mean interval between fixes in the 3 s up to the last one; 0
@@ -141,6 +144,7 @@ class LiveTracker(
     private var speedKmh: Double? = null
     private var accelX: Double? = null
     private var accelY: Double? = null
+    private val gWindow = GWindow()
     private val standing = StandingBias()
     private var storageLowBytes: Long? = null
     private var stoppedReason: String? = null
@@ -168,7 +172,10 @@ class LiveTracker(
                 else -> shown[v.channelId]?.update(set.tMicros, v.value)
             }
         }
-        if (accel) standing.update(speedKmh, accelX, accelY)
+        if (accel) {
+            standing.update(speedKmh, accelX, accelY)
+            gWindow.add(set.tMicros, accelX, accelY)
+        }
         if (lat && lon) {
             fixes++
             lastFixMicros = maxOf(lastFixMicros ?: Long.MIN_VALUE, set.tMicros)
@@ -200,7 +207,7 @@ class LiveTracker(
             storageLowBytes = storageLowBytes,
             stoppedReason = stoppedReason,
             droppedSamples = droppedSamples(),
-            gCombined = accelX?.let { x -> accelY?.let { y -> hypot(x - standing.x, y - standing.y) } },
+            gCombined = gWindow.combined(standing),
             receiverRateHz = receiverRateHz,
             channels = shown.values.mapNotNull { it.current(now) }.toMap(),
         )
@@ -247,6 +254,47 @@ private class ShownValue(val name: String) {
         if (atMicros == Long.MIN_VALUE) return null
         val limit = maxOf(StaleMinMicros, StalePeriods * periodMicros)
         return name to if (now - atMicros > limit) Double.NaN else value
+    }
+}
+
+/**
+ * How far back the live G averages the accelerometer (FBBD-302). RaceChrono's G channels in Arek's
+ * Jastrząb exports match GPS acceleration smoothed over 0.5 to 0.7 s; a single 25 Hz reading jumps
+ * with every bump, and combining unsmoothed X and Y adds that noise to the G shown.
+ */
+const val GSmoothingMicros = 500_000L
+
+/**
+ * The receiver's X and Y readings of the last [GSmoothingMicros] before the newest. Each axis is
+ * averaged before the two are combined, so road vibration cancels out instead of adding to the G.
+ */
+internal class GWindow {
+    private val times = ArrayDeque<Long>()
+    private val xs = ArrayDeque<Double>()
+    private val ys = ArrayDeque<Double>()
+    private var sumX = 0.0
+    private var sumY = 0.0
+    private var newest = Long.MIN_VALUE
+
+    fun add(t: Long, x: Double?, y: Double?) {
+        if (x == null || y == null || !x.isFinite() || !y.isFinite()) return
+        times.addLast(t)
+        xs.addLast(x)
+        ys.addLast(y)
+        sumX += x
+        sumY += y
+        newest = maxOf(newest, t)
+        while (times.isNotEmpty() && times.first() <= newest - GSmoothingMicros) {
+            times.removeFirst()
+            sumX -= xs.removeFirst()
+            sumY -= ys.removeFirst()
+        }
+    }
+
+    /** The averaged X and Y combined, [standing] taken off; null before the first reading. */
+    fun combined(standing: StandingBias): Double? {
+        if (times.isEmpty()) return null
+        return hypot(sumX / times.size - standing.x, sumY / times.size - standing.y)
     }
 }
 

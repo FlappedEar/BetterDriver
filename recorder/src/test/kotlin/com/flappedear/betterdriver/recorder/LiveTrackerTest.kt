@@ -182,9 +182,31 @@ class LiveTrackerTest {
         )
         for (i in 0 until 50) at(i * 40_000L, 0.2, -0.187, 0.015)
         assertEquals(0.0, assertNotNull(tracker.snapshot().gCombined), 1e-3)
-        // Braking at 0.4 g on the move: the X axis reads 0.4 g more than at rest.
-        at(2_000_000, 60.0, -0.187 + 0.4, 0.015)
+        // Braking at 0.4 g on the move for half a second: the X axis reads 0.4 g more than at rest.
+        for (i in 0 until 13) at(2_000_000 + i * 40_000L, 60.0, -0.187 + 0.4, 0.015)
         assertEquals(0.4, assertNotNull(tracker.snapshot().gCombined), 1e-3)
+    }
+
+    @Test
+    fun `live G averages half a second so road vibration neither jumps nor adds to it`() {
+        // A steady 0.5 g turn with ±0.3 g of vibration on both axes, 25 Hz (FBBD-302).
+        val tracker = LiveTracker("s", 0, { 0L }, accelIds = 110 to 111)
+        val shown = ArrayList<Double>()
+        for (i in 0 until 100) {
+            val shake = if (i % 2 == 0) 0.3 else -0.3
+            tracker.onSamples(SampleSet(i * 40_000L, listOf(ChannelValue(110, shake), ChannelValue(111, 0.5 + shake))))
+            if (i >= 25) shown += assertNotNull(tracker.snapshot().gCombined)
+        }
+        // A single reading would show 0.3 to 0.86 g; the half-second mean stays near 0.5 g.
+        assertTrue(shown.all { it in 0.45..0.56 }, "shown $shown")
+
+        // A step from 0 to 0.8 g is shown in full half a second later.
+        val step = LiveTracker("s", 0, { 0L }, accelIds = 110 to 111)
+        fun x(i: Int, g: Double) =
+            step.onSamples(SampleSet(i * 40_000L, listOf(ChannelValue(110, g), ChannelValue(111, 0.0))))
+        for (i in 0 until 25) x(i, 0.0)
+        for (i in 25 until 38) x(i, 0.8)
+        assertEquals(0.8, assertNotNull(step.snapshot().gCombined), 1e-9)
     }
 
     @Test
