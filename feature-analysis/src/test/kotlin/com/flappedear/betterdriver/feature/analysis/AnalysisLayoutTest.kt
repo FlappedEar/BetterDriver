@@ -51,7 +51,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.setContent { AppScreen { Analysis() } }
         val problems = ArrayList<String>()
         AnalysisTab.entries.forEach { t ->
-            tab(t).performScrollTo().performClick()
+            tab(t).performClick()
             compose.waitForIdle()
             // Roborazzi keeps names ending in "_compare" for itself.
             compose.saveScreenshot(device, "analysis_${t.name.lowercase()}_tab")
@@ -148,7 +148,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
     fun carTabShowsPedalsTemperaturesAndHeartRate() {
         compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
-        tab(AnalysisTab.Car).performScrollTo().performClick()
+        tab(AnalysisTab.Car).performClick()
         compose.waitForIdle()
         compose.onNodeWithTag(PedalCardTag).performScrollTo().assertIsDisplayed()
         compose.onNode(hasText("Not recorded")).assertExists()
@@ -170,7 +170,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.waitForIdle()
         compose.onNodeWithTag(DrivingStatesTag).performScrollTo().assertIsDisplayed()
         compose.onNode(hasText("Coasting: lap 2 ≈1.32 s · lap 3 ≈2.05 s")).performScrollTo().assertIsDisplayed()
-        tab(AnalysisTab.Corners).performScrollTo().performClick()
+        tab(AnalysisTab.Corners).performClick()
         compose.waitForIdle()
         compose.onAllNodes(hasText(CoastingLabel))[0].performScrollTo().assertIsDisplayed()
         compose.onAllNodes(hasText("≈0.12 s"))[0].assertExists()
