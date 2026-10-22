@@ -244,6 +244,14 @@ class RecorderService : Service() {
     }
 
     @Suppress("TooGenericExceptionCaught") // Any startup failure is reported to the UI, never a crash.
+    /** The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started. */
+    private fun coachFor(recording: Recording, timing: SessionTiming, gnss: GnssRef): CoachLink? =
+        if (coachSettings(this).read().verbosity == Verbosity.Off) {
+            null
+        } else {
+            CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
+        }
+
     private fun startRecording(car: String, track: String, gnss: GnssRef?, sensors: List<SensorRef>) = control.execute {
         active?.let {
             // Running, or still finishing after a stop (Audit A03): one writer at a time.
@@ -287,12 +295,7 @@ class RecorderService : Service() {
                 recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
             }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
             recording.listeners.add(timing)
-            // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
-            val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
-                null
-            } else {
-                CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
-            }
+            val coach = coachFor(recording, timing, gnss)
             coach?.let(recording.listeners::add)
             // Ends the recording here only when its writer has stopped, also for stops the recorder makes
             // itself (storage full, write error), with the writer's reason (Audit A03).
