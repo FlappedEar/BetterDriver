@@ -17,6 +17,8 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.vbo.VboExporter
 import java.io.ByteArrayOutputStream
 import java.util.Collections
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -42,7 +44,10 @@ class SimulatedHeartRateMonitorTest {
         lateinit var onData: (ByteArray) -> Unit
         lateinit var onState: (LinkState) -> Unit
         var started = 0
+
+        @Volatile
         var stopped = 0
+        private val stopLatch = CountDownLatch(1)
 
         override fun start() {
             started++
@@ -50,7 +55,15 @@ class SimulatedHeartRateMonitorTest {
 
         override fun stop() {
             stopped++
+            stopLatch.countDown()
         }
+
+        /**
+         * Waits for the strap's first stop. Recording.stop() returning true means the session is finished,
+         * not that every source has stopped: the recorder stops sources on their own threads, so a source
+         * blocking in stop() cannot hold up the end of the recording (Audit A14).
+         */
+        fun awaitStopped(): Boolean = stopLatch.await(StopWaitSeconds, TimeUnit.SECONDS)
 
         fun state(s: LinkState) {
             state.value = s
@@ -117,6 +130,7 @@ class SimulatedHeartRateMonitorTest {
         repeat(3) { second(80, contact = false) }
         (0 until 30).forEach { second(130) }
         assertTrue(rec.stop())
+        assertTrue(strap.awaitStopped())
         assertEquals(1, strap.stopped)
 
         val data = store.read(rec.id)
@@ -184,8 +198,17 @@ class SimulatedHeartRateMonitorTest {
         strap.state(LinkState.Reconnecting(1, 1_000, "gatt status 8"))
         assertEquals(HeartRateStatus(HeartRateLink.LOST, null), status())
         assertTrue(rec.stop())
+        // The recorder stops its sources on their own thread, after the session has finished (Audit A14).
+        assertTrue(strap.awaitStopped())
+        assertTrue(eventually { HeartRateSource.current == null })
         assertEquals(null, status())
-        assertEquals(null, HeartRateSource.current)
+    }
+
+    /** Waits up to [StopWaitSeconds] for [condition], which another thread makes true. */
+    private fun eventually(condition: () -> Boolean): Boolean {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(StopWaitSeconds)
+        while (!condition() && System.nanoTime() < deadline) Thread.sleep(5)
+        return condition()
     }
 
     private fun session(): Pair<Recording, SessionStore> {
@@ -235,6 +258,7 @@ class SimulatedHeartRateMonitorTest {
         strap.notify(80)
         assertEquals(null, source.status())
         assertTrue(rec.stop())
+        assertTrue(strap.awaitStopped())
         assertEquals(1, strap.stopped)
 
         val data = store.read(rec.id)
@@ -290,6 +314,7 @@ class SimulatedHeartRateMonitorTest {
         strap.notify(118)
         assertEquals(HeartRateStatus(HeartRateLink.STREAMING, 118), source.status())
         assertTrue(rec.stop())
+        assertTrue(strap.awaitStopped())
         assertEquals(1, strap.stopped)
         val data = store.read(rec.id)
         assertTrue(data.events.none { it.kind == HeartRateEvents.OFF })
@@ -297,5 +322,9 @@ class SimulatedHeartRateMonitorTest {
             set.values.firstOrNull { it.channelId == HeartRateChannels.HEART_RATE.id }?.value
         }
         assertEquals(listOf(92.0, 94.0, 95.0, 93.0, 92.0, 118.0), bpm)
+    }
+
+    private companion object {
+        const val StopWaitSeconds = 5L
     }
 }
