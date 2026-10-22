@@ -87,6 +87,8 @@ private fun driveChecks(
     val sections = listOfNotNull(
         if (s.source in DemoSources) {
             demoGnssSection()
+        } else if (s.source == PhoneGnssSource) {
+            phoneGnssSection(logGnssSection(seconds, events, end))
         } else if (s.legacy) {
             legacyGnssSection(s, end)
         } else {
@@ -113,6 +115,9 @@ private fun driveChecks(
 
 /** The logged source of Demo GNSS and the demo track: the receiver's name, "Demo GNSS" or "Demo track" (FBBD-233). */
 private val DemoSources = setOf("Demo_GNSS", "Demo_track")
+
+/** How the session start line names the phone's own GPS (FBBD-275, app GnssRef.Phone). */
+private const val PhoneGnssSource = "Phone_GPS"
 
 /** When [s] ended on the phone's wall clock, as [LoggedSession.inferredEndMicros] gives it. */
 private fun endUtcMillis(s: LoggedSession): Long = (s.startUtcMillis ?: 0L) + s.inferredEndMicros() / MicrosPerMilli

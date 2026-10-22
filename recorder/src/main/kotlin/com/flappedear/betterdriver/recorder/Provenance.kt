@@ -78,15 +78,19 @@ enum class Provenance(val measured: Boolean) {
 
         /**
          * [def]'s provenance in a session stored without one (before FBBD-174), from what its metadata
-         * says: Demo GNSS positions are simulated; an import's GNSS channels are a GPS of unknown kind,
-         * a VBO file's a GNSS receiver's, and a GPX file's speed and heading were mostly worked out
-         * from its positions ([ImportOrigin.format]).
+         * says: Demo GNSS positions are simulated, the phone's GPS positions a phone's (FBBD-275); an
+         * import's GNSS channels are a GPS of unknown kind, a VBO file's a GNSS receiver's, and a GPX
+         * file's speed and heading were mostly worked out from its positions ([ImportOrigin.format]).
          */
         fun forSession(def: ChannelDef, devices: List<String>, imported: ImportOrigin?): Provenance {
             val derived = derive(def.source, def.name)
             if (def.source != GnssChannels.SOURCE) return derived
             return when {
-                imported == null -> if (DemoDevice in devices) SIMULATED else derived
+                imported == null -> when {
+                    DemoDevice in devices -> SIMULATED
+                    PhoneGnssDevice in devices -> MEASURED_GPS
+                    else -> derived
+                }
                 imported.format == "VBO" -> MEASURED_GNSS_RECEIVER
                 imported.format == "GPX" && def.id in GpsDerived -> CALCULATED
                 else -> MEASURED_GPS
@@ -95,6 +99,9 @@ enum class Provenance(val measured: Boolean) {
 
         /** Name of the Demo GNSS source ([fake.FakeGnssSource]) as a session lists it in its devices. */
         const val DemoDevice = "fake-gnss"
+
+        /** Name of the phone's GPS as a session's position source (FBBD-275) in its devices. */
+        const val PhoneGnssDevice = "phone_gnss"
 
         /** Source of the channels an import adds (transfer's SessionImport.Source). */
         const val ImportSource = "import"

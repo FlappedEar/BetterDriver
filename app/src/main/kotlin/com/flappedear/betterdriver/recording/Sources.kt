@@ -65,6 +65,9 @@ enum class GnssType {
 
     /** A made-up car lapping the demo circuit, whose track is saved for it (FBBD-233). */
     DEMO_TRACK,
+
+    /** The phone's own GPS, about one position a second, when there is no receiver (FBBD-275). */
+    PHONE,
 }
 
 /**
@@ -81,6 +84,7 @@ data class GnssRef(
     companion object {
         val Demo = GnssRef("", "Demo GNSS", GnssType.DEMO)
         val DemoTrack = GnssRef("", "Demo track", GnssType.DEMO_TRACK)
+        val Phone = GnssRef("", "Phone GPS", GnssType.PHONE)
 
         /** The demo receiver of [type]: Demo GNSS, or the demo track. */
         fun demoOf(type: GnssType): GnssRef = if (type == GnssType.DEMO_TRACK) DemoTrack else Demo
@@ -125,8 +129,8 @@ fun gnssRefOf(e: Equipment): GnssRef? {
 /**
  * Data sources for a new recording: the chosen receiver, each kind of which reconnects on its own
  * if the link drops, or Demo GNSS, plus the phone's accelerometer and the first listed heart rate
- * monitor, and the listed OBD-II adapters (FBBD-15, FBBD-121). There is no
- * fallback: without a receiver nothing is recorded, never simulated positions (FBBD-83).
+ * monitor, and the listed OBD-II adapters (FBBD-15, FBBD-121). Never simulated positions in place
+ * of a receiver (FBBD-83); the phone's own GPS is a real one, recorded as such (FBBD-275).
  */
 internal object Sources {
     fun create(context: Context, gnss: GnssRef, sensors: List<SensorRef> = emptyList()): List<DataSource> {
@@ -144,6 +148,7 @@ internal object Sources {
             GnssType.TCP -> tcpSource(app, gnss)
             GnssType.VBOX -> VboxSportSource(app, gnss.address, gnss.name)
             GnssType.DRAGY -> DragySource(app, gnss.address, gnss.name)
+            GnssType.PHONE -> PhoneGnssSource(app)
             GnssType.RACEBOX -> RaceBoxSource(app, gnss.address, gnss.name, imuCalibrations(context).load(gnss.address))
         }
         // Heart rate has fixed channel ids, so two monitors would merge into one stream: the first records.

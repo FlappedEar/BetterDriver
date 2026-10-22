@@ -72,6 +72,16 @@ private fun wantedGnss(wanted: SharedPreferences): GnssRef? = when {
     }
 }
 
+/**
+ * The position channels of a session on [gnss]: Demo GNSS positions are stored as made up, never as
+ * measured (FBBD-174); the phone's GPS as a phone's, never as a receiver's (FBBD-275).
+ */
+private fun gnssChannels(gnss: GnssRef) = when {
+    gnss.demo -> FakeGnssSource.Channels
+    gnss.type == GnssType.PHONE -> PhoneGnssChannels.GNSS
+    else -> GnssChannels.ALL
+}
+
 /** The receiver a start intent names: Demo GNSS, a RaceBox, another receiver, or none. */
 private fun gnssFrom(intent: Intent): GnssRef? = when {
     intent.getBooleanExtra(RecorderProtocol.EXTRA_GNSS_DEMO, false) ->
@@ -252,8 +262,7 @@ class RecorderService : Service() {
                 car = car,
                 track = track,
                 devices = sources.map { it.name },
-                // Demo GNSS positions are stored as made up, never as measured (FBBD-174).
-                channels = if (gnss.demo) FakeGnssSource.Channels else GnssChannels.ALL,
+                channels = gnssChannels(gnss),
             )
             val recording = Recorder(store).start(info).also { logTo(it, gnss.name) }
             val tracker = LiveTracker(

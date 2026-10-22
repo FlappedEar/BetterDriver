@@ -84,6 +84,13 @@ class ProvenanceTest {
             Provenance.forSession(def, devices, imported)
         assertEquals(Provenance.MEASURED_GNSS_RECEIVER, of(lat, listOf("racebox")))
         assertEquals(Provenance.SIMULATED, of(lat, listOf("fake-gnss")))
+        // The phone's own GPS (FBBD-275): its positions a phone's, the phone's accelerometer unchanged.
+        assertEquals(Provenance.MEASURED_GPS, of(lat, listOf(Provenance.PhoneGnssDevice, "phone")))
+        assertEquals(Provenance.MEASURED_GPS, of(speed, listOf(Provenance.PhoneGnssDevice, "phone")))
+        assertEquals(
+            Provenance.MEASURED_ACCELEROMETER,
+            of(ChannelDef(700, "phone_accel_x", "g", "phone"), listOf(Provenance.PhoneGnssDevice, "phone")),
+        )
         assertEquals(Provenance.MEASURED_ACCELEROMETER, of(accel, listOf("racebox")))
         assertEquals(Provenance.MEASURED_GNSS_RECEIVER, of(speed, imported = ImportOrigin("VBO", "a.vbo")))
         assertEquals(Provenance.MEASURED_GPS, of(lat, imported = ImportOrigin("GPX", "a.gpx")))
