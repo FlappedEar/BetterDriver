@@ -81,7 +81,7 @@ internal val SessionOrder: Comparator<SessionCoachingRecord> =
     compareBy({ it.sessionStartUtcMillis }, { it.sessionId })
 
 /** A track or session [id], once it is known to be safe as a file name. */
-private fun checkedId(id: String): String {
+internal fun checkedId(id: String): String {
     require(id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_." } && id != "." && id != "..") {
         "bad id: $id"
     }
@@ -89,7 +89,7 @@ private fun checkedId(id: String): String {
 }
 
 /** Writes [text] to a temporary file, syncs it and renames it over [target], so a reader never sees half of it. */
-private fun writeAtomically(target: File, text: String) {
+internal fun writeAtomically(target: File, text: String) {
     target.parentFile?.mkdirs()
     val tmp = File(target.parentFile, target.name + ".tmp")
     FileOutputStream(tmp).use { out ->

@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.analysis.data.metresPerSecondPerSpeedUnit
 import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.geo.projectCoordinate
+import com.flappedear.betterdriver.analysis.focus.FocusMinimumLossSeconds
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.optimal.AcceleratingAboveG
 import com.flappedear.betterdriver.analysis.optimal.AccelerationWindowSeconds
@@ -33,9 +34,10 @@ import kotlin.math.max
 import kotlin.math.sqrt
 
 // Where on the track the time is and what to do there (FBBD-306): each corner of a session's
-// fastest lap against the driver's own fastest pass through that corner, from this session or
-// any other at the same track. The target is a line he has driven, never a simulated one: the
-// app does not know where the track's edges are, only where his laps went.
+// fastest lap against the driver's own target pass through that corner (his second fastest, a
+// time driven twice), from this session or any other at the same track. The target is a line he
+// has driven, never a simulated one: the app does not know where the track's edges are, only
+// where his laps went.
 
 /** Line points and the road band are read every this many metres along the axis. */
 const val LineStepMeters = 2.0
@@ -44,19 +46,32 @@ const val LineStepMeters = 2.0
 const val MinimumBandLaps = 3
 
 /**
+ * The target through a corner is the [ConfirmingPasses]-th fastest pass over every lap at the track:
+ * a time driven at least twice, the rule the coach's targets follow (FBBD-177). A corner with fewer
+ * passes than that has no target.
+ */
+const val ConfirmingPasses = 2
+
+/**
  * Differences smaller than these are not advice: the receiver repeats them lap to lap.
- * [lineMeters] is [JointThresholds.lateralMeters]. [placeMeters]: at 10 Hz a car doing 100 km/h
- * moves 2.8 m between fixes. [speedKmh]: a GNSS speed repeats to a few tenths of a km/h, but a
+ * [lineMeters] is [JointThresholds.lateralMeters]. A corner with less than [gainSeconds] to find
+ * has nothing to find. [placeMeters]: at 10 Hz a car doing 100 km/h moves 2.8 m between
+ * fixes. [speedKmh]: a GNSS speed repeats to a few tenths of a km/h, but a
  * minimum speed moves by about a km/h lap to lap without the driver doing anything different.
  */
 data class LineThresholds(
     val lineMeters: Double = JointThresholds().lateralMeters,
     val placeMeters: Double = 3.0,
     val speedKmh: Double = 1.0,
+    /** Less time than this through a corner is GPS timing noise, as for the session focus (FBBD-20). */
+    val gainSeconds: Double = FocusMinimumLossSeconds,
 )
 
-/** Another session at the same track whose laps can be the target (read in full, like PreviousLaps). */
-data class LineSession(val session: TelemetrySession, val laps: LapSession, val label: String)
+/**
+ * Another session at the same track whose laps can be the target (read in full, like PreviousLaps).
+ * [label] is what the screen calls it; [id] is its session id, for the line plan.
+ */
+data class LineSession(val session: TelemetrySession, val laps: LapSession, val label: String, val id: String = "")
 
 /** One point of a lap's line, in metres east and north of the axis origin. */
 data class LinePoint(
@@ -89,6 +104,8 @@ data class LinePass(
     /** Distance from the axis at the corner's apex (mid-corner without one), positive left. */
     val apexOffsetMeters: Double?,
     val line: List<LinePoint>,
+    /** [LineSession.id] of the session the lap is from. */
+    val sourceId: String = "",
 )
 
 /** Where the laps went at one point: the road they used, at least, though not necessarily all of it. */
@@ -123,7 +140,8 @@ data class CornerAdvice(
 /**
  * One corner: its window (from the middle of the straight before it to the middle of the one
  * after, so the braking and the exit count, and the windows tile the lap), the reference lap and
- * the fastest pass through the window, and what that pass does differently.
+ * the target pass through the window ([ConfirmingPasses]), and what that pass does differently.
+ * [segmentId] is the track's CornerId when the analysis has the track's corner identity (FBBD-172).
  */
 data class CornerLine(
     val segmentId: String,
@@ -134,13 +152,13 @@ data class CornerLine(
     val endMeters: Double,
     val reference: LinePass,
     val target: LinePass,
-    /** Reference minus target through the window; 0 when the reference lap is the fastest there. */
+    /** Reference minus target through the window; 0 within [LineThresholds.gainSeconds] of it. */
     val gainSeconds: Double,
     val road: List<RoadBand>,
     val advice: CornerAdvice,
 )
 
-/** A session's fastest lap against the fastest pass through each corner of every lap at the track. */
+/** A session's fastest lap against the target pass through each corner of every lap at the track. */
 data class LineAnalysis(
     val referenceLapNumber: Int,
     val referenceLapSeconds: Double,
@@ -161,12 +179,16 @@ data class LineAnalysis(
  * [analysis] of [session] against the laps of [others] at the same track, timed on its axis and
  * corners as the session before is for the summary. Null without corners, or when the session
  * has no fastest lap.
+ *
+ * [others] is read one session at a time and only what the target needs is kept of each (its two
+ * fastest passes through each corner and how wide its laps went), so a sequence that reads each
+ * session as it is asked for never holds more than one in memory besides [session].
  */
 @Suppress("ReturnCount")
 fun analyzeLine(
     analysis: SessionAnalysis,
     session: TelemetrySession,
-    others: List<LineSession> = emptyList(),
+    others: Sequence<LineSession> = emptySequence(),
     thresholds: LineThresholds = LineThresholds(),
 ): LineAnalysis? {
     val axis = analysis.axis ?: return null
@@ -174,53 +196,129 @@ fun analyzeLine(
     val referenceNumber = analysis.axisLapNumber ?: return null
     val windows = cornerWindows(segments.segments, axis)
     if (windows.isEmpty()) return null
-    val features = computeTrackFeatures(axis, SegmentReviewSmoothingMeters)
-    val sources = listOf(LineSession(session, analysis.laps, "")) + others
-    // One reader per session, never looked up by label: labels are for display and need not be unique.
-    val probes = sources.map { LineProbe(it.session, axis) }
-    val candidates = sources.flatMapIndexed { k, source ->
-        source.laps.timedLaps.filter { it.referenceEligible }.map { lap ->
-            val population = PopulationLap(source.session, lap.startTelemetryTime, lap.endTelemetryTime, lap.number)
-            Candidate(source, probes[k], population, lap.durationSeconds)
-        }
-    }
-    val reference = candidates.firstOrNull { it.probe === probes.first() && it.lap.reference == referenceNumber }
-        ?: return null
-    val approved = ApprovedSegments(windows.map { it.window }, segments.revision + "/line")
-    // Every lap read the same way on this session's axis (FBBD-215).
-    val timed = timeOnAxis(axis, approved, candidates.map { it.lap }, analysis.robustness)
-    val corners = windows.mapNotNull { w ->
-        val seconds = candidates.indices.map { timed.times[it].sector(w.window.id)?.seconds }
-        val ref = candidates.indexOf(reference)
-        val refSeconds = seconds[ref] ?: return@mapNotNull null
-        val best = seconds.indices.filter { seconds[it] != null }.minBy { seconds[it]!! }
-        fun pass(i: Int): LinePass {
-            val c = candidates[i]
-            val measured = measureCornerLap(
-                axis, features, segments, w.corner.id, w.corner.startProgressMeters, w.corner.endProgressMeters,
-                timed.traces[i], c.source.session, c.lap.start, c.lap.end, c.lap.reference,
-            )
-            val metrics = measured.observation
-            val slowest = measured.speeds.minimum.takeIf { measured.speeds.valid && it.value != null }
-            return LinePass(
-                c.source.label, c.lap.reference as Int, c.lapSeconds, seconds[i]!!,
-                metrics.brakingPointMeters, slowest?.progressMeters,
-                slowest?.value?.let { kmh(it, measured.speeds.unit) }, metrics.pickupMeters, metrics.lineOffsetMeters,
-                c.probe.line(timed.traces[i], w.window, axis.lengthMeters),
-            )
-        }
-        val refPass = pass(ref)
-        val targetPass = if (best == ref) refPass else pass(best)
-        val readers = candidates.indices.map { candidates[it].probe to timed.traces[it] }
-        val road = roadBand(axis, w.window, readers)
-        val turnsLeft = turnsLeft(features, w.corner, axis.lengthMeters)
+    val reader = LineReader(analysis, axis, segments.revision, windows)
+    val own = reader.read(LineSession(session, analysis.laps, ""), referenceNumber) ?: return null
+    val reference = own.reference ?: return null
+    val read = mutableListOf(own)
+    for (other in others) reader.read(other, null)?.let { read += it }
+    val corners = windows.indices.mapNotNull { k ->
+        val w = windows[k]
+        val refPass = reference.passes[k] ?: return@mapNotNull null
+        // The target is a time driven twice (FBBD-177), as the coach's: the second fastest pass.
+        val second = read.flatMap { it.fastest[k] }.sortedBy { it.seconds }.getOrNull(ConfirmingPasses - 1)
+        val ahead = second != null && refPass.seconds - second.seconds >= thresholds.gainSeconds
+        val target = if (ahead) second!! else refPass
+        val turnsLeft = turnsLeft(reader.features, w.corner, axis.lengthMeters)
         CornerLine(
             w.corner.id, w.corner.name, turnsLeft, w.window.startProgressMeters, w.window.endProgressMeters,
-            refPass, targetPass, max(0.0, refSeconds - targetPass.seconds), road,
-            if (best == ref) CornerAdvice() else advise(refPass, targetPass, turnsLeft, axis.lengthMeters, thresholds),
+            refPass, target, max(0.0, refPass.seconds - target.seconds), reader.band(k, read.map { it.road[k] }),
+            if (ahead) advise(refPass, target, turnsLeft, axis.lengthMeters, thresholds) else CornerAdvice(),
         )
     }
-    return LineAnalysis(referenceNumber, reference.lapSeconds, corners, candidates.size, sources.size)
+    return LineAnalysis(referenceNumber, reference.lapSeconds, corners, read.sumOf { it.laps }, read.size)
+}
+
+/** Overload for a list of sessions already read. */
+fun analyzeLine(
+    analysis: SessionAnalysis,
+    session: TelemetrySession,
+    others: List<LineSession>,
+    thresholds: LineThresholds = LineThresholds(),
+): LineAnalysis? = analyzeLine(analysis, session, others.asSequence(), thresholds)
+
+/** What one session gives the line analysis; its samples are not kept. */
+private data class SessionLines(
+    /** Per window, its fastest passes (at most [ConfirmingPasses]), fastest first. */
+    val fastest: List<List<LinePass>>,
+    /** Per window, how far left and right its laps went at each station. */
+    val road: List<RoadSpread>,
+    /** The analysed session's reference lap through each window; null for other sessions. */
+    val reference: ReferenceLap?,
+    val laps: Int,
+)
+
+private class ReferenceLap(val lapSeconds: Double, val passes: List<LinePass?>)
+
+/** The furthest left and right, and how many laps, at each station of one window. */
+private class RoadSpread(val left: DoubleArray, val right: DoubleArray, val count: IntArray)
+
+/** Reads sessions on the analysed session's axis and corners, one at a time. */
+private class LineReader(
+    private val analysis: SessionAnalysis,
+    private val axis: ProgressAxis,
+    revision: String,
+    private val windows: List<CornerWindow>,
+) {
+    val features: TrackFeatures = computeTrackFeatures(axis, SegmentReviewSmoothingMeters)
+    private val approved = ApprovedSegments(windows.map { it.window }, "$revision/line")
+    private val stations = windows.map { stations(it.window, axis.lengthMeters) }
+
+    /** [source]'s eligible laps; with [referenceNumber], its reference lap too. Null without one. */
+    @Suppress("ReturnCount")
+    fun read(source: LineSession, referenceNumber: Int?): SessionLines? {
+        val laps = source.laps.timedLaps.filter { it.referenceEligible }
+        if (laps.isEmpty()) return null
+        val probe = LineProbe(source.session, axis)
+        val population = laps.map {
+            PopulationLap(source.session, it.startTelemetryTime, it.endTelemetryTime, it.number)
+        }
+        // Every lap read the same way on this session's axis (FBBD-215).
+        val timed = timeOnAxis(axis, approved, population, analysis.robustness)
+        fun pass(k: Int, i: Int, seconds: Double): LinePass {
+            val w = windows[k]
+            val lap = population[i]
+            val measured = measureCornerLap(
+                axis, features, analysis.segments!!, w.corner.id, w.corner.startProgressMeters,
+                w.corner.endProgressMeters, timed.traces[i], source.session, lap.start, lap.end, lap.reference,
+            )
+            val slowest = measured.speeds.minimum.takeIf { measured.speeds.valid && it.value != null }
+            return LinePass(
+                source.label, lap.reference as Int, laps[i].durationSeconds, seconds,
+                measured.observation.brakingPointMeters, slowest?.progressMeters,
+                slowest?.value?.let { kmh(it, measured.speeds.unit) }, measured.observation.pickupMeters,
+                measured.observation.lineOffsetMeters, probe.line(timed.traces[i], w.window, axis.lengthMeters),
+                source.id,
+            )
+        }
+        val seconds = windows.map { w -> laps.indices.map { timed.times[it].sector(w.window.id)?.seconds } }
+        val fastest = windows.indices.map { k ->
+            laps.indices.filter { seconds[k][it] != null }.sortedBy { seconds[k][it]!! }
+                .take(ConfirmingPasses).map { pass(k, it, seconds[k][it]!!) }
+        }
+        val reference = referenceNumber?.let { n ->
+            val i = laps.indexOfFirst { it.number == n }.takeIf { it >= 0 } ?: return null
+            ReferenceLap(laps[i].durationSeconds, windows.indices.map { k -> seconds[k][i]?.let { pass(k, i, it) } })
+        }
+        val road = windows.indices.map { k ->
+            val at = stations[k]
+            val spread = RoadSpread(
+                DoubleArray(at.size) { Double.NEGATIVE_INFINITY },
+                DoubleArray(at.size) { Double.POSITIVE_INFINITY },
+                IntArray(at.size),
+            )
+            for (trace in timed.traces) {
+                at.forEachIndexed { j, p ->
+                    val offset = timeAtProgress(trace, p)?.let { probe.offsetAt(it, p) } ?: return@forEachIndexed
+                    spread.left[j] = max(spread.left[j], offset)
+                    spread.right[j] = minOf(spread.right[j], offset)
+                    spread.count[j]++
+                }
+            }
+            spread
+        }
+        return SessionLines(fastest, road, reference, laps.size)
+    }
+
+    /** The road the laps of every session used through window [k], where at least [MinimumBandLaps] went. */
+    fun band(k: Int, spreads: List<RoadSpread>): List<RoadBand> = stations[k].indices.mapNotNull { j ->
+        if (spreads.sumOf { it.count[j] } < MinimumBandLaps) return@mapNotNull null
+        val left = spreads.filter { it.count[j] > 0 }.maxOf { it.left[j] }
+        val right = spreads.filter { it.count[j] > 0 }.minOf { it.right[j] }
+        val p = stations[k][j]
+        val l = beside(axis, p, left)
+        val r = beside(axis, p, right)
+        if (l == null || r == null) null else RoadBand(p, left, right, l, r)
+    }
 }
 
 /** What [target] does differently from [reference] in a corner, beyond [thresholds]. */
@@ -263,8 +361,6 @@ internal fun signedSpan(from: Double, to: Double, length: Double): Double {
     val m = d.mod(length)
     return if (m > length / 2) m - length else m
 }
-
-private class Candidate(val source: LineSession, val probe: LineProbe, val lap: PopulationLap, val lapSeconds: Double)
 
 internal class CornerWindow(val corner: TrackSegment, val window: TrackSegment)
 
@@ -310,24 +406,6 @@ private fun turnsLeft(features: TrackFeatures, corner: TrackSegment, length: Dou
     }
     return inside.sumOf { it.curvaturePerMeter } > 0.0 && length > 0.0
 }
-
-private fun roadBand(
-    axis: ProgressAxis,
-    window: TrackSegment,
-    laps: List<Pair<LineProbe, List<ProgressSegment>>>,
-): List<RoadBand> =
-    stations(window, axis.lengthMeters).mapNotNull { p ->
-        val offsets = laps.mapNotNull { (probe, trace) -> timeAtProgress(trace, p)?.let { probe.offsetAt(it, p) } }
-        if (offsets.size < MinimumBandLaps) {
-            null
-        } else {
-            val left = offsets.max()
-            val right = offsets.min()
-            val l = beside(axis, p, left)
-            val r = beside(axis, p, right)
-            if (l == null || r == null) null else RoadBand(p, left, right, l, r)
-        }
-    }
 
 /** The point [offset] metres left of [axis] at [progress] (negative: right). */
 @Suppress("ReturnCount")
