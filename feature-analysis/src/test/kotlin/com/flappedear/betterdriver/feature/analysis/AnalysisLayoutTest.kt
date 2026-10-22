@@ -2,8 +2,10 @@ package com.flappedear.betterdriver.feature.analysis
 
 import androidx.activity.ComponentActivity
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
@@ -239,17 +241,51 @@ abstract class AnalysisLayoutTest(private val device: String) {
         tab(AnalysisTab.Laps).assertIsSelected()
     }
 
+    /**
+     * Where to find time (FBBD-306, UI-167 B) is the Map tab's second view: the whole lap with a
+     * list ranked by time to find, and a corner opened from the list says what to do there.
+     */
+    @Test
+    fun whereToFindTimeLaysOutCleanly() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        tab(AnalysisTab.Map).performClick()
+        compose.onNodeWithTag(MapViewTagPrefix + MapView.Line.name).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(LineViewTag).assertExists()
+        compose.saveScreenshot(device, "analysis_line_view")
+        val problems = compose.layoutProblems().map { "list: $it" }.toMutableList()
+        // Most time to find first.
+        val rows = compose.onAllNodes(hasTestTagPrefix(LineRowTagPrefix)).fetchSemanticsNodes()
+            .map { it.config[SemanticsProperties.TestTag].removePrefix(LineRowTagPrefix) }
+        check(rows.take(2) == listOf("T4", "T1")) { "rows $rows" }
+        compose.onNodeWithTag(LineRowTagPrefix + "T4").performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNode(hasText("Apex 8 m later")).assertExists()
+        compose.onNode(hasText("‹ All corners")).assertExists()
+        compose.saveScreenshot(device, "analysis_line_corner")
+        problems += compose.layoutProblems().map { "corner: $it" }
+        check(problems.isEmpty()) { "where to find time on $device:\n" + problems.joinToString("\n") }
+    }
+
+    private fun hasTestTagPrefix(prefix: String) = SemanticsMatcher("test tag starts with $prefix") {
+        it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith(prefix) == true
+    }
+
     private fun tab(t: AnalysisTab) = compose.onNode(hasText(t.title) and IsTab)
 
     private companion object {
-        val IsTab = SemanticsMatcher.keyIsDefined(SemanticsProperties.Selected)
+        // By role: the Map tab's view chips (Laps, Where to find time) are selectable too.
+        val IsTab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
     }
 }
 
 @Composable
 private fun Analysis(coachFocusFirst: Boolean = false) {
     AnalysisScreen(
-        AnalysisState.Ready(PreviewUi.copy(map = PreviewMap, coachFocusFirst = coachFocusFirst)),
+        AnalysisState.Ready(
+            PreviewUi.copy(map = PreviewMap, coachFocusFirst = coachFocusFirst, line = LineState.Ready(PreviewLine)),
+        ),
         onCompare = {},
         layout = deviceLayout(),
     )

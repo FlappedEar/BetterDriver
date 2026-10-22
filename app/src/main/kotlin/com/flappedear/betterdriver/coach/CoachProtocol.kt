@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import android.content.Context
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import java.io.File
 
 /**
@@ -67,3 +68,9 @@ internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachD
  * corner and what it recommended next. With the coach's files, so a backup carries it.
  */
 internal fun coachingHistoryStore(context: Context) = CoachingHistoryStore(File(coachDir(context), "history"))
+
+/**
+ * The line plan of each track (FBBD-306): where the time is and the target through each corner, for
+ * the Map tab, the coach and the 3D export. With the coach's files, so a backup carries it.
+ */
+internal fun linePlanStore(context: Context) = LinePlanStore(File(coachDir(context), "lines"))
