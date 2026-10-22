@@ -1,10 +1,10 @@
 package com.flappedear.betterdriver.gopro
 
 import java.io.File
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
-class GoProFileImportTest {
+class FileNamesTest {
     private val camera = "gopro-1234"
 
     @Test
