@@ -56,4 +56,27 @@ class HeartRateStatsTest {
         assertNull(heartRateStats(TelemetrySession(emptyMap(), emptyMap())))
         assertNull(heartRateStats(session(1.0 to 0.0, 2.0 to Double.NaN)))
     }
+
+    @Test
+    fun `an imported RaceChrono session's heart rate column counts too (FBBD-176)`() {
+        val name = "heart_rate-hrm"
+        val s = TelemetrySession(
+            mapOf(name to TelemetryChannel(name, doubleArrayOf(1.0, 2.0), doubleArrayOf(120.0, 130.0))),
+            emptyMap(),
+        )
+        assertEquals(125, heartRateStats(s)!!.averageBpm)
+    }
+
+    @Test
+    fun `the chart series leaves a dropout and zeros blank (UI-160 A)`() {
+        val first = (0..59).map { it.toDouble() to 120.0 }
+        val zeros = (60..69).map { it.toDouble() to 0.0 }
+        val back = (200..259).map { it.toDouble() to 140.0 }
+        val series = heartRateSeries(session(*(first + zeros + back).toTypedArray()))
+        assertEquals(2, series.size)
+        assertEquals(6, series[0].size)
+        assertEquals(120.0, series[0].first().value, 1e-9)
+        assertEquals(140.0, series[1].last().value, 1e-9)
+        assertEquals(emptyList(), heartRateSeries(TelemetrySession(emptyMap(), emptyMap())))
+    }
 }

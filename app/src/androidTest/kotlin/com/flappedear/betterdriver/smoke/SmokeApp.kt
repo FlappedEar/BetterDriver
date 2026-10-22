@@ -263,7 +263,8 @@ fun tab(title: String): SemanticsMatcher =
 
 /** Opens the tab or bottom-bar destination [title]. */
 fun SmokeRule.openTab(title: String) {
-    waitFor(tab(title)).performClick()
+    // The analysis's six tabs scroll on a phone (UI-157 B): a tab off the screen is scrolled to first.
+    waitFor(tab(title)).performScrollTo().performClick()
     waitForIdle()
 }
 

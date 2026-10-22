@@ -27,6 +27,7 @@ sealed interface AnalysisState {
      * [acceleration] still shows the session's acceleration runs, which need no laps.
      * [quality] is the session's data quality (FBBD-183), null while it is worked out.
      * [gForces] is the whole session's G-G diagram, which needs no laps either; null without movement.
+     * [car] is the car's values and the heart rate of the whole drive, which need no laps either.
      */
     data class Unavailable(
         val message: String,
@@ -34,6 +35,8 @@ sealed interface AnalysisState {
         val acceleration: AccelerationUi? = null,
         val quality: QualityUi? = null,
         val gForces: GgTrace? = null,
+        /** The car's values and the heart rate over the whole drive (UI-162 A); null without any. */
+        val car: CarUi? = null,
     ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
@@ -243,6 +246,8 @@ data class AnalysisUi(
     val gForces: GgTrace? = null,
     /** The session's heart rate; null when it recorded none. */
     val heartRate: HeartRateUi? = null,
+    /** The Car tab (FBBD-176): pedals, temperatures and heart rate; null until worked out. */
+    val car: CarUi? = null,
 )
 
 /** Losses below this are GPS timing noise and not listed. */

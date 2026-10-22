@@ -51,7 +51,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.setContent { AppScreen { Analysis() } }
         val problems = ArrayList<String>()
         AnalysisTab.entries.forEach { t ->
-            tab(t).performClick()
+            tab(t).performScrollTo().performClick()
             compose.waitForIdle()
             // Roborazzi keeps names ending in "_compare" for itself.
             compose.saveScreenshot(device, "analysis_${t.name.lowercase()}_tab")
@@ -141,6 +141,23 @@ abstract class AnalysisLayoutTest(private val device: String) {
     }
 
     /**
+     * The Car tab (FBBD-176, UI-157 B) shows the pedals by lap, the temperatures by lap with the one
+     * not recorded named, and the heart rate chart; a lap without pedals says so instead of a bar.
+     */
+    @Test
+    fun carTabShowsPedalsTemperaturesAndHeartRate() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        tab(AnalysisTab.Car).performScrollTo().performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(PedalCardTag).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Not recorded")).assertExists()
+        compose.onNodeWithTag(TemperatureCardTag).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Not recorded: intake")).assertExists()
+        compose.onNodeWithTag(HeartRateChartTag).performScrollTo().assertIsDisplayed()
+    }
+
+    /**
      * The Compare tab shows what each lap's car was doing along the lap and how long each coasted
      * (FBBD-175), marked as inferred; the Corners tab shows each corner's coasting, marked too.
      */
@@ -152,7 +169,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.waitForIdle()
         compose.onNodeWithTag(DrivingStatesTag).performScrollTo().assertIsDisplayed()
         compose.onNode(hasText("Coasting: lap 2 ≈1.32 s · lap 3 ≈2.05 s")).performScrollTo().assertIsDisplayed()
-        tab(AnalysisTab.Corners).performClick()
+        tab(AnalysisTab.Corners).performScrollTo().performClick()
         compose.waitForIdle()
         compose.onAllNodes(hasText(CoastingLabel))[0].performScrollTo().assertIsDisplayed()
         compose.onAllNodes(hasText("≈0.12 s"))[0].assertExists()

@@ -25,7 +25,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.PrimaryTabRow
+import androidx.compose.material3.PrimaryScrollableTabRow
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,7 +89,12 @@ fun AnalysisScreen(
             AnalysisState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is AnalysisState.Unavailable -> WithAcceleration(state.acceleration, state.quality, state.gForces) {
+            is AnalysisState.Unavailable -> WithAcceleration(
+                state.acceleration,
+                state.quality,
+                state.gForces,
+                state.car,
+            ) {
                 Card {
                     Text(state.message, style = MaterialTheme.typography.bodyLarge)
                     state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
@@ -107,6 +112,9 @@ internal enum class AnalysisTab(val title: String) {
     Map("Map"),
     Laps("Laps"),
     Corners("Corners"),
+
+    /** The car's values and the heart rate (FBBD-176, UI-157 B). */
+    Car("Car"),
 }
 
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
@@ -126,7 +134,12 @@ private fun Ready(
         onCompare(it)
         tab = AnalysisTab.Compare.ordinal
     }
-    PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
+    // Six tabs do not fit a phone's width with their names whole, so the row scrolls (UI-157 B).
+    PrimaryScrollableTabRow(
+        selectedTabIndex = tab,
+        containerColor = MaterialTheme.colorScheme.background,
+        edgePadding = 0.dp,
+    ) {
         AnalysisTab.entries.forEach { t ->
             Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }, text = { Text(t.title) })
         }
@@ -169,6 +182,7 @@ private fun Ready(
                     Sectors(ui, width)
                     CornerDetails(ui, width)
                 }
+                AnalysisTab.Car -> CarCards(ui.car, width)
             }
         }
     }

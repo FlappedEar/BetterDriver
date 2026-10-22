@@ -125,14 +125,16 @@ private fun clock(seconds: Double): String {
 
 /**
  * The analysis's message when it has no laps to show (a road drive, say), then the session's
- * G-forces and the Acceleration card when the session has runs: they need no laps. Then its data
- * quality (FBBD-183), once worked out.
+ * G-forces and the Acceleration card when the session has runs: they need no laps. Then its pedals,
+ * temperatures and heart rate (FBBD-176, UI-162 A) when it recorded any, and its data quality
+ * (FBBD-183), once worked out.
  */
 @Composable
 internal fun WithAcceleration(
     acceleration: AccelerationUi?,
     quality: QualityUi? = null,
     gForces: GgTrace? = null,
+    car: CarUi? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Column(
@@ -147,6 +149,7 @@ internal fun WithAcceleration(
         val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
         gForces?.let { GForcesCard(it, width) }
         acceleration?.let { AccelerationCard(it, width) }
+        car?.let { CarCards(it, width) }
         quality?.let { QualityCard(it, width) }
     }
 }
