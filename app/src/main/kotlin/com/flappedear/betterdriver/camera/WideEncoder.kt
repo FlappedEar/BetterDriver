@@ -33,7 +33,7 @@ import java.util.concurrent.TimeUnit
  * [events] are called on the encoder's own threads. [stop] blocks; call it off the main thread.
  * A file asks for the keyframe that starts the next one [cutMarginBytes] before its size limit.
  */
-@Suppress("TooManyFunctions") // One function per encoder, muxer and file step.
+@Suppress("TooManyFunctions", "LongParameterList") // One function per encoder, muxer and file step; test hooks.
 internal class WideEncoder(
     private val target: WideTarget,
     private val pcm: PcmSource?,

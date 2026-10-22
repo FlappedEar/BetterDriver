@@ -30,11 +30,12 @@ internal class WriterBacklog(private val budgetKib: Int, private val waitMs: Lon
     fun reserve(capacity: Int, onFull: (() -> Unit)? = null): Boolean {
         if (stalled) return false
         val kib = kibOf(capacity)
-        if (room.tryAcquire(kib)) return true
-        onFull?.invoke()
-        if (room.tryAcquire(kib, waitMs, TimeUnit.MILLISECONDS)) return true
-        stalled = true
-        return false
+        val taken = room.tryAcquire(kib) || run {
+            onFull?.invoke()
+            room.tryAcquire(kib, waitMs, TimeUnit.MILLISECONDS)
+        }
+        if (!taken) stalled = true
+        return taken
     }
 
     /** The writer is done with a copy of [capacity] bytes that [reserve] made room for. */
