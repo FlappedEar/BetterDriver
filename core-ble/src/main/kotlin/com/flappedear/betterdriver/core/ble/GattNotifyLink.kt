@@ -144,6 +144,9 @@ class GattNotifyLink(
 
     private val received = AtomicInteger()
 
+    /** Notifications count only from [gatt]; one from a closed connection is dropped (audit A09). */
+    private val connection = CurrentConnection<BluetoothGatt>()
+
     override fun start() {
         handler.post {
             if (running) return@post
@@ -185,6 +188,7 @@ class GattNotifyLink(
                 val device = adapter.getRemoteDevice(address)
                 DebugLog.i(Tag, "$address connecting ($plan, ${bondName(device)}, setup ${ladder.failures})")
                 gatt = device.connectGatt(appContext, plan.autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
+                gatt?.let(connection::open)
                 if (gatt == null) "connectGatt returned null" else null
             }
         } catch (e: SecurityException) {
@@ -236,6 +240,8 @@ class GattNotifyLink(
     private fun closeGatt() {
         handler.removeCallbacks(mtuOverdue)
         awaitingMtu = false
+        // Before the state change that resets the decoder: no old notification gets through after it.
+        connection.close()
         val g = gatt ?: return
         gatt = null
         try {
@@ -369,14 +375,14 @@ class GattNotifyLink(
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
-            if (ch.uuid == spec.characteristic) data(value)
+            if (ch.uuid == spec.characteristic) connection.deliver(g) { data(value) }
         }
 
         @Deprecated("Called instead of the overload above before Android 13")
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && ch.uuid == spec.characteristic) {
-                ch.value?.let { data(it.copyOf()) }
+                ch.value?.let { v -> connection.deliver(g) { data(v.copyOf()) } }
             }
         }
     }

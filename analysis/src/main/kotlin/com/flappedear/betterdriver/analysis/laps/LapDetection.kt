@@ -26,9 +26,10 @@ import com.flappedear.betterdriver.analysis.geo.Vector2
 import com.flappedear.betterdriver.analysis.geo.geoMidpoint
 import com.flappedear.betterdriver.analysis.geo.isValidCoordinate
 import com.flappedear.betterdriver.analysis.geo.projectCoordinate
+import com.flappedear.betterdriver.timing.live.MinimumGnssGapSeconds
+import com.flappedear.betterdriver.timing.live.gnssGapThresholdSeconds
 import kotlin.math.abs
 import kotlin.math.min
-import kotlin.math.max
 
 // Port of FlappedEar Telemetry packages/telemetry_core/lib/src/laps/lap_detection.dart,
 // lap_traces.dart and segment_geometry.dart (Apache 2.0).
@@ -60,18 +61,17 @@ fun deriveSourceLapSession(
 private class GpsSample(val time: Double, val point: Vector2)
 
 /**
- * The longest step between two GPS fixes that is still continuous: the smaller channel gap, and at
- * least [MinimumGpsGapSeconds] (FBBD-215). Three sample intervals alone made two fixes missing in a
- * row at 25 Hz (a receiver that already skips the odd fix) a loss of GPS that took the whole lap or
- * run out of the analysis.
+ * The longest step between two GPS fixes that is still continuous: three of the shorter channel's
+ * median intervals, and at least [MinimumGpsGapSeconds] (FBBD-215). Three sample intervals alone made
+ * two fixes missing in a row at 25 Hz (a receiver that already skips the odd fix) a loss of GPS that
+ * took the whole lap or run out of the analysis. The same rule as the live lap timer's
+ * ([gnssGapThresholdSeconds], audit A11).
  */
-fun gpsGapThreshold(latitude: TelemetryChannel, longitude: TelemetryChannel): Double {
-    val threshold = min(latitude.gapThreshold(), longitude.gapThreshold())
-    return if (threshold > 0.0) max(threshold, MinimumGpsGapSeconds) else threshold
-}
+fun gpsGapThreshold(latitude: TelemetryChannel, longitude: TelemetryChannel): Double =
+    gnssGapThresholdSeconds(min(latitude.baseIntervalSeconds, longitude.baseIntervalSeconds))
 
 /** A step between fixes up to this long is never a GPS gap: a few missed fixes, not a loss of signal. */
-const val MinimumGpsGapSeconds = 0.5
+const val MinimumGpsGapSeconds = MinimumGnssGapSeconds
 
 private fun gpsSampleAt(lat: TelemetryChannel, lon: TelemetryChannel, index: Int, origin: GeoCoordinate): GpsSample? {
     if (index < 0 || index >= lat.timestamps.size || index >= lon.timestamps.size) return null

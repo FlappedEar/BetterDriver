@@ -1,7 +1,6 @@
 package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.timing.geo.Xy
-import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.track.Track
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
@@ -70,7 +69,8 @@ private fun Double.centi() = (this * CentiUnits).roundToLong() / CentiUnits
  * two passes of each corner become its targets.
  */
 fun buildReference(track: Track, sessions: List<SessionLaps>): CoachReference? {
-    val timed = sessions.flatMap { s -> s.laps.filter { it.lap.kind == LapKind.Timed }.map { s.sessionId to it } }
+    // Laps with a GNSS gap (audit A11) are left out: their time is partly interpolated.
+    val timed = sessions.flatMap { s -> s.laps.filter { it.lap.countsForBest }.map { s.sessionId to it } }
     val (bestSession, best) = timed.minByOrNull { it.second.lap.timeMicros } ?: return null
     val found = findCorners(best.trace)
     // Named by the track's corners (FBBD-172); the coach names them again from the track it runs at.

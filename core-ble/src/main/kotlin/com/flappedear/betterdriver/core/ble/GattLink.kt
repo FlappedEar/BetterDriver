@@ -112,6 +112,9 @@ class GattLink(
     private var lastDataAt = 0L
 
     private val received = AtomicInteger()
+
+    /** Notifications count only from [gatt]; one from a closed connection is dropped (audit A09). */
+    private val connection = CurrentConnection<BluetoothGatt>()
     private val gattProbe = probe?.let(::GattProbe)
     private var lastFastLinkAt = 0L
 
@@ -217,6 +220,7 @@ class GattLink(
             } else {
                 gatt = adapter.getRemoteDevice(address)
                     .connectGatt(appContext, plan.autoConnect, callback, BluetoothDevice.TRANSPORT_LE)
+                gatt?.let(connection::open)
                 if (gatt == null) "connectGatt returned null" else null
             }
         } catch (e: SecurityException) {
@@ -299,6 +303,8 @@ class GattLink(
         toSubscribe.clear()
         handshaking = false
         subscribed = false
+        // Before the state change that resets the decoder: no old notification gets through after it.
+        connection.close()
         val g = gatt ?: return
         gatt = null
         try {
@@ -539,7 +545,7 @@ class GattLink(
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
-            if (ch.uuid in profile.notify) data(ch.uuid, value)
+            if (ch.uuid in profile.notify) connection.deliver(g) { data(ch.uuid, value) }
         }
 
         override fun onPhyUpdate(g: BluetoothGatt, txPhy: Int, rxPhy: Int, status: Int) {
@@ -565,7 +571,7 @@ class GattLink(
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && ch.uuid in profile.notify) {
-                ch.value?.let { data(ch.uuid, it.copyOf()) }
+                ch.value?.let { v -> connection.deliver(g) { data(ch.uuid, v.copyOf()) } }
             }
         }
     }

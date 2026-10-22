@@ -60,9 +60,22 @@ fun defaultMinLapSeconds(track: Track): Double = if (track.pointToPoint) Default
  * to the start, which crosses the lines the other way). Crossing the start line again during a run
  * starts it over: the run was aborted and the car came back round, so it keeps its number.
  *
- * Feed fixes in time order from one thread. Fixes that go back in time are ignored.
+ * A step between two fixes longer than the receiver's [GnssContinuity] allows is a GNSS gap (audit
+ * A11). A line crossed inside a gap is still interpolated, so laps go on being counted, but the
+ * laps on both sides of it are marked [Lap.gnssGap], as is a lap with a gap anywhere in it, and so
+ * are never the best lap or a reference; a sector with a gap in it, or a line crossed in one, has
+ * no time.
+ *
+ * Feed fixes in time order from one thread. Fixes that go back in time, or repeat the last fix's
+ * time, are ignored ([accepts]).
  */
-class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSeconds(track)) {
+@Suppress("TooManyFunctions") // One function per line kind and per lap step.
+class LapTimer(
+    private val track: Track,
+    minLapSeconds: Double = defaultMinLapSeconds(track),
+    /** Tells a GNSS gap from a continuous step; null for fixes placed by hand (tests), where no step is a gap. */
+    private val continuity: GnssContinuity? = GnssContinuity(),
+) {
     private val startFinishLine = requireNotNull(track.startFinish) { "track ${track.id} has no start/finish line" }
 
     /** Runs from a start line to a finish line instead of laps. */
@@ -85,6 +98,12 @@ class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSe
 
     private var prev: Xy? = null
     private var prevT = 0L
+
+    /** The step to the fix being processed bridges a GNSS gap. */
+    private var stepIsGap = false
+
+    /** The lap being driven has a GNSS gap in it, or started at a line crossed in one. */
+    private var lapGap = false
 
     /**
      * Number of the lap being driven; 0 before the first fix. On a point-to-point track, the run
@@ -117,11 +136,17 @@ class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSe
 
     // Boundary k is the start of sector k; boundary sectorCount is the finish.
     private val boundaries = arrayOfNulls<Long>(sectorCount + 1)
+
+    // Sector k of the lap being driven has a GNSS gap in it, or one of its lines was crossed in one.
+    private val sectorGap = BooleanArray(sectorCount)
     private var enteredPit = false
     private var exitedPit = false
     private var previousKind: LapKind? = null
 
-    /** Processes one fix; returns what it caused, in time order. */
+    /** Whether [update] takes [fix]: the first fix, or one later than the last fix taken. */
+    fun accepts(fix: Fix): Boolean = prev == null || fix.tMicros > prevT
+
+    /** Processes one fix; returns what it caused, in time order. Empty for a fix not [accepts]ed. */
     @Suppress("ReturnCount") // First fix, out-of-order fix and no crossing each end early.
     fun update(fix: Fix): List<LapEvent> {
         val p = frame.toXy(fix.lat, fix.lon)
@@ -134,6 +159,8 @@ class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSe
             return emptyList()
         }
         if (fix.tMicros <= prevT) return emptyList()
+        stepIsGap = continuity?.isGap(fix.tMicros - prevT) == true
+        if (stepIsGap) markGap()
         val crossings = crossings(p0, p, fix.tMicros)
         prev = p
         prevT = fix.tMicros
@@ -151,6 +178,12 @@ class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSe
             }
         }
         return events
+    }
+
+    /** The lap and the sector being driven now have a gap in them. */
+    private fun markGap() {
+        lapGap = true
+        if (running && currentSector < sectorCount) sectorGap[currentSector] = true
     }
 
     /** Every line crossed between the last fix ([p0]) and this one, in time order. */
@@ -200,7 +233,7 @@ class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSe
         boundaries[sectorCount] = t
         val last = sectorCount - 1
         val sector = LapEvent.SectorDone(t, lapNumber, last, sectorTime(last))
-        return Lap(lapNumber, kind, lapStartMicros, t, List(sectorCount, ::sectorTime)) to sector
+        return Lap(lapNumber, kind, lapStartMicros, t, List(sectorCount, ::sectorTime), gnssGap = lapGap) to sector
     }
 
     private fun startLap(t: Long, at: Xy) {
@@ -210,20 +243,26 @@ class LapTimer(private val track: Track, minLapSeconds: Double = defaultMinLapSe
         currentSector = 0
         boundaries.fill(null)
         boundaries[0] = t
+        // A lap that starts at a line crossed inside a gap has an interpolated start.
+        lapGap = stepIsGap
+        sectorGap.fill(false)
+        if (stepIsGap && sectorCount > 0) sectorGap[0] = true
     }
 
     /** Sector line [i] ends sector i. Lines must come in order; skipped ones leave their sectors untimed. */
     private fun onSectorLine(i: Int, t: Long, events: MutableList<LapEvent>) {
         if (i < currentSector) return
         boundaries[i + 1] = t
+        if (stepIsGap) sectorGap[i] = true
         events += LapEvent.SectorDone(t, lapNumber, i, sectorTime(i))
         currentSector = i + 1
+        if (stepIsGap && currentSector < sectorCount) sectorGap[currentSector] = true
     }
 
     private fun sectorTime(i: Int): Long? {
         val start = boundaries[i]
         val end = boundaries[i + 1]
-        return if (start == null || end == null) null else end - start
+        return if (start == null || end == null || sectorGap[i]) null else end - start
     }
 
     private fun kindOfLapEnding(): LapKind = when {
