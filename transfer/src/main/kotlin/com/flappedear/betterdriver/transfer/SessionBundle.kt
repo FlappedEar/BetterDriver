@@ -89,9 +89,18 @@ object SessionBundle {
     /**
      * Unpacks a bundle from [input] into a new folder under [staging] and checks it. Nothing reaches
      * the session list until [SessionInbox.accept]; on any error the folder is removed.
+     *
+     * Each session file's declared size is checked before it is copied (audit A08): files the app
+     * reads whole have limits ([SessionLimits]), and every file must leave the device a margin of
+     * [freeBytes]. Video has no size limit.
      */
     @Suppress("ThrowsCount", "CyclomaticComplexMethod") // One reason per way a bundle can be bad.
-    internal fun receive(input: InputStream, staging: File, onBytes: (Int) -> Unit = {}): Received {
+    internal fun receive(
+        input: InputStream,
+        staging: File,
+        onBytes: (Int) -> Unit = {},
+        freeBytes: (File) -> Long = File::getUsableSpace,
+    ): Received {
         val staged = File(staging, "in-" + UUID.randomUUID())
         check(staged.mkdirs()) { "could not create ${staged.path}" }
         try {
@@ -107,7 +116,11 @@ object SessionBundle {
                         if (size > MaxSmallEntry) throw BundleFormatException("track too large")
                         track = decodeTrack(contents.readBytes())
                     }
-                    path.startsWith(SessionPrefix) -> copyTo(File(staged, path), contents, onBytes)
+                    path.startsWith(SessionPrefix) -> {
+                        SessionLimits.checkEntry(path.removePrefix(SessionPrefix), size)
+                        SessionLimits.checkSpace(staged, size, freeBytes)
+                        copyTo(File(staged, path), contents, onBytes)
+                    }
                     else -> Unit // Entries a newer app adds are skipped.
                 }
             }
@@ -115,7 +128,7 @@ object SessionBundle {
             if (h.getProperty("format") != Format) throw BundleFormatException("not a session bundle")
             val id = h.getProperty("session").orEmpty()
             if (!SessionInbox.validId(id)) throw BundleFormatException("bad session id")
-            val received = Received(id, readInfo(File(staged, "session")), track, staged)
+            val received = Received(id, SessionLimits.readInfo(File(staged, "session"), "session"), track, staged)
             val trackId = track?.id
             if (trackId != null && trackId != h.getProperty("track")) {
                 throw BundleFormatException("track does not match")
@@ -134,17 +147,6 @@ object SessionBundle {
         TrackJson.decode(bytes.toString(Charsets.UTF_8))
     } catch (e: TrackFormatException) {
         throw BundleFormatException("bad track: ${e.message}", e)
-    }
-
-    @Suppress("TooGenericExceptionCaught") // Damaged metadata fails in many ways (as in SessionStore.list).
-    private fun readInfo(sessionDir: File): SessionInfo {
-        val props = SessionFiles.readProps(File(sessionDir, SessionFiles.META))
-            ?: throw BundleFormatException("no session metadata")
-        return try {
-            SessionFiles.propsToMeta(props)
-        } catch (e: RuntimeException) {
-            throw BundleFormatException("bad session metadata", e)
-        }
     }
 
     internal fun copyTo(target: File, contents: InputStream, onBytes: (Int) -> Unit) {

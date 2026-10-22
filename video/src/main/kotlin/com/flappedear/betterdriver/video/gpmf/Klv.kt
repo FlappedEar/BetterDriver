@@ -14,12 +14,18 @@ internal class Klv(val key: String, val type: Char, val structSize: Int, val rep
  * Source: https://github.com/gopro/gpmf-parser (README).
  */
 internal object Gpmf {
-    /** Calls [onStream] with the items of every STRM, at any depth under DEVC. */
-    fun forEachStream(buf: ByteBuffer, onStream: (List<Klv>) -> Unit) {
+    /**
+     * Calls [onStream] with the items of every STRM, at any depth under DEVC. GoPro nests two levels
+     * (DEVC, STRM); deeper than [MaxDepth] is damage, refused before the stack runs out (audit A07).
+     */
+    fun forEachStream(buf: ByteBuffer, onStream: (List<Klv>) -> Unit) = forEachStream(buf, 0, onStream)
+
+    private fun forEachStream(buf: ByteBuffer, depth: Int, onStream: (List<Klv>) -> Unit) {
+        if (depth >= MaxDepth) throw Mp4FormatException("GPMF nested deeper than $MaxDepth levels")
         for (item in items(buf)) {
             when {
                 item.key == "STRM" && item.type == NestedType -> onStream(items(ByteBuffer.wrap(item.bytes)))
-                item.type == NestedType -> forEachStream(ByteBuffer.wrap(item.bytes), onStream)
+                item.type == NestedType -> forEachStream(ByteBuffer.wrap(item.bytes), depth + 1, onStream)
             }
         }
     }
@@ -45,16 +51,30 @@ internal object Gpmf {
     /**
      * Every number in [item]. [types] gives one type char per field of a structure (for GPS9 it
      * comes from TYPE); otherwise the item's own type applies to every value.
+     *
+     * The field types are checked before any value is read: none may be missing or unknown, and a
+     * structure of them must be exactly the item's structure size. So every pass reads a whole
+     * structure and the loop always moves on (audit A07: an empty TYPE looped forever).
      */
+    @Suppress("ThrowsCount") // One reason per way the types can be bad.
     fun numbers(item: Klv, types: String? = null): List<Double> {
-        val fieldTypes = types?.takeIf { item.type == ComplexType || it.length > 1 } ?: item.type.toString()
+        val fieldTypes = if (item.type == ComplexType) {
+            types ?: throw Mp4FormatException("GPMF ${item.key} has no TYPE")
+        } else {
+            types?.takeIf { it.length > 1 } ?: item.type.toString()
+        }
+        if (fieldTypes.isEmpty()) throw Mp4FormatException("GPMF ${item.key} has an empty TYPE")
+        val structBytes = fieldTypes.sumOf(::sizeOf)
+        val complex = fieldTypes.length > 1
+        if (complex && structBytes != item.structSize) {
+            throw Mp4FormatException(
+                "GPMF ${item.key} TYPE \"$fieldTypes\" is $structBytes bytes, structure ${item.structSize}",
+            )
+        }
         val b = ByteBuffer.wrap(item.bytes)
-        val out = mutableListOf<Double>()
-        while (b.hasRemaining()) {
-            for (t in fieldTypes) {
-                if (b.remaining() < sizeOf(t)) return out
-                out += readNumber(b, t)
-            }
+        val out = ArrayList<Double>(item.bytes.size / structBytes * fieldTypes.length)
+        while (b.remaining() >= structBytes) {
+            for (t in fieldTypes) out += readNumber(b, t)
         }
         return out
     }
@@ -84,6 +104,7 @@ internal object Gpmf {
     }
 
     private const val KlvHeaderBytes = 8
+    private const val MaxDepth = 8
     private const val NestedType = '\u0000'
     private const val ComplexType = '?'
     private const val Q16 = 65536.0

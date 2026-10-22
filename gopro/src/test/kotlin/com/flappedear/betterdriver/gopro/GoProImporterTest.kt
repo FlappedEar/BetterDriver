@@ -200,6 +200,22 @@ class GoProImporterTest {
         assertEquals(1, result.problems.size)
     }
 
+    @Test
+    fun `a damaged MP4 is reported as that file's problem and the good chapter is still imported`() {
+        // Audit A04: moov with an empty mvhd once escaped the importer as BufferUnderflowException.
+        val session = TestSession.data(60)
+        val good = chapter("GH010031.MP4", offsetUs = 5_000_000, seconds = 20)
+        val damaged = File(videoDir, "GH010032.MP4").apply {
+            writeBytes(byteArrayOf(0, 0, 0, 16) + "moov".toByteArray() + byteArrayOf(0, 0, 0, 8) + "mvhd".toByteArray())
+        }
+        val result = GoProImporter().import(dir, session, listOf(good), hero8)
+        val bad = GoProImporter().import(dir, session, listOf(damaged), hero8)
+        assertEquals(listOf("GH010031.MP4"), result.clips.map { it.fileName })
+        assertEquals(1, bad.problems.size)
+        assertTrue(bad.problems.single().startsWith("GH010032.MP4: "), bad.problems.single())
+        assertTrue(bad.clips.isEmpty())
+    }
+
     private companion object {
         const val Since1904 = 2_082_844_800L
     }

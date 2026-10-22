@@ -2,7 +2,9 @@
 
 package com.flappedear.betterdriver.video.gpmf
 
+import com.flappedear.betterdriver.video.mp4.Mp4FormatException
 import com.flappedear.betterdriver.video.mp4.Mp4Reader
+import com.flappedear.betterdriver.video.mp4.parsing
 import java.io.File
 import java.nio.ByteBuffer
 import java.time.LocalDate
@@ -41,6 +43,7 @@ data class GpsSample(
  */
 object GpmfGps {
 
+    /** The file's GPS samples; a damaged file throws [Mp4FormatException] (see its parser contract). */
     fun read(file: File): List<GpsSample> {
         val track = Mp4Reader.read(file).gpmfTrack ?: return emptyList()
         return track.samples.flatMap { sample ->
@@ -48,11 +51,14 @@ object GpmfGps {
         }
     }
 
-    /** GPS samples in one GPMF payload that plays from [startUs] for [durationUs]. */
-    fun parsePayload(payload: ByteArray, startUs: Long, durationUs: Long): List<GpsSample> {
+    /**
+     * GPS samples in one GPMF payload that plays from [startUs] for [durationUs]. A damaged payload
+     * throws [Mp4FormatException], never another exception.
+     */
+    fun parsePayload(payload: ByteArray, startUs: Long, durationUs: Long): List<GpsSample> = parsing("GPMF payload") {
         val out = mutableListOf<GpsSample>()
         Gpmf.forEachStream(ByteBuffer.wrap(payload)) { items -> out += gpsFromStream(items, startUs, durationUs) }
-        return out
+        out
     }
 
     private fun gpsFromStream(items: List<Klv>, startUs: Long, durationUs: Long): List<GpsSample> {
@@ -79,6 +85,7 @@ object GpmfGps {
         val fix = items.firstOrNull { it.key == "GPSF" }?.let { Gpmf.numbers(it).firstOrNull()?.toInt() }
             ?: Gps5UnknownFix
         val values = Gpmf.numbers(data, Gps5Types)
+        checkValues(data, values, Gps5Fields)
         return List(data.repeat) { i ->
             val v = DoubleArray(Gps5Fields) { f -> values[i * Gps5Fields + f] / scal.at(f) }
             GpsSample(
@@ -102,12 +109,15 @@ object GpmfGps {
         val types = items.firstOrNull { it.key == "TYPE" }
             ?.let { String(it.bytes, Charsets.US_ASCII).trimEnd('\u0000') }
             ?: Gps9DefaultTypes
-        val values = Gpmf.numbers(data, types)
         val fields = types.length
-        if (fields < Gps9Fields) return emptyList()
+        // Checked before any value is read: an empty TYPE once made the reader loop forever (audit A07).
+        if (fields < Gps9Fields) throw Mp4FormatException("GPS9 TYPE \"$types\" has $fields fields, needs $Gps9Fields")
+        val values = Gpmf.numbers(data, types)
+        checkValues(data, values, fields)
         return List(data.repeat) { i ->
             val v = DoubleArray(Gps9Fields) { f -> values[i * fields + f] / scal.at(f) }
             val days = v[5].toLong()
+            if (days !in 0..MaxGps9Days) throw Mp4FormatException("GPS9 date $days days after 2000")
             val secondsOfDay = v[6]
             GpsSample(
                 videoTimeUs = startUs + i * step,
@@ -118,6 +128,13 @@ object GpmfGps {
                 speedMps = v[3],
                 fix = v[8].toInt(),
             )
+        }
+    }
+
+    /** Fails unless [data] holds [fields] values for each of its samples. */
+    private fun checkValues(data: Klv, values: List<Double>, fields: Int) {
+        if (values.size < data.repeat * fields) {
+            throw Mp4FormatException("${data.key} holds ${values.size} values for ${data.repeat} samples of $fields")
         }
     }
 
@@ -144,6 +161,9 @@ object GpmfGps {
     private const val Gps9DefaultTypes = "lllllllSS"
     private const val Gps5UnknownFix = UnknownFix
     private const val GpsuChars = 16
+
+    /** GPS9 days since 2000 up to the year 2200; anything later is damage. */
+    private const val MaxGps9Days = 200L * 366
     private const val MicrosPerMilli = 1000L
     private const val MillisPerSecond = 1000.0
     private val Gps9Epoch: LocalDate = LocalDate.of(2000, 1, 1)
