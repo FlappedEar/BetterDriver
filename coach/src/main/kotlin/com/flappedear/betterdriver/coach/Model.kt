@@ -51,6 +51,11 @@ data class Corner(
      * second braking corner of a chain, or for an apex on a straight.
      */
     val entryAt: Double? = null,
+    /**
+     * The car braked into it; false for a corner it only lifted for (FBBD-307), where [brakeAt] is
+     * where the lift starts and the coach says nothing about braking.
+     */
+    val braked: Boolean = true,
 ) {
     /** The number said and shown for it: the track's corner number, else the coach's own. */
     val label: Int get() = turnNumber ?: number
@@ -79,6 +84,11 @@ data class CornerPass(
     val intervalMicros: Long = 0,
     /** Every speed in the window came from the receiver, none worked out from positions. */
     val speedMeasured: Boolean = true,
+    /**
+     * Where the car was across the road at [apexAt] (FBBD-307): metres beside the reference path,
+     * positive left of the direction of travel. Null when not measured (a pass stored before it was).
+     */
+    val apexOffsetMeters: Double? = null,
 )
 
 /** How much the coach says (FBBD-27). */

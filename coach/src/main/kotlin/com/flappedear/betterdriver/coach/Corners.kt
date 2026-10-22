@@ -136,12 +136,14 @@ private const val HalfTurnDegrees = 180.0
 private const val FullTurnDegrees = 360.0
 
 /**
- * The braking corners of one lap (FBBD-96, FBBD-202): every speed minimum that is the lowest speed
- * within 40 m either side, comes after a drop of at least [MinCornerDropKmh] from the fastest point
- * since the previous corner, and that the car braked into: it slowed harder than
- * [CornerBrakingMps2] on the way down. That fastest point is the braking point. Corners taken flat
- * out are not listed: there is nothing to say about braking for them. Nor are stops (below
- * [StopKmh]), such as a first lap that waits just past the line or calls at the pits.
+ * The corners of one lap the car slows for (FBBD-96, FBBD-202): every speed minimum that is the
+ * lowest speed within 40 m either side and comes after a drop of at least [MinCornerDropKmh] from the
+ * fastest point since the previous corner. That fastest point is the braking point. A corner the car
+ * braked into slowed harder than [CornerBrakingMps2] on the way down; one it only lifted for
+ * ([Corner.braked] false, FBBD-307) must turn, so a lift on a straight (traffic, cooling down) is no
+ * corner, while a fast sweeper taken on a lift is: where the car is and where it accelerates there
+ * is worth time. Corners taken flat out are not listed. Nor are stops (below [StopKmh]), such as a
+ * first lap that waits just past the line or calls at the pits.
  */
 fun findCorners(trace: LapTrace): List<Corner> {
     val r = trace.resample()
@@ -162,19 +164,26 @@ fun findCorners(trace: LapTrace): List<Corner> {
         // from the trace itself: a hard stop can fall between two resampled points.
         val stop = trace.slowestBetween(r.along(i - smoothHalf), r.along(i + smoothHalf)) < StopKmh
         if (stop) segmentStart = i
-        if (stop || v[brake] - v[i] < MinCornerDropKmh || !braked(r, brake, apex)) continue
+        val braked = braked(r, brake, apex)
+        val turn = turnAt(r, brake, apex)
+        if (stop || !isCorner(v[brake] - v[i], braked, turn)) continue
         corners += Corner(
             number = corners.size + 1,
             brakeAt = r.along(brake),
             apexAt = r.along(apex),
             entryKmh = r.speedsKmh[brake],
             minKmh = r.speedsKmh[apex],
-            turn = turnAt(r, brake, apex),
+            turn = turn,
+            braked = braked,
         )
         segmentStart = i
     }
     return corners
 }
+
+/** Slowing [dropKmh] is a corner if the car [braked] for it, or lifted where the road turns (FBBD-307). */
+private fun isCorner(dropKmh: Double, braked: Boolean, turn: Turn) =
+    dropKmh >= MinCornerDropKmh && (braked || turn != Turn.Straight)
 
 /** Whether the car slowed harder than [CornerBrakingMps2] at some point from [from] to [to]. */
 private fun braked(r: Resampled, from: Int, to: Int): Boolean {

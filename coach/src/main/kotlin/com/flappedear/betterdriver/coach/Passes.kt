@@ -40,6 +40,29 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
         start..end
     }
 
+    /**
+     * How far [p] is beside the path at [along] metres (FBBD-307), positive left of the direction of
+     * travel, negative right: where the car is across the road against the reference lap's line.
+     */
+    fun offset(p: Xy, along: Double): Double? {
+        val a = path.along
+        val m = along.coerceIn(0.0, path.lengthMeters)
+        var lo = 0
+        var hi = a.size - 1
+        while (hi - lo > 1) {
+            val mid = (lo + hi) / 2
+            if (a[mid] <= m) lo = mid else hi = mid
+        }
+        val p0 = path.points[lo]
+        val d = path.points[hi] - p0
+        val length = d.length()
+        if (length <= 0.0) return null
+        val u = (m - a[lo]) / length
+        val ex = p.x - (p0.x + d.x * u)
+        val ey = p.y - (p0.y + d.y * u)
+        return (d.x * ey - d.y * ex) / length
+    }
+
     /** Places positions of one lap on the path. Use a new one for each lap. */
     fun cursor(): PathCursor = PathCursor(delta.Cursor())
 
@@ -60,7 +83,10 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
             // A pass keeps whether its speeds were measured (FBBD-177), so a reference built from
             // worked-out speeds never gives a precise speed cue.
             val measured = trace.speedsMeasured?.get(i) ?: true
-            for (m in meters) m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured)?.let { passes += it }
+            val offset = offset(trace.points[i], along)
+            for (m in meters) {
+                m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured, offset)?.let { passes += it }
+            }
         }
         meters.mapNotNullTo(passes) { it.finish() }
         return passes
@@ -86,13 +112,17 @@ class PassMeter(
     /** Where the finish line is along the path. */
     private val lineAt: Double = window.endInclusive,
 ) {
-    /** [fresh]: a new position, not the receiver holding its last one through a dropout (FBBD-177). */
+    /**
+     * [fresh]: a new position, not the receiver holding its last one through a dropout (FBBD-177).
+     * [offset]: metres beside the reference path, positive left ([CornerMap.offset]); null when not known.
+     */
     private class Sample(
         val along: Double,
         val tMicros: Long,
         val kmh: Double,
         val measured: Boolean = true,
         val fresh: Boolean = true,
+        val offset: Double? = null,
     )
 
     private var previous: Sample? = null
@@ -110,11 +140,14 @@ class PassMeter(
         line = Sample(0.0, lineMicros, lineKmh)
     }
 
-    /** The car is [along] the path at [tMicros] at [kmh], which the receiver [measured] or was worked out. */
-    fun add(along: Double, tMicros: Long, kmh: Double, measured: Boolean = true): CornerPass? {
+    /**
+     * The car is [along] the path at [tMicros] at [kmh], which the receiver [measured] or was worked
+     * out, [offset] metres beside the path (positive left) when known.
+     */
+    fun add(along: Double, tMicros: Long, kmh: Double, measured: Boolean = true, offset: Double? = null): CornerPass? {
         if (finished) return null
         val p = previous
-        val s = Sample(along, tMicros, kmh, measured, fresh = p == null || abs(along - p.along) >= HeldMeters)
+        val s = Sample(along, tMicros, kmh, measured, fresh = p == null || abs(along - p.along) >= HeldMeters, offset)
         val first = !started
         previous = s
         started = true
@@ -211,6 +244,7 @@ class PassMeter(
             gapMicros = steps.last(),
             intervalMicros = steps[steps.size / 2],
             speedMeasured = inside.all { it.measured },
+            apexOffsetMeters = inside[apex].offset,
         )
     }
 
