@@ -113,6 +113,7 @@ private val GnssTypes = mapOf(
     EquipmentModel.TCP_GNSS to GnssType.TCP,
     EquipmentModel.VBOX_SPORT to GnssType.VBOX,
     EquipmentModel.DRAGY to GnssType.DRAGY,
+    EquipmentModel.PHONE_GPS to GnssType.PHONE,
 )
 
 /** The receiver an equipment item is, or null when it is not a receiver. */
@@ -122,6 +123,8 @@ fun gnssRefOf(e: Equipment): GnssRef? {
     return when (type) {
         null -> null
         GnssType.DEMO, GnssType.DEMO_TRACK -> GnssRef.demoOf(type)
+        // One name in the log and the session whatever Arek calls it (DriveChecks reads "Phone_GPS").
+        GnssType.PHONE -> GnssRef.Phone
         else -> GnssRef(e.address.orEmpty(), e.advertisedName ?: e.name, type)
     }
 }

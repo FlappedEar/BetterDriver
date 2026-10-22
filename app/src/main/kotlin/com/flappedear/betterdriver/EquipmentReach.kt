@@ -73,7 +73,7 @@ private fun LogReach(searching: Boolean, equipment: List<Equipment>, reach: Map<
 
 /** [heard] is the addresses the scan heard, null while it does not look. */
 private fun reachOf(e: Equipment, classic: Boolean, heard: Set<String>?): Reach? = when {
-    e.model == EquipmentModel.PHONE_CAMERA -> Reach.BuiltIn
+    e.model == EquipmentModel.PHONE_CAMERA || e.model == EquipmentModel.PHONE_GPS -> Reach.BuiltIn
     !e.model.controlledByApp -> Reach.ByHand
     e.model in MadeUpModels -> Reach.MadeUp
     e.model in WifiModels -> Reach.WiFi

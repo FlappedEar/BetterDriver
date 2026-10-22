@@ -60,6 +60,12 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
      */
     DRAGY(EquipmentKind.GNSS, "Dragy"),
 
+    /**
+     * The phone's own GPS, about one position a second (FBBD-275, UI-153 B): added and chosen like a
+     * receiver, for a session without one. There is only one.
+     */
+    PHONE_GPS(EquipmentKind.GNSS, "Phone GPS"),
+
     /** Synthetic GNSS for trying the app without hardware. Only there when added on purpose. */
     DEMO_GNSS(EquipmentKind.GNSS, "Demo GNSS"),
 
@@ -128,8 +134,8 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
 
     val isGoPro: Boolean get() = this == GOPRO || this == GOPRO_FILES
 
-    /** Listed once at most: there is one phone camera. Any number of GoPros and receivers can be listed. */
-    val single: Boolean get() = this == PHONE_CAMERA
+    /** Listed once at most: there is one phone camera and one phone GPS. Any number of GoPros and receivers. */
+    val single: Boolean get() = this == PHONE_CAMERA || this == PHONE_GPS
 
     /**
      * The phone camera's video modes (FBBD-88), best first, narrowed at run time to what the phone
@@ -399,7 +405,8 @@ data class Setup(
      * Adds an item. The first GNSS receiver becomes the session's receiver, and a new camera is
      * used in the next session; Arek can turn either off. A model paired over Bluetooth that is
      * already listed at the same address is updated instead of listed twice. Only the phone camera
-     * is listed once at most; any number of GoPros and receivers can be listed. [goPro] says which
+     * and the phone's GPS are listed once at most ([EquipmentModel.single]); any number of GoPros and
+     * receivers can be listed. [goPro] says which
      * GoPro a GoPro is; an Open GoPro camera whose model is not known is listed as one.
      */
     @Suppress("LongParameterList") // Each is a property of the new item.

@@ -2,6 +2,8 @@ package com.flappedear.betterdriver.recording
 
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
+import com.flappedear.betterdriver.setup.Equipment
+import com.flappedear.betterdriver.setup.EquipmentModel
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -57,8 +59,11 @@ class PhoneGnssSourceTest {
     }
 
     @Test
-    fun `the phone's GPS is its own source type`() {
+    fun `the phone's GPS added as equipment starts sessions on its own source, under one name`() {
         assertEquals(GnssType.PHONE, GnssRef.Phone.type)
         assertTrue(!GnssRef.Phone.demo)
+        // Renamed by Arek, it still records and logs as "Phone GPS" (the drive-log report reads Phone_GPS).
+        val item = Equipment("p1", EquipmentModel.PHONE_GPS, "My phone", null)
+        assertEquals(GnssRef.Phone, gnssRefOf(item))
     }
 }
