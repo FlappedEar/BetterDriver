@@ -130,4 +130,22 @@ class TrackStoreConcurrencyTest {
         assertEquals(first.revision + writers / 2, stored.revision)
         assertEquals(renamed, stored.identity)
     }
+
+    @Test
+    fun `a reader setting a damaged file aside never takes the good track a writer just saved`() {
+        val dir = Files.createTempDirectory("tracks").toFile()
+        val first = TrackStore(dir).save(circuit.track(), nowUtcMillis = 1_000)
+        val file = File(dir, "${first.id}.track.json")
+        repeat(rounds) { round ->
+            file.writeText("{ half a track")
+            together(dir) { store, i ->
+                if (i == 0) store.save(first.copy(name = "Good $round")) else store.get(first.id)
+            }
+            // Only the damaged text is ever set aside; the saved track is where it belongs.
+            val aside = dir.listFiles { f -> f.name.contains(".unreadable-") }.orEmpty()
+            assertTrue(aside.all { it.readText() == "{ half a track" }, "round $round")
+            aside.forEach { it.delete() }
+            assertEquals("Good $round", TrackJson.decode(file.readText()).name)
+        }
+    }
 }

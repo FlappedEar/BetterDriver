@@ -6,6 +6,9 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
+import kotlinx.serialization.SerializationException
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
@@ -19,7 +22,7 @@ private const val CopyBuffer = 1 shl 20
 private const val StagingPrefix = ".import-"
 private const val PreviousSuffix = ".previous"
 
-/** A stale staging folder (the app was killed during an import) is removed after this long. */
+/** A staging folder untouched for this long belongs to an import that was killed ([FileImport.recoverStaging]). */
 private const val StaleStagingMillis = 60L * 60 * 1000
 
 /** A GoPro file name, after the camera prefix the import adds ([plainName]): chapter, then recording number. */
@@ -58,7 +61,7 @@ class FileImport(
     /** Returns the problems; [onCopied] gets the bytes copied so far. */
     fun run(files: List<PickedFile>, onCopied: (Long) -> Unit = {}): List<String> {
         val videoDir = File(sessionDir, VideoFiles.DIR).apply { mkdirs() }
-        removeStaleStaging(videoDir)
+        recoverStaging(videoDir)
         val staging = File(videoDir, StagingPrefix + UUID.randomUUID()).apply { mkdirs() }
         try {
             val problems = mutableListOf<String>()
@@ -149,8 +152,15 @@ class FileImport(
     /**
      * Moves the placed files into the session, keeping each file they replace in [staging] until the
      * index is written; on any failure the replaced files are put back and the new ones taken out.
+     * A journal of the clips is written first, so an import killed half-way is finished or undone by
+     * a later one ([recoverStaging]).
      */
     private fun commit(videoDir: File, staging: File, clips: List<VideoClip>) {
+        val journal = File(staging, JournalName)
+        journal.outputStream().use { out ->
+            out.write(json.encodeToString(clipList, clips).toByteArray(Charsets.UTF_8))
+            out.fd.sync()
+        }
         val moved = mutableListOf<Pair<File, File?>>()
         try {
             for (clip in clips) {
@@ -161,6 +171,7 @@ class FileImport(
                 move(File(staging, clip.fileName), target)
             }
             VideoIndex(sessionDir).putAll(clips)
+            journal.delete()
         } catch (e: IOException) {
             for ((target, previous) in moved.asReversed()) {
                 if (previous != null && previous.exists()) {
@@ -169,14 +180,53 @@ class FileImport(
                     target.delete()
                 }
             }
+            journal.delete()
             throw e
         }
     }
 
-    private fun removeStaleStaging(videoDir: File) {
-        videoDir.listFiles { f -> f.isDirectory && f.name.startsWith(StagingPrefix) }.orEmpty()
-            .filter { nowMillis() - it.lastModified() > StaleStagingMillis }
-            .forEach { it.deleteRecursively() }
+    /**
+     * A staging folder nothing has touched for [StaleStagingMillis] belongs to an import that was
+     * killed. Without a journal nothing in the session was changed yet: it is removed. With one, the
+     * index tells how far it got: when it has the journal's clips the import is finished, else every
+     * file it replaced is put back. Only then is the folder removed, so a replaced video is never lost.
+     */
+    private fun recoverStaging(videoDir: File) {
+        val stale = videoDir.listFiles { f -> f.isDirectory && f.name.startsWith(StagingPrefix) }.orEmpty()
+            .filter { dir -> nowMillis() - newest(dir) > StaleStagingMillis }
+        for (dir in stale) {
+            val journal = File(dir, JournalName)
+            val clips = if (journal.isFile) readJournal(journal) else emptyList()
+            val indexed = VideoIndex(sessionDir).clips()
+            if (clips.isNotEmpty() && !indexed.containsAll(clips)) putBack(dir, videoDir, clips)
+            dir.deleteRecursively()
+        }
+    }
+
+    /** Puts each file the import of [clips] replaced back from [staging]. */
+    private fun putBack(staging: File, videoDir: File, clips: List<VideoClip>) {
+        for (clip in clips) {
+            val previous = File(staging, clip.fileName + PreviousSuffix)
+            if (previous.exists()) move(previous, File(videoDir, clip.fileName))
+        }
+    }
+
+    /** The journal's clips; a journal cut short was written before anything moved, so none. */
+    private fun readJournal(journal: File): List<VideoClip> = try {
+        json.decodeFromString(clipList, journal.readText())
+    } catch (_: SerializationException) {
+        emptyList()
+    } catch (_: IllegalArgumentException) {
+        emptyList()
+    }
+
+    private fun newest(dir: File): Long =
+        maxOf(dir.lastModified(), dir.listFiles().orEmpty().maxOfOrNull { it.lastModified() } ?: 0L)
+
+    private companion object {
+        const val JournalName = "commit.json"
+        val clipList = ListSerializer(VideoClip.serializer())
+        val json = Json { ignoreUnknownKeys = true }
     }
 }
 

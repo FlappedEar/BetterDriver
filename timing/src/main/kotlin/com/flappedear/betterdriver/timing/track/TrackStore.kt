@@ -113,19 +113,25 @@ class TrackStore(private val dir: File) {
         return File(dir, id + Suffix)
     }
 
-    private fun readOrSetAside(file: File): Track? = try {
+    /**
+     * A file that cannot be read is set aside under the lock, and only if it still cannot be read
+     * then: a writer may have replaced it with a good track since this read (Audit A02).
+     */
+    private fun readOrSetAside(file: File): Track? = read(file) ?: locked {
+        read(file).also { track ->
+            if (track == null && file.exists()) {
+                file.renameTo(File(dir, file.name + UnreadableMarker + System.currentTimeMillis()))
+            }
+        }
+    }
+
+    private fun read(file: File): Track? = try {
         TrackJson.decode(file.readText()).takeIf { it.id + Suffix == file.name }
             ?: throw TrackFormatException("id does not match file name")
     } catch (_: TrackFormatException) {
-        setAside(file)
+        null
     } catch (_: IOException) {
-        setAside(file)
-    }
-
-    /** Renamed so it no longer ends in [Suffix] and is not read again. */
-    private fun setAside(file: File): Track? {
-        file.renameTo(File(dir, file.name + UnreadableMarker + System.currentTimeMillis()))
-        return null
+        null
     }
 
     /**
@@ -136,11 +142,21 @@ class TrackStore(private val dir: File) {
     private fun <T> locked(change: () -> T): T {
         dir.mkdirs()
         val canonical = dir.canonicalFile
+        val held = holding.get()
+        // Reentrant: a change reads, and a read may set a file aside under the lock.
+        if (canonical.path in held) return change()
         val monitor = monitors.computeIfAbsent(canonical.path) { Any() }
         return synchronized(monitor) {
             val lockFile = File(canonical.parentFile, canonical.name + LockSuffix)
             RandomAccessFile(lockFile, "rw").channel.use { channel ->
-                channel.lock().use { change() }
+                channel.lock().use {
+                    held += canonical.path
+                    try {
+                        change()
+                    } finally {
+                        held -= canonical.path
+                    }
+                }
             }
         }
     }
@@ -180,5 +196,8 @@ class TrackStore(private val dir: File) {
 
         /** One monitor per tracks folder, shared by every instance in this process. */
         val monitors = ConcurrentHashMap<String, Any>()
+
+        /** The folders whose lock this thread holds. */
+        val holding: ThreadLocal<MutableSet<String>> = ThreadLocal.withInitial { mutableSetOf() }
     }
 }

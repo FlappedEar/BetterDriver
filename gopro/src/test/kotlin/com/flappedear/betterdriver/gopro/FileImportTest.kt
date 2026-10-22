@@ -1,8 +1,11 @@
 package com.flappedear.betterdriver.gopro
 
+import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoIndex
 import com.flappedear.betterdriver.video.VideoSourceKind
 import com.flappedear.betterdriver.video.gpmf.FakeGoProFile
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.json.Json
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
@@ -31,13 +34,27 @@ class FileImportTest {
     private val index get() = File(videoDir, "clips.json")
     private val stored get() = File(videoDir, "$camera-GH010007.MP4")
 
-    private fun import(vararg files: PickedFile): List<String> = FileImport(
+    private fun import(vararg files: PickedFile, laterMillis: Long = 0): List<String> = FileImport(
         session,
         camera,
         VideoSourceKind.GOPRO_FILES,
         GoProImporter(zone = ZoneOffset.UTC),
+        nowMillis = { System.currentTimeMillis() + laterMillis },
         readSession = { data },
     ).run(files.toList())
+
+    /**
+     * The state an import killed half-way through its commit leaves: the session's copy moved into
+     * the staging folder, the new file in its place, the journal naming the new clip.
+     */
+    private fun killedDuringCommit(newClip: VideoClip): File {
+        val staging = File(videoDir, ".import-killed").apply { mkdirs() }
+        val journal = Json.encodeToString(ListSerializer(VideoClip.serializer()), listOf(newClip))
+        File(staging, "commit.json").writeText(journal)
+        stored.copyTo(File(staging, stored.name + ".previous"))
+        stored.writeText("the new copy")
+        return staging
+    }
 
     /** A HERO8-style chapter on the "card", recorded [offsetUs] into the session. */
     private fun chapter(name: String, offsetUs: Long, seconds: Int = 60): File {
@@ -141,11 +158,39 @@ class FileImportTest {
     fun `a staging folder left by a killed import is removed later, a fresh one is not`() {
         videoDir.mkdirs()
         val stale = File(videoDir, ".import-old").apply { mkdirs() }
-        File(stale, "x.MP4").writeText("half")
-        stale.setLastModified(System.currentTimeMillis() - 2 * 60 * 60 * 1000)
+        val half = File(stale, "x.MP4").apply { writeText("half") }
+        val twoHoursAgo = System.currentTimeMillis() - 2 * 60 * 60 * 1000
+        half.setLastModified(twoHoursAgo)
+        stale.setLastModified(twoHoursAgo)
         val fresh = File(videoDir, ".import-other").apply { mkdirs() }
         import(picked("GH010007.MP4", chapter("GH010007.MP4", 5_300_000)))
         assertTrue(!stale.exists())
         assertTrue(fresh.isDirectory)
+    }
+
+    @Test
+    fun `an import killed before its index was written gets the session's copy back`() {
+        val (video, clips) = first()
+        val newClip = VideoIndex(session).clips().single().let { it.copy(sessionOffsetUs = it.sessionOffsetUs + 1) }
+        val staging = killedDuringCommit(newClip)
+        // A fresh staging folder may be another import still running: left alone.
+        import(laterMillis = 0)
+        assertTrue(staging.isDirectory)
+        import(laterMillis = 2 * 60 * 60 * 1000L)
+        assertContentEquals(video, stored.readBytes())
+        assertContentEquals(clips, index.readBytes())
+        assertTrue(!staging.exists())
+    }
+
+    @Test
+    fun `an import killed after its index was written is finished`() {
+        first()
+        val newClip = VideoIndex(session).clips().single().let { it.copy(sessionOffsetUs = it.sessionOffsetUs + 1) }
+        val staging = killedDuringCommit(newClip)
+        VideoIndex(session).putAll(listOf(newClip))
+        import(laterMillis = 2 * 60 * 60 * 1000L)
+        assertEquals("the new copy", stored.readText())
+        assertEquals(listOf(newClip), VideoIndex(session).clips())
+        assertTrue(!staging.exists())
     }
 }
