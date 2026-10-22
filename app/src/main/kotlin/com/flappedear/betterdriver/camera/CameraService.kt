@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.R
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoSink
+import com.flappedear.betterdriver.recording.CameraFinishWaitMs
 import com.flappedear.betterdriver.recording.RecorderProtocol
 import com.flappedear.betterdriver.recording.RecorderService
 import com.flappedear.betterdriver.recording.RecordingChannelId
@@ -39,12 +40,10 @@ import java.io.File
 
 private const val NotificationId = 2
 private const val NanosPerMicro = 1_000L
+private const val MillisPerSecond = 1_000L
 
 /** How long to wait for the recorder to report its session before giving up. */
 private const val SessionWaitMs = 15_000L
-
-/** After a stop, how long the camera gets to finish its file before the service ends anyway. */
-private const val FinishMs = 5_000L
 
 /** The video mode in a start intent ([CameraService.EXTRA_VIDEO_SIZE], [CameraService.EXTRA_VIDEO_FPS]). */
 private fun videoMode(intent: Intent): VideoMode? {
@@ -107,7 +106,11 @@ class CameraService : LifecycleService() {
 
     private val giveUp = Runnable { if (camera == null) end() }
 
-    private val finishNow = Runnable { finish() }
+    /** After a stop: waits for the camera's last file, at most [CameraFinishWaitMs] (audit A13). */
+    private val videoEnd = VideoEnd({ r, ms -> main.postDelayed(r, ms) }, main::removeCallbacks)
+
+    /** The running session's reports to the recorder; null before one began. */
+    private var sink: RemoteSink? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
@@ -226,14 +229,17 @@ class CameraService : LifecycleService() {
         DebugLog.session = id
         main.removeCallbacks(giveUp)
         val index = VideoIndex(File(sessionsDir(this), id))
-        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode))
-            .also { it.start(RemoteSink(id, startNanos)) }
+        val reports = RemoteSink(id, startNanos)
+        sink = reports
+        camera = PhoneCamera(this, this, index, audioGranted(), ladderFrom(mode)).also { it.start(reports) }
     }
 
     /**
-     * Stops video, gives the camera up to [FinishMs] to finish its file, then ends the service. The
-     * camera's last stop report ends it sooner ([lastFileEnded]), so a session started again right
-     * after loses no video while the old one waits out the grace time.
+     * Stops video and ends the service once the camera has finished its last file and let go of the
+     * camera, so the service keeps its foreground and the recorder hears the file's end (audit A13).
+     * A camera that is not done after [CameraFinishWaitMs] ends it anyway, with the reason logged and
+     * reported. A session started meanwhile records once the old one's camera is done ([startAgain]).
+     * Until 1.7.1 the service ended 5 s after the stop, also while a large MP4 was still finishing.
      */
     private fun end() {
         if (ending) return
@@ -242,21 +248,20 @@ class CameraService : LifecycleService() {
         val cam = camera
         if (cam == null) {
             finish()
-        } else {
-            cam.stop()
-            main.postDelayed(finishNow, FinishMs)
+            return
+        }
+        val reports = sink
+        videoEnd.begin({ finished -> cam.stop(finished) }) { timedOut ->
+            if (timedOut) {
+                val seconds = CameraFinishWaitMs / MillisPerSecond
+                DebugLog.w(Tag, "video not finished $seconds s after the stop: the service ends anyway")
+                reports?.status("Video not finished", ok = false)
+            }
+            finish()
         }
     }
 
-    /** The ending session's file is finalized: finish now, after the camera has let go of its use case. */
-    private fun lastFileEnded(session: String) {
-        if (!ending || session != sessionId) return
-        main.removeCallbacks(finishNow)
-        main.post(finishNow)
-    }
-
     private fun finish() {
-        main.removeCallbacks(finishNow)
         DebugLog.session = null
         recorder?.let { send(it, Message.obtain(null, RecorderProtocol.MSG_UNREGISTER)) }
         if (bound) unbindService(connection)
@@ -268,6 +273,7 @@ class CameraService : LifecycleService() {
             ending = false
             camera = null
             sessionId = null
+            sink = null
             waitForSession()
             return
         }
@@ -276,6 +282,7 @@ class CameraService : LifecycleService() {
     }
 
     override fun onDestroy() {
+        videoEnd.abandon()
         camera?.stop()
         test?.stop("the camera service ended")
         if (bound) unbindService(connection)
@@ -307,10 +314,8 @@ class CameraService : LifecycleService() {
                 frameMicros?.let { putLong(RecorderProtocol.VIDEO_FRAME_US, it) }
             }
 
-        override fun stopped(file: String, atMicros: Long, reason: String) {
+        override fun stopped(file: String, atMicros: Long, reason: String) =
             report(RecorderProtocol.VIDEO_STOPPED, file, atMicros) { putString(RecorderProtocol.VIDEO_TEXT, reason) }
-            lastFileEnded(session)
-        }
 
         override fun status(text: String, ok: Boolean) = report(RecorderProtocol.VIDEO_STATUS, "", nowMicros()) {
             putString(RecorderProtocol.VIDEO_TEXT, text)
