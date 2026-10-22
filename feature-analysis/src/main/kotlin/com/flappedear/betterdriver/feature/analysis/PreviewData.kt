@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.map.LapMap
 import com.flappedear.betterdriver.analysis.map.MapCorner
 import com.flappedear.betterdriver.analysis.map.MapPoint
+import com.flappedear.betterdriver.analysis.optimal.PedalState
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.summary.SegmentChange
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
@@ -282,3 +283,49 @@ internal val PreviewMap = previewOval().let { line ->
         referenceGg = previewGg(1.05),
     )
 }
+
+/** A point of the made-up oval at angle [a] (radians), [scale] times its size. */
+private fun ovalDot(a: Double, scale: Double, pedal: PedalState? = null) =
+    LineDot(200.0 * scale * cos(a), 125.0 * scale * sin(a), pedal)
+
+/** One quarter of the oval as a corner window: braking, coasting, then throttle along it. */
+private fun previewLineCorner(k: Int, tag: String, gain: Double, todo: List<String>): LineCornerUi {
+    val angles = (0..45).map { PI / 2 * (k + it / 45.0) }
+    fun pedal(i: Int) = when {
+        i < 12 -> PedalState.Braking
+        i < 24 -> PedalState.Coasting
+        else -> PedalState.Accelerating
+    }
+    val reference = angles.mapIndexed { i, a -> ovalDot(a, 1.0, pedal(i)) }
+    return LineCornerUi(
+        tag = tag,
+        gainSeconds = gain,
+        todo = todo,
+        targetFrom = "this session, lap 4 (1:52.61)",
+        startMeters = PreviewLength / 4 * k,
+        endMeters = PreviewLength / 4 * (k + 1),
+        reference = reference,
+        target = angles.map { ovalDot(it, 0.985) },
+        roadLeft = angles.map { ovalDot(it, 0.96) },
+        roadRight = angles.map { ovalDot(it, 1.03) },
+        anchor = reference[reference.size / 2],
+    )
+}
+
+/** Where to find time in the made-up session (FBBD-306). */
+internal val PreviewLine = LineUi(
+    bestLapNumber = 2,
+    bestLapSeconds = 112.41,
+    totalGainSeconds = 0.42,
+    laps = 14,
+    sessions = 3,
+    corners = listOf(
+        previewLineCorner(
+            0, "T1", 0.11,
+            listOf("Brake 5 m earlier", "Apex 2 m tighter", "Carry 2 km/h more through the slowest point"),
+        ),
+        previewLineCorner(1, "T2–3", 0.0, listOf("Your best lap is as quick as your target here.")),
+        previewLineCorner(2, "T4", 0.31, listOf("Apex 8 m later", "Back on the throttle 5 m earlier")),
+        previewLineCorner(3, "T5", 0.0, listOf("Your best lap is as quick as your target here.")),
+    ),
+)

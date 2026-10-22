@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -51,7 +52,42 @@ private const val SpeedUnit = "km/h"
  * side by side when [layout] has room for it: tablets, and large phones held sideways.
  */
 @Composable
-internal fun MapTab(ui: MapUi, layout: LayoutSize, modifier: Modifier) {
+internal fun MapTab(ui: MapUi, layout: LayoutSize, modifier: Modifier, line: LineState = LineState.Reading) {
+    var view by rememberSaveable { mutableStateOf(MapView.Laps) }
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        // Where to find time sits next to the laps map (UI-167 B).
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (option in MapView.entries) {
+                FilterChip(
+                    selected = view == option,
+                    onClick = { view = option },
+                    label = { Text(option.title) },
+                    modifier = Modifier.testTag(MapViewTagPrefix + option.name),
+                )
+            }
+        }
+        when (view) {
+            MapView.Laps -> LapsMap(ui, layout, Modifier.fillMaxWidth())
+            MapView.Line -> when (line) {
+                is LineState.Ready -> LineView(line.ui, layout, Modifier.fillMaxWidth())
+                LineState.Reading -> Card { Dim("Reading every session at this track for the targets…") }
+                is LineState.Unavailable -> Card { Dim(line.why) }
+            }
+        }
+    }
+}
+
+/** The Map tab's two views. */
+enum class MapView(val title: String) {
+    Laps("Laps"),
+    Line("Where to find time"),
+}
+
+/** Test tag of each view's chip: the prefix and the view's name. */
+const val MapViewTagPrefix = "map-view-"
+
+@Composable
+private fun LapsMap(ui: MapUi, layout: LayoutSize, modifier: Modifier) {
     var coloring by rememberSaveable(ui.lapNumber) {
         mutableStateOf(if (ui.referenceNumber != null) MapColoring.Delta else MapColoring.Speed)
     }
@@ -201,7 +237,7 @@ internal fun ggSourceNote(source: GgSource) = when (source) {
 }
 
 @Composable
-private fun Key(color: Color, label: String) {
+internal fun Key(color: Color, label: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).background(color, CircleShape))
         Spacer(Modifier.width(6.dp))
