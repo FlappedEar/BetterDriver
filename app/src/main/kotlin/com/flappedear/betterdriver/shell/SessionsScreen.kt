@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -216,6 +217,9 @@ internal fun dayLabel(day: LocalDate, today: LocalDate = LocalDate.now()): Strin
 private val DayFormat = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())
 private val TimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
 
+/** The test tag of the Sessions row of session [id]: tests find a row by it, not by its time text. */
+internal fun sessionRowTag(id: String) = "session-row-$id"
+
 /** "16:23 · Silesia Ring": when the session started, and where. */
 internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault()): String {
     val time = TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
@@ -271,7 +275,8 @@ private fun SessionRow(
         Modifier
             .fillMaxWidth()
             .border(2.dp, outline, RowShape)
-            .clickable(enabled = opens, onClickLabel = "Lap analysis", onClick = onAnalyse),
+            .clickable(enabled = opens, onClickLabel = "Lap analysis", onClick = onAnalyse)
+            .testTag(sessionRowTag(s.id)),
     ) {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         Row(
