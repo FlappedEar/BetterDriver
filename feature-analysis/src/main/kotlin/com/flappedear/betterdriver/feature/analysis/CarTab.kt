@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
@@ -212,15 +213,13 @@ private fun HeartRateChart(hr: HeartRateChartUi, modifier: Modifier) {
     val low = (values.min() - ChartPaddingBpm)
     val high = (values.max() + ChartPaddingBpm)
     val span = (hr.toSeconds - hr.fromSeconds).coerceAtLeast(1.0)
-    Box(modifier) {
-        Canvas(
-            Modifier
-                .fillMaxWidth()
-                .height(ChartHeight)
-                .semantics {
-                    contentDescription = "Heart rate over the session, ${hr.stats.minBpm} to ${hr.stats.maxBpm} bpm"
-                },
-        ) {
+    // One node for the chart and its max and min labels, read as one description.
+    Box(
+        modifier.clearAndSetSemantics {
+            contentDescription = "Heart rate over the session, ${hr.stats.minBpm} to ${hr.stats.maxBpm} bpm"
+        },
+    ) {
+        Canvas(Modifier.fillMaxWidth().height(ChartHeight)) {
             fun x(t: Double) = ((t - hr.fromSeconds) / span).toFloat() * size.width
             fun y(v: Double) = size.height - ((v - low) / (high - low)).toFloat() * size.height
             hr.laps.forEachIndexed { i, (from, to) ->
