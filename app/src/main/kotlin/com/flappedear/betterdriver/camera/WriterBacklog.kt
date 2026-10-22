@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.camera
 
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The memory [WideEncoder]'s copies may hold while they wait for the writer thread (audit A15): a
@@ -15,10 +16,14 @@ import java.util.concurrent.TimeUnit
 internal class WriterBacklog(private val budgetKib: Int, private val waitMs: Long) {
     private val room = Semaphore(budgetKib)
 
-    /** The writer was behind for a whole wait: nothing is queued from then on. */
-    @Volatile
-    var stalled = false
-        private set
+    private val stall = AtomicBoolean(false)
+    private val stallReported = AtomicBoolean(false)
+
+    /**
+     * The writer was behind for a whole wait: nothing is queued from then on, also by the other
+     * encoder's thread if its wait ends after this one's.
+     */
+    val stalled: Boolean get() = stall.get()
 
     /** KiB taken by copies waiting for the writer. */
     val takenKib: Int get() = budgetKib - room.availablePermits()
@@ -28,15 +33,21 @@ internal class WriterBacklog(private val budgetKib: Int, private val waitMs: Lon
      * with the writer [stalled], when the room is still taken after [waitMs].
      */
     fun reserve(capacity: Int, onFull: (() -> Unit)? = null): Boolean {
-        if (stalled) return false
+        if (stall.get()) return false
         val kib = kibOf(capacity)
         val taken = room.tryAcquire(kib) || run {
             onFull?.invoke()
             room.tryAcquire(kib, waitMs, TimeUnit.MILLISECONDS)
         }
-        if (!taken) stalled = true
-        return taken
+        if (!taken) stall.set(true)
+        // Room freed after the other thread's wait ran out is not taken: the writer is stalled for both.
+        val queued = taken && !stall.get()
+        if (taken && !queued) room.release(kib)
+        return queued
     }
+
+    /** True for the one caller that reports the stall, false for every other and before a stall. */
+    fun claimStallReport(): Boolean = stall.get() && stallReported.compareAndSet(false, true)
 
     /** The writer is done with a copy of [capacity] bytes that [reserve] made room for. */
     fun release(capacity: Int) = room.release(kibOf(capacity))

@@ -100,6 +100,27 @@ class WriterBacklogTest {
     }
 
     @Test
+    fun stallIsReportedOnceAndRoomFreedAfterItIsNotTaken() {
+        val backlog = WriterBacklog(budgetKib, waitMs)
+        assertFalse("no stall yet", backlog.claimStallReport())
+        assertTrue(backlog.reserve(budgetKib * 1_024))
+        assertFalse(backlog.reserve(1_024))
+        // The writer frees its room after the stall: the video or sound thread still queues nothing.
+        backlog.release(budgetKib * 1_024)
+        assertFalse(backlog.reserve(1_024))
+        assertEquals(0, backlog.takenKib)
+
+        // Both encoders' threads find the stall at once: only one reports it.
+        val pool = Executors.newFixedThreadPool(8)
+        try {
+            val claims = (1..8).map { pool.submit<Boolean> { backlog.claimStallReport() } }.map { it.get() }
+            assertEquals(1, claims.count { it })
+        } finally {
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun copyBiggerThanTheBudgetTakesAllOfIt() {
         val backlog = WriterBacklog(budgetKib, waitMs)
         assertTrue(backlog.reserve(budgetKib * 4 * 1_024))

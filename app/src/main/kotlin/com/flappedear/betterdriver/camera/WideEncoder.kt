@@ -108,9 +108,6 @@ internal class WideEncoder(
     val surface: Surface
 
     @Volatile private var ending = false
-
-    /** The stalled writer was reported once ([queue]); both encoders' threads may find it. */
-    @Volatile private var stallReported = false
     private var first: File? = null
     private var next: File? = null
     private var current: Out? = null
@@ -507,8 +504,7 @@ internal class WideEncoder(
     private fun queue(track: Track, data: ByteBuffer, info: MediaCodec.BufferInfo, entered: Long, heldNanos: Long) {
         val capacity = data.capacity()
         if (!backlog.reserve(capacity, if (track == Track.Video) videoFull else null)) {
-            if (!stallReported) {
-                stallReported = true
+            if (backlog.claimStallReport()) {
                 DebugLog.w(Tag, "writer stalled: ${backlog.takenKib} KiB waiting after $backlogWaitMs ms")
                 events.failed("writer stalled")
             }
