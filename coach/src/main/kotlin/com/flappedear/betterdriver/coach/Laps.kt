@@ -33,6 +33,7 @@ class LapCollector(track: Track) {
     private val times = mutableListOf<Long>()
     private val speeds = mutableListOf<Double>()
     private val measuredSpeeds = mutableListOf<Boolean>()
+    private val throttles = mutableListOf<Double?>()
 
     /** Position of the last fix in [frame], and its speed in km/h. */
     var position: Xy? = null
@@ -42,6 +43,10 @@ class LapCollector(track: Track) {
 
     /** [speedKmh] came from the receiver, not worked out from positions (FBBD-177). */
     var speedMeasured: Boolean = true
+        private set
+
+    /** The pedal at the last fix in percent (FBBD-307), null without a recent one. */
+    var throttlePct: Double? = null
         private set
 
     /** Laps finished by [fix]; a lap whose start was not at the line has no usable path and is left out. */
@@ -57,6 +62,7 @@ class LapCollector(track: Track) {
         }
         position = p
         speedKmh = kmh
+        throttlePct = fix.throttlePct?.takeIf { it.isFinite() }
         val events = timer.update(fix.toFix())
         finished.clear()
         for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, kmh)
@@ -65,6 +71,7 @@ class LapCollector(track: Track) {
             times += fix.tMicros - timer.lapStartMicros
             speeds += kmh
             measuredSpeeds += speedMeasured
+            throttles += throttlePct
         }
         return events
     }
@@ -81,6 +88,8 @@ class LapCollector(track: Track) {
                 listOf(0L) + times + lap.timeMicros,
                 listOf(speeds.firstOrNull() ?: kmh) + speeds + kmh,
                 listOf(measuredSpeeds.firstOrNull() ?: speedMeasured) + measuredSpeeds + speedMeasured,
+                throttles.takeIf { t -> t.any { it != null } }
+                    ?.let { t -> listOf(t.first()) + t + throttlePct },
             )
             finished += TracedLap(lap, trace)
         }
@@ -89,6 +98,7 @@ class LapCollector(track: Track) {
         times.clear()
         speeds.clear()
         measuredSpeeds.clear()
+        throttles.clear()
     }
 
     private fun derivedKmh(p: Xy, t: Long): Double {

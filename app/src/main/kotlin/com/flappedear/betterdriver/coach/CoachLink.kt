@@ -9,6 +9,7 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.live.LiveFixAge
@@ -46,6 +47,12 @@ internal class CoachLink(
      */
     private var atSavedTrack = false
 
+    /** The session's channels so far, to find the pedal by (FBBD-307). Listener thread only. */
+    private val channels = mutableMapOf<Int, ChannelDef>()
+
+    /** Reads each fix with the last pedal value. Listener thread only. */
+    private var reader = CoachFixReader(null)
+
     private var bound = false
 
     private val connection = object : ServiceConnection {
@@ -82,12 +89,20 @@ internal class CoachLink(
         coach = null
     }
 
+    override fun onChannel(def: ChannelDef) {
+        channels[def.id] = def
+        // An OBD adapter that connects later brings its pedal channel then.
+        val pedal = pedalChannelId(channels.values)
+        if (pedal != reader.pedal) reader = CoachFixReader(pedal)
+    }
+
     override fun onSamples(set: SampleSet) {
         fixAge?.add(set)
+        // Read before the coach is known, so the pedal value is there for the first fix.
+        val fix = reader.read(set)
         val m = coach ?: return
         // The track is detected at the first position; until the coach knows it there is nothing to coach.
         if (trackSentTo !== m) sendTrack(m)
-        val fix = set.toCoachFix()
         if (fix != null && trackSentTo === m && atSavedTrack) {
             send(m, CoachProtocol.MSG_FIX) {
                 putLong(CoachProtocol.T_US, fix.tMicros)
@@ -95,6 +110,7 @@ internal class CoachLink(
                 putDouble(CoachProtocol.LON, fix.lon)
                 putDouble(CoachProtocol.SPEED, fix.speedKmh ?: Double.NaN)
                 putLong(CoachProtocol.FIX_AGE_US, fixAge?.micros ?: 0L)
+                putDouble(CoachProtocol.THROTTLE, fix.throttlePct ?: Double.NaN)
             }
         }
     }

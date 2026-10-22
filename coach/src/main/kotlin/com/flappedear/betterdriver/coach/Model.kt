@@ -7,7 +7,8 @@ import kotlinx.serialization.Serializable
 /**
  * One GNSS fix with the receiver's speed, on the session clock. [speedKmh] is null if the receiver gave none.
  * [ageMicros]: how long before [tMicros] the fix was taken, when known (FBBD-229: a RaceBox fix arrives
- * about 0.8 s after it was taken); by then the car is that much further on.
+ * about 0.8 s after it was taken); by then the car is that much further on. [throttlePct]: the
+ * accelerator pedal (or throttle) in percent from OBD at that time (FBBD-307), null without a recent one.
  */
 data class CoachFix(
     val tMicros: Long,
@@ -15,6 +16,7 @@ data class CoachFix(
     val lon: Double,
     val speedKmh: Double? = null,
     val ageMicros: Long = 0,
+    val throttlePct: Double? = null,
 ) {
     fun toFix() = Fix(tMicros, lat, lon)
 }
@@ -89,6 +91,13 @@ data class CornerPass(
      * positive left of the direction of travel. Null when not measured (a pass stored before it was).
      */
     val apexOffsetMeters: Double? = null,
+    /**
+     * Where the throttle went back on (FBBD-307), metres along the reference path: the first rise of
+     * the pedal to [PickupOnPct] after it was at or below [PickupOffPct], held for [PickupHoldMicros],
+     * as the lap analysis reads it. Null without the pedal, without such a rise in the window, or for
+     * a pass stored before it was measured.
+     */
+    val pickupAt: Double? = null,
 )
 
 /** How much the coach says (FBBD-27). */

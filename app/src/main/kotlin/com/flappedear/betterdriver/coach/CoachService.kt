@@ -184,6 +184,7 @@ class CoachService : Service() {
             data.getDouble(CoachProtocol.LON),
             speed.takeUnless { it.isNaN() },
             data.getLong(CoachProtocol.FIX_AGE_US, 0L),
+            data.getDouble(CoachProtocol.THROTTLE, Double.NaN).takeUnless { it.isNaN() },
         )
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.

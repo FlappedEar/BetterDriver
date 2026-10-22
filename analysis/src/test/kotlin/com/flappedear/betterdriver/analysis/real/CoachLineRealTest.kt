@@ -10,6 +10,7 @@ import com.flappedear.betterdriver.analysis.line.analyzeLine
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.LineToleranceMeters
+import com.flappedear.betterdriver.coach.PickupToleranceMeters
 import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.TracedLap
 import com.flappedear.betterdriver.coach.buildReference
@@ -29,7 +30,8 @@ import kotlin.test.assertTrue
  * The live coach's line and throttle measurement (FBBD-307) on Arek's six Jastrząb sessions of
  * 29 Aug 2026, at 10 Hz as RaceChrono recorded them: every pass gets its line at the apex, the
  * coach has a corner where the analysis finds the most time (the last complex, taken on a lift),
- * and on the same two laps the coach's line difference matches the line analysis (FBBD-306).
+ * and on the same two laps the coach's line and throttle point (from the OBD pedal) differences
+ * match the line analysis (FBBD-306).
  */
 class CoachLineRealTest {
     @TempDir
@@ -56,7 +58,7 @@ class CoachLineRealTest {
     }
 
     @Test
-    fun `the coach measures the line on every pass and agrees with the line analysis on the same laps`() {
+    fun `the coach measures the line and the throttle and agrees with the line analysis on the same laps`() {
         val day = day()
         val map = day.reference.map()
         val all = day.laps.values.flatten()
@@ -89,5 +91,22 @@ class CoachLineRealTest {
         assertTrue(compared.size >= 2, "compared $compared")
         // Within what the receiver repeats: the coach would ask for the same line the analysis shows.
         assertTrue(compared.all { (_, a, c) -> abs(a - c) <= LineToleranceMeters }, "analysis vs coach $compared")
+
+        // Where the pedal goes back on, read from OBD on both: the same difference on the same laps.
+        val pickups = day.line.corners.mapNotNull { line ->
+            val c = map.corners.firstOrNull { it.apexAt in line.startMeters..line.endMeters } ?: return@mapNotNull null
+            val analysis = line.reference.pickupMeters?.let { r -> line.target.pickupMeters?.minus(r) }
+                ?: return@mapNotNull null
+            val ref = lap(line.reference.lapSeconds)
+            val target = lap(line.target.lapSeconds)
+            val before = map.passes(ref.trace, ref.lap.number).single { it.corner == c.number }
+            val after = map.passes(target.trace, target.lap.number).single { it.corner == c.number }
+            Triple(line.name, analysis, assertNotNull(after.pickupAt) - assertNotNull(before.pickupAt))
+        }
+        assertTrue(pickups.size >= 6, "compared $pickups")
+        assertTrue(pickups.all { (_, a, c) -> abs(a - c) <= PickupToleranceMeters }, "analysis vs coach $pickups")
+        // The last complex: about 17 m earlier on the throttle, which the speed alone did not show.
+        val last = pickups.single { it.first == complex.name }
+        assertTrue(last.third < -10.0, "last complex $last")
     }
 }
