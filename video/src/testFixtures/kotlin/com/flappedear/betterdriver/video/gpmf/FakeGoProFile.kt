@@ -81,8 +81,16 @@ object FakeGoProFile {
         )
     }
 
-    /** Writes an MP4 whose only track is GPMF, one payload per second (timescale 1000). */
-    fun writeMp4(file: File, payloads: List<ByteArray>, creationSecondsSince1904: Long = 3_800_000_000L) {
+    /**
+     * Writes an MP4 whose only track is GPMF, one payload per second (timescale 1000). With
+     * [fixedSampleSize], `stsz` gives one size for all payloads (they must be equal) and no table.
+     */
+    fun writeMp4(
+        file: File,
+        payloads: List<ByteArray>,
+        creationSecondsSince1904: Long = 3_800_000_000L,
+        fixedSampleSize: Boolean = false,
+    ) {
         val header = box("ftyp", "mp41".toByteArray() + ints(0) + "mp41".toByteArray())
         val mdatBody = payloads.fold(ByteArray(0)) { acc, b -> acc + b }
         val mdatStart = header.size + 8
@@ -92,7 +100,12 @@ object FakeGoProFile {
             fullBox("stsd", ints(1) + box("gpmd", ByteArray(8))),
             fullBox("stts", ints(1, payloads.size, 1000)),
             fullBox("stsc", ints(1, 1, 1, 1)),
-            fullBox("stsz", ints(0, payloads.size, *payloads.map { it.size }.toIntArray())),
+            if (fixedSampleSize) {
+                require(payloads.map { it.size }.distinct().size <= 1) { "fixed size needs equal payloads" }
+                fullBox("stsz", ints(payloads.firstOrNull()?.size ?: 0, payloads.size))
+            } else {
+                fullBox("stsz", ints(0, payloads.size, *payloads.map { it.size }.toIntArray()))
+            },
             fullBox("stco", ints(payloads.size, *offsets.map { it.toInt() }.toIntArray())),
         )
         val trak = box(

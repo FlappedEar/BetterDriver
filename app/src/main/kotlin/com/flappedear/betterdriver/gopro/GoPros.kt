@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.video.VideoSourceKind
 import com.flappedear.betterdriver.video.VideoSessionContext
 import java.io.File
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -212,6 +213,7 @@ class GoPros private constructor(private val context: Context) {
      * (UI-32). Files of one recording (chapters GH01xxxx, GH02xxxx, ...) are imported together, in
      * chapter order. A file that cannot be placed in the session is reported and its copy deleted.
      */
+    @Suppress("TooGenericExceptionCaught") // See the catch: the import must always end.
     fun addFiles(id: String, sourceId: String, uris: List<Uri>) {
         if (recording || id in work || uris.isEmpty()) return
         val other = setup.setup.equipment.any {
@@ -223,15 +225,24 @@ class GoPros private constructor(private val context: Context) {
         work[id] = GoProWork.Adding(sourceId, uris.size, 0, total)
         problems.remove(id)
         scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                var shown = -1L
-                adding.run(File(sessionsDir(context), id), uris) { copied ->
-                    if (copied / ProgressStep != shown) {
-                        shown = copied / ProgressStep
-                        val w = GoProWork.Adding(sourceId, uris.size, copied, total)
-                        scope.launch { work[id] = w }
+            val result = try {
+                withContext(Dispatchers.IO) {
+                    var shown = -1L
+                    adding.run(File(sessionsDir(context), id), uris) { copied ->
+                        if (copied / ProgressStep != shown) {
+                            shown = copied / ProgressStep
+                            val w = GoProWork.Adding(sourceId, uris.size, copied, total)
+                            scope.launch { work[id] = w }
+                        }
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: RuntimeException) {
+                // Damaged files end as a problem of that file; anything else that slips through must
+                // still end the import instead of leaving "Adding" for ever or closing the app (audit A04).
+                DebugLog.e(Tag, "adding files to $id failed", e)
+                listOf("Could not add the files: ${e.message ?: e.javaClass.simpleName}")
             }
             finish(id, result)
         }
