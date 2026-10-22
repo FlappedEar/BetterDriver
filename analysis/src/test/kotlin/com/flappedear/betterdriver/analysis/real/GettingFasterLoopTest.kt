@@ -17,20 +17,27 @@ import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.analysis.line.LineAnalysis
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LineProof
+import com.flappedear.betterdriver.analysis.line.ProofVerdict
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
+import com.flappedear.betterdriver.analysis.line.lineProof
+import com.flappedear.betterdriver.analysis.line.linePlan
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.segmentLine
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.CoachSession
 import com.flappedear.betterdriver.coach.CoachSettings
+import com.flappedear.betterdriver.coach.CornerMap
 import com.flappedear.betterdriver.coach.Cue
 import com.flappedear.betterdriver.coach.CueKind
 import com.flappedear.betterdriver.coach.FocusTarget
 import com.flappedear.betterdriver.coach.MinLossMicros
 import com.flappedear.betterdriver.coach.SessionFocusRecord
 import com.flappedear.betterdriver.coach.SessionLaps
+import com.flappedear.betterdriver.coach.TracedLap
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.advise
 import com.flappedear.betterdriver.coach.buildReference
@@ -48,15 +55,17 @@ import com.flappedear.betterdriver.timing.track.TrackRevision
 import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.util.Locale
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
 /**
  * The getting-faster loop (FBBD-309, FBBD-311) run end to end on Arek's own track days, with no
  * test drive. Each session is analysed as the app analyses it: where the time is against every
- * earlier session's laps (FBBD-306) and what to work on next (FBBD-20). The next session of the day
- * is then replayed through the coach at Focus, with the reference and focus the app would hand it,
- * and its coaching history (FBBD-180) says whether the focus corners got faster.
+ * earlier session's laps, kept as the track's line plan (FBBD-306), and what to work on next
+ * (FBBD-20). The next session of the day is then replayed through the coach at Focus, with the
+ * reference and focus the app would hand it, and its coaching history (FBBD-180) and the line
+ * plan's proof (FBBD-310) say whether the focus corners got faster.
  *
  * A link that breaks fails the build: a session without a focus, a focus the coach is not handed,
  * a number said without High confidence, a focus the next session does not measure. Where the loop
@@ -73,9 +82,11 @@ class GettingFasterLoopTest {
     /**
      * Where the loop falls short on a day today, never to grow: focus corners the coach has no
      * corner for ([uncoachable]), and focus corners where the next session lost time against the
-     * coach's target on two passes or more and heard nothing there ([silent]).
+     * coach's target on two passes or more and heard nothing there ([silent]), and corners whose
+     * coach target is another lap than the line plan's ([otherTarget]: one target everywhere, FBBD-306),
+     * and corners of the line plan's focus the coach said nothing about in the next session ([unspoken]).
      */
-    private class Known(val uncoachable: Int, val silent: Int)
+    private class Known(val uncoachable: Int, val silent: Int, val otherTarget: Int, val unspoken: Int)
 
     /** One analysed session, and what it hands the next. */
     private class Step(
@@ -85,6 +96,8 @@ class GettingFasterLoopTest {
         val analysis: SessionAnalysis,
         val plan: NextSessionPlan,
         val line: LineAnalysis?,
+        /** The track's line plan after this session (FBBD-306): what the Map tab, the coach and the 3D export read. */
+        val linePlan: LinePlan?,
         val focus: SessionFocusRecord,
     )
 
@@ -103,8 +116,23 @@ class GettingFasterLoopTest {
         val silent: Boolean get() = coachCorners.isNotEmpty() && losing >= 2 && cues == 0
     }
 
-    /** One turn of the loop: [from]'s analysis, the coach in [to], and what [to] measured. */
-    private class Turn(val from: Step, val to: Step, val corners: List<FocusCorner>, val cues: List<Cue>)
+    /** A corner of [from]'s line plan and the lap the coach of the next session aims at there. */
+    private class Target(val name: String, val plan: String, val coach: String?) {
+        val same: Boolean get() = plan == coach
+    }
+
+    /**
+     * One turn of the loop: [from]'s analysis, the coach in [to], what [to] measured, the line plan's
+     * proof ([proof], FBBD-310) and the targets of the plan against the coach's ([targets]).
+     */
+    private class Turn(
+        val from: Step,
+        val to: Step,
+        val corners: List<FocusCorner>,
+        val cues: List<Cue>,
+        val proof: LineProof?,
+        val targets: List<Target>,
+    )
 
     private fun day(files: List<String>, track: Track): List<Step> {
         val steps = mutableListOf<Step>()
@@ -115,10 +143,18 @@ class GettingFasterLoopTest {
             // The track keeps its corner identity from one session to the next (FBBD-172).
             val analysis = analyzeSession(session, identity = identity)
             identity = analysis.identity ?: identity
-            val others = steps.map { LineSession(it.session, it.analysis.laps, it.label) }
+            val others = steps.map { LineSession(it.session, it.analysis.laps, it.label, it.data.id) }
             val plan = nextSessionPlan(analysis)
             val line = analyzeLine(analysis, session, others)
-            steps += Step(label(name), data, session, analysis, plan, line, focusRecord(track, data, analysis, plan))
+            // Made as the app makes it when the session is analysed (lineState in the app's LineSessions).
+            val linePlan = line?.let { l ->
+                analysis.axis?.origin?.let { origin ->
+                    val revision = analysis.identity?.number?.takeIf { analysis.identified }
+                    linePlan(l, origin, track.id, data.id, data.info.startUtcMillis, revision)
+                }
+            }
+            val focus = focusRecord(track, data, analysis, plan)
+            steps += Step(label(name), data, session, analysis, plan, line, linePlan, focus)
         }
         return steps
     }
@@ -185,7 +221,13 @@ class GettingFasterLoopTest {
                 .mapNotNull { CoachEvents.parseCue(it.tMicros, it.text) }
             record(track, to, events)?.let { records += it }
             val attempts = coachingHistory(to.data.id, records).attempts
-            Turn(from, to, focusCorners(at, reference, from, to, cues, attempts), cues)
+            val proof = from.linePlan?.let { before ->
+                to.linePlan?.let { lineProof(before, it, CoachEvents.cuesByCorner(events)) }
+            }
+            Turn(
+                from, to, focusCorners(at, reference, from, to, cues, attempts), cues, proof,
+                targets(at, reference, steps.subList(0, k), from.linePlan),
+            )
         }
         return steps to turns
     }
@@ -225,6 +267,45 @@ class GettingFasterLoopTest {
         }
     }
 
+    /**
+     * For every corner of [plan], the session and lap of its target, and of the coach's target there
+     * (its second fastest pass, FBBD-177) in a reference from [earlier]: the plan's sessions. A lap is
+     * known by its session and its time, since the coach and the analysis number laps each their own way.
+     */
+    private fun targets(at: Track, reference: CoachReference?, earlier: List<Step>, plan: LinePlan?): List<Target> {
+        val map = reference?.let { r -> lapFrame(at)?.let { identified(r.map(), it, at.identity) } }
+            ?: return emptyList()
+        val laps = earlier.flatMap { s -> tracedLaps(at, s.data.coachFixes()).map { s to it } }
+        return plan?.corners.orEmpty().filter { it.cornerId != null }.map { c ->
+            val coach = map.corners.filter { it.cornerId == c.cornerId }.map { corner ->
+                val target = reference.targets.filter { it.corner == corner.number }.getOrNull(1)
+                target?.let { t -> source(map, laps, t.lap, t.timeMicros, corner.number) } ?: "none"
+            }.distinct().singleOrNull()
+            Target(c.name, "${c.target.sessionId} ${lapTime(c.target.lapSeconds)}", coach)
+        }
+    }
+
+    /**
+     * The session and lap time of the pass through [corner] on lap [lap] that took [micros]: the
+     * reference keeps its path to the centimetre, so a pass measured again is a few tenths of a
+     * millisecond off ([SamePassMicros]).
+     */
+    private fun source(
+        map: CornerMap,
+        laps: List<Pair<Step, TracedLap>>,
+        lap: Int,
+        micros: Long,
+        corner: Int,
+    ): String? = laps.filter { it.second.lap.number == lap }
+        .mapNotNull { (s, t) ->
+            map.passes(t.trace, t.lap.number).firstOrNull { it.corner == corner }
+                ?.let { abs(it.timeMicros - micros) to "${s.data.id} ${lapTime(t.lap.timeMicros / 1e6)}" }
+        }
+        .filter { it.first <= SamePassMicros }
+        .minByOrNull { it.first }?.second
+
+    private fun lapTime(seconds: Double) = String.format(Locale.ROOT, "%.1f", seconds)
+
     /** Every link of the loop on one day, and the shortfalls against [known]. */
     private fun check(name: String, files: List<String>, track: Track, known: Known) {
         val (steps, turns) = loop(files, track)
@@ -249,7 +330,12 @@ class GettingFasterLoopTest {
             t.cues.filter { it.kind == CueKind.Corner && it.confidence != Confidence.HIGH }
                 .filter { c -> c.text.replace("Turn ${c.turn}", "").any(Char::isDigit) }
                 .forEach { problems += "$turn: '${it.text}' says a number at ${it.confidence}" }
-            // 3. Prove: the next session measures every focus corner, and knows the coach worked on it.
+            // 3. Prove (FBBD-310): the line plan's focus is measured in the next session.
+            val proof = t.proof
+            if (proof == null && t.from.linePlan?.focus()?.isNotEmpty() == true) problems += "$turn: no line proof"
+            proof?.corners?.filter { it.verdict == ProofVerdict.NotComparable || it.verdict == ProofVerdict.NotDriven }
+                ?.forEach { problems += "$turn: line proof of ${it.name} ${it.verdict}" }
+            // The coaching history: every focus corner measured, and known as coached.
             for (c in t.corners) {
                 val a = c.attempt
                 when {
@@ -267,6 +353,15 @@ class GettingFasterLoopTest {
             problems += "$uncoachable focus corners without a coach corner, was ${known.uncoachable}"
         }
         if (silent > known.silent) problems += "$silent silent focus corners, was ${known.silent}"
+        // 4. One target everywhere: the coach aims at the plan's lap in every corner.
+        val otherTarget = turns.sumOf { t -> t.targets.count { !it.same } }
+        if (otherTarget > known.otherTarget) {
+            problems += "$otherTarget corners where the coach aims at another lap than the plan, " +
+                "was ${known.otherTarget}"
+        }
+        // 5. The coach works on the plan's focus.
+        val unspoken = turns.sumOf { t -> t.proof?.corners.orEmpty().count { !it.coached } }
+        if (unspoken > known.unspoken) problems += "$unspoken plan focus corners without a cue, was ${known.unspoken}"
         if (all.none { it.attempt?.verdict == FocusVerdict.Improved }) {
             problems += "no focus corner got faster all day"
         }
@@ -277,14 +372,14 @@ class GettingFasterLoopTest {
     fun `the loop runs through Arek's six sessions at Jastrząb (29 Aug 2026)`() =
         check(
             "Jastrząb 29 Aug", RealCorpus.JASTRZAB_DAY, RealCorpus.jastrzabTrack(),
-            Known(uncoachable = 2, silent = 4),
+            Known(uncoachable = 2, silent = 4, otherTarget = 53, unspoken = 10),
         )
 
     @Test
     fun `the loop runs through Arek's three sessions at Silesia Ring (27 Sep 2026)`() =
         check(
             "Silesia Ring 27 Sep", RealCorpus.SILESIA_DAY, RealCorpus.silesiaTrack(),
-            Known(uncoachable = 0, silent = 3),
+            Known(uncoachable = 0, silent = 3, otherTarget = 19, unspoken = 5),
         )
 
     /** Each turn of the loop as a Markdown page, with the drive replay's in the pull request's checks. */
@@ -317,6 +412,27 @@ class GettingFasterLoopTest {
                 )
             }
         }
+        out.appendLine()
+        out.appendLine(
+            "| Turn | Plan focus | Before | After | Target | Verdict | Cues | Coach aims at the plan's lap |",
+        )
+        out.appendLine("| --- | --- | --- | --- | --- | --- | --- | --- |")
+        for (t in turns) {
+            val targets = t.targets.associateBy { it.name }
+            for (c in t.proof?.corners.orEmpty()) {
+                out.appendLine(
+                    "| ${t.from.label} → ${t.to.label} | ${c.name} | " +
+                        "${fmt(c.beforeSeconds)} | ${fmt(c.afterSeconds)} | " +
+                        "${fmt(c.targetSeconds)} | ${c.verdict} | ${c.cues ?: "-"} | " +
+                        (targets[c.name]?.let { if (it.same) "yes" else "no" } ?: "-") + " |",
+                )
+            }
+            val other = t.targets.count { !it.same }
+            out.appendLine(
+                "| ${t.from.label} → ${t.to.label} | all corners | | | | | | " +
+                    "${t.targets.size - other} of ${t.targets.size} |",
+            )
+        }
         val text = out.toString()
         println(text)
         File("build/reports/replay-drive").apply { mkdirs() }
@@ -325,4 +441,8 @@ class GettingFasterLoopTest {
     }
 
     private fun fmt(v: Double?) = v?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "-"
+
+    private companion object {
+        const val SamePassMicros = 5_000L
+    }
 }
