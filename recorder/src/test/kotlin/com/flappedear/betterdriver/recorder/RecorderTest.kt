@@ -317,16 +317,51 @@ class RecorderTest {
         val store = SessionStore(tmp)
         val rec = Recorder(store).start(info())
         val stops = AtomicLong()
+        val firstStop = java.util.concurrent.CountDownLatch(1)
         rec.attach(object : DataSource {
             override val name = "counting"
             override fun start(sink: SampleSink) = Unit
             override fun stop() {
                 stops.incrementAndGet()
+                firstStop.countDown()
             }
         })
         assertTrue(rec.stop())
-        // The writer thread runs its own stopAll after the stop completes; give it time to.
+        // Sources stop on their own thread: wait for the first stop, then give the writer thread's
+        // own stopAll time to (wrongly) stop it again.
+        assertTrue(firstStop.await(5, java.util.concurrent.TimeUnit.SECONDS))
         Thread.sleep(200)
+        assertEquals(1, stops.get())
+    }
+
+    @Test
+    fun `a finished session does not wait for a slow source to stop`() {
+        // Audit A14: stop() returning true means the session is finished, not that each source has stopped.
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(info())
+        val entered = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val stops = AtomicLong()
+        rec.attach(object : DataSource {
+            override val name = "slow"
+            override fun start(sink: SampleSink) = Unit
+            override fun stop() {
+                entered.countDown()
+                release.await()
+                stops.incrementAndGet()
+            }
+        })
+        feed(rec, 10)
+        try {
+            assertTrue(rec.stop(timeoutMs = 5_000))
+            assertEquals(SessionState.FINISHED, store.state(rec.dir))
+            assertTrue(entered.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            assertEquals(0L, stops.get())
+        } finally {
+            release.countDown()
+        }
+        val deadline = System.nanoTime() + 5_000_000_000L
+        while (stops.get() == 0L && System.nanoTime() < deadline) Thread.sleep(5)
         assertEquals(1, stops.get())
     }
 

@@ -201,7 +201,9 @@ class Recording internal constructor(
 
     /**
      * Stops sources, writes the end record, syncs and marks the session finished.
-     * Returns true once all of that is done, or false if it did not finish within [timeoutMs].
+     * Returns true once the session is finished, or false if it did not finish within [timeoutMs].
+     * True does not mean every source has stopped: sources are stopped on their own thread, so one
+     * that blocks in [DataSource.stop] cannot hold up the finished recording.
      */
     fun stop(reason: String = "user", timeoutMs: Long = StopTimeoutMs): Boolean {
         if (stopIntake()) {
