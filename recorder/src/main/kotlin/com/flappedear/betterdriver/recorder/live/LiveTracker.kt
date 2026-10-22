@@ -277,7 +277,8 @@ internal class GWindow {
     private var newest = Long.MIN_VALUE
 
     fun add(t: Long, x: Double?, y: Double?) {
-        if (x == null || y == null || !x.isFinite() || !y.isFinite()) return
+        if (x == null || y == null) return
+        if (!x.isFinite() || !y.isFinite()) return
         times.addLast(t)
         xs.addLast(x)
         ys.addLast(y)
