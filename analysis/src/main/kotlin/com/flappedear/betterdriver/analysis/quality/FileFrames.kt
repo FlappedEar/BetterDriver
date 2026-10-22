@@ -14,7 +14,7 @@ import kotlin.math.roundToLong
 /**
  * How many [frames] a camera's [file] holds over [mediaMicros] of media, and the rate it was set to
  * record at ([setFps]) when the counter knows it (FBBD-246): counted in the MP4 by the app, or logged
- * by the 2.7K recorder when it closes a file. [wide] marks a file larger than 1080p (2.7K).
+ * by the own recorder when it closes a file. [wide] marks a file larger than 1080p (2.7K).
  */
 data class FileFrames(
     val camera: String,
@@ -110,14 +110,19 @@ internal fun recordedFps(frames: Long, mediaMicros: Long): Double? =
     if (frames < 2 || mediaMicros <= 0) null else frames * MicrosPerSecond.toDouble() / mediaMicros
 
 /** "phone_0001.mp4: 2688x1512@60 21603 frames in 446.5 s = 48.4 fps 2045178095 bytes", from WideRecorder. */
-private val WideFileLine = Regex("""^(\S+): \d+x\d+@(\d+) (\d+) frames in ([\d.]+) s\b""")
+private val WideFileLine = Regex("""^(\S+): (\d+)x(\d+)@(\d+) (\d+) frames in ([\d.]+) s\b""")
 private const val WideRecorderTag = "WideRecorder"
 private const val WideFile = 1
-private const val WideFps = 2
-private const val WideFrames = 3
-private const val WideSeconds = 4
+private const val WideWidth = 2
+private const val WideHeight = 3
+private const val WideFps = 4
+private const val WideFrames = 5
+private const val WideSeconds = 6
 
-/** The phone files whose frames the 2.7K recorder counted as it closed them (FBBD-246). */
+/**
+ * The phone files whose frames the own recorder counted as it closed them (FBBD-246): 2.7K until
+ * 1.5, 1080p60 since 1.6.4 and 4K60 since 1.7.1 (FBBD-278). Only 2.7K is left out of the verdict.
+ */
 internal fun loggedFrames(lines: List<LogLine>): List<FileFrames> = lines.filter { it.tag == WideRecorderTag }
     .mapNotNull { line ->
         val g = WideFileLine.find(line.message)?.groupValues ?: return@mapNotNull null
@@ -129,6 +134,7 @@ internal fun loggedFrames(lines: List<LogLine>): List<FileFrames> = lines.filter
         if (micros == null || count == null) {
             null
         } else {
-            FileFrames(CameraIds.PHONE, g[WideFile], count, micros, g[WideFps].toIntOrNull(), wide = true)
+            val wide = isWide(g[WideWidth].toInt(), g[WideHeight].toInt())
+            FileFrames(CameraIds.PHONE, g[WideFile], count, micros, g[WideFps].toIntOrNull(), wide)
         }
     }
