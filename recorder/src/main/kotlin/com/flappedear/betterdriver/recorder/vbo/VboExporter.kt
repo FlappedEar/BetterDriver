@@ -159,9 +159,7 @@ object VboExporter {
                 if (set.values.none { it.channelId == GnssChannels.UTC_MS.id }) {
                     row[TIME_INDEX] = session.info.startUtcMillis + set.tMicros / MicrosPerMilli
                 }
-                extraIds.forEachIndexed { i, id ->
-                    row[STANDARD.size + i] = lines[id]?.at(set.tMicros) ?: latest[id] ?: 0.0
-                }
+                extraIds.forEachIndexed { i, id -> row[STANDARD.size + i] = valueAt(id, set.tMicros, lines, latest) }
                 derived.forEachIndexed { i, d ->
                     while (next[i] < d.tMicros.size && d.tMicros[next[i]] <= set.tMicros) next[i]++
                     row[STANDARD.size + extraIds.size + i] = d.values[(next[i] - 1).coerceAtLeast(0)]
@@ -175,6 +173,10 @@ object VboExporter {
             }
         }
     }
+
+    /** [id]'s value at [tMicros]: on its line when it is interpolated ([lines]), else the latest held. */
+    private fun valueAt(id: Int, tMicros: Long, lines: Map<Int, Readings>, latest: Map<Int, Double>): Double =
+        lines[id]?.at(tMicros) ?: latest[id] ?: 0.0
 
     /** Replaces "RaceBox" in any case with "gnss", or "GNSS" when not all lower case (see the class comment). */
     internal fun neutral(text: String) =
@@ -197,12 +199,14 @@ private class Readings(private val t: LongArray, private val v: DoubleArray) {
     private var next = 0
 
     fun at(tMicros: Long): Double? {
-        if (t.isEmpty()) return null
         while (next < t.size && t[next] <= tMicros) next++
-        if (next == 0) return v[0]
         val i = next - 1
-        if (next == t.size || t[i] == tMicros || t[next] - t[i] > MaxInterpolationGapMicros) return v[i]
-        return v[i] + (v[next] - v[i]) * (tMicros - t[i]).toDouble() / (t[next] - t[i])
+        return when {
+            t.isEmpty() -> null
+            next == 0 -> v[0]
+            next == t.size || t[i] == tMicros || t[next] - t[i] > MaxInterpolationGapMicros -> v[i]
+            else -> v[i] + (v[next] - v[i]) * (tMicros - t[i]).toDouble() / (t[next] - t[i])
+        }
     }
 
     companion object {
