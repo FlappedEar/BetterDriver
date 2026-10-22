@@ -3,9 +3,12 @@ package com.flappedear.betterdriver.timing.track
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.RandomAccessFile
 import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Arek's tracks, one JSON file each in [dir] (FBBD-54). Writes go to a temporary file that is
@@ -13,7 +16,11 @@ import java.nio.file.StandardCopyOption
  * new track, never half of one. A file that cannot be read is moved aside, never overwritten or
  * deleted, so a damaged file or one from a newer app keeps its lines.
  *
- * Not thread-safe; the app keeps one instance and calls it off the main thread.
+ * Safe to use from several instances, threads and processes (Audit A02): the app makes one wherever it
+ * needs tracks, and the editor, the session analysis and the coach references all write. Each change
+ * (read, check, write or delete) holds a monitor per folder and a file lock next to the folder, so no
+ * change is lost and two writes never share a temporary file. Reads need no lock: a file is only ever
+ * replaced whole. Blocking; call it off the main thread.
  */
 @Suppress("TooManyFunctions") // One entry point per thing kept: tracks, their corners and their corrections.
 class TrackStore(private val dir: File) {
@@ -39,8 +46,11 @@ class TrackStore(private val dir: File) {
      * corrections (FBBD-179), its identity replaces the one here as the next revision after it
      * ([adoptedOver]).
      */
-    fun save(track: Track, nowUtcMillis: Long = System.currentTimeMillis(), adoptIdentity: Boolean = false): Track {
-        dir.mkdirs()
+    fun save(
+        track: Track,
+        nowUtcMillis: Long = System.currentTimeMillis(),
+        adoptIdentity: Boolean = false,
+    ): Track = locked {
         val previous = get(track.id)
         val received = track.identity?.takeIf { adoptIdentity }
         val stored = track.copy(
@@ -49,7 +59,7 @@ class TrackStore(private val dir: File) {
             identity = received?.adoptedOver(previous?.identity) ?: previous?.identity ?: track.identity,
         )
         writeAtomically(fileFor(track.id), TrackJson.encode(stored))
-        return stored
+        stored
     }
 
     /**
@@ -57,12 +67,13 @@ class TrackStore(private val dir: File) {
      * [expected], so two analyses never replace each other's; the lines, the [Track.revision] and the
      * update time stay as they are. Returns the track as stored afterwards, null if there is none.
      */
-    fun updateIdentity(id: String, expected: TrackRevision?, identity: TrackRevision): Track? {
+    fun updateIdentity(id: String, expected: TrackRevision?, identity: TrackRevision): Track? = locked {
         val current = get(id)
-        if (current == null || current.identity != expected || current.identity == identity) return current
-        val stored = current.copy(identity = identity)
-        writeAtomically(fileFor(id), TrackJson.encode(stored))
-        return stored
+        if (current == null || current.identity != expected || current.identity == identity) {
+            current
+        } else {
+            current.copy(identity = identity).also { writeAtomically(fileFor(id), TrackJson.encode(it)) }
+        }
     }
 
     /**
@@ -77,17 +88,22 @@ class TrackStore(private val dir: File) {
         expected: TrackRevision,
         edit: SegmentEdit,
         nowUtcMillis: Long = System.currentTimeMillis(),
-    ): Track? {
+    ): Track? = locked {
         val current = get(id)
         val made = current?.identity?.takeIf { it == expected }?.corrected(edit)
-        if (current == null || made == null || made == current.identity) return current
-        val stored = current.copy(identity = made, updatedUtcMillis = maxOf(nowUtcMillis, current.updatedUtcMillis))
-        writeAtomically(fileFor(id), TrackJson.encode(stored))
-        return stored
+        if (current == null || made == null || made == current.identity) {
+            current
+        } else {
+            current.copy(identity = made, updatedUtcMillis = maxOf(nowUtcMillis, current.updatedUtcMillis))
+                .also { writeAtomically(fileFor(id), TrackJson.encode(it)) }
+        }
     }
 
     /** Deletes the track; false when there was none. */
-    fun delete(id: String): Boolean = fileFor(id).delete()
+    fun delete(id: String): Boolean {
+        val file = fileFor(id)
+        return dir.isDirectory && locked { file.delete() }
+    }
 
     /** Files moved aside because they could not be read. */
     fun setAside(): List<File> = dir.listFiles { f -> f.name.contains(UnreadableMarker) }.orEmpty().toList()
@@ -112,12 +128,38 @@ class TrackStore(private val dir: File) {
         return null
     }
 
-    private fun writeAtomically(target: File, text: String) {
-        val tmp = File(dir, target.name + ".tmp")
-        FileOutputStream(tmp).use { out ->
-            out.write(text.toByteArray(Charsets.UTF_8))
-            out.fd.sync()
+    /**
+     * Runs [change] holding this folder's monitor (threads of this process) and its file lock (other
+     * processes). The lock file sits next to the folder, so the folder holds only tracks and a backup
+     * or restore of it never meets a lock file.
+     */
+    private fun <T> locked(change: () -> T): T {
+        dir.mkdirs()
+        val canonical = dir.canonicalFile
+        val monitor = monitors.computeIfAbsent(canonical.path) { Any() }
+        return synchronized(monitor) {
+            val lockFile = File(canonical.parentFile, canonical.name + LockSuffix)
+            RandomAccessFile(lockFile, "rw").channel.use { channel ->
+                channel.lock().use { change() }
+            }
         }
+    }
+
+    /** Each write has its own temporary file, so two writers never write into one (Audit A02). */
+    private fun writeAtomically(target: File, text: String) {
+        val tmp = File(dir, "${target.name}.${UUID.randomUUID()}$TmpSuffix")
+        try {
+            FileOutputStream(tmp).use { out ->
+                out.write(text.toByteArray(Charsets.UTF_8))
+                out.fd.sync()
+            }
+            move(tmp, target)
+        } finally {
+            tmp.delete()
+        }
+    }
+
+    private fun move(tmp: File, target: File) {
         try {
             Files.move(
                 tmp.toPath(),
@@ -133,5 +175,10 @@ class TrackStore(private val dir: File) {
     private companion object {
         const val Suffix = ".track.json"
         const val UnreadableMarker = ".unreadable-"
+        const val TmpSuffix = ".tmp"
+        const val LockSuffix = ".lock"
+
+        /** One monitor per tracks folder, shared by every instance in this process. */
+        val monitors = ConcurrentHashMap<String, Any>()
     }
 }
