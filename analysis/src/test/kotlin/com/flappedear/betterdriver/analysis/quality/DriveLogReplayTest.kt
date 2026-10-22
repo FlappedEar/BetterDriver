@@ -123,6 +123,28 @@ class DriveLogReplayTest {
         assertEquals(Verdict.NOT_MEASURED, r.metric("hr.rate").verdict, r.metric("hr.rate").how)
     }
 
+    @Test
+    fun `the 1_7_1 46-min drive with BLE OBD and HR loses 0_33 % and keeps 4K60 at 60 fps (FBBD-273, FBBD-278)`() {
+        // Arek's drive of 22 Oct 2026, 09:07 to 09:53, on 1.7.1: RaceBox at MTU 247 from its first setup,
+        // Vgate vLinker over BLE, HR strap worn, 4K60 through the own encoder in seven files at 60.0 fps.
+        // Two stops with the engine off (16 and 3 min): the six gaps of 520-1000 ms all fall in them,
+        // and the strap's link dropped twice and came back. Session, Gnss, Hr, event and file lines,
+        // without positions.
+        val r = driveChecks(File(javaClass.getResource("/drive-log/1.7.1-0953")!!.toURI())).single()
+        assertEquals("20261022-090738-feb2054c", r.sessionId)
+        assertEquals(Verdict.PASS, r.metric("gnss.dropped").verdict, r.metric("gnss.dropped").how)
+        assertEquals(0.33, r.metric("gnss.dropped").value!!, 0.03)
+        assertEquals(Verdict.FAIL, r.metric("gnss.max_gap").verdict, r.metric("gnss.max_gap").how)
+        assertEquals(1000.0, r.metric("gnss.max_gap").value!!, 1.0)
+        assertEquals(6.0, r.metric("gnss.long_gaps").value)
+        assertEquals(Verdict.PASS, r.metric("soak.gnss_dropped").verdict, r.metric("soak.gnss_dropped").how)
+        val video = r.metric("video.phone.frame_rate")
+        assertEquals(Verdict.PASS, video.verdict, video.how)
+        assertTrue(video.value!! >= 59.9, video.how)
+        assertEquals(Verdict.PASS, r.metric("hr.rate").verdict, r.metric("hr.rate").how)
+        assertEquals(Verdict.PASS, r.metric("hr.reconnect").verdict, r.metric("hr.reconnect").how)
+    }
+
     /** The VBO's rows as the recorder would have logged them: one [GnssSecondLog] line per second. */
     private fun vboLog(): List<LogLine> {
         val start = LogLine.parse("2026-10-12T10:36:07.979Z 2646 recorder-control I Recording: x")!!.utcMillis
