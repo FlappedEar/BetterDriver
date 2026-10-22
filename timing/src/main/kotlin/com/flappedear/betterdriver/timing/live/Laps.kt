@@ -5,8 +5,10 @@ enum class LapKind { Out, Timed, In }
 
 /**
  * A finished lap (FBBD-58). Times are microseconds on the session clock. [sectorMicros] has one
- * entry per sector; an entry is null when a line was missed (GNSS gap) or the lap did not start
- * at the start/finish line.
+ * entry per sector; an entry is null when a line was missed or crossed in a GNSS gap, the sector
+ * had a gap in it, or the lap did not start at the start/finish line. [gnssGap]: the lap had a GNSS
+ * gap in it or at one of its ends, so its time is partly interpolated across missing fixes (audit
+ * A11); it is kept and shown, but never the best lap or a reference.
  */
 data class Lap(
     val number: Int,
@@ -14,19 +16,24 @@ data class Lap(
     val startMicros: Long,
     val endMicros: Long,
     val sectorMicros: List<Long?>,
+    val gnssGap: Boolean = false,
 ) {
     val timeMicros: Long get() = endMicros - startMicros
     val timeMillis: Long get() = (timeMicros + MicrosPerMilli / 2) / MicrosPerMilli
 
     /** Every sector was timed. */
     val allSectors: Boolean get() = sectorMicros.all { it != null }
+
+    /** A timed lap without a GNSS gap: one that can be the best lap or a reference. */
+    val countsForBest: Boolean get() = kind == LapKind.Timed && !gnssGap
 }
 
 internal const val MicrosPerMilli = 1_000L
 internal const val MicrosPerSecond = 1_000_000.0
 
 /**
- * Lap list with bests (FBBD-58, FBBD-59). Best lap and best sectors come from timed laps only.
+ * Lap list with bests (FBBD-58, FBBD-59). Best sectors come from timed laps only, the best lap from
+ * timed laps without a GNSS gap ([Lap.countsForBest]).
  * Gains are in microseconds, negative meaning faster than the comparison.
  */
 class LapBook(val sectorCount: Int) {
@@ -61,7 +68,7 @@ class LapBook(val sectorCount: Int) {
             if (t != null && (b == null || t < b)) bestSectorTimes[i] = t
         }
         val previous = best
-        val isBest = previous == null || lap.timeMicros < previous.timeMicros
+        val isBest = lap.countsForBest && (previous == null || lap.timeMicros < previous.timeMicros)
         if (isBest) best = lap
         return isBest
     }

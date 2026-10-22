@@ -602,11 +602,13 @@ class CueEngine(
             m.finish(lap.endMicros, laps.speedKmh)?.let { pass -> onPass(pass, now)?.let(results::add) }
         }
         val timed = lap.kind == LapKind.Timed
+        // A lap with a GNSS gap (audit A11) is timed and said, but sets no corners and no targets.
+        val clean = lap.countsForBest
         val traced = laps.finished.lastOrNull { it.lap.number == lap.number }
         val b = book
-        if (b == null && timed && traced != null) {
+        if (b == null && clean && traced != null) {
             book = cornersFrom(traced, picked) { identified(it, laps.frame, identity) }
-        } else if (b != null && timed) {
+        } else if (b != null && clean) {
             b.onTimedLap(lapPasses)
         }
         lapPasses.clear()
@@ -627,7 +629,7 @@ class CueEngine(
     private fun onTimedLap(lap: Lap, now: Long, say: Boolean) {
         timedLaps++
         val best = bestLapMicros
-        val isBest = best == null || lap.timeMicros < best
+        val isBest = !lap.gnssGap && (best == null || lap.timeMicros < best)
         if (isBest) bestLapMicros = lap.timeMicros
         if (say && settings.verbosity >= Verbosity.LapTimes) {
             pendingLap = PendingLap(phrases.lapTime(lap.timeMillis, isBest), lap.number, now + LapCueExpiryMicros)

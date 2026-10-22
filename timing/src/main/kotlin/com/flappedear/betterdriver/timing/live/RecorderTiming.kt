@@ -89,7 +89,8 @@ class SessionTiming(
 
 /** The text of a [com.flappedear.betterdriver.recorder.EventKinds.LAP_LINE] event. */
 fun lapLineText(lap: Lap, predictedMillis: Long?): String =
-    "lap=${lap.number} kind=${lap.kind.name} time_ms=${lap.timeMillis} predicted_ms=${predictedMillis ?: "none"}"
+    "lap=${lap.number} kind=${lap.kind.name} time_ms=${lap.timeMillis} predicted_ms=${predictedMillis ?: "none"}" +
+        if (lap.gnssGap) " gnss_gap=true" else ""
 
 /** The track's name for screens: a saved track, or the directory circuit the car is at. */
 val TrackDetection.placeName: String?

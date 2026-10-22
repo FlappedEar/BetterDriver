@@ -56,7 +56,7 @@ class LapTimerTest {
             pitEntry = line(-100.0, 20.0, 40.0),
             pitExit = line(100.0, 20.0, 40.0),
         )
-        val d = Driver(frame, LapTimer(track))
+        val d = Driver(frame, LapTimer(track, continuity = null))
         d.at(-50.0, 0.0, 0.0)
         d.pass(0.0, 5.0)
         d.pass(0.0, 65.0)
@@ -80,7 +80,7 @@ class LapTimerTest {
             startFinish = line(0.0, -15.0, 40.0),
             pitEntry = line(-100.0, 20.0, 40.0),
         )
-        val d = Driver(frame, LapTimer(track))
+        val d = Driver(frame, LapTimer(track, continuity = null))
         d.at(-50.0, 0.0, 0.0)
         d.pass(0.0, 5.0)
         d.pass(0.0, 65.0)
@@ -94,7 +94,7 @@ class LapTimerTest {
     @Test
     fun `a second pass within the minimum lap time is ignored`() {
         val track = Track(id = "t", name = "T", center = origin, startFinish = line(0.0, -15.0, 15.0))
-        val d = Driver(frame, LapTimer(track))
+        val d = Driver(frame, LapTimer(track, continuity = null))
         d.at(-50.0, 0.0, 0.0)
         d.pass(0.0, 5.0)
         d.pass(0.0, 7.0)
@@ -109,7 +109,7 @@ class LapTimerTest {
             startFinish = line(0.0, -15.0, 15.0),
             sectorLines = listOf(line(200.0, -15.0, 15.0), line(400.0, -15.0, 15.0)),
         )
-        val d = Driver(frame, LapTimer(track))
+        val d = Driver(frame, LapTimer(track, continuity = null))
         val book = LapBook(track.sectorCount)
         d.at(-50.0, 0.0, 0.0)
         var t = 10.0
@@ -143,7 +143,7 @@ class LapTimerTest {
             startFinish = line(0.0, -15.0, 15.0),
             sectorLines = listOf(line(200.0, -15.0, 15.0), line(400.0, -15.0, 15.0)),
         )
-        val d = Driver(frame, LapTimer(track))
+        val d = Driver(frame, LapTimer(track, continuity = null))
         d.at(-50.0, 0.0, 0.0)
         d.pass(0.0, 10.0)
         // GNSS gap over the first sector line.
@@ -164,7 +164,7 @@ class LapTimerTest {
             startFinish = line(0.0, -15.0, 15.0),
             sectorLines = listOf(line(200.0, -15.0, 15.0), line(400.0, -15.0, 15.0)),
         )
-        val d = Driver(frame, LapTimer(track))
+        val d = Driver(frame, LapTimer(track, continuity = null))
         d.at(-50.0, 0.0, 0.0)
         d.pass(0.0, 10.0)
         d.pass(200.0, 30.0)

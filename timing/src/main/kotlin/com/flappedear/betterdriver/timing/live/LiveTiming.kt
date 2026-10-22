@@ -67,7 +67,9 @@ class LiveTiming(track: Track, minLapSeconds: Double = defaultMinLapSeconds(trac
     var state: LiveTimingState = LiveTimingState.empty(timer.sectorCount, timer.pointToPoint)
         private set
 
+    /** Takes [fix]; one the timer ignores (older than, or as old as, the last one) changes nothing (audit A12). */
     fun update(fix: Fix): LiveTimingState {
+        if (!timer.accepts(fix)) return state
         val events = timer.update(fix)
         for (e in events) {
             when (e) {

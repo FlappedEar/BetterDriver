@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.feature.review.SessionVideo
 import com.flappedear.betterdriver.core.ble.hr.HeartRateChannels
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -41,7 +42,8 @@ import java.util.concurrent.Executors
 /**
  * Laps of saved sessions for the lap review (FBBD-92), in the UI process. Each session is read
  * once, replayed into laps on the saved track it was recorded at, and kept with its video; a
- * session is read again only when its track's lines change. Disk work runs on one background
+ * session is read again only when its track's lines, its video or its own files change (a session
+ * replaced by an import of the same id, audit A10). Disk work runs on one background
  * thread; [state] is Compose state.
  */
 class ReviewLaps private constructor(context: Context) {
@@ -76,7 +78,7 @@ class ReviewLaps private constructor(context: Context) {
         cache.keys.retainAll(sessions.map { it.id }.toSet())
         sessions.forEachIndexed { i, s ->
             val known = cache[s.id]
-            if (known == null || known.stale(saved, videoStamp(s.dir))) cache[s.id] = read(s, saved)
+            if (known == null || known.stale(saved, Stamps.of(s.dir))) cache[s.id] = read(s, saved)
             // Once laps are shown, a reload keeps them on screen: back on Loading, the review would
             // leave and forget the laps picked (after a rotation, or on coming back to it).
             if ((state as? ReviewLoad.Ready)?.tracks.isNullOrEmpty()) post(ReviewLoad.Loading(i + 1, sessions.size))
@@ -95,7 +97,7 @@ class ReviewLaps private constructor(context: Context) {
         older.keys.retainAll(rest.map { it.id }.toSet())
         for (s in rest) {
             val known = older[s.id]
-            if (known == null || known.stale(saved, videoStamp(s.dir))) older[s.id] = read(s, saved).withoutLaps()
+            if (known == null || known.stale(saved, Stamps.of(s.dir))) older[s.id] = read(s, saved).withoutLaps()
         }
     }
 
@@ -121,7 +123,7 @@ class ReviewLaps private constructor(context: Context) {
         val recorded = recordedSources(data)
         val facts = SessionFacts(obd = ObdSource in recorded, heartRate = HeartRateChannels.SOURCE in recorded)
         if (track == null) {
-            Cached(null, null, revisions(saved), videoStamp(s.dir), facts)
+            Cached(null, null, revisions(saved), Stamps.of(s.dir), facts)
         } else {
             val laps = replayLaps(s.id, data.sampleSets, track)
             val video = sessionVideo(s.dir, VideoTimeline.from(data.events, indexedClips(s.dir)))
@@ -138,13 +140,13 @@ class ReviewLaps private constructor(context: Context) {
                 track.id,
                 session.takeIf { it.laps.isNotEmpty() },
                 revisions(saved),
-                videoStamp(s.dir),
+                Stamps.of(s.dir),
                 facts.copy(laps = timed.size, bestMillis = laps.best?.lap?.timeMillis),
             )
         }
     } catch (e: Exception) {
         DebugLog.w(Tag, "reading session ${s.id} failed", e)
-        Cached(null, null, revisions(saved), videoStamp(s.dir), SessionFacts())
+        Cached(null, null, revisions(saved), Stamps.of(s.dir), SessionFacts())
     }
 
     /** The sources ([ObdSource], heart rate) that recorded at least one value in the session. */
@@ -162,19 +164,20 @@ class ReviewLaps private constructor(context: Context) {
     }
 
     /**
-     * What a session's laps were worked out against: each track's revision, and its video files. Any
-     * change (lines moved, a track added or removed, GoPro files added) reads the session again.
+     * What a session's laps were worked out against: each track's revision, the session's own files
+     * and its video files. Any change (lines moved, a track added or removed, the session replaced,
+     * GoPro files added) reads the session again.
      */
     private class Cached(
         val trackId: String?,
         val session: ReviewSession?,
         val tracks: Map<String, Int>,
-        val video: Long,
+        val files: Stamps,
         val facts: SessionFacts,
     ) {
-        fun stale(saved: List<Track>, videoNow: Long) = tracks != revisions(saved) || video != videoNow
+        fun stale(saved: List<Track>, filesNow: Stamps) = tracks != revisions(saved) || files != filesNow
 
-        fun withoutLaps() = Cached(trackId, null, tracks, video, facts)
+        fun withoutLaps() = Cached(trackId, null, tracks, files, facts)
     }
 
     companion object {
@@ -197,9 +200,29 @@ class ReviewLaps private constructor(context: Context) {
 
 private fun revisions(saved: List<Track>) = saved.associate { it.id to it.revision }
 
+/** What a session's laps were read from: its own files (metadata, chunks, end marker) and its video files. */
+internal data class Stamps(val session: Long, val video: Long) {
+    companion object {
+        fun of(dir: File) = Stamps(sessionStamp(dir), videoStamp(dir))
+    }
+}
+
+/**
+ * Changes when one of the files the session's laps are read from is added, removed or rewritten:
+ * its metadata, end or recovery marker, and chunks. A session replaced by an import of the same id
+ * (audit A10) comes with new files. Files written later beside them (the quality report) do not
+ * count.
+ */
+internal fun sessionStamp(dir: File): Long {
+    val markers = listOf(SessionFiles.META, SessionFiles.FINISHED, SessionFiles.RECOVERY).map { File(dir, it) }
+    return filesStamp(markers.filter { it.isFile } + SessionFiles.chunks(dir))
+}
+
 /** Changes when a file in the session's video directory (or the clip index) is added, removed or rewritten. */
-private fun videoStamp(dir: File): Long = File(dir, VideoFiles.DIR).listFiles().orEmpty()
-    .sumOf { f -> (f.name.hashCode().toLong() * StampPrime + f.length()) * StampPrime + f.lastModified() }
+private fun videoStamp(dir: File): Long = filesStamp(File(dir, VideoFiles.DIR).listFiles().orEmpty().asList())
+
+private fun filesStamp(files: List<File>): Long =
+    files.sumOf { f -> (f.name.hashCode().toLong() * StampPrime + f.length()) * StampPrime + f.lastModified() }
 
 private const val StampPrime = 31L
 
