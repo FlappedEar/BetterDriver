@@ -88,7 +88,8 @@ class CoachLineRealTest {
             val after = map.passes(target.trace, target.lap.number).single { it.corner == c.number }
             Triple(line.name, tighter, assertNotNull(tighterBy(before, after, c.turn)))
         }
-        assertTrue(compared.size >= 2, "compared $compared")
+        // With the second-fastest target (FBBD-177, #311) the analysis asks for a line change in one corner here.
+        assertTrue(compared.isNotEmpty(), "compared $compared")
         // Within what the receiver repeats: the coach would ask for the same line the analysis shows.
         assertTrue(compared.all { (_, a, c) -> abs(a - c) <= LineToleranceMeters }, "analysis vs coach $compared")
 
@@ -105,8 +106,9 @@ class CoachLineRealTest {
         }
         assertTrue(pickups.size >= 6, "compared $pickups")
         assertTrue(pickups.all { (_, a, c) -> abs(a - c) <= PickupToleranceMeters }, "analysis vs coach $pickups")
-        // The last complex: about 17 m earlier on the throttle, which the speed alone did not show.
+        // The last complex: earlier on the throttle by more than the receiver repeats (about 5 m against
+        // the second-fastest target), which the speed alone did not show.
         val last = pickups.single { it.first == complex.name }
-        assertTrue(last.third < -10.0, "last complex $last")
+        assertTrue(last.third < -PickupToleranceMeters, "last complex $last")
     }
 }
