@@ -12,12 +12,21 @@ import java.time.Instant
 private const val MinutesPerDegree = 60.0
 private const val MicrosPerMilli = 1_000.0
 
+/** OBD-II channels (core-ble ObdSource), interpolated between readings in a VBO (FBBD-303). */
+private const val ObdSource = "obd"
+
+/** Two OBD-II readings further apart than this are not joined by a line: the value is held. */
+private const val MaxInterpolationGapMicros = 1_000_000L
+
 /**
  * Converts a stored session (finished, recovered or interrupted) to VBO (FBBD-66, FBBD-71).
  *
  * One data row per GNSS fix (a sample set holding latitude and longitude). Other channels are
- * sample-and-hold: each row carries the latest value seen at or before the fix. Before a channel's
- * first value the first value is used; a channel with no values at all is left out.
+ * sample-and-hold: each row carries the latest value seen at or before the fix. OBD-II channels are
+ * interpolated instead, as RaceChrono's VBO export does (FBBD-303): a fix between two readings at
+ * most [MaxInterpolationGapMicros] apart gets the value on the straight line between them, so RPM
+ * reads as a line rather than steps. Before a channel's first value the first value is used; a
+ * channel with no values at all is left out.
  * If a fix has no GNSS UTC time, session start time plus elapsed time is used.
  * With [VboVideo], each row also gets avifileindex and avisynctime, and the VBO gets an [avi] section (FBBD-25).
  * The data then starts at the first video's start: Circuit Tools plays video file 1 from the first
@@ -73,7 +82,7 @@ object VboExporter {
                 gates = gates(session),
                 aviBaseName = video?.baseName,
                 aviExtension = video?.takeIf { it.extensionLine }?.extension,
-                rows = rows(session, sets, extra.map { it.id }, firstValue, derivedHere, video).onEach { rows++ },
+                rows = rows(session, sets, extra, firstValue, derivedHere, video).onEach { rows++ },
             ),
         )
         writer.flush()
@@ -130,13 +139,15 @@ object VboExporter {
     private fun rows(
         session: SessionData,
         sets: List<SampleSet>,
-        extraIds: List<Int>,
+        extra: List<ChannelDef>,
         firstValue: Map<Int, Double>,
         derived: List<VboDerivedChannel>,
         video: VboVideo?,
     ) = sequence {
+        val extraIds = extra.map { it.id }
         val width = STANDARD.size + extraIds.size + derived.size + if (video != null) 2 else 0
         val latest = HashMap(firstValue)
+        val lines = extra.filter { it.source == ObdSource }.associate { it.id to Readings.of(sets, it.id) }
         // Sample-and-hold like the recorded channels: the newest derived value at or before each fix.
         val next = IntArray(derived.size)
         for (set in sets) {
@@ -148,7 +159,9 @@ object VboExporter {
                 if (set.values.none { it.channelId == GnssChannels.UTC_MS.id }) {
                     row[TIME_INDEX] = session.info.startUtcMillis + set.tMicros / MicrosPerMilli
                 }
-                extraIds.forEachIndexed { i, id -> row[STANDARD.size + i] = latest[id] ?: 0.0 }
+                extraIds.forEachIndexed { i, id ->
+                    row[STANDARD.size + i] = lines[id]?.at(set.tMicros) ?: latest[id] ?: 0.0
+                }
                 derived.forEachIndexed { i, d ->
                     while (next[i] < d.tMicros.size && d.tMicros[next[i]] <= set.tMicros) next[i]++
                     row[STANDARD.size + extraIds.size + i] = d.values[(next[i] - 1).coerceAtLeast(0)]
@@ -173,6 +186,39 @@ object VboExporter {
         set.values.any { it.channelId == GnssChannels.LAT.id } && set.values.any { it.channelId == GnssChannels.LON.id }
 
     private val TIME_INDEX = STANDARD.indexOfFirst { it.first == GnssChannels.UTC_MS }
+}
+
+/**
+ * One channel's readings in time order, read at ascending times by [at]: the value on the line
+ * between the readings either side when they are at most [MaxInterpolationGapMicros] apart, else
+ * the latest at or before, else the first. Null when the channel has no reading.
+ */
+private class Readings(private val t: LongArray, private val v: DoubleArray) {
+    private var next = 0
+
+    fun at(tMicros: Long): Double? {
+        if (t.isEmpty()) return null
+        while (next < t.size && t[next] <= tMicros) next++
+        if (next == 0) return v[0]
+        val i = next - 1
+        if (next == t.size || t[i] == tMicros || t[next] - t[i] > MaxInterpolationGapMicros) return v[i]
+        return v[i] + (v[next] - v[i]) * (tMicros - t[i]).toDouble() / (t[next] - t[i])
+    }
+
+    companion object {
+        /** The finite readings of [channelId] in [sets], which are in time order. */
+        fun of(sets: List<SampleSet>, channelId: Int): Readings {
+            val t = ArrayList<Long>()
+            val v = ArrayList<Double>()
+            for (set in sets) for (value in set.values) {
+                if (value.channelId == channelId && value.value.isFinite()) {
+                    t += set.tMicros
+                    v += value.value
+                }
+            }
+            return Readings(t.toLongArray(), v.toDoubleArray())
+        }
+    }
 }
 
 /**
