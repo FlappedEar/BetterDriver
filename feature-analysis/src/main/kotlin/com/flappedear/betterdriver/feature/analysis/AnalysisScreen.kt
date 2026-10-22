@@ -181,7 +181,7 @@ private fun Ready(
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
-                AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide) }
+                AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide, ui.line) }
                     ?: Card(width) { Dim("No map: the laps of this session have no usable GPS line.") }
                 AnalysisTab.Laps -> Laps(ui, compare, width)
                 AnalysisTab.Corners -> {

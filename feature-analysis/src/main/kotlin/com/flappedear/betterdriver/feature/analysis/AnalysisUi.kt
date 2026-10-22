@@ -248,6 +248,8 @@ data class AnalysisUi(
     val heartRate: HeartRateUi? = null,
     /** The Car tab (FBBD-176): pedals, temperatures and heart rate; null until worked out. */
     val car: CarUi? = null,
+    /** Where to find time (FBBD-306), in the Map tab: read from every session at the track after the rest. */
+    val line: LineState = LineState.Reading,
 )
 
 /** Losses below this are GPS timing noise and not listed. */

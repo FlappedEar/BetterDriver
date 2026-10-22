@@ -41,12 +41,14 @@ import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.coachingHistoryStore
+import com.flappedear.betterdriver.coach.linePlanStore
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.CarUi
+import com.flappedear.betterdriver.feature.analysis.LineState
 import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
@@ -170,6 +172,7 @@ internal fun SessionAnalysisRoute(
     var analysed by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
     var state by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
     var quality by remember(id) { mutableStateOf<QualityUi?>(null) }
+    var line by remember(id) { mutableStateOf<LineState>(LineState.Reading) }
     var coaching by remember(id) { mutableStateOf(SessionCoaching()) }
     // Made off the main thread when first used: making it reads the disk (FBBD-41).
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
@@ -208,12 +211,27 @@ internal fun SessionAnalysisRoute(
             )
         }
     }
-    LaunchedEffect(load, compared, progress) {
+    // Where to find time (FBBD-306) reads every session at the track, so it comes after the rest; it
+    // also keeps the track's line plan for the coach and the 3D export.
+    LaunchedEffect(load) {
+        val l = load as? Load.Done ?: return@LaunchedEffect
+        line = withContext(Dispatchers.Default) {
+            val loaded = l.loaded
+            analysedOr<LineState>(id, { LineState.Unavailable(it.message) }) {
+                val others = lineSessions(store.value, id, loaded.track, loaded.tracks)
+                lineState(
+                    linePlanStore(context), l.epoch, loaded.track, id, loaded.startUtcMillis,
+                    loaded.analysis, loaded.session, others,
+                )
+            }
+        }
+    }
+    LaunchedEffect(load, compared, progress, line) {
         analysed = when (val l = load) {
             null -> AnalysisState.Loading
             is Load.Failed -> l.state
             is Load.Done -> withContext(Dispatchers.Default) {
-                analysedOr<AnalysisState>(id, { it }) { readyState(l.loaded, compared, progress) }
+                analysedOr<AnalysisState>(id, { it }) { readyState(l.loaded, compared, progress, line) }
             }
         }
     }
@@ -269,7 +287,7 @@ private fun unavailableAction(load: Load?, nav: NavHostController, tracks: Track
     }
 }
 
-private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress?): AnalysisState {
+private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress?, line: LineState): AnalysisState {
     val analysis = loaded.analysis
     val fastest = analysis.laps.fastestLapIndex
     val other = compared ?: defaultComparedLap(analysis)
@@ -291,7 +309,9 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
     val map = mapUi(analysis, loaded.session, comparison)
     val whole = loaded.whole
     return AnalysisState.Ready(
-        ui.copy(progress = progress, map = map, acceleration = whole.acceleration, gForces = whole.gForces),
+        ui.copy(
+            progress = progress, map = map, acceleration = whole.acceleration, gForces = whole.gForces, line = line,
+        ),
     )
 }
 
