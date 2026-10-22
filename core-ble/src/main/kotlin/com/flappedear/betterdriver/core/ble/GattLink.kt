@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 
 private const val RequestedMtu = 517
 private const val WatchdogMs = 1_000L
+private const val TicksPerMinute = 60
 private const val SilenceTimeoutMs = 3_000L
 
 /** How long the MTU answer may take before the services are looked up without it (FBBD-272). */
@@ -112,6 +113,18 @@ class GattLink(
     private var lastDataAt = 0L
 
     private val received = AtomicInteger()
+
+    /**
+     * Each minute: notifications as Android handed them over, before any check, and those the
+     * connection gate dropped, with the connection's interval and latency then. Tells a message the
+     * receiver never sent apart from one lost in the app.
+     */
+    private val notified = AtomicInteger()
+    private val gateDropped = AtomicInteger()
+
+    @Volatile
+    private var linkTiming = "not reported"
+    private var watchdogTicks = 0
 
     /** Notifications count only from [gatt]; one from a closed connection is dropped (audit A09). */
     private val connection = CurrentConnection<BluetoothGatt>()
@@ -206,6 +219,7 @@ class GattLink(
         setState(LinkState.Connecting)
         setupStartedAt = SystemClock.elapsedRealtime()
         lastDataAt = 0L
+        linkTiming = "not reported"
         gattProbe?.clear()
         plan = ladder.plan()
         setupDeadlineAt = setupStartedAt + plan.setupTimeoutMs
@@ -248,6 +262,20 @@ class GattLink(
 
     private val reconnect = Runnable { connect() }
 
+    private fun logMinute() {
+        val raw = notified.getAndSet(0)
+        val dropped = gateDropped.getAndSet(0)
+        DebugLog.i(
+            Tag,
+            "$address minute: $raw notifications from Android, $dropped dropped by the gate, $linkTiming",
+        )
+    }
+
+    private fun notification(g: BluetoothGatt, uuid: UUID, value: ByteArray) {
+        notified.incrementAndGet()
+        if (!connection.deliver(g) { data(uuid, value) }) gateDropped.incrementAndGet()
+    }
+
     /** Once a second: report the rate, and restart a link that went silent or never finished setting up. */
     private fun watchdog() {
         if (!running) return
@@ -263,6 +291,7 @@ class GattLink(
                 ladder.streaming()
                 setups.ended(address)
                 setState(LinkState.Streaming(count))
+                if (++watchdogTicks % TicksPerMinute == 0) logMinute()
                 gatt?.let { g ->
                     gattProbe?.tick(g, now)
                     if (subscribed && lateMtu.ask(now)) askMtuAgain(g)
@@ -545,7 +574,7 @@ class GattLink(
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
-            if (ch.uuid in profile.notify) connection.deliver(g) { data(ch.uuid, value) }
+            if (ch.uuid in profile.notify) notification(g, ch.uuid, value)
         }
 
         override fun onPhyUpdate(g: BluetoothGatt, txPhy: Int, rxPhy: Int, status: Int) {
@@ -560,6 +589,7 @@ class GattLink(
         @Suppress("unused", "UNUSED_PARAMETER")
         fun onConnectionUpdated(g: BluetoothGatt, interval: Int, latency: Int, timeout: Int, status: Int) {
             val ms = interval * IntervalUnitMs
+            if (g === gatt) linkTiming = "interval ${"%.2f".format(Locale.ROOT, ms)} ms, latency $latency"
             DebugLog.i(
                 Tag,
                 "$address connection interval ${"%.2f".format(Locale.ROOT, ms)} ms, " +
@@ -571,7 +601,7 @@ class GattLink(
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && ch.uuid in profile.notify) {
-                ch.value?.let { v -> connection.deliver(g) { data(ch.uuid, v.copyOf()) } }
+                ch.value?.let { v -> notification(g, ch.uuid, v.copyOf()) }
             }
         }
     }
