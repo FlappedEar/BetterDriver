@@ -219,6 +219,7 @@ class GattLink(
         setState(LinkState.Connecting)
         setupStartedAt = SystemClock.elapsedRealtime()
         lastDataAt = 0L
+        linkTiming = "not reported"
         gattProbe?.clear()
         plan = ladder.plan()
         setupDeadlineAt = setupStartedAt + plan.setupTimeoutMs
@@ -588,7 +589,7 @@ class GattLink(
         @Suppress("unused", "UNUSED_PARAMETER")
         fun onConnectionUpdated(g: BluetoothGatt, interval: Int, latency: Int, timeout: Int, status: Int) {
             val ms = interval * IntervalUnitMs
-            linkTiming = "interval ${"%.2f".format(Locale.ROOT, ms)} ms, latency $latency"
+            if (g === gatt) linkTiming = "interval ${"%.2f".format(Locale.ROOT, ms)} ms, latency $latency"
             DebugLog.i(
                 Tag,
                 "$address connection interval ${"%.2f".format(Locale.ROOT, ms)} ms, " +
