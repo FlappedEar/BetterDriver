@@ -61,12 +61,20 @@ A release is reported done only after these, in the same session:
 2. Confluence "BetterDriver status" (page 12976129): a Now entry and a new
    row at the top of the Releases table.
 3. Confluence "What blocks 1.0" (16482306), the plan of record (14483457) and
-   "BetterDriver validation without test drives" (15007745), where the
-   release changes them.
-4. Jira: the issues the release ships moved to their real state.
+   "BetterDriver validation without test drives" (15007745): on every
+   release, re-check each page's summary and bump its "checked" date and
+   release, even when the release does not change them.
+4. Every other Confluence page whose subject the release touches
+   (Architecture, Recorder, RaceBox Micro BLE protocol, Steering angle, VBO
+   video format, UI decisions, Roadmap, the Build Plan's history panel):
+   update its summary and its "checked" date and release.
+5. Jira: the issues the release ships moved to their real state.
 
 The release run's summary repeats this list. From 0.3.25 to 0.4.0 the Home
-banner was not part of the steps and stayed at 0.3.24 for 20 releases.
+banner was not part of the steps and stayed at 0.3.24 for 20 releases. Until
+1.7.1 step 3 said "where the release changes them", so those pages were
+skipped and eleven pages stayed at 1.0.2 (found 2026-10-22). A page whose
+"checked" line names an older release than the latest one is stale.
 
 ## Template
 
