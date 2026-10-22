@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.analysis
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.line.LinePass
 import com.flappedear.betterdriver.analysis.line.advise
+import com.flappedear.betterdriver.analysis.line.beside
 import com.flappedear.betterdriver.analysis.line.cornerWindows
 import com.flappedear.betterdriver.analysis.line.signedSpan
 import com.flappedear.betterdriver.analysis.progress.ProgressAxis
@@ -57,5 +58,23 @@ class LineAnalysisTest {
         )
         val w = cornerWindows(s, axis).map { it.window.startProgressMeters to it.window.endProgressMeters }
         assertEquals(listOf(0.0 to 200.0, 200.0 to 500.0, 500.0 to 0.0), w)
+    }
+
+    @Test
+    fun `a point beside a loop's closing stretch moves toward the start`() {
+        // A 40 m square loop sampled at its corners: the last 10 m run from (0, 10) back to (0, 0).
+        val axis = ProgressAxis(
+            points = listOf(
+                MetricPoint(0.0, 0.0), MetricPoint(10.0, 0.0), MetricPoint(10.0, 10.0), MetricPoint(0.0, 10.0),
+            ),
+            cumulative = doubleArrayOf(0.0, 10.0, 20.0, 30.0),
+            lengthMeters = 40.0,
+            spacingMeters = 10.0,
+            valid = true,
+        )
+        val p = beside(axis, 35.0, 1.0)!!
+        // Halfway down the closing stretch, heading south; 1 m left of travel is east.
+        assertEquals(1.0, p.eastMeters, 1e-9)
+        assertEquals(5.0, p.northMeters, 1e-9)
     }
 }

@@ -176,18 +176,19 @@ fun analyzeLine(
     if (windows.isEmpty()) return null
     val features = computeTrackFeatures(axis, SegmentReviewSmoothingMeters)
     val sources = listOf(LineSession(session, analysis.laps, "")) + others
-    val candidates = sources.flatMap { source ->
+    // One reader per session, never looked up by label: labels are for display and need not be unique.
+    val probes = sources.map { LineProbe(it.session, axis) }
+    val candidates = sources.flatMapIndexed { k, source ->
         source.laps.timedLaps.filter { it.referenceEligible }.map { lap ->
             val population = PopulationLap(source.session, lap.startTelemetryTime, lap.endTelemetryTime, lap.number)
-            Candidate(source, population, lap.durationSeconds)
+            Candidate(source, probes[k], population, lap.durationSeconds)
         }
     }
-    val reference = candidates.firstOrNull { it.source.label.isEmpty() && it.lap.reference == referenceNumber }
+    val reference = candidates.firstOrNull { it.probe === probes.first() && it.lap.reference == referenceNumber }
         ?: return null
     val approved = ApprovedSegments(windows.map { it.window }, segments.revision + "/line")
     // Every lap read the same way on this session's axis (FBBD-215).
     val timed = timeOnAxis(axis, approved, candidates.map { it.lap }, analysis.robustness)
-    val probes = sources.associate { it.label to LineProbe(it.session, axis) }
     val corners = windows.mapNotNull { w ->
         val seconds = candidates.indices.map { timed.times[it].sector(w.window.id)?.seconds }
         val ref = candidates.indexOf(reference)
@@ -205,12 +206,12 @@ fun analyzeLine(
                 c.source.label, c.lap.reference as Int, c.lapSeconds, seconds[i]!!,
                 metrics.brakingPointMeters, slowest?.progressMeters,
                 slowest?.value?.let { kmh(it, measured.speeds.unit) }, metrics.pickupMeters, metrics.lineOffsetMeters,
-                probes.getValue(c.source.label).line(timed.traces[i], w.window, axis.lengthMeters),
+                c.probe.line(timed.traces[i], w.window, axis.lengthMeters),
             )
         }
         val refPass = pass(ref)
         val targetPass = if (best == ref) refPass else pass(best)
-        val readers = candidates.indices.map { probes.getValue(candidates[it].source.label) to timed.traces[it] }
+        val readers = candidates.indices.map { candidates[it].probe to timed.traces[it] }
         val road = roadBand(axis, w.window, readers)
         val turnsLeft = turnsLeft(features, w.corner, axis.lengthMeters)
         CornerLine(
@@ -263,7 +264,7 @@ internal fun signedSpan(from: Double, to: Double, length: Double): Double {
     return if (m > length / 2) m - length else m
 }
 
-private class Candidate(val source: LineSession, val lap: PopulationLap, val lapSeconds: Double)
+private class Candidate(val source: LineSession, val probe: LineProbe, val lap: PopulationLap, val lapSeconds: Double)
 
 internal class CornerWindow(val corner: TrackSegment, val window: TrackSegment)
 
@@ -330,7 +331,7 @@ private fun roadBand(
 
 /** The point [offset] metres left of [axis] at [progress] (negative: right). */
 @Suppress("ReturnCount")
-private fun beside(axis: ProgressAxis, progress: Double, offset: Double): MetricPoint? {
+internal fun beside(axis: ProgressAxis, progress: Double, offset: Double): MetricPoint? {
     if (axis.points.size < 2 || axis.cumulative.size != axis.points.size) return null
     var upper = 0
     var high = axis.cumulative.size
@@ -338,11 +339,14 @@ private fun beside(axis: ProgressAxis, progress: Double, offset: Double): Metric
         val middle = (upper + high) shr 1
         if (axis.cumulative[middle] < progress) upper = middle + 1 else high = middle
     }
+    // A loop's length includes the stretch from its last point back to its first.
+    val tail = axis.closed && progress > axis.cumulative.last()
     val index = upper.coerceIn(1, axis.points.size - 1)
-    val a = axis.points[index - 1]
-    val b = axis.points[index]
-    val span = axis.cumulative[index] - axis.cumulative[index - 1]
-    val f = if (span > 0.0) ((progress - axis.cumulative[index - 1]) / span).coerceIn(0.0, 1.0) else 0.0
+    val a = if (tail) axis.points.last() else axis.points[index - 1]
+    val b = if (tail) axis.points.first() else axis.points[index]
+    val from = if (tail) axis.cumulative.last() else axis.cumulative[index - 1]
+    val span = (if (tail) axis.lengthMeters else axis.cumulative[index]) - from
+    val f = if (span > 0.0) ((progress - from) / span).coerceIn(0.0, 1.0) else 0.0
     val east = b.eastMeters - a.eastMeters
     val north = b.northMeters - a.northMeters
     val length = sqrt(east * east + north * north)
