@@ -297,6 +297,20 @@ class DriveChecksTest {
     }
 
     @Test
+    fun `the own recorder's 1080p and 4K files are judged and only its 2_7K ones are not (FBBD-278)`() {
+        fun line(message: String) = LogLine(0L, null, "camera", 1, "t", 'I', "WideRecorder", "s", message)
+        val files = loggedFrames(
+            listOf(
+                line("phone_0001.mp4: 3840x2160@60 24610 frames in 413.0 s = 59.6 fps 3800411594 bytes"),
+                line("phone_0002.mp4: 1920x1080@60 3597 frames in 60.0 s = 59.9 fps 135000000 bytes"),
+                line("phone_0003.mp4: 2688x1512@60 21603 frames in 446.5 s = 48.4 fps 2045178095 bytes"),
+            ),
+        )
+        assertEquals(listOf(false, false, true), files.map { it.wide })
+        assertEquals(listOf(60, 60, 60), files.map { it.setFps })
+    }
+
+    @Test
     fun `a file with a set rate but no count is named in the frame rate check`() {
         val events = listOf(
             RecorderEvent(500_000, EventKinds.VIDEO_START, "camera=phone file=phone_0001.mp4 fps=60"),
