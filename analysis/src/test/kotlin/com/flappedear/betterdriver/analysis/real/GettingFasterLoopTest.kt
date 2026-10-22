@@ -35,11 +35,14 @@ import com.flappedear.betterdriver.coach.Cue
 import com.flappedear.betterdriver.coach.CueKind
 import com.flappedear.betterdriver.coach.FocusTarget
 import com.flappedear.betterdriver.coach.MinLossMicros
+import com.flappedear.betterdriver.coach.PlannedTarget
+import com.flappedear.betterdriver.coach.PlannedTargets
 import com.flappedear.betterdriver.coach.SessionFocusRecord
 import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.TracedLap
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.advise
+import com.flappedear.betterdriver.coach.aim
 import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
 import com.flappedear.betterdriver.coach.identified
@@ -194,6 +197,14 @@ class GettingFasterLoopTest {
             CoachedSession(CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events)),
         )
 
+    /** [plan]'s targets as the app gives them to the coach (CoachReferences.plannedTargets). */
+    private fun plannedTargets(plan: LinePlan) = PlannedTargets(
+        plan.sessionId,
+        plan.corners.mapNotNull { c ->
+            c.cornerId?.let { PlannedTarget(it, c.target.sessionId, c.target.lapSeconds) }
+        },
+    )
+
     private fun loop(files: List<String>, track: Track): Pair<List<Step>, List<Turn>> {
         val steps = day(files, track)
         val records = listOfNotNull(record(track, steps.first(), emptyList())).toMutableList()
@@ -201,11 +212,13 @@ class GettingFasterLoopTest {
             val from = steps[k - 1]
             val to = steps[k]
             // The coach of the next session at the track, as the app starts it: the track with its
-            // corner identity, a reference from every session so far, the last one's focus.
+            // corner identity, a reference from every session so far aiming where the last one's line
+            // plan does (FBBD-307), the last one's focus.
             val at = track.copy(identity = from.analysis.identity)
             val reference = buildReference(
                 at,
                 steps.subList(0, k).map { SessionLaps(it.data.id, tracedLaps(at, it.data.coachFixes())) },
+                from.linePlan?.let(::plannedTargets),
             )
             val coach = CoachSession(
                 CoachSettings(Verbosity.Focus), at, reference, sameDay = true, focus = from.focus.picks(),
@@ -250,8 +263,8 @@ class GettingFasterLoopTest {
             var losing = 0
             var advisable = 0
             for (c in corners) {
-                // The coach aims at a time driven twice (FBBD-177): the second fastest pass.
-                val target = reference?.targets?.filter { it.corner == c.number }?.getOrNull(1)
+                // The coach aims where the line plan does, else at a time driven twice (FBBD-177).
+                val target = reference?.aim(c.number)
                 val here = passes.filter { it.corner == c.number }
                 count += here.size
                 if (target == null) continue
@@ -279,7 +292,7 @@ class GettingFasterLoopTest {
         val laps = earlier.flatMap { s -> tracedLaps(at, s.data.coachFixes()).map { s to it } }
         return plan?.corners.orEmpty().filter { it.cornerId != null }.map { c ->
             val coach = map.corners.filter { it.cornerId == c.cornerId }.map { corner ->
-                val target = reference.targets.filter { it.corner == corner.number }.getOrNull(1)
+                val target = reference.aim(corner.number)
                 target?.let { t -> source(map, laps, t.lap, t.timeMicros, corner.number) } ?: "none"
             }.distinct().singleOrNull()
             Target(c.name, lapOf(laps, c.target.sessionId, c.target.lapSeconds), coach)
@@ -383,14 +396,16 @@ class GettingFasterLoopTest {
     fun `the loop runs through Arek's six sessions at Jastrząb (29 Aug 2026)`() =
         check(
             "Jastrząb 29 Aug", RealCorpus.JASTRZAB_DAY, RealCorpus.jastrzabTrack(),
-            Known(uncoachable = 1, silent = 4, otherTarget = 50, unspoken = 10),
+            // Silent 4 -> 6 with the plan's aims (FBBD-307): the aim is the plan's faster pass, so Corner 7
+            // (10:00) and Corner 5 (13:03) now lose on 2 passes, by line or throttle, which have no cue yet.
+            Known(uncoachable = 1, silent = 6, otherTarget = 15, unspoken = 10),
         )
 
     @Test
     fun `the loop runs through Arek's three sessions at Silesia Ring (27 Sep 2026)`() =
         check(
             "Silesia Ring 27 Sep", RealCorpus.SILESIA_DAY, RealCorpus.silesiaTrack(),
-            Known(uncoachable = 0, silent = 3, otherTarget = 19, unspoken = 5),
+            Known(uncoachable = 0, silent = 2, otherTarget = 6, unspoken = 5),
         )
 
     /** Each turn of the loop as a Markdown page, with the drive replay's in the pull request's checks. */

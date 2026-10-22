@@ -53,7 +53,7 @@ internal fun lineSessions(store: SessionStore, id: String, track: Track, saved: 
  * Where to find time in session [id] (FBBD-306): its line analysis against [others], kept as the
  * track's line plan in [plans] for the coach and the 3D export, and shown in the Map tab. [epoch] is
  * the app data's restore epoch taken before the session was read: the plan of a session read before
- * a restore is not written.
+ * a restore is not written. [onSaved] runs once a new plan is written, for the coach to aim at it.
  */
 @Suppress("LongParameterList", "ReturnCount") // What one analysed session gives the plan.
 internal fun lineState(
@@ -65,6 +65,7 @@ internal fun lineState(
     analysis: SessionAnalysis,
     session: TelemetrySession,
     others: Sequence<LineSession>,
+    onSaved: () -> Unit = {},
 ): LineState {
     val origin = analysis.axis?.origin ?: return LineState.Unavailable(NoLineText)
     val line = analyzeLine(analysis, session, others) ?: return LineState.Unavailable(NoLineText)
@@ -76,6 +77,7 @@ internal fun lineState(
         if (wrote) {
             val focus = plan.focus().joinToString { String.format(Locale.ROOT, "%s %.2f s", it.name, it.gainSeconds) }
             DebugLog.i(Tag, "line plan of $id at ${track.id}: ${plan.sessions} sessions, focus $focus")
+            onSaved()
         }
     } catch (e: IOException) {
         DebugLog.w(Tag, "line plan of $id not saved", e)

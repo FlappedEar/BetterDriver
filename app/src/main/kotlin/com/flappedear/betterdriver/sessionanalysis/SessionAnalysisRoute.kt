@@ -38,6 +38,7 @@ import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
+import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.coachingHistoryStore
@@ -222,7 +223,7 @@ internal fun SessionAnalysisRoute(
                 lineState(
                     linePlanStore(context), l.epoch, loaded.track, id, loaded.startUtcMillis,
                     loaded.analysis, loaded.session, others,
-                )
+                ) { CoachReferences.refresh(context) }
             }
         }
     }

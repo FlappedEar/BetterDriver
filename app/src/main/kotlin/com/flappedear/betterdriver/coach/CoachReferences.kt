@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.coach
 import android.content.Context
 import android.os.SystemClock
 import com.flappedear.betterdriver.analysis.identity.IdentityMigrations
+import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -13,11 +14,26 @@ import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** The coach library over the app's sessions, tracks and coach references (FBBD-168). */
+/**
+ * The coach library over the app's sessions, tracks and coach references (FBBD-168), aiming where
+ * each track's line plan does (FBBD-307).
+ */
 internal fun coachLibrary(context: Context): CoachLibrary {
     val tracks = TrackStore(tracksDir(context))
-    return CoachLibrary(SessionStore(sessionsDir(context)), coachReferencesDir(context)) { tracks.all() }
+    val lines = linePlanStore(context)
+    return CoachLibrary(
+        SessionStore(sessionsDir(context)),
+        coachReferencesDir(context),
+        tracks = { tracks.all() },
+        plans = { id -> lines.get(id)?.let(::plannedTargets) },
+    )
 }
+
+/** The targets of [plan] in its corners with a CornerId, as the coach reference takes them. */
+internal fun plannedTargets(plan: LinePlan) = PlannedTargets(
+    plan.sessionId,
+    plan.corners.mapNotNull { c -> c.cornerId?.let { PlannedTarget(it, c.target.sessionId, c.target.lapSeconds) } },
+)
 
 /** How often a refresh looks whether a recording started, in milliseconds. */
 private const val RecordingCheckMillis = 2_000L
