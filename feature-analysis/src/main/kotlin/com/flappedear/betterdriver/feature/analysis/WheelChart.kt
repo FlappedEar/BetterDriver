@@ -30,8 +30,11 @@ internal fun WheelChart(wheel: WheelTrace, modifier: Modifier = Modifier) {
     Column(modifier.testTag(WheelChartTag)) {
         TrackLabel("Wheel · you red, target green")
         Canvas(Modifier.fillMaxWidth().height(96.dp)) {
-            val zero = size.height * ZeroShare
-            val perDeg = zero / wheel.maxDeg.toFloat()
+            // Into the turn upward, out of it (countersteer) below: the zero line sits where both fit.
+            val up = wheel.maxIntoDeg.toFloat()
+            val down = wheel.maxOutDeg.toFloat()
+            val perDeg = size.height / (up + down)
+            val zero = up * perDeg
             val perMeter = size.width / wheel.meters.toFloat()
             drawLine(c.line, Offset(0f, zero), Offset(size.width, zero), 1.dp.toPx())
             trace(wheel.target, c.gain, zero, perDeg, perMeter)
@@ -49,6 +52,3 @@ private fun DrawScope.trace(dots: List<WheelDot>, color: Color, zero: Float, per
     }
     drawPath(path, color, style = Stroke(2.5.dp.toPx(), join = StrokeJoin.Round))
 }
-
-/** Where no wheel sits, from the top: room below it for the wheel turned out of the corner. */
-private const val ZeroShare = 0.85f

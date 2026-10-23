@@ -136,7 +136,8 @@ internal const val RepeatText = "Your best lap does it: repeat it"
 /** A corner with time per lap but no difference in the line, the brakes or the speed beyond GPS accuracy. */
 internal const val NoAdviceText = "Nothing measurably different from your target: drive it as on your best pass."
 
-private fun CornerAdvice.plan() = PlanAdvice(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters)
+private fun CornerAdvice.plan() =
+    PlanAdvice(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters, steering)
 
 /**
  * The chart in words: how much the typical lap came down from the day's first session to its

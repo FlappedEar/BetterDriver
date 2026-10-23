@@ -53,8 +53,12 @@ data class WheelDot(val meters: Double, val deg: Double)
 
 /** The steering wheel through a corner (UI-273 B): your best lap's and your target's. */
 data class WheelTrace(val reference: List<WheelDot>, val target: List<WheelDot>) {
-    /** The most wheel either way on either lap, at least 1, for the chart's scale. */
-    val maxDeg: Double get() = (reference + target).maxOfOrNull { abs(it.deg) }?.coerceAtLeast(1.0) ?: 1.0
+    /** The most wheel into the turn on either lap, at least 1, for the chart's scale. */
+    val maxIntoDeg: Double get() = maxOf(1.0, (reference + target).maxOfOrNull { it.deg } ?: 0.0)
+
+    /** The most wheel out of the turn (countersteer) on either lap, at least 1/10 of [maxIntoDeg]. */
+    val maxOutDeg: Double get() =
+        maxOf(maxIntoDeg * MinOutShare, -((reference + target).minOfOrNull { it.deg } ?: 0.0))
 
     /** The longer of the two, at least 1 m. */
     val meters: Double get() = (reference + target).maxOfOrNull { it.meters }?.coerceAtLeast(1.0) ?: 1.0
@@ -221,6 +225,9 @@ private fun targetFrom(pass: PlanPass, sessionId: String): String {
 }
 
 private const val MillisPerSecond = 1000.0
+
+/** Room below the zero line of a wheel trace without countersteer: a tenth of the chart's wheel. */
+private const val MinOutShare = 0.1
 
 /** A lap time as the app shows one. */
 internal fun lineLapTime(seconds: Double): String = formatLapTime((seconds * MillisPerSecond).roundToLong())

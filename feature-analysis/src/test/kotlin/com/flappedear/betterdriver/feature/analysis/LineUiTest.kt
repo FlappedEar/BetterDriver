@@ -96,7 +96,11 @@ class LineUiTest {
         assertEquals(90.0, trace.target.last().deg, 1e-9)
         // About 11 m driven north over the 10 steps of 1e-5°.
         assertEquals(11.1, trace.reference.last().meters, 0.2)
-        assertEquals(120.0, trace.maxDeg, 1e-9)
+        assertEquals(120.0, trace.maxIntoDeg, 1e-9)
+        assertEquals(12.0, trace.maxOutDeg, 1e-9)
+        // Countersteer gets its own room below the line, so it is not clipped.
+        val caught = trace.copy(target = trace.target + WheelDot(12.0, -50.0))
+        assertEquals(50.0, caught.maxOutDeg, 1e-9)
         // A right-hander's wheel is drawn into the turn too; without the wheel there is no trace.
         val right = lineUi(plan.copy(corners = listOf(c.copy(turnsLeft = false))), "s1")!!.corners[0].wheel!!
         assertEquals(-120.0, right.reference.last().deg, 1e-9)
