@@ -27,6 +27,8 @@ import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.tracks.Tracks
 import com.flappedear.betterdriver.transfer.BundleFormatException
+import com.flappedear.betterdriver.transfer.ImportOrder
+import com.flappedear.betterdriver.transfer.ImportProgress
 import com.flappedear.betterdriver.transfer.IncomingFiles
 import com.flappedear.betterdriver.transfer.IncomingKind
 import com.flappedear.betterdriver.transfer.SessionBundle
@@ -40,6 +42,7 @@ import com.flappedear.betterdriver.transfer.foreign.SessionImport
 import java.io.File
 import java.io.IOException
 import java.io.InputStream
+import java.util.Locale
 import java.util.concurrent.Executors
 
 /**
@@ -57,7 +60,9 @@ class TransferQuestion(val title: String, val text: String, val answer: (replace
  * A session is unpacked and checked before it is listed ([SessionInbox]); a damaged file adds
  * nothing. A session or track already here with other content needs a keep-or-replace answer
  * ([question]). Imports are refused while a session records, so that question never comes up
- * during an outing. One per process; disk work runs on one background thread.
+ * during an outing. Several picked files come in one after another, oldest session first, with
+ * one progress for all of them (FBBD-314, UI-193 A); one that fails does not stop the rest. One
+ * per process; disk work runs on one background thread.
  */
 @Suppress("TooManyFunctions") // One small step per kind of file and per moment of an import.
 class Imports private constructor(private val context: Context) {
@@ -81,17 +86,67 @@ class Imports private constructor(private val context: Context) {
     var openedFromOutside by mutableIntStateOf(0)
         private set
 
+    // The files of the current import, in the order they come in, and what came of each. Set on
+    // the main thread before the io thread reads them.
+    private var batch: List<Picked> = emptyList()
+    private var current = 0
+    private val results = mutableListOf<Outcome>()
+
+    // io thread only.
+    private var progress = ImportProgress(emptyList())
+
     init {
         // Whatever an import killed half way left behind. The list may have been read without it.
         io.execute { if (inbox.clearStaging()) Sessions.get(context).refresh() }
     }
 
     /** Imports a session bundle or a track file. [fromOutside]: opened with the app from another app. */
-    fun import(uri: Uri, fromOutside: Boolean = false) {
-        if (state?.running == true || question != null) return
+    fun import(uri: Uri, fromOutside: Boolean = false) = import(listOf(uri), fromOutside)
+
+    /** Imports [uris] one after another, oldest session first (UI-193 A). */
+    fun import(uris: List<Uri>, fromOutside: Boolean = false) {
+        if (uris.isEmpty() || state?.running == true || question != null) return
         if (fromOutside) openedFromOutside++
         state = TransferState("Reading the file…", running = true)
-        io.execute { guarded { importNow(uri) } }
+        io.execute {
+            // The name and size lookups give empty and 0 on a provider's failure, so the batch
+            // always starts and each file then fails or comes in on its own.
+            val picked = uris.map { Picked(it, displayNameOf(context, it), sizeOf(context, it)) }
+            val ordered = ImportOrder.oldestFirst(picked.map { it.name }).map { picked[it] }
+            progress = ImportProgress(ordered.map { it.size })
+            main.post {
+                batch = ordered
+                results.clear()
+                startFile(0)
+            }
+        }
+    }
+
+    /** Main thread: file [index] of the batch starts on the io thread. */
+    private fun startFile(index: Int) {
+        current = index
+        io.execute {
+            progress.start(index)
+            show("Reading the file…", progress.snapshot())
+            guarded { importNow(batch[index].uri) }
+        }
+    }
+
+    /** io thread: shows how far the current file is; [text] says what is being done with it. */
+    private fun reading(text: String): (Int) -> Unit = { n ->
+        if (progress.bytes(n)) show(text, progress.snapshot())
+    }
+
+    private fun show(text: String, snapshot: ImportProgress.Snapshot) = main.post {
+        if (question == null) {
+            state = TransferState(
+                text,
+                snapshot.fileFraction,
+                running = true,
+                progress = snapshot,
+                fileName = batch.getOrNull(snapshot.file)?.name.orEmpty(),
+            )
+        }
     }
 
     /** The question was dismissed without a choice: what is here stays. */
@@ -124,7 +179,7 @@ class Imports private constructor(private val context: Context) {
         if (total > ImportLimits.MaxBytes) {
             throw ImportFormatException("the file is too large (over ${ImportLimits.MaxMegabytes} MB)")
         }
-        val progress = progressOf(main, total) { f -> state = TransferState("Reading the session…", f, running = true) }
+        val progress = reading("Reading the session…")
         val tracks = trackStore.all()
         val circuits = CircuitDirectory(circuitsDir(context)).load()
         val name = displayNameOf(context, uri)
@@ -142,9 +197,7 @@ class Imports private constructor(private val context: Context) {
         context.contentResolver.openInputStream(uri)?.use(block) ?: throw IOException("could not open the file")
 
     private fun receiveSession(uri: Uri) {
-        val total = sizeOf(context, uri)
-        val progress = progressOf(main, total) { f -> state = TransferState("Importing…", f, running = true) }
-        val received = read(uri) { inbox.receive(it, progress) }
+        val received = read(uri) { inbox.receive(it, reading("Importing…")) }
         refuseWhileRecording(store) { inbox.discard(received) }
         val title = sessionTitle(SessionSummary(received.sessionId, File(""), received.info, SessionState.FINISHED))
         val decide = { replace: Boolean -> io.execute { guarded { accept(received, replace, title) } } }
@@ -222,8 +275,16 @@ class Imports private constructor(private val context: Context) {
         }
     }
 
-    private fun finish(message: String, failed: Boolean = false, prefixed: Boolean = failed) =
-        main.post { state = TransferState(if (prefixed) "Import failed: $message" else message, failed = failed) }
+    /** What came of the current file; then the next file starts, or the import ends. */
+    private fun finish(message: String, failed: Boolean = false, prefixed: Boolean = failed) = main.post {
+        val text = if (prefixed) "Import failed: $message" else message
+        results += Outcome(batch.getOrNull(current)?.name.orEmpty(), text, failed)
+        if (current + 1 < batch.size) {
+            startFile(current + 1)
+        } else {
+            state = summary(results, batch.sumOf { it.size })
+        }
+    }
 
     private fun guarded(block: () -> Unit) {
         try {
@@ -251,6 +312,65 @@ class Imports private constructor(private val context: Context) {
             instance ?: Imports(context.applicationContext).also { instance = it }
         }
     }
+}
+
+/** A picked file: its name as the picker shows it (empty when unknown) and its size (0 when unknown). */
+internal class Picked(val uri: Uri, val name: String, val size: Long)
+
+/** What came of one file of an import: the message it would show alone. */
+internal class Outcome(val name: String, val text: String, val failed: Boolean)
+
+private const val FailuresShown = 3
+
+/**
+ * The end of an import. One file shows its own message, as before; several show how many came in
+ * and why the first [FailuresShown] that failed did (UI-193 A), so the card stays short on top of
+ * Sessions; the ones that came in are in the list. Red only when nothing came in.
+ */
+internal fun summary(results: List<Outcome>, bytes: Long): TransferState {
+    results.singleOrNull()?.let { return TransferState(it.text, failed = it.failed) }
+    val bad = results.filter { it.failed }
+    val size = if (bytes > 0) " (${sizeText(bytes)})" else ""
+    val head = "Finished ${results.size} files$size. " + when (bad.size) {
+        0 -> "All came in."
+        1 -> "1 could not be imported:"
+        else -> "${bad.size} could not be imported:"
+    }
+    val lines = bad.take(FailuresShown).map { r -> if (r.name.isBlank()) r.text else "${r.name}: ${r.text}" } +
+        if (bad.size > FailuresShown) listOf("and ${bad.size - FailuresShown} more") else emptyList()
+    return TransferState((listOf(head) + lines).joinToString("\n"), failed = bad.size == results.size)
+}
+
+private const val Kilo = 1000.0
+private const val Mega = Kilo * Kilo
+private const val Giga = Mega * Kilo
+
+/** "640 MB", "1.6 GB", in the decimal units Android's Files app uses. */
+internal fun sizeText(bytes: Long): String = when {
+    bytes >= Giga -> String.format(Locale.ROOT, "%.1f GB", bytes / Giga)
+    bytes >= Mega -> String.format(Locale.ROOT, "%.0f MB", bytes / Mega)
+    bytes >= Kilo -> String.format(Locale.ROOT, "%.0f kB", bytes / Kilo)
+    else -> "$bytes B"
+}
+
+private const val ToPercent = 100L
+private const val SecondsPerMinute = 60L
+private const val FewSeconds = 10L
+private const val SecondsStep = 5L
+
+/** "about 1 min left" (UI-192 B), or null when the speed is not known yet. */
+internal fun timeLeftText(seconds: Long?): String? = when {
+    seconds == null -> null
+    seconds < FewSeconds -> "a few seconds left"
+    seconds < SecondsPerMinute -> "about ${(seconds + SecondsStep - 1) / SecondsStep * SecondsStep} s left"
+    else -> "about ${(seconds + SecondsPerMinute / 2) / SecondsPerMinute} min left"
+}
+
+/** "640 MB of 1.6 GB · 40 %", or "312 MB read" when the file's size is unknown. */
+internal fun bytesText(done: Long, size: Long): String = if (size > 0) {
+    "${sizeText(done)} of ${sizeText(size)} · ${done * ToPercent / size} %"
+} else {
+    "${sizeText(done)} read"
 }
 
 /**
@@ -302,13 +422,32 @@ private fun displayNameOf(context: Context, uri: Uri): String = try {
     }
 } catch (_: IllegalArgumentException) {
     null
+} catch (_: SecurityException) {
+    null
 }.orEmpty()
 
-/** The file's size for progress; 0 when the provider does not say. */
-internal fun sizeOf(context: Context, uri: Uri): Long = try {
-    context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
-        if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
-    } ?: 0L
-} catch (_: IllegalArgumentException) {
-    0L
+/**
+ * The file's size for progress: as the provider lists it, else from the open file itself (FBBD-314:
+ * a provider without a size left the bar at 0 %); 0 when neither says.
+ */
+internal fun sizeOf(context: Context, uri: Uri): Long {
+    val listed = try {
+        context.contentResolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { c ->
+            if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
+        } ?: 0L
+    } catch (_: IllegalArgumentException) {
+        0L
+    } catch (_: SecurityException) {
+        0L
+    }
+    if (listed > 0) return listed
+    return try {
+        context.contentResolver.openFileDescriptor(uri, "r")?.use { it.statSize.coerceAtLeast(0L) } ?: 0L
+    } catch (_: IOException) {
+        0L
+    } catch (_: IllegalArgumentException) {
+        0L
+    } catch (_: SecurityException) {
+        0L
+    }
 }
