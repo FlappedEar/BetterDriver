@@ -9,7 +9,10 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.GraphicsMode
 
-/** The perfect lap in 3D (FBBD-308) drawn as the player and the video draw it: road, line and both cars. */
+/**
+ * The perfect lap in 3D (FBBD-308, FBBD-316) drawn as the player and the video draw it: road or
+ * the map photo, line and both cars.
+ */
 @RunWith(RobolectricTestRunner::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class PerfectLapPainterTest {
@@ -32,11 +35,30 @@ class PerfectLapPainterTest {
             assertTrue("road at ${corner.name}", (count[palette.road] ?: 0) > 2000)
             val line = listOf(palette.braking, palette.coasting, palette.accelerating).sumOf { count[it] ?: 0 }
             assertTrue("line at ${corner.name}", line > 200)
-            // The car and its halo: amber, at full strength or seen through (the car itself is a few
-            // pixels when the camera takes in a long corner, the halo round it is what stands out).
+            // The car, seen from close behind (UI-200 A).
             val amber = px.count { amberish(it) }
-            assertTrue("car at ${corner.name}: $amber", amber > 30)
+            assertTrue("car at ${corner.name}: $amber", amber > 300)
         }
+    }
+
+    @Test
+    fun theMapPhotoCoversTheGroundAndTheLineStaysOnTop() {
+        val scene = perfectLapScene(previewPerfectLapPlan())!!
+        val blue = 0xFF1040C0.toInt()
+        val tile = Bitmap.createBitmap(512, 512, Bitmap.Config.ARGB_8888).apply { eraseColor(blue) }
+        var asked = 0
+        val painter = PerfectLapPainter(scene, palette, { _, _, _ -> asked++; tile }, "© MapTiler")
+        val bmp = Bitmap.createBitmap(960, 540, Bitmap.Config.ARGB_8888)
+        val corner = scene.corners.first()
+        painter.draw(Canvas(bmp), (corner.startSeconds + corner.endSeconds) / 2, bmp.width, bmp.height)
+        val px = IntArray(bmp.width * bmp.height)
+        bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
+        assertTrue("tiles asked: $asked", asked > 0)
+        // The photo is under most of the picture, the drawn road is covered, the line is on top.
+        assertTrue("photo ${px.count { it == blue }}", px.count { it == blue } > px.size / 3)
+        assertTrue("road left ${px.count { it == palette.road }}", px.count { it == palette.road } < 2000)
+        val line = listOf(palette.braking, palette.coasting, palette.accelerating).sumOf { c -> px.count { it == c } }
+        assertTrue("line $line", line > 200)
     }
 
     private fun amberish(c: Int): Boolean {
