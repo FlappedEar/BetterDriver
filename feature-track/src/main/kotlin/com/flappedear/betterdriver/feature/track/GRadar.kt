@@ -45,12 +45,12 @@ fun GRadarView(radar: GRadar?, modifier: Modifier = Modifier) {
         val side = minOf(maxWidth, maxHeight)
         // One g from the centre, as the canvas draws it.
         val ring = side / 2 / EdgeG
+        val centre = maxWidth / 2
         Box(Modifier.fillMaxSize()) {
             Canvas(Modifier.fillMaxSize()) { drawRadar(radar, c.line, c.textDim, c.text) }
             TrackLabel("Brake", Modifier.align(Alignment.TopCenter))
             TrackLabel("Gas", Modifier.align(Alignment.BottomCenter))
             // Each ring's label starts just right of where it crosses the axis, above the axis.
-            val centre = maxWidth / 2
             val axis = Modifier.align(Alignment.CenterStart)
             TrackLabel("0.5", axis.offset(x = centre + ring * HalfG + LabelGap, y = -LabelRise))
             TrackLabel("1 g", axis.offset(x = centre + ring + LabelGap, y = -LabelRise))
