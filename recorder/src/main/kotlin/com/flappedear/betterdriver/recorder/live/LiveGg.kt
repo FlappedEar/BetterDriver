@@ -33,6 +33,9 @@ internal class LiveGg {
     private val fits = Array(FitLagsMicros.size) { Array(Pairs) { Agreement() } }
     private var mapping: AxisMapping? = null
 
+    /** The newest fix already paired with a reading: each fix counts once in the match. */
+    private var fittedFix = Long.MIN_VALUE
+
     private var now: GPoint? = null
     private var nowMicros = Long.MIN_VALUE
     private val trail = ArrayDeque<Pair<Long, GPoint>>()
@@ -52,9 +55,10 @@ internal class LiveGg {
 
     /**
      * The receiver's X and Y now, each averaged over the [GSmoothingMicros] (as the G tile), with
-     * the standing tilt taken off. With a fix in the same set, [fit] adds the pair to the match.
+     * the standing tilt taken off. The newest fix, once, if it came with this reading or just before
+     * it: a RaceBox sends both in one set, RaceChrono DIY input in two (NmeaDecoder).
      */
-    fun addAccel(t: Long, x: Double, y: Double, fit: Boolean) {
+    fun addAccel(t: Long, x: Double, y: Double) {
         accelTimes.addLast(t)
         accelXs.addLast(x)
         accelYs.addLast(y)
@@ -63,8 +67,11 @@ internal class LiveGg {
             accelXs.removeFirst()
             accelYs.removeFirst()
         }
-        val gps = gpsG()
-        if (fit && gps != null && (fixSpeeds.lastOrNull() ?: 0.0) * KmhPerMps >= FitMinKmh) {
+        val gps = gpsG(t)
+        val fix = fixTimes.lastOrNull() ?: Long.MIN_VALUE
+        val fit = fix > fittedFix && t - fix in 0..MaxPairGapMicros
+        if (fit && gps != null && fixSpeeds.last() * KmhPerMps >= FitMinKmh) {
+            fittedFix = fix
             FitLagsMicros.forEachIndexed { i, lag ->
                 accelAt(t - lag)?.let { (ax, ay) -> addPair(fits[i], ax, ay, gps) }
             }
@@ -75,7 +82,7 @@ internal class LiveGg {
 
     /** A fix without an accelerometer reading in its set: the radar shows the GPS's G until the axes agree. */
     fun fixOnly(t: Long) {
-        if (mapping == null) update(t, gpsG())
+        if (mapping == null) update(t, gpsG(t))
     }
 
     /** The G now, or null before there is one. */
@@ -85,21 +92,27 @@ internal class LiveGg {
     fun trail(): List<GPoint> =
         trail.filter { it.first > nowMicros - GSmoothingMicros && it.first < nowMicros }.map { it.second }
 
+    /** A null [g] takes the dot away: the GPS's G of a lost fix is not the G now. */
     private fun update(t: Long, g: GPoint?) {
-        if (g == null || t < nowMicros) return
+        if (t < nowMicros) return
         now = g
         nowMicros = t
+        if (g == null) {
+            trail.clear()
+            return
+        }
         if (trail.isEmpty() || t - trail.last().first >= TrailStepMicros) trail.addLast(t to g)
         while (trail.first().first <= t - GSmoothingMicros) trail.removeFirst()
     }
 
     /**
      * Acceleration from the fixes of the last [GSmoothingMicros]: forward from the change of speed,
-     * left from speed times the turn rate. Null with less than [MinGpsSpanMicros] between them.
+     * left from speed times the turn rate. Null with less than [MinGpsSpanMicros] between them, or
+     * when the newest fix is more than [StaleFixMicros] before [t].
      */
-    private fun gpsG(): GPoint? {
+    private fun gpsG(t: Long): GPoint? {
         val span = if (fixTimes.size < 2) 0L else fixTimes.last() - fixTimes.first()
-        if (span < MinGpsSpanMicros) return null
+        if (span < MinGpsSpanMicros || t - fixTimes.last() > StaleFixMicros) return null
         val dt = span / MicrosPerSecond
         val forward = (fixSpeeds.last() - fixSpeeds.first()) / dt / StandardGravity
         val h0 = fixHeadings.first()
@@ -245,6 +258,9 @@ private const val MinimumLivePairs = 250
 
 /** GPS G needs fixes at least this far apart: a 1 Hz receiver gives none until its second fix. */
 private const val MinGpsSpanMicros = 200_000L
+
+/** A fix older than this gives no GPS G: lost, or a 1 Hz receiver's fix missed. */
+private const val StaleFixMicros = 1_500_000L
 
 /** A lagged reading pairs only with a reading this close to its time. */
 private const val MaxPairGapMicros = 60_000L

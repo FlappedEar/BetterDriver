@@ -38,12 +38,16 @@ class LiveGgTest {
 
     /**
      * Feeds [seconds] of driving; [mount] turns the true (forward, left) into the receiver's X and Y.
-     * [fixLateMicros] makes each set's fix that much older than its acceleration (FBBD-229).
+     * [fixLateMicros] makes each set's fix that much older than its acceleration (FBBD-229). With
+     * [separate] the acceleration and the fix come in sets of their own, as RaceChrono DIY input sends
+     * them; [fixUntil] stops the fixes there, as a lost fix.
      */
     private fun drive(
         seconds: Double,
         mount: (Double, Double) -> Pair<Double, Double>,
         fixLateMicros: Long = 0,
+        separate: Boolean = false,
+        fixUntil: Double = Double.MAX_VALUE,
         check: (t: Double, s: LiveSnapshot, truth: GPoint) -> Unit = { _, _, _ -> },
     ): LiveSnapshot {
         var now = 0L
@@ -60,19 +64,23 @@ class LiveGgTest {
             val (speed, heading) = if (fixes.size > late) fixes.removeFirst() else fixes.first()
             val (x, y) = mount(car.forward(t), car.left(t))
             now = n * StepMicros
-            tracker.onSamples(
-                SampleSet(
-                    now,
-                    listOf(
-                        ChannelValue(GnssChannels.LAT.id, 50.0),
-                        ChannelValue(GnssChannels.LON.id, 19.0),
-                        ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
-                        ChannelValue(GnssChannels.HEADING.id, (heading % 360 + 360) % 360),
-                        ChannelValue(AccelX, x),
-                        ChannelValue(AccelY, y),
-                    ),
-                ),
-            )
+            val fix = if (t < fixUntil) {
+                listOf(
+                    ChannelValue(GnssChannels.LAT.id, 50.0),
+                    ChannelValue(GnssChannels.LON.id, 19.0),
+                    ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
+                    ChannelValue(GnssChannels.HEADING.id, (heading % 360 + 360) % 360),
+                )
+            } else {
+                emptyList()
+            }
+            val accel = listOf(ChannelValue(AccelX, x), ChannelValue(AccelY, y))
+            if (separate) {
+                tracker.onSamples(SampleSet(now, accel))
+                if (fix.isNotEmpty()) tracker.onSamples(SampleSet(now, fix))
+            } else {
+                tracker.onSamples(SampleSet(now, fix + accel))
+            }
             // The dot is the last half second's mean: the truth a quarter second back.
             check(t, tracker.snapshot(), GPoint(car.forward(t - 0.25), car.left(t - 0.25)))
             n++
@@ -98,6 +106,21 @@ class LiveGgTest {
         drive(60.0, { f, l -> -l to -f }, fixLateMicros = 800_000) { t, s, truth ->
             if (t > 30) assertNear(truth, s.g, 0.08, t)
         }
+    }
+
+    @Test
+    fun `RaceChrono DIY input, acceleration and fix in separate sets, is matched too`() {
+        // On GPS G alone the dot would be the 0.8 s late fix's, well off the truth.
+        drive(60.0, { f, l -> -l to -f }, fixLateMicros = 800_000, separate = true) { t, s, truth ->
+            if (t > 30) assertNear(truth, s.g, 0.08, t)
+        }
+    }
+
+    @Test
+    fun `a fix lost before the axes are matched takes the dot away, not freezes it`() {
+        val s = drive(6.0, { f, l -> -f to l }, fixUntil = 3.0)
+        assertNull(s.g)
+        assertTrue(s.gTrail.isEmpty())
     }
 
     @Test

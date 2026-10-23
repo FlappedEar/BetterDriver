@@ -218,7 +218,7 @@ class LiveTracker(
         if (accel) {
             standing.update(speedKmh, accelX, accelY)
             gWindow.add(t, accelX, accelY)
-            gWindow.mean(standing)?.let { (x, y) -> gg.addAccel(t, x, y, fit = speed != null) }
+            gWindow.mean(standing)?.let { (x, y) -> gg.addAccel(t, x, y) }
         } else if (speed != null) {
             gg.fixOnly(t)
         }
