@@ -42,6 +42,7 @@ private const val DiskLimitBytes = 300L * 1024 * 1024
  * [keyFile] keeps the MapTiler key Arek enters on the map (FBBD-230): on the phone only, never in
  * the repository or the APK.
  */
+@Suppress("TooManyFunctions") // Memory, disk and network for the editor's map and the perfect lap's (FBBD-316).
 class TileLoader(private val cacheDir: File, private val userAgent: String, private val keyFile: File? = null) {
 
     private data class Key(val source: String, val z: Int, val x: Int, val y: Int)
@@ -107,6 +108,15 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         memory.get(key)?.let { return it }
         request(source, key)
         return null
+    }
+
+    /**
+     * The tile from memory, the disk or the network, waiting for it; null when it cannot be had.
+     * Not on the main thread: the perfect lap's video (FBBD-316) draws each frame with its tiles.
+     */
+    fun load(source: TileSource, z: Int, x: Int, y: Int): ImageBitmap? {
+        val key = Key(source.id, z, x, y)
+        return memory.get(key) ?: (readCached(key) ?: download(source, key))?.also { memory.put(key, it) }
     }
 
     /** The tile only if it is already in memory; nothing is loaded. For drawing a coarser tile meanwhile. */

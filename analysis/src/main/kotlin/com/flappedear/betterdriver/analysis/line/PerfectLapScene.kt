@@ -12,18 +12,15 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
 import kotlin.math.sqrt
-import kotlin.math.tan
 
 // The perfect lap in 3D (FBBD-308, UI review round 44): the line plan's perfect lap driven as a car
 // along its line, coloured by what the pedals do (UI-182 A), with the best lap as a see-through
-// car driving at its own speed beside it (UI-183 C), seen from above each corner (UI-181 C). It
-// reads the plan and works out no target of its own, so it shows what the Map tab and the coach say.
+// car driving at its own speed beside it (UI-183 C). Since round 47 (FBBD-316) it is followed from
+// behind and above the car (UI-200 A), over a satellite photo (UI-201 B). It reads the plan and
+// works out no target of its own, so it shows what the Map tab and the coach say.
 
 /** The road the laps used is this much narrower than the road; it is drawn this much wider each side. */
 const val SceneRoadMarginMeters = 2.0
-
-/** The camera moves from one corner's view to the next over this long, at the start of the next. */
-const val SceneCameraMoveSeconds = 1.2
 
 /** One point of a scene line, in metres east and north of the scene origin, at its time on the lap. */
 data class ScenePoint(
@@ -89,6 +86,8 @@ data class PerfectLapScene(
     val perfectSeconds: Double,
     val bestSeconds: Double,
     val bestLapNumber: Int,
+    /** Where east and north are measured from, for the map under the road. */
+    val origin: GeoCoordinate,
 ) {
     /** The scene plays this long: the perfect lap. */
     val durationSeconds: Double get() = perfect.last().seconds
@@ -111,63 +110,45 @@ data class PerfectLapScene(
         return if (i < 0) corners.lastIndex else i
     }
 
-    /** Where the camera is at [seconds]: above the corner, moving to the next one's view as it starts (UI-181 C). */
-    fun cameraAt(seconds: Double, aspect: Double): CameraPose {
-        val i = cornerAt(seconds)
-        val pose = cornerCamera(i, aspect)
-        val f = (seconds - corners[i].startSeconds) / SceneCameraMoveSeconds
-        if (i == 0 || f >= 1.0) return pose
-        // Eased in and out, so the camera starts and stops gently.
-        val s = f.coerceIn(0.0, 1.0).let { it * it * (EaseA - EaseB * it) }
-        return cornerCamera(i - 1, aspect).lerp(pose, s)
-    }
-
     /**
-     * Above corner [i], behind it along the way the lap goes through it and tilted down by
-     * [CameraTiltDegrees], far enough that the whole road of the corner fits in a [aspect]-wide view.
+     * Where the camera is at [seconds]: behind and above the perfect lap's car, looking ahead of it
+     * (UI-200 A), so the car, its line on the road and the next corner are in one picture. It
+     * faces the way the line goes over the next and last few metres, so it turns smoothly.
      */
-    fun cornerCamera(i: Int, aspect: Double): CameraPose {
-        val c = corners[i]
-        val pts = c.left + c.right
-        val cx = pts.sumOf { it.first } / pts.size
-        val cy = pts.sumOf { it.second } / pts.size
-        val first = perfect.first { it.seconds >= c.startSeconds }
-        val last = perfect.last { it.seconds <= c.endSeconds }
-        var dx = last.eastMeters - first.eastMeters
-        var dy = last.northMeters - first.northMeters
-        if (hypot(dx, dy) < 1.0) {
-            dx = 0.0
-            dy = 1.0
+    fun cameraAt(seconds: Double): CameraPose {
+        val car = perfectAt(seconds)
+        val back = pointAtMeters(perfect, car.lapMeters - CameraLookBackMeters)
+        val ahead = pointAtMeters(perfect, car.lapMeters + CameraLookAheadMeters)
+        var dx = ahead.first - back.first
+        var dy = ahead.second - back.second
+        val l = hypot(dx, dy)
+        if (l < 1.0) {
+            dx = cos(car.heading)
+            dy = sin(car.heading)
+        } else {
+            dx /= l
+            dy /= l
         }
-        val heading = atan2(dy, dx)
-        val fx = cos(heading)
-        val fy = sin(heading)
-        // The corner's size across and along the view, so it fits both ways.
-        val along = pts.maxOf { (it.first - cx) * fx + (it.second - cy) * fy } -
-            pts.minOf { (it.first - cx) * fx + (it.second - cy) * fy }
-        val across = pts.maxOf { -(it.first - cx) * fy + (it.second - cy) * fx } -
-            pts.minOf { -(it.first - cx) * fy + (it.second - cy) * fx }
-        val tilt = Math.toRadians(CameraTiltDegrees)
-        val halfH = tan(Math.toRadians(CameraFovDegrees) / 2)
-        val halfV = halfH / aspect
-        // Seen tilted, the ground along the view shrinks by sin(tilt).
-        val need = max(across / 2 / halfH, along * sin(tilt) / 2 / halfV) * CameraMargin
-        val distance = max(need, MinimumCameraMeters)
-        val eye = Vec3(cx - fx * distance * cos(tilt), cy - fy * distance * cos(tilt), distance * sin(tilt))
-        return CameraPose(eye, Vec3(cx, cy, 0.0))
+        val eye = Vec3(
+            car.eastMeters - dx * CameraBehindMeters,
+            car.northMeters - dy * CameraBehindMeters,
+            CameraUpMeters,
+        )
+        val target = Vec3(car.eastMeters + dx * CameraAimMeters, car.northMeters + dy * CameraAimMeters, 0.0)
+        return CameraPose(eye, target)
     }
 
     companion object {
         /** Horizontal field of view of the scene's camera. */
-        const val CameraFovDegrees = 58.0
+        const val CameraFovDegrees = 62.0
 
-        /** How far below the horizon the camera looks. */
-        const val CameraTiltDegrees = 58.0
+        /** How far behind the car and how high the camera is, and how far ahead of the car it looks, metres. */
+        const val CameraBehindMeters = 34.0
+        const val CameraUpMeters = 22.0
+        const val CameraAimMeters = 16.0
 
-        private const val CameraMargin = 1.15
-        private const val EaseA = 3.0
-        private const val EaseB = 2.0
-        private const val MinimumCameraMeters = 60.0
+        private const val CameraLookBackMeters = 10.0
+        private const val CameraLookAheadMeters = 20.0
     }
 }
 
@@ -217,6 +198,7 @@ fun perfectLapScene(plan: LinePlan): PerfectLapScene? {
         perfectSeconds = plan.perfectLap().seconds,
         bestSeconds = best.last().seconds,
         bestLapNumber = plan.referenceLapNumber,
+        origin = origin,
     )
 }
 
@@ -309,3 +291,13 @@ private const val WrapMeters = 100.0
 private const val MinimumKmh = 5.0
 
 private const val KmhPerMs = 3.6
+
+/** East and north of the point [meters] along [line], held at its ends. */
+private fun pointAtMeters(line: List<ScenePoint>, meters: Double): Pair<Double, Double> {
+    val i = line.indexOfFirst { it.lapMeters >= meters }.let { if (it < 0) line.lastIndex else max(it, 1) }
+    val a = line[i - 1]
+    val b = line[i]
+    val span = b.lapMeters - a.lapMeters
+    val f = if (span > 0) ((meters - a.lapMeters) / span).coerceIn(0.0, 1.0) else 1.0
+    return a.eastMeters + (b.eastMeters - a.eastMeters) * f to a.northMeters + (b.northMeters - a.northMeters) * f
+}

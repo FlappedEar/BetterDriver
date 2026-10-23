@@ -20,7 +20,6 @@ import java.io.File
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
-import kotlin.math.sin
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -81,10 +80,10 @@ class PerfectLapSceneRealTest {
     }
 
     @Test
-    fun `every frame shows the perfect lap's car on the road, from above its corner`() {
+    fun `every frame follows the perfect lap's car from behind, with its line and the map under the road`() {
         val scene = assertNotNull(perfectLapScene(plan()))
         val ground = SceneGround(scene)
-        for ((w, h) in listOf(1920 to 1080, 1000 to 1000)) {
+        for ((w, h) in listOf(1920 to 1080, 1280 to 720)) {
             var ghostShown = 0
             val frames = (scene.durationSeconds * 10).toInt()
             for (i in 0..frames) {
@@ -92,35 +91,87 @@ class PerfectLapSceneRealTest {
                 val f = sceneFrame(scene, ground, t, w, h)
                 val car = f.shapes.filter { it.paint == ScenePaint.Car }
                 assertTrue(car.isNotEmpty(), "no car at $t s in $w×$h")
-                // Fully in the picture, with room round it.
-                car.forEach { s ->
-                    val inside = s.xs.all { it in 0f..w.toFloat() } && s.ys.all { it in 0f..h.toFloat() }
-                    assertTrue(inside, "car off the picture at $t s")
-                }
+                // Fully in the picture, below its middle, and big enough to see (UI-200 A).
+                val xs = car.flatMap { it.xs.asList() }
+                val ys = car.flatMap { it.ys.asList() }
+                val inside = xs.all { it in 0f..w.toFloat() } && ys.all { it in 0f..h.toFloat() }
+                assertTrue(inside, "car off the picture at $t s")
+                assertTrue(ys.min() > h / 2f, "car above the middle at $t s")
+                assertTrue(xs.max() - xs.min() > w / 60f, "car ${xs.max() - xs.min()} px wide at $t s")
                 assertTrue(f.shapes.count { it.paint == ScenePaint.Road } > 20, "road at $t s")
+                val line = listOf(ScenePaint.Braking, ScenePaint.Coasting, ScenePaint.Accelerating, ScenePaint.NoPedal)
+                assertTrue(f.shapes.count { it.paint in line } > 20, "line at $t s")
+                // Map tiles under the whole bottom half, where the car is.
+                assertTrue(f.tiles.isNotEmpty(), "no map at $t s")
+                assertTrue(f.tiles.all { it.z == 18 && it.u1 > it.u0 && it.v1 > it.v0 })
                 if (f.shapes.any { it.paint == ScenePaint.Ghost }) ghostShown++
             }
-            // The ghost is beside the perfect lap's car nearly all the time.
-            assertTrue(ghostShown >= frames * 0.95, "ghost in $ghostShown of $frames frames")
+            // The ghost is in the picture nearly all the time: it drops back by at most the time to find.
+            assertTrue(ghostShown >= frames * 0.9, "ghost in $ghostShown of $frames frames")
         }
         writeFrames(scene, ground)
     }
 
     @Test
-    fun `the camera looks down at each corner and moves smoothly to the next`() {
+    fun `the map tiles cover the road and the car's place is inside one of them`() {
         val scene = assertNotNull(perfectLapScene(plan()))
-        var last = scene.cameraAt(0.0, 16.0 / 9)
+        val ground = SceneGround(scene)
+        // Jastrząb is about 1 km across: a few dozen tiles of about 100 m at zoom 18.
+        assertTrue(ground.tiles.size in 20..400, "${ground.tiles.size} tiles")
+        for (p in scene.perfect.filterIndexed { i, _ -> i % 25 == 0 }) {
+            val inside = ground.tiles.count { (_, q) ->
+                val minE = minOf(q[0], q[9])
+                val maxE = maxOf(q[3], q[6])
+                val minN = minOf(q[7], q[10])
+                val maxN = maxOf(q[1], q[4])
+                p.eastMeters in minE..maxE && p.northMeters in minN..maxN
+            }
+            assertEquals(1, inside, "tiles over (${p.eastMeters}, ${p.northMeters})")
+        }
+        // A zoom-18 tile at 50° north is about 98 m a side.
+        val (_, q) = ground.tiles.first()
+        assertEquals(98.0, kotlin.math.hypot(q[3] - q[0], q[4] - q[1]), 4.0)
+    }
+
+    @Test
+    fun `brake and gas bars stand where the perfect lap's pedals change, one of each per braking zone`() {
+        val plan = plan()
+        val scene = assertNotNull(perfectLapScene(plan))
+        val ground = SceneGround(scene)
+        val brakes = ground.bars.filter { it.paint == ScenePaint.BrakeBar }
+        val gas = ground.bars.filter { it.paint == ScenePaint.GasBar }
+        // Every corner of the plan brakes and goes back on the gas at least once, and not a bar every few metres.
+        val range = scene.corners.size / 2..scene.corners.size * 3
+        assertTrue(brakes.size in range, "${brakes.size} brake bars")
+        assertTrue(gas.size in range, "${gas.size} gas bars")
+        assertTrue(brakes.all { it.text == "BRAKE" } && gas.all { it.text == "GAS" })
+        // A word is shown in the picture as its bar comes up.
+        val words = (0..(scene.durationSeconds * 2).toInt()).sumOf { i ->
+            sceneFrame(scene, ground, i / 2.0, 1920, 1080).labels.count { it.size >= 12f }
+        }
+        assertTrue(words > brakes.size, "$words words")
+    }
+
+    @Test
+    fun `the camera stays behind and above the car, looking down, and moves smoothly`() {
+        val scene = assertNotNull(perfectLapScene(plan()))
+        var last = scene.cameraAt(0.0)
         for (i in 1..(scene.durationSeconds * 30).toInt()) {
-            val c = scene.cameraAt(i / 30.0, 16.0 / 9)
+            val t = i / 30.0
+            val c = scene.cameraAt(t)
+            val car = scene.perfectAt(t)
             val d = c.eye - c.target
-            // Looking down, steeply.
-            assertTrue(d.z / d.length > sin(Math.toRadians(45.0)), "camera at ${i / 30.0} s")
+            // Looking down between 15° and 40°, from 22 m up and behind the car.
+            val down = Math.toDegrees(kotlin.math.asin(d.z / d.length))
+            assertTrue(down in 15.0..40.0, "camera looks down $down° at $t s")
+            assertEquals(PerfectLapScene.CameraUpMeters, c.eye.z, 1e-9)
+            val back = kotlin.math.hypot(c.eye.x - car.eastMeters, c.eye.y - car.northMeters)
+            assertEquals(PerfectLapScene.CameraBehindMeters, back, 1e-6)
             // No jump between two frames of a 30 fps video.
-            assertTrue((c.target - last.target).length < 15.0, "camera jumps at ${i / 30.0} s")
+            assertTrue((c.eye - last.eye).length < 4.0, "camera jumps ${(c.eye - last.eye).length} m at $t s")
             last = c
         }
-        scene.corners.indices.forEach { assertTrue(scene.cornerCamera(it, 16.0 / 9).eye.z in 60.0..400.0) }
-        assertTrue(cos(Math.toRadians(PerfectLapScene.CameraTiltDegrees)) > 0)
+        assertTrue(cos(Math.toRadians(PerfectLapScene.CameraFovDegrees)) > 0)
     }
 
     /** A few frames as SVG under build/tmp for a look; not uploaded with the reports. */
@@ -130,7 +181,8 @@ class PerfectLapSceneRealTest {
             ScenePaint.Road to "#2b3136", ScenePaint.RoadEdge to "#cfd6db", ScenePaint.Braking to "#FF4B4B",
             ScenePaint.Coasting to "#9aa3ab", ScenePaint.Accelerating to "#22D37A", ScenePaint.NoPedal to "#9aa3ab",
             ScenePaint.Car to "#FCB203", ScenePaint.CarDark to "#3a2c00", ScenePaint.Ghost to "#ffffff",
-            ScenePaint.CarHalo to "#FCB203", ScenePaint.GhostHalo to "#ffffff",
+            ScenePaint.CarHalo to "#FCB203", ScenePaint.GhostHalo to "#ffffff", ScenePaint.LineEdge to "#000000",
+            ScenePaint.BrakeBar to "#FF4B4B", ScenePaint.GasBar to "#22D37A",
         )
         for (t in listOf(5.0, scene.durationSeconds * 0.5, scene.durationSeconds - 8)) {
             val f = sceneFrame(scene, ground, t, 1280, 720)
@@ -143,9 +195,13 @@ class PerfectLapSceneRealTest {
                 }
                 "<polygon points=\"$pts\" fill=\"${colors[s.paint]}\"$op/>"
             }
+            val words = f.labels.joinToString("") { l ->
+                val at = String.format(Locale.ROOT, "x=\"%.0f\" y=\"%.0f\" font-size=\"%.0f\"", l.x, l.y, l.size)
+                "<text $at fill=\"#fff\">${l.text}</text>"
+            }
             File(dir, String.format(Locale.ROOT, "frame-%05.1f.svg", t)).writeText(
                 "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 1280 720\">" +
-                    "<rect width=\"1280\" height=\"720\" fill=\"#17261b\"/>$body</svg>",
+                    "<rect width=\"1280\" height=\"720\" fill=\"#2f6b3a\"/>$body$words</svg>",
             )
         }
         assertTrue(abs(scene.gapAt(0.0)) < 0.05)

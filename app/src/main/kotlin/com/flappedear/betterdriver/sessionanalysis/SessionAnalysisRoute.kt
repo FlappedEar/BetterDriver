@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -51,6 +52,7 @@ import com.flappedear.betterdriver.feature.analysis.AnalysisScreen
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.CarUi
 import com.flappedear.betterdriver.feature.analysis.LineState
+import com.flappedear.betterdriver.feature.analysis.LocalPerfectLapGround
 import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
@@ -269,18 +271,23 @@ internal fun SessionAnalysisRoute(
     }
     val done = load as? Load.Done
     val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)
+    // MapTiler's photo under the perfect lap in 3D once a key is entered on the editor's map (UI-201 B).
+    val mapKey = tracks.tiles.mapTilerKey
+    val ground = remember(mapKey) { mapKey?.let { MapTilerGround(tracks.tiles, it) } }
     CornerLapsRoute(nav, id, source, corner) {
-        AnalysisScreen(
-            state = state,
-            onCompare = { compared = it },
-            onAction = { unavailableAction(load, nav, tracks, id) },
-            onCoachPick = { toggleCoachPick(load, coachPicks, it) },
-            layout = layout,
-            topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
-            optimalVideo = optimalVideoSlot(id, (load as? Load.Done)?.loaded?.analysis, (load as? Load.Done)?.lapVideo),
-            // Progression over every session at the track (FBBD-181).
-            onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
-        )
+        CompositionLocalProvider(LocalPerfectLapGround provides ground) {
+            AnalysisScreen(
+                state = state,
+                onCompare = { compared = it },
+                onAction = { unavailableAction(load, nav, tracks, id) },
+                onCoachPick = { toggleCoachPick(load, coachPicks, it) },
+                layout = layout,
+                topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
+                optimalVideo = optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo),
+                // Progression over every session at the track (FBBD-181).
+                onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
+            )
+        }
     }
 }
 
