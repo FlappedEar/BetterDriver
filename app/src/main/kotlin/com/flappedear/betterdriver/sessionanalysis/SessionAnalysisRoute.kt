@@ -23,6 +23,7 @@ import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
+import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
@@ -157,7 +158,7 @@ internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding
  * class of the space it has. [onBack] is its back button, none beside the session list. [corner]
  * (a CornerId) opens it on that corner's passes, as the progression does (FBBD-93).
  */
-@Suppress("LongMethod") // Loads, analyses and follows the coach picks: one flow, one place.
+@Suppress("LongMethod", "CyclomaticComplexMethod") // Loads, analyses and follows the coach picks: one flow, one place.
 @Composable
 internal fun SessionAnalysisRoute(
     nav: NavHostController,
@@ -175,6 +176,7 @@ internal fun SessionAnalysisRoute(
     var quality by remember(id) { mutableStateOf<QualityUi?>(null) }
     var line by remember(id) { mutableStateOf<LineState>(LineState.Reading) }
     var coaching by remember(id) { mutableStateOf(SessionCoaching()) }
+    var proof by remember(id) { mutableStateOf<LineProof?>(null) }
     // Made off the main thread when first used: making it reads the disk (FBBD-41).
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
@@ -252,12 +254,18 @@ internal fun SessionAnalysisRoute(
             ) { tracks.get(loaded.track.id) != null }
         }
     }
+    // What came of the last focus in seconds (FBBD-310), once this session's line plan is kept.
+    LaunchedEffect(line, coaching) {
+        val l = load as? Load.Done ?: return@LaunchedEffect
+        if (line !is LineState.Ready || coaching.attempts.isEmpty()) return@LaunchedEffect
+        proof = withContext(Dispatchers.IO) { lastFocusProof(linePlanStore(context), l.loaded.track.id, id, coaching) }
+    }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
     // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
-    LaunchedEffect(analysed, picks, quality, verbosity, coaching) {
+    LaunchedEffect(analysed, picks, quality, verbosity, coaching, proof) {
         val l = load as? Load.Done
         val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
-        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching)
+        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching, proof)
     }
     val done = load as? Load.Done
     val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)

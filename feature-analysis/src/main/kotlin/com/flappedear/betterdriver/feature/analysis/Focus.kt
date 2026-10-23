@@ -31,6 +31,9 @@ const val NextSessionTag = "next-session"
 /** Its primary focus, for tests. */
 const val PrimaryFocusTag = "next-session-primary"
 
+/** The link to Where to find time on the card, for tests. */
+const val WhereToFindTimeTag = "next-session-line"
+
 /** Said under the focus only where the spoken coach will work on it first ([AnalysisUi.coachFocusFirst]). */
 const val CoachFocusFirstText = "The spoken coach works on these first next session at this track."
 
@@ -41,10 +44,18 @@ const val CoachFocusFirstText = "The spoken coach works on these first next sess
  * phone. Where the spoken coach will work on them first next session, it says so. Each shows its confidence
  * below High (FBBD-177), and the corners left out for weak evidence are named on one line. Tapping a
  * focus compares its lap with the fastest; where the screen can show every pass through a corner
- * ([LocalCornerLaps]), a corner's "Every pass" opens its passes, traces and video (FBBD-93).
+ * ([LocalCornerLaps]), a corner's "Every pass" opens its passes, traces and video (FBBD-93). Once
+ * the line analysis is ready, a link at the bottom opens Where to find time in the Map tab
+ * ([onWhereToFindTime], UI-190 B): the card keeps its own answer, the link the line analysis's.
  */
 @Composable
-internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, layout: LayoutSize, modifier: Modifier) {
+internal fun Focus(
+    ui: AnalysisUi,
+    onCompare: (Int) -> Unit,
+    layout: LayoutSize,
+    modifier: Modifier,
+    onWhereToFindTime: () -> Unit = {},
+) {
     val primary = ui.focus.firstOrNull { it.primary } ?: ui.focus.firstOrNull()
     val secondary = ui.focus.filter { it !== primary }
     Card(modifier.testTag(NextSessionTag)) {
@@ -71,7 +82,27 @@ internal fun Focus(ui: AnalysisUi, onCompare: (Int) -> Unit, layout: LayoutSize,
             Dim("Left out, too little evidence: ${ui.withheld.joinToString { it.name }}")
         }
         if (primary != null && ui.coachFocusFirst) Dim(CoachFocusFirstText)
+        (ui.line as? LineState.Ready)?.let { WhereToFindTimeLink(it.ui.totalGainSeconds, onWhereToFindTime) }
     }
+}
+
+/** "Where to find time ≈ 0.41 s ›": the line analysis's total, one tap from the Map tab view (UI-190 B). */
+@Composable
+private fun WhereToFindTimeLink(totalSeconds: Double, onClick: () -> Unit) {
+    val text = if (totalSeconds > 0.0) {
+        "Where to find time ≈ ${focusSeconds(totalSeconds)} ›"
+    } else {
+        "Where to find time ›"
+    }
+    Text(
+        text,
+        Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .testTag(WhereToFindTimeTag)
+            .padding(vertical = 4.dp),
+        color = MaterialTheme.colorScheme.primary,
+    )
 }
 
 private const val PrimaryWeight = 1.4f

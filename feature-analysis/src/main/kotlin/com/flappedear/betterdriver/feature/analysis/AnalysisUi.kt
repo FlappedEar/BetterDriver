@@ -236,6 +236,11 @@ data class AnalysisUi(
      * earlier gains held in it; empty when the history has nothing for it.
      */
     val coaching: List<CoachingRow> = emptyList(),
+    /**
+     * Time won back over the last focus's corners measured through the line plans (FBBD-310, UI-191
+     * A): their fastest passes against the session before; null when none could be measured.
+     */
+    val lastFocusWonBackSeconds: Double? = null,
     /** The session's acceleration runs; null when it has none. */
     val acceleration: AccelerationUi? = null,
     /** The session's data quality (FBBD-183); null while it is worked out, or when it cannot be. */
