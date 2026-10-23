@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -39,6 +40,14 @@ object PolishPhrases : PhraseBook {
                 else -> "gaz ${-after} przed apeksem"
             }
         }
+        // Round 54 (FBBD-321): UI-270 B "Szóstka, uciekł przód, wolniej na wejściu", UI-271 B, UI-272 A.
+        is Advice.Steer -> when (val w = a.what) {
+            SteerAdvice.Less -> "uciekł przód, wolniej na wejściu"
+            SteerAdvice.More -> "szeroko, mocniej skręć"
+            SteerAdvice.Smoother -> "jeden płynny ruch"
+            SteerAdvice.Oversteer -> "uciekł tył, łagodniej z gazem"
+            is SteerAdvice.OpenEarlier -> if (a.precise) "prostuj ${w.meters} wcześniej" else "prostuj wcześniej"
+        }
     }
 
     override fun shortCorner(cue: Cue): String? {
@@ -66,7 +75,16 @@ object PolishPhrases : PhraseBook {
             a.afterApex > 0 -> "Gaz ${a.afterApex} m za apeksem"
             else -> "Gaz ${-a.afterApex} m przed apeksem"
         }
+        a is Advice.Steer -> steerLine(a.what)
         else -> null
+    }
+
+    private fun steerLine(w: SteerAdvice): String = when (w) {
+        SteerAdvice.Less -> "Uciekł przód · wolniej na wejściu"
+        SteerAdvice.More -> "Szeroko · mocniej skręć"
+        SteerAdvice.Smoother -> "Jeden płynny ruch"
+        SteerAdvice.Oversteer -> "Uciekł tył · łagodniej z gazem"
+        is SteerAdvice.OpenEarlier -> "Prostuj ${w.meters} m wcześniej"
     }
 
     override fun result(moved: List<Moved>, done: Boolean, gainSeconds: Double?): String {
@@ -86,6 +104,7 @@ object PolishPhrases : PhraseBook {
         is Advice.BrakeLater, is Advice.BrakeEarlier ->
             "Hamowanie ${abs(by).roundToInt()} m " + if (by >= 0) "później" else "wcześniej"
         is Advice.CarrySpeed -> "Apeks ${abs(by).roundToInt()} km/h " + if (by >= 0) "szybciej" else "wolniej"
+        is Advice.Steer -> "Prostowanie ${abs(by).roundToInt()} m " + if (by >= 0) "wcześniej" else "później"
     }
 
     /** "Dzisiaj, Dziewiątka, Jedynka, Czwórka" (UI-174 A). */

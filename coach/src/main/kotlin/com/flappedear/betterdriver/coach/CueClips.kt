@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import java.util.concurrent.ConcurrentHashMap
 
 /** One piece of a phrase said from a pre-rendered clip (FBBD-48): words or a number, and the pause after it. */
@@ -102,6 +103,11 @@ object CueClips {
             book.corner(corner, Advice.Throttle(SampleNumber, afterApex = -SampleNumber)),
             book.corner(corner, Advice.Throttle(SampleNumber, afterApex = 0)),
             book.corner(corner, Advice.Throttle(SampleNumber, precise = false), Advice.Throttle(-SampleNumber, false)),
+            // The hands on the FR-S (FBBD-321, round 54).
+            book.corner(corner, Advice.Steer(SteerAdvice.Less), Advice.Steer(SteerAdvice.More)),
+            book.corner(corner, Advice.Steer(SteerAdvice.Smoother), Advice.Steer(SteerAdvice.Oversteer)),
+            book.corner(corner, Advice.Steer(SteerAdvice.OpenEarlier(SampleNumber)), Advice.Throttle(SampleNumber)),
+            book.corner(corner, Advice.Steer(SteerAdvice.OpenEarlier(SampleNumber), precise = false)),
             // The out-lap plan (UI-174 A), of one corner and of several.
             book.plan(listOf(1)),
             book.plan((1..SamplePlanCorners).toList()),

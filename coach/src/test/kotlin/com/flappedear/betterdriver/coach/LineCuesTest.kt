@@ -93,6 +93,7 @@ class LineCuesTest {
             is Advice.CarrySpeed -> "carry"
             is Advice.Line -> "line"
             is Advice.Throttle -> "throttle"
+            is Advice.Steer -> "steer"
         }
     }
 

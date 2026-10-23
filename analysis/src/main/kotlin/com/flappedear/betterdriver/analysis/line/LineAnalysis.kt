@@ -143,12 +143,12 @@ data class CornerAdvice(
     val pickupMeters: Double? = null,
     /**
      * What to do with the wheel (FBBD-321), in driving order; empty without steering on both passes.
-     * Not in [any] yet: nothing shows or says it until its words are picked (UI review round 54).
      */
     val steering: List<SteerAdvice> = emptyList(),
 ) {
     val any: Boolean
-        get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null }
+        get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null } ||
+            steering.isNotEmpty()
 }
 
 /**

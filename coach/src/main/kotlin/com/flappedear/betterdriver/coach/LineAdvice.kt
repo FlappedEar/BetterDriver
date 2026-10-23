@@ -1,5 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.steeringAdvice
 import kotlin.math.abs
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -84,28 +86,59 @@ fun improvedPickup(earlierMeters: Int, before: CornerPass, after: CornerPass): B
     return b != null && a != null && (b - a) * sign(earlierMeters.toDouble()) >= abs(earlierMeters) / 2.0
 }
 
+/**
+ * What to do with the hands at [corner] (FBBD-321): [steeringAdvice] of [pass]'s wheel against
+ * [target]'s, only for a pass that lost at least [MinLossMicros], and only with the wheel on both.
+ */
+fun steerChange(pass: CornerPass, target: CornerPass, corner: Corner): List<SteerAdvice> {
+    val p = pass.steering
+    val t = target.steering
+    if (p == null || t == null || pass.timeMicros - target.timeMicros < MinLossMicros) return emptyList()
+    return steeringAdvice(p, t, tighterBy(pass, target, corner.turn))
+}
+
 /** At most this many things to change are said in one corner cue (UI-170 B). */
 const val MaxAdvicePerCue = 2
 
 /**
- * What to ask for at [corner] (FBBD-307, UI-170 B): the brake or apex speed advice ([advise]), where
- * to be at the apex ([lineChange]) and where to go back on throttle ([pickupChange]), at most
- * [MaxAdvicePerCue], in the order they are driven. With all three, the line stays (the apex is
- * where both halves of the corner meet) and the other kept is the one for the half of the corner
- * that lost more time against [target]: before the apex the brake or speed advice, after it the
- * throttle. Without the time to the apex on both passes, the first two in driving order.
+ * What to ask for at [corner] (FBBD-307, UI-170 B), in the order it is driven: the entry (the brake
+ * or apex speed advice, [advise]), the apex ([lineChange]) and the exit ([pickupChange]), at most
+ * [MaxAdvicePerCue]. With the FR-S's wheel (FBBD-321, round 54) the hands come in: a front that slid
+ * takes the entry's place ("front slid, slower in": braking later or carrying more would slide it
+ * more) and leaves the line be; running wide with less wheel takes the line's ("ran wide, turn in
+ * more"); a corner in pieces is said at the apex when nothing else is; straightening earlier goes
+ * with the throttle as one exit cue (UI-271 B); the rear stepping out takes the whole exit ("gentler
+ * throttle" against "throttle earlier"). With more than two, the half of the corner that lost more
+ * time against [target] is kept: before the apex the entry and the apex, after it the exit, or the
+ * apex and the first of the exit. Without the time to the apex on both passes, the first two.
  */
+@Suppress("CyclomaticComplexMethod") // Each kind of advice with its place in the corner.
 fun cornerAdvice(pass: CornerPass, target: CornerPass, corner: Corner): List<Advice> {
-    val main = advise(pass, target, corner)
-    val line = lineChange(pass, target, corner)?.let { Advice.Line(it, turn = corner.turn) }
-    val throttle = pickupChange(pass, target)?.let { Advice.Throttle(it, afterApex = pickupAfterApex(target)) }
-    val all = listOfNotNull(main, line, throttle)
+    val steer = steerChange(pass, target, corner)
+    val slid = SteerAdvice.Less in steer
+    val smoother = Advice.Steer(SteerAdvice.Smoother).takeIf { SteerAdvice.Smoother in steer }
+    val entry = if (slid) Advice.Steer(SteerAdvice.Less) else advise(pass, target, corner)
+    val apex = when {
+        slid -> smoother
+        SteerAdvice.More in steer -> Advice.Steer(SteerAdvice.More)
+        else -> lineChange(pass, target, corner)?.let { Advice.Line(it, turn = corner.turn) } ?: smoother
+    }
+    val exit = if (SteerAdvice.Oversteer in steer) {
+        listOf(Advice.Steer(SteerAdvice.Oversteer))
+    } else {
+        listOfNotNull(
+            steer.firstOrNull { it is SteerAdvice.OpenEarlier }?.let { Advice.Steer(it) },
+            pickupChange(pass, target)?.let { Advice.Throttle(it, afterApex = pickupAfterApex(target)) },
+        )
+    }
+    val all = listOfNotNull(entry, apex) + exit
     val a = pass.apexMicros
     val b = target.apexMicros
     return when {
         all.size <= MaxAdvicePerCue -> all
         a == null || b == null -> all.take(MaxAdvicePerCue)
-        a - b >= (pass.timeMicros - a) - (target.timeMicros - b) -> listOfNotNull(main, line)
-        else -> listOfNotNull(line, throttle)
+        a - b >= (pass.timeMicros - a) - (target.timeMicros - b) -> all.take(MaxAdvicePerCue)
+        exit.size == MaxAdvicePerCue -> exit
+        else -> listOfNotNull(apex, exit.firstOrNull()).take(MaxAdvicePerCue)
     }
 }

@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.coach
 import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapEvent
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.steering.improvedSteering
 import com.flappedear.betterdriver.timing.track.Track
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -937,6 +938,9 @@ fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean =
         is Advice.CarrySpeed -> after.minKmh - before.minKmh >= advice.kmh / 2.0
         is Advice.Line -> improvedLine(advice.tighterMeters, before, after, advice.turn)
         is Advice.Throttle -> improvedPickup(advice.earlierMeters, before, after)
+        is Advice.Steer -> before.steering?.let { b ->
+            after.steering?.let { improvedSteering(advice.what, b, it) }
+        } ?: false
         null -> after.timeMicros < before.timeMicros
     }
 

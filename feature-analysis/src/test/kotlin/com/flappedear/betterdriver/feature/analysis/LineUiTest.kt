@@ -6,6 +6,8 @@ import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanMark
 import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.SteeringPass
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -45,6 +47,60 @@ class LineUiTest {
             listOf("The same as your best lap within GPS accuracy: no advice."),
             cornerTodo(corner(0.08, PlanAdvice())),
         )
+    }
+
+    @Test
+    fun `the wheel says why first, with its numbers, and draws yours against the target`() {
+        // FBBD-321, round 54: UI-270 B, UI-271 B, UI-272 A, UI-273 B.
+        fun wheel(peak: Double, push: Double, corrections: Int = 0) =
+            SteeringPass(peak, 150.0, 130.0, 160.0, corrections, false, push)
+        fun steered(base: PlanPass, deg: (Int) -> Double, s: SteeringPass) =
+            base.copy(line = base.line.mapIndexed { i, p -> p.copy(steerDeg = deg(i)) }, steering = s)
+        val advice = PlanAdvice(
+            steering = listOf(
+                SteerAdvice.Less,
+                SteerAdvice.Smoother,
+                SteerAdvice.OpenEarlier(10),
+                SteerAdvice.Oversteer,
+            ),
+            pickupMeters = -5.0,
+        )
+        val base = corner(0.21, advice)
+        val c = base.copy(
+            reference = steered(base.reference, { 12.0 * it }, wheel(120.0, 70.0, corrections = 2)),
+            target = steered(base.target, { 9.0 * it }, wheel(90.0, 40.0)),
+        )
+        assertEquals(
+            listOf(
+                "Brake at the same place",
+                "Front slid: 30° more lock than your target, slower in",
+                "One smooth turn: you added lock 2 more times than your target",
+                "Straighten 10 m earlier",
+                "Back on the throttle 5 m earlier",
+                "The rear stepped out: gentler on the throttle",
+            ),
+            cornerTodo(c),
+        )
+        assertEquals(
+            listOf("Ran wide: 20° less lock than your target, turn in more"),
+            adviceTodo(PlanAdvice(steering = listOf(SteerAdvice.More)), wheel(70.0, 30.0), wheel(90.0, 30.0)),
+        )
+        val plan = LinePlan(
+            trackId = "t", sessionId = "s1", sessionStartUtcMillis = 1L, referenceLapNumber = 2,
+            referenceLapSeconds = 109.91, laps = 25, sessions = 6, corners = listOf(c, base),
+        )
+        val ui = lineUi(plan, "s1")!!
+        val trace = ui.corners[0].wheel!!
+        assertEquals(11, trace.reference.size)
+        assertEquals(120.0, trace.reference.last().deg, 1e-9)
+        assertEquals(90.0, trace.target.last().deg, 1e-9)
+        // About 11 m driven north over the 10 steps of 1e-5°.
+        assertEquals(11.1, trace.reference.last().meters, 0.2)
+        assertEquals(120.0, trace.maxDeg, 1e-9)
+        // A right-hander's wheel is drawn into the turn too; without the wheel there is no trace.
+        val right = lineUi(plan.copy(corners = listOf(c.copy(turnsLeft = false))), "s1")!!.corners[0].wheel!!
+        assertEquals(-120.0, right.reference.last().deg, 1e-9)
+        assertNull(ui.corners[1].wheel)
     }
 
     @Test
