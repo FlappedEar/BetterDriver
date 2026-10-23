@@ -7,7 +7,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -34,6 +33,7 @@ import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.shell.ShellTopBar
+import com.flappedear.betterdriver.shell.rememberAcrossTurns
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
@@ -64,8 +64,12 @@ internal fun NavGraphBuilder.trackDayDestination(nav: NavHostController, padding
 @Composable
 internal fun TrackDayRoute(ids: List<String>, onBack: () -> Unit) {
     val context = LocalContext.current
-    var state by remember(ids) { mutableStateOf<TrackDayState>(TrackDayState.Reading) }
+    // Kept while the tablet turns, so the day is not read again (FBBD-323).
+    var state by rememberAcrossTurns("track-day:" + ids.joinToString(",")) {
+        mutableStateOf<TrackDayState>(TrackDayState.Reading)
+    }
     LaunchedEffect(ids) {
+        if (state !is TrackDayState.Reading) return@LaunchedEffect
         // Taken before any session is read, so a day read before a restore is not kept (FBBD-156).
         val epoch = AppDataGate.epoch
         state = withContext(Dispatchers.Default) {

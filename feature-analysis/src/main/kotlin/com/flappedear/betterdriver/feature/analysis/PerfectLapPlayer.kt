@@ -33,6 +33,7 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -107,9 +108,12 @@ internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose:
         val painter = remember(scene, palette, ground) {
             PerfectLapPainter(scene, palette, ground?.let { g -> g::tile }, ground?.attribution)
         }
-        var seconds by remember(scene) { mutableDoubleStateOf(scene.corners[startCorner].startSeconds) }
-        var playing by remember { mutableStateOf(true) }
-        var speed by remember { mutableDoubleStateOf(1.0) }
+        // Where it is, playing or not and how fast stay as they were when the tablet turns (FBBD-323).
+        var seconds by rememberSaveable(scene) {
+            mutableDoubleStateOf(scene.corners[startCorner].startSeconds)
+        }
+        var playing by rememberSaveable { mutableStateOf(true) }
+        var speed by rememberSaveable { mutableDoubleStateOf(1.0) }
         LaunchedEffect(playing, speed) {
             if (!playing) return@LaunchedEffect
             var last = withFrameNanos { it }

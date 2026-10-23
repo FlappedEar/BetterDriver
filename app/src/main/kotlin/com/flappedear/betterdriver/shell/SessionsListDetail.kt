@@ -28,7 +28,7 @@ import com.flappedear.betterdriver.core.ui.layout.WidthClass
  * keeps showing it on its own.
  *
  * The list and each session's analysis keep their state (scroll, tab, compared lap) when the tablet
- * turns, as the panes rearrange.
+ * turns, as the panes rearrange (FBBD-323).
  *
  * [detail] gets the session, the size class of its pane, and its back action: none beside the list,
  * where the list stays in view.
@@ -43,22 +43,27 @@ internal fun SessionsListDetail(
 ) {
     val states = rememberSaveableStateHolder()
     BackHandler(enabled = shown != null, onBack = onClose)
-    when (sessionsPanes(layout, shown)) {
-        SessionsPanes.List -> states.SaveableStateProvider(ListKey) { list(Modifier) }
-        SessionsPanes.Detail -> shown?.let { id ->
-            states.SaveableStateProvider(detailKey(id)) { detail(id, layout, onClose) }
-        }
-        SessionsPanes.ListAndDetail -> BoxWithConstraints(Modifier.fillMaxSize()) {
-            val listWidth = sessionListWidthDp(maxWidth.value)
-            val pane = layout.pane(maxWidth.value - listWidth)
-            Row(Modifier.fillMaxSize()) {
-                states.SaveableStateProvider(ListKey) { list(Modifier.width(listWidth.dp)) }
-                VerticalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+    val panes = sessionsPanes(layout, shown)
+    // Every arrangement composes each pane at the same place: saved state is found by its place, so
+    // a pane moved elsewhere when the tablet turns would start over (FBBD-323).
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+        val sideBySide = panes == SessionsPanes.ListAndDetail
+        val listWidth = sessionListWidthDp(maxWidth.value)
+        Row(Modifier.fillMaxSize()) {
+            if (panes != SessionsPanes.Detail) {
+                val width = if (sideBySide) Modifier.width(listWidth.dp) else Modifier.weight(1f)
+                states.SaveableStateProvider(ListKey) { list(width) }
+            }
+            if (sideBySide) VerticalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
+            if (panes != SessionsPanes.List) {
                 Box(Modifier.weight(1f).fillMaxHeight()) {
                     if (shown == null) {
                         PickSession()
                     } else {
-                        states.SaveableStateProvider(detailKey(shown)) { detail(shown, pane, null) }
+                        val pane = if (sideBySide) layout.pane(maxWidth.value - listWidth) else layout
+                        states.SaveableStateProvider(detailKey(shown)) {
+                            detail(shown, pane, onClose.takeUnless { sideBySide })
+                        }
                     }
                 }
             }
