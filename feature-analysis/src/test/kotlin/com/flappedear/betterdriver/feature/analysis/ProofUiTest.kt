@@ -1,8 +1,15 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import com.flappedear.betterdriver.analysis.coaching.FocusAsk
+import com.flappedear.betterdriver.analysis.coaching.FocusAttempt
+import com.flappedear.betterdriver.analysis.coaching.FocusVerdict
+import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
+import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.line.CornerProof
+import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.line.ProofVerdict
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 /** What came of the last focus in words (FBBD-310, UI-191 A). */
@@ -35,5 +42,23 @@ class ProofUiTest {
             proofText(proof(8.40, 8.55, ProofVerdict.Slower, 2)),
         )
         assertEquals("No pass through it this session", proofText(proof(8.40, null, ProofVerdict.NotDriven, 0)))
+    }
+
+    @Test
+    fun `the time won back is over the corners compared, and there is none when none was driven`() {
+        fun record(id: String) =
+            SessionCoachingRecord(trackId = "t", sessionId = id, sessionStartUtcMillis = 0L, identityRevision = 3)
+        fun attempt(corner: String) = FocusAttempt(
+            FocusAsk(corner, "T$corner", "primary", "HIGH"), record("a"), record("b"), FocusVerdict.NotDriven,
+        )
+        val coaching = SessionCoaching(listOf(attempt("c1"), attempt("c2")))
+        fun corner(id: String, after: Double?, verdict: ProofVerdict) = CornerProof(id, id, 9.0, after, 8.8, verdict, 0)
+        val notDriven = LineProof("a", listOf(corner("c1", null, ProofVerdict.NotDriven)))
+        assertNull(lastFocusWonBack(coaching, notDriven))
+        val driven = LineProof(
+            "a",
+            listOf(corner("c1", 8.9, ProofVerdict.Faster), corner("c2", 9.03, ProofVerdict.Same)),
+        )
+        assertEquals(0.07, lastFocusWonBack(coaching, driven)!!, 1e-9)
     }
 }

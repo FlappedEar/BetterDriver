@@ -120,11 +120,11 @@ fun coachingRows(coaching: SessionCoaching, zone: ZoneId, proof: LineProof? = nu
 
 /**
  * The time won back over the focus corners [proof] measured that [coaching] worked on (UI-191 A),
- * slower ones counting against it; null when it measured none of them.
+ * slower ones counting against it; null when it compared none of them (none driven, say).
  */
 fun lastFocusWonBack(coaching: SessionCoaching, proof: LineProof?): Double? {
-    val measured = coaching.attempts.mapNotNull { measuredCorner(proof, it.ask.cornerId) }
-    return if (measured.isEmpty()) null else measured.mapNotNull { it.wonBackSeconds }.sum()
+    val deltas = coaching.attempts.mapNotNull { measuredCorner(proof, it.ask.cornerId)?.wonBackSeconds }
+    return if (deltas.isEmpty()) null else deltas.sum()
 }
 
 private fun measuredCorner(proof: LineProof?, cornerId: String): CornerProof? =
