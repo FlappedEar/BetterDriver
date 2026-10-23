@@ -5,9 +5,12 @@ object Dtc {
     /**
      * The codes in one ECU's answer (`43 02 01 33 00 00`): two bytes a code, the first two bits the
      * system (P, C, B, U). On CAN the byte after the mode is the number of codes, which an odd
-     * count of bytes gives away. `00 00` pairs are padding.
+     * count of bytes gives away. `00 00` pairs are padding. Only a positive answer (43, 47, 4A)
+     * has codes.
      */
     fun codes(message: ByteArray): List<String> {
+        // A refusal (7F 07 11) or any other answer has no codes.
+        if (message.firstOrNull()?.toInt() !in POSITIVE) return emptyList()
         val data = message.drop(1)
         val pairs = if (data.size % 2 == 1) data.drop(1) else data
         return pairs.chunked(2).filter { it.size == 2 && (it[0].toInt() != 0 || it[1].toInt() != 0) }.map { (a, b) ->
@@ -18,6 +21,7 @@ object Dtc {
         }
     }
 
+    private val POSITIVE = setOf(0x43, 0x47, 0x4A)
     private const val BYTE_MASK = 0xFF
     private const val SYSTEM_SHIFT = 6
     private const val DIGIT_SHIFT = 4

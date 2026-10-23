@@ -113,7 +113,8 @@ class FrsReader(
     /** The adapter's identity and the car's VIN, model year and serial cut off. */
     private fun identity() {
         IDENTITY.forEach { cmd(it) }
-        val vin = (parse(cmd("0902", REQUEST_MS)) as? ElmResponse.Messages)?.messages
+        // Not through cmd(): its raw answer would put the whole VIN in the shared log.
+        val vin = (parse(line.command("0902", REQUEST_MS)) as? ElmResponse.Messages)?.messages
             ?.firstNotNullOfOrNull { Vin.of(it.bytes) }
         if (vin == null) {
             log.info("VIN: no answer")
@@ -169,6 +170,8 @@ class FrsReader(
      */
     private fun readRepeated(kind: String, to: Int?, command: String, channel: PidChannel?) {
         setHeader(to)
+        // Only answers to this mode count: a refusal (7F 21 12) is not a read.
+        val positive = command.take(2).toInt(HEX) + POSITIVE_OFFSET
         var ok = 0
         var latencyMax = 0L
         var latencySum = 0L
@@ -182,6 +185,7 @@ class FrsReader(
             latencySum += latency
             latencyMax = maxOf(latencyMax, latency)
             val messages = (text?.let { parse(it) } as? ElmResponse.Messages)?.messages.orEmpty()
+                .filter { m -> m.bytes.firstOrNull()?.toInt() == positive }
             if (messages.isNotEmpty()) {
                 ok++
                 last = messages
@@ -276,6 +280,8 @@ class FrsReader(
         private const val VIN_KEPT = 11
         private const val LAST_LOCAL_ID = 0xFF
         private const val POSITIVE_21 = 0x61
+        private const val POSITIVE_OFFSET = 0x40
+        private const val HEX = 16
     }
 }
 

@@ -52,6 +52,8 @@ class FrsReaderTest {
             "7DF:0105" -> "7E803410587"
             "7DF:0902" -> "7E8101449020" + "14A4631\r7E8215A4E41413139" + "44\r7E82230303030303030"
             "7DF:03" -> "7E80443010133"
+            "7DF:07" -> "7E8037F0711"
+            "7E1:2182" -> "7E9037F2112"
             "7B0:2141" -> "7B803614128"
             "7E0:2105" -> "7E8056105AABBCC"
             "7B0:2105" -> "7B803 7F2112".replace(" ", "")
@@ -109,6 +111,10 @@ class FrsReaderTest {
         assertTrue(log, Regex("""frame \d+ 0D1 000012""").containsMatchIn(log))
         assertTrue(log, log.contains("sweep 7E0 2105 -> 7E8: 61 05 AA BB CC"))
         assertTrue(log, log.contains("summary sweep 7B0: 1 answered, 1 refused"))
+        assertTrue(log, log.contains("dtc mode 07: none"))
+        assertTrue(log, Regex("diag 7E1 2182 ok=0/3 ").containsMatchIn(log))
+        // The VIN's serial is in no line, raw answers included.
+        assertFalse(log, log.contains("30 30 30 30 30 30") || log.contains("7E82230303030303030"))
     }
 
     @Test
