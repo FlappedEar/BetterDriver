@@ -3,10 +3,12 @@ package com.flappedear.betterdriver.feature.analysis
 import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.projectCoordinate
 import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.PerfectLapScene
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
+import com.flappedear.betterdriver.analysis.line.perfectLapScene
 import com.flappedear.betterdriver.analysis.optimal.PedalState
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import kotlin.math.abs
@@ -48,6 +50,8 @@ data class LineUi(
     val sessions: Int,
     /** In track order. */
     val corners: List<LineCornerUi>,
+    /** The perfect lap to drive in 3D (FBBD-308); null when a corner has no line or road to draw. */
+    val scene: PerfectLapScene? = null,
 ) {
     /** Most time first; corners with nothing to find last, in track order. */
     val ranked: List<LineCornerUi> get() = corners.sortedByDescending { it.gainSeconds }
@@ -89,6 +93,7 @@ fun lineUi(plan: LinePlan, sessionId: String): LineUi? {
                     ?: reference.getOrNull(reference.size / 2),
             )
         },
+        scene = perfectLapScene(plan),
     )
 }
 

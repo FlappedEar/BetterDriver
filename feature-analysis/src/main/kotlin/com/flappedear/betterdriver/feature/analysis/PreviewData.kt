@@ -6,7 +6,14 @@ import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.data.SamplePoint
 import com.flappedear.betterdriver.analysis.driving.DrivingState
 import com.flappedear.betterdriver.analysis.driving.DrivingStateRun
+import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
+import com.flappedear.betterdriver.analysis.geo.unprojectCoordinate
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.PlanAdvice
+import com.flappedear.betterdriver.analysis.line.PlanCorner
+import com.flappedear.betterdriver.analysis.line.PlanPass
+import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.analysis.map.GgPoint
 import com.flappedear.betterdriver.analysis.map.GgSource
 import com.flappedear.betterdriver.analysis.map.GgTrace
@@ -337,3 +344,46 @@ internal val PreviewLine = LineUi(
         previewLineCorner(3, "T5", 0.0, listOf("Your best lap is as quick as your target here.")),
     ),
 )
+
+/**
+ * A made-up line plan for the perfect lap in 3D (FBBD-308): four corners round an oval at
+ * 0° N 0° E (no real place), the target a little inside the best lap and quicker through each.
+ */
+internal fun previewPerfectLapPlan(): LinePlan {
+    val origin = GeoCoordinate(0.0, 0.0)
+    val steps = 60
+    fun at(a: Double, scale: Double): PlanPoint {
+        val g = unprojectCoordinate(PreviewOvalEast * scale * cos(a), PreviewOvalNorth * scale * sin(a), origin)
+        return PlanPoint(0.0, g.latitudeDegrees, g.longitudeDegrees)
+    }
+    fun pedal(i: Int) = when {
+        i < steps / 4 -> PedalState.Braking
+        i < steps / 2 -> PedalState.Coasting
+        else -> PedalState.Accelerating
+    }
+    val quarter = PreviewOvalLength / 4
+    val corners = (0 until 4).map { k ->
+        fun line(scale: Double, kmh: Double) = (0..steps).map { i ->
+            val a = PI / 2 * (k + i.toDouble() / steps)
+            val progress = quarter * k + quarter * i / steps
+            at(a, scale).copy(progressMeters = progress, speedKmh = kmh + 20 * sin(PI * i / steps), pedal = pedal(i))
+        }
+        val gain = listOf(0.11, 0.0, 0.31, 0.0)[k]
+        fun pass(scale: Double, kmh: Double, seconds: Double) =
+            PlanPass("s1", "", 2, 112.41, seconds, line = line(scale, kmh))
+        PlanCorner(
+            cornerId = null, name = "Corner ${k + 1}", turnsLeft = true,
+            startMeters = quarter * k, endMeters = quarter * (k + 1), gainSeconds = gain,
+            reference = pass(1.0, 80.0, 112.41 / 4), target = pass(0.985, 82.0, 112.41 / 4 - gain),
+            advice = PlanAdvice(), roadLeft = line(0.96, 0.0), roadRight = line(1.03, 0.0),
+        )
+    }
+    return LinePlan(
+        trackId = "preview", sessionId = "s1", sessionStartUtcMillis = 0L, referenceLapNumber = 2,
+        referenceLapSeconds = 112.41, laps = 14, sessions = 3, corners = corners,
+    )
+}
+
+private const val PreviewOvalEast = 320.0
+private const val PreviewOvalNorth = 180.0
+private const val PreviewOvalLength = 1600.0

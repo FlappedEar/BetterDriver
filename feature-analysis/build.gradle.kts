@@ -43,6 +43,8 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     // Every lap's pass through a corner on video (FBBD-153).
     implementation(libs.androidx.media3.exoplayer)
+    // The perfect lap's video is drawn and encoded off the main thread (FBBD-308).
+    implementation(libs.kotlinx.coroutines.android)
     debugImplementation(libs.compose.ui.tooling)
     testImplementation(libs.junit)
     testImplementation(platform(libs.compose.bom))

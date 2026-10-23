@@ -66,4 +66,22 @@ class LineUiTest {
         assertEquals(0.0, ui.corners[0].reference.first().eastMeters, 1e-6)
         assertEquals(11.1, ui.corners[0].reference.last().northMeters, 0.05)
     }
+
+    @Test
+    fun `the perfect lap in 3D comes with the view, and says where the ghost is`() {
+        // Without the road the laps used there is nothing to drive on.
+        assertNull(lineUi(LinePlan(
+            trackId = "t", sessionId = "s1", sessionStartUtcMillis = 1L, referenceLapNumber = 2,
+            referenceLapSeconds = 109.91, laps = 25, sessions = 6, corners = listOf(corner(0.11, PlanAdvice())),
+        ), "s1")!!.scene)
+        val plan = previewPerfectLapPlan()
+        val scene = lineUi(plan, "s1")!!.scene!!
+        assertEquals(112.41 - 0.42, scene.perfectSeconds, 1e-9)
+        assertEquals(0.42, scene.gapAt(scene.durationSeconds), 0.01)
+        val hud = sceneHud(scene, scene.corners[2].startSeconds + 1.0)
+        assertEquals("T3", hud.corner)
+        assertEquals("Target from this session, lap 2", hud.from)
+        assertEquals("Your best lap +0.42 s", ghostText(0.4199))
+        assertEquals("Your best lap −0.05 s", ghostText(-0.05))
+    }
 }

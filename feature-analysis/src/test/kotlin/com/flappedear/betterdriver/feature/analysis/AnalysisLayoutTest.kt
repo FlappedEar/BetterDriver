@@ -19,6 +19,7 @@ import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import com.flappedear.betterdriver.analysis.line.perfectLapScene
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
@@ -268,6 +269,22 @@ abstract class AnalysisLayoutTest(private val device: String) {
         check(problems.isEmpty()) { "where to find time on $device:\n" + problems.joinToString("\n") }
     }
 
+    /** The perfect lap in 3D (FBBD-308) opens full screen from the header of Where to find time (UI-184 A). */
+    @Test
+    fun perfectLapOpensFromWhereToFindTime() {
+        compose.setContent { AppScreen { Analysis(perfectLap = true) } }
+        tab(AnalysisTab.Map).performClick()
+        compose.onNodeWithTag(MapViewTagPrefix + MapView.Line.name).performClick()
+        compose.waitForIdle()
+        check(compose.layoutProblems().isEmpty()) { "header on $device: ${compose.layoutProblems()}" }
+        // The player animates every frame, so the clock moves by hand from here.
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag(PerfectLapButtonTag).performClick()
+        compose.mainClock.advanceTimeBy(500)
+        compose.onNodeWithTag(PerfectLapPlayerTag).assertExists()
+        compose.onNode(hasText("Save video")).assertExists()
+    }
+
     /**
      * Round 45: the next-session card keeps its answer and links to Where to find time (UI-190 B),
      * one tap opening it in the Map tab; the last focus says the time won back on top (UI-191 A).
@@ -301,10 +318,11 @@ abstract class AnalysisLayoutTest(private val device: String) {
 }
 
 @Composable
-private fun Analysis(coachFocusFirst: Boolean = false) {
+private fun Analysis(coachFocusFirst: Boolean = false, perfectLap: Boolean = false) {
+    val line = if (perfectLap) PreviewLine.copy(scene = perfectLapScene(previewPerfectLapPlan())) else PreviewLine
     AnalysisScreen(
         AnalysisState.Ready(
-            PreviewUi.copy(map = PreviewMap, coachFocusFirst = coachFocusFirst, line = LineState.Ready(PreviewLine)),
+            PreviewUi.copy(map = PreviewMap, coachFocusFirst = coachFocusFirst, line = LineState.Ready(line)),
         ),
         onCompare = {},
         layout = deviceLayout(),

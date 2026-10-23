@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Session bundles and track files prepared for sending (FBBD-23, FBBD-80), and debug log zips
-     (FBBD-146). Only these cache folders are shared. -->
+     (FBBD-146), and the perfect lap's video on Android 8 and 9 (FBBD-308). Only these folders are shared. -->
 <paths>
     <cache-path name="outgoing" path="outgoing/" />
     <cache-path name="logs" path="logs-out/" />
+    <external-files-path name="perfect-lap" path="Movies/BetterDriver/" />
 </paths>

@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -60,9 +61,13 @@ internal fun MapTab(
     view: MapView = MapView.Laps,
     onView: (MapView) -> Unit = {},
 ) {
+    val ready = line as? LineState.Ready
+    var corner by rememberSaveable(ready?.ui?.bestLapNumber) { mutableStateOf<String?>(null) }
+    var driving by rememberSaveable { mutableStateOf(false) }
+    val scene = ready?.ui?.scene
     Column(modifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Where to find time sits next to the laps map (UI-167 B).
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             for (option in MapView.entries) {
                 FilterChip(
                     selected = view == option,
@@ -71,15 +76,27 @@ internal fun MapTab(
                     modifier = Modifier.testTag(MapViewTagPrefix + option.name),
                 )
             }
+            // The perfect lap in 3D starts from the view's header (UI-184 A).
+            if (view == MapView.Line && scene != null) {
+                Spacer(Modifier.weight(1f))
+                Button(onClick = { driving = true }, modifier = Modifier.testTag(PerfectLapButtonTag)) {
+                    Text(if (layout.sideBySide) "▶ Perfect lap in 3D" else "▶ 3D")
+                }
+            }
         }
         when (view) {
             MapView.Laps -> LapsMap(ui, layout, Modifier.fillMaxWidth())
             MapView.Line -> when (line) {
-                is LineState.Ready -> LineView(line.ui, layout, Modifier.fillMaxWidth())
+                is LineState.Ready -> LineView(line.ui, layout, Modifier.fillMaxWidth(), corner) { corner = it }
                 LineState.Reading -> Card { Dim("Reading every session at this track for the targets…") }
                 is LineState.Unavailable -> Card { Dim(line.why) }
             }
         }
+    }
+    if (driving && ready != null && scene != null) {
+        // From the corner tapped on the view, or the start of the lap.
+        val start = ready.ui.corners.indexOfFirst { it.tag == corner }.coerceAtLeast(0)
+        PerfectLapPlayer(scene, start) { driving = false }
     }
 }
 
