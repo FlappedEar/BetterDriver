@@ -33,4 +33,6 @@ include(
     ":feature-track",
     ":feature-review",
     ":feature-analysis",
+    // FR-S CAN/OBD reader, a separate test APK (FBBD-319).
+    ":tools:canreader",
 )
