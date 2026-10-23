@@ -40,21 +40,25 @@ class ImportProgressTextTest {
     }
 
     @Test
-    fun severalFilesEndWithACountThenEachFile() {
-        val s = summary(
-            listOf(
-                Outcome("a.vbo", "Imported the VBO session of 29 Aug 10:00.", false),
-                Outcome("b.vbo", "Import failed: the file is damaged", true),
-            ),
-            1_630_000_000,
-        )
+    fun severalFilesEndWithACountAndOnlyTheFirstFailures() {
+        val ok = Outcome("a.vbo", "Imported the VBO session of 29 Aug 10:00.", false)
+        val bad = (1..5).map { Outcome("b$it.vbo", "Import failed: the file is damaged", true) }
+        val good = summary(listOf(ok, ok), 1_630_000_000)
+        assertEquals("Finished 2 files (1.6 GB). All came in.", good.text)
+        val one = summary(listOf(ok, bad[0]), 0)
+        assertEquals("Finished 2 files. 1 could not be imported:\nb1.vbo: Import failed: the file is damaged", one.text)
+        assertFalse("red only when nothing came in", one.failed)
+        val many = summary(listOf(ok) + bad, 0)
         assertEquals(
-            "Finished 2 files (1.6 GB). 1 could not be imported.\n" +
-                "a.vbo: Imported the VBO session of 29 Aug 10:00.\n" +
-                "b.vbo: Import failed: the file is damaged",
-            s.text,
+            listOf(
+                "Finished 6 files. 5 could not be imported:",
+                "b1.vbo: Import failed: the file is damaged",
+                "b2.vbo: Import failed: the file is damaged",
+                "b3.vbo: Import failed: the file is damaged",
+                "and 2 more",
+            ),
+            many.text.lines(),
         )
-        assertFalse("red only when nothing came in", s.failed)
-        assertTrue(summary(listOf(Outcome("a", "x", true), Outcome("b", "y", true)), 0).failed)
+        assertTrue(summary(bad.take(2), 0).failed)
     }
 }

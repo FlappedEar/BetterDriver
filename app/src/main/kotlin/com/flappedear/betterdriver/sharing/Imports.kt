@@ -109,6 +109,8 @@ class Imports private constructor(private val context: Context) {
         if (fromOutside) openedFromOutside++
         state = TransferState("Reading the file…", running = true)
         io.execute {
+            // The name and size lookups give empty and 0 on a provider's failure, so the batch
+            // always starts and each file then fails or comes in on its own.
             val picked = uris.map { Picked(it, displayNameOf(context, it), sizeOf(context, it)) }
             val ordered = ImportOrder.oldestFirst(picked.map { it.name }).map { picked[it] }
             progress = ImportProgress(ordered.map { it.size })
@@ -318,21 +320,25 @@ internal class Picked(val uri: Uri, val name: String, val size: Long)
 /** What came of one file of an import: the message it would show alone. */
 internal class Outcome(val name: String, val text: String, val failed: Boolean)
 
+private const val FailuresShown = 3
+
 /**
- * The end of an import. One file shows its own message, as before; several show how many came in,
- * then each file's message (UI-193 A). Red only when nothing came in.
+ * The end of an import. One file shows its own message, as before; several show how many came in
+ * and why the first [FailuresShown] that failed did (UI-193 A), so the card stays short on top of
+ * Sessions; the ones that came in are in the list. Red only when nothing came in.
  */
 internal fun summary(results: List<Outcome>, bytes: Long): TransferState {
     results.singleOrNull()?.let { return TransferState(it.text, failed = it.failed) }
-    val bad = results.count { it.failed }
+    val bad = results.filter { it.failed }
     val size = if (bytes > 0) " (${sizeText(bytes)})" else ""
-    val head = "Finished ${results.size} files$size." + when (bad) {
-        0 -> ""
-        1 -> " 1 could not be imported."
-        else -> " $bad could not be imported."
+    val head = "Finished ${results.size} files$size. " + when (bad.size) {
+        0 -> "All came in."
+        1 -> "1 could not be imported:"
+        else -> "${bad.size} could not be imported:"
     }
-    val lines = results.map { r -> if (r.name.isBlank()) r.text else "${r.name}: ${r.text}" }
-    return TransferState((listOf(head) + lines).joinToString("\n"), failed = bad == results.size)
+    val lines = bad.take(FailuresShown).map { r -> if (r.name.isBlank()) r.text else "${r.name}: ${r.text}" } +
+        if (bad.size > FailuresShown) listOf("and ${bad.size - FailuresShown} more") else emptyList()
+    return TransferState((listOf(head) + lines).joinToString("\n"), failed = bad.size == results.size)
 }
 
 private const val Kilo = 1000.0
@@ -416,6 +422,8 @@ private fun displayNameOf(context: Context, uri: Uri): String = try {
     }
 } catch (_: IllegalArgumentException) {
     null
+} catch (_: SecurityException) {
+    null
 }.orEmpty()
 
 /**
@@ -428,6 +436,8 @@ internal fun sizeOf(context: Context, uri: Uri): Long {
             if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else 0L
         } ?: 0L
     } catch (_: IllegalArgumentException) {
+        0L
+    } catch (_: SecurityException) {
         0L
     }
     if (listed > 0) return listed
