@@ -13,10 +13,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
@@ -34,13 +30,18 @@ const val LineRowTagPrefix = "line-row-"
  * "Where to find time" in the Map tab (FBBD-306; UI-164 A, UI-165 C, UI-166 A, UI-167 B): the
  * whole lap with time to find per corner and a list ranked by it; tapping a corner zooms the map to
  * it and the list becomes what to do there. His lap is coloured by what the pedals do, the target
- * is a thin green line. The map and the list sit side by side when [layout] has room for it.
+ * is a thin green line. The map and the list sit side by side when [layout] has room for it. The
+ * tapped corner is [selected], chosen through [pick], so the perfect lap in 3D can start there.
  */
 @Composable
-internal fun LineView(ui: LineUi, layout: LayoutSize, modifier: Modifier = Modifier) {
-    var selected by rememberSaveable(ui.bestLapNumber) { mutableStateOf<String?>(null) }
+internal fun LineView(
+    ui: LineUi,
+    layout: LayoutSize,
+    modifier: Modifier = Modifier,
+    selected: String? = null,
+    pick: (String?) -> Unit = {},
+) {
     val corner = ui.corners.firstOrNull { it.tag == selected }
-    val pick: (String?) -> Unit = { selected = it }
     Box(modifier.testTag(LineViewTag)) {
         if (layout.sideBySide) {
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
