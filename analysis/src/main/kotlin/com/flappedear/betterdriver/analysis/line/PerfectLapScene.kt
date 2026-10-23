@@ -114,8 +114,11 @@ data class PerfectLapScene(
      * Where the camera is at [seconds]: behind and above the perfect lap's car, looking ahead of it
      * (UI-200 A), so the car, its line on the road and the next corner are in one picture. It
      * faces the way the line goes over the next and last few metres, so it turns smoothly.
+     * [distance] moves it nearer or farther along the same view (pinched in the player), so it
+     * looks down at the same angle and never sees the sky.
      */
-    fun cameraAt(seconds: Double): CameraPose {
+    fun cameraAt(seconds: Double, distance: Double = 1.0): CameraPose {
+        val d = distance.coerceIn(MinCameraDistance, MaxCameraDistance)
         val car = perfectAt(seconds)
         val back = pointAtMeters(perfect, car.lapMeters - CameraLookBackMeters)
         val ahead = pointAtMeters(perfect, car.lapMeters + CameraLookAheadMeters)
@@ -130,17 +133,21 @@ data class PerfectLapScene(
             dy /= l
         }
         val eye = Vec3(
-            car.eastMeters - dx * CameraBehindMeters,
-            car.northMeters - dy * CameraBehindMeters,
-            CameraUpMeters,
+            car.eastMeters - dx * CameraBehindMeters * d,
+            car.northMeters - dy * CameraBehindMeters * d,
+            CameraUpMeters * d,
         )
-        val target = Vec3(car.eastMeters + dx * CameraAimMeters, car.northMeters + dy * CameraAimMeters, 0.0)
+        val target = Vec3(car.eastMeters + dx * CameraAimMeters * d, car.northMeters + dy * CameraAimMeters * d, 0.0)
         return CameraPose(eye, target)
     }
 
     companion object {
         /** Horizontal field of view of the scene's camera. */
         const val CameraFovDegrees = 62.0
+
+        /** How much nearer or farther than normal the camera can be pinched. */
+        const val MinCameraDistance = 0.5
+        const val MaxCameraDistance = 3.0
 
         /** How far behind the car and how high the camera is, and how far ahead of the car it looks, metres. */
         const val CameraBehindMeters = 34.0

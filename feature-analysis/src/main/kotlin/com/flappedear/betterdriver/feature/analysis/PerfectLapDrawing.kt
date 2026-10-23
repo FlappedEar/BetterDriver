@@ -19,6 +19,7 @@ import com.flappedear.betterdriver.analysis.line.sceneFrame
 import com.flappedear.betterdriver.analysis.line.underMap
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
@@ -95,8 +96,13 @@ internal class PerfectLapPainter(
     }
     private val panel = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = palette.panel }
 
+    /** How far the camera is from the car, times the normal distance: pinched in the player, kept in the video. */
+    @Volatile
+    var distance = 1.0
+
     /** Another painter of the same, for drawing on another thread, taking its tiles from [tiles]. */
-    fun copy(tiles: TileSource3d? = this.tiles) = PerfectLapPainter(scene, palette, tiles, attribution)
+    fun copy(tiles: TileSource3d? = this.tiles) =
+        PerfectLapPainter(scene, palette, tiles, attribution).also { it.distance = distance }
 
     /**
      * The picture at [seconds]. [controlsPx] is how much of the bottom the player's bar covers
@@ -104,7 +110,7 @@ internal class PerfectLapPainter(
      */
     fun draw(canvas: Canvas, seconds: Double, width: Int, height: Int, controlsPx: Float = 0f) {
         canvas.drawColor(palette.ground)
-        val frame = sceneFrame(scene, ground, seconds, width, height)
+        val frame = sceneFrame(scene, ground, seconds, width, height, distance)
         // The drawn road first, the photo over it where a tile is at hand, then the line and the cars.
         shapes(canvas, frame.shapes.filter { it.paint.underMap })
         val photos = photo(canvas, frame.tiles)
@@ -134,9 +140,19 @@ internal class PerfectLapPainter(
             dst[k * 2 + 1] = t.ys[k]
         }
         if (!matrix.setPolyToPoly(src, 0, dst, 0, CORNERS)) return false
+        // Each piece is cut out a pixel wider than it is, so neighbours overlap: cut exactly, the
+        // edges of two pieces each half cover their pixels and the ground shows through as a seam.
+        val cx = (dst[0] + dst[2] + dst[4] + dst[6]) / CORNERS
+        val cy = (dst[1] + dst[3] + dst[5] + dst[7]) / CORNERS
         path.rewind()
-        path.moveTo(dst[0], dst[1])
-        for (k in 1 until CORNERS) path.lineTo(dst[k * 2], dst[k * 2 + 1])
+        for (k in 0 until CORNERS) {
+            val dx = dst[k * 2] - cx
+            val dy = dst[k * 2 + 1] - cy
+            val l = hypot(dx, dy).takeIf { it > 0f } ?: 1f
+            val x = dst[k * 2] + dx / l * SEAM_PX
+            val y = dst[k * 2 + 1] + dy / l * SEAM_PX
+            if (k == 0) path.moveTo(x, y) else path.lineTo(x, y)
+        }
         path.close()
         canvas.save()
         canvas.clipPath(path)
@@ -249,6 +265,7 @@ internal class PerfectLapPainter(
         const val OPAQUE_ALPHA = 0xFF000000.toInt()
         const val WORD_EDGE = 6f
         const val CORNERS = 4
+        const val SEAM_PX = 1f
         const val DARKEN = 0.35f
 
         fun darker(c: Int): Int {

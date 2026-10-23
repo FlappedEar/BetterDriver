@@ -5,6 +5,8 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,6 +35,7 @@ import androidx.compose.runtime.mutableDoubleStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -42,6 +45,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
@@ -98,13 +102,7 @@ private sealed interface Saving {
 internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose: () -> Unit) {
     val ground = LocalPerfectLapGround.current
     Dialog(onDismissRequest = onClose, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        val c = TrackTheme.colors
-        val palette = ScenePalette(
-            ground = GrassColor, road = RoadColor, edge = EdgeColor,
-            braking = c.loss.toArgb(), coasting = c.textDim.toArgb(), accelerating = c.gain.toArgb(),
-            car = MaterialTheme.colorScheme.primary.toArgb(), text = c.text.toArgb(), textDim = c.textDim.toArgb(),
-            panel = PanelColor,
-        )
+        val palette = scenePalette()
         val painter = remember(scene, palette, ground) {
             PerfectLapPainter(scene, palette, ground?.let { g -> g::tile }, ground?.attribution)
         }
@@ -112,6 +110,8 @@ internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose:
         var seconds by rememberSaveable(scene) { mutableDoubleStateOf(scene.corners[startCorner].startSeconds) }
         var playing by rememberSaveable { mutableStateOf(true) }
         var speed by rememberSaveable { mutableDoubleStateOf(1.0) }
+        // How far the camera is from the car, pinched on the picture; a double tap puts it back.
+        var distance by rememberSaveable { mutableDoubleStateOf(1.0) }
         LaunchedEffect(playing, speed) {
             if (!playing) return@LaunchedEffect
             var last = withFrameNanos { it }
@@ -138,9 +138,10 @@ internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose:
                 }
                 // Its own painter, fetching its map tiles itself: the player keeps drawing with the other.
                 val videoPainter = remember(painter, ground) { painter.copy(ground?.let { g -> g::load }) }
-                SaveVideo(scene, videoPainter) { playing = false }
+                SaveVideo(scene, videoPainter, distance) { playing = false }
             }
-            Picture(painter, ground, seconds, Modifier.weight(1f).fillMaxWidth()) { bar ->
+            val zoom = Zoom(distance) { distance = it }
+            Picture(painter, ground, seconds, zoom, Modifier.weight(1f).fillMaxWidth()) { bar ->
                 PlayerBar(
                     scene, seconds, playing, speed,
                     seek = { seconds = it },
@@ -156,12 +157,32 @@ internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose:
     }
 }
 
-/** The 16:9 picture at [seconds], as large as fits, with [controls] on it at the bottom (UI-204 A). */
+/** The scene's colours from the app's theme. */
+@Composable
+private fun scenePalette(): ScenePalette {
+    val c = TrackTheme.colors
+    return ScenePalette(
+        ground = GrassColor, road = RoadColor, edge = EdgeColor,
+        braking = c.loss.toArgb(), coasting = c.textDim.toArgb(), accelerating = c.gain.toArgb(),
+        car = MaterialTheme.colorScheme.primary.toArgb(), text = c.text.toArgb(), textDim = c.textDim.toArgb(),
+        panel = PanelColor,
+    )
+}
+
+/** The camera's distance from the car, times normal, and how a pinch sets it. */
+private class Zoom(val distance: Double, val set: (Double) -> Unit)
+
+/**
+ * The 16:9 picture at [seconds], as large as fits, with [controls] on it at the bottom (UI-204 A).
+ * Pinching it brings the camera nearer or farther; a double tap puts it back.
+ */
+@Suppress("LongParameterList") // The painter, its map, the moment, the zoom and the layout.
 @Composable
 private fun Picture(
     painter: PerfectLapPainter,
     ground: PerfectLapGround?,
     seconds: Double,
+    zoom: Zoom,
     modifier: Modifier,
     controls: @Composable (Modifier) -> Unit,
 ) {
@@ -172,8 +193,25 @@ private fun Picture(
             val barPx = with(LocalDensity.current) { (BarHeight + BarMargin * 2).toPx() }
             // Read here so the picture is drawn again as each map tile arrives.
             val tilesLoaded = ground?.loaded ?: 0
-            Canvas(Modifier.fillMaxSize()) {
+            val distance by rememberUpdatedState(zoom.distance)
+            val set by rememberUpdatedState(zoom.set)
+            val gestures = Modifier
+                .pointerInput(Unit) {
+                    detectTransformGestures { _, _, pinch, _ ->
+                        if (pinch > 0f) {
+                            set(
+                                (distance / pinch).coerceIn(
+                                    PerfectLapScene.MinCameraDistance,
+                                    PerfectLapScene.MaxCameraDistance,
+                                ),
+                            )
+                        }
+                    }
+                }
+                .pointerInput(Unit) { detectTapGestures(onDoubleTap = { set(1.0) }) }
+            Canvas(Modifier.fillMaxSize().then(gestures)) {
                 if (tilesLoaded >= 0 && size.width >= 1f && size.height >= 1f) {
+                    painter.distance = zoom.distance
                     drawIntoCanvas {
                         painter.draw(it.nativeCanvas, seconds, size.width.toInt(), size.height.toInt(), barPx)
                     }
@@ -267,7 +305,7 @@ private fun CornerTicks(scene: PerfectLapScene, at: Int) {
 
 /** Save video in the header (UI-204 A), with its progress, and Send once saved. [pause] stops the player first. */
 @Composable
-private fun SaveVideo(scene: PerfectLapScene, painter: PerfectLapPainter, pause: () -> Unit) {
+private fun SaveVideo(scene: PerfectLapScene, painter: PerfectLapPainter, distance: Double, pause: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var saving by remember { mutableStateOf<Saving>(Saving.Idle) }
@@ -293,6 +331,8 @@ private fun SaveVideo(scene: PerfectLapScene, painter: PerfectLapPainter, pause:
                     }
                     OutlinedButton(onClick = {
                         pause()
+                        // The video is seen from where the player's camera is now.
+                        painter.distance = distance
                         job = scope.launch { saving = save(context, scene, painter) { saving = it } }
                     }) { Text("Save video") }
                 }

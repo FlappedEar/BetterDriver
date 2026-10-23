@@ -73,6 +73,16 @@ const val SceneMapZoom = 18
 /** Map around the road this far out, metres. */
 private const val MapMarginMeters = 150.0
 
+/**
+ * The coarser map under it, out to the horizon of the farthest camera: about 0.8 m a pixel, so the
+ * picture is photo to its top edge, and a place whose fine tile is not loaded yet is never empty.
+ */
+const val SceneFarZoom = 16
+private const val FarMarginMeters = 1500.0
+
+/** Fine tiles are left to the coarse map beyond this distance from the camera, metres. */
+private const val NearTileMeters = 400.0
+
 /** A BRAKE or GAS bar across the road is this long along it, metres. */
 private const val BarMeters = 1.2
 
@@ -85,7 +95,7 @@ private const val BarGapMeters = 40.0
 /** The word stands this far outside the road's edge, metres; its height on the road, metres. */
 private const val LabelOutMeters = 3.0
 private const val LabelMeters = 1.8
-private const val MaxSubdivision = 3
+private const val MaxSubdivision = 5
 
 private const val EdgeMeters = 0.5
 
@@ -159,9 +169,10 @@ class SceneGround(scene: PerfectLapScene) {
 
     /**
      * The map tiles round the road, each with its corners in scene metres: top left, top right,
-     * bottom right, bottom left.
+     * bottom right, bottom left; the coarse ones ([SceneFarZoom]) first, as they are drawn.
      */
-    internal val tiles: List<Pair<IntArray, DoubleArray>> = mapTiles(scene)
+    internal val tiles: List<Pair<IntArray, DoubleArray>> =
+        mapTiles(scene, SceneFarZoom, FarMarginMeters) + mapTiles(scene, SceneMapZoom, MapMarginMeters)
 
     internal class Bar(val quad: DoubleArray, val paint: ScenePaint, val text: String, val label: DoubleArray)
 
@@ -214,15 +225,14 @@ class SceneGround(scene: PerfectLapScene) {
         else Bar(quad, ScenePaint.GasBar, "GAS", label)
     }
 
-    private fun mapTiles(scene: PerfectLapScene): List<Pair<IntArray, DoubleArray>> {
+    private fun mapTiles(scene: PerfectLapScene, z: Int, margin: Double): List<Pair<IntArray, DoubleArray>> {
         val pts = edgesLeft + edgesRight
         if (pts.isEmpty()) return emptyList()
         val origin = scene.origin
         fun geo(e: Double, n: Double) =
             unprojectCoordinate(e, n, origin).let { it.latitudeDegrees to it.longitudeDegrees }
-        val (south, west) = geo(pts.minOf { it.first } - MapMarginMeters, pts.minOf { it.second } - MapMarginMeters)
-        val (north, east) = geo(pts.maxOf { it.first } + MapMarginMeters, pts.maxOf { it.second } + MapMarginMeters)
-        val z = SceneMapZoom
+        val (south, west) = geo(pts.minOf { it.first } - margin, pts.minOf { it.second } - margin)
+        val (north, east) = geo(pts.maxOf { it.first } + margin, pts.maxOf { it.second } + margin)
         val x0 = tileX(west, z)
         val x1 = tileX(east, z)
         val y0 = tileY(north, z)
@@ -264,9 +274,20 @@ class SceneGround(scene: PerfectLapScene) {
     }
 }
 
-/** The picture at [seconds], [width] by [height] pixels. */
-fun sceneFrame(scene: PerfectLapScene, ground: SceneGround, seconds: Double, width: Int, height: Int): SceneFrame {
-    val cam = Camera(scene.cameraAt(seconds), width, height)
+/**
+ * The picture at [seconds], [width] by [height] pixels, the camera [distance] times as far from the
+ * car as normal (pinched in the player).
+ */
+@Suppress("LongParameterList") // The scene, the moment, the picture's size and the camera's distance.
+fun sceneFrame(
+    scene: PerfectLapScene,
+    ground: SceneGround,
+    seconds: Double,
+    width: Int,
+    height: Int,
+    distance: Double = 1.0,
+): SceneFrame {
+    val cam = Camera(scene.cameraAt(seconds, distance), width, height)
     val shapes = ArrayList<SceneShape>(ground.quads.size / 2)
     for ((q, paint) in ground.quads) cam.polygon(q, paint)?.let { shapes += it }
     val ghost = scene.bestAt(seconds)
@@ -284,7 +305,9 @@ fun sceneFrame(scene: PerfectLapScene, ground: SceneGround, seconds: Double, wid
             SceneLabel(b.text, x, y, size)
         }
     }
-    val tiles = ground.tiles.flatMap { (id, q) -> cam.tile(id, q) }
+    val tiles = ground.tiles.flatMap { (id, q) ->
+        cam.tile(id, q, if (id[0] == SceneMapZoom) NearTileMeters else Double.MAX_VALUE)
+    }
     return SceneFrame(
         shapes,
         cam.point(ghost.eastMeters, ghost.northMeters, LabelAboveMeters),
@@ -369,10 +392,13 @@ private class Camera(pose: CameraPose, private val width: Int, private val heigh
 
     /**
      * Map tile [id] (z, x, y) with corners [q] (scene metres) on screen. A tile reaching behind the
-     * camera is cut in four, up to [MaxSubdivision] times; pieces still behind it, or off the picture, are left out.
+     * camera is cut in four, up to [MaxSubdivision] times; pieces still behind it, off the picture,
+     * or wholly farther than [maxDepth] metres are left out.
      */
-    fun tile(id: IntArray, q: DoubleArray): List<SceneTile> {
+    fun tile(id: IntArray, q: DoubleArray, maxDepth: Double = Double.MAX_VALUE): List<SceneTile> {
         val out = mutableListOf<SceneTile>()
+        // A coarser tile is cut further, into pieces as small as a fine tile's.
+        val levels = MaxSubdivision + (SceneMapZoom - id[0]).coerceAtLeast(0)
         fun at(u: Double, v: Double): DoubleArray {
             // Bilinear between the four corners: top left, top right, bottom right, bottom left.
             fun c(k: Int, i: Int) = q[k * 3 + i]
@@ -386,6 +412,7 @@ private class Camera(pose: CameraPose, private val width: Int, private val heigh
             val corners = listOf(at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1))
             val zs = corners.map { depth(it[0], it[1], it[2]) }
             val behind = zs.count { it < NearMeters }
+            if (zs.min() > maxDepth) return
             if (behind == 0) {
                 val xs = FloatArray(corners.size)
                 val ys = FloatArray(corners.size)
@@ -396,7 +423,7 @@ private class Camera(pose: CameraPose, private val width: Int, private val heigh
                 }
                 val uv = floatArrayOf(u0.toFloat(), v0.toFloat(), u1.toFloat(), v1.toFloat())
                 if (!offPicture(xs, ys)) out += SceneTile(id, uv, xs, ys)
-            } else if (behind < corners.size && level < MaxSubdivision) {
+            } else if (behind < corners.size && level < levels) {
                 val um = (u0 + u1) / 2
                 val vm = (v0 + v1) / 2
                 piece(u0, v0, um, vm, level + 1)
