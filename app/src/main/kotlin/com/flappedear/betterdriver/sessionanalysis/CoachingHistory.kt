@@ -86,9 +86,10 @@ internal fun AnalysisState.withCoaching(coaching: SessionCoaching, proof: LinePr
 }
 
 /**
- * What came of the focus session [sessionId] worked on (FBBD-310, UI-191 A): its corners, as the
- * summary of the session they came from named them (UI-190 B), measured through that session's line
- * plan and this one's, both from [plans]; with the coach's cues at each. Null when either plan is
+ * What came of the focus session [sessionId] worked on (FBBD-310, UI-191 A): the corners its coach
+ * worked on (the line plan's, UI-174 A, FBBD-313), else the ones the summary of the session they came
+ * from named (UI-190 B), measured through that session's line plan and this one's, both from [plans];
+ * with the coach's cues at each. Null when either plan is
  * missing (a session analysed before line plans, or read during a restore).
  */
 @Suppress("ReturnCount") // Each missing piece leaves the proof out.
