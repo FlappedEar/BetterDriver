@@ -98,6 +98,12 @@ data class CornerPass(
      * a pass stored before it was measured.
      */
     val pickupAt: Double? = null,
+    /**
+     * The time from the start of the window to the corner's apex on the reference path ([Corner.apexAt]),
+     * so the time lost before the apex and after it compare between passes (FBBD-307, UI-170 B); null
+     * for a pass stored before it was measured.
+     */
+    val apexMicros: Long? = null,
 )
 
 /** How much the coach says (FBBD-27). */
@@ -205,11 +211,35 @@ sealed interface Advice {
     /** Slower at the apex than the reference: carry [kmh] more, [goalKmh] at the apex. */
     data class CarrySpeed(val kmh: Int, override val precise: Boolean = true, val goalKmh: Int? = null) : Advice
 
+    /**
+     * Where to be at the apex (FBBD-307): the target was [tighterMeters] whole metres closer to the
+     * inside of the corner (negative: wider), at a corner turning [turn]. Said without the number
+     * (UI-168 B): "tighter at the apex".
+     */
+    data class Line(
+        val tighterMeters: Int,
+        override val precise: Boolean = true,
+        val turn: Turn = Turn.Straight,
+    ) : Advice
+
+    /**
+     * Where to go back on throttle (FBBD-307): the target did it [earlierMeters] earlier (negative:
+     * later), [afterApex] metres after its apex (negative: before). Said by its target only (UI-169 C):
+     * "throttle 5 after the apex"; null [afterApex] in advice without it.
+     */
+    data class Throttle(
+        val earlierMeters: Int,
+        override val precise: Boolean = true,
+        val afterApex: Int? = null,
+    ) : Advice
+
     /** The same advice, said with its numbers only when [precise]. */
     fun withPrecision(precise: Boolean): Advice = when (this) {
         is BrakeLater -> copy(precise = precise)
         is BrakeEarlier -> copy(precise = precise)
         is CarrySpeed -> copy(precise = precise)
+        is Line -> copy(precise = precise)
+        is Throttle -> copy(precise = precise)
     }
 
     /**
@@ -219,15 +249,18 @@ sealed interface Advice {
     fun brakeAnchor(before: CornerPass): Double? = when (this) {
         is BrakeLater -> at?.let { before.brakeAt + meters + it }
         is BrakeEarlier -> at?.let { at -> meters?.let { before.brakeAt - it + at } }
-        is CarrySpeed -> null
+        is CarrySpeed, is Line, is Throttle -> null
     }
 }
 
 /** Why a corner cue is not High confidence (FBBD-177): a short [code] for the log and its [text]. */
 data class CueDoubt(val code: String, val cap: Confidence, val text: String)
 
-/** Why a cue was spoken. [Praise] (FBBD-243): a corner was done better. */
-enum class CueKind { Corner, LapTime, Praise }
+/**
+ * Why a cue was spoken. [Praise] (FBBD-243): a corner was done better. [Plan] (FBBD-307, UI-174 A):
+ * on the out-lap, the corners the session works on.
+ */
+enum class CueKind { Corner, LapTime, Praise, Plan }
 
 /**
  * What a praise said (FBBD-243, UI-93 C): a cue at the corner [Worked] (“that worked”), or the corner
@@ -270,7 +303,14 @@ data class Cue(
     val praised: CornerPass? = null,
     /** The language it was said in (FBBD-245); the cue review is written in it too (UI-100 B). */
     val language: CoachLanguage = CoachLanguage.English,
+    /** For a corner cue, a second thing to change said in the same cue (FBBD-307, UI-170 B). */
+    val also: Advice? = null,
+    /** For a plan cue (UI-174 A), the corner numbers said, most time to find first. */
+    val turns: List<Int> = emptyList(),
 ) {
+    /** What a corner cue asks for: its advice, and the second one when it has one. */
+    val asked: List<Advice> get() = listOfNotNull(advice, also)
+
     /** The corner number the driver heard, for a corner cue. */
     val heardTurn: Int? get() = turn ?: corner
 }

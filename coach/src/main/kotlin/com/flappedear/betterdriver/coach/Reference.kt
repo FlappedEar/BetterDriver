@@ -64,10 +64,10 @@ data class CoachReference(
         const val Format = "betterdriver-coach-reference"
         /**
          * 2: two targets per corner (FBBD-177). 3: passes carry their line at the apex and their
-         * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). An older file is rebuilt from
-         * the sessions.
+         * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). 5: passes carry their time to
+         * the apex (UI-170 B). An older file is rebuilt from the sessions.
          */
-        const val Version = 4
+        const val Version = 5
     }
 }
 

@@ -50,6 +50,19 @@ class LiveTrackerTest {
     }
 
     @Test
+    fun `keeps the latest fix's position for the map screen, not a late one's`() {
+        val tracker = LiveTracker("s", 0, { 200_000 })
+        assertNull(tracker.snapshot().latitude)
+        fun at(t: Long, lat: Double, lon: Double) =
+            SampleSet(t, listOf(ChannelValue(GnssChannels.LAT.id, lat), ChannelValue(GnssChannels.LON.id, lon)))
+        tracker.onSamples(at(100_000, 50.2, 18.9))
+        tracker.onSamples(at(60_000, 50.1, 18.8))
+        val s = tracker.snapshot()
+        assertEquals(50.2, s.latitude)
+        assertEquals(18.9, s.longitude)
+    }
+
+    @Test
     fun `reports GNSS lost when fixes stop, and a set without a position is not a fix`() {
         var now = 0L
         val tracker = LiveTracker("s", 0, { now })

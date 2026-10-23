@@ -45,10 +45,13 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
             var unsaid = 0
             for (e in events.sortedBy { it.tMicros }) {
                 when (e.kind) {
-                    CoachEvents.CUE -> CoachEvents.parseCue(e.tMicros, e.text)?.let {
-                        latest[it.seq] = cues.size
-                        cues += ReviewedCue(it, null)
-                    }
+                    // The out-lap plan (UI-174 A) is no corner cue: it has no pass to review.
+                    CoachEvents.CUE -> CoachEvents.parseCue(e.tMicros, e.text)
+                        ?.takeIf { it.kind != CueKind.Plan }
+                        ?.let {
+                            latest[it.seq] = cues.size
+                            cues += ReviewedCue(it, null)
+                        }
                     CoachEvents.RESULT -> CoachEvents.parseResult(e.text)?.let { r ->
                         val i = latest.remove(r.seq) ?: return@let
                         cues[i] = cues[i].copy(result = r)
@@ -100,6 +103,7 @@ fun ReviewedCue.outcome(): String? {
     return if (cue.kind == CueKind.Praise) cue.praiseOutcome(words) else cornerOutcome(words)
 }
 
+@Suppress("ReturnCount", "CyclomaticComplexMethod") // One reading for each kind of advice.
 private fun ReviewedCue.cornerOutcome(words: ReviewWords): String? {
     val r = result
     val before = cue.before
@@ -107,6 +111,12 @@ private fun ReviewedCue.cornerOutcome(words: ReviewWords): String? {
     val precise = cue.confidence.precise && r.confidence.precise
     val target = cue.target
     val advice = cue.advice
+    // The line, the throttle and two in one cue (FBBD-307) read as the coach line showed them (UI-173 A).
+    if (cue.also != null || advice is Advice.Line || advice is Advice.Throttle) {
+        val moved = cue.asked.map { Moved(it, movedBy(it, before, r.after)?.takeIf { precise }) }
+        val text = PhraseBook.of(cue.language).result(moved, r.improved, null)
+        return "$text · ${timeChange(r.gainMicros, precise, words)}"
+    }
     val anchor = advice?.brakeAnchor(before)
     val change = when {
         precise && advice is Advice.CarrySpeed && advice.goalKmh != null ->

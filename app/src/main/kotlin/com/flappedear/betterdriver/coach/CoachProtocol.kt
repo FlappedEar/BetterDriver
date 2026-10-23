@@ -48,6 +48,9 @@ internal object CoachProtocol {
 
     /** In a status report: true when the coach line shows a praise (FBBD-243). */
     const val STATUS_PRAISE = "praise"
+
+    /** In a status report: true when the coach line shows a cue not done yet (UI-173 A), drawn grey. */
+    const val STATUS_DIM = "dim"
 }
 
 /** Coach files: settings, and the per-track references with their session index. */

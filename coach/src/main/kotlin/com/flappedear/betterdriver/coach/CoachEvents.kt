@@ -38,6 +38,17 @@ object CoachEvents {
     const val FOCUS = "coach_focus"
 
     /**
+     * The coach works on the focus of the track's line plan (FBBD-306, UI-174 A), in place of [FOCUS];
+     * text from [planText]: the session the plan was made from, its focus corners' CornerIds, most
+     * time to find first, and their time to find together.
+     */
+    const val PLAN = "coach_plan"
+
+    fun planText(sessionId: String, cornerIds: List<String>, gainSeconds: Double) =
+        "source=$sessionId corners=${cornerIds.joinToString(",")} gain_s=" +
+            String.format(Locale.ROOT, "%.2f", gainSeconds)
+
+    /**
      * The coach went quiet for the rest of a lap (FBBD-202): text "lap=<n> reason=<[COOLING_DOWN] or
      * [PIT_LANE]>". So a log shows which laps it took as cool-down, not only that it said nothing (FBBD-244).
      */
@@ -61,10 +72,11 @@ object CoachEvents {
         "source=$sessionId corners=${cornerIds.joinToString(",")}"
 
     /**
-     * The session whose focus the coach worked on in a session with [events]: the last [FOCUS]
-     * event's, as a restarted coach logs it again; null when the coach worked on none.
+     * The session whose focus the coach worked on in a session with [events]: the last [FOCUS] or
+     * [PLAN] event's (a line plan's focus, UI-174 A), as a restarted coach logs it again; null when
+     * the coach worked on none.
      */
-    fun focusSource(events: List<RecorderEvent>): String? = events.filter { it.kind == FOCUS }
+    fun focusSource(events: List<RecorderEvent>): String? = events.filter { it.kind == FOCUS || it.kind == PLAN }
         .maxByOrNull { it.tMicros }?.let { split(it.text).first["source"] }?.takeIf { it.isNotBlank() }
 
     /** How many corner cues were said at each CornerId in a session with [events]; cues without one are left out. */
@@ -75,12 +87,15 @@ object CoachEvents {
         .mapNotNull { it.cornerId }
         .groupingBy { it }.eachCount()
 
+    @Suppress("CyclomaticComplexMethod") // One optional field after another.
     fun cueText(cue: Cue): String = buildString {
         append("seq=").append(cue.seq)
         append(" lap=").append(cue.lap)
         append(" kind=").append(cue.kind.name)
         cue.corner?.let { append(" corner=").append(it) }
         cue.advice?.let { append(" advice=").append(adviceText(it)) }
+        cue.also?.let { append(" also=").append(adviceText(it)) }
+        if (cue.turns.isNotEmpty()) append(" turns=").append(cue.turns.joinToString(","))
         cue.before?.let { append(" before=").append(passText(it)) }
         cue.target?.let { append(" target=").append(passText(it)) }
         cue.zoneMeters?.let { append(" zone_m=").append(String.format(Locale.ROOT, "%.1f", it)) }
@@ -152,6 +167,8 @@ object CoachEvents {
             text = spoken,
             corner = corner,
             advice = fields["advice"]?.let(::parseAdvice),
+            also = fields["also"]?.let(::parseAdvice),
+            turns = fields["turns"]?.split(',')?.mapNotNull { it.toIntOrNull() }.orEmpty(),
             before = corner?.let { c -> fields["before"]?.let { parsePass(c, it) } },
             target = corner?.let { c -> fields["target"]?.let { parsePass(c, it) } },
             zoneMeters = fields["zone_m"]?.toDouble(),
@@ -205,12 +222,18 @@ object CoachEvents {
      * "brake_later:10", "brake_later:10:vague" for advice said without its number (FBBD-177), with
      * its target "brake_later:10:at=100" (FBBD-242); "brake_earlier:10:at=120"; "carry:5:goal=60".
      * Before FBBD-242 brake_earlier had no number and nothing had a target; those still parse.
+     * The line and the throttle (FBBD-307): "line:2:turn=Left" (metres tighter, negative wider, at a
+     * left-hand corner) and
+     * "throttle:5:after=5" (metres earlier, negative later; the target metres after the apex).
      */
     private fun adviceText(a: Advice): String {
         val (kind, number, target) = when (a) {
             is Advice.BrakeLater -> Triple("brake_later", a.meters, a.at?.let { "$At$it" })
             is Advice.BrakeEarlier -> Triple("brake_earlier", a.meters, a.at?.let { "$At$it" })
             is Advice.CarrySpeed -> Triple("carry", a.kmh, a.goalKmh?.let { "$Goal$it" })
+            is Advice.Line ->
+                Triple("line", a.tighterMeters, a.turn.takeIf { it != Turn.Straight }?.let { "$Dir${it.name}" })
+            is Advice.Throttle -> Triple("throttle", a.earlierMeters, a.afterApex?.let { "$After$it" })
         }
         return listOfNotNull(kind, number?.toString(), Vague.takeUnless { a.precise }, target).joinToString(":")
     }
@@ -225,6 +248,11 @@ object CoachEvents {
             "brake_later" -> Advice.BrakeLater(requireNotNull(number), precise, tagged(At))
             "brake_earlier" -> Advice.BrakeEarlier(number, precise, tagged(At))
             "carry" -> Advice.CarrySpeed(requireNotNull(number), precise, tagged(Goal))
+            "line" -> Advice.Line(
+                requireNotNull(number), precise,
+                rest.firstOrNull { it.startsWith(Dir) }?.removePrefix(Dir)?.let(Turn::valueOf) ?: Turn.Straight,
+            )
+            "throttle" -> Advice.Throttle(requireNotNull(number), precise, tagged(After))
             else -> throw IllegalArgumentException("unknown advice $s")
         }
     }
@@ -232,17 +260,26 @@ object CoachEvents {
     private const val Vague = "vague"
     private const val At = "at="
     private const val Goal = "goal="
+    private const val After = "after="
+    private const val Dir = "turn="
 
-    /** "lap,brakeAt,apexAt,entryKmh,minKmh,timeMicros", distances and speeds to 0.1. */
+    /**
+     * "lap,brakeAt,apexAt,entryKmh,minKmh,timeMicros", distances and speeds to 0.1; then (FBBD-307)
+     * ",apexOffset,pickupAt,apexMicros", each empty when not known. Passes logged before have six fields.
+     */
     private fun passText(p: CornerPass) = String.format(
         Locale.ROOT,
         "%d,%.1f,%.1f,%.1f,%.1f,%d",
         p.lap, p.brakeAt, p.apexAt, p.entryKmh, p.minKmh, p.timeMicros,
-    )
+    ) + listOf(
+        p.apexOffsetMeters?.let { String.format(Locale.ROOT, "%.2f", it) },
+        p.pickupAt?.let { String.format(Locale.ROOT, "%.1f", it) },
+        p.apexMicros?.toString(),
+    ).joinToString("") { "," + it.orEmpty() }
 
     private fun parsePass(corner: Int, s: String): CornerPass {
         val v = s.split(',')
-        require(v.size == PassFields) { "pass needs $PassFields fields" }
+        require(v.size == PassFields || v.size == LinePassFields) { "pass needs $PassFields or $LinePassFields fields" }
         val next = v.iterator()
         return CornerPass(
             corner = corner,
@@ -252,8 +289,12 @@ object CoachEvents {
             entryKmh = next.next().toDouble(),
             minKmh = next.next().toDouble(),
             timeMicros = next.next().toLong(),
+            apexOffsetMeters = if (next.hasNext()) next.next().toDoubleOrNull() else null,
+            pickupAt = if (next.hasNext()) next.next().toDoubleOrNull() else null,
+            apexMicros = if (next.hasNext()) next.next().toLongOrNull() else null,
         )
     }
 
     private const val PassFields = 6
+    private const val LinePassFields = 9
 }

@@ -42,6 +42,8 @@ data class RecorderState(
     val place: String? = null,
     /** [place] is a saved track; false when it is only a circuit from the built-in list (FBBD-79). */
     val placeSaved: Boolean = false,
+    /** The saved track's id when [placeSaved] (UI-171 B: its line plan draws the map screen). */
+    val trackId: String? = null,
     /** Live timing, when the recording is at a saved track with lines (FBBD-12). */
     val timing: LiveTimingState? = null,
     /** The coach line (FBBD-98): the last cue, or whether the coach is learning; null when it says nothing. */
@@ -96,6 +98,7 @@ class RecorderClient private constructor(private val context: Context) {
             },
             place = msg.data.getString(RecorderProtocol.KEY_PLACE),
             placeSaved = msg.data.getBoolean(RecorderProtocol.KEY_PLACE_SAVED),
+            trackId = msg.data.getString(RecorderProtocol.KEY_TRACK_ID),
             timing = RecorderProtocol.timingFrom(msg.data),
             obd = RecorderProtocol.obdFrom(msg.data),
             heartRate = RecorderProtocol.heartRateFrom(msg.data),
@@ -104,6 +107,7 @@ class RecorderClient private constructor(private val context: Context) {
                     msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),
                     it,
                     msg.data.getBoolean(RecorderProtocol.KEY_COACH_PRAISE),
+                    msg.data.getBoolean(RecorderProtocol.KEY_COACH_DIM),
                 )
             },
         )

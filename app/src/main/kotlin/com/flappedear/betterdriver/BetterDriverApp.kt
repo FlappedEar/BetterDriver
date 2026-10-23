@@ -47,6 +47,7 @@ import com.flappedear.betterdriver.recording.obdAdapterLabel
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.liveTileChoices
 import com.flappedear.betterdriver.recording.liveTrackState
+import com.flappedear.betterdriver.recording.rememberNextCorners
 import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.SessionAnalysisRoute
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
@@ -299,10 +300,16 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
         // Read once as the track screen opens: the coach line does not come and go while driving (UI-142 B).
         val context = LocalContext.current
         val coachOn = remember { CoachPrefs.get(context).settings.verbosity != Verbosity.Off }
+        // The line plan's next corner on a third screen (UI-171 B, UI-172 C), at a saved track with one.
+        val corners = rememberNextCorners(recorder.state.trackId)
         TrackScreen(
             brightness = prefs.trackBrightness,
             onReport = { DebugLog.i("TrackScreen", it) },
-            state = liveTrackState(recorder.state, session.trackScreens, hasG).copy(coachOn = coachOn),
+            state = liveTrackState(recorder.state, session.trackScreens, hasG).copy(
+                coachOn = coachOn,
+                mapOn = corners != null,
+                nextCorner = corners?.at(recorder.state.live?.latitude, recorder.state.live?.longitude),
+            ),
             onStop = {
                 recorder.stop()
                 nav.popBackStack()

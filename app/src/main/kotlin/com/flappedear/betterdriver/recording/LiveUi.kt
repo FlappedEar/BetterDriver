@@ -73,6 +73,7 @@ fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Bo
         coachCorner = state.coach?.corner,
         coachCue = state.coach?.text,
         coachPraise = state.coach?.praise == true,
+        coachDim = state.coach?.dim == true,
         secondTiles = screens.tiles(TrackPage.SECOND).map { trackTile(it, sources) },
         editable = stopped(live),
     )
