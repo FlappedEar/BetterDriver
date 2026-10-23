@@ -63,7 +63,7 @@ class ReaderActivity : Activity() {
         // Android 15 draws apps edge to edge: without the system bars' insets the status bar hid the
         // top buttons (0.1.0 on the Pixel 6, 23 Oct 2026).
         ViewCompat.setOnApplyWindowInsetsListener(column) { v, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars())
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             v.setPadding(bars.left + PAD, bars.top + PAD, bars.right + PAD, bars.bottom + PAD)
             insets
         }
@@ -178,7 +178,8 @@ class ReaderActivity : Activity() {
         }
         val missing = needed.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
         if (missing.isNotEmpty()) {
-            adapterText.text = "Allow Nearby devices, then press the button again."
+            val what = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "Nearby devices" else "Location"
+            adapterText.text = "Allow $what, then press the button again."
             requestPermissions(missing.toTypedArray(), 1)
         }
         return missing.isEmpty()
