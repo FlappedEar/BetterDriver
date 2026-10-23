@@ -190,8 +190,13 @@ class SceneGround(scene: PerfectLapScene) {
     private fun bar(line: List<ScenePoint>, i: Int): Bar? {
         val here = line[i]
         val p = here.eastMeters to here.northMeters
-        val l = edgesLeft.minBy { hypot(it.first - p.first, it.second - p.second) }
-        val r = edgesRight.minBy { hypot(it.first - p.first, it.second - p.second) }
+        // Both ends from one cross-section of the road, so a bar never spans to a section running beside it.
+        val k = edgesLeft.indices.minBy {
+            val (l, r) = edgesLeft[it] to edgesRight[it]
+            hypot((l.first + r.first) / 2 - p.first, (l.second + r.second) / 2 - p.second)
+        }
+        val l = edgesLeft[k]
+        val r = edgesRight[k]
         val dx = here.eastMeters - line[i - 1].eastMeters
         val dy = here.northMeters - line[i - 1].northMeters
         val dl = hypot(dx, dy).takeIf { it > 1e-6 } ?: return null

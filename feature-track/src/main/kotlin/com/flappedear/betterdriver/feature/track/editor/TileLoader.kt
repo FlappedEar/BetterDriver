@@ -25,6 +25,9 @@ private const val BytesPerPixel = 4
 private const val Threads = 6
 private const val TimeoutMs = 15_000
 private const val RetryAfterMs = 30_000L
+
+/** A tile the video could not have, or every download after the network failed, is not tried again for this long. */
+private const val LoadRetryAfterMs = 10 * 60_000L
 private const val MaxDownloadBytes = 4 * 1024 * 1024
 private const val HttpOk = 200
 
@@ -52,6 +55,11 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
     }
     private val pending = ConcurrentHashMap.newKeySet<Key>()
     private val failedAt = HashMap<Key, Long>()
+
+    /** For [load], off the main thread: tiles it could not have, and until when the network is skipped. */
+    private val loadFailedAt = ConcurrentHashMap<Key, Long>()
+
+    @Volatile private var offlineUntil = 0L
 
     /** Goes up with each key change, so downloads made with the old key do not count as failures. Main thread. */
     private var keyGeneration = 0
@@ -116,7 +124,20 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
      */
     fun load(source: TileSource, z: Int, x: Int, y: Int): ImageBitmap? {
         val key = Key(source.id, z, x, y)
-        return memory.get(key) ?: (readCached(key) ?: download(source, key))?.also { memory.put(key, it) }
+        return memory.get(key) ?: (readCached(key) ?: loadDownload(source, key))?.also { memory.put(key, it) }
+    }
+
+    /**
+     * The video draws every frame with the same tiles: a tile that failed, or a dropped network,
+     * costs one timeout, not one per frame.
+     */
+    private fun loadDownload(source: TileSource, key: Key): ImageBitmap? {
+        val now = SystemClock.elapsedRealtime()
+        val failed = loadFailedAt[key]
+        val skip = now < offlineUntil || (failed != null && now - failed < LoadRetryAfterMs)
+        val image = if (skip) null else download(source, key)
+        if (image == null && !skip) loadFailedAt[key] = SystemClock.elapsedRealtime()
+        return image
     }
 
     /** The tile only if it is already in memory; nothing is loaded. For drawing a coarser tile meanwhile. */
@@ -159,6 +180,7 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         val bytes = try {
             fetch(source.url(key.z, key.x, key.y))
         } catch (_: IOException) {
+            offlineUntil = SystemClock.elapsedRealtime() + LoadRetryAfterMs
             null
         } ?: return null
         // A WMS reports errors as XML with status 200: only real images are kept.
