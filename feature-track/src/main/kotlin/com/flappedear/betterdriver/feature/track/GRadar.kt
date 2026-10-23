@@ -32,11 +32,11 @@ data class RadarPoint(val forward: Float, val left: Float)
 data class GRadar(val now: RadarPoint?, val trail: List<RadarPoint>)
 
 /**
- * The G radar on the second screen (UI-240 A): the 0.5 g and 1 g rings only (UI-241 B), marked as in
- * the picked mockup, no readouts such as grip used or G (UI-242 C), and the dot moved the way the driver is pushed (UI-243 A): braking moves it up, a
- * right turn moves it left. The trail is the half second before the dot, drawn smaller and fainter
- * the older it is. Drawn at the screen's 4 Hz with nothing animated in between. Beyond [EdgeG] the
- * dot stays on the edge.
+ * The G radar on the second screen (UI-240 A): the 0.5 g and 1 g rings only (UI-241 B), marked as
+ * in the picked mockup, and no readouts such as grip used or G (UI-242 C). The dot moves the way the
+ * driver is pushed (UI-243 A): braking moves it up, a right turn moves it left. The trail is the half
+ * second before the dot, drawn smaller and fainter the older it is. Drawn at the screen's 4 Hz with
+ * nothing animated in between. Beyond [EdgeG] the dot stays on the edge.
  */
 @Composable
 fun GRadarView(radar: GRadar?, modifier: Modifier = Modifier) {
