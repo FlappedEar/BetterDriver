@@ -14,8 +14,8 @@ import kotlin.test.assertTrue
  * than v1.4b, which answers `?` to `AT CRA` without an id; [autoReceive] false refuses `AT AR` too.
  * Mode 01: RPM (0C) only, and intake air (0F) unasked. [vin] is the `09 02` answer (FBBD-284), none for null.
  * With [stn] it takes STN pass filters (`STFCP`, `STFAP id,mask`) and monitors through them (`STM`),
- * as the vLinker's STN1151 does (FBBD-320). The bus goes quiet at [quietFromMs]. `21 82` is answered
- * only behind header 7E1 (the FR-S transmission, ATF).
+ * as the vLinker's STN1151 does (FBBD-320). The bus goes quiet at [quietFromMs]: only [quietIds] when
+ * given. `21 82` is answered only behind header 7E1 (the FR-S transmission, ATF).
  */
 @Suppress("LongParameterList")
 private class BusElm(
@@ -27,6 +27,7 @@ private class BusElm(
     val vin: String? = FrsVin,
     val stn: Boolean = false,
     val quietFromMs: Long = Long.MAX_VALUE,
+    val quietIds: Set<Int>? = null,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -93,8 +94,10 @@ private class BusElm(
         monitoring = false
         val passes = if (stnMonitor) passFilters.toSet() else null
         stnMonitor = false
-        if (now >= quietFromMs) return feed("STOPPED")
+        val quiet = now >= quietFromMs
+        if (quiet && quietIds == null) return feed("STOPPED")
         val frames = bus.filterKeys { if (passes != null) it in passes else filter == null || it == filter }
+            .filterKeys { !(quiet && quietIds?.contains(it) == true) }
             .map { (id, data) -> if (headers) "%03X".format(id) + data else data }
             .let { once -> List(repeats) { once }.flatten() }
         feed(frames.joinToString("\r") + "\rSTOPPED")
@@ -241,6 +244,22 @@ class CanListenTest {
         assertTrue(elm.sent.drop(probeEnd).none { it.startsWith("ATCRA") }, elm.sent.toString())
         assertTrue(got.values.any { it.first == "coolant_temp" } && got.values.any { it.first == "steering_angle" })
         assertTrue(got.logs.any { it.startsWith("can_hz ") && it.endsWith("mode=stn") }, got.logs.toString())
+    }
+
+    @Test
+    fun `one frame that stops gives its channels back to polling`() {
+        // Codex on #328: 0x140 stops while steering goes on; rpm and the pedal must be polled again.
+        val elm = BusElm(frs, stn = true, quietIds = setOf(0x140), quietFromMs = 1_500)
+        val got = run(elm, stopAfterMs = 8_000)
+        val logs = got.logs.toString()
+        assertTrue(got.logs.any { it.startsWith("can_listen dropped 140: no frames in 10 listens") }, logs)
+        assertTrue("polling again what CAN gave" in got.logs, logs)
+        val dropped = elm.sent.lastIndexOf("STFAP 140,7FF")
+        assertTrue(elm.sent.drop(dropped).any { it == "010C" }, elm.sent.toString())
+        assertTrue(elm.sent.drop(dropped + 1).none { it == "STFAP 140,7FF" }, elm.sent.toString())
+        // Steering is still heard after rpm went back to polling.
+        val polledRpm = got.values.indexOfFirst { it.first == "rpm" && it.second == 1726.0 }
+        assertTrue(polledRpm >= 0 && got.values.indexOfLast { it.first == "steering_angle" } > polledRpm, logs)
     }
 
     @Test

@@ -151,6 +151,10 @@ class ElmPoller(
     private val listenFrames = LinkedHashMap<Int, Int>()
     private var listenMs = 0L
     private var emptyListens = 0
+
+    /** Listens in a row without a frame, by frame id, and the ids heard in the current listen (FBBD-320). */
+    private val silentListens = HashMap<Int, Int>()
+    private val heardNow = HashSet<Int>()
     private var turn = 0
 
     /** Listening stopped: the channels it gave are polled again (FBBD-320). */
@@ -475,13 +479,17 @@ class ElmPoller(
         val hadHeaders = headers
         val ids = byFrame.keys.toList()
         var frames = 0
+        var listened = emptyList<Int>()
+        heardNow.clear()
         if (headers || setHeaders(true)) {
-            frames = if (ids.size > 1 && setStnFilters(ids)) {
-                monitorStn(window)
+            if (ids.size > 1 && setStnFilters(ids)) {
+                frames = monitorStn(window)
+                if (stnFilters == true) listened = ids
             } else {
                 val id = ids[turn++ % ids.size]
                 val text = listenText(id, minOf(window, ROTATE_WINDOW_MS))
-                if (text == null) 0 else report(listOf(text))
+                if (text != null) frames = report(listOf(text))
+                listened = listOf(id)
             }
         }
         line.command("ATCAF1", AT_TIMEOUT_MS)
@@ -490,7 +498,27 @@ class ElmPoller(
         emptyListens = if (frames == 0) emptyListens + 1 else 0
         if (emptyListens >= MAX_EMPTY_LISTENS && listens.isNotEmpty()) {
             stopListening("no frames in $MAX_EMPTY_LISTENS listens")
+        } else {
+            dropSilent(listened)
         }
+    }
+
+    /**
+     * One frame id that stopped while the others go on (Codex on #328): after [MAX_EMPTY_LISTENS] of its
+     * listens without a frame its signals are dropped, so the channels it gave are polled again.
+     */
+    private fun dropSilent(listened: List<Int>) {
+        for (id in listened) silentListens[id] = if (id in heardNow) 0 else (silentListens[id] ?: 0) + 1
+        val silent = listened.filter { (silentListens[it] ?: 0) >= MAX_EMPTY_LISTENS }
+        if (silent.isEmpty()) return
+        val gone = listens.filter { it.canId in silent }
+        listener.log(
+            "can_listen dropped ${silent.joinToString(" ") { hex(it, CAN_ID_DIGITS) }}: no frames in " +
+                "$MAX_EMPTY_LISTENS listens (" + gone.joinToString(" ") { it.id } + ")",
+        )
+        silent.forEach { silentListens.remove(it) }
+        setListens(listens - gone.toSet())
+        listensLost = true
     }
 
     /**
@@ -564,6 +592,7 @@ class ElmPoller(
                 }
             }
             listenFrames[id] = (listenFrames[id] ?: 0) + frames.size
+            heardNow += id
         }
         return heard.size
     }
