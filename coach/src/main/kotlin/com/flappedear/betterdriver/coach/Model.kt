@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.timing.live.Fix
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
 import kotlinx.serialization.Serializable
 
@@ -241,6 +242,14 @@ sealed interface Advice {
         val afterApex: Int? = null,
     ) : Advice
 
+    /**
+     * What to do with the hands (FBBD-321), from the FR-S's steering wheel against the target pass:
+     * [what] the steering advice. Said with why first (UI-270 B): "front slid, slower in"; straightening
+     * earlier goes with the throttle in one exit cue (UI-271 B); a corner in pieces and the rear
+     * stepping out are said too (UI-272 A).
+     */
+    data class Steer(val what: SteerAdvice, override val precise: Boolean = true) : Advice
+
     /** The same advice, said with its numbers only when [precise]. */
     fun withPrecision(precise: Boolean): Advice = when (this) {
         is BrakeLater -> copy(precise = precise)
@@ -248,6 +257,7 @@ sealed interface Advice {
         is CarrySpeed -> copy(precise = precise)
         is Line -> copy(precise = precise)
         is Throttle -> copy(precise = precise)
+        is Steer -> copy(precise = precise)
     }
 
     /**
@@ -257,7 +267,7 @@ sealed interface Advice {
     fun brakeAnchor(before: CornerPass): Double? = when (this) {
         is BrakeLater -> at?.let { before.brakeAt + meters + it }
         is BrakeEarlier -> at?.let { at -> meters?.let { before.brakeAt - it + at } }
-        is CarrySpeed, is Line, is Throttle -> null
+        is CarrySpeed, is Line, is Throttle, is Steer -> null
     }
 }
 

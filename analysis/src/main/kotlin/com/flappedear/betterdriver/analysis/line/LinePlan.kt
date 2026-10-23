@@ -90,13 +90,14 @@ data class PlanAdvice(
     val minimumSpeedKmh: Double? = null,
     val pickupMeters: Double? = null,
     /**
-     * What to do with the wheel (FBBD-321), in driving order. Not in [any] yet: the screens and the
-     * coach say it only once its words are picked on the UI review page (round 54).
+     * What to do with the wheel (FBBD-321), in driving order; shown as Arek picked on the UI review
+     * page, round 54 (UI-273 B: words and the wheel trace).
      */
     val steering: List<SteerAdvice> = emptyList(),
 ) {
     val any: Boolean
-        get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null }
+        get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null } ||
+            steering.isNotEmpty()
 }
 
 /**

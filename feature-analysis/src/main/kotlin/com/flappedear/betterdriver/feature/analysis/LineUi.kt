@@ -13,7 +13,10 @@ import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.analysis.line.perfectLapScene
 import com.flappedear.betterdriver.analysis.optimal.PedalState
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.SteeringPass
 import kotlin.math.abs
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -41,7 +44,25 @@ data class LineCornerUi(
     val roadRight: List<LineDot>,
     /** Where the corner's label sits on the whole-lap map. */
     val anchor: LineDot?,
+    /** The wheel through the corner, yours against your target (FBBD-321, UI-273 B); null without both. */
+    val wheel: WheelTrace? = null,
 )
+
+/** One point of a wheel trace: metres driven from the corner's start, degrees of wheel into the turn. */
+data class WheelDot(val meters: Double, val deg: Double)
+
+/** The steering wheel through a corner (UI-273 B): your best lap's and your target's. */
+data class WheelTrace(val reference: List<WheelDot>, val target: List<WheelDot>) {
+    /** The most wheel into the turn on either lap, at least 1, for the chart's scale. */
+    val maxIntoDeg: Double get() = maxOf(1.0, (reference + target).maxOfOrNull { it.deg } ?: 0.0)
+
+    /** The most wheel out of the turn (countersteer) on either lap, at least 1/10 of [maxIntoDeg]. */
+    val maxOutDeg: Double get() =
+        maxOf(maxIntoDeg * MinOutShare, -((reference + target).minOfOrNull { it.deg } ?: 0.0))
+
+    /** The longer of the two, at least 1 m. */
+    val meters: Double get() = (reference + target).maxOfOrNull { it.meters }?.coerceAtLeast(1.0) ?: 1.0
+}
 
 /** "Where to find time": the session's fastest lap against the target through each corner. */
 data class LineUi(
@@ -93,6 +114,7 @@ fun lineUi(plan: LinePlan, sessionId: String): LineUi? {
                 roadRight = dots(c.roadRight),
                 anchor = c.reference.apex?.let { dots(listOf(PlanPoint(0.0, it.latitude, it.longitude))).first() }
                     ?: reference.getOrNull(reference.size / 2),
+                wheel = wheelTrace(c, ::dots),
             )
         },
         scene = perfectLapScene(plan),
@@ -105,19 +127,72 @@ fun cornerTodo(corner: PlanCorner): List<String> {
     if (corner.gainSeconds <= 0.0) return listOf("Your best lap is as quick as your target here.")
     val a = corner.advice
     if (!a.any) return listOf("The same as your best lap within GPS accuracy: no advice.")
-    val todo = adviceTodo(a)
+    val todo = adviceTodo(a, corner.reference.steering, corner.target.steering)
     val same = brakeSame(corner).takeIf { a.brakeMeters == null }
     return if (same != null) listOf(same) + todo else todo
 }
 
-/** [a] in words, one instruction a line (UI-166 A): brake, apex, speed, throttle, as there is advice for. */
-fun adviceTodo(a: PlanAdvice): List<String> {
+/**
+ * [a] in words, one instruction a line (UI-166 A): brake, apex, speed, throttle, as there is advice
+ * for, with the wheel (FBBD-321, round 54) where it is driven, why first (UI-270 B). [reference] and
+ * [target] give the wheel's numbers; without them its lines say no number.
+ */
+fun adviceTodo(a: PlanAdvice, reference: SteeringPass? = null, target: SteeringPass? = null): List<String> {
     val lines = mutableListOf<String>()
     a.brakeMeters?.let { lines += "Brake ${metres(it)} ${laterOrEarlier(it)}" }
+    if (SteerAdvice.Less in a.steering) lines += slidLine(reference, target)
     apexLine(a)?.let { lines += it }
+    if (SteerAdvice.More in a.steering) lines += wideLine(reference, target)
+    if (SteerAdvice.Smoother in a.steering) lines += smoothLine(reference, target)
     a.minimumSpeedKmh?.let { lines += speedLine(it) }
+    a.steering.filterIsInstance<SteerAdvice.OpenEarlier>().firstOrNull()
+        ?.let { lines += "Straighten ${it.meters} m earlier" }
     a.pickupMeters?.let { lines += "Back on the throttle ${metres(it)} ${laterOrEarlier(it)}" }
+    if (SteerAdvice.Oversteer in a.steering) lines += "The rear stepped out: gentler on the throttle"
     return lines
+}
+
+private fun slidLine(reference: SteeringPass?, target: SteeringPass?): String {
+    val more = reference?.pushDeg?.let { r -> target?.pushDeg?.let { (r - it).roundToInt() } }
+    return if (more == null) "Front slid: slower in" else "Front slid: $more° more lock than your target, slower in"
+}
+
+private fun wideLine(reference: SteeringPass?, target: SteeringPass?): String {
+    val less = reference?.let { r -> target?.let { (it.peakDeg - r.peakDeg).roundToInt() } }
+    return if (less == null) "Ran wide: turn in more" else "Ran wide: $less° less lock than your target, turn in more"
+}
+
+private fun smoothLine(reference: SteeringPass?, target: SteeringPass?): String {
+    val extra = reference?.let { r -> target?.let { r.corrections - it.corrections } }
+    return if (extra == null) {
+        "One smooth turn of the wheel"
+    } else {
+        "One smooth turn: you added lock $extra more times than your target"
+    }
+}
+
+/**
+ * The wheel through [c] on your best lap and your target (UI-273 B), with [dots] placing the points
+ * so each lap is measured by the distance it drove; null unless both laps have the wheel.
+ */
+private fun wheelTrace(c: PlanCorner, dots: (List<PlanPoint>) -> List<LineDot>): WheelTrace? {
+    val side = if (c.turnsLeft) 1.0 else -1.0
+    fun trace(points: List<PlanPoint>): List<WheelDot> {
+        val placed = dots(points)
+        var driven = 0.0
+        return points.indices.mapNotNull { i ->
+            if (i > 0) {
+                driven += hypot(
+                    placed[i].eastMeters - placed[i - 1].eastMeters,
+                    placed[i].northMeters - placed[i - 1].northMeters,
+                )
+            }
+            points[i].steerDeg?.let { WheelDot(driven, it * side) }
+        }
+    }
+    val reference = trace(c.reference.line)
+    val target = trace(c.target.line)
+    return if (reference.size < 2 || target.size < 2) null else WheelTrace(reference, target)
 }
 
 private fun brakeSame(corner: PlanCorner) =
@@ -150,6 +225,9 @@ private fun targetFrom(pass: PlanPass, sessionId: String): String {
 }
 
 private const val MillisPerSecond = 1000.0
+
+/** Room below the zero line of a wheel trace without countersteer: a tenth of the chart's wheel. */
+private const val MinOutShare = 0.1
 
 /** A lap time as the app shows one. */
 internal fun lineLapTime(seconds: Double): String = formatLapTime((seconds * MillisPerSecond).roundToLong())

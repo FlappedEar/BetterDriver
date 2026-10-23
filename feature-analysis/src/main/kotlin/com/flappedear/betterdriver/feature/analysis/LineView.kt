@@ -111,6 +111,7 @@ private fun LineSide(ui: LineUi, corner: LineCornerUi?, pick: (String?) -> Unit,
                     Text(line)
                 }
             }
+            corner.wheel?.let { WheelChart(it, Modifier.padding(top = 8.dp)) }
         }
         Dim("Lines closer than 1.5 m are treated as the same line: the RaceBox repeats a line to about that.")
     }

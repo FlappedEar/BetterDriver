@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import kotlin.math.roundToInt
 
 /**
@@ -112,7 +113,10 @@ private const val TenthsPerMinute = 600L
  * without a target (logged before FBBD-242) is said as before: "Turn 3, brake 10 metres later".
  * The line and the throttle (FBBD-307, round 43): "Turn 1, tighter at the apex" without a number
  * (UI-168 B), "Turn 1, throttle 5 after the apex", the target only (UI-169 C), and at most two in
- * one cue (UI-170 B): "Turn 1, tighter at the apex, throttle 5 after the apex".
+ * one cue (UI-170 B): "Turn 1, tighter at the apex, throttle 5 after the apex". The hands on the
+ * FR-S (FBBD-321, round 54): why first, then what to do (UI-270 B), "Turn 6, front slid, slower in";
+ * straightening with the throttle (UI-271 B), "Turn 6, straighten 10 earlier, throttle 5 after the
+ * apex"; "one smooth turn" and "rear stepped out, gentler throttle" (UI-272 A).
  */
 @Suppress("TooManyFunctions", "CyclomaticComplexMethod") // Each phrase with its few forms.
 object Phrases : PhraseBook {
@@ -143,6 +147,13 @@ object Phrases : PhraseBook {
                 after > 0 -> "throttle $after after the apex"
                 else -> "throttle ${-after} before the apex"
             }
+        }
+        is Advice.Steer -> when (val w = a.what) {
+            SteerAdvice.Less -> "front slid, slower in"
+            SteerAdvice.More -> "ran wide, turn in more"
+            SteerAdvice.Smoother -> "one smooth turn"
+            SteerAdvice.Oversteer -> "rear stepped out, gentler throttle"
+            is SteerAdvice.OpenEarlier -> if (a.precise) "straighten ${w.meters} earlier" else "straighten earlier"
         }
     }
 
@@ -186,7 +197,17 @@ object Phrases : PhraseBook {
             a.afterApex > 0 -> "Throttle ${a.afterApex} m after the apex"
             else -> "Throttle ${-a.afterApex} m before the apex"
         }
+        a is Advice.Steer -> steerLine(a.what)
         else -> null
+    }
+
+    /** The hands on the coach line (UI-270 B, UI-271 B, UI-272 A): "Front slid · slower in". */
+    private fun steerLine(w: SteerAdvice): String = when (w) {
+        SteerAdvice.Less -> "Front slid · slower in"
+        SteerAdvice.More -> "Ran wide · turn in more"
+        SteerAdvice.Smoother -> "One smooth turn"
+        SteerAdvice.Oversteer -> "Rear stepped out · gentler throttle"
+        is SteerAdvice.OpenEarlier -> "Straighten ${w.meters} m earlier"
     }
 
     override fun result(moved: List<Moved>, done: Boolean, gainSeconds: Double?): String {
@@ -206,6 +227,7 @@ object Phrases : PhraseBook {
         is Advice.BrakeLater, is Advice.BrakeEarlier ->
             "Braked ${kotlin.math.abs(by).roundToInt()} m " + if (by >= 0) "later" else "earlier"
         is Advice.CarrySpeed -> "Apex ${kotlin.math.abs(by).roundToInt()} km/h " + if (by >= 0) "faster" else "slower"
+        is Advice.Steer -> "Straightened ${kotlin.math.abs(by).roundToInt()} m " + if (by >= 0) "earlier" else "later"
     }
 
     override fun plan(turns: List<Int>): String = when (turns.size) {

@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.analysis.line.DayProof
 import com.flappedear.betterdriver.analysis.line.DaySession
 import com.flappedear.betterdriver.analysis.line.LinePass
 import com.flappedear.betterdriver.analysis.line.ProofVerdict
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -79,6 +80,13 @@ class TrackDayUiTest {
         assertEquals(listOf(NoAdviceText), ui.corners.single().todo)
         assertTrue(ui.next.isEmpty())
         assertNull(ui.coachLine)
+    }
+
+    @Test
+    fun `a corner whose only difference is the wheel says it (FBBD-321)`() {
+        val advice = CornerAdvice(steering = listOf(SteerAdvice.OpenEarlier(10)))
+        val ui = trackDayUi(day(corner("Corner 2", 0.3, 0.0, advice = advice)), "Jastrząb", "Fri 29 Aug")
+        assertEquals(listOf("Straighten 10 m earlier"), ui.corners.single().todo)
     }
 
     @Test

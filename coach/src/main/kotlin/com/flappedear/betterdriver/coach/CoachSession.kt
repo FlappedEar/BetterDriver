@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.track.Track
 
 /**
@@ -178,11 +179,14 @@ class CoachLines(private val phrases: PhraseBook) {
 
 /**
  * How far [after] moved the way [a] asks from [before]: metres tighter at the apex, metres earlier on
- * throttle, metres later braking, km/h more at the apex; null when not measured.
+ * throttle, metres later braking, km/h more at the apex, metres earlier off full lock; null when not measured.
  */
 fun movedBy(a: Advice, before: CornerPass, after: CornerPass): Double? = when (a) {
     is Advice.Line -> tighterBy(before, after, a.turn)
     is Advice.Throttle -> before.pickupAt?.let { b -> after.pickupAt?.let { b - it } }
     is Advice.BrakeLater, is Advice.BrakeEarlier -> after.brakeAt - before.brakeAt
     is Advice.CarrySpeed -> after.minKmh - before.minKmh
+    // Metres earlier off full lock (FBBD-321); the other hands advice has no distance.
+    is Advice.Steer -> before.steering?.unwindAt?.takeIf { a.what is SteerAdvice.OpenEarlier }
+        ?.let { b -> after.steering?.unwindAt?.let { b - it } }
 }

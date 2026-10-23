@@ -3,6 +3,8 @@ package com.flappedear.betterdriver.coach
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.SteeringPass
 import java.util.Locale
 
 /**
@@ -234,6 +236,8 @@ object CoachEvents {
      * The line and the throttle (FBBD-307): "line:2:turn=Left" (metres tighter, negative wider, at a
      * left-hand corner) and
      * "throttle:5:after=5" (metres earlier, negative later; the target metres after the apex).
+     * The hands (FBBD-321): "steer_less", "steer_more", "steer_smooth", "oversteer" and
+     * "straighten:10" (metres earlier off full lock).
      */
     private fun adviceText(a: Advice): String {
         val (kind, number, target) = when (a) {
@@ -243,8 +247,17 @@ object CoachEvents {
             is Advice.Line ->
                 Triple("line", a.tighterMeters, a.turn.takeIf { it != Turn.Straight }?.let { "$Dir${it.name}" })
             is Advice.Throttle -> Triple("throttle", a.earlierMeters, a.afterApex?.let { "$After$it" })
+            is Advice.Steer -> steerText(a.what)
         }
         return listOfNotNull(kind, number?.toString(), Vague.takeUnless { a.precise }, target).joinToString(":")
+    }
+
+    private fun steerText(w: SteerAdvice): Triple<String, Int?, String?> = when (w) {
+        SteerAdvice.Less -> Triple("steer_less", null, null)
+        SteerAdvice.More -> Triple("steer_more", null, null)
+        SteerAdvice.Smoother -> Triple("steer_smooth", null, null)
+        SteerAdvice.Oversteer -> Triple("oversteer", null, null)
+        is SteerAdvice.OpenEarlier -> Triple("straighten", w.meters, null)
     }
 
     private fun parseAdvice(s: String): Advice {
@@ -262,6 +275,11 @@ object CoachEvents {
                 rest.firstOrNull { it.startsWith(Dir) }?.removePrefix(Dir)?.let(Turn::valueOf) ?: Turn.Straight,
             )
             "throttle" -> Advice.Throttle(requireNotNull(number), precise, tagged(After))
+            "steer_less" -> Advice.Steer(SteerAdvice.Less, precise)
+            "steer_more" -> Advice.Steer(SteerAdvice.More, precise)
+            "steer_smooth" -> Advice.Steer(SteerAdvice.Smoother, precise)
+            "oversteer" -> Advice.Steer(SteerAdvice.Oversteer, precise)
+            "straighten" -> Advice.Steer(SteerAdvice.OpenEarlier(requireNotNull(number)), precise)
             else -> throw IllegalArgumentException("unknown advice $s")
         }
     }
@@ -274,7 +292,9 @@ object CoachEvents {
 
     /**
      * "lap,brakeAt,apexAt,entryKmh,minKmh,timeMicros", distances and speeds to 0.1; then (FBBD-307)
-     * ",apexOffset,pickupAt,apexMicros", each empty when not known. Passes logged before have six fields.
+     * ",apexOffset,pickupAt,apexMicros", each empty when not known; then with the wheel (FBBD-321)
+     * ",peakDeg,peakAt,turnInAt,unwindAt,corrections,countersteer,pushDeg", countersteer 1 or 0.
+     * Passes logged before have six or nine fields.
      */
     private fun passText(p: CornerPass) = String.format(
         Locale.ROOT,
@@ -284,11 +304,33 @@ object CoachEvents {
         p.apexOffsetMeters?.let { String.format(Locale.ROOT, "%.2f", it) },
         p.pickupAt?.let { String.format(Locale.ROOT, "%.1f", it) },
         p.apexMicros?.toString(),
+    ).joinToString("") { "," + it.orEmpty() } + p.steering?.let(::steeringText).orEmpty()
+
+    private fun steeringText(s: SteeringPass): String = listOf(
+        String.format(Locale.ROOT, "%.1f", s.peakDeg),
+        String.format(Locale.ROOT, "%.1f", s.peakAt),
+        String.format(Locale.ROOT, "%.1f", s.turnInAt),
+        s.unwindAt?.let { String.format(Locale.ROOT, "%.1f", it) },
+        s.corrections.toString(),
+        if (s.countersteer) "1" else "0",
+        s.pushDeg?.let { String.format(Locale.ROOT, "%.1f", it) },
     ).joinToString("") { "," + it.orEmpty() }
+
+    private fun parseSteering(v: List<String>): SteeringPass = SteeringPass(
+        peakDeg = v[0].toDouble(),
+        peakAt = v[1].toDouble(),
+        turnInAt = v[2].toDouble(),
+        unwindAt = v[3].toDoubleOrNull(),
+        corrections = v[4].toInt(),
+        countersteer = v[5] == "1",
+        pushDeg = v[6].toDoubleOrNull(),
+    )
 
     private fun parsePass(corner: Int, s: String): CornerPass {
         val v = s.split(',')
-        require(v.size == PassFields || v.size == LinePassFields) { "pass needs $PassFields or $LinePassFields fields" }
+        require(v.size == PassFields || v.size == LinePassFields || v.size == SteerPassFields) {
+            "pass needs $PassFields, $LinePassFields or $SteerPassFields fields"
+        }
         val next = v.iterator()
         return CornerPass(
             corner = corner,
@@ -301,9 +343,12 @@ object CoachEvents {
             apexOffsetMeters = if (next.hasNext()) next.next().toDoubleOrNull() else null,
             pickupAt = if (next.hasNext()) next.next().toDoubleOrNull() else null,
             apexMicros = if (next.hasNext()) next.next().toLongOrNull() else null,
+            steering = v.takeIf { it.size == SteerPassFields }
+                ?.let { parseSteering(it.subList(LinePassFields, it.size)) },
         )
     }
 
     private const val PassFields = 6
     private const val LinePassFields = 9
+    private const val SteerPassFields = 16
 }

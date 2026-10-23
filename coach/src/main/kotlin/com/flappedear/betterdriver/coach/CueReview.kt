@@ -112,7 +112,8 @@ private fun ReviewedCue.cornerOutcome(words: ReviewWords): String? {
     val target = cue.target
     val advice = cue.advice
     // The line, the throttle and two in one cue (FBBD-307) read as the coach line showed them (UI-173 A).
-    if (cue.also != null || advice is Advice.Line || advice is Advice.Throttle) {
+    val asShown = advice is Advice.Line || advice is Advice.Throttle || advice is Advice.Steer
+    if (cue.also != null || asShown) {
         val moved = cue.asked.map { Moved(it, movedBy(it, before, r.after)?.takeIf { precise }) }
         val text = PhraseBook.of(cue.language).result(moved, r.improved, null)
         return "$text · ${timeChange(r.gainMicros, precise, words)}"
