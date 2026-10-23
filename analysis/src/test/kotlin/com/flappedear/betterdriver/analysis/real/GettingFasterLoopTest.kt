@@ -31,6 +31,7 @@ import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.CoachSession
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CornerMap
+import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.Cue
 import com.flappedear.betterdriver.coach.CueKind
 import com.flappedear.betterdriver.coach.FocusTarget
@@ -104,9 +105,8 @@ class GettingFasterLoopTest {
         val focus: SessionFocusRecord,
     )
 
-    /** One focus corner of a session, in the next: the coach's corners there, its passes and cues, and the proof. */
-    private class FocusCorner(
-        val target: FocusTarget,
+    /** One corner the coach of the next session worked on: its corners there, their passes and cues. */
+    private class Coached(
         val coachCorners: List<Int>,
         val passes: Int,
         /** Passes at least [MinLossMicros] slower than the coach's target. */
@@ -114,9 +114,18 @@ class GettingFasterLoopTest {
         /** Of those, the ones the coach has brake or speed advice for. */
         val advisable: Int,
         val cues: Int,
-        val attempt: FocusAttempt?,
     ) {
         val silent: Boolean get() = coachCorners.isNotEmpty() && losing >= 2 && cues == 0
+    }
+
+    /** One focus corner of a session (FBBD-20), in the next: how the coach did there, and the proof. */
+    private class FocusCorner(val target: FocusTarget, val coached: Coached, val attempt: FocusAttempt?) {
+        val coachCorners get() = coached.coachCorners
+        val passes get() = coached.passes
+        val losing get() = coached.losing
+        val advisable get() = coached.advisable
+        val cues get() = coached.cues
+        val silent get() = coached.silent
     }
 
     /** A corner of [from]'s line plan and the lap the coach of the next session aims at there. */
@@ -135,7 +144,12 @@ class GettingFasterLoopTest {
         val cues: List<Cue>,
         val proof: LineProof?,
         val targets: List<Target>,
-    )
+        /** The line plan's focus corners when the coach worked on them (UI-174 A), by CornerId. */
+        val planned: Map<String, Coached>?,
+    ) {
+        /** The corners the coach worked on: the plan's focus when it had one, else the session focus. */
+        val worked: List<Coached> get() = planned?.values?.toList() ?: corners.map { it.coached }
+    }
 
     private fun day(files: List<String>, track: Track): List<Step> {
         val steps = mutableListOf<Step>()
@@ -194,8 +208,26 @@ class GettingFasterLoopTest {
     private fun record(track: Track, step: Step, events: List<RecorderEvent>): SessionCoachingRecord? =
         sessionCoachingRecord(
             step.analysis, track.id, step.data.id, step.data.info.startUtcMillis,
-            CoachedSession(CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events)),
+            CoachedSession(
+                CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events), CoachEvents.planCorners(events),
+            ),
         )
+
+    /**
+     * [plan]'s focus as the app gives it to the coach (planFocusOf in CoachService): its corners as
+     * coach picks, most time to find first, and the time to find in each by CornerId; null without one.
+     */
+    private fun planFocus(plan: LinePlan): Pair<List<CornerPick>, Map<String, Double>>? {
+        val corners = plan.focus().filter { it.cornerId != null && it.target.line.isNotEmpty() }
+        if (plan.identityRevision == null || corners.isEmpty()) return null
+        val picks = corners.map { c ->
+            CornerPick(
+                c.name, c.target.line.map { it.latitude }, c.target.line.map { it.longitude }, plan.sessionId,
+                c.cornerId, plan.identityRevision,
+            )
+        }
+        return picks to corners.associate { it.cornerId!! to it.gainSeconds }
+    }
 
     /** [plan]'s targets as the app gives them to the coach (CoachReferences.plannedTargets). */
     private fun plannedTargets(plan: LinePlan) = PlannedTargets(
@@ -220,8 +252,12 @@ class GettingFasterLoopTest {
                 steps.subList(0, k).map { SessionLaps(it.data.id, tracedLaps(at, it.data.coachFixes())) },
                 from.linePlan?.let(::plannedTargets),
             )
+            // The focus as the app gives it (planFocusOf in the app's CoachService, UI-174 A): the line
+            // plan's corners with the most time to find, else the last session's focus (FBBD-20).
+            val planned = from.linePlan?.let(::planFocus)
             val coach = CoachSession(
-                CoachSettings(Verbosity.Focus), at, reference, sameDay = true, focus = from.focus.picks(),
+                CoachSettings(Verbosity.Focus), at, reference, sameDay = true,
+                focus = planned?.first ?: from.focus.picks(), focusSeconds = planned?.second.orEmpty(),
             )
             val focusEvent = RecorderEvent(
                 0, CoachEvents.FOCUS,
@@ -237,28 +273,35 @@ class GettingFasterLoopTest {
             val proof = from.linePlan?.let { before ->
                 to.linePlan?.let { lineProof(before, it, CoachEvents.cuesByCorner(events)) }
             }
+            val measure = Measure(at, reference, to, cues)
             Turn(
-                from, to, focusCorners(at, reference, from, to, cues, attempts), cues, proof,
-                targets(at, reference, steps.subList(0, k), from.linePlan),
+                from, to,
+                from.focus.targets.map { t ->
+                    FocusCorner(t, measure.at(t.cornerId), attempts.firstOrNull { it.ask.cornerId == t.cornerId })
+                },
+                cues, proof, targets(at, reference, steps.subList(0, k), from.linePlan),
+                planned?.first?.mapNotNull { it.cornerId }?.associateWith { measure.at(it) },
             )
         }
         return steps to turns
     }
 
-    /** What became of each focus corner of [from] in [to]: against the reference the coach starts [to] with. */
-    private fun focusCorners(
-        at: Track,
-        reference: CoachReference?,
-        from: Step,
+    /** How the coach of [to] did at a corner, against the reference it starts [to] with. */
+    private class Measure(
+        private val at: Track,
+        private val reference: CoachReference?,
         to: Step,
-        cues: List<Cue>,
-        attempts: List<FocusAttempt>,
-    ): List<FocusCorner> {
-        val map = reference?.let { r -> lapFrame(at)?.let { identified(r.map(), it, at.identity) } }
-        val laps = tracedLaps(at, to.data.coachFixes())
-        val passes = map?.let { m -> laps.flatMap { m.passes(it.trace, it.lap.number) } }.orEmpty()
-        return from.focus.targets.map { t ->
-            val corners = map?.corners.orEmpty().filter { it.cornerId != null && it.cornerId == t.cornerId }
+        private val cues: List<Cue>,
+    ) {
+        private val map = reference?.let { r -> lapFrame(at)?.let { identified(r.map(), it, at.identity) } }
+        private val passes = map?.let { m ->
+            tracedLaps(at, to.data.coachFixes()).flatMap { m.passes(it.trace, it.lap.number) }
+        }
+            .orEmpty()
+
+        /** The coach's corners in the track corner [cornerId], their passes, losses and cues. */
+        fun at(cornerId: String?): Coached {
+            val corners = map?.corners.orEmpty().filter { it.cornerId != null && it.cornerId == cornerId }
             var count = 0
             var losing = 0
             var advisable = 0
@@ -272,11 +315,8 @@ class GettingFasterLoopTest {
                 losing += slow.size
                 advisable += slow.count { advise(it, target, c) != null }
             }
-            FocusCorner(
-                t, corners.map { it.number }, count, losing, advisable,
-                cues.count { it.kind == CueKind.Corner && it.cornerId == t.cornerId },
-                attempts.firstOrNull { it.ask.cornerId == t.cornerId },
-            )
+            val said = cues.count { it.kind == CueKind.Corner && it.cornerId == cornerId }
+            return Coached(corners.map { it.number }, count, losing, advisable, said)
         }
     }
 
@@ -348,7 +388,12 @@ class GettingFasterLoopTest {
         }
         for (t in turns) {
             val turn = "${t.from.label} -> ${t.to.label}"
-            // 2. Coach: no number without High confidence (FBBD-177).
+            // 2. Coach: the out-lap says the plan's focus corners once (UI-174 A), the way the coach numbers them.
+            val plans = t.cues.filter { it.kind == CueKind.Plan }
+            if (t.from.linePlan?.focus()?.isNotEmpty() == true && plans.size != 1) {
+                problems += "$turn: ${plans.size} out-lap plan cues, 1 expected"
+            }
+            // No number without High confidence (FBBD-177).
             t.cues.filter { it.kind == CueKind.Corner && it.confidence != Confidence.HIGH }
                 .filter { c -> c.text.replace("Turn ${c.turn}", "").any(Char::isDigit) }
                 .forEach { problems += "$turn: '${it.text}' says a number at ${it.confidence}" }
@@ -370,7 +415,8 @@ class GettingFasterLoopTest {
         }
         val all = turns.flatMap { it.corners }
         val uncoachable = all.count { it.coachCorners.isEmpty() }
-        val silent = all.count { it.silent }
+        // Silent where the coach worked: the plan's focus when it had one (UI-174 A), else the session focus.
+        val silent = turns.sumOf { t -> t.worked.count { it.silent } }
         if (uncoachable > known.uncoachable) {
             problems += "$uncoachable focus corners without a coach corner, was ${known.uncoachable}"
         }
@@ -405,7 +451,9 @@ class GettingFasterLoopTest {
     fun `the loop runs through Arek's three sessions at Silesia Ring (27 Sep 2026)`() =
         check(
             "Silesia Ring 27 Sep", RealCorpus.SILESIA_DAY, RealCorpus.silesiaTrack(),
-            Known(uncoachable = 0, silent = 2, otherTarget = 6, unspoken = 5),
+            // Silent 2 -> 4 when silent became the plan's focus (UI-174 A): Turns 6, 11 and 1 follow straights
+            // of 1.6 to 2.2 s, shorter than the shortest cue (2.8 s), so nothing is said there in time.
+            Known(uncoachable = 0, silent = 4, otherTarget = 6, unspoken = 5),
         )
 
     /** Each turn of the loop as a Markdown page, with the drive replay's in the pull request's checks. */

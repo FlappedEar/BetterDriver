@@ -102,6 +102,9 @@ data class LiveSnapshot(
      * dash and never an old reading as current.
      */
     val channels: Map<String, Double> = emptyMap(),
+    /** The last fix's position, for the map screen's car (UI-171 B); null before the first fix. */
+    val latitude: Double? = null,
+    val longitude: Double? = null,
 ) {
     val gnss: GnssState
         get() = when {
@@ -149,6 +152,8 @@ class LiveTracker(
     private var receiverRateHz = 0
     private var sats: Int? = null
     private var speedKmh: Double? = null
+    private var latitude: Double? = null
+    private var longitude: Double? = null
     private var accelX: Double? = null
     private var accelY: Double? = null
     private val gWindow = GWindow()
@@ -162,13 +167,13 @@ class LiveTracker(
     }
 
     override fun onSamples(set: SampleSet) = synchronized(this) {
-        var lat = false
-        var lon = false
+        var lat: Double? = null
+        var lon: Double? = null
         var accel = false
         for (v in set.values) {
             when (v.channelId) {
-                GnssChannels.LAT.id -> lat = true
-                GnssChannels.LON.id -> lon = true
+                GnssChannels.LAT.id -> lat = v.value
+                GnssChannels.LON.id -> lon = v.value
                 GnssChannels.SATS.id -> sats = v.value.toInt()
                 GnssChannels.SPEED_KMH.id -> speedKmh = v.value
                 accelIds?.first -> {
@@ -183,13 +188,21 @@ class LiveTracker(
             standing.update(speedKmh, accelX, accelY)
             gWindow.add(set.tMicros, accelX, accelY)
         }
-        if (lat && lon) {
+        if (lat != null && lon != null) {
+            place(set.tMicros, lat, lon)
             fixes++
             lastFixMicros = maxOf(lastFixMicros ?: Long.MIN_VALUE, set.tMicros)
             recentFixes.addLast(set.tMicros)
             trim(set.tMicros)
             receiverRateHz = measureRate(set.tMicros)
         }
+    }
+
+    /** The car's position from the newest fix only: a late one is older. */
+    private fun place(t: Long, lat: Double, lon: Double) {
+        if (t < (lastFixMicros ?: Long.MIN_VALUE)) return
+        latitude = lat
+        longitude = lon
     }
 
     override fun onStatus(status: RecorderStatus) = synchronized(this) {
@@ -217,6 +230,8 @@ class LiveTracker(
             gCombined = gWindow.combined(standing),
             receiverRateHz = receiverRateHz,
             channels = shown.values.mapNotNull { it.current(now) }.toMap(),
+            latitude = latitude,
+            longitude = longitude,
         )
     }
 

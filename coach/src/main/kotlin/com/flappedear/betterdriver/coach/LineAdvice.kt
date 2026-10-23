@@ -8,8 +8,9 @@ import kotlin.math.sign
 // Where to be on the track and where to accelerate (FBBD-307): what the target pass of a corner
 // does differently from the last one in its line at the apex and where the pedal goes back on,
 // measured live by the same pass meter as braking and apex speed, so both passes are read the same
-// way. Differences smaller than the receiver repeats are not advice. The words the coach says for
-// them are Arek's pick on the UI review page (round 43); until then nothing here is said. The
+// way. Differences smaller than the receiver repeats are not advice. The words are Arek's picks on
+// the UI review page, round 43: "tighter at the apex" without a number (UI-168 B), "throttle 5
+// after the apex", the target only (UI-169 C), and at most two things in one cue (UI-170 B). The
 // throttle point needs the pedal from OBD: the speed alone does not show it (the car still slows on
 // a part throttle).
 
@@ -81,4 +82,30 @@ fun improvedPickup(earlierMeters: Int, before: CornerPass, after: CornerPass): B
     val b = before.pickupAt
     val a = after.pickupAt
     return b != null && a != null && (b - a) * sign(earlierMeters.toDouble()) >= abs(earlierMeters) / 2.0
+}
+
+/** At most this many things to change are said in one corner cue (UI-170 B). */
+const val MaxAdvicePerCue = 2
+
+/**
+ * What to ask for at [corner] (FBBD-307, UI-170 B): the brake or apex speed advice ([advise]), where
+ * to be at the apex ([lineChange]) and where to go back on throttle ([pickupChange]), at most
+ * [MaxAdvicePerCue], in the order they are driven. With all three, the line stays (the apex is
+ * where both halves of the corner meet) and the other kept is the one for the half of the corner
+ * that lost more time against [target]: before the apex the brake or speed advice, after it the
+ * throttle. Without the time to the apex on both passes, the first two in driving order.
+ */
+fun cornerAdvice(pass: CornerPass, target: CornerPass, corner: Corner): List<Advice> {
+    val main = advise(pass, target, corner)
+    val line = lineChange(pass, target, corner)?.let { Advice.Line(it, turn = corner.turn) }
+    val throttle = pickupChange(pass, target)?.let { Advice.Throttle(it, afterApex = pickupAfterApex(target)) }
+    val all = listOfNotNull(main, line, throttle)
+    val a = pass.apexMicros
+    val b = target.apexMicros
+    return when {
+        all.size <= MaxAdvicePerCue -> all
+        a == null || b == null -> all.take(MaxAdvicePerCue)
+        a - b >= (pass.timeMicros - a) - (target.timeMicros - b) -> listOfNotNull(main, line)
+        else -> listOfNotNull(line, throttle)
+    }
 }

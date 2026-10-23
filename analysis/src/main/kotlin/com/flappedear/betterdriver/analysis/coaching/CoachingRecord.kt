@@ -20,9 +20,10 @@ import kotlinx.serialization.Serializable
 /**
  * v2 (FBBD-181) adds each lap's time, the throttle pickup of each pass and where an imported
  * session came from, for the progression across sessions. A v1 record still reads; it is made
- * again when its session is analysed again.
+ * again when its session is analysed again. v3 (FBBD-313) adds the line plan corners the coach
+ * worked on ([SessionCoachingRecord.coachedCorners]), so a v2 record is made again from its recording.
  */
-const val CoachingHistoryAlgorithm = "coaching-history-v2"
+const val CoachingHistoryAlgorithm = "coaching-history-v3"
 
 /**
  * One counted lap's pass through a corner, as kept for the history. [seconds] is the corner time;
@@ -131,7 +132,9 @@ data class FocusAsk(
  * What one analysed session at a track holds for the coaching history (FBBD-180): its corners,
  * under the CornerIds of [identityRevision] of the track's corner identity, what it recommended
  * working on next ([focus]), and the session whose focus the coach worked on during it
- * ([coachedFrom], from the coach's own event; null when the coach did not). [laps] are its timed
+ * ([coachedFrom], from the coach's own event; null when the coach did not). [coachedCorners]: when
+ * the coach worked on [coachedFrom]'s line plan focus (UI-174 A), its CornerIds, most time to find
+ * first; empty when it worked on that session's next-session focus (FBBD-313). [laps] are its timed
  * laps and [origin] where it came from when it was imported from another app's file ("VBO
  * lap-12.vbo"), null when recorded here (FBBD-181): both empty in records from before they were kept.
  */
@@ -145,6 +148,7 @@ data class SessionCoachingRecord(
     val algorithm: String = CoachingHistoryAlgorithm,
     val identityRevision: Int,
     val coachedFrom: String? = null,
+    val coachedCorners: List<String> = emptyList(),
     val focus: List<FocusAsk> = emptyList(),
     val corners: List<CornerRecord> = emptyList(),
     val laps: List<LapRecord> = emptyList(),
@@ -165,9 +169,15 @@ data class SessionCoachingRecord(
 
 /**
  * What the coach did during a session, from its events: the session whose focus it worked on
- * ([focusFrom]), and how many corner cues it gave at each CornerId ([cues]).
+ * ([focusFrom]), and how many corner cues it gave at each CornerId ([cues]). [planCorners]: when it
+ * worked on that session's line plan focus (UI-174 A) and not its next-session focus, those corners'
+ * CornerIds, most time to find first (FBBD-313).
  */
-data class CoachedSession(val focusFrom: String? = null, val cues: Map<String, Int> = emptyMap())
+data class CoachedSession(
+    val focusFrom: String? = null,
+    val cues: Map<String, Int> = emptyMap(),
+    val planCorners: List<String> = emptyList(),
+)
 
 /**
  * The coaching history record of session [sessionId] at [trackId], started at [startUtcMillis],
@@ -221,6 +231,8 @@ fun sessionCoachingRecord(
         sessionStartUtcMillis = startUtcMillis,
         identityRevision = revision,
         coachedFrom = coached.focusFrom?.takeIf { it != sessionId },
+        coachedCorners = coached.planCorners.takeIf { coached.focusFrom != null && coached.focusFrom != sessionId }
+            .orEmpty().distinct(),
         focus = nextSessionPlan(analysis).focuses.filter { it.segmentId in ids }.map { f ->
             FocusAsk(
                 cornerId = f.segmentId,

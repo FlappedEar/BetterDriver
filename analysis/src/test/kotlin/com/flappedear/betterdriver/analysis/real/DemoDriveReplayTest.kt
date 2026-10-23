@@ -270,9 +270,11 @@ class DemoDriveReplayTest {
         /**
          * Jastrząb's short straights (FBBD-256): since the coach times a cue with the car still gaining speed,
          * every cue ends before its braking zone (0.06 s at worst in English, 0.2 s or more in Polish; was
-         * 0.06 s late, "Turn 4, brake at 165"). Half of them end at least 1.6 s before it.
+         * 0.06 s late, "Turn 4, brake at 165"). Half of them end at least 1.2 s before it in English, 2.0 s
+         * in Polish: 1.6 before the line and throttle cues (FBBD-307), which also come on the short straights,
+         * where a cue goes as soon as the car is on them. The worst cue now ends 0.3 s before its zone.
          */
-        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, 0.0, 1.6)
+        val Jastrzab = Drive("jastrzab", "Autodrom Jastrząb", 3_229L, 0.0, 1.2)
 
         /** The drive check's slowing between two cues on different straights (coach.per_straight). */
         const val BrakingDropKmh = 15.0

@@ -9,7 +9,9 @@ import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.timing.live.LiveSector
 import com.flappedear.betterdriver.timing.live.LiveTimingState
+import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.live.sectorName
+import com.flappedear.betterdriver.timing.track.TrackDetection
 
 /**
  * Messages between the UI process and [RecorderService], which runs in its own process (FBBD-69).
@@ -122,11 +124,17 @@ internal object RecorderProtocol {
     /** In a [MSG_STATE] bundle: true when the coach line shows a praise (FBBD-243). */
     const val KEY_COACH_PRAISE = "coachPraise"
 
+    /** In a [MSG_STATE] bundle: true when the coach line shows a cue not done yet (UI-173 A). */
+    const val KEY_COACH_DIM = "coachDim"
+
     /** In a [MSG_STATE] bundle: the track or circuit the recording is at, once detected (FBBD-55). */
     const val KEY_PLACE = "place"
 
     /** In a [MSG_STATE] bundle: true when [KEY_PLACE] is a saved track, false for a circuit-list match. */
     const val KEY_PLACE_SAVED = "placeSaved"
+
+    /** In a [MSG_STATE] bundle: the saved track's id, when [KEY_PLACE] is one, for its line plan (UI-171 B). */
+    const val KEY_TRACK_ID = "trackId"
 
     private const val OBD_STATE = "obd.state"
     private const val OBD_DETAIL = "obd.detail"
@@ -152,6 +160,8 @@ internal object RecorderProtocol {
     private const val STOPPED = "stoppedReason"
     private const val DROPPED = "droppedSamples"
     private const val G_COMBINED = "gCombined"
+    private const val LAT = "latitude"
+    private const val LON = "longitude"
     private const val CHANNEL_NAMES = "channelNames"
     private const val CHANNEL_VALUES = "channelValues"
 
@@ -181,6 +191,8 @@ internal object RecorderProtocol {
         s.stoppedReason?.let { putString(STOPPED, it) }
         putLong(DROPPED, s.droppedSamples)
         s.gCombined?.let { putDouble(G_COMBINED, it) }
+        s.latitude?.let { putDouble(LAT, it) }
+        s.longitude?.let { putDouble(LON, it) }
         if (s.channels.isNotEmpty()) {
             val names = s.channels.keys.toTypedArray()
             putStringArray(CHANNEL_NAMES, names)
@@ -206,6 +218,8 @@ internal object RecorderProtocol {
             gCombined = if (b.containsKey(G_COMBINED)) b.getDouble(G_COMBINED) else null,
             receiverRateHz = b.getInt(RECEIVER_RATE),
             channels = channels(b),
+            latitude = if (b.containsKey(LAT)) b.getDouble(LAT) else null,
+            longitude = if (b.containsKey(LON)) b.getDouble(LON) else null,
         )
     }
 
@@ -214,6 +228,16 @@ internal object RecorderProtocol {
         val values = b.getDoubleArray(CHANNEL_VALUES)
         if (names == null || values == null || names.size != values.size) return emptyMap()
         return names.indices.associate { names[it] to values[it] }
+    }
+
+    /**
+     * Adds where the recording is to a [MSG_STATE] bundle: its name, and a saved track's id for its
+     * line plan (UI-171 B).
+     */
+    fun putPlace(b: Bundle, found: TrackDetection) {
+        found.placeName?.let { b.putString(KEY_PLACE, it) }
+        b.putBoolean(KEY_PLACE_SAVED, found is TrackDetection.Saved)
+        if (found is TrackDetection.Saved) b.putString(KEY_TRACK_ID, found.track.id)
     }
 
     /** Adds live timing (FBBD-12) to a [MSG_STATE] bundle. Unknown values are left out, or NaN in the sector arrays. */

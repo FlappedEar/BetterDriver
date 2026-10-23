@@ -35,6 +35,12 @@ class RecorderProtocolTest {
     }
 
     @Test
+    fun `the car's position survives the trip for the map screen`() {
+        val placed = live.copy(latitude = 50.123456789, longitude = 18.987654321)
+        assertEquals(placed, RecorderProtocol.fromBundle(RecorderProtocol.toBundle(placed)))
+    }
+
+    @Test
     fun `a snapshot without car or body values reads back with none`() {
         assertEquals(live, RecorderProtocol.fromBundle(RecorderProtocol.toBundle(live)))
     }

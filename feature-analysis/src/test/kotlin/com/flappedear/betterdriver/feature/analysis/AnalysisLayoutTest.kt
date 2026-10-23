@@ -285,6 +285,26 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.onNode(hasText("Save video")).assertExists()
     }
 
+    /**
+     * Round 45: the next-session card keeps its answer and links to Where to find time (UI-190 B),
+     * one tap opening it in the Map tab; the last focus says the time won back on top (UI-191 A).
+     */
+    @Test
+    fun nextSessionLinksToWhereToFindTimeAndLastFocusSaysTimeWonBack() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        compose.waitForIdle()
+        compose.onNodeWithTag(WonBackTag).assertExists()
+        compose.onNode(hasText("Faster, no cue") and hasAnyAncestor(hasTestTag(CoachingHistoryTag))).assertExists()
+        compose.onNode(hasText(ProofNote)).assertExists()
+        compose.onNodeWithTag(WhereToFindTimeTag).assertIsDisplayed()
+        compose.onNode(hasText("Where to find time ≈ 0.42 s ›")).assertExists()
+        compose.onNodeWithTag(WhereToFindTimeTag).performClick()
+        compose.waitForIdle()
+        tab(AnalysisTab.Map).assertIsSelected()
+        compose.onNodeWithTag(LineViewTag).assertExists()
+    }
+
     private fun hasTestTagPrefix(prefix: String) = SemanticsMatcher("test tag starts with $prefix") {
         it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith(prefix) == true
     }

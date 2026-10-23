@@ -53,8 +53,14 @@ private const val SpeedUnit = "km/h"
  * side by side when [layout] has room for it: tablets, and large phones held sideways.
  */
 @Composable
-internal fun MapTab(ui: MapUi, layout: LayoutSize, modifier: Modifier, line: LineState = LineState.Reading) {
-    var view by rememberSaveable { mutableStateOf(MapView.Laps) }
+internal fun MapTab(
+    ui: MapUi,
+    layout: LayoutSize,
+    modifier: Modifier,
+    line: LineState = LineState.Reading,
+    view: MapView = MapView.Laps,
+    onView: (MapView) -> Unit = {},
+) {
     val ready = line as? LineState.Ready
     var corner by rememberSaveable(ready?.ui?.bestLapNumber) { mutableStateOf<String?>(null) }
     var driving by rememberSaveable { mutableStateOf(false) }
@@ -65,7 +71,7 @@ internal fun MapTab(ui: MapUi, layout: LayoutSize, modifier: Modifier, line: Lin
             for (option in MapView.entries) {
                 FilterChip(
                     selected = view == option,
-                    onClick = { view = option },
+                    onClick = { onView(option) },
                     label = { Text(option.title) },
                     modifier = Modifier.testTag(MapViewTagPrefix + option.name),
                 )

@@ -31,6 +31,7 @@ private val CoachEventKinds =
         CoachEvents.VOICE,
         CoachEvents.VOICE_END,
         CoachEvents.FOCUS,
+        CoachEvents.PLAN,
         // When and why the coach went quiet and came back (FBBD-202, FBBD-254): the session and the
         // continuous log show which laps it took as cool-down, as the replay checks read them.
         CoachEvents.QUIET,
@@ -293,6 +294,7 @@ internal fun logCoachReport(recording: Recording, what: Int, data: Bundle, onSta
                 data.getString(CoachProtocol.STATUS_CORNER),
                 data.getString(CoachProtocol.STATUS_TEXT),
                 data.getBoolean(CoachProtocol.STATUS_PRAISE),
+                data.getBoolean(CoachProtocol.STATUS_DIM),
             ),
         )
     }

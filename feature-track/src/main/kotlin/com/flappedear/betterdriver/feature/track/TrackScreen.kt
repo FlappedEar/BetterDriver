@@ -83,6 +83,8 @@ data class TrackScreenState(
     val coachCue: String?,
     /** The coach line shows a praise (FBBD-243): its text is green. */
     val coachPraise: Boolean = false,
+    /** The coach line shows a cue not done yet (UI-173 A): its text is grey. */
+    val coachDim: Boolean = false,
     /** The second screen's tiles (UI-121 B), slot by slot: three rows of [SecondColumns]. */
     val secondTiles: List<TrackTile?> = emptyList(),
     /** The car is stopped: a 1 s hold on a tile opens its list (UI-123 B). */
@@ -92,7 +94,17 @@ data class TrackScreenState(
      * take its place. Set once for the session, so nothing moves while the car does.
      */
     val coachOn: Boolean = true,
-)
+    /**
+     * The track has a line plan (UI-171 B): a third screen shows the next corner ([nextCorner]). Set
+     * once the track is known, so the screens do not come and go while driving.
+     */
+    val mapOn: Boolean = false,
+    /** The corner ahead on the map screen, or null when the car is not near the plan's line. */
+    val nextCorner: NextCorner? = null,
+) {
+    /** How many screens a swipe goes through: the map's after the tiles' (UI-171 B). */
+    val pages: Int get() = if (mapOn) TrackPages + 1 else TrackPages
+}
 
 /** UI-120 A with Arek's note "6 in one row": one row of six on the main screen. */
 const val MainColumns = 6
@@ -102,8 +114,11 @@ const val MainRows = 1
 const val SecondColumns = 4
 const val SecondRows = 3
 
-/** The track screen's screens: the main one and the one a swipe shows (UI-121). */
+/** The track screen's screens: the main one and the one a swipe shows (UI-121); the map's comes third. */
 const val TrackPages = 2
+
+/** The map screen's page (UI-171 B), when [TrackScreenState.mapOn]. */
+const val MapPage = 2
 
 /**
  * Track screen entry point used by the app. Keeps the screen on and in
@@ -145,7 +160,7 @@ fun TrackScreen(
         HoldToStop(
             onStop,
             modifier.fillMaxSize().background(TrackTheme.colors.background),
-            onSwipe = { step -> page = (page + step).coerceIn(0, TrackPages - 1) },
+            onSwipe = { step -> page = (page + step).coerceIn(0, state.pages - 1) },
         ) {
             TrackScreenContent(
                 state = state,
@@ -193,13 +208,13 @@ fun TrackScreenContent(
             if (alert != null) {
                 AlertBanner(alert.title, alert.detail, alert.level, state.recordingTime, top)
             } else {
-                StatusStrip(state.status, state.recordingTime, top, page = page, pages = TrackPages)
+                StatusStrip(state.status, state.recordingTime, top, page = page, pages = state.pages)
             }
             val coach = Modifier.fillMaxWidth().height(CoachHeight).testTag(TrackSlots.Coach)
-            if (page == 0) {
-                MainPage(state, coach, onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } })
-            } else {
-                SecondPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(1, slot) } })
+            when {
+                page == 0 -> MainPage(state, coach, onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } })
+                page == MapPage && state.mapOn -> MapScreen(state, coach)
+                else -> SecondPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(1, slot) } })
             }
         }
     }
@@ -218,7 +233,9 @@ private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHol
             Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
         )
     }
-    if (state.coachOn) CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    if (state.coachOn) {
+        CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise, dim = state.coachDim)
+    }
     // Without the coach line the tiles grow into its place (UI-142 B).
     val height = if (state.coachOn) PanelHeight else PanelHeight + CoachHeight + Gap
     TilePanel(
@@ -256,7 +273,9 @@ private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: M
             onHoldTile,
         )
     }
-    if (state.coachOn) CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    if (state.coachOn) {
+        CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise, dim = state.coachDim)
+    }
 }
 
 private val Gap = 6.dp
@@ -285,6 +304,9 @@ object TrackSlots {
 
     /** The second screen's tiles. */
     const val Second = "track-second"
+
+    /** The map screen's next corner (UI-171 B). */
+    const val Map = "track-map"
 
     /** A tile's list. */
     const val Picker = "track-tile-picker"

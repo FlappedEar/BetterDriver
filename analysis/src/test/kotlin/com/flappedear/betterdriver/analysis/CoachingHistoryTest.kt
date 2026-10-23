@@ -442,6 +442,24 @@ class CoachingHistoryTest {
     }
 
     @Test
+    fun `a coach that worked on the line plan's corners is judged on them, not on the summary's focus`() {
+        val coached = CoachedSession(focusFrom = "s0", cues = mapOf("c3" to 2), planCorners = listOf("c3", "c1"))
+        val s1 = record(session(after, brakingAfter, minimumAfter), "s1", 2_000, coached)
+        assertEquals(listOf("c3", "c1"), s1.coachedCorners)
+        val history = coachingHistory("s1", listOf(s0, s1))
+        assertEquals(listOf("c3", "c1"), history.attempts.map { it.ask.cornerId })
+        assertEquals(listOf("Corner 3", "Corner 1"), history.attempts.map { it.ask.name })
+        assertTrue(history.attempts.first().ask.primary)
+        assertTrue(history.attempts.all { it.coached })
+        assertEquals(2, history.attempts.first().cues)
+        // The plan says how to drive them: no change asked, the corner time decides.
+        assertEquals(FocusVerdict.Improved, history.c1().verdict)
+        assertTrue(history.c1().shifts.isEmpty())
+        // The plan's corners only count for the session the coach worked from.
+        assertTrue(record(session(after), "s2", 3_000, coached.copy(focusFrom = null)).coachedCorners.isEmpty())
+    }
+
+    @Test
     fun `the coach's events say which focus it worked on and its cues at each corner`() {
         val brake = "kind=Corner corner=1 corner_id=c1 conf=HIGH text=Brake later"
         val events = listOf(
@@ -456,5 +474,11 @@ class CoachingHistoryTest {
         assertEquals("s9", CoachEvents.focusSource(events))
         assertEquals(mapOf("c1" to 2), CoachEvents.cuesByCorner(events))
         assertNull(CoachEvents.focusSource(events.filter { it.kind != CoachEvents.FOCUS }))
+        // A line plan's corners only when the coach's last word was the plan (UI-174 A).
+        assertTrue(CoachEvents.planCorners(events).isEmpty())
+        val plan = RecorderEvent(10, CoachEvents.PLAN, CoachEvents.planText("s9", listOf("c4", "c2"), 0.6))
+        assertEquals(listOf("c4", "c2"), CoachEvents.planCorners(events + plan))
+        assertEquals("s9", CoachEvents.focusSource(events + plan))
+        assertTrue(CoachEvents.planCorners(listOf(plan) + events.map { it.copy(tMicros = it.tMicros + 10) }).isEmpty())
     }
 }

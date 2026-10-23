@@ -157,7 +157,9 @@ private fun analyseInto(summary: SessionSummary, stores: ProgressionStores, trac
     val start = data.info.startUtcMillis
     val analysis = analyzeAtTrack(stores.tracks, track, telemetrySessionOf(data, track), start)
     val events = data.events
-    val coached = CoachedSession(CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events))
+    val coached = CoachedSession(
+        CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events), CoachEvents.planCorners(events),
+    )
     keepCoachingHistory(stores.history, epoch, trackId, data.id, start, analysis, coached, originOf(data.info)) {
         stores.tracks.get(trackId) != null
     }
