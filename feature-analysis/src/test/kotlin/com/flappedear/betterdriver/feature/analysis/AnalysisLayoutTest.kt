@@ -12,6 +12,7 @@ import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsSelected
 import androidx.compose.ui.test.hasAnyAncestor
+import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.StateRestorationTester
@@ -240,6 +241,33 @@ abstract class AnalysisLayoutTest(private val device: String) {
         tab(AnalysisTab.Laps).assertIsSelected()
         restoration.emulateSavedInstanceStateRestore()
         tab(AnalysisTab.Laps).assertIsSelected()
+    }
+
+    /**
+     * Turned with Where to find time open on a corner and the perfect lap in 3D paused (FBBD-323):
+     * after the activity is made again, the Map tab, the view, the corner and the paused player
+     * are all as they were.
+     */
+    @Test
+    fun whereToFindTimeAndPerfectLapSurviveRotation() {
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent { AppScreen { Analysis(perfectLap = true) } }
+        tab(AnalysisTab.Map).performClick()
+        compose.onNodeWithTag(MapViewTagPrefix + MapView.Line.name).performClick()
+        compose.onNodeWithTag(LineRowTagPrefix + "T4").performScrollTo().performClick()
+        compose.onNode(hasText("‹ All corners")).assertExists()
+        // The player animates every frame while it plays, so the clock moves by hand until it is paused.
+        compose.mainClock.autoAdvance = false
+        compose.onNodeWithTag(PerfectLapButtonTag).performClick()
+        compose.mainClock.advanceTimeBy(500)
+        compose.onNode(hasContentDescription("Pause")).performClick()
+        compose.mainClock.advanceTimeBy(100)
+        compose.mainClock.autoAdvance = true
+        restoration.emulateSavedInstanceStateRestore()
+        compose.onNodeWithTag(PerfectLapPlayerTag).assertExists()
+        compose.onNode(hasContentDescription("Play")).assertExists()
+        tab(AnalysisTab.Map).assertIsSelected()
+        compose.onNode(hasText("‹ All corners")).assertExists()
     }
 
     /**

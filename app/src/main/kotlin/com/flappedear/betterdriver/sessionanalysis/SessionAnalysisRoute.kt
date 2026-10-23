@@ -73,6 +73,7 @@ import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.shell.ShellTopBar
+import com.flappedear.betterdriver.shell.rememberAcrossTurns
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
@@ -127,6 +128,20 @@ private sealed interface Load {
     data class Failed(val state: AnalysisState.Unavailable, val proposal: Proposal? = null) : Load
 }
 
+/** What the screen read and worked out for one session: kept while the tablet turns (FBBD-323). */
+private class AnalysisValues {
+    var load by mutableStateOf<Load?>(null)
+    var progress by mutableStateOf<SessionProgress?>(null)
+    var analysed by mutableStateOf<AnalysisState>(AnalysisState.Loading)
+    var state by mutableStateOf<AnalysisState>(AnalysisState.Loading)
+    var quality by mutableStateOf<QualityUi?>(null)
+    var qualityRead = false
+    var line by mutableStateOf<LineState>(LineState.Reading)
+    var coaching by mutableStateOf(SessionCoaching())
+    var coachingKept = false
+    var proof by mutableStateOf<LineProof?>(null)
+}
+
 /** A track made from the session, to check in the editor, and the session's drive to show there. */
 private class Proposal(val track: Track, val session: EditorSession)
 
@@ -170,15 +185,17 @@ internal fun SessionAnalysisRoute(
     corner: String? = null,
 ) {
     val context = LocalContext.current
-    var load by remember(id) { mutableStateOf<Load?>(null) }
+    // Kept while the tablet turns, so the session is not read and analysed again (FBBD-323).
+    val kept = rememberAcrossTurns("session-analysis:$id") { AnalysisValues() }
+    var load by kept::load
     var compared by rememberSaveable(id) { mutableStateOf<Int?>(null) }
-    var progress by remember(id) { mutableStateOf<SessionProgress?>(null) }
-    var analysed by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
-    var state by remember(id) { mutableStateOf<AnalysisState>(AnalysisState.Loading) }
-    var quality by remember(id) { mutableStateOf<QualityUi?>(null) }
-    var line by remember(id) { mutableStateOf<LineState>(LineState.Reading) }
-    var coaching by remember(id) { mutableStateOf(SessionCoaching()) }
-    var proof by remember(id) { mutableStateOf<LineProof?>(null) }
+    var progress by kept::progress
+    var analysed by kept::analysed
+    var state by kept::state
+    var quality by kept::quality
+    var line by kept::line
+    var coaching by kept::coaching
+    var proof by kept::proof
     // Made off the main thread when first used: making it reads the disk (FBBD-41).
     val store = remember { lazy { SessionStore(sessionsDir(context)) } }
     val tracks = remember { Tracks.get(context) }
@@ -188,6 +205,7 @@ internal fun SessionAnalysisRoute(
     val trackId = (load as? Load.Done)?.loaded?.track?.id
     val picks = trackId?.let { allPicks[it] }
     LaunchedEffect(id) {
+        if (load != null) return@LaunchedEffect
         load = withContext(Dispatchers.Default) {
             val epoch = AppDataGate.epoch
             val started = SystemClock.elapsedRealtime()
@@ -202,11 +220,14 @@ internal fun SessionAnalysisRoute(
     }
     // The session's validation report (FBBD-183): read, or made the first time the session is opened.
     LaunchedEffect(id) {
+        if (kept.qualityRead) return@LaunchedEffect
         quality = withContext(Dispatchers.IO) { qualityReports(context).load(id)?.let(::qualityUi) }
+        kept.qualityRead = true
     }
     // The earlier sessions at the track are read after the analysis shows, so they never delay it.
     LaunchedEffect(load) {
         val l = load as? Load.Done ?: return@LaunchedEffect
+        if (progress != null) return@LaunchedEffect
         progress = withContext(Dispatchers.IO) {
             val loaded = l.loaded
             val earlier = earlierSessions(store.value, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
@@ -220,6 +241,7 @@ internal fun SessionAnalysisRoute(
     // also keeps the track's line plan for the coach and the 3D export.
     LaunchedEffect(load) {
         val l = load as? Load.Done ?: return@LaunchedEffect
+        if (line !is LineState.Reading) return@LaunchedEffect
         line = withContext(Dispatchers.Default) {
             val loaded = l.loaded
             analysedOr<LineState>(id, { LineState.Unavailable(it.message) }) {
@@ -244,6 +266,7 @@ internal fun SessionAnalysisRoute(
     // what was driven for the coaching history (FBBD-180), which says what came of the last focus.
     LaunchedEffect(load) {
         val l = load as? Load.Done ?: return@LaunchedEffect
+        if (kept.coachingKept) return@LaunchedEffect
         val loaded = l.loaded
         coaching = withContext(Dispatchers.Default) {
             val store = sessionFocusStore(context)
@@ -255,6 +278,7 @@ internal fun SessionAnalysisRoute(
                 history, l.epoch, loaded.track.id, id, at, loaded.analysis, loaded.coached, loaded.origin,
             ) { tracks.get(loaded.track.id) != null }
         }
+        kept.coachingKept = true
     }
     // What came of the last focus in seconds (FBBD-310), once this session's line plan is kept.
     LaunchedEffect(line, coaching) {

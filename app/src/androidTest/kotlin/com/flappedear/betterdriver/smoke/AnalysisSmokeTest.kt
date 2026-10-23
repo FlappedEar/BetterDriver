@@ -1,15 +1,18 @@
 package com.flappedear.betterdriver.smoke
 
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.hasScrollToNodeAction
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
+import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.isToggleable
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -110,6 +113,31 @@ class AnalysisSmokeTest {
         legend().performScrollTo().assertIsDisplayed()
         app.back()
         app.waitForText("Compare laps")
+    }
+
+    /**
+     * Turning the device makes the activity again (FBBD-323): the analysis comes straight back on
+     * the tab and the lap it was left on, without reading and analysing the session again.
+     */
+    @Test
+    fun analysisKeepsItsStateWhenTheActivityIsMadeAgain() {
+        app.openSessions()
+        app.openSession(SmokeFixtures.VideoCar)
+        app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
+        app.openTab("Laps")
+        // Tapping lap 2 compares it, which opens Compare.
+        app.waitForText("Lap 2").performClick()
+        app.waitForText("vs best lap", substring = true)
+        app.activityRule.scenario.recreate()
+        app.waitForIdle()
+        // The analysis is read off the main thread, which waitForIdle does not wait for: had it been
+        // read again, its spinner would show now.
+        check(!app.exists(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate))) {
+            "the analysis was read again after the activity was made again"
+        }
+        app.waitForText("vs best lap", substring = true).assertIsDisplayed()
+        app.waitForText("Lap 2").assertIsDisplayed()
+        app.waitFor(hasText("Compare") and isSelected()).assertIsDisplayed()
     }
 
     @Test
