@@ -20,9 +20,10 @@ import kotlinx.serialization.Serializable
 /**
  * v2 (FBBD-181) adds each lap's time, the throttle pickup of each pass and where an imported
  * session came from, for the progression across sessions. A v1 record still reads; it is made
- * again when its session is analysed again.
+ * again when its session is analysed again. v3 (FBBD-313) adds the line plan corners the coach
+ * worked on ([SessionCoachingRecord.coachedCorners]), so a v2 record is made again from its recording.
  */
-const val CoachingHistoryAlgorithm = "coaching-history-v2"
+const val CoachingHistoryAlgorithm = "coaching-history-v3"
 
 /**
  * One counted lap's pass through a corner, as kept for the history. [seconds] is the corner time;
