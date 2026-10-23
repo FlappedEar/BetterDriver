@@ -126,6 +126,7 @@ class PathCursor internal constructor(private val cursor: DeltaReference.Cursor)
  * whole window (pits, GNSS gap, off the path). A window that starts at the line starts with the lap;
  * one that ends at the line is closed by [finish] when the lap ends.
  */
+@Suppress("TooManyFunctions") // One measure of a pass each.
 class PassMeter(
     private val corner: Corner,
     private val window: ClosedFloatingPointRange<Double>,
@@ -273,8 +274,17 @@ class PassMeter(
             speedMeasured = inside.all { it.measured },
             apexOffsetMeters = inside[apex].reading.offsetMeters,
             pickupAt = pickup(pickupFrom(brake, apex)),
+            apexMicros = timeTo(before, after, corner.apexAt)?.let { (it - t0).roundToLong() },
         )
     }
+
+    /**
+     * When the car passed [along] metres on the path, from [before] the window through the positions
+     * inside it to [after] it; null if [along] is not between them.
+     */
+    private fun timeTo(before: Sample, after: Sample, along: Double): Double? =
+        (listOf(before) + inside + after).zipWithNext().firstOrNull { (a, b) -> along >= a.along && along <= b.along }
+            ?.let { (a, b) -> timeAt(a, b, along) }
 
     /**
      * The slowest point the car slowed into, at least [MinCornerDropKmh] below the fastest point

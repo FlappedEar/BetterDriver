@@ -104,6 +104,7 @@ class RecorderClient private constructor(private val context: Context) {
                     msg.data.getString(RecorderProtocol.KEY_COACH_CORNER),
                     it,
                     msg.data.getBoolean(RecorderProtocol.KEY_COACH_PRAISE),
+                    msg.data.getBoolean(RecorderProtocol.KEY_COACH_DIM),
                 )
             },
         )

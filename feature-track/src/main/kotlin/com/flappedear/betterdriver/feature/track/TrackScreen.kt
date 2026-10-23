@@ -83,6 +83,8 @@ data class TrackScreenState(
     val coachCue: String?,
     /** The coach line shows a praise (FBBD-243): its text is green. */
     val coachPraise: Boolean = false,
+    /** The coach line shows a cue not done yet (UI-173 A): its text is grey. */
+    val coachDim: Boolean = false,
     /** The second screen's tiles (UI-121 B), slot by slot: three rows of [SecondColumns]. */
     val secondTiles: List<TrackTile?> = emptyList(),
     /** The car is stopped: a 1 s hold on a tile opens its list (UI-123 B). */
@@ -218,7 +220,9 @@ private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHol
             Modifier.weight(0.38f).fillMaxHeight().testTag(TrackSlots.Laps),
         )
     }
-    if (state.coachOn) CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    if (state.coachOn) {
+        CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise, dim = state.coachDim)
+    }
     // Without the coach line the tiles grow into its place (UI-142 B).
     val height = if (state.coachOn) PanelHeight else PanelHeight + CoachHeight + Gap
     TilePanel(
@@ -256,7 +260,9 @@ private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: M
             onHoldTile,
         )
     }
-    if (state.coachOn) CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise)
+    if (state.coachOn) {
+        CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise, dim = state.coachDim)
+    }
 }
 
 private val Gap = 6.dp

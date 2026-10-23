@@ -341,7 +341,7 @@ class CoachReplayTest {
             val before = assertNotNull(cue.before)
             val gain = before.timeMicros - pass.timeMicros
             assertTrue(abs(gain - result.gainMicros) <= 20_000, "$what: gained ${result.gainMicros} us, data $gain us")
-            assertEquals(improved(cue.advice, before, pass), result.improved, "$what: improved")
+            assertEquals(improved(cue, before, pass), result.improved, "$what: improved")
         }
     }
 

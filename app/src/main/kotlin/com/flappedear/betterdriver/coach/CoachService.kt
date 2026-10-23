@@ -147,6 +147,7 @@ class CoachService : Service() {
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
+    @Suppress("CyclomaticComplexMethod") // One step after another to start the coach on a known track.
     private fun track(data: Bundle) {
         val a = active ?: return
         val track = data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) }
@@ -160,14 +161,21 @@ class CoachService : Service() {
         val picks = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
             ?.let { coachPicks(this).get(it.id) }.orEmpty()
         if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
-        // What the last analysed session at the track recommends working on (FBBD-20), primary first.
-        val focus = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
-            ?.let { sessionFocusOf(this, it, a.id) }
+        // The corners with the most time to find in the track's line plan (FBBD-306, UI-174 A), else what
+        // the last analysed session at the track recommends working on (FBBD-20), primary first.
+        val coached = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
+        val plan = coached?.let { planFocusOf(this, it, a.id) }
+        val focus = coached?.takeIf { plan == null }?.let { sessionFocusOf(this, it, a.id) }
         // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
         val settings = a.settings.copy(audioDelayMillis = a.timingMillis)
-        a.coach = CoachSession(settings, track, reference, picks, sameDay, focus?.picks.orEmpty())
+        a.coach = CoachSession(
+            settings, track, reference, picks, sameDay, plan?.picks ?: focus?.picks.orEmpty(), plan?.seconds.orEmpty(),
+        )
         // Which recommendation this session works on, for the coaching history (FBBD-180).
-        if (focus != null && focus.picks.isNotEmpty()) {
+        if (plan != null) {
+            val text = CoachEvents.planText(plan.sessionId, plan.cornerIds, plan.seconds.values.sum())
+            report(a, a.now(), CoachEvents.PLAN, text)
+        } else if (focus != null && focus.picks.isNotEmpty()) {
             val corners = focus.record.targets.sortedBy { !it.primary }.mapNotNull { it.cornerId }
             report(a, a.now(), CoachEvents.FOCUS, CoachEvents.focusText(focus.record.sessionId, corners))
         }
@@ -251,6 +259,7 @@ class CoachService : Service() {
             status.corner?.let { putString(CoachProtocol.STATUS_CORNER, it) }
             status.text?.let { putString(CoachProtocol.STATUS_TEXT, it) }
             putBoolean(CoachProtocol.STATUS_PRAISE, status.praise)
+            putBoolean(CoachProtocol.STATUS_DIM, status.dim)
         }
     }
 
@@ -283,6 +292,33 @@ class CoachService : Service() {
         /** timed_src of a cue said on another path (live, clip) than it was timed for (FBBD-255). */
         const val OtherPath = "other_path"
     }
+}
+
+/**
+ * The focus of a line plan (FBBD-306): its corners as coach picks, most time to find first, and the
+ * time to find in each by CornerId; made from session [sessionId].
+ */
+private class PlanFocus(val sessionId: String, val picks: List<CornerPick>, val seconds: Map<String, Double>) {
+    val cornerIds: List<String> get() = picks.mapNotNull { it.cornerId }
+}
+
+/**
+ * The focus of [track]'s line plan (FBBD-306, UI-174 A): the corners with the most time to find over
+ * every session there, as the Map tab shows them; null without a plan, one made from session [current],
+ * one whose corners are not the track's (no CornerIds), or one with nothing to work on.
+ */
+private fun planFocusOf(context: Context, track: Track, current: String): PlanFocus? {
+    val plan = linePlanStore(context).get(track.id)?.takeIf { it.sessionId != current && it.identityRevision != null }
+    val corners = plan?.focus().orEmpty().filter { it.cornerId != null && it.target.line.isNotEmpty() }
+    if (plan == null || corners.isEmpty()) return null
+    val picks = corners.map { c ->
+        CornerPick(
+            c.name, c.target.line.map { it.latitude }, c.target.line.map { it.longitude }, plan.sessionId,
+            c.cornerId, plan.identityRevision,
+        )
+    }
+    DebugLog.i("CoachService", "line plan focus from ${plan.sessionId}: ${corners.joinToString { it.name }}")
+    return PlanFocus(plan.sessionId, picks, corners.associate { it.cornerId!! to it.gainSeconds })
 }
 
 /** A session's next-session focus (FBBD-20) and its corners as coach picks, the primary first. */

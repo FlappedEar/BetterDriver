@@ -465,7 +465,8 @@ private class SpeechTiming(
  *   FBBD-190), at most [WarmUpLaps], since the corners and targets are known already.
  * - **One cue per straight.** On the straight before a corner the coach looks at the last lap's pass
  *   there (the lap before's, when the last lap passed it cooling down) and may give one cue: brake
- *   later, brake earlier, or carry more speed. It is timed to end,
+ *   later, brake earlier, or carry more speed; where to be at the apex and where to go back on
+ *   throttle (FBBD-307); at most two of them in one cue ([cornerAdvice], UI-170 B). It is timed to end,
  *   after [CoachSettings.audioDelayMillis], before the braking zone; if the straight is too short it
  *   is skipped. A corner cued on one lap gets the next lap to try it before it is cued again.
  * - **Lap times** are spoken on the straight after the line, only when that straight has no corner cue.
@@ -485,11 +486,13 @@ private class SpeechTiming(
  * - **Session focus** ([focus], FBBD-20): the corners the last analysed session at the track
  *   recommends working on, the primary first, matched like the picks. At [Verbosity.Focus] the
  *   primary takes the first focus place, the picks the next, then the secondary ones; cue timing is
- *   unchanged: one cue per straight, for the corner that follows it.
+ *   unchanged: one cue per straight, for the corner that follows it. [focusSeconds] is the line
+ *   plan's time to find in each focus corner, by CornerId (FBBD-306).
+ * - **Plan** (UI-174 A): on the out-lap the coach says once which corners it works on ([speakPlan]).
  *
  * Pure and single-threaded.
  */
-@Suppress("LongParameterList") // What the coach knows at the start of a session, one parameter each.
+@Suppress("LongParameterList", "TooManyFunctions") // What the coach knows at the start, and what it says.
 class CueEngine(
     track: Track,
     private val settings: CoachSettings,
@@ -498,6 +501,7 @@ class CueEngine(
     private val picks: List<CornerPick> = emptyList(),
     sameDay: Boolean = false,
     private val focus: List<CornerPick> = emptyList(),
+    private val focusSeconds: Map<String, Double> = emptyMap(),
 ) {
     private val laps = LapCollector(track)
     private val phrases = PhraseBook.of(settings.language)
@@ -545,11 +549,25 @@ class CueEngine(
     private var plan: Plan? = null
     private val openCues = mutableMapOf<Int, Cue>()
 
-    private class PendingLap(val text: String, val lap: Int, val expiresMicros: Long)
+    /** A lap time to say; [alone]: nothing else was said on its lap, so it goes before a corner cue. */
+    private class PendingLap(val text: String, val lap: Int, val expiresMicros: Long, val alone: Boolean = false)
+
+    /** Cues said about the lap being driven. */
+    private var saidOnLap = 0
 
     private var pendingLap: PendingLap? = null
 
     private val praises = PraiseQueue()
+
+    /** The out-lap's plan cue (UI-174 A) is still to be said: until it is, or the first lap ends. */
+    private var planPending = true
+
+    /**
+     * The time to find in the corners the plan cue named, by the line plan ([focusSeconds]), once
+     * said; null before, or when the plan gives none for them.
+     */
+    var plannedSeconds: Double? = null
+        private set
 
     /** The corners being coached, once known. */
     val corners: List<Corner> get() = book?.map?.corners.orEmpty()
@@ -592,6 +610,7 @@ class CueEngine(
      * The coach at [fix]. [voiceFree] is false while the voice is still saying the last phrase: nothing
      * is said over it, and a cue waits on its straight while it still fits (FBBD-253).
      */
+    @Suppress("CyclomaticComplexMethod") // The coach's steps on each fix, in order.
     fun update(fix: CoachFix, voiceFree: Boolean = true): CoachUpdate {
         val events = laps.update(fix)
         speech.onSpeed(fix.tMicros, laps.speedKmh)
@@ -612,9 +631,11 @@ class CueEngine(
         inLap.update(fix.tMicros, laps.speedKmh, along?.takeIf { book?.onStraight(it) == true }, book?.map?.path)
         val cue = when {
             settings.verbosity == Verbosity.Off || inLap.inPitLane -> null
-            along == null -> speakLapTime(fix.tMicros, null, anywhere = true)
-            else -> speak(fix.tMicros, along)
+            along == null -> speakPlan(fix.tMicros, null) ?: speakLapTime(fix.tMicros, null, anywhere = true)
+            else -> speakPlan(fix.tMicros, along) ?: speak(fix.tMicros, along)
         }
+        // A lap time said now is the last lap's.
+        if (cue != null && cue.lap == laps.timer.lapNumber) saidOnLap++
         return if (cue == null && results.isEmpty()) CoachUpdate.None else CoachUpdate(listOfNotNull(cue), results)
     }
 
@@ -638,6 +659,8 @@ class CueEngine(
         val cooled = inLap.cruising
         val inPits = inLap.onLapDone(laps.speedKmh, book?.map?.path)
         if (inPits) pendingLap = null
+        // The out-lap is the first lap that ends on track: a session started in the pits crosses the line there first.
+        if (!inPits) planPending = false
         if (inPits || cooled) praises.clear()
         if (timed) onTimedLap(lap, now, say = !inPits)
         cursor = book?.map?.cursor()
@@ -645,6 +668,7 @@ class CueEngine(
         meters.forEach { it.start(lap.endMicros, laps.speedKmh) }
         plan = null
         openCues.clear()
+        saidOnLap = 0
     }
 
     /** A timed lap is done; its time is said if [say] (not after an in-lap). */
@@ -654,7 +678,13 @@ class CueEngine(
         val isBest = !lap.gnssGap && (best == null || lap.timeMicros < best)
         if (isBest) bestLapMicros = lap.timeMicros
         if (say && settings.verbosity >= Verbosity.LapTimes) {
-            pendingLap = PendingLap(phrases.lapTime(lap.timeMillis, isBest), lap.number, now + LapCueExpiryMicros)
+            pendingLap =
+                PendingLap(
+                    phrases.lapTime(lap.timeMillis, isBest),
+                    lap.number,
+                    now + LapCueExpiryMicros,
+                    alone = saidOnLap == 0,
+                )
         }
     }
 
@@ -673,7 +703,7 @@ class CueEngine(
             null
         } else {
             val gain = before.timeMicros - pass.timeMicros
-            CueResult(now, cue, pass, improved(cue.advice, before, pass), gain, confidenceOf(passDoubts(pass)))
+            CueResult(now, cue, pass, improved(cue, before, pass), gain, confidenceOf(passDoubts(pass)))
         }
         val mayPraise = !cruising && settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         val b = book
@@ -700,7 +730,7 @@ class CueEngine(
     }
 
     /** At most one cue for this fix, with the car [along] the reference path. */
-    @Suppress("ReturnCount") // Each early return is a reason to stay quiet on this fix.
+    @Suppress("ReturnCount", "CyclomaticComplexMethod") // Each early return is a reason to stay quiet on this fix.
     private fun speak(now: Long, along: Double): Cue? {
         // Cooling down: no advice, but the time of the lap just driven is still said.
         if (inLap.cruising) return speakLapTime(now, null, anywhere = true)
@@ -719,6 +749,9 @@ class CueEngine(
         // A praise found only after the straight's cue or lap time was said (the cue starts early, FBBD-47)
         // waits for no other straight: one cue per straight (FBBD-27), and the cue won.
         if (!speech.leftStraight) praises.clear()
+        // The time of a lap the coach said nothing else on goes first (FBBD-244: no silent laps); the
+        // corner cue follows when it still fits, else waits for the next lap.
+        if (pendingLap?.alone == true) speakLapTime(now, time)?.let { return it }
         val cueNeed = cue?.let { speech.needMicros(it.text) + MarginMicros } ?: 0L
         val praise = praises.next(now, time, speech.free(now)) { speech.needMicros(it.text) + MarginMicros + cueNeed }
         if (praise != null) return speech.said(praise.copy(seq = ++seq, tMicros = now, zoneMeters = zoneStart - along))
@@ -734,14 +767,13 @@ class CueEngine(
     private fun speakCorner(full: Cue, now: Long, timeToZone: Long?, zoneMeters: Double): Cue? {
         var planned = full
         var need = speech.needMicros(planned.text) + MarginMicros
-        // Too long for what is left of the straight: the target alone, if that fits (FBBD-242).
-        val short = phrases.shortCorner(planned)
-        if (timeToZone != null && timeToZone < need && short != null) {
-            val shortNeed = speech.needMicros(short) + MarginMicros
-            if (timeToZone >= shortNeed) {
-                planned = planned.copy(text = short)
-                need = shortNeed
-                plan = Plan(planned.corner!!, planned.lap, planned)
+        // Too long for what is left of the straight: the target alone, if that fits (FBBD-242); a cue
+        // of two then says one of its two, first the first (UI-170 B), and only that is asked for.
+        if (timeToZone != null && timeToZone < need) {
+            shorter(planned).firstOrNull { timeToZone >= speech.needMicros(it.text) + MarginMicros }?.let {
+                planned = it
+                need = speech.needMicros(it.text) + MarginMicros
+                plan = Plan(it.corner!!, it.lap, it)
             }
         }
         val late = timeToZone != null && timeToZone < need
@@ -754,6 +786,57 @@ class CueEngine(
         openCues[planned.corner] = cue
         book?.cuedOnLap?.set(planned.corner - 1, planned.lap)
         return cue
+    }
+
+    /** Shorter forms of [cue], shortest said first: its target alone, then each of a cue of two alone. */
+    private fun shorter(cue: Cue): List<Cue> {
+        val corner = cue.corner?.let { book?.map?.corners?.getOrNull(it - 1) }
+        val second = cue.also
+        return listOfNotNull(
+            phrases.shortCorner(cue)?.let { cue.copy(text = it, also = null) },
+            if (second != null && corner != null) {
+                cue.copy(text = phrases.corner(corner, second), advice = second, also = null)
+            } else {
+                null
+            },
+        )
+    }
+
+    /**
+     * Says on the out-lap, once, which corners the session works on (UI-174 A): the focus corners
+     * ([CornerBook.focus]), when the session started from an analysis ([focus]) and the corners are
+     * known. On a straight it is said only when heard in full before the next braking zone; off the
+     * corner map ([along] null) as soon as the car is moving and not braking. Dropped when the first
+     * lap that ends on track does: the out-lap.
+     */
+    @Suppress("ReturnCount") // Each early return is a reason to say nothing on this fix.
+    private fun speakPlan(now: Long, along: Double?): Cue? {
+        if (!planPending) return null
+        val b = book
+        if (settings.verbosity < Verbosity.Focus || focus.isEmpty() || b == null) {
+            planPending = false
+            return null
+        }
+        if (along != null && !b.onStraight(along)) return null
+        val corners = b.focus().mapNotNull { b.map.corners.getOrNull(it - 1) }
+        if (corners.isEmpty()) {
+            planPending = false
+            return null
+        }
+        val turns = corners.map { it.label }
+        val text = phrases.plan(turns)
+        val next = along?.let(b::next)
+        val time = next?.let { speech.timeTo(b.map.path, along, b.zoneStart(it)) }
+        val fits = if (next != null) {
+            time != null && time >= speech.needMicros(text) + MarginMicros
+        } else {
+            speech.kmh >= MinCueSpeedKmh
+        }
+        if (!fits || !speech.free(now)) return null
+        planPending = false
+        plannedSeconds = corners.mapNotNull { c -> c.cornerId?.let(focusSeconds::get) }
+            .takeIf { it.isNotEmpty() }?.sum()
+        return speech.said(Cue(++seq, now, laps.timer.lapNumber, CueKind.Plan, text, turns = turns))
     }
 
     /**
@@ -784,11 +867,13 @@ class CueEngine(
         val doubts = cueDoubts(last, target, b.losses[i].toList(), unidentified)
         val confidence = confidenceOf(doubts)
         // Low: weak evidence gives no advice at all; Medium: advice without its number.
-        val advice = advise(last, target, corner)?.takeIf { confidence.advises }?.withPrecision(confidence.precise)
-        return advice?.let {
+        val asked = cornerAdvice(last, target, corner).takeIf { confidence.advises }.orEmpty()
+            .map { it.withPrecision(confidence.precise) }
+        val also = asked.getOrNull(1)
+        return asked.firstOrNull()?.let { advice ->
             Cue(
-                0, now, lap, CueKind.Corner, phrases.corner(corner, it), corner.number, it, last, target,
-                turn = corner.label, cornerId = corner.cornerId, confidence = confidence, doubts = doubts,
+                0, now, lap, CueKind.Corner, phrases.corner(corner, advice, also), corner.number, advice, last, target,
+                turn = corner.label, cornerId = corner.cornerId, confidence = confidence, doubts = doubts, also = also,
             )
         }
     }
@@ -840,11 +925,21 @@ fun brakeAnchor(corner: Corner, brakeAt: Double): Double =
 private fun metresBefore(corner: Corner, brakeAt: Double): Int? =
     ((brakeAnchor(corner, brakeAt) - brakeAt) / MetresStep).roundToInt().times(MetresStep).takeIf { it >= MetresStep }
 
-/** Whether [after] moved the way [advice] asked, from [before]: at least half of what was asked. */
-fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean = when (advice) {
-    is Advice.BrakeLater -> after.brakeAt - before.brakeAt >= advice.meters / 2.0
-    is Advice.BrakeEarlier ->
-        before.brakeAt - after.brakeAt >= maxOf(advice.meters ?: 0, BrakeToleranceMeters.toInt()) / 2.0
-    is Advice.CarrySpeed -> after.minKmh - before.minKmh >= advice.kmh / 2.0
-    null -> after.timeMicros < before.timeMicros
-}
+/**
+ * Whether [after] moved the way [advice] asked, from [before]: at least half of what was asked. A line
+ * cue at a corner without a turn never counts as moved.
+ */
+fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean =
+    when (advice) {
+        is Advice.BrakeLater -> after.brakeAt - before.brakeAt >= advice.meters / 2.0
+        is Advice.BrakeEarlier ->
+            before.brakeAt - after.brakeAt >= maxOf(advice.meters ?: 0, BrakeToleranceMeters.toInt()) / 2.0
+        is Advice.CarrySpeed -> after.minKmh - before.minKmh >= advice.kmh / 2.0
+        is Advice.Line -> improvedLine(advice.tighterMeters, before, after, advice.turn)
+        is Advice.Throttle -> improvedPickup(advice.earlierMeters, before, after)
+        null -> after.timeMicros < before.timeMicros
+    }
+
+/** Whether [after] moved the way every part of [cue] asked (UI-170 B). */
+fun improved(cue: Cue, before: CornerPass, after: CornerPass): Boolean =
+    cue.asked.ifEmpty { listOf(null) }.all { improved(it, before, after) }

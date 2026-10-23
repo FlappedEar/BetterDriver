@@ -372,6 +372,7 @@ class RecorderService : Service() {
             coachStatus.corner?.let { state.putString(RecorderProtocol.KEY_COACH_CORNER, it) }
             coachStatus.text?.let { state.putString(RecorderProtocol.KEY_COACH_TEXT, it) }
             state.putBoolean(RecorderProtocol.KEY_COACH_PRAISE, coachStatus.praise)
+            state.putBoolean(RecorderProtocol.KEY_COACH_DIM, coachStatus.dim)
         }
         if (a != null) {
             ObdSource.current?.status()?.let { RecorderProtocol.putObd(state, it) }

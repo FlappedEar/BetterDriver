@@ -96,6 +96,15 @@ object CueClips {
             // Said without the number below High confidence (FBBD-177).
             book.corner(corner, Advice.BrakeLater(SampleNumber, precise = false)),
             book.corner(corner, Advice.CarrySpeed(SampleNumber, precise = false)),
+            // The line and the throttle (FBBD-307, UI-168 B, UI-169 C), both ways.
+            book.corner(corner, Advice.Line(SampleNumber), Advice.Line(-SampleNumber)),
+            book.corner(corner, Advice.Throttle(SampleNumber, afterApex = SampleNumber)),
+            book.corner(corner, Advice.Throttle(SampleNumber, afterApex = -SampleNumber)),
+            book.corner(corner, Advice.Throttle(SampleNumber, afterApex = 0)),
+            book.corner(corner, Advice.Throttle(SampleNumber, precise = false), Advice.Throttle(-SampleNumber, false)),
+            // The out-lap plan (UI-174 A), of one corner and of several.
+            book.plan(listOf(1)),
+            book.plan((1..SamplePlanCorners).toList()),
             book.praise(corner, Praise.Worked),
             book.praise(corner, Praise.BestYet),
             book.lapTime(SampleLapMillis, best = true),
@@ -120,6 +129,9 @@ object CueClips {
         key.map { if (it.isLetterOrDigit()) it.lowercaseChar() else '_' }.joinToString("") + ".wav"
 
     private const val SampleNumber = 10
+
+    /** The corners of a sample out-lap plan: as many as the plan says (UI-174 A). */
+    private const val SamplePlanCorners = 3
     private const val SampleLapMillis = 92_400L
     private const val SampleShortLapMillis = 58_300L
     private const val SampleCorners = 30
