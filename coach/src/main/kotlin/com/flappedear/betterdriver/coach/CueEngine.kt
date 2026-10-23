@@ -622,7 +622,7 @@ class CueEngine(
         val along = position?.let { p -> cursor?.along(p) }
         if (along == null) meters.forEach(PassMeter::lost)
         if (along != null) {
-            val reading = PassReading(book?.map?.offset(position!!, along), laps.throttlePct)
+            val reading = PassReading(book?.map?.offset(position!!, along), laps.throttlePct, laps.steerDeg, position)
             for (m in meters) {
                 val pass = m.add(along, fix.tMicros, laps.speedKmh, laps.speedMeasured, reading)
                 pass?.let { onPass(it, fix.tMicros)?.let(results::add) }

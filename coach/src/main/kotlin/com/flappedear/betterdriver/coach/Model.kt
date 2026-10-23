@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.timing.live.Fix
+import com.flappedear.betterdriver.timing.steering.SteeringPass
 import kotlinx.serialization.Serializable
 
 /**
@@ -17,6 +18,8 @@ data class CoachFix(
     val speedKmh: Double? = null,
     val ageMicros: Long = 0,
     val throttlePct: Double? = null,
+    /** The steering wheel in degrees, positive left (FBBD-321); null without a recent one. */
+    val steerDeg: Double? = null,
 ) {
     fun toFix() = Fix(tMicros, lat, lon)
 }
@@ -104,6 +107,11 @@ data class CornerPass(
      * for a pass stored before it was measured.
      */
     val apexMicros: Long? = null,
+    /**
+     * What the hands did through the window (FBBD-321), from the car's steering angle; null without
+     * it, at a corner without a turn, or for a pass stored before it was measured.
+     */
+    val steering: SteeringPass? = null,
 )
 
 /** How much the coach says (FBBD-27). */

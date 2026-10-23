@@ -29,6 +29,11 @@ import com.flappedear.betterdriver.analysis.segments.SegmentReviewSmoothingMeter
 import com.flappedear.betterdriver.analysis.segments.TrackSegment
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.timeOnAxis
+import com.flappedear.betterdriver.analysis.vehicle.VehicleChannel
+import com.flappedear.betterdriver.analysis.vehicle.vehicleChannel
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.SteeringPass
+import com.flappedear.betterdriver.timing.steering.steeringAdvice
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sqrt
@@ -84,6 +89,8 @@ data class LinePoint(
     val speedKmh: Double?,
     /** From the change of speed over [AccelerationWindowSeconds] either side, as RealisticOptimal reads it. */
     val pedal: PedalState?,
+    /** The steering wheel in degrees, positive turning left (FBBD-321); null without the car's steering angle. */
+    val steerDeg: Double? = null,
 )
 
 /** One lap through one corner's window: its time there, where it braked, turned and accelerated. */
@@ -106,6 +113,8 @@ data class LinePass(
     val line: List<LinePoint>,
     /** [LineSession.id] of the session the lap is from. */
     val sourceId: String = "",
+    /** What the hands did through the window (FBBD-321); null without the car's steering angle. */
+    val steering: SteeringPass? = null,
 )
 
 /** Where the laps went at one point: the road they used, at least, though not necessarily all of it. */
@@ -132,6 +141,11 @@ data class CornerAdvice(
     val minimumSpeedKmh: Double? = null,
     /** Back on throttle. */
     val pickupMeters: Double? = null,
+    /**
+     * What to do with the wheel (FBBD-321), in driving order; empty without steering on both passes.
+     * Not in [any] yet: nothing shows or says it until its words are picked (UI review round 54).
+     */
+    val steering: List<SteerAdvice> = emptyList(),
 ) {
     val any: Boolean
         get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null }
@@ -304,12 +318,13 @@ internal class LineReader(
                 w.corner.endProgressMeters, timed.traces[i], source.session, lap.start, lap.end, lap.reference,
             )
             val slowest = measured.speeds.minimum.takeIf { measured.speeds.valid && it.value != null }
+            val line = probe.line(timed.traces[i], w.window, axis.lengthMeters)
             return LinePass(
                 source.label, lap.reference as Int, laps[i].durationSeconds, seconds,
                 measured.observation.brakingPointMeters, slowest?.progressMeters,
                 slowest?.value?.let { kmh(it, measured.speeds.unit) }, measured.observation.pickupMeters,
-                measured.observation.lineOffsetMeters, probe.line(timed.traces[i], w.window, axis.lengthMeters),
-                source.id,
+                measured.observation.lineOffsetMeters, line, source.id,
+                steeringOf(line, turnsLeft(k), axis.lengthMeters),
             )
         }
         val seconds = windows.map { w -> laps.indices.map { timed.times[it].sector(w.window.id)?.seconds } }
@@ -374,12 +389,12 @@ fun advise(
     } else {
         null
     }
-    val tighter = if (reference.apexOffsetMeters != null && target.apexOffsetMeters != null) {
-        ((target.apexOffsetMeters - reference.apexOffsetMeters) * if (turnsLeft) 1.0 else -1.0)
-            .takeIf { abs(it) >= thresholds.lineMeters }
+    val tighterBy = if (reference.apexOffsetMeters != null && target.apexOffsetMeters != null) {
+        (target.apexOffsetMeters - reference.apexOffsetMeters) * if (turnsLeft) 1.0 else -1.0
     } else {
         null
     }
+    val tighter = tighterBy?.takeIf { abs(it) >= thresholds.lineMeters }
     val speed = if (reference.minimumSpeedKmh != null && target.minimumSpeedKmh != null) {
         (target.minimumSpeedKmh - reference.minimumSpeedKmh).takeIf { abs(it) >= thresholds.speedKmh }
     } else {
@@ -391,6 +406,11 @@ fun advise(
         tighterMeters = tighter,
         minimumSpeedKmh = speed,
         pickupMeters = place(reference.pickupMeters, target.pickupMeters),
+        steering = if (reference.steering != null && target.steering != null) {
+            steeringAdvice(reference.steering, target.steering, tighterBy)
+        } else {
+            emptyList()
+        },
     )
 }
 
@@ -487,10 +507,15 @@ private class LineProbe(private val session: TelemetrySession, private val axis:
         stations(window, length).mapNotNull { p ->
             val time = timeAtProgress(trace, p) ?: return@mapNotNull null
             val at = position(time) ?: return@mapNotNull null
-            LinePoint(p, at.eastMeters, at.northMeters, offset(at, p), speedAt(time), pedalAt(time))
+            LinePoint(p, at.eastMeters, at.northMeters, offset(at, p), speedAt(time), pedalAt(time), steerAt(time))
         }
 
     fun offsetAt(time: Double, progress: Double): Double? = position(time)?.let { offset(it, progress) }
+
+    private val steering = vehicleChannel(session, VehicleChannel.SteeringAngle)
+
+    /** The wheel at [time]; a gap of the adapter's longer than [MaxSteeringGapSeconds] is not bridged. */
+    private fun steerAt(time: Double): Double? = steering?.valueAt(time, minimumGapSeconds = MaxSteeringGapSeconds)
 
     private fun offset(at: MetricPoint, progress: Double) =
         lateralOffsetMeters(axis, progress.coerceIn(0.0, axis.lengthMeters), at)

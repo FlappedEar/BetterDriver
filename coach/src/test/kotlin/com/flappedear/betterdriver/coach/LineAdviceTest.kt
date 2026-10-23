@@ -107,6 +107,41 @@ class LineAdviceTest {
     }
 
     @Test
+    fun `a pass reads the steering wheel from just before braking, and the wheel reaches the coach from its channel`() {
+        // Wheel on to 90° left from 50 m to the 70 m apex, held to 90 m, open again by 110 m; before
+        // the window's braking point the wheel is still 60° into the corner before (left out).
+        val wheel: (Int) -> Double = { at ->
+            when {
+                at < -10 -> 60.0
+                at < 50 -> 0.0
+                at < 70 -> 90.0 * (at - 50) / 20.0
+                at <= 90 -> 90.0
+                at < 110 -> 90.0 * (110 - at) / 20.0
+                else -> 0.0
+            }
+        }
+        val base = trace({ kmh(it) })
+        val wheels = List(base.points.size) { wheel(it) }
+        val steered = LapTrace(base.points, base.timesMicros, base.speedsKmh, steersDeg = wheels)
+        val s = assertNotNull(assertNotNull(map.passes(steered, 1).single()).steering)
+        assertEquals(90.0, s.peakDeg, 1e-9)
+        assertEquals(57.0, s.turnInAt, 1.0)
+        assertEquals(93.0, assertNotNull(s.unwindAt), 1.0)
+        assertNull(pass().steering)
+        val defs = listOf(ChannelDef(1, "lat", "deg", "gnss"), ChannelDef(42, "obd_steering_angle", "°", "obd"))
+        assertEquals(42, steeringChannelId(defs))
+        assertNull(steeringChannelId(defs.take(1)))
+        val reader = CoachFixReader(null, 42)
+        fun fix(t: Long) = SampleSet(
+            t,
+            listOf(ChannelValue(GnssChannels.LAT.id, 52.0), ChannelValue(GnssChannels.LON.id, 16.0)),
+        )
+        assertNull(reader.read(SampleSet(100_000, listOf(ChannelValue(42, -35.5)))))
+        assertEquals(-35.5, reader.read(fix(200_000))?.steerDeg)
+        assertNull(reader.read(fix(700_000))?.steerDeg)
+    }
+
+    @Test
     fun `a line within what the receiver repeats is not advice`() {
         val last = pass().copy(timeMicros = 3_000_000)
         assertNull(lineChange(last, pass(y = { 1.2 }).copy(timeMicros = 2_800_000), corner))

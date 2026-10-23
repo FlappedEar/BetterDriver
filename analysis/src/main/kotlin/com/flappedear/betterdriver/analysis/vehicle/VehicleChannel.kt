@@ -15,6 +15,9 @@ enum class VehicleChannel(pattern: String) {
     CoolantTemp("^(?:obd_)?(?:engine_)?coolant_temp(?:-obd|-canbus)?$"),
     GearboxTemp("^(?:obd_)?(?:atf|gearbox|transmission)_temp(?:-obd|-canbus)?$"),
     IntakeTemp("^(?:obd_)?intake(?:_air)?_temp(?:-obd|-canbus)?$"),
+
+    /** The steering wheel in degrees, positive left: the gen-1 FR-S's CAN broadcast (FBBD-263, FBBD-321). */
+    SteeringAngle("^(?:obd_)?steering(?:_wheel)?_angle(?:-obd|-canbus)?$"),
     ;
 
     private val regex = Regex(pattern, RegexOption.IGNORE_CASE)

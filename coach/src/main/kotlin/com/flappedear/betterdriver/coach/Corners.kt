@@ -18,11 +18,14 @@ class LapTrace(
     val speedsKmh: List<Double>,
     val speedsMeasured: List<Boolean>? = null,
     val throttlesPct: List<Double?>? = null,
+    /** The steering wheel at each point in degrees, positive left (FBBD-321); null without it. */
+    val steersDeg: List<Double?>? = null,
 ) {
     init {
         require(points.size == timesMicros.size && points.size == speedsKmh.size) { "trace arrays differ in size" }
         require(speedsMeasured == null || speedsMeasured.size == points.size) { "trace arrays differ in size" }
         require(throttlesPct == null || throttlesPct.size == points.size) { "trace arrays differ in size" }
+        require(steersDeg == null || steersDeg.size == points.size) { "trace arrays differ in size" }
         require(points.size >= 2) { "a trace needs at least two points" }
     }
 
