@@ -109,9 +109,7 @@ internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose:
             PerfectLapPainter(scene, palette, ground?.let { g -> g::tile }, ground?.attribution)
         }
         // Where it is, playing or not and how fast stay as they were when the tablet turns (FBBD-323).
-        var seconds by rememberSaveable(scene) {
-            mutableDoubleStateOf(scene.corners[startCorner].startSeconds)
-        }
+        var seconds by rememberSaveable(scene) { mutableDoubleStateOf(scene.corners[startCorner].startSeconds) }
         var playing by rememberSaveable { mutableStateOf(true) }
         var speed by rememberSaveable { mutableDoubleStateOf(1.0) }
         LaunchedEffect(playing, speed) {
