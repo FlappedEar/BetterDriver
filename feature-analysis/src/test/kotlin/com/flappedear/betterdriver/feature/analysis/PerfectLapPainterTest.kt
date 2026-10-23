@@ -32,7 +32,17 @@ class PerfectLapPainterTest {
             assertTrue("road at ${corner.name}", (count[palette.road] ?: 0) > 2000)
             val line = listOf(palette.braking, palette.coasting, palette.accelerating).sumOf { count[it] ?: 0 }
             assertTrue("line at ${corner.name}", line > 200)
-            assertTrue("car at ${corner.name}", (count[palette.car] ?: 0) > 5)
+            // The car and its halo: amber, at full strength or seen through (the car itself is a few
+            // pixels when the camera takes in a long corner, the halo round it is what stands out).
+            val amber = px.count { amberish(it) }
+            assertTrue("car at ${corner.name}: $amber", amber > 30)
         }
+    }
+
+    private fun amberish(c: Int): Boolean {
+        val r = c shr 16 and 0xFF
+        val g = c shr 8 and 0xFF
+        val b = c and 0xFF
+        return r - b > 40 && g - b > 20 && r >= g
     }
 }

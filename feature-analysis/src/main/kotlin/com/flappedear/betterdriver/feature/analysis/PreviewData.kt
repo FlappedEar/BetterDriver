@@ -347,7 +347,7 @@ internal val PreviewLine = LineUi(
 
 /**
  * A made-up line plan for the perfect lap in 3D (FBBD-308): four corners round an oval at
- * 0° N 0° E (no real place), the target a little inside his best lap and quicker through each.
+ * 0° N 0° E (no real place), the target a little inside the best lap and quicker through each.
  */
 internal fun previewPerfectLapPlan(): LinePlan {
     val origin = GeoCoordinate(0.0, 0.0)
