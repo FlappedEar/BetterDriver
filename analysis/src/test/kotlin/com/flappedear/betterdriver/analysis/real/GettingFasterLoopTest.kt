@@ -208,7 +208,9 @@ class GettingFasterLoopTest {
     private fun record(track: Track, step: Step, events: List<RecorderEvent>): SessionCoachingRecord? =
         sessionCoachingRecord(
             step.analysis, track.id, step.data.id, step.data.info.startUtcMillis,
-            CoachedSession(CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events)),
+            CoachedSession(
+                CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events), CoachEvents.planCorners(events),
+            ),
         )
 
     /**

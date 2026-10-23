@@ -182,8 +182,25 @@ private fun attemptsIn(sorted: List<SessionCoachingRecord>, at: Int): List<Focus
     } else {
         sorted.subList(0, at).lastOrNull { it.focus.isNotEmpty() }
     } ?: return emptyList()
-    return source.focus.sortedBy { !it.primary }.map { attempt(it, source, s) }
+    // A coach that worked on the line plan's corners (UI-174 A) is judged on them, not on the summary's.
+    val asks = planAsks(s, source).ifEmpty { source.focus.sortedBy { !it.primary } }
+    return asks.map { attempt(it, source, s) }
 }
+
+/**
+ * The line plan corners session [s]'s coach worked on (FBBD-313), as recommendations of [source]:
+ * the one with the most time to find primary; nothing asked of how to drive them, the plan's target
+ * says it. A corner neither session has is left out.
+ */
+private fun planAsks(s: SessionCoachingRecord, source: SessionCoachingRecord): List<FocusAsk> =
+    if (s.coachedFrom != source.sessionId) {
+        emptyList()
+    } else {
+        s.coachedCorners.mapNotNull { id -> (source.corner(id) ?: s.corner(id))?.let { id to it.name } }
+            .mapIndexed { i, (id, name) ->
+                FocusAsk(id, name, if (i == 0) "primary" else "secondary", Confidence.MEDIUM.name)
+            }
+    }
 
 private fun counted(corner: CornerRecord?): List<CornerPassRecord> =
     corner?.passes.orEmpty().filter { it.level != Confidence.LOW }

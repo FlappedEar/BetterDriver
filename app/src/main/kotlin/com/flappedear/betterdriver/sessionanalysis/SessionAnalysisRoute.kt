@@ -407,7 +407,12 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces, car = car))
     }
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
-    val coached = CoachedSession(CoachEvents.focusSource(data.events), CoachEvents.cuesByCorner(data.events))
+    // A coach that worked on the line plan's corners logs them too (UI-174 A, FBBD-313).
+    val coached = CoachedSession(
+        CoachEvents.focusSource(data.events),
+        CoachEvents.cuesByCorner(data.events),
+        CoachEvents.planCorners(data.events),
+    )
     val whole = WholeSession(acceleration, gForces, car)
     val loaded = Loaded(
         session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info), strap,

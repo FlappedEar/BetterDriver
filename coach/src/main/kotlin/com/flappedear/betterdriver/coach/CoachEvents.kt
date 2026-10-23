@@ -79,6 +79,15 @@ object CoachEvents {
     fun focusSource(events: List<RecorderEvent>): String? = events.filter { it.kind == FOCUS || it.kind == PLAN }
         .maxByOrNull { it.tMicros }?.let { split(it.text).first["source"] }?.takeIf { it.isNotBlank() }
 
+    /**
+     * The corners the coach worked on in a session with [events] when it worked on a line plan's focus
+     * (UI-174 A): the last [PLAN] event's CornerIds, most time to find first. Empty when the last
+     * [FOCUS] or [PLAN] event is a [FOCUS] (FBBD-20's own corners), or there is none.
+     */
+    fun planCorners(events: List<RecorderEvent>): List<String> = events.filter { it.kind == FOCUS || it.kind == PLAN }
+        .maxByOrNull { it.tMicros }?.takeIf { it.kind == PLAN }
+        ?.let { split(it.text).first["corners"] }?.split(',')?.filter { it.isNotBlank() }.orEmpty()
+
     /** How many corner cues were said at each CornerId in a session with [events]; cues without one are left out. */
     fun cuesByCorner(events: List<RecorderEvent>): Map<String, Int> = events.asSequence()
         .filter { it.kind == CUE }
