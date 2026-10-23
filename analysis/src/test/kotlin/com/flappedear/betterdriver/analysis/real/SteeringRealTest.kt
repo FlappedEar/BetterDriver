@@ -66,7 +66,7 @@ class SteeringRealTest {
         assertNotNull(analyzeLine(analyzeSession(day.own), day.own, day.others))
 
     @Test
-    fun `every corner pass reads the hands; a car the same every lap gets no push or smoothing advice`() {
+    fun `every corner pass reads the hands - a car the same every lap gets no push or smoothing advice`() {
         val line = line(day())
         val read = line.corners.filter { it.reference.steering != null && it.target.steering != null }
         // Every corner of this track bends enough to need wheel; a kink below MinCornerWheelDeg may not.
