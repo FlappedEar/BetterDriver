@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.recording
 
 import android.app.Application
+import com.flappedear.betterdriver.recorder.live.GPoint
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -38,6 +39,12 @@ class RecorderProtocolTest {
     fun `the car's position survives the trip for the map screen`() {
         val placed = live.copy(latitude = 50.123456789, longitude = 18.987654321)
         assertEquals(placed, RecorderProtocol.fromBundle(RecorderProtocol.toBundle(placed)))
+    }
+
+    @Test
+    fun `the G radar's dot and trail survive the trip (FBBD-318)`() {
+        val radar = live.copy(g = GPoint(-0.63, -0.53), gTrail = listOf(GPoint(-0.52, -0.1), GPoint(-0.58, -0.19)))
+        assertEquals(radar, RecorderProtocol.fromBundle(RecorderProtocol.toBundle(radar)))
     }
 
     @Test

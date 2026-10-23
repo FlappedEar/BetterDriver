@@ -8,6 +8,9 @@ import com.flappedear.betterdriver.core.ui.component.StatusItem
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.feature.track.GRadar
+import com.flappedear.betterdriver.feature.track.RadarPoint
+import com.flappedear.betterdriver.recorder.live.GPoint
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -17,7 +20,9 @@ import com.flappedear.betterdriver.setup.TrackScreens
 import com.flappedear.betterdriver.timing.live.LiveSector
 import com.flappedear.betterdriver.timing.live.LiveTimingState
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -45,6 +50,18 @@ class LiveUiTest {
         assertEquals("1:02:03", formatClock(3_723_000_000))
         assertEquals("<1 min", formatDuration(59_000_000))
         assertEquals("18 min", formatDuration(18 * 60_000_000L + 5))
+    }
+
+    @Test
+    fun theRadarShowsWithAReceiverThatGivesGAndFollowsItsDot() {
+        val withG = live.copy(g = GPoint(-0.63, -0.53), gTrail = listOf(GPoint(-0.58, -0.19)))
+        val s = liveTrackState(RecorderState(connected = true, live = withG), tiles, true)
+        assertTrue(s.radarOn)
+        assertEquals(GRadar(RadarPoint(-0.63f, -0.53f), listOf(RadarPoint(-0.58f, -0.19f))), s.radar)
+        // Without G from the receiver, no radar: the second screen keeps its twelve tiles.
+        assertFalse(liveTrackState(RecorderState(connected = true, live = withG), tiles, false).radarOn)
+        // Before the first reading the radar is drawn empty.
+        assertNull(liveTrackState(RecorderState(connected = true, live = live), tiles, true).radar)
     }
 
     @Test

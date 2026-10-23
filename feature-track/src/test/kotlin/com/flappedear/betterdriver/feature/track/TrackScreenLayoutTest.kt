@@ -169,6 +169,9 @@ abstract class TrackScreenLayoutTest(private val device: String) {
         small += tooSmall(ExampleTrackState.tiles.indices.map { TrackSlots.tile(it) }, MinArcMinutes)
         showState(ExampleTrackState, onPage = 1)
         small += tooSmall(ExampleTrackState.secondTiles.indices.map { TrackSlots.secondTile(it) }, MinArcMinutes)
+        // Beside the G radar, three rows of three (UI-240 A).
+        showState(ExampleTrackState.copy(radarOn = true, radar = ExampleRadar), onPage = 1)
+        small += tooSmall((0 until RadarTiles).map { TrackSlots.secondTile(it) }, MinArcMinutes)
         check(small.isEmpty()) {
             "glance values too small on $device (FBBD-65):\n" + small.joinToString("\n")
         }
@@ -317,6 +320,13 @@ abstract class TrackScreenLayoutTest(private val device: String) {
                 TrackColorsGreenRed,
             ),
             Triple("blue_orange", ExampleTrackState, TrackColorsBlueOrange),
+            // A receiver with G: the radar beside nine tiles on the second screen (FBBD-318, UI-240 A).
+            Triple("radar", ExampleTrackState.copy(radarOn = true, radar = ExampleRadar), TrackColorsGreenRed),
+            Triple(
+                "radar_coach_off",
+                ExampleTrackState.copy(radarOn = true, radar = ExampleRadar, coachOn = false),
+                TrackColorsGreenRed,
+            ),
             // The spoken coach off for the session: no coach line, taller tiles (UI-142 B).
             Triple("coach_off", ExampleTrackState.copy(coachOn = false), TrackColorsGreenRed),
             // A new install (UI-125 B): speed and G, the other slots empty.

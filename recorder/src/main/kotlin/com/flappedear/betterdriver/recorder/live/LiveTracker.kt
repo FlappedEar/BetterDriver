@@ -90,6 +90,13 @@ data class LiveSnapshot(
      */
     val gCombined: Double? = null,
     /**
+     * The G radar's dot (FBBD-318): the same half-second average as [gCombined], turned to the car's
+     * forward and left; null before the first reading.
+     */
+    val g: GPoint? = null,
+    /** The radar's trail behind [g], oldest first: a point every 0.1 s of the half second before it. */
+    val gTrail: List<GPoint> = emptyList(),
+    /**
      * The receiver's rate, from the mean interval between fixes in the 3 s up to the last one; 0
      * before the second fix. Unlike [fixRateHz] it does not fall while fixes are missing, so it sets
      * how long to wait before [GnssState.Lost].
@@ -157,6 +164,7 @@ class LiveTracker(
     private var accelX: Double? = null
     private var accelY: Double? = null
     private val gWindow = GWindow()
+    private val gg = LiveGg()
     private val standing = StandingBias()
     private var storageLowBytes: Long? = null
     private var stoppedReason: String? = null
@@ -170,12 +178,18 @@ class LiveTracker(
         var lat: Double? = null
         var lon: Double? = null
         var accel = false
+        var speed: Double? = null
+        var heading: Double? = null
         for (v in set.values) {
             when (v.channelId) {
                 GnssChannels.LAT.id -> lat = v.value
                 GnssChannels.LON.id -> lon = v.value
                 GnssChannels.SATS.id -> sats = v.value.toInt()
-                GnssChannels.SPEED_KMH.id -> speedKmh = v.value
+                GnssChannels.SPEED_KMH.id -> {
+                    speedKmh = v.value
+                    speed = v.value
+                }
+                GnssChannels.HEADING.id -> heading = v.value
                 accelIds?.first -> {
                     accelX = v.value
                     accel = true
@@ -184,10 +198,7 @@ class LiveTracker(
                 else -> shown[v.channelId]?.update(set.tMicros, v.value)
             }
         }
-        if (accel) {
-            standing.update(speedKmh, accelX, accelY)
-            gWindow.add(set.tMicros, accelX, accelY)
-        }
+        motion(set.tMicros, accel, speed, heading)
         if (lat != null && lon != null) {
             place(set.tMicros, lat, lon)
             fixes++
@@ -195,6 +206,21 @@ class LiveTracker(
             recentFixes.addLast(set.tMicros)
             trim(set.tMicros)
             receiverRateHz = measureRate(set.tMicros)
+        }
+    }
+
+    /**
+     * The G tile's and the radar's readings from one set: [accel] when it carried the receiver's
+     * acceleration, [speed] and [heading] when it carried a fix.
+     */
+    private fun motion(t: Long, accel: Boolean, speed: Double?, heading: Double?) {
+        speed?.let { gg.addFix(t, it, heading) }
+        if (accel) {
+            standing.update(speedKmh, accelX, accelY)
+            gWindow.add(t, accelX, accelY)
+            gWindow.mean(standing)?.let { (x, y) -> gg.addAccel(t, x, y) }
+        } else if (speed != null) {
+            gg.fixOnly(t)
         }
     }
 
@@ -228,6 +254,8 @@ class LiveTracker(
             stoppedReason = stoppedReason,
             droppedSamples = droppedSamples(),
             gCombined = gWindow.combined(standing),
+            g = gg.current(),
+            gTrail = gg.trail(),
             receiverRateHz = receiverRateHz,
             channels = shown.values.mapNotNull { it.current(now) }.toMap(),
             latitude = latitude,
@@ -319,11 +347,14 @@ internal class GWindow {
         }
     }
 
-    /** The averaged X and Y combined, [standing] taken off; null before the first reading. */
-    fun combined(standing: StandingBias): Double? {
+    /** The averaged X and Y, [standing] taken off; null before the first reading. */
+    fun mean(standing: StandingBias): Pair<Double, Double>? {
         if (times.isEmpty()) return null
-        return hypot(sumX / times.size - standing.x, sumY / times.size - standing.y)
+        return (sumX / times.size - standing.x) to (sumY / times.size - standing.y)
     }
+
+    /** The averaged X and Y combined, [standing] taken off; null before the first reading. */
+    fun combined(standing: StandingBias): Double? = mean(standing)?.let { (x, y) -> hypot(x, y) }
 }
 
 /**

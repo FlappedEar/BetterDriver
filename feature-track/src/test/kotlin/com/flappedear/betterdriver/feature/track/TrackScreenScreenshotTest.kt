@@ -47,6 +47,12 @@ class TrackScreenScreenshotTest {
     @Test
     fun secondScreen() = snap("track_screen_second") { TrackScreenContent(ExampleTrackState, page = 1) }
 
+    /** FBBD-318: the G radar beside nine tiles (UI-240 A), rings only, no numbers, braking up. */
+    @Test
+    fun secondScreenWithRadar() = snap("track_screen_second_radar") {
+        TrackScreenContent(ExampleTrackState.copy(radarOn = true, radar = ExampleRadar), page = 1)
+    }
+
     @Test
     fun mapScreen() = snap("track_screen_map") {
         TrackScreenContent(ExampleTrackState.copy(mapOn = true, nextCorner = ExampleNextCorner), page = MapPage)
