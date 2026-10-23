@@ -85,6 +85,63 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
         }
     }
 
+    /**
+     * Like [monitor], but hands over the lines the adapter prints as they come (FBBD-320), so each frame
+     * can be stamped when it arrived rather than at the end of the window: [onLines] gets every batch
+     * of whole lines on the calling thread, outside the lock, the last batch (up to the prompt) after
+     * the monitor stopped. False when no prompt came [timeoutMs] after the stop; the next command then
+     * resyncs as after [command].
+     */
+    fun monitorLines(text: String, windowMs: Long, timeoutMs: Long, onLines: (List<String>) -> Unit): Boolean {
+        synchronized(lock) {
+            if (outstanding) awaitPrompt(resyncMs)
+            outstanding = false
+            closed?.let { throw IOException(it) }
+            received.setLength(0)
+        }
+        write((text + "\r").toByteArray(Charsets.US_ASCII))
+        val windowEnd = System.nanoTime() + windowMs * NanosPerMs
+        var stopped = false
+        var stopDeadline = 0L
+        while (true) {
+            val (lines, prompt) = synchronized(lock) { awaitLines(if (stopped) stopDeadline else windowEnd) }
+            if (lines.isNotEmpty()) onLines(lines)
+            if (prompt) return true
+            if (!stopped && System.nanoTime() >= windowEnd) {
+                write(STOP_MONITOR)
+                stopped = true
+                stopDeadline = System.nanoTime() + timeoutMs * NanosPerMs
+            } else if (stopped && System.nanoTime() >= stopDeadline) {
+                synchronized(lock) { outstanding = true }
+                return false
+            }
+        }
+    }
+
+    /**
+     * Under [lock]: waits until whole lines or a prompt came, or [deadline] (nanoTime) passed, and takes
+     * the lines out; true with them when the prompt came (consumed, with everything before it).
+     */
+    private fun awaitLines(deadline: Long): Pair<List<String>, Boolean> {
+        while (true) {
+            val prompt = received.indexOf(">")
+            // Up to the prompt, or else up to the last whole line.
+            val end = if (prompt >= 0) prompt else received.lastIndexOf("\r")
+            val text = if (end < 0) "" else received.substring(0, end)
+            val lines = text.split('\r', '\n').filter { it.isNotBlank() }
+            if (end >= 0) received.delete(0, end + 1)
+            closed?.takeIf { prompt < 0 && lines.isEmpty() }?.let { throw IOException(it) }
+            val leftMs = (deadline - System.nanoTime()) / NanosPerMs
+            if (prompt >= 0 || lines.isNotEmpty() || leftMs <= 0) return lines to (prompt >= 0)
+            try {
+                lock.wait(leftMs)
+            } catch (e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("interrupted", e)
+            }
+        }
+    }
+
     /** Under [lock]: what came before the next prompt, consumed with it, or null after [timeoutMs]. */
     private fun awaitPrompt(timeoutMs: Long): String? {
         val deadline = System.nanoTime() + timeoutMs * NanosPerMs

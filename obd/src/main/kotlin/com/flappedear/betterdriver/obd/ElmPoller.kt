@@ -70,6 +70,15 @@ interface ObdClock {
  * `AT CAF1` and `AT CRA` back. The adapter does one thing at a time, so a listen takes the place of
  * a few requests; continuous monitoring would stop polling altogether (FBBD-206).
  *
+ * CAN first on the FR-S (FBBD-320, Arek 2026-10-23: "Integrujemy CAN skoro jest szybszy niż obd"). Its
+ * bus carries steering, brake, pedal, throttle, rpm, oil and coolant ([CanBroadcasts.Frs]) at 20 to
+ * 100 a second, faster than any request. A channel the bus gives is not polled; what is left (ATF
+ * temperature through its own header 7E1, intake air) is slow, so the adapter listens all the time
+ * and stops only when a request is due, at most [CAN_SLOW_MAX_HZ] each. A listen takes every frame id
+ * at once behind STN pass filters (`STFAP`, then `STM`) when the adapter has them, as the vLinker's
+ * STN1151 does; a plain ELM327 listens to one id at a time (`AT CRA`) in turn. Frames are stamped as
+ * they arrive. When the bus goes quiet the polled channels come back.
+ *
  * Only on a car whose broadcasts are wanted (FBBD-284): the FR-S / 86 / BRZ of the first generation,
  * told by [PollSet.broadcastCar] (the session's car) or by its VIN (`09 02`, read once at connect). On any
  * other car (Arek's Corolla: "w Corolli mnie to nie interesuje") there is no probe and no listen, so
@@ -92,6 +101,7 @@ class ElmPoller(
     private val probeMs: Long = DEFAULT_PROBE_MS,
     private val listenIntervalMs: Long = DEFAULT_LISTEN_INTERVAL_MS,
     private val listenWindowMs: Long = DEFAULT_LISTEN_WINDOW_MS,
+    private val maxListenMs: Long = DEFAULT_MAX_LISTEN_MS,
 ) {
     /** What each group's request got without a count, by its lead request. */
     private class Learned(private val resampleEvery: Int) {
@@ -132,12 +142,29 @@ class ElmPoller(
     private val lastValues = LinkedHashMap<String, Double>()
     private var requests = 0
     private var rateStartMs = 0L
+    private var nextRateLog = 0L
+    private var nextSetCheck = 0L
 
-    /** The broadcast signals listened for, and frames each got since the last rates line. */
+    /** The broadcast signals listened for, by frame id, and frames of each id since the last rates line. */
     private var listens: List<CanSignal> = emptyList()
-    private val listenFrames = HashMap<String, Int>()
+    private var byFrame: Map<Int, List<CanSignal>> = emptyMap()
+    private val listenFrames = LinkedHashMap<Int, Int>()
     private var listenMs = 0L
     private var emptyListens = 0
+
+    /** Listens in a row without a frame, by frame id, and the ids heard in the current listen (FBBD-320). */
+    private val silentListens = HashMap<Int, Int>()
+    private val heardNow = HashSet<Int>()
+    private var turn = 0
+
+    /** Listening stopped: the channels it gave are polled again (FBBD-320). */
+    private var listensLost = false
+
+    /** Whether the adapter takes STN pass filters for several ids at once; null before the first try. */
+    private var stnFilters: Boolean? = null
+
+    /** The header requests go to now; null is the adapter's default (FBBD-320). */
+    private var currentHeader: Int? = null
 
     /** FBBD-284: the [ST_STEPS] step in use (-1: the adapter's own), requests left in its trial, done. */
     private var stStep = -1
@@ -157,22 +184,22 @@ class ElmPoller(
         val (adapter, voltage) = setUp() ?: return "adapter not answering"
         val supported = discover() ?: return "car not answering"
         val protocol = line.command("ATDPN", AT_TIMEOUT_MS)?.trim().orEmpty()
-        val available = profile.channelsToPoll(supported).filter { it.header == null && it.compiled != null }
-        listens = broadcastsOn(protocol)
+        setListens(broadcastsOn(protocol))
+        val available = availableOn(protocol, supported)
         val can = isCan(protocol)
         resetTimeout(can)
         var set = pollSet()
         var first = true
         while (true) {
-            val channels = set.select(available)
-            val skipped = available - channels.toSet()
-            if (skipped.isNotEmpty()) listener.log("not polled (not used): " + skipped.joinToString(" ") { it.id })
+            val channels = toPoll(available, set)
             val all = channels + listens.map { it.channel }
             if (first) listener.ready(adapter, protocol, voltage, supported, all) else listener.polling(all)
             first = false
-            if (channels.isEmpty()) return "no channels to poll"
+            if (channels.isEmpty() && listens.isEmpty()) return "no channels to poll"
             countOn = responseCount && can
             expected.clear()
+            // The multi-PID check goes to every ECU, whatever header the last loop's requests used.
+            headerFor(null)
             val groups = groupsFor(channels, combine = multiPid && can)
             listener.log(
                 "polling " + groups.joinToString(" ") { g -> g.joinToString("+") { it.id } } +
@@ -181,9 +208,38 @@ class ElmPoller(
             )
             val ended = poll(channels, groups, set)
             if (ended != null) return ended
+            if (listensLost) {
+                listensLost = false
+                listener.log("polling again what CAN gave")
+            } else {
+                listener.log("poll set changed")
+            }
             set = pollSet()
-            listener.log("poll set changed")
         }
+    }
+
+    /**
+     * The channels the car has that can be polled: its profile's, and on an FR-S whose broadcasts are
+     * heard the FR-S profile's own requests too (ATF through 7E1, FBBD-320). A request to a header of
+     * its own needs 11-bit CAN.
+     */
+    private fun availableOn(protocol: String, supported: Set<Int>): List<PidChannel> {
+        val frs = profile == CarProfile.Generic && listens.any { it in CanBroadcasts.Frs }
+        val car = if (frs) CarProfiles.ScionFrs2013 else profile
+        val can11 = isCan11(protocol)
+        return car.channelsToPoll(supported).filter { (it.header == null || can11) && it.compiled != null }
+    }
+
+    /** What [set] polls of [available]: not what it leaves out, nor what the bus gives (logged). */
+    private fun toPoll(available: List<PidChannel>, set: PollSet): List<PidChannel> {
+        val covered = listens.mapTo(HashSet()) { it.id }
+        val chosen = set.select(available)
+        val channels = chosen.filter { it.id !in covered }
+        val skipped = available - chosen.toSet()
+        if (skipped.isNotEmpty()) listener.log("not polled (not used): " + skipped.joinToString(" ") { it.id })
+        val fromCan = chosen - channels.toSet()
+        if (fromCan.isNotEmpty()) listener.log("not polled (from CAN): " + fromCan.joinToString(" ") { it.id })
+        return channels
     }
 
     /**
@@ -242,6 +298,18 @@ class ElmPoller(
     private fun setHeaders(on: Boolean): Boolean {
         val ok = line.command(if (on) "ATH1" else "ATH0", AT_TIMEOUT_MS)?.contains("OK") == true
         if (ok) headers = on
+        return ok
+    }
+
+    /**
+     * Points requests at [header] (`AT SH`, FBBD-320: the FR-S's ATF is asked of 7E1), or back at the
+     * functional broadcast for null; false when the adapter refused. Only on 11-bit CAN.
+     */
+    private fun headerFor(header: Int?): Boolean {
+        if (header == currentHeader) return true
+        val cmd = "ATSH" + hex(header ?: FUNCTIONAL_11, CAN_ID_DIGITS)
+        val ok = line.command(cmd, AT_TIMEOUT_MS)?.contains("OK") == true
+        if (ok) currentHeader = header else listener.log("$cmd not taken")
         return ok
     }
 
@@ -380,35 +448,153 @@ class ElmPoller(
         val restored = line.command("ATCRA", AT_TIMEOUT_MS)?.contains("OK") == true ||
             line.command("ATAR", AT_TIMEOUT_MS)?.contains("OK") == true
         if (!restored) {
-            listener.log("can_listen off: receive filter not restored (AT CRA and AT AR refused)")
             filterStuck = true
-            listens = emptyList()
+            stopListening("receive filter not restored (AT CRA and AT AR refused)")
         }
         return restored
     }
 
+    private fun setListens(signals: List<CanSignal>) {
+        listens = signals
+        byFrame = signals.groupBy { it.canId }
+    }
+
+    /** Listening stops for good on this connection; the poll loop then polls what it gave (FBBD-320). */
+    private fun stopListening(why: String) {
+        listener.log("can_listen off: $why")
+        if (listens.isNotEmpty()) listensLost = true
+        setListens(emptyList())
+    }
+
     /**
-     * One listen for [signal] between polls: reports each frame's value, stamped back from the end of
-     * the monitor at the signal's period. Listening stops after [MAX_EMPTY_LISTENS] without a frame.
+     * One listen of about [windowMs] (FBBD-263, FBBD-320): every listened id at once behind STN pass
+     * filters, else one id in turn behind `AT CRA` for at most [ROTATE_WINDOW_MS]. Headers go on so the
+     * ids can be told apart, and CAN formatting off; both go back after. Listening stops after
+     * [MAX_EMPTY_LISTENS] listens without a frame.
      */
-    private fun listen(signal: CanSignal) {
+    private fun listenRound(windowMs: Long) {
         val start = clock.nowMs()
+        val window = windowMs.coerceAtMost(maxListenMs).coerceAtLeast(listenWindowMs)
         line.command("ATCAF0", AT_TIMEOUT_MS)
-        val frames = listenFor(signal.canId, listenWindowMs)
-        val end = clock.nowMs()
+        val hadHeaders = headers
+        val ids = byFrame.keys.toList()
+        var frames = 0
+        var listened = emptyList<Int>()
+        heardNow.clear()
+        if (headers || setHeaders(true)) {
+            if (ids.size > 1 && setStnFilters(ids)) {
+                frames = monitorStn(window)
+                if (stnFilters == true) listened = ids
+            } else {
+                val id = ids[turn++ % ids.size]
+                val text = listenText(id, minOf(window, ROTATE_WINDOW_MS))
+                if (text != null) frames = report(listOf(text))
+                listened = listOf(id)
+            }
+        }
         line.command("ATCAF1", AT_TIMEOUT_MS)
+        if (!hadHeaders && headers) setHeaders(false)
         listenMs += clock.nowMs() - start
-        val values = frames.mapNotNull { signal.decode(it) }
-        values.forEachIndexed { i, v ->
-            lastValues[signal.id] = v
-            listener.value(signal.channel, v, end - (values.size - 1 - i) * signal.periodMs)
+        emptyListens = if (frames == 0) emptyListens + 1 else 0
+        if (emptyListens >= MAX_EMPTY_LISTENS && listens.isNotEmpty()) {
+            stopListening("no frames in $MAX_EMPTY_LISTENS listens")
+        } else {
+            dropSilent(listened)
         }
-        listenFrames[signal.id] = (listenFrames[signal.id] ?: 0) + values.size
-        emptyListens = if (values.isEmpty()) emptyListens + 1 else 0
-        if (emptyListens >= MAX_EMPTY_LISTENS) {
-            listener.log("can_listen off: no ${hex(signal.canId, CAN_ID_DIGITS)} frames in $MAX_EMPTY_LISTENS listens")
-            listens = emptyList()
+    }
+
+    /**
+     * One frame id that stopped while the others go on (Codex on #328): after [MAX_EMPTY_LISTENS] of its
+     * listens without a frame its signals are dropped, so the channels it gave are polled again.
+     */
+    private fun dropSilent(listened: List<Int>) {
+        for (id in listened) silentListens[id] = if (id in heardNow) 0 else (silentListens[id] ?: 0) + 1
+        val silent = listened.filter { (silentListens[it] ?: 0) >= MAX_EMPTY_LISTENS }
+        if (silent.isEmpty()) return
+        val gone = listens.filter { it.canId in silent }
+        listener.log(
+            "can_listen dropped ${silent.joinToString(" ") { hex(it, CAN_ID_DIGITS) }}: no frames in " +
+                "$MAX_EMPTY_LISTENS listens (" + gone.joinToString(" ") { it.id } + ")",
+        )
+        silent.forEach { silentListens.remove(it) }
+        setListens(listens - gone.toSet())
+        listensLost = true
+    }
+
+    /**
+     * Sets one STN pass filter for each of [ids] (`STFCP`, then `STFAP <id>,7FF`); false when the adapter
+     * is not an STN one or refused, and from then on for this connection.
+     */
+    @Suppress("ReturnCount") // Each early return is one way the adapter has no STN filters.
+    private fun setStnFilters(ids: List<Int>): Boolean {
+        if (stnFilters == false) return false
+        if (line.command("STFCP", AT_TIMEOUT_MS)?.contains("OK") != true) return noStn("STFCP not taken")
+        for (id in ids) {
+            if (line.command("STFAP ${hex(id, CAN_ID_DIGITS)},7FF", AT_TIMEOUT_MS)?.contains("OK") != true) {
+                line.command("STFCP", AT_TIMEOUT_MS)
+                return noStn("STFAP not taken")
+            }
         }
+        return true
+    }
+
+    private fun noStn(why: String): Boolean {
+        if (stnFilters != false) listener.log("can_listen one id at a time: $why")
+        stnFilters = false
+        return false
+    }
+
+    /** `STM` behind the pass filters for [windowMs], then the filters cleared; the frames heard. */
+    private fun monitorStn(windowMs: Long): Int {
+        var frames = 0
+        var refused = false
+        line.monitorLines("STM", windowMs, MONITOR_STOP_MS) { lines ->
+            if (lines.any { it.trim() == "?" }) refused = true
+            frames += report(lines)
+        }
+        line.command("STFCP", AT_TIMEOUT_MS)
+        if (refused) {
+            noStn("STM answered ?")
+        } else if (stnFilters == null) {
+            stnFilters = true
+            listener.log("can_listen all ids at once: STFAP + STM")
+        }
+        return frames
+    }
+
+    /** What the adapter printed in [windowMs] of `AT MA` behind `AT CRA` [canId]; null when it would not filter. */
+    @Suppress("ReturnCount") // Each early return is a filter the adapter would not set or drop.
+    private fun listenText(canId: Int, windowMs: Long): String? {
+        val filter = line.command("ATCRA" + hex(canId, CAN_ID_DIGITS), AT_TIMEOUT_MS)
+        if (filter == null || '?' in filter) return null
+        val lines = ArrayList<String>()
+        line.monitorLines("ATMA", windowMs, MONITOR_STOP_MS) { lines += it }
+        if (!restoreFilter()) return null
+        return lines.joinToString("\r")
+    }
+
+    /**
+     * Reports the values in the frames of [lines], which have just arrived: the frames of one id in a
+     * batch are stamped back from now at its period (the adapter sends them in bursts). The frames read.
+     */
+    private fun report(lines: List<String>): Int {
+        val at = clock.nowMs()
+        val heard = CanMonitor.frames(lines.joinToString("\r")).filter { it.first in byFrame }
+        for ((id, frames) in heard.groupBy { it.first }) {
+            val signals = byFrame.getValue(id)
+            val period = signals.minOf { it.periodMs }
+            frames.forEachIndexed { i, (_, data) ->
+                val t = at - (frames.size - 1 - i) * period
+                for (signal in signals) {
+                    val v = signal.decode(data) ?: continue
+                    lastValues[signal.id] = v
+                    listener.value(signal.channel, v, t)
+                }
+            }
+            listenFrames[id] = (listenFrames[id] ?: 0) + frames.size
+            heardNow += id
+        }
+        return heard.size
     }
 
     /** The mode 01 PIDs the car has, from the `01 00`, `01 20`, … bitmasks; null when none answered. */
@@ -433,54 +619,83 @@ class ElmPoller(
 
     /** Polls [groups] until stopped (why, for the log) or until [pollSet] is no longer [set] (null). */
     private fun poll(channels: List<PidChannel>, groups: List<List<PidChannel>>, set: PollSet): String? {
+        val canFirst = listens.isNotEmpty() && channels.none { it.pollClass == PollClass.FAST }
         val scheduler = PollScheduler(
             channels,
             fastWeight = set.fastWeight,
-            slowMaxHz = set.slowMaxHz,
+            slowMaxHz = slowMaxHz(set),
             groups = groups,
         )
         val byRequest = groups.associateBy { it.first().request }
         var timeouts = 0
         rateStartMs = clock.nowMs()
-        var nextRateLog = rateStartMs + rateLogMs
-        var nextSetCheck = rateStartMs + POLL_SET_CHECK_MS
+        nextRateLog = rateStartMs + rateLogMs
+        nextSetCheck = rateStartMs + POLL_SET_CHECK_MS
         var nextListen = rateStartMs
-        var turn = 0
         var ended: String? = null
         while (ended == null && running()) {
             val now = clock.nowMs()
-            if (now >= nextSetCheck) {
-                nextSetCheck = now + POLL_SET_CHECK_MS
-                if (pollSet() != set) return null
-            }
-            if (listenDue(now, nextListen)) {
-                listen(listens[turn++ % listens.size])
-                nextListen = clock.nowMs() + listenIntervalMs
-                continue
-            }
+            if (setChanged(now, set) || listensLost) return null
             val next = scheduler.next(now)
+            val listenFor = listenWindow(canFirst, now, next, nextListen)
             when {
+                listenFor != null -> {
+                    listenRound(listenFor)
+                    nextListen = clock.nowMs() + listenIntervalMs
+                }
                 next == null -> ended = "car stopped answering"
                 // Only slow requests left and none due: wait, but not past the next listen.
                 next.notBeforeMs > now -> clock.sleep(wakeAt(next.notBeforeMs, nextListen) - now)
                 else -> {
                     timeouts = if (ask(next.request, byRequest, scheduler)) 0 else timeouts + 1
                     if (timeouts >= MAX_TIMEOUTS) ended = "adapter stopped answering"
-                    val done = clock.nowMs()
-                    if (done >= nextRateLog) {
-                        nextRateLog = done + rateLogMs
-                        logRates(scheduler, channels, done)
-                    }
                 }
             }
+            logRatesIfDue(scheduler, channels)
         }
         return ended ?: "stopped"
+    }
+
+    private fun logRatesIfDue(scheduler: PollScheduler, channels: List<PidChannel>) {
+        val now = clock.nowMs()
+        if (now < nextRateLog) return
+        nextRateLog = now + rateLogMs
+        logRates(scheduler, channels, now)
+    }
+
+    /** How often a slow channel is asked at most: less often while the bus gives the rest (FBBD-320). */
+    private fun slowMaxHz(set: PollSet): Double =
+        if (listens.isEmpty()) set.slowMaxHz else minOf(set.slowMaxHz, CAN_SLOW_MAX_HZ)
+
+    /** Whether [pollSet] is no longer [set], asked every [POLL_SET_CHECK_MS]. */
+    private fun setChanged(now: Long, set: PollSet): Boolean {
+        if (now < nextSetCheck) return false
+        nextSetCheck = now + POLL_SET_CHECK_MS
+        return pollSet() != set
+    }
+
+    /**
+     * How long to listen now, or null to poll (FBBD-320): CAN first, until the next request is due;
+     * else for [listenWindowMs] every [listenIntervalMs], and whenever nothing is left to poll.
+     */
+    private fun listenWindow(canFirst: Boolean, now: Long, next: PollScheduler.Next?, nextListen: Long): Long? {
+        val requestDue = next != null && next.notBeforeMs <= now
+        return when {
+            listens.isEmpty() -> null
+            canFirst -> if (requestDue) null else (next?.notBeforeMs ?: (now + maxListenMs)) - now
+            listenDue(now, nextListen) || next == null -> listenWindowMs
+            else -> null
+        }
     }
 
     /** Sends [request]'s group and reports its channels' values; false when no prompt came back in time. */
     private fun ask(request: Request, byRequest: Map<Request, List<PidChannel>>, scheduler: PollScheduler): Boolean {
         val group = byRequest[request].orEmpty()
         val base = MultiPid.command(group)
+        if (!headerFor(group.firstOrNull()?.header)) {
+            scheduler.completed(request, clock.nowMs(), 0, answered = false)
+            return true
+        }
         val learned = expected[request]
         val count = learned?.takeIf { it.ready }?.let { if (countsFrames) it.frames else it.messages }
             ?.takeIf { countOn && it in 1..MAX_COUNT }
@@ -620,9 +835,12 @@ class ElmPoller(
         )
         if (listenFrames.isNotEmpty() && elapsed > 0) {
             val can = listenFrames.entries.joinToString(" ") { (id, n) ->
-                "$id=${"%.1f".format(Locale.ROOT, n * MS_PER_S / elapsed)}"
+                "${hex(id, CAN_ID_DIGITS)}=${"%.1f".format(Locale.ROOT, n * MS_PER_S / elapsed)}"
             }
-            listener.log("can_hz $can listen_share=${"%.2f".format(Locale.ROOT, listenMs.toDouble() / elapsed)}")
+            val mode = if (stnFilters == true) "stn" else "one_id"
+            listener.log(
+                "can_hz $can listen_share=${"%.2f".format(Locale.ROOT, listenMs.toDouble() / elapsed)} mode=$mode",
+            )
             listenFrames.clear()
             listenMs = 0
         }
@@ -676,6 +894,18 @@ class ElmPoller(
         /** FBBD-263: a listen every 400 ms, 100 ms of frames each (5 steering frames at 50 Hz). */
         const val DEFAULT_LISTEN_INTERVAL_MS = 400L
         const val DEFAULT_LISTEN_WINDOW_MS = 100L
+
+        /**
+         * FBBD-320, CAN first: the longest listen before the poll set and stop are looked at again, the
+         * longest one id is listened to in turn on a plain ELM327, and how often each polled channel is
+         * asked at most (ATF and intake air change over minutes).
+         */
+        const val DEFAULT_MAX_LISTEN_MS = 5_000L
+        private const val ROTATE_WINDOW_MS = 250L
+        const val CAN_SLOW_MAX_HZ = 0.2
+
+        /** The functional broadcast header on 11-bit CAN, which requests go to by default. */
+        private const val FUNCTIONAL_11 = 0x7DF
 
         /** How long a stopped monitor may take to print its prompt. */
         private const val MONITOR_STOP_MS = 1_000L
