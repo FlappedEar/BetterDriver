@@ -163,6 +163,25 @@ abstract class AnalysisLayoutTest(private val device: String) {
     }
 
     /**
+     * On the FR-S (FBBD-322): the steering card with the most lock each way, the time over 90° and
+     * the best lap's wheel (UI-250 A), and the brake pressure figures in bar on the pedal card (UI-251 A).
+     */
+    @Test
+    fun carTabShowsSteeringAndBrakePressure() {
+        compose.edgeToEdge()
+        compose.setContent { AppScreen { Analysis() } }
+        tab(AnalysisTab.Car).performClick()
+        compose.waitForIdle()
+        compose.onNodeWithTag(SteeringCardTag).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Most left 183°")).assertExists()
+        compose.onNode(hasText("Over 90° 11 s/lap")).assertExists()
+        compose.onNode(hasText("Best lap, 1:21.24. Up = left, down = right.")).assertExists()
+        compose.onNodeWithTag(BrakePressureTag, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
+        compose.onNode(hasText("Hardest brake 51 bar")).assertExists()
+        compose.onNode(hasText("Brake 50 % + 9.0 s/lap")).assertExists()
+    }
+
+    /**
      * The Compare tab shows what each lap's car was doing along the lap and how long each coasted
      * (FBBD-175), marked as inferred; the Corners tab shows each corner's coasting, marked too.
      */

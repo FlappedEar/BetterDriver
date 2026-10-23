@@ -18,6 +18,9 @@ enum class VehicleChannel(pattern: String) {
 
     /** The steering wheel in degrees, positive left: the gen-1 FR-S's CAN broadcast (FBBD-263, FBBD-321). */
     SteeringAngle("^(?:obd_)?steering(?:_wheel)?_angle(?:-obd|-canbus)?$"),
+
+    /** The brake line pressure in bar: the gen-1 FR-S's CAN broadcast (FBBD-320, FBBD-322). */
+    BrakePressure("^(?:obd_)?brake_pressure(?:-obd|-canbus)?$"),
     ;
 
     private val regex = Regex(pattern, RegexOption.IGNORE_CASE)
