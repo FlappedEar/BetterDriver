@@ -37,12 +37,12 @@ import kotlin.math.roundToInt
 /** UI-251 A: the hardest press, the typical stop and the time at half braking or more, in bar. */
 @Composable
 internal fun BrakePressureFigures(b: BrakePressureUi) {
-    Figures(
+    CarFigures(
         Modifier.testTag(BrakePressureTag),
         listOfNotNull(
-            Figure("Hardest brake", "${b.hardest}", " ${b.unit}"),
-            b.typicalStop?.let { Figure("Typical brake", "$it", " ${b.unit}") },
-            Figure("Brake 50 % +", seconds(b.hardSeconds), if (b.perLap) " s/lap" else " s"),
+            CarFigure("Hardest brake", "${b.hardest}", " ${b.unit}"),
+            b.typicalStop?.let { CarFigure("Typical brake", "$it", " ${b.unit}") },
+            CarFigure("Brake 50 % +", figureSeconds(b.hardSeconds), if (b.perLap) " s/lap" else " s"),
         ),
     )
 }
@@ -55,12 +55,12 @@ internal fun BrakePressureFigures(b: BrakePressureUi) {
 internal fun SteeringCard(s: SteeringUi, modifier: Modifier) {
     Card(modifier.testTag(SteeringCardTag)) {
         TrackLabel("Steering · FR-S")
-        Figures(
+        CarFigures(
             Modifier,
             listOf(
-                Figure("Most left", "${s.mostLeft}", "°"),
-                Figure("Most right", "${s.mostRight}", "°"),
-                Figure("Over 90°", seconds(s.largeLockSeconds), if (s.perLap) " s/lap" else " s"),
+                CarFigure("Most left", "${s.mostLeft}", "°"),
+                CarFigure("Most right", "${s.mostRight}", "°"),
+                CarFigure("Over 90°", figureSeconds(s.largeLockSeconds), if (s.perLap) " s/lap" else " s"),
             ),
         )
         if (s.trace.isNotEmpty()) {
@@ -115,12 +115,12 @@ private fun SteeringChart(s: SteeringUi, modifier: Modifier) {
     }
 }
 
-private class Figure(val label: String, val value: String, val unit: String)
+private class CarFigure(val label: String, val value: String, val unit: String)
 
 /** Figures in a row, as the heart rate's: the label dim, the value bold, the unit dim. */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun Figures(modifier: Modifier, figures: List<Figure>) {
+private fun CarFigures(modifier: Modifier, figures: List<CarFigure>) {
     FlowRow(modifier, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
         for (f in figures) {
             Text(
@@ -137,7 +137,7 @@ private fun Figures(modifier: Modifier, figures: List<Figure>) {
 }
 
 /** Whole seconds from 10 up, one decimal under. */
-private fun seconds(s: Double): String =
+private fun figureSeconds(s: Double): String =
     if (s >= TenSeconds) "${s.roundToInt()}" else String.format(Locale.ROOT, "%.1f", s)
 
 internal const val SteeringCardTag = "car-steering"

@@ -45,6 +45,12 @@ private fun previewTemps(oil: Pair<Double, Double>, coolant: Pair<Double, Double
         TemperatureRange(VehicleChannel.IntakeTemp, 30.0, 36.0, "°C"),
     )
 
+private val PreviewWheel = listOf(
+    0, 1, 4, 11, 19, 39, 14, -35, -52, -66, -62, -29, -13, -8, 4, 8, 8, 6, -4, -9, -46, -73, -47, -34, -12, -3,
+    4, 12, 13, 10, -28, 14, 47, -47, -89, -86, -97, -105, -78, -31, -18, -15, 6, 6, 10, 32, 66, 140, 161, 64, 8,
+    5, 0, -5, -2, -1, -2, -29, -139, -167, -121, -49, -20, -18, 0, 13, 28, 93, 125, 115, 85, 49, -5, -33, -53, -101,
+)
+
 /** The Car tab of [PreviewUi]: all four temperatures, the third lap's gearbox not recorded, no pedals on lap 4. */
 internal val PreviewCar = CarUi(
     rows = listOf(
@@ -92,11 +98,6 @@ internal val PreviewCar = CarUi(
     brakePressure = BrakePressureUi(hardest = 51, typicalStop = 38, hardSeconds = 9.0, perLap = true, unit = "bar"),
 )
 
-private val PreviewWheel = listOf(
-    0, 1, 4, 11, 19, 39, 14, -35, -52, -66, -62, -29, -13, -8, 4, 8, 8, 6, -4, -9, -46, -73, -47, -34, -12, -3,
-    4, 12, 13, 10, -28, 14, 47, -47, -89, -86, -97, -105, -78, -31, -18, -15, 6, 6, 10, 32, 66, 140, 161, 64, 8,
-    5, 0, -5, -2, -1, -2, -29, -139, -167, -121, -49, -20, -18, 0, 13, 28, 93, 125, 115, 85, 49, -5, -33, -53, -101,
-)
 
 /** A made-up session for previews and the UI review page. */
 internal val PreviewUi = AnalysisUi(
