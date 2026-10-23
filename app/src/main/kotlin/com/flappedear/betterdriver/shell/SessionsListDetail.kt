@@ -49,6 +49,7 @@ internal fun SessionsListDetail(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val sideBySide = panes == SessionsPanes.ListAndDetail
         val listWidth = sessionListWidthDp(maxWidth.value)
+        val pane = if (sideBySide) layout.pane(maxWidth.value - listWidth) else layout
         Row(Modifier.fillMaxSize()) {
             if (panes != SessionsPanes.Detail) {
                 val width = if (sideBySide) Modifier.width(listWidth.dp) else Modifier.weight(1f)
@@ -60,7 +61,6 @@ internal fun SessionsListDetail(
                     if (shown == null) {
                         PickSession()
                     } else {
-                        val pane = if (sideBySide) layout.pane(maxWidth.value - listWidth) else layout
                         states.SaveableStateProvider(detailKey(shown)) {
                             detail(shown, pane, onClose.takeUnless { sideBySide })
                         }
