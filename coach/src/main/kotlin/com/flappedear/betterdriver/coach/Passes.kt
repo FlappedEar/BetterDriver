@@ -2,6 +2,10 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.DeltaReference
+import com.flappedear.betterdriver.timing.steering.SteerSample
+import com.flappedear.betterdriver.timing.steering.SteeringPass
+import com.flappedear.betterdriver.timing.steering.bends
+import com.flappedear.betterdriver.timing.steering.steeringPass
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -25,6 +29,9 @@ private const val PeakToleranceKmh = 0.5
 /** A position this close along the path to the one before is the receiver holding it, not a new one. */
 private const val HeldMeters = 0.01
 
+/** The steering of a pass is read from this far before the reference brake point (FBBD-321). */
+const val SteerBeforeBrakeMeters = 30.0
+
 /** The pedal is back on when it rises to this, in percent, as the lap analysis reads a pickup (FBBD-307). */
 const val PickupOnPct = 20.0
 
@@ -42,9 +49,15 @@ const val PickupHoldMicros = 200_000L
 
 /**
  * What else is known of the car at one position (FBBD-307): [offsetMeters] beside the reference
- * path, positive left ([CornerMap.offset]), and the pedal in percent; null where not known.
+ * path, positive left ([CornerMap.offset]), the pedal in percent, and (FBBD-321) the steering wheel
+ * in degrees, positive left, with the position itself to read the path's bend from; null where not known.
  */
-data class PassReading(val offsetMeters: Double? = null, val throttlePct: Double? = null)
+data class PassReading(
+    val offsetMeters: Double? = null,
+    val throttlePct: Double? = null,
+    val steerDeg: Double? = null,
+    val point: Xy? = null,
+)
 
 /**
  * The reference lap's path with its corners (FBBD-96): what every pass is measured against. Positions
@@ -104,7 +117,9 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
             // A pass keeps whether its speeds were measured (FBBD-177), so a reference built from
             // worked-out speeds never gives a precise speed cue.
             val measured = trace.speedsMeasured?.get(i) ?: true
-            val reading = PassReading(offset(trace.points[i], along), trace.throttlesPct?.get(i))
+            val reading = PassReading(
+                offset(trace.points[i], along), trace.throttlesPct?.get(i), trace.steersDeg?.get(i), trace.points[i],
+            )
             for (m in meters) {
                 m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured, reading)?.let { passes += it }
             }
@@ -275,7 +290,29 @@ class PassMeter(
             apexOffsetMeters = inside[apex].reading.offsetMeters,
             pickupAt = pickup(pickupFrom(brake, apex)),
             apexMicros = timeTo(before, after, corner.apexAt)?.let { (it - t0).roundToLong() },
+            steering = steering(),
         )
+    }
+
+    /**
+     * What the hands did through the window (FBBD-321): the wheel at each position that has it, the
+     * bend of the car's own path there; null at a corner without a turn or without the wheel.
+     */
+    @Suppress("ReturnCount")
+    private fun steering(): SteeringPass? {
+        if (corner.turn == Turn.Straight) return null
+        // From a little before braking: earlier in the window the wheel may still be leaving the corner before.
+        val from = corner.brakeAt - SteerBeforeBrakeMeters
+        val read = inside.filter {
+            it.fresh && it.along >= from && it.reading.steerDeg != null && it.reading.point != null
+        }
+        if (read.size < 2) return null
+        val points = read.map { it.reading.point!! }
+        val along = DoubleArray(points.size)
+        for (i in 1 until points.size) along[i] = along[i - 1] + (points[i] - points[i - 1]).length()
+        val bends = bends(points, along)
+        val samples = read.indices.map { SteerSample(read[it].along, read[it].reading.steerDeg!!, bends[it]) }
+        return steeringPass(samples, corner.turn == Turn.Left)
     }
 
     /**

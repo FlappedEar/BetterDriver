@@ -6,6 +6,8 @@ import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.geo.unprojectCoordinate
 import com.flappedear.betterdriver.analysis.optimal.PedalState
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.SteeringPass
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -28,6 +30,8 @@ data class PlanPoint(
     val offsetMeters: Double? = null,
     val speedKmh: Double? = null,
     val pedal: PedalState? = null,
+    /** The steering wheel, degrees, positive left (FBBD-321). */
+    val steerDeg: Double? = null,
 )
 
 /** Where something happens on a pass: braking starts, the slowest point, back on throttle. */
@@ -53,6 +57,8 @@ data class PlanPass(
     val apex: PlanMark? = null,
     val throttle: PlanMark? = null,
     val line: List<PlanPoint> = emptyList(),
+    /** What the hands did (FBBD-321); null without the car's steering angle. */
+    val steering: SteeringPass? = null,
 )
 
 /** One corner of the plan; [cornerId] is the track's CornerId (FBBD-172), null when the analysis had none. */
@@ -83,6 +89,11 @@ data class PlanAdvice(
     val tighterMeters: Double? = null,
     val minimumSpeedKmh: Double? = null,
     val pickupMeters: Double? = null,
+    /**
+     * What to do with the wheel (FBBD-321), in driving order. Not in [any] yet: the screens and the
+     * coach say it only once its words are picked on the UI review page (round 54).
+     */
+    val steering: List<SteerAdvice> = emptyList(),
 ) {
     val any: Boolean
         get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null }
@@ -186,7 +197,9 @@ fun linePlan(
 ): LinePlan {
     fun point(p: LinePoint): PlanPoint {
         val at = unprojectCoordinate(p.eastMeters, p.northMeters, origin)
-        return PlanPoint(p.progressMeters, at.latitudeDegrees, at.longitudeDegrees, p.offsetMeters, p.speedKmh, p.pedal)
+        return PlanPoint(
+            p.progressMeters, at.latitudeDegrees, at.longitudeDegrees, p.offsetMeters, p.speedKmh, p.pedal, p.steerDeg,
+        )
     }
     fun mark(pass: LinePass, progress: Double?, speed: Double? = null): PlanMark? {
         val near = progress?.let { p -> pass.line.minByOrNull { abs(it.progressMeters - p) } } ?: return null
@@ -203,6 +216,7 @@ fun linePlan(
         apex = mark(p, p.minimumSpeedMeters, p.minimumSpeedKmh),
         throttle = mark(p, p.pickupMeters),
         line = p.line.map(::point),
+        steering = p.steering,
     )
     fun edge(meters: Double, at: MetricPoint, progress: Double): PlanPoint {
         val g = unprojectCoordinate(at.eastMeters, at.northMeters, origin)
@@ -228,7 +242,9 @@ fun linePlan(
                 gainSeconds = c.gainSeconds,
                 reference = pass(c.reference),
                 target = pass(c.target),
-                advice = PlanAdvice(a.brakeMeters, a.apexMeters, a.tighterMeters, a.minimumSpeedKmh, a.pickupMeters),
+                advice = PlanAdvice(
+                    a.brakeMeters, a.apexMeters, a.tighterMeters, a.minimumSpeedKmh, a.pickupMeters, a.steering,
+                ),
                 roadLeft = c.road.map { edge(it.leftMeters, it.left, it.progressMeters) },
                 roadRight = c.road.map { edge(it.rightMeters, it.right, it.progressMeters) },
                 sessionBestSeconds = c.sessionBestSeconds,

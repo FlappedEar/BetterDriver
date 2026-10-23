@@ -27,21 +27,48 @@ fun pedalChannelId(channels: Collection<ChannelDef>): Int? {
         )?.id
 }
 
-/** Turns a session's sample sets, in time order, into coach fixes carrying the last pedal value from [pedal]. */
-class CoachFixReader(val pedal: Int?) {
-    private var value: Double? = null
-    private var at = Long.MIN_VALUE
+/**
+ * The car's steering wheel angle (FBBD-321): the app's "obd_steering_angle" from the FR-S's CAN,
+ * RaceChrono's "steering_angle-canbus".
+ */
+private val SteeringPattern = Regex("^(?:obd_)?steering(?:_wheel)?_angle(?:-obd|-canbus)?$", RegexOption.IGNORE_CASE)
 
-    /** The fix in [set], if it has one, with the pedal when one was read in the last [MaxPedalAgeMicros]. */
+/** The channel the coach reads the steering wheel from; null without one. */
+fun steeringChannelId(channels: Collection<ChannelDef>): Int? =
+    channels.sortedBy { it.name.lowercase() }.firstOrNull { SteeringPattern.matches(it.name) }?.id
+
+/**
+ * Turns a session's sample sets, in time order, into coach fixes carrying the last pedal value from
+ * [pedal] and the last steering wheel angle from [steering] (FBBD-321), each while recent.
+ */
+class CoachFixReader(val pedal: Int?, val steering: Int? = null) {
+    private val pedalValue = Latest(pedal)
+    private val steeringValue = Latest(steering)
+
+    /** The fix in [set], if it has one, with the pedal and the wheel when read in the last [MaxPedalAgeMicros]. */
     fun read(set: SampleSet): CoachFix? {
-        if (pedal != null) {
-            set.values.firstOrNull { it.channelId == pedal }?.value?.takeIf { it.isFinite() }?.let {
+        pedalValue.read(set)
+        steeringValue.read(set)
+        val fix = set.toCoachFix() ?: return null
+        return fix.copy(
+            throttlePct = pedalValue.at(set.tMicros) ?: fix.throttlePct,
+            steerDeg = steeringValue.at(set.tMicros) ?: fix.steerDeg,
+        )
+    }
+
+    /** The last finite value of one channel and when it came. */
+    private class Latest(val channel: Int?) {
+        private var value: Double? = null
+        private var at = Long.MIN_VALUE
+
+        fun read(set: SampleSet) {
+            if (channel == null) return
+            set.values.firstOrNull { it.channelId == channel }?.value?.takeIf { it.isFinite() }?.let {
                 value = it
                 at = set.tMicros
             }
         }
-        val fix = set.toCoachFix() ?: return null
-        val fresh = value?.takeIf { set.tMicros - at in 0..MaxPedalAgeMicros }
-        return if (fresh == null) fix else fix.copy(throttlePct = fresh)
+
+        fun at(tMicros: Long): Double? = value?.takeIf { tMicros - at in 0..MaxPedalAgeMicros }
     }
 }
