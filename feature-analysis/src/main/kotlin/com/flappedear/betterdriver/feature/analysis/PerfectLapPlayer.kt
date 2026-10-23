@@ -65,13 +65,16 @@ private const val NanosPerSecond = 1e9
 /** The player's two speeds: as driven, and half (to see where the pedals change). */
 private val Speeds = listOf(1.0 to "1×", 0.5 to "½×")
 
+/** Where the video went: [inMovies] false on Android 8 and 9, where it stays in the app's own folder, to send. */
+internal data class SavedVideo(val uri: Uri, val inMovies: Boolean)
+
 /** What saving the video is doing. */
 private sealed interface Saving {
     data object Idle : Saving
 
     data class Running(val progress: Float) : Saving
 
-    data class Saved(val uri: Uri) : Saving
+    data class Saved(val video: SavedVideo) : Saving
 
     data class Failed(val why: String) : Saving
 }
@@ -209,7 +212,7 @@ private fun Controls(
                 if (s is Saving.Saved) {
                     TextButton(onClick = {
                         val send = Intent(Intent.ACTION_SEND).setType("video/mp4")
-                            .putExtra(Intent.EXTRA_STREAM, s.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            .putExtra(Intent.EXTRA_STREAM, s.video.uri).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         context.startActivity(Intent.createChooser(send, "Send the perfect lap"))
                     }) { Text("Send") }
                 }
@@ -217,7 +220,8 @@ private fun Controls(
         }
     }
     when (val s = saving) {
-        is Saving.Saved -> Dim("Saved to Movies/BetterDriver.")
+        is Saving.Saved ->
+            Dim(if (s.video.inMovies) "Saved to Movies/BetterDriver." else "Saved in the app. Send it to keep it.")
         is Saving.Failed -> Dim("The video was not saved: ${s.why}", color = TrackTheme.colors.loss)
         else -> Unit
     }
@@ -232,12 +236,12 @@ private suspend fun save(
 ): Saving {
     update(Saving.Running(0f))
     return try {
-        val uri = withContext(Dispatchers.Default) {
+        val video = withContext(Dispatchers.Default) {
             // Its own painter: the player keeps drawing with the other while the video is made.
             val name = "perfect-lap-${System.currentTimeMillis()}"
             savePerfectLapVideo(context, scene, painter.copy(), name) { update(Saving.Running(it)) }
         }
-        Saving.Saved(uri)
+        Saving.Saved(video)
     } catch (e: CancellationException) {
         update(Saving.Idle)
         throw e
@@ -245,6 +249,8 @@ private suspend fun save(
         Saving.Failed(e.message ?: "the video could not be written")
     } catch (e: IllegalStateException) {
         Saving.Failed(e.message ?: "the phone's video encoder refused")
+    } catch (e: IllegalArgumentException) {
+        Saving.Failed(e.message ?: "the phone's video encoder refused this size")
     }
 }
 

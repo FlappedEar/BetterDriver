@@ -6,7 +6,6 @@ import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaFormat
 import android.media.MediaMuxer
-import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
@@ -29,7 +28,8 @@ private const val MicrosPerSecond = 1_000_000L
  * Draws the perfect lap of [scene] frame by frame with [painter] into an H.264 MP4, as fast as
  * the encoder takes it, reporting [progress] from 0 to 1, then saves it to the phone's Movies
  * (Movies/BetterDriver) and returns where it is. Cancelling stops it and leaves nothing behind.
- * Run off the main thread.
+ * A phone whose encoder refuses the format throws [IllegalArgumentException] or
+ * [IllegalStateException]. Run off the main thread.
  */
 internal suspend fun savePerfectLapVideo(
     context: Context,
@@ -37,7 +37,7 @@ internal suspend fun savePerfectLapVideo(
     painter: PerfectLapPainter,
     name: String,
     progress: (Float) -> Unit,
-): Uri {
+): SavedVideo {
     val file = File(File(context.cacheDir, "perfect-lap").apply { mkdirs() }, "$name.mp4")
     try {
         encode(scene, painter, file, progress)
@@ -60,8 +60,16 @@ private suspend fun encode(scene: PerfectLapScene, painter: PerfectLapPainter, f
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setInteger(MediaFormat.KEY_MAX_B_FRAMES, 0)
     }
     val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-    codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
-    val surface = codec.createInputSurface()
+    val surface = try {
+        codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        codec.createInputSurface()
+    } catch (e: IllegalArgumentException) {
+        codec.release()
+        throw e
+    } catch (e: IllegalStateException) {
+        codec.release()
+        throw e
+    }
     val muxer = MediaMuxer(file.path, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
     val info = MediaCodec.BufferInfo()
     var track = -1
@@ -117,7 +125,7 @@ private suspend fun encode(scene: PerfectLapScene, painter: PerfectLapPainter, f
 
 /** Copies [file] to Movies/BetterDriver, where the phone's gallery and Quick Share find it. */
 @Suppress("NestedBlockDepth") // A pending entry, written, then shown or removed.
-private fun publish(context: Context, file: File, name: String): Uri {
+private fun publish(context: Context, file: File, name: String): SavedVideo {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         val values = ContentValues().apply {
             put(MediaStore.Video.Media.DISPLAY_NAME, "$name.mp4")
@@ -137,11 +145,12 @@ private fun publish(context: Context, file: File, name: String): Uri {
             resolver.delete(uri, null, null)
             throw e
         }
-        return uri
+        return SavedVideo(uri, inMovies = true)
     }
-    // Android 8 and 9: the app's own Movies folder, shared through the app's file provider.
+    // Android 8 and 9: the public Movies folder needs a storage permission the app does not ask
+    // for, so the video stays in the app's own Movies folder and is sent through the file provider.
     val dir = File(context.getExternalFilesDir(Environment.DIRECTORY_MOVIES), "BetterDriver").apply { mkdirs() }
     val out = File(dir, "$name.mp4")
     file.copyTo(out, overwrite = true)
-    return FileProvider.getUriForFile(context, context.packageName + ".transfer", out)
+    return SavedVideo(FileProvider.getUriForFile(context, context.packageName + ".transfer", out), inMovies = false)
 }
