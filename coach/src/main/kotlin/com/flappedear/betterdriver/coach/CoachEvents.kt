@@ -72,10 +72,11 @@ object CoachEvents {
         "source=$sessionId corners=${cornerIds.joinToString(",")}"
 
     /**
-     * The session whose focus the coach worked on in a session with [events]: the last [FOCUS]
-     * event's, as a restarted coach logs it again; null when the coach worked on none.
+     * The session whose focus the coach worked on in a session with [events]: the last [FOCUS] or
+     * [PLAN] event's (a line plan's focus, UI-174 A), as a restarted coach logs it again; null when
+     * the coach worked on none.
      */
-    fun focusSource(events: List<RecorderEvent>): String? = events.filter { it.kind == FOCUS }
+    fun focusSource(events: List<RecorderEvent>): String? = events.filter { it.kind == FOCUS || it.kind == PLAN }
         .maxByOrNull { it.tMicros }?.let { split(it.text).first["source"] }?.takeIf { it.isNotBlank() }
 
     /** How many corner cues were said at each CornerId in a session with [events]; cues without one are left out. */

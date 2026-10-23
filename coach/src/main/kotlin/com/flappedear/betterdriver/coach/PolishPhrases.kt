@@ -71,8 +71,7 @@ object PolishPhrases : PhraseBook {
 
     override fun result(moved: List<Moved>, done: Boolean, gainSeconds: Double?): String {
         val what = moved.joinToString(" · ") { m ->
-            val by = m.by?.takeIf { gainSeconds != null }
-            if (by == null) words(m.advice).replaceFirstChar(Char::uppercase) else movedBy(m.advice, by)
+            m.by?.let { movedBy(m.advice, it) } ?: words(m.advice).replaceFirstChar(Char::uppercase)
         }
         return when {
             !done -> "$what · jeszcze nie"

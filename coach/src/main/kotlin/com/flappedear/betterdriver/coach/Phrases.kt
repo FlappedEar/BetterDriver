@@ -20,9 +20,9 @@ interface PhraseBook {
 
     /**
      * What a pass did after a cue, for the coach line (UI-173 A): what it moved, against the pass
-     * before the cue ([moved]), then whether it did what was asked and the time it gave ([gainSeconds],
-     * positive faster; null when the numbers are not trusted): "Apex 1.8 m tighter ✓ · −0.09 s",
-     * "Apex 0.4 m tighter · not yet".
+     * before the cue ([moved], by null when the numbers are not trusted: the advice's words), then
+     * whether it did what was asked and the time it gave ([gainSeconds], positive faster; null to
+     * leave it out): "Apex 1.8 m tighter ✓ · −0.09 s", "Apex 0.4 m tighter · not yet".
      */
     fun result(moved: List<Moved>, done: Boolean, gainSeconds: Double?): String
 
@@ -191,8 +191,7 @@ object Phrases : PhraseBook {
 
     override fun result(moved: List<Moved>, done: Boolean, gainSeconds: Double?): String {
         val what = moved.joinToString(" · ") { m ->
-            val by = m.by?.takeIf { gainSeconds != null }
-            if (by == null) words(m.advice).replaceFirstChar(Char::uppercase) else movedBy(m.advice, by)
+            m.by?.let { movedBy(m.advice, it) } ?: words(m.advice).replaceFirstChar(Char::uppercase)
         }
         return when {
             !done -> "$what · not yet"

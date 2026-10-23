@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.Confidence
+import com.flappedear.betterdriver.recorder.RecorderEvent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -114,7 +115,8 @@ class LineCuesTest {
         assertEquals("Apex 1.8 m tighter ✓ · −0.09 s", Phrases.result(worked, true, 0.09))
         assertEquals("Apex 0.4 m tighter · not yet", Phrases.result(listOf(Moved(line, 0.4)), false, 0.01))
         assertEquals("Apeks 1,8 m ciaśniej ✓ · −0,09 s", PolishPhrases.result(worked, true, 0.09))
-        assertEquals("Tighter at the apex ✓", Phrases.result(worked, true, null))
+        assertEquals("Tighter at the apex ✓", Phrases.result(listOf(Moved(line, null)), true, null))
+        assertEquals("Apex 1.8 m tighter ✓", Phrases.result(worked, true, null))
         val two = listOf(Moved(line, 1.8), Moved(Advice.Throttle(5, afterApex = 5), 4.0))
         assertEquals("Apex 1.8 m tighter · Throttle 4 m earlier ✓ · +0.02 s", Phrases.result(two, true, -0.02))
     }
@@ -179,5 +181,11 @@ class LineCuesTest {
             "source=s1 corners=c9,c1,c4 gain_s=0.98",
             CoachEvents.planText("s1", listOf("c9", "c1", "c4"), 0.98),
         )
+        // A session coached from a line plan links back to the plan's session (coaching history).
+        val events = listOf(RecorderEvent(5, CoachEvents.PLAN, CoachEvents.planText("s1", listOf("c9"), 0.4)))
+        assertEquals("s1", CoachEvents.focusSource(events))
+        // The plan has no pass to review: the cue review leaves it out.
+        val said = RecorderEvent(10, CoachEvents.CUE, CoachEvents.cueText(plan))
+        assertTrue(CueReview.of(listOf(said)).cues.isEmpty())
     }
 }

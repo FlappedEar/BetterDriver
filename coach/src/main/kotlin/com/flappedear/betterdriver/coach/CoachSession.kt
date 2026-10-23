@@ -147,8 +147,8 @@ class CoachLines(private val phrases: PhraseBook) {
     fun result(r: CueResult): CoachStatus {
         val cue = r.cue
         val before = cue.before
-        val moved = cue.asked.map { a -> Moved(a, before?.let { movedBy(a, it, r.after) }) }
         val precise = cue.confidence.precise && r.confidence.precise
+        val moved = cue.asked.map { a -> Moved(a, before?.let { movedBy(a, it, r.after) }?.takeIf { precise }) }
         val gain = (r.gainMicros / MicrosPerSecond).takeIf { precise }
         val text = phrases.result(moved, r.improved, gain)
         val praise = r.improved && r.gainMicros > 0
