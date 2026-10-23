@@ -46,8 +46,8 @@ const val FullBrakeBar = 89.6
 /** A stop starts at this pressure: below it the foot only rests on the pedal. */
 const val BrakeStopBar = 5.0
 
-/** A wait between two samples longer than this is a gap and adds no time. */
-private const val MaxSampleGapSeconds = 0.25
+/** A wait between two samples longer than this is a gap: it adds no time and ends a stop. */
+private const val MaxSampleGapSeconds = 0.5
 
 /** The steering wheel of [session] over [spans] (start and end seconds); null without a wheel angle there. */
 fun steeringStats(session: TelemetrySession, spans: List<Pair<Double, Double>>): SteeringStats? {
@@ -92,23 +92,34 @@ fun brakePressureStats(session: TelemetrySession, spans: List<Pair<Double, Doubl
     var hardest = 0.0
     var seconds = 0.0
     var stretches = 0
-    val stops = mutableListOf<Double>()
+    // One list over all the spans, so a stop across the line between two laps counts once.
+    val all = sortedMapOf<Double, Double>()
     for ((from, to) in spans) {
         val samples = c.samplesIn(from, to)
         if (samples.isEmpty()) continue
         stretches++
         hardest = max(hardest, samples.maxOf { it.value })
-        stops += stopPeaks(samples)
+        samples.forEach { all[it.time] = it.value }
         seconds += c.timeWhere(from, to) { it >= HardBrakeShare * FullBrakeBar }
     }
+    val stops = stopPeaks(all.map { (t, v) -> SamplePoint(t, v) })
     return if (stretches == 0) null else BrakePressureStats(hardest, stops.sorted().median(), seconds, stretches, unit)
 }
 
-/** The highest pressure of each stop in [samples]: a stop runs while the pressure is [BrakeStopBar] or more. */
+/**
+ * The highest pressure of each stop in [samples], in time order: a stop runs while the pressure is
+ * [BrakeStopBar] or more, and a gap in the samples ends it.
+ */
 private fun stopPeaks(samples: List<SamplePoint>): List<Double> {
     val peaks = mutableListOf<Double>()
     var peak = 0.0
+    var last = Double.NaN
     for (s in samples) {
+        if (peak > 0.0 && s.time - last > MaxSampleGapSeconds) {
+            peaks += peak
+            peak = 0.0
+        }
+        last = s.time
         if (s.value >= BrakeStopBar) {
             peak = max(peak, s.value)
         } else if (peak > 0.0) {
@@ -128,16 +139,15 @@ private fun TelemetryChannel.samplesIn(from: Double, to: Double): List<SamplePoi
 
 /**
  * The seconds from [from] to [to] this channel's value held where [test] is true: each sample counts
- * until the next one, at most [MaxSampleGapSeconds], so a gap adds nothing.
+ * until the next one; a wait longer than [MaxSampleGapSeconds] is a gap and adds nothing.
  */
 private fun TelemetryChannel.timeWhere(from: Double, to: Double, test: (Double) -> Boolean): Double {
     var seconds = 0.0
     for (i in 0 until timestamps.size - 1) {
         val t = timestamps[i]
         val counts = t >= from && t < to && values[i].isFinite()
-        if (counts && test(values[i])) {
-            seconds += min(min(timestamps[i + 1], to) - t, MaxSampleGapSeconds).coerceAtLeast(0.0)
-        }
+        val gap = timestamps[i + 1] - t > MaxSampleGapSeconds
+        if (counts && !gap && test(values[i])) seconds += (min(timestamps[i + 1], to) - t).coerceAtLeast(0.0)
     }
     return seconds
 }

@@ -83,6 +83,30 @@ class SteeringBrakeTest {
     }
 
     @Test
+    fun `a stop across the line between two laps counts once`() {
+        // One 60 bar stop from 48 to 52 s, across the line at 50 s, and one of 20 bar in lap 2.
+        val pressure = channel("obd_brake_pressure", "bar") { t ->
+            when {
+                t >= 48 && t < 52 -> 60.0
+                t >= 70 && t < 71 -> 20.0
+                else -> 0.0
+            }
+        }
+        val b = assertNotNull(brakePressureStats(session(pressure), laps))
+        assertEquals(40.0, b.typicalStop!!, 1e-9, "median of 60 and 20, not of 60, 60 and 20")
+    }
+
+    @Test
+    fun `a gap in the readings adds no time`() {
+        // 120° held, but read only at 0 and 10 s: the 10 s between is a gap, not 10 s of lock.
+        val sparse = TelemetryChannel(
+            "obd_steering_angle", doubleArrayOf(0.0, 10.0), doubleArrayOf(120.0, 120.0), "deg", Provenance.MEASURED_OBD,
+        )
+        val s = assertNotNull(steeringStats(session(sparse), listOf(0.0 to 20.0)))
+        assertEquals(0.0, s.largeLockSeconds, 1e-9)
+    }
+
+    @Test
     fun `a pressure in another unit, or none, is not shown`() {
         assertNull(brakePressureStats(session(channel("obd_brake_pressure", "kPa") { 100.0 }), laps))
         assertNull(brakePressureStats(session(wheel), laps))

@@ -78,7 +78,8 @@ private fun SteeringChart(s: SteeringUi, modifier: Modifier) {
     val most = points.maxOf { abs(it.value) }
     // At least ±200° so a quiet lap does not look busy; a lap with more lock gets room for it.
     val limit = max(SteeringChartMinDegrees, ceil(most / SteeringGridDegrees) * SteeringGridDegrees)
-    val span = points.maxOf { it.time }.coerceAtLeast(1.0)
+    // The whole lap is the axis, so a reading that stopped early leaves the rest of the lap blank.
+    val span = (s.traceLapMillis?.let { it / MillisPerSecond } ?: points.maxOf { it.time }).coerceAtLeast(1.0)
     val grid = (1..(limit / SteeringGridDegrees).toInt()).flatMap { i ->
         listOf(i * SteeringGridDegrees, -i * SteeringGridDegrees)
     }
@@ -146,3 +147,4 @@ internal const val BrakePressureTag = "car-brake-pressure"
 private const val SteeringChartMinDegrees = 200.0
 private const val SteeringGridDegrees = 90.0
 private const val TenSeconds = 10.0
+private const val MillisPerSecond = 1000.0
