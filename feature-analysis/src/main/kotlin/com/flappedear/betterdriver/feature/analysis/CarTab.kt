@@ -38,7 +38,10 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import kotlin.math.roundToInt
 
-/** The Car tab's cards (FBBD-176): pedals, temperatures and heart rate, each only when recorded. */
+/**
+ * The Car tab's cards (FBBD-176): pedals (with the FR-S brake pressure, UI-251 A), the FR-S steering
+ * wheel (UI-250 A), temperatures and heart rate, each only when recorded.
+ */
 @Composable
 internal fun CarCards(car: CarUi?, modifier: Modifier) {
     if (car == null || car.empty) {
@@ -48,6 +51,7 @@ internal fun CarCards(car: CarUi?, modifier: Modifier) {
         return
     }
     PedalCard(car, modifier)
+    car.steering?.let { SteeringCard(it, modifier) }
     TemperatureCard(car, modifier)
     HeartRateChartCard(car.heartRate, modifier)
 }
@@ -77,6 +81,7 @@ private fun PedalCard(car: CarUi, modifier: Modifier) {
         TrackLabel(if (car.rows.any { it.lapNumber != null }) "Pedals by lap" else "Pedals · whole drive")
         if (!car.hasPedals) {
             Dim("Not recorded in this session")
+            car.brakePressure?.let { BrakePressureFigures(it) }
             return@Card
         }
         val withBrake = car.rows.any { it.pedals?.braking != null }
@@ -93,9 +98,11 @@ private fun PedalCard(car: CarUi, modifier: Modifier) {
             listOf(c.gain to "Full", c.gain.copy(alpha = PartAlpha) to "Part", c.textDim to "Off throttle")
         }
         Key(keys)
+        car.brakePressure?.let { BrakePressureFigures(it) }
         Dim("Share of the time above ${PedalMinimumSpeedKmh.roundToInt()} km/h. Full = pedal 90 % or more.")
     }
 }
+
 
 @Composable
 private fun PedalBar(p: PedalShares, modifier: Modifier) {
@@ -287,8 +294,8 @@ internal const val CarEmptyTag = "car-empty"
 private const val PartAlpha = 0.5f
 private const val ChartPaddingBpm = 5.0
 private val BarHeight = 12.dp
-private val ChartHeight = 120.dp
-private val LineWidth = 1.5.dp
+internal val ChartHeight = 120.dp
+internal val LineWidth = 1.5.dp
 private val LapNameWidth = 48.dp
 private val LapTimeWidth = 72.dp
 private val WholeDriveWidth = 120.dp
