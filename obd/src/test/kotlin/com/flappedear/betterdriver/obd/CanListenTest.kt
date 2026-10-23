@@ -12,7 +12,10 @@ import kotlin.test.assertTrue
  * `AT CRA` id when a filter is set), `STOPPED` and the prompt, with headers as `AT H1`/`AT H0` set. With
  * [monitor] false the adapter answers `?` to `AT CAF0` and `AT MA`. [bareCra] false is an ELM327 older
  * than v1.4b, which answers `?` to `AT CRA` without an id; [autoReceive] false refuses `AT AR` too.
- * Mode 01: RPM (0C) only. [vin] is the `09 02` answer (FBBD-284), none for null.
+ * Mode 01: RPM (0C) only, and intake air (0F) unasked. [vin] is the `09 02` answer (FBBD-284), none for null.
+ * With [stn] it takes STN pass filters (`STFCP`, `STFAP id,mask`) and monitors through them (`STM`),
+ * as the vLinker's STN1151 does (FBBD-320). The bus goes quiet at [quietFromMs]. `21 82` is answered
+ * only behind header 7E1 (the FR-S transmission, ATF).
  */
 @Suppress("LongParameterList")
 private class BusElm(
@@ -22,6 +25,8 @@ private class BusElm(
     val bareCra: Boolean = true,
     val autoReceive: Boolean = true,
     val vin: String? = FrsVin,
+    val stn: Boolean = false,
+    val quietFromMs: Long = Long.MAX_VALUE,
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -29,6 +34,9 @@ private class BusElm(
     private var headers = false
     private var filter: Int? = null
     private var monitoring = false
+    private var stnMonitor = false
+    private val passFilters = LinkedHashSet<Int>()
+    private var header = 0x7DF
 
     private val answers = mapOf(
         "ATZ" to "\r\rELM327 v2.2", "ATE0" to "OK", "ATL0" to "OK", "ATS0" to "OK", "ATH0" to "OK",
@@ -36,6 +44,7 @@ private class BusElm(
         "ATDPN" to "A6", "0100" to "SEARCHING...\r410000100000", "010C" to "410C1AF8",
     )
 
+    @Suppress("CyclomaticComplexMethod") // One branch per command the fake adapter knows.
     fun write(bytes: ByteArray) {
         now += 25
         // Any byte stops the monitor.
@@ -45,6 +54,21 @@ private class BusElm(
         if (!track(cmd)) return feed("?")
         when {
             monitor && cmd == "ATMA" -> monitoring = true
+            stn && cmd == "STM" -> {
+                monitoring = true
+                stnMonitor = true
+            }
+            stn && cmd == "STFCP" -> passFilters.clear().also { feed("OK") }
+            stn && cmd.startsWith("STFAP") -> {
+                passFilters += cmd.removePrefix("STFAP").trim().substringBefore(',').toInt(16)
+                feed("OK")
+            }
+            cmd.startsWith("ATSH") -> {
+                header = cmd.removePrefix("ATSH").toInt(16)
+                feed("OK")
+            }
+            cmd == "2182" -> feed(if (header == 0x7E1) "61825A66" else "NO DATA")
+            cmd == "010F" -> feed(if (header == 0x7DF) "410F41" else "NO DATA")
             monitor && (cmd == "ATCAF0" || cmd == "ATCAF1" || cmd.startsWith("ATCRA") || cmd == "ATAR") -> feed("OK")
             cmd == "0902" -> feed(vin?.let(::vinAnswer) ?: "NO DATA")
             else -> feed(answers[cmd] ?: "?")
@@ -67,7 +91,10 @@ private class BusElm(
 
     private fun stopMonitor() {
         monitoring = false
-        val frames = bus.filterKeys { filter == null || it == filter }
+        val passes = if (stnMonitor) passFilters.toSet() else null
+        stnMonitor = false
+        if (now >= quietFromMs) return feed("STOPPED")
+        val frames = bus.filterKeys { if (passes != null) it in passes else filter == null || it == filter }
             .map { (id, data) -> if (headers) "%03X".format(id) + data else data }
             .let { once -> List(repeats) { once }.flatten() }
         feed(frames.joinToString("\r") + "\rSTOPPED")
@@ -120,11 +147,14 @@ private class CanHeard : ObdListener {
 }
 
 class CanListenTest {
-    /** FR-S frames: steering 0x012C = 300 → -30.0°, plus the ids the FR-S signal requires. */
+    /**
+     * FR-S frames: steering 0x012C = 300 → -30.0°; brake byte 0x20; pedal 0x33, rpm 0x02EE = 750,
+     * throttle 0x19; oil 0x75 and coolant 0x7D, 40 under.
+     */
     private val frs = mapOf(
         0x0D0 to "2C01000000000000",
-        0x0D1 to "0000000000000000",
-        0x140 to "0000000000000000",
+        0x0D1 to "0000200000000000",
+        0x140 to "3300EE0200001900",
         0x360 to "0000757D00000000",
         0x7E8 to "03410C1AF8000000",
     )
@@ -140,6 +170,7 @@ class CanListenTest {
             rateLogMs = 1_000,
             probeMs = 5,
             listenWindowMs = 5,
+            maxListenMs = 5,
             pollSet = { pollSet },
         ).run()
         return got
@@ -156,25 +187,73 @@ class CanListenTest {
     }
 
     @Test
-    fun `the FR-S steering angle is heard between polls`() {
+    fun `on the FR-S the bus replaces polling`() {
+        // FBBD-320: everything the bus has comes from it; only the ATF (7E1 21 82) is still asked.
         val elm = BusElm(frs)
         val got = run(elm)
-        assertEquals(listOf("rpm", "steering_angle"), got.channels.map { it.id })
+        assertEquals(
+            listOf(
+                "atf_temp", "steering_angle", "brake_pressure", "brake", "accelerator", "throttle", "rpm",
+                "oil_temp", "coolant_temp",
+            ),
+            got.channels.map { it.id },
+        )
         val logs = got.logs.toString()
         assertTrue(got.logs.any { it.startsWith("can_probe ms=5 frames=25 ids=5") && "0D0:5" in it }, logs)
         assertTrue(got.logs.any { it.startsWith("can_ids 0D0:5 0D1:5 140:5 360:5 025:0 0AA:0 0B4:0") }, logs)
-        assertTrue(got.logs.any { it.endsWith("listen steering_angle=0D0") }, logs)
-        val steering = got.values.filter { it.first == "steering_angle" }.map { it.second }
-        assertTrue(steering.size >= 5, "steering $steering")
-        assertTrue(steering.all { it == -30.0 }, "steering $steering")
-        // Polling goes on: rpm is still read, and most of the adapter's time is still polling.
-        val rpm = got.values.count { it.first == "rpm" }
-        assertTrue(rpm > steering.size, "rpm $rpm steering ${steering.size}")
-        assertTrue(got.logs.any { it.startsWith("can_hz steering_angle=") && "listen_share=" in it }, logs)
-        // A listen sets the filter, turns CAN formatting off, monitors, and puts both back.
-        val i = elm.sent.indexOfLast { it == "ATCRA0D0" }
-        assertEquals(listOf("ATCRA0D0", "ATMA", "ATCRA", "ATCAF1"), elm.sent.subList(i, i + 4))
-        assertEquals("ATCAF0", elm.sent[i - 1])
+        assertTrue("not polled (from CAN): rpm brake accelerator oil_temp" in got.logs, logs)
+        fun values(id: String) = got.values.filter { it.first == id }.map { it.second }.distinct()
+        assertEquals(listOf(-30.0), values("steering_angle"))
+        assertEquals(listOf(40.96), values("brake_pressure"))
+        assertEquals(listOf(750.0), values("rpm"))
+        assertEquals(listOf(20.0), values("accelerator"))
+        assertEquals(listOf(77.0, 85.0), values("oil_temp") + values("coolant_temp"))
+        assertTrue(kotlin.math.abs(values("brake").single() - 32 / 0.7) < 1e-9, logs)
+        assertTrue(kotlin.math.abs(values("throttle").single() - 25 / 2.55) < 1e-9, logs)
+        // ATF through its own header, and back to the broadcast header for nothing else.
+        assertEquals(listOf(49.0), values("atf_temp"))
+        val atf = elm.sent.indexOf("2182")
+        assertEquals("ATSH7E1", elm.sent[atf - 1])
+        // Not polled: engine speed, pedal, brake, oil.
+        assertTrue(elm.sent.none { it == "010C" || it == "015A" || it == "2141" || it == "2101" }, elm.sent.toString())
+        // A plain ELM327 listens to one id after another.
+        assertTrue("can_listen one id at a time: STFCP not taken" in got.logs, logs)
+        val ids = elm.sent.filter { it.startsWith("ATCRA") && it != "ATCRA" }.takeLast(8).distinct().sorted()
+        assertEquals(listOf("ATCRA0D0", "ATCRA0D1", "ATCRA140", "ATCRA360"), ids)
+        assertTrue(got.logs.any { it.startsWith("can_hz 0D0=") && it.endsWith("mode=one_id") }, logs)
+        // Most of the adapter's time is listening.
+        val share = got.logs.last { it.startsWith("can_hz") }.substringAfter("listen_share=").substringBefore(' ')
+        assertTrue(share.toDouble() > 0.5, logs)
+    }
+
+    @Test
+    fun `an STN adapter hears every FR-S id in one monitor`() {
+        val elm = BusElm(frs, stn = true)
+        val got = run(elm)
+        assertTrue("can_listen all ids at once: STFAP + STM" in got.logs, got.logs.toString())
+        val i = elm.sent.indexOf("STM")
+        assertEquals(
+            listOf("STFCP", "STFAP 0D0,7FF", "STFAP 0D1,7FF", "STFAP 140,7FF", "STFAP 360,7FF"),
+            elm.sent.subList(i - 5, i),
+        )
+        assertEquals("STFCP", elm.sent[i + 1])
+        val probeEnd = elm.sent.indexOfFirst { it == "STFCP" }
+        assertTrue(elm.sent.drop(probeEnd).none { it.startsWith("ATCRA") }, elm.sent.toString())
+        assertTrue(got.values.any { it.first == "coolant_temp" } && got.values.any { it.first == "steering_angle" })
+        assertTrue(got.logs.any { it.startsWith("can_hz ") && it.endsWith("mode=stn") }, got.logs.toString())
+    }
+
+    @Test
+    fun `when the bus goes quiet the channels it gave are polled again`() {
+        val elm = BusElm(frs, quietFromMs = 1_500, stn = true)
+        val got = run(elm, stopAfterMs = 6_000)
+        val logs = got.logs.toString()
+        assertTrue("can_listen off: no frames in 10 listens" in got.logs, logs)
+        assertTrue("polling again what CAN gave" in got.logs, logs)
+        val quiet = elm.sent.lastIndexOf("STM")
+        assertTrue(elm.sent.drop(quiet).any { it == "010C" }, elm.sent.toString())
+        val last = got.values.takeLast(3)
+        assertTrue(last.any { it.first == "rpm" && it.second == 1726.0 }, last.toString())
     }
 
     @Test
@@ -289,7 +368,7 @@ class CanListenTest {
     fun `a broadcast needs every id it requires`() {
         val frsOnly = mapOf(0x0D0 to 9, 0x0D1 to 9, 0x140 to 9)
         assertEquals(emptyList(), CanBroadcasts.matching(frsOnly))
-        assertEquals(listOf(CanBroadcasts.FrsSteering), CanBroadcasts.matching(frsOnly + (0x360 to 3)))
+        assertEquals(CanBroadcasts.Frs, CanBroadcasts.matching(frsOnly + (0x360 to 3)))
         val toyota = mapOf(0x025 to 3, 0x0AA to 3, 0x0B4 to 3)
         assertEquals(listOf(CanBroadcasts.ToyotaSteering), CanBroadcasts.matching(toyota))
         // Another make's 0x025 alone is not a Toyota steering angle.

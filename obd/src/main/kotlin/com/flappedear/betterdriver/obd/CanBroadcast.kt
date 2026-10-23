@@ -19,8 +19,9 @@ data class CanSignal(
     val unit: String,
     val periodMs: Long,
     val requires: Set<Int> = setOf(canId),
+    val pollClass: PollClass = PollClass.FAST,
 ) {
-    val channel: PidChannel = PidChannel(id, name, canId, BroadcastMode, 0, equation, unit, PollClass.FAST)
+    val channel: PidChannel = PidChannel(id, name, canId, BroadcastMode, 0, equation, unit, pollClass)
 
     /** The value in one frame's data bytes, or null when the equation has none. */
     fun decode(data: ByteArray): Double? = channel.compiled?.evaluate(data)?.takeIf { it.isFinite() }
@@ -33,21 +34,53 @@ data class CanSignal(
 
 /** The broadcast signals the app knows (FBBD-263), and which of them a car's OBD port carries. */
 object CanBroadcasts {
+    /** The FR-S frames all of its signals require: steering, speed and brake, pedal and rpm, temperatures. */
+    private val FrsFrames = setOf(0x0D0, 0x0D1, 0x140, 0x360)
+
+    @Suppress("LongParameterList")
+    private fun frs(id: String, name: String, canId: Int, equation: String, unit: String, periodMs: Long) =
+        CanSignal(
+            id, name, canId, equation, unit, periodMs, FrsFrames,
+            if (periodMs >= SLOW_PERIOD_MS) PollClass.SLOW else PollClass.FAST,
+        )
+
     /**
      * 2013 Scion FR-S / Toyota 86 / Subaru BRZ (gen 1): steering angle in frame 0xD0, 0.1° per bit,
      * signed little-endian, positive turning left, 50 times a second. From the FT86 CAN map
      * (https://github.com/timurrrr/ft86/blob/main/can_bus/gen1.md), the formula Arek sent on
-     * 2026-10-20. Read through pins 6 and 14 of the OBD port. Required with it: 0xD1 (speed, brake
-     * pressure), 0x140 (accelerator, rpm) and 0x360 (oil and coolant temperature) from the same map.
+     * 2026-10-20, and checked on his car on 2026-10-23 (FBBD-319: -435° to +413° lock to lock).
+     * Read through pins 6 and 14 of the OBD port. In degrees ("deg", plain ASCII for VBO readers).
      */
-    val FrsSteering = CanSignal(
-        id = "steering_angle",
-        name = "Steering angle",
-        canId = 0x0D0,
-        equation = "bytesToIntLe(raw, 0, 2) * -0.1",
-        unit = "°",
-        periodMs = 20,
-        requires = setOf(0x0D0, 0x0D1, 0x140, 0x360),
+    val FrsSteering = frs("steering_angle", "Steering angle", 0x0D0, "bytesToIntLe(raw, 0, 2) * -0.1", "deg", 20)
+
+    /**
+     * FR-S brake pressure, frame 0xD1 byte 2 (`C`), 54 a second on Arek's car (FBBD-319). RaceChrono's
+     * FT86 map scales it by 128 without naming the unit; read as kPa that is 1.28 bar a bit, which made
+     * 63 bar for a hard press standing (medium confidence on the unit, FBBD-320). [FrsBrake] is the
+     * same byte as the map's brake position: 100 % at 0x46.
+     */
+    val FrsBrakePressure = frs("brake_pressure", "Brake pressure", 0x0D1, "C * 1.28", "bar", 20)
+    val FrsBrake = frs("brake", "Brake", 0x0D1, "MIN(C / 0.7, 100)", "%", 20)
+
+    /**
+     * FR-S frame 0x140, 100 a second: accelerator pedal (`A`), throttle plate (`G`), both in 255ths,
+     * and engine speed in the low 14 bits of bytes 2 and 3 (750 rpm idle, 2160 on a blip, FBBD-319).
+     */
+    val FrsAccelerator = frs("accelerator", "Accelerator", 0x140, "A / 2.55", "%", 10)
+    val FrsThrottle = frs("throttle", "Throttle", 0x140, "G / 2.55", "%", 10)
+    val FrsRpm = frs("rpm", "RPM", 0x140, "(C + D * 256) & 0x3FFF", "rpm", 10)
+
+    /** FR-S frame 0x360, 20 a second: engine oil (`C`) and coolant (`D`), 40 under. Same as 7E0 21 01 and 01 05. */
+    val FrsOilTemp = frs("oil_temp", "Engine oil temp", 0x360, "C - 40", "°C", 50)
+    val FrsCoolantTemp = frs("coolant_temp", "Coolant temp", 0x360, "D - 40", "°C", 50)
+
+    /**
+     * Everything the FR-S broadcasts that the app records (FBBD-320, Arek 2026-10-23: "Integrujemy CAN
+     * skoro jest szybszy niż obd"). A polled channel with the same id is not asked for while these are
+     * heard; only what the bus lacks (ATF temperature, intake air) is still polled.
+     */
+    val Frs = listOf(
+        FrsSteering, FrsBrakePressure, FrsBrake, FrsAccelerator, FrsThrottle, FrsRpm, FrsOilTemp, FrsCoolantTemp,
     )
 
     /**
@@ -70,7 +103,7 @@ object CanBroadcasts {
         requires = setOf(0x025, 0x0AA, 0x0B4),
     )
 
-    val all: List<CanSignal> = listOf(FrsSteering, ToyotaSteering)
+    val all: List<CanSignal> = Frs + ToyotaSteering
 
     /**
      * VINs of the cars whose broadcasts are listened for (FBBD-284): the first-generation Scion FR-S,
@@ -100,6 +133,9 @@ object CanBroadcasts {
 
     /** Frames of each required id a probe must have caught: a frame sent once a second can be missed. */
     const val MIN_FRAMES = 3
+
+    /** A signal sent this far apart or more is a slow one, like a polled temperature. */
+    private const val SLOW_PERIOD_MS = 50L
 }
 
 /** Reading what an ELM327 prints while it monitors the bus (`AT MA`) with headers on (FBBD-263). */

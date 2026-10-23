@@ -73,4 +73,28 @@ class VboObdInterpolationTest {
         assertTrue(interpolated < 25.0, "interpolated mean error $interpolated rpm")
         assertTrue(interpolated < held / 4, "interpolated $interpolated rpm, held $held rpm")
     }
+
+    /**
+     * FBBD-320: the FR-S steering angle from CAN, 50 a second, is a VBO column of its own that FlappedEar
+     * Overlays reads by name: `obd_steering_angle`, unit `deg`, positive with the wheel turned left.
+     */
+    @Test
+    fun `the steering angle is the column obd_steering_angle in degrees`() {
+        val steering = ChannelDef(301, "obd_steering_angle", "deg", "obd", 2)
+        val store = SessionStore(tmp)
+        val rec = Recorder(store).start(SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + steering))
+        val fixes = (0..4).map { SampleSet(it * 40_000L, gnss.fix(it.toLong())) }
+        val angles = (0..8).map { SampleSet(it * 20_000L + 1, listOf(ChannelValue(steering.id, -90.0 + it * 10.0))) }
+        (fixes + angles).sortedBy { it.tMicros }.forEach(rec::submit)
+        rec.stop()
+        val out = ByteArrayOutputStream()
+        VboExporter.export(store.read(rec.id), out)
+        val vbo = VboValidator.validate(out.toString(Charsets.UTF_8))
+        assertEquals("obd_steering_angle", vbo.header.last())
+        assertEquals("obd_steering_angle", vbo.columnNames.last())
+        assertEquals("deg", vbo.units.last())
+        val values = vbo.rows.map { it.last().toDouble() }
+        assertEquals(-90.0, values.first())
+        assertTrue(values.zipWithNext().all { (a, b) -> b > a }, values.toString())
+    }
 }
