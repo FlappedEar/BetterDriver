@@ -20,6 +20,8 @@ class BeyondBestTest {
      * A straight line every 2 m: [entry] km/h until [brakeAt] m, braking at [brakeG] to [slowest] km/h,
      * then back up at 0.3 g. No turning, so all the acceleration is the braking's.
      */
+    private var laps = 0
+
     private fun pass(brakeG: Double, entry: Double = 100.0, slowest: Double = 50.0, brakeAt: Double = 100.0): LinePass {
         val g = 9.80665
         val ve = entry / 3.6
@@ -34,7 +36,7 @@ class BeyondBestTest {
             }
             LinePoint(s, s, 0.0, 0.0, v * 3.6, null)
         }
-        return LinePass("", 1, 100.0, 10.0, brakeAt, apex, slowest, null, 0.0, line)
+        return LinePass("", ++laps, 100.0, 10.0, brakeAt, apex, slowest, null, 0.0, line)
     }
 
     private fun corner(name: String, target: LinePass, others: List<LinePass> = emptyList(), gain: Double = 0.0) =
@@ -87,6 +89,30 @@ class BeyondBestTest {
         )
         assertNull(beyond.corners.single { it.name == "once" }.brake)
         assertTrue(beyond.corners.none { it.name == "line" })
+    }
+
+    @Test
+    fun `the target's own lap again, or a pass that cannot be read, is no second opinion`() {
+        val soft = pass(0.4)
+        val unreadable = soft.copy(lapNumber = 99, line = soft.line.take(5))
+        val beyond = assertNotNull(
+            beyondBest(
+                listOf(
+                    corner("hard", pass(0.95)), corner("confirms", pass(0.9)),
+                    corner("again", soft, listOf(soft)),
+                    corner("unread", pass(0.4), listOf(pass(0.45), unreadable)),
+                ),
+            ),
+        )
+        assertNull(beyond.corners.single { it.name == "again" }.brake)
+        assertEquals(1, beyond.corners.single { it.name == "again" }.passes)
+        assertNull(beyond.corners.single { it.name == "unread" }.brake)
+    }
+
+    @Test
+    fun `braking that starts before its peak can be read is unread, not braking at 0 g`() {
+        // At 5 g from the first point the slowest point is 6 m in: no deceleration can be read before it.
+        assertNull(passDynamics(pass(5.0, brakeAt = 0.0)))
     }
 
     @Test

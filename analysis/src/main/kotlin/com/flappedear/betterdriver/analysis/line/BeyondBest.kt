@@ -142,8 +142,13 @@ fun beyondBest(corners: List<CornerPasses>): BeyondBest? {
         apex[1].second.apexG, apex.take(2).map { it.first.name },
     )
     val beyond = read.filter { it.first.gainSeconds <= 0.0 }.map { (c, d) ->
-        val others = c.others.mapNotNull { passDynamics(it) }
-        val room = d.brakes && d.peakBrakeG <= limits.brakeG - BrakeRoomG &&
+        // Each other lap counts once, and the target's own lap given again is no second opinion.
+        val lap = { p: LinePass -> Triple(p.sourceId, p.source, p.lapNumber) }
+        val laps = c.others.filter { lap(it) != lap(c.target) }.distinctBy(lap)
+        val read = laps.map { passDynamics(it) }
+        // A pass that cannot be read cannot agree: without every one, no room.
+        val others = read.filterNotNull().takeIf { it.size == read.size }.orEmpty()
+        val room = d.brakes && d.peakBrakeG <= limits.brakeG - BrakeRoomG && others.isNotEmpty() &&
             others.all { it.brakes && it.peakBrakeG <= limits.brakeG - BrakeRoomG }
         CornerBeyond(
             c.segmentId, c.name, c.target, d, 1 + others.size,
@@ -154,9 +159,15 @@ fun beyondBest(corners: List<CornerPasses>): BeyondBest? {
     return BeyondBest(limits, beyond)
 }
 
-/** The line plan's corners: the target against the session's fastest lap. */
-fun LineAnalysis.beyondBest(): BeyondBest? =
-    beyondBest(corners.map { CornerPasses(it.segmentId, it.name, it.target, listOf(it.reference), it.gainSeconds) })
+/**
+ * The line plan's corners: the target against the session's fastest lap and the corner's second
+ * fastest pass (where the fastest lap is the target, the second is the other opinion).
+ */
+fun LineAnalysis.beyondBest(): BeyondBest? = beyondBest(
+    corners.map {
+        CornerPasses(it.segmentId, it.name, it.target, listOfNotNull(it.reference, it.confirming), it.gainSeconds)
+    },
+)
 
 /**
  * The day's corners: the target against the day's fastest lap and its typical pass, so the room
@@ -213,19 +224,22 @@ private fun wrap(angle: Double): Double {
 }
 
 /** [pass]'s braking and grip through its window; null when its line is too short to read. */
+@Suppress("ReturnCount")
 fun passDynamics(pass: LinePass): PassDynamics? {
     val p = profile(pass) ?: return null
     val k = GSpanPoints
     val (start, apex) = brakingOf(p)
     val peak = (max(start, k) until apex).maxOfOrNull { i ->
         -(p.v[i + k] * p.v[i + k] - p.v[i - k] * p.v[i - k]) / (2 * (p.s[i + k] - p.s[i - k]))
-    } ?: 0.0
+    }
+    // Braking too close to the window's start to read its peak is unread, not braking at 0 g.
+    if (peak == null && start < apex) return null
     val distance = p.s[apex] - p.s[start]
     val average = if (distance > 0.0) (p.v[start] * p.v[start] - p.v[apex] * p.v[apex]) / (2 * distance) else 0.0
     val near = (k until p.size - k).filter { abs(p.s[it] - p.s[apex]) <= ApexReachMeters }
     return PassDynamics(
         p.progress[start], p.v[start] * KmhPerMetrePerSecond, p.v[apex] * KmhPerMetrePerSecond, distance,
-        max(peak, 0.0) / StandardGravity, max(average, 0.0) / StandardGravity, near.maxOf { p.g[it] },
+        max(peak ?: 0.0, 0.0) / StandardGravity, max(average, 0.0) / StandardGravity, near.maxOf { p.g[it] },
     )
 }
 
