@@ -108,6 +108,9 @@ abstract class TrackScreenLayoutTest(private val device: String) {
             showState(s, palette, onPage = 1)
             compose.saveScreenshot(device, "track_${name}_second")
             problems += compose.layoutProblems().map { "$name, second screen: $it" }
+            showState(s.copy(mapOn = true, nextCorner = ExampleNextCorner), palette, onPage = MapPage)
+            compose.saveScreenshot(device, "track_${name}_map")
+            problems += compose.layoutProblems().map { "$name, map screen: $it" }
         }
         check(problems.isEmpty()) { "track screen on $device (FBBD-40):\n" + problems.joinToString("\n") }
     }
