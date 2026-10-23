@@ -19,8 +19,11 @@ import java.net.URL
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 
-/** Decoded tiles kept in memory, in bytes: 160 tiles of 256 px, or 40 of 512 px. */
-private const val MemoryBytes = 40 * 1024 * 1024
+/**
+ * Decoded tiles kept in memory, in bytes: 256 tiles of 256 px, or 64 of 512 px, so the perfect
+ * lap in 3D (up to 48 tiles in one picture, FBBD-316) never drops a tile it is still showing.
+ */
+private const val MemoryBytes = 64 * 1024 * 1024
 private const val BytesPerPixel = 4
 private const val Threads = 6
 private const val TimeoutMs = 15_000

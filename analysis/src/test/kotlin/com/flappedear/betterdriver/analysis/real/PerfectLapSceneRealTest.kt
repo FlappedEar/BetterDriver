@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.PerfectLapScene
+import com.flappedear.betterdriver.analysis.line.SceneFrame
 import com.flappedear.betterdriver.analysis.line.SceneGround
 import com.flappedear.betterdriver.analysis.line.ScenePaint
 import com.flappedear.betterdriver.analysis.line.analyzeLine
@@ -103,7 +104,7 @@ class PerfectLapSceneRealTest {
                 assertTrue(f.shapes.count { it.paint in line } > 20, "line at $t s")
                 // Map tiles under the whole bottom half, where the car is.
                 assertTrue(f.tiles.isNotEmpty(), "no map at $t s")
-                assertTrue(f.tiles.all { it.z == 18 && it.u1 > it.u0 && it.v1 > it.v0 })
+                assertTrue(f.tiles.all { (it.z == 18 || it.z == 16) && it.u1 > it.u0 && it.v1 > it.v0 })
                 if (f.shapes.any { it.paint == ScenePaint.Ghost }) ghostShown++
             }
             // The ghost is in the picture nearly all the time: it drops back by at most the time to find.
@@ -117,9 +118,15 @@ class PerfectLapSceneRealTest {
         val scene = assertNotNull(perfectLapScene(plan()))
         val ground = SceneGround(scene)
         // Jastrząb is about 1 km across: a few dozen tiles of about 100 m at zoom 18.
-        assertTrue(ground.tiles.size in 20..400, "${ground.tiles.size} tiles")
-        for (p in scene.perfect.filterIndexed { i, _ -> i % 25 == 0 }) {
-            val inside = ground.tiles.count { (_, q) ->
+        val near = ground.tiles.filter { (id, _) -> id[0] == 18 }
+        val far = ground.tiles.filter { (id, _) -> id[0] == 16 }
+        assertEquals(ground.tiles.size, near.size + far.size)
+        assertTrue(near.size in 20..400, "${near.size} tiles")
+        // The coarse map is drawn first, under the fine one.
+        val lastFar = ground.tiles.indexOfLast { (id, _) -> id[0] == 16 }
+        assertTrue(lastFar < ground.tiles.indexOfFirst { (id, _) -> id[0] == 18 })
+        for (tiles in listOf(near, far)) for (p in scene.perfect.filterIndexed { i, _ -> i % 25 == 0 }) {
+            val inside = tiles.count { (_, q) ->
                 val minE = minOf(q[0], q[9])
                 val maxE = maxOf(q[3], q[6])
                 val minN = minOf(q[7], q[10])
@@ -128,9 +135,53 @@ class PerfectLapSceneRealTest {
             }
             assertEquals(1, inside, "tiles over (${p.eastMeters}, ${p.northMeters})")
         }
-        // A zoom-18 tile at 50° north is about 98 m a side.
-        val (_, q) = ground.tiles.first()
+        // A zoom-18 tile at 50° north is about 98 m a side, a zoom-16 one four times that.
+        val (_, q) = near.first()
         assertEquals(98.0, kotlin.math.hypot(q[3] - q[0], q[4] - q[1]), 4.0)
+        val (_, qf) = far.first()
+        assertEquals(393.0, kotlin.math.hypot(qf[3] - qf[0], qf[4] - qf[1]), 16.0)
+    }
+
+    @Test
+    fun `the map photo fills the whole picture at every camera distance`() {
+        val scene = assertNotNull(perfectLapScene(plan()))
+        val ground = SceneGround(scene)
+        val (w, h) = 1920 to 1080
+        var maxTiles = 0
+        for (distance in listOf(PerfectLapScene.MinCameraDistance, 1.0, PerfectLapScene.MaxCameraDistance)) {
+            for (i in 0..(scene.durationSeconds * 2).toInt()) {
+                val t = i / 2.0
+                val f = sceneFrame(scene, ground, t, w, h, distance)
+                // Few enough different tiles for the phone to keep them all in memory while it plays.
+                maxTiles = maxOf(maxTiles, f.tiles.map { Triple(it.z, it.x, it.y) }.toSet().size)
+                // Every point of a grid over the picture, edges included, is on a map piece.
+                val hole = uncovered(f, w, h)
+                assertEquals(null, hole, "no map at $hole, $t s, distance $distance")
+                // The car's own place has a fine piece once those tiles are loaded.
+                val car = f.shapes.first { it.paint == ScenePaint.Car }
+                val cx = car.xs.average().toFloat()
+                val cy = car.ys.average().toFloat()
+                val fine = f.tiles.any { it.z == 18 && inside(it.xs, it.ys, cx, cy) }
+                assertTrue(fine, "no fine map under the car at $t s")
+            }
+        }
+        assertTrue(maxTiles <= 48, "$maxTiles tiles in one picture")
+    }
+
+    /** A point of a 17 × 10 grid over the picture that no map piece covers, or null. */
+    private fun uncovered(f: SceneFrame, w: Int, h: Int): Pair<Float, Float>? {
+        val grid = (0..16).flatMap { gx -> (0..9).map { gy -> gx * (w - 1) / 16f to gy * (h - 1) / 9f } }
+        return grid.firstOrNull { (x, y) -> f.tiles.none { inside(it.xs, it.ys, x, y) } }
+    }
+
+    private fun inside(xs: FloatArray, ys: FloatArray, x: Float, y: Float): Boolean {
+        var c = false
+        var j = xs.size - 1
+        for (i in xs.indices) {
+            if ((ys[i] > y) != (ys[j] > y) && x < (xs[j] - xs[i]) * (y - ys[i]) / (ys[j] - ys[i]) + xs[i]) c = !c
+            j = i
+        }
+        return c
     }
 
     @Test
@@ -172,6 +223,17 @@ class PerfectLapSceneRealTest {
             last = c
         }
         assertTrue(cos(Math.toRadians(PerfectLapScene.CameraFovDegrees)) > 0)
+        // Pinched nearer or farther, it keeps the same view, just closer or farther away.
+        val normal = scene.cameraAt(30.0)
+        for (k in listOf(PerfectLapScene.MinCameraDistance, 2.0, PerfectLapScene.MaxCameraDistance)) {
+            val c = scene.cameraAt(30.0, k)
+            assertEquals(PerfectLapScene.CameraUpMeters * k, c.eye.z, 1e-9)
+            val a = normal.eye - normal.target
+            val b = c.eye - c.target
+            assertEquals(a.z / a.length, b.z / b.length, 1e-9)
+        }
+        val farthest = PerfectLapScene.CameraUpMeters * PerfectLapScene.MaxCameraDistance
+        assertEquals(farthest, scene.cameraAt(30.0, 10.0).eye.z, 1e-9)
     }
 
     /** A few frames as SVG under build/tmp for a look; not uploaded with the reports. */
