@@ -259,8 +259,9 @@ jobs:
             if [ -f "$notes" ]; then cat "$notes"; echo; fi
             echo "Install: download BetterDriver-$VERSION-android.apk on the phone or tablet and open it. Checksums are in SHA256SUMS.txt."
           } > "$RUNNER_TEMP/notes.md"
-          since=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 \
-            --exclude-drafts --json tagName --jq '.[0].tagName // ""')
+          # The last app release: the FR-S reader's canreader-v* releases (canreader.yml) are not the app's.
+          since=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 30 \
+            --exclude-drafts --json tagName --jq '[.[] | select(.tagName | test("^v[0-9]"))][0].tagName // ""')
           start=()
           [ -n "$since" ] && start=(--notes-start-tag "$since")
           gh release create "$tag" dist/* \
