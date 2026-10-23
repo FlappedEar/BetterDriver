@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
@@ -51,18 +52,24 @@ internal fun SessionsListDetail(
         val listWidth = sessionListWidthDp(maxWidth.value)
         val pane = if (sideBySide) layout.pane(maxWidth.value - listWidth) else layout
         Row(Modifier.fillMaxSize()) {
-            if (panes != SessionsPanes.Detail) {
-                val width = if (sideBySide) Modifier.width(listWidth.dp) else Modifier.weight(1f)
-                states.SaveableStateProvider(ListKey) { list(width) }
+            // Each pane under its own key: a keyed group's place does not count the panes before it,
+            // which come and go as the tablet turns.
+            key(ListKey) {
+                if (panes != SessionsPanes.Detail) {
+                    val width = if (sideBySide) Modifier.width(listWidth.dp) else Modifier.weight(1f)
+                    states.SaveableStateProvider(ListKey) { list(width) }
+                }
             }
             if (sideBySide) VerticalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
-            if (panes != SessionsPanes.List) {
-                Box(Modifier.weight(1f).fillMaxHeight()) {
-                    if (shown == null) {
-                        PickSession()
-                    } else {
-                        states.SaveableStateProvider(detailKey(shown)) {
-                            detail(shown, pane, onClose.takeUnless { sideBySide })
+            key(DetailKey) {
+                if (panes != SessionsPanes.List) {
+                    Box(Modifier.weight(1f).fillMaxHeight()) {
+                        if (shown == null) {
+                            PickSession()
+                        } else {
+                            states.SaveableStateProvider(detailKey(shown)) {
+                                detail(shown, pane, onClose.takeUnless { sideBySide })
+                            }
                         }
                     }
                 }
@@ -83,6 +90,8 @@ private fun PickSession() {
 }
 
 private const val ListKey = "list"
+
+private const val DetailKey = "detail"
 
 /** A session's state key, kept apart from [ListKey] whatever the session id. */
 private fun detailKey(id: String) = "detail:$id"
