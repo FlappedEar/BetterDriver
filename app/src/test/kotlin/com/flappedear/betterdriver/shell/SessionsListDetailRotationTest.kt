@@ -19,6 +19,7 @@ import com.flappedear.betterdriver.core.ui.layout.HeightClass
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.core.ui.layout.WidthClass
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
+import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
 import org.junit.Rule
 import org.junit.Test
@@ -34,7 +35,8 @@ import org.robolectric.annotation.Config
  * turn both ways.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(application = Application::class)
+// The Galaxy Tab's window: on Robolectric's default 320 dp the list leaves the analysis no width to tap.
+@Config(application = Application::class, qualifiers = Devices.TabletLandscape)
 class SessionsListDetailRotationTest {
     private val compose = createAndroidComposeRule<ComponentActivity>()
 
