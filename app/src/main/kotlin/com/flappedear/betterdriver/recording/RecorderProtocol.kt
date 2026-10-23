@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.timing.live.LiveSector
 import com.flappedear.betterdriver.timing.live.LiveTimingState
+import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.live.sectorName
 import com.flappedear.betterdriver.timing.track.TrackDetection
 

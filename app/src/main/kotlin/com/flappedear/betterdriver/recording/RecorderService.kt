@@ -39,7 +39,6 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import com.flappedear.betterdriver.timing.live.lapLineText
-import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executor
