@@ -3,11 +3,14 @@ package com.flappedear.betterdriver.recording
 import com.flappedear.betterdriver.core.ui.component.AlertLevel
 import com.flappedear.betterdriver.core.ui.component.StatusIcon
 import com.flappedear.betterdriver.core.ui.component.StatusItem
+import com.flappedear.betterdriver.feature.track.GRadar
+import com.flappedear.betterdriver.feature.track.RadarPoint
 import com.flappedear.betterdriver.feature.track.TrackAlert
 import com.flappedear.betterdriver.feature.track.TrackScreenState
 import com.flappedear.betterdriver.feature.track.TileChoiceGroup
 import com.flappedear.betterdriver.feature.track.withTiming
 import com.flappedear.betterdriver.obd.ObdLinkState
+import com.flappedear.betterdriver.recorder.live.GPoint
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -76,8 +79,18 @@ fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Bo
         coachDim = state.coach?.dim == true,
         secondTiles = screens.tiles(TrackPage.SECOND).map { trackTile(it, sources) },
         editable = stopped(live),
+        // The radar shows with a receiver that gives G, as the G tile does (UI-126 B).
+        radarOn = receiverHasG,
+        radar = live?.let(::radarOf),
     )
     return if (timing == null) screen else screen.withTiming(timing)
+}
+
+/** The G radar's dot and trail (FBBD-318), or null before the first G. */
+internal fun radarOf(live: LiveSnapshot): GRadar? {
+    val now = live.g ?: return null
+    val point = { p: GPoint -> RadarPoint(p.forward.toFloat(), p.left.toFloat()) }
+    return GRadar(point(now), live.gTrail.map(point))
 }
 
 /**

@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -101,6 +102,14 @@ data class TrackScreenState(
     val mapOn: Boolean = false,
     /** The corner ahead on the map screen, or null when the car is not near the plan's line. */
     val nextCorner: NextCorner? = null,
+    /**
+     * The second screen shows the G radar (FBBD-318, UI-240 A) beside its first [RadarTiles] tiles:
+     * the session's receiver gives G. Set once for the session, so the screen does not change while
+     * driving.
+     */
+    val radarOn: Boolean = false,
+    /** The radar's dot and trail; null before the first reading. */
+    val radar: GRadar? = null,
 ) {
     /** How many screens a swipe goes through: the map's after the tiles' (UI-171 B). */
     val pages: Int get() = if (mapOn) TrackPages + 1 else TrackPages
@@ -113,6 +122,10 @@ const val MainRows = 1
 /** UI-121 B: three rows of four on the second screen. */
 const val SecondColumns = 4
 const val SecondRows = 3
+
+/** UI-240 A: with the G radar, the second screen's first nine tiles, three rows of three. */
+const val RadarColumns = 3
+const val RadarTiles = RadarColumns * SecondRows
 
 /** The track screen's screens: the main one and the one a swipe shows (UI-121); the map's comes third. */
 const val TrackPages = 2
@@ -253,25 +266,34 @@ private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHol
 
 /**
  * The second screen: the status strip and the coach line stay, the line only when the coach speaks
- * (UI-142 B); the tiles take the rest (UI-121 B).
+ * (UI-142 B); the tiles take the rest (UI-121 B). With the G radar (UI-240 A) it is a square on the
+ * left and the first nine tiles fill the rest, three rows of three.
  */
 @Composable
 private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
     val coachSpace = if (state.coachOn) CoachHeight + Gap else 0.dp
-    if (shownRows(state.secondTiles, SecondColumns, SecondRows, state.editable).isEmpty()) {
-        Spacer(Modifier.fillMaxWidth().weight(1f))
-    } else {
-        TilePanel(
-            state.secondTiles,
-            SecondColumns,
-            SecondRows,
-            window - TopHeight - Gap - coachSpace,
-            SecondValueSize,
-            TrackSlots::secondTile,
-            Modifier.fillMaxWidth().weight(1f).testTag(TrackSlots.Second),
-            state.editable,
-            onHoldTile,
-        )
+    val tiles = if (state.radarOn) state.secondTiles.take(RadarTiles) else state.secondTiles
+    val columns = if (state.radarOn) RadarColumns else SecondColumns
+    val height = window - TopHeight - Gap - coachSpace
+    Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(Gap)) {
+        if (state.radarOn) {
+            GRadarView(state.radar, Modifier.fillMaxHeight().aspectRatio(1f).testTag(TrackSlots.Radar))
+        }
+        if (shownRows(tiles, columns, SecondRows, state.editable).isEmpty()) {
+            Spacer(Modifier.weight(1f))
+        } else {
+            TilePanel(
+                tiles,
+                columns,
+                SecondRows,
+                height,
+                SecondValueSize,
+                TrackSlots::secondTile,
+                Modifier.weight(1f).fillMaxHeight().testTag(TrackSlots.Second),
+                state.editable,
+                onHoldTile,
+            )
+        }
     }
     if (state.coachOn) {
         CoachLine(state.coachCorner, state.coachCue, coach, praise = state.coachPraise, dim = state.coachDim)
@@ -307,6 +329,9 @@ object TrackSlots {
 
     /** The map screen's next corner (UI-171 B). */
     const val Map = "track-map"
+
+    /** The second screen's G radar (FBBD-318). */
+    const val Radar = "track-radar"
 
     /** A tile's list. */
     const val Picker = "track-tile-picker"

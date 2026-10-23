@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.core.ble.hr.HeartRateStatus
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.obd.ObdReading
 import com.flappedear.betterdriver.obd.ObdStatus
+import com.flappedear.betterdriver.recorder.live.GPoint
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.timing.live.LiveSector
 import com.flappedear.betterdriver.timing.live.LiveTimingState
@@ -160,6 +161,8 @@ internal object RecorderProtocol {
     private const val STOPPED = "stoppedReason"
     private const val DROPPED = "droppedSamples"
     private const val G_COMBINED = "gCombined"
+    private const val G_FORWARD = RadarForward
+    private const val G_LEFT = RadarLeft
     private const val LAT = "latitude"
     private const val LON = "longitude"
     private const val CHANNEL_NAMES = "channelNames"
@@ -191,6 +194,7 @@ internal object RecorderProtocol {
         s.stoppedReason?.let { putString(STOPPED, it) }
         putLong(DROPPED, s.droppedSamples)
         s.gCombined?.let { putDouble(G_COMBINED, it) }
+        putRadar(s)
         s.latitude?.let { putDouble(LAT, it) }
         s.longitude?.let { putDouble(LON, it) }
         if (s.channels.isNotEmpty()) {
@@ -216,6 +220,8 @@ internal object RecorderProtocol {
             stoppedReason = b.getString(STOPPED),
             droppedSamples = b.getLong(DROPPED),
             gCombined = if (b.containsKey(G_COMBINED)) b.getDouble(G_COMBINED) else null,
+            g = if (b.containsKey(G_FORWARD)) GPoint(b.getDouble(G_FORWARD), b.getDouble(G_LEFT)) else null,
+            gTrail = radarTrail(b),
             receiverRateHz = b.getInt(RECEIVER_RATE),
             channels = channels(b),
             latitude = if (b.containsKey(LAT)) b.getDouble(LAT) else null,
@@ -314,4 +320,24 @@ internal object RecorderProtocol {
             pointToPoint = b.getBoolean(POINT_TO_POINT, false),
         )
     }
+}
+
+private const val RadarForward = "gForward"
+private const val RadarLeft = "gLeft"
+private const val RadarTrail = "gTrail"
+
+/** The G radar's dot, and its trail as forward and left of each point in turn (FBBD-318). */
+private fun Bundle.putRadar(s: LiveSnapshot) {
+    s.g?.let {
+        putDouble(RadarForward, it.forward)
+        putDouble(RadarLeft, it.left)
+    }
+    if (s.gTrail.isNotEmpty()) {
+        putDoubleArray(RadarTrail, s.gTrail.flatMap { listOf(it.forward, it.left) }.toDoubleArray())
+    }
+}
+
+private fun radarTrail(b: Bundle): List<GPoint> {
+    val a = b.getDoubleArray(RadarTrail) ?: return emptyList()
+    return List(a.size / 2) { GPoint(a[2 * it], a[2 * it + 1]) }
 }
