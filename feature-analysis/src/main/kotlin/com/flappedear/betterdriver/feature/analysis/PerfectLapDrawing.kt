@@ -133,7 +133,7 @@ internal class PerfectLapPainter(private val scene: PerfectLapScene, private val
         text.textSize = 3.4f * u
         text.color = palette.text
         canvas.drawText(hud.clock, pad, height - pad, text)
-        // His best lap, labelled beside its car.
+        // The best lap, labelled beside its car.
         frame.ghostLabel?.let { (x, y) ->
             text.textSize = 3.2f * u
             text.textAlign = Paint.Align.CENTER
