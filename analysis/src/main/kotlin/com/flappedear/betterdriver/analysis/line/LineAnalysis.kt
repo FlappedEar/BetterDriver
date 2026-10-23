@@ -200,25 +200,34 @@ fun analyzeLine(
     if (windows.isEmpty()) return null
     val reader = LineReader(analysis, axis, segments.revision, windows)
     val own = reader.read(LineSession(session, analysis.laps, ""), referenceNumber) ?: return null
-    val reference = own.reference ?: return null
     val read = mutableListOf(own)
     for (other in others) reader.read(other, null)?.let { read += it }
-    val corners = windows.indices.mapNotNull { k ->
-        val w = windows[k]
+    return lineOf(reader, read, thresholds)
+}
+
+/**
+ * The line analysis of [read] (the analysed session first, with its reference lap, then the others)
+ * on [reader]'s axis and windows. Null when the first has no reference lap.
+ */
+internal fun lineOf(reader: LineReader, read: List<SessionLines>, thresholds: LineThresholds): LineAnalysis? {
+    val own = read.first()
+    val reference = own.reference ?: return null
+    val corners = reader.windows.indices.mapNotNull { k ->
+        val w = reader.windows[k]
         val refPass = reference.passes[k] ?: return@mapNotNull null
         // The target is a time driven twice (FBBD-177), as the coach's: the second fastest pass.
         val second = read.flatMap { it.fastest[k] }.sortedBy { it.seconds }.getOrNull(ConfirmingPasses - 1)
         val ahead = second != null && refPass.seconds - second.seconds >= thresholds.gainSeconds
         val target = if (ahead) second!! else refPass
-        val turnsLeft = turnsLeft(reader.features, w.corner, axis.lengthMeters)
+        val turnsLeft = reader.turnsLeft(k)
         CornerLine(
             w.corner.id, w.corner.name, turnsLeft, w.window.startProgressMeters, w.window.endProgressMeters,
             refPass, target, max(0.0, refPass.seconds - target.seconds), reader.band(k, read.map { it.road[k] }),
-            if (ahead) advise(refPass, target, turnsLeft, axis.lengthMeters, thresholds) else CornerAdvice(),
+            if (ahead) advise(refPass, target, turnsLeft, reader.axis.lengthMeters, thresholds) else CornerAdvice(),
             own.fastest[k].firstOrNull()?.seconds,
         )
     }
-    return LineAnalysis(referenceNumber, reference.lapSeconds, corners, read.sumOf { it.laps }, read.size)
+    return LineAnalysis(reference.number, reference.lapSeconds, corners, read.sumOf { it.laps }, read.size)
 }
 
 /** Overload for a list of sessions already read. */
@@ -230,7 +239,7 @@ fun analyzeLine(
 ): LineAnalysis? = analyzeLine(analysis, session, others.asSequence(), thresholds)
 
 /** What one session gives the line analysis; its samples are not kept. */
-private data class SessionLines(
+internal class SessionLines(
     /** Per window, its fastest passes (at most [ConfirmingPasses]), fastest first. */
     val fastest: List<List<LinePass>>,
     /** Per window, how far left and right its laps went at each station. */
@@ -238,27 +247,47 @@ private data class SessionLines(
     /** The analysed session's reference lap through each window; null for other sessions. */
     val reference: ReferenceLap?,
     val laps: Int,
+    /** What a day's analysis reads besides (FBBD-315); null when it was not asked for. */
+    val pace: PaceLaps? = null,
 )
 
-private class ReferenceLap(val lapSeconds: Double, val passes: List<LinePass?>)
+internal class ReferenceLap(val number: Int, val lapSeconds: Double, val passes: List<LinePass?>)
+
+/**
+ * Every eligible lap of a session as a day's analysis reads it (FBBD-315): its time, its time
+ * through each window, and per window the pass at the median of the laps at pace (no slower than
+ * the limit the reader was given).
+ */
+internal class PaceLaps(
+    val lapSeconds: List<Double>,
+    /** Per window, per lap (as [lapSeconds]), the time through it; null where it was not timed. */
+    val seconds: List<List<Double?>>,
+    val median: List<LinePass?>,
+)
 
 /** The furthest left and right, and how many laps, at each station of one window. */
-private class RoadSpread(val left: DoubleArray, val right: DoubleArray, val count: IntArray)
+internal class RoadSpread(val left: DoubleArray, val right: DoubleArray, val count: IntArray)
 
 /** Reads sessions on the analysed session's axis and corners, one at a time. */
-private class LineReader(
+internal class LineReader(
     private val analysis: SessionAnalysis,
-    private val axis: ProgressAxis,
+    val axis: ProgressAxis,
     revision: String,
-    private val windows: List<CornerWindow>,
+    val windows: List<CornerWindow>,
 ) {
     val features: TrackFeatures = computeTrackFeatures(axis, SegmentReviewSmoothingMeters)
     private val approved = ApprovedSegments(windows.map { it.window }, "$revision/line")
     private val stations = windows.map { stations(it.window, axis.lengthMeters) }
 
-    /** [source]'s eligible laps; with [referenceNumber], its reference lap too. Null without one. */
-    @Suppress("ReturnCount")
-    fun read(source: LineSession, referenceNumber: Int?): SessionLines? {
+    /** Whether window [k]'s corner turns left. */
+    fun turnsLeft(k: Int): Boolean = turnsLeft(features, windows[k].corner, axis.lengthMeters)
+
+    /**
+     * [source]'s eligible laps; with [referenceNumber], its reference lap too. Null without one.
+     * With [paceLimitSeconds], every lap's times as well ([PaceLaps]).
+     */
+    @Suppress("ReturnCount", "LongMethod")
+    fun read(source: LineSession, referenceNumber: Int?, paceLimitSeconds: Double? = null): SessionLines? {
         val laps = source.laps.timedLaps.filter { it.referenceEligible }
         if (laps.isEmpty()) return null
         val probe = LineProbe(source.session, axis)
@@ -290,7 +319,7 @@ private class LineReader(
         }
         val reference = referenceNumber?.let { n ->
             val i = laps.indexOfFirst { it.number == n }.takeIf { it >= 0 } ?: return null
-            ReferenceLap(laps[i].durationSeconds, windows.indices.map { k -> seconds[k][i]?.let { pass(k, i, it) } })
+            ReferenceLap(n, laps[i].durationSeconds, windows.indices.map { k -> seconds[k][i]?.let { pass(k, i, it) } })
         }
         val road = windows.indices.map { k ->
             val at = stations[k]
@@ -309,7 +338,15 @@ private class LineReader(
             }
             spread
         }
-        return SessionLines(fastest, road, reference, laps.size)
+        val pace = paceLimitSeconds?.let { limit ->
+            val median = windows.indices.map { k ->
+                val timed = laps.indices.filter { laps[it].durationSeconds <= limit && seconds[k][it] != null }
+                    .sortedBy { seconds[k][it]!! }
+                timed.getOrNull((timed.size - 1) / 2)?.let { pass(k, it, seconds[k][it]!!) }
+            }
+            PaceLaps(laps.map { it.durationSeconds }, seconds, median)
+        }
+        return SessionLines(fastest, road, reference, laps.size, pace)
     }
 
     /** The road the laps of every session used through window [k], where at least [MinimumBandLaps] went. */

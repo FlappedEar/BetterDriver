@@ -10,6 +10,7 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
+import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.RecorderProtocol
 import com.flappedear.betterdriver.recording.sessionsDir
@@ -164,7 +165,8 @@ class CoachService : Service() {
         // The corners with the most time to find in the track's line plan (FBBD-306, UI-174 A), else what
         // the last analysed session at the track recommends working on (FBBD-20), primary first.
         val coached = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
-        val plan = coached?.let { planFocusOf(this, it, a.id) }
+        // The first session of a new day there works on the last track day's focus instead (UI-214 B).
+        val plan = coached?.let { planFocusOf(this, it, a.id, sameDay) }
         val focus = coached?.takeIf { plan == null }?.let { sessionFocusOf(this, it, a.id) }
         // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
         val settings = a.settings.copy(audioDelayMillis = a.timingMillis)
@@ -305,19 +307,38 @@ private class PlanFocus(val sessionId: String, val picks: List<CornerPick>, val 
 /**
  * The focus of [track]'s line plan (FBBD-306, UI-174 A): the corners with the most time to find over
  * every session there, as the Map tab shows them; null without a plan, one made from session [current],
- * one whose corners are not the track's (no CornerIds), or one with nothing to work on.
+ * one whose corners are not the track's (no CornerIds), or one with nothing to work on. Out on a new
+ * day there (not [sameDay]), the last track day's plan comes first (FBBD-315, UI-214 B) while no
+ * session since that day made a newer line plan: the first session of the day works on the day's
+ * corners, and the sessions after it on what the session before them found (UI-190 B).
  */
-private fun planFocusOf(context: Context, track: Track, current: String): PlanFocus? {
-    val plan = linePlanStore(context).get(track.id)?.takeIf { it.sessionId != current && it.identityRevision != null }
-    val corners = plan?.focus().orEmpty().filter { it.cornerId != null && it.target.line.isNotEmpty() }
-    if (plan == null || corners.isEmpty()) return null
+private fun planFocusOf(context: Context, track: Track, current: String, sameDay: Boolean): PlanFocus? {
+    val line = linePlanStore(context).get(track.id)
+    if (!sameDay) {
+        val day = try {
+            dayPlanStore(context).days(track.id).lastOrNull()?.plan
+        } catch (e: IllegalArgumentException) {
+            DebugLog.w("CoachService", "day plan at ${track.id} not read", e)
+            null
+        }
+        val fresh = day?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
+        fresh?.let { focusOf(it, current, "day plan") }?.let { return it }
+    }
+    return line?.let { focusOf(it, current, "line plan") }
+}
+
+/** [plan]'s focus as coach picks; null when made from session [current], without CornerIds or with nothing to do. */
+private fun focusOf(plan: LinePlan, current: String, what: String): PlanFocus? {
+    val corners = plan.takeIf { it.sessionId != current && it.identityRevision != null }?.focus().orEmpty()
+        .filter { it.cornerId != null && it.target.line.isNotEmpty() }
+    if (corners.isEmpty()) return null
     val picks = corners.map { c ->
         CornerPick(
             c.name, c.target.line.map { it.latitude }, c.target.line.map { it.longitude }, plan.sessionId,
             c.cornerId, plan.identityRevision,
         )
     }
-    DebugLog.i("CoachService", "line plan focus from ${plan.sessionId}: ${corners.joinToString { it.name }}")
+    DebugLog.i("CoachService", "$what focus from ${plan.sessionId}: ${corners.joinToString { it.name }}")
     return PlanFocus(plan.sessionId, picks, corners.associate { it.cornerId!! to it.gainSeconds })
 }
 

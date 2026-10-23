@@ -1,3 +1,5 @@
+@file:Suppress("TooManyFunctions") // The view and the words it says.
+
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
@@ -103,9 +105,15 @@ fun cornerTodo(corner: PlanCorner): List<String> {
     if (corner.gainSeconds <= 0.0) return listOf("Your best lap is as quick as your target here.")
     val a = corner.advice
     if (!a.any) return listOf("The same as your best lap within GPS accuracy: no advice.")
+    val todo = adviceTodo(a)
+    val same = brakeSame(corner).takeIf { a.brakeMeters == null }
+    return if (same != null) listOf(same) + todo else todo
+}
+
+/** [a] in words, one instruction a line (UI-166 A): brake, apex, speed, throttle, as there is advice for. */
+fun adviceTodo(a: PlanAdvice): List<String> {
     val lines = mutableListOf<String>()
     a.brakeMeters?.let { lines += "Brake ${metres(it)} ${laterOrEarlier(it)}" }
-        ?: brakeSame(corner)?.let { lines += it }
     apexLine(a)?.let { lines += it }
     a.minimumSpeedKmh?.let { lines += speedLine(it) }
     a.pickupMeters?.let { lines += "Back on the throttle ${metres(it)} ${laterOrEarlier(it)}" }

@@ -52,6 +52,7 @@ import com.flappedear.betterdriver.recording.rememberSessionExport
 import com.flappedear.betterdriver.sessionanalysis.SessionAnalysisRoute
 import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.sessionanalysis.progressionDestination
+import com.flappedear.betterdriver.sessionanalysis.trackDayDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TrackChannel
 import com.flappedear.betterdriver.setup.TrackPage
@@ -170,6 +171,7 @@ private fun AppNavHost(
         reviewDestination(nav, padding, layout)
         analysisDestination(nav, padding, layout)
         progressionDestination(nav, padding)
+        trackDayDestination(nav, padding)
         cueReview(nav, padding, layout)
         composable(Routes.Settings) {
             Box(Modifier.padding(padding)) { Settings(nav, prefs, repo, tracks, topic = null, onBack = null) }
@@ -362,13 +364,9 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
                 sessions = sessions.list,
                 exports = sessions.exports,
                 withVideo = sessions.withVideo,
-                onAnalyse = { s ->
-                    if (layout.tablet) {
-                        picked = s.id
-                    } else {
-                        nav.navigate(Routes.sessionAnalysis(s.id))
-                    }
-                },
+                onAnalyse = { s -> if (layout.tablet) picked = s.id else nav.navigate(Routes.sessionAnalysis(s.id)) },
+                // The whole day at one track (FBBD-315, UI-210 B).
+                onTrackDay = { ids -> nav.navigate(Routes.trackDay(ids)) },
                 selectedId = shown.takeIf { layout.tablet },
                 facts = rememberSessionFacts(sessions),
                 onExport = export,

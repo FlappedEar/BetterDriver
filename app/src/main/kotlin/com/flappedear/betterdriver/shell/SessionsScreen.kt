@@ -102,6 +102,7 @@ fun SessionsScreen(
     coach: SessionCoach = SessionCoach(),
     videoExport: SessionVideoExport = SessionVideoExport(),
     onAnalyse: (SessionSummary) -> Unit = {},
+    onTrackDay: (ids: List<String>) -> Unit = {},
     selectedId: String? = null,
     facts: Map<String, SessionFacts> = emptyMap(),
     header: @Composable () -> Unit = {},
@@ -123,9 +124,7 @@ fun SessionsScreen(
         } else {
             LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 byDay(sessions).forEach { (day, list) ->
-                    item(key = "day-$day") {
-                        SectionLabel(dayLabel(day), Modifier.padding(top = 12.dp, start = 4.dp))
-                    }
+                    item(key = "day-$day") { DayHeading(day, list, onTrackDay) }
                     items(list, key = { it.id }) { s ->
                         SessionRow(
                             s,

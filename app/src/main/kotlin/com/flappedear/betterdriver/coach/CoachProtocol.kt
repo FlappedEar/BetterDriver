@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import android.content.Context
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
+import com.flappedear.betterdriver.analysis.line.DayPlanStore
 import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import java.io.File
 
@@ -77,3 +78,9 @@ internal fun coachingHistoryStore(context: Context) = CoachingHistoryStore(File(
  * the Map tab, the coach and the 3D export. With the coach's files, so a backup carries it.
  */
 internal fun linePlanStore(context: Context) = LinePlanStore(File(coachDir(context), "lines"))
+
+/**
+ * The plan of each track day (FBBD-315): the day's focus corners, for the coach's first session of
+ * the next day there (UI-214 B) and that day's proof. With the coach's files, so a backup carries it.
+ */
+internal fun dayPlanStore(context: Context) = DayPlanStore(File(coachDir(context), "days"))
