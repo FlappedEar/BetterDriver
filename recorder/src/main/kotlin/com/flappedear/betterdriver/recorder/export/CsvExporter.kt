@@ -19,7 +19,9 @@ import java.util.Locale
  *
  * One row per sample set, in time order. Columns: the time in the phone's time zone with its offset
  * from UTC (ISO-8601, e.g. 2026-10-13T09:11:14.495+02:00, from the session start plus the recorder's
- * clock, so it never runs backwards; FBBD-217), the seconds since the session started,
+ * clock, so it never runs backwards; FBBD-217), set on the receiver's GNSS clock when the session has
+ * fixes with UTC, so the column matches other apps' files (FBBD-324; [gnssClockOffsetMillis]),
+ * the seconds since the session started,
  * with [laps] the lap number and the time into that lap, then every channel that has a value, as
  * "name (unit)": the GNSS channels first, then the others by id. A cell is empty when the set has
  * no value for that channel; values are not repeated from earlier rows, so each row is what was
@@ -48,6 +50,7 @@ object CsvExporter {
         zone: ZoneId = ZoneId.systemDefault(),
     ) {
         val time = TIME.withZone(zone)
+        val startMillis = session.info.startUtcMillis + (gnssClockOffsetMillis(session) ?: 0L)
         // Sources queue independently, so file order is not time order. The sort is stable.
         val sets = session.sampleSets.sortedBy { it.tMicros }
         val seen = HashSet<Int>()
@@ -71,7 +74,7 @@ object CsvExporter {
                 if (v.value.isFinite()) cells[i] = decimal(v.value, channels[i].decimals)
             }
             sb.setLength(0)
-            sb.append(time.format(Instant.ofEpochMilli(session.info.startUtcMillis + set.tMicros / MicrosPerMilli)))
+            sb.append(time.format(Instant.ofEpochMilli(startMillis + set.tMicros / MicrosPerMilli)))
             sb.append(',').append(seconds(set.tMicros))
             if (laps.isNotEmpty()) {
                 val lap = cursor.at(set.tMicros)
@@ -82,6 +85,31 @@ object CsvExporter {
             line(out, sb)
         }
         out.flush()
+    }
+
+    /**
+     * How far the phone clock that set the session start is behind the receiver's GNSS UTC, in ms:
+     * the median over the fixes of UTC minus (start + recorder time), or null with no usable UTC.
+     * One offset for the whole file keeps the times from running backwards (FBBD-217). The phone
+     * clock was measured 1.944 s ahead of the RaceBox (FBBD-324). Only fixes with a position count,
+     * and a UTC before 2000 is a time of day or garbage, as in the GPX export.
+     */
+    internal fun gnssClockOffsetMillis(session: SessionData): Long? {
+        val offsets = session.sampleSets.mapNotNull { set ->
+            var utc: Double? = null
+            var lat = 0.0
+            var lon = 0.0
+            for (v in set.values) when (v.channelId) {
+                GnssChannels.UTC_MS.id -> utc = v.value
+                GnssChannels.LAT.id -> lat = v.value
+                GnssChannels.LON.id -> lon = v.value
+            }
+            val ms = utc?.takeIf { it.isFinite() }?.let { Math.round(it) }?.takeIf { it >= Year2000Millis }
+            if (ms == null || (lat == 0.0 && lon == 0.0)) null
+            else ms - (session.info.startUtcMillis + set.tMicros / MicrosPerMilli)
+        }
+        if (offsets.isEmpty()) return null
+        return offsets.sorted()[offsets.size / 2]
     }
 
     /** Channels with values: the GNSS ones in their usual order, then the rest by id. */
@@ -127,6 +155,7 @@ object CsvExporter {
 
     private const val CRLF = "\r\n"
     private const val MicrosPerMilli = 1_000L
+    private const val Year2000Millis = 946_684_800_000L
     private const val MicrosPerSecond = 1_000_000.0
     private const val DefaultDecimals = 3
     private const val BufferChars = 1 shl 16

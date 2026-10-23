@@ -108,6 +108,44 @@ class CsvGpxExportTest {
         assertTrue(january[1].startsWith("2026-01-15T10:00:00.000+01:00,0.000,"), january[1])
     }
 
+    /** The phone clock ran 1.944 s ahead of the RaceBox's GNSS UTC in the 2026-10-23 drive (FBBD-324). */
+    @Test
+    fun `csv time follows the receiver's gnss clock when fixes carry utc`() {
+        val ahead = 1_944L
+        fun gnss(t: Long) = start - ahead + t / 1_000
+        val rows = csv(
+            session(
+                listOf(
+                    fix(0, 52.0, 16.6, utc = gnss(0)),
+                    SampleSet(20_000, listOf(ChannelValue(obd.id, 3456.0))),
+                    fix(40_000, 52.1, 16.7, utc = gnss(40_000)),
+                    // No fix yet, and a time of day instead of a date: neither moves the clock.
+                    fix(80_000, 0.0, 0.0, utc = start + 60_000),
+                    fix(120_000, 52.1, 16.7, utc = 5_000),
+                    fix(160_000, 52.1, 16.7, utc = gnss(160_000)),
+                ),
+            ),
+        )
+        assertEquals(
+            listOf(
+                "2025-10-11T09:02:21.056+00:00,0.000",
+                "2025-10-11T09:02:21.076+00:00,0.020",
+                "2025-10-11T09:02:21.096+00:00,0.040",
+                "2025-10-11T09:02:21.136+00:00,0.080",
+                "2025-10-11T09:02:21.176+00:00,0.120",
+                "2025-10-11T09:02:21.216+00:00,0.160",
+            ),
+            rows.drop(1).map { it.split(',').take(2).joinToString(",") },
+        )
+    }
+
+    @Test
+    fun `csv time keeps the phone clock without gnss utc`() {
+        val data = session(listOf(fix(0, 52.0, 16.6), fix(40_000, 52.0, 16.6, utc = 5_000)))
+        assertEquals(null, CsvExporter.gnssClockOffsetMillis(data))
+        assertTrue(csv(data)[1].startsWith("2025-10-11T09:02:23.000+00:00,0.000,"))
+    }
+
     @Test
     fun `csv gets lap number and lap time when laps are known`() {
         val sets = (0..5).map { fix(it * 1_000_000L, 52.0 + it * 0.001, 16.6) }
