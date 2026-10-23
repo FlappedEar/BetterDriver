@@ -28,7 +28,7 @@ class PerfectLapPainterTest {
             painter.draw(Canvas(bmp), (corner.startSeconds + corner.endSeconds) / 2, bmp.width, bmp.height)
             val px = IntArray(bmp.width * bmp.height)
             bmp.getPixels(px, 0, bmp.width, 0, 0, bmp.width, bmp.height)
-            val count = px.groupingBy { it }.eachCount()
+            val count = px.asList().groupingBy { it }.eachCount()
             assertTrue("road at ${corner.name}", (count[palette.road] ?: 0) > 2000)
             val line = listOf(palette.braking, palette.coasting, palette.accelerating).sumOf { count[it] ?: 0 }
             assertTrue("line at ${corner.name}", line > 200)
