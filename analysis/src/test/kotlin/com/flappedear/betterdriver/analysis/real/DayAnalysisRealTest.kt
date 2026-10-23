@@ -6,11 +6,13 @@ import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.DayAnalysis
 import com.flappedear.betterdriver.analysis.line.DayLoss
+import com.flappedear.betterdriver.analysis.line.DayPlanStore
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.LineThresholds
 import com.flappedear.betterdriver.analysis.line.ProofVerdict
 import com.flappedear.betterdriver.analysis.line.PushLapShare
 import com.flappedear.betterdriver.analysis.line.analyzeDay
+import com.flappedear.betterdriver.analysis.line.dayPlan
 import com.flappedear.betterdriver.analysis.line.dayProof
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -95,22 +97,32 @@ class DayAnalysisRealTest {
         val morning = assertNotNull(analyzeDay(all.take(3), analyze))
         val afternoon = assertNotNull(analyzeDay(all.drop(3), analyze))
         assertTrue(morning.identityRevision != null && morning.identityRevision == afternoon.identityRevision)
-        val proof = assertNotNull(dayProof(morning, afternoon))
-        assertEquals(morning.focus().map { it.name }, proof.corners.map { it.name })
+        // The morning is kept as its day's plan, and the afternoon measured against it.
+        val plan = dayPlan(morning, "jastrzab", "2026-08-28", "s1303", 1L)
+        val store = DayPlanStore(File(tmp, "days"))
+        assertTrue(store.save(plan))
+        assertTrue(!store.save(plan), "the same plan is not written again")
+        assertEquals(plan, store.before("jastrzab", "2026-08-29"))
+        assertNull(store.before("jastrzab", "2026-08-28"))
+        // The coach works on the plan's focus: the day's corners with most per lap, with their targets.
+        assertEquals(morning.focus().map { it.segmentId }, plan.plan.focus().map { it.cornerId })
+        plan.plan.focus().forEach { assertTrue(it.target.line.isNotEmpty(), it.name) }
+        val proof = assertNotNull(dayProof(plan, afternoon))
+        assertEquals(morning.focus().size, proof.corners.size)
         proof.corners.forEach {
             assertTrue(it.verdict != ProofVerdict.NotComparable, it.name)
             assertTrue(afternoon.corners.any { c -> c.segmentId == it.cornerId && c.name == it.name }, it.name)
-            assertNotNull(it.afterTypicalSeconds, it.name)
+            assertNotNull(it.afterSeconds, it.name)
         }
         report("jastrzab-morning-afternoon", afternoon, proof.corners.joinToString("\n") {
             String.format(
-                Locale.ROOT, "| %s | %.2f | %.2f | %.2f | %s |", it.name, it.beforeTypicalSeconds,
-                it.afterTypicalSeconds, it.wonBackSeconds, it.verdict,
+                Locale.ROOT, "| %s | %.2f | %.2f | %.2f | %s |", it.name, it.beforeSeconds,
+                it.afterSeconds, it.wonBackSeconds, it.verdict,
             )
         })
         // Without one corner identity nothing is compared.
         val other = afternoon.copy(identityRevision = null)
-        assertTrue(dayProof(morning, other)!!.corners.all { it.verdict == ProofVerdict.NotComparable })
+        assertTrue(dayProof(plan, other)!!.corners.all { it.verdict == ProofVerdict.NotComparable })
     }
 
     private fun checkDay(day: DayAnalysis) {

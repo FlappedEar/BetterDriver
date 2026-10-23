@@ -3,6 +3,7 @@ package com.flappedear.betterdriver
 import android.net.Uri
 
 /** App destinations. */
+@Suppress("TooManyFunctions") // One route builder per destination with arguments.
 object Routes {
     const val Setup = "setup"
     const val Drive = "drive"
@@ -93,6 +94,12 @@ object Routes {
     const val TrackProgressionPattern = "tracks/{id}/progression"
 
     fun trackProgression(id: String) = "tracks/$id/progression"
+
+    /** One day at one track (FBBD-315): its sessions' ids, comma separated, from the Sessions day heading. */
+    const val TrackDayPattern = "trackday?ids={ids}"
+    const val TrackDayIdsArg = "ids"
+
+    fun trackDay(ids: List<String>) = "trackday?ids=${Uri.encode(ids.joinToString(","))}"
 
     /** One Settings topic's page (UI-137 B), from Settings and the first-run checklist. */
     const val SettingsTopicPattern = "settings/{topic}"

@@ -18,6 +18,7 @@ import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.coachPicks
 import com.flappedear.betterdriver.coach.coachReferencesDir
 import com.flappedear.betterdriver.coach.coachingHistoryStore
+import com.flappedear.betterdriver.coach.dayPlanStore
 import com.flappedear.betterdriver.coach.linePlanStore
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
@@ -244,6 +245,7 @@ class Tracks private constructor(private val context: Context) {
         val focus = sessionFocusStore(context)
         val history = coachingHistoryStore(context)
         val lines = linePlanStore(context)
+        val days = dayPlanStore(context)
         // Waits for a restore (FBBD-156), so the delete is not lost in its swap.
         val gone = AppDataGate.write {
             references.delete(id)
@@ -255,8 +257,9 @@ class Tracks private constructor(private val context: Context) {
             val focusGone = focus.delete(id)
             val historyGone = history.delete(id)
             val lineGone = lines.delete(id)
+            val dayGone = days.delete(id)
             val coachGone = references.get(id) == null && picks.get(id).isEmpty() && focusGone && historyGone &&
-                lineGone
+                lineGone && dayGone
             if (coachGone) store.delete(id)
             coachGone && store.get(id) == null
         }

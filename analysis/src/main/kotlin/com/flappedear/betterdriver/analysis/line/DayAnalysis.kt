@@ -2,8 +2,8 @@ package com.flappedear.betterdriver.analysis.line
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.analyzeSession
-import com.flappedear.betterdriver.analysis.coaching.ImprovedSeconds
 import com.flappedear.betterdriver.analysis.focus.median
+import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import kotlin.math.abs
 
 // The track day (FBBD-315): every session of one day at one track, read on the axis and corners of
@@ -12,8 +12,9 @@ import kotlin.math.abs
 // twice, FBBD-177), the line plan's question. On every lap: what a typical lap at the day's pace
 // loses there, which is where his laps go once he is up to speed and what the next day can win
 // back most surely. The day's focus is the corners with most of the second and something to do
-// there; the next day at the track proves it ([dayProof]). How each session went (its own push
-// laps) is the day's trend: what he learned over the day and where he stopped getting faster.
+// there; the next day at the track proves it ([dayProof], against the day's [DayPlan]). How each
+// session went (its own push laps) is the day's trend: what he learned over the day and where he
+// stopped getting faster.
 
 /**
  * 107 %, the limit racing uses for a lap that counts. A lap more than this share slower than its
@@ -117,6 +118,8 @@ data class DayAnalysis(
     val corners: List<DayCorner>,
     /** The track's corner identity revision the corner ids are in (FBBD-172); null without one. */
     val identityRevision: Int? = null,
+    /** The fastest lap's axis origin: where the corners' line points are measured from. */
+    val origin: GeoCoordinate = GeoCoordinate(0.0, 0.0),
 ) {
     /** Most time per lap first. */
     val ranked: List<DayCorner>
@@ -197,6 +200,7 @@ fun analyzeDay(
         typicalLapSeconds = median(atPace),
         corners = corners,
         identityRevision = analysis.identity?.number?.takeIf { analysis.identified },
+        origin = axis.origin,
     )
 }
 
@@ -237,59 +241,6 @@ private fun dayCorner(
             val mine = l.push.mapNotNull { l.pace.seconds[k][it] }
             val typical = if (mine.isEmpty()) null else median(mine)
             DayCornerSession(l.session.label, l.session.id, mine.minOrNull(), typical)
-        },
-    )
-}
-
-/** One focus corner of the day before, on this day: typical and fastest pass then and now. */
-data class DayCornerProof(
-    val cornerId: String?,
-    val name: String,
-    val beforeTypicalSeconds: Double,
-    val afterTypicalSeconds: Double?,
-    val beforeBestSeconds: Double?,
-    val afterBestSeconds: Double?,
-    val targetSeconds: Double,
-    /** Judged on the typical pass: the time every lap wins back. */
-    val verdict: ProofVerdict,
-) {
-    /** Typical before minus after: positive is faster on every lap. */
-    val wonBackSeconds: Double? get() = afterTypicalSeconds?.let { beforeTypicalSeconds - it }
-}
-
-/** What came of [previousReferenceSessionId]'s day focus on the next day at the track. */
-data class DayProof(val previousReferenceSessionId: String, val corners: List<DayCornerProof>) {
-    val wonBackSeconds: Double get() = corners.mapNotNull { it.wonBackSeconds }.sum()
-}
-
-/**
- * What came of the focus of day [previous] (at most [count] corners) on day [current] at the same
- * track: corners matched by CornerId in one identity revision, as the line proof matches them
- * (FBBD-310); without that they are [ProofVerdict.NotComparable]. Null when [previous] had no focus.
- */
-fun dayProof(previous: DayAnalysis, current: DayAnalysis, count: Int = LinePlan.FocusCorners): DayProof? {
-    val focus = previous.focus(count)
-    if (focus.isEmpty()) return null
-    val comparable = previous.identityRevision != null && previous.identityRevision == current.identityRevision
-    return DayProof(
-        previous.referenceSessionId,
-        focus.map { before ->
-            val after = current.corners.firstOrNull { it.segmentId == before.segmentId }.takeIf { comparable }
-            val was = before.typicalSeconds
-            val now = after?.typicalSeconds?.takeIf { after.passes > 0 }
-            val verdict = when {
-                !comparable -> ProofVerdict.NotComparable
-                now == null -> ProofVerdict.NotDriven
-                was - now >= ImprovedSeconds -> ProofVerdict.Faster
-                now - was >= ImprovedSeconds -> ProofVerdict.Slower
-                else -> ProofVerdict.Same
-            }
-            DayCornerProof(
-                // The corner as this day names it: the same CornerId may be numbered otherwise on another day's lap.
-                before.segmentId.takeIf { previous.identityRevision != null }, after?.name ?: before.name, was, now,
-                before.sessions.mapNotNull { it.bestSeconds }.minOrNull(),
-                after?.sessions?.mapNotNull { it.bestSeconds }?.minOrNull(), before.target.seconds, verdict,
-            )
         },
     )
 }
