@@ -1,18 +1,29 @@
 package com.flappedear.betterdriver.shell
 
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.TransferQuestion
 import com.flappedear.betterdriver.sharing.TransferState
+import com.flappedear.betterdriver.sharing.bytesText
+import com.flappedear.betterdriver.sharing.sizeText
+import com.flappedear.betterdriver.sharing.timeLeftText
+import com.flappedear.betterdriver.transfer.ImportProgress
 
 /**
  * Share on a session card (FBBD-23): prepares the session as one file, with its video and its
@@ -46,13 +57,57 @@ internal fun TransferLine(state: TransferState?) {
     DimText(state.text, color = if (state.failed) TrackTheme.colors.loss else Color.Unspecified)
 }
 
-/** The current or last import, at the top of Sessions and Tracks. */
+/** The current or last import, at the top of Sessions and Tracks (UI-194 A). */
 @Composable
 internal fun ImportCard(state: TransferState?) {
     if (state == null) return
     ShellCard {
         SectionLabel("Import")
-        TransferLine(state)
+        val progress = state.progress
+        if (state.running && progress != null) ImportProgressLines(progress, state.fileName) else TransferLine(state)
+    }
+}
+
+/**
+ * How far an import is (FBBD-314): with several files, which one and all their bytes on a bar of
+ * its own (UI-193 A); then the file's name, its bar, its bytes and percent, and the time left
+ * (UI-192 B). A file of unknown size gets a moving bar and the bytes read.
+ */
+@Composable
+private fun ImportProgressLines(p: ImportProgress.Snapshot, fileName: String) {
+    if (p.files > 1) {
+        val total = if (p.totalSize > 0) "${sizeText(p.totalDone)} of ${sizeText(p.totalSize)}" else ""
+        EndsRow("File ${p.file + 1} of ${p.files}", total)
+        ImportBar(p.totalFraction, 8.dp)
+    }
+    if (fileName.isNotBlank()) {
+        Text(
+            fileName,
+            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+    ImportBar(p.fileFraction, if (p.files > 1) 5.dp else 8.dp)
+    EndsRow(bytesText(p.fileDone, p.fileSize), timeLeftText(p.secondsLeft).orEmpty())
+}
+
+@Composable
+private fun ImportBar(fraction: Float?, height: Dp) {
+    val modifier = Modifier.fillMaxWidth().height(height)
+    if (fraction != null) {
+        LinearProgressIndicator(progress = { fraction }, modifier = modifier)
+    } else {
+        LinearProgressIndicator(modifier = modifier)
+    }
+}
+
+/** [start] on the left, [end] dimmed on the right. */
+@Composable
+private fun EndsRow(start: String, end: String) {
+    Row(Modifier.fillMaxWidth()) {
+        Text(start, Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+        if (end.isNotEmpty()) DimText(end)
     }
 }
 

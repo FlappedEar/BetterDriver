@@ -39,8 +39,9 @@ internal fun rememberSessionTransfer(recording: Boolean): SessionTransferState {
         saving = null
         if (it != null && id != null) transfers.saveSession(id, it)
     }
-    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
-        if (it != null) imports.import(it)
+    // Several files at once, imported oldest session first (UI-193 A).
+    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) {
+        imports.import(it)
     }
     return SessionTransferState(
         outgoing = transfers.outgoing
@@ -63,8 +64,9 @@ internal fun rememberTrackTransfer(): TrackTransferState {
     val context = LocalContext.current
     val imports = remember(context) { Imports.get(context) }
     val recorder = RecorderClient.get(context)
-    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) {
-        if (it != null) imports.import(it)
+    // Several files at once, imported oldest session first (UI-193 A).
+    val pickImport = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) {
+        imports.import(it)
     }
     return TrackTransferState(
         incoming = imports.state,

@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackStore
+import com.flappedear.betterdriver.transfer.ImportProgress
 import com.flappedear.betterdriver.transfer.SessionBundle
 import com.flappedear.betterdriver.transfer.SessionBundleExtension
 import com.flappedear.betterdriver.transfer.TrackTransfer
@@ -32,6 +33,10 @@ data class TransferState(
     val fraction: Float? = null,
     val running: Boolean = false,
     val failed: Boolean = false,
+    /** An import's bytes, files and time left while it reads (FBBD-314); null otherwise. */
+    val progress: ImportProgress.Snapshot? = null,
+    /** The file being imported, as the picker names it; empty when unknown. */
+    val fileName: String = "",
 )
 
 /**

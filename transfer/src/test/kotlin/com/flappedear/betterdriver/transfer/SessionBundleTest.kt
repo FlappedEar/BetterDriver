@@ -140,6 +140,22 @@ class SessionBundleTest {
     }
 
     @Test
+    fun `import progress of a bundle climbs to its file size and never goes back (FBBD-314)`() {
+        val phone = SessionStore(File(tmp, "phone/sessions"))
+        val bytes = bundle(phone, session(phone))
+        val progress = ImportProgress(listOf(bytes.size.toLong()))
+        progress.start(0)
+        val shares = mutableListOf<Float>()
+        SessionInbox(SessionStore(File(tmp, "tablet")), File(tmp, "staging")).receive(bytes.inputStream()) { n ->
+            progress.bytes(n)
+            shares += progress.snapshot().fileFraction!!
+        }
+        assertEquals(shares.sorted(), shares, "never goes back")
+        // Only the files inside count, so headers and names keep it just short of the whole file.
+        assertTrue(shares.last() in 0.95f..1f, "ends at ${shares.last()}")
+    }
+
+    @Test
     fun `every channel's provenance survives the transfer, imported origin included`() {
         val phone = SessionStore(File(tmp, "phone"))
         // A channel of every kind, as the recorder stores them: in the metadata and the chunk.
