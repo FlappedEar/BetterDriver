@@ -119,7 +119,7 @@ internal enum class AnalysisTab(val title: String, val icon: ImageVector) {
     Car("Car", AnalysisIcons.Car),
 }
 
-@Suppress("CyclomaticComplexMethod") // One branch per tab.
+@Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per tab.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Ready(
@@ -131,6 +131,12 @@ private fun Ready(
     onProgression: (() -> Unit)?,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
+    // The Map tab's view, here so the next-session card can open Where to find time (UI-190 B).
+    var mapView by rememberSaveable { mutableStateOf(MapView.Laps) }
+    val whereToFindTime = {
+        mapView = MapView.Line
+        tab = AnalysisTab.Map.ordinal
+    }
     // Picking a lap or a loss compares it, so the Compare tab opens.
     val compare: (Int) -> Unit = {
         onCompare(it)
@@ -166,13 +172,13 @@ private fun Ready(
             when (AnalysisTab.entries[tab]) {
                 AnalysisTab.Summary -> {
                     // What to work on next comes first (FBBD-20): the answer the session is analysed for.
-                    Focus(ui, compare, layout, width)
+                    Focus(ui, compare, layout, width, whereToFindTime)
                     Summary(ui, width, optimalVideo)
                     // Heart rate under the lap times, only when the session recorded it (UI-107 A, UI-109).
                     ui.heartRate?.let { HeartRateCard(it, width) }
                     // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
                     // so the next focus and the best lap both stay on the first screen of a phone on its side.
-                    CoachingHistory(ui.coaching, width)
+                    CoachingHistory(ui.coaching, ui.lastFocusWonBackSeconds, width)
                     ui.progress?.let { Progress(it, width, onProgression) }
                     if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                     ui.gForces?.let { GForcesCard(it, width) }
@@ -181,7 +187,7 @@ private fun Ready(
                 }
                 AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
                     ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
-                AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide, ui.line) }
+                AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide, ui.line, mapView) { v -> mapView = v } }
                     ?: Card(width) { Dim("No map: the laps of this session have no usable GPS line.") }
                 AnalysisTab.Laps -> Laps(ui, compare, width)
                 AnalysisTab.Corners -> {

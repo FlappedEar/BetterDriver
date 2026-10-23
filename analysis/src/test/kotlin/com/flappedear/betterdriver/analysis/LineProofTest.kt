@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanPass
+import com.flappedear.betterdriver.analysis.line.ProofAsk
 import com.flappedear.betterdriver.analysis.line.ProofVerdict
 import com.flappedear.betterdriver.analysis.line.lineProof
 import com.flappedear.betterdriver.analysis.line.planBefore
@@ -55,5 +56,19 @@ class LineProofTest {
         val plans = listOf(plan("x", 0, 3), before, plan("c", 5, 3))
         assertEquals("a", planBefore(plans, plan("b", 2, 3))!!.sessionId)
         assertNull(planBefore(plans, plan("first", -1, 3)))
+    }
+
+    @Test
+    fun `the corners the summary asked for are measured, in its words, whatever the plan's own focus`() {
+        val before = plan("a", 1, 3, corner("c1", 0.30, 9.95), corner("c7", 0.0, 8.40))
+        val after = plan("b", 2, 3, corner("c1", 0.0, 9.90), corner("c7", 0.0, 8.30))
+        val asked = listOf(ProofAsk("c7", "T7", cues = 0), ProofAsk("straight-2", "Back straight", cues = 2))
+        val proof = lineProof(before, after, asked)!!
+        val t7 = proof.corners.single()
+        assertEquals("T7", t7.name)
+        assertEquals(ProofVerdict.Faster, t7.verdict)
+        assertEquals(false, t7.coached)
+        assertEquals(0.10, proof.wonBackSeconds, 1e-9)
+        assertNull(lineProof(before, after, listOf(ProofAsk("nowhere", "X"))), "no window, no proof")
     }
 }

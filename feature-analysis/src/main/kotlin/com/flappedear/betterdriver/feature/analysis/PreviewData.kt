@@ -184,12 +184,19 @@ internal val PreviewUi = AnalysisUi(
     coaching = listOf(
         CoachingRow(
             "Corner 4",
-            CoachingStatus.Improved,
-            "You worked on Corner 4 with the coach in this session (5 cues there). The braking point moved " +
-                "8 m later and the median corner time improved by 0.18 s; 3 of 4 counted passes were faster " +
-                "than before. This is no longer a top-three loss.",
+            CoachingStatus.Faster,
+            "0.20 s back · 0.05 s still to your target · the coach spoke here 5 times",
             doubtful = false,
             cornerId = "s5",
+            measured = true,
+        ),
+        CoachingRow(
+            "Corners 2–3",
+            CoachingStatus.FasterNoCue,
+            "0.07 s back without a cue from the coach",
+            doubtful = false,
+            cornerId = "s3",
+            measured = true,
         ),
         CoachingRow(
             "Corner 1",
@@ -201,6 +208,7 @@ internal val PreviewUi = AnalysisUi(
             attempt = false,
         ),
     ),
+    lastFocusWonBackSeconds = 0.27,
     coachPickable = setOf("s2", "s5"),
     coachPicked = setOf("s5"),
     compare = CompareUi(

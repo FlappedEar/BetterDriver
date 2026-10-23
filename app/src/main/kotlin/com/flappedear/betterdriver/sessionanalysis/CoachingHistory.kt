@@ -6,8 +6,13 @@ import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
 import com.flappedear.betterdriver.analysis.coaching.coachingHistory
 import com.flappedear.betterdriver.analysis.coaching.sessionCoachingRecord
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
+import com.flappedear.betterdriver.analysis.line.LineProof
+import com.flappedear.betterdriver.analysis.line.ProofAsk
+import com.flappedear.betterdriver.analysis.line.lineProof
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.coachingRows
+import com.flappedear.betterdriver.feature.analysis.lastFocusWonBack
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.sharing.AppDataGate
@@ -66,8 +71,42 @@ private const val Tag = "CoachingHistory"
 /** Where a session imported from another app's file came from (FBBD-164): "VBO lap-12.vbo"; null when recorded here. */
 internal fun originOf(info: SessionInfo): String? = info.imported?.let { "${it.format} ${it.fileName}".trim() }
 
-/** [this] with what came of the last focus and whether earlier gains held (FBBD-180), in the phone's time zone. */
-internal fun AnalysisState.withCoaching(coaching: SessionCoaching): AnalysisState {
+/**
+ * [this] with what came of the last focus and whether earlier gains held (FBBD-180), in the phone's
+ * time zone; the focus corners [proof] measured through the line plans say it in seconds (FBBD-310).
+ */
+internal fun AnalysisState.withCoaching(coaching: SessionCoaching, proof: LineProof? = null): AnalysisState {
     if (this !is AnalysisState.Ready || coaching.empty) return this
-    return AnalysisState.Ready(ui.copy(coaching = coachingRows(coaching, ZoneId.systemDefault())))
+    return AnalysisState.Ready(
+        ui.copy(
+            coaching = coachingRows(coaching, ZoneId.systemDefault(), proof),
+            lastFocusWonBackSeconds = lastFocusWonBack(coaching, proof),
+        ),
+    )
+}
+
+/**
+ * What came of the focus session [sessionId] worked on (FBBD-310, UI-191 A): its corners, as the
+ * summary of the session they came from named them (UI-190 B), measured through that session's line
+ * plan and this one's, both from [plans]; with the coach's cues at each. Null when either plan is
+ * missing (a session analysed before line plans, or read during a restore).
+ */
+@Suppress("ReturnCount") // Each missing piece leaves the proof out.
+internal fun lastFocusProof(
+    plans: LinePlanStore,
+    trackId: String,
+    sessionId: String,
+    coaching: SessionCoaching,
+): LineProof? {
+    val from = coaching.attempts.firstOrNull()?.source?.sessionId ?: return null
+    val kept = try {
+        plans.plans(trackId)
+    } catch (e: IllegalArgumentException) {
+        DebugLog.w(Tag, "line plans at $trackId not read", e)
+        return null
+    }
+    val previous = kept.firstOrNull { it.sessionId == from } ?: return null
+    val current = kept.firstOrNull { it.sessionId == sessionId } ?: return null
+    val asked = coaching.attempts.map { ProofAsk(it.ask.cornerId, it.ask.name, it.cues) }
+    return lineProof(previous, current, asked)
 }
