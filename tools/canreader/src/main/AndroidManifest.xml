@@ -12,7 +12,7 @@
         android:allowBackup="false"
         android:label="FR-S reader"
         android:supportsRtl="true"
-        android:theme="@android:style/Theme.Material">
+        android:theme="@android:style/Theme.Material.NoActionBar">
         <activity
             android:name=".app.ReaderActivity"
             android:exported="true">

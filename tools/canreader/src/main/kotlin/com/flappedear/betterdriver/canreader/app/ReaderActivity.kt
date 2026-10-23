@@ -17,6 +17,8 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.obd.scanObdAdapters
 import kotlinx.coroutines.Job
@@ -57,14 +59,22 @@ class ReaderActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val column = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(PAD, PAD, PAD, PAD)
+        val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        // Android 15 draws apps edge to edge: without the system bars' insets the status bar hid the
+        // top buttons (0.1.0 on the Pixel 6, 23 Oct 2026).
+        ViewCompat.setOnApplyWindowInsetsListener(column) { v, insets ->
+            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            v.setPadding(bars.left + PAD, bars.top + PAD, bars.right + PAD, bars.bottom + PAD)
+            insets
         }
-        adapterText = TextView(this)
+        adapterText = TextView(this).apply { textSize = STATUS_SP }
         adapterButtons = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         logText = TextView(this).apply { setTextIsSelectable(true) }
         scroll = ScrollView(this).apply { addView(logText) }
+        column.addView(TextView(this).apply {
+            text = "FR-S reader ${packageManager.getPackageInfo(packageName, 0).versionName}"
+            textSize = TITLE_SP
+        })
         column.addView(adapterText)
         column.addView(button("Find adapter") { findAdapters() })
         column.addView(adapterButtons)
@@ -167,7 +177,11 @@ class ReaderActivity : Activity() {
             arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         }
         val missing = needed.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
-        if (missing.isNotEmpty()) requestPermissions(missing.toTypedArray(), 1)
+        if (missing.isNotEmpty()) {
+            val what = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "Nearby devices" else "Location"
+            adapterText.text = "Allow $what, then press the button again."
+            requestPermissions(missing.toTypedArray(), 1)
+        }
         return missing.isEmpty()
     }
 
@@ -178,5 +192,7 @@ class ReaderActivity : Activity() {
         const val REFRESH_MS = 500L
         const val SHOWN_LINES = 120
         const val PAD = 32
+        const val TITLE_SP = 22f
+        const val STATUS_SP = 16f
     }
 }
