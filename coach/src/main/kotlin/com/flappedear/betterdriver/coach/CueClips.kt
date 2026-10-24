@@ -80,6 +80,7 @@ object CueClips {
      * Every clip the coach can need in [book]'s language: the fixed words of each kind of phrase, the
      * numbers 0 to 99, "00" to "09" for a lap time's seconds, and the parts of 100 to 999.
      */
+    @Suppress("SpreadOperator") // Once per language.
     fun vocabulary(book: PhraseBook): Set<String> = vocabularies.getOrPut(book) {
         val corner = Corner(1, 0.0, 0.0, 0.0, 0.0, Turn.Straight)
         val samples = listOf(
@@ -108,6 +109,10 @@ object CueClips {
             book.corner(corner, Advice.Steer(SteerAdvice.Smoother), Advice.Steer(SteerAdvice.Oversteer)),
             book.corner(corner, Advice.Steer(SteerAdvice.OpenEarlier(SampleNumber)), Advice.Throttle(SampleNumber)),
             book.corner(corner, Advice.Steer(SteerAdvice.OpenEarlier(SampleNumber), precise = false)),
+            // The gears (FBBD-326): "Turn 1, brake at 10, 10 later, second".
+            *(1..SampleGears).map {
+                book.corner(corner, Advice.BrakeLater(SampleNumber, at = SampleNumber), Advice.Gear(it))
+            }.toTypedArray(),
             // The out-lap plan (UI-174 A), of one corner and of several.
             book.plan(listOf(1)),
             book.plan((1..SamplePlanCorners).toList()),
@@ -135,6 +140,7 @@ object CueClips {
         key.map { if (it.isLetterOrDigit()) it.lowercaseChar() else '_' }.joinToString("") + ".wav"
 
     private const val SampleNumber = 10
+    private const val SampleGears = 6
 
     /** The corners of a sample out-lap plan: as many as the plan says (UI-174 A). */
     private const val SamplePlanCorners = 3

@@ -237,7 +237,7 @@ object CoachEvents {
      * left-hand corner) and
      * "throttle:5:after=5" (metres earlier, negative later; the target metres after the apex).
      * The hands (FBBD-321): "steer_less", "steer_more", "steer_smooth", "oversteer" and
-     * "straighten:10" (metres earlier off full lock).
+     * "straighten:10" (metres earlier off full lock). The gear (FBBD-326): "gear:2".
      */
     private fun adviceText(a: Advice): String {
         val (kind, number, target) = when (a) {
@@ -248,6 +248,7 @@ object CoachEvents {
                 Triple("line", a.tighterMeters, a.turn.takeIf { it != Turn.Straight }?.let { "$Dir${it.name}" })
             is Advice.Throttle -> Triple("throttle", a.earlierMeters, a.afterApex?.let { "$After$it" })
             is Advice.Steer -> steerText(a.what)
+            is Advice.Gear -> Triple("gear", a.gear, null)
         }
         return listOfNotNull(kind, number?.toString(), Vague.takeUnless { a.precise }, target).joinToString(":")
     }
@@ -260,6 +261,7 @@ object CoachEvents {
         is SteerAdvice.OpenEarlier -> Triple("straighten", w.meters, null)
     }
 
+    @Suppress("CyclomaticComplexMethod") // One branch per kind of advice.
     private fun parseAdvice(s: String): Advice {
         val parts = s.split(':')
         val rest = parts.drop(1)
@@ -280,6 +282,7 @@ object CoachEvents {
             "steer_smooth" -> Advice.Steer(SteerAdvice.Smoother, precise)
             "oversteer" -> Advice.Steer(SteerAdvice.Oversteer, precise)
             "straighten" -> Advice.Steer(SteerAdvice.OpenEarlier(requireNotNull(number)), precise)
+            "gear" -> Advice.Gear(requireNotNull(number), precise)
             else -> throw IllegalArgumentException("unknown advice $s")
         }
     }

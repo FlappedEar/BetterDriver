@@ -38,26 +38,43 @@ fun steeringChannelId(channels: Collection<ChannelDef>): Int? =
     channels.sortedBy { it.name.lowercase() }.firstOrNull { SteeringPattern.matches(it.name) }?.id
 
 /**
- * Turns a session's sample sets, in time order, into coach fixes carrying the last pedal value from
- * [pedal] and the last steering wheel angle from [steering] (FBBD-321), each while recent.
+ * The engine speed (FBBD-326): the app's "obd_rpm" (OBD or the FR-S's CAN), RaceChrono's "rpm-obd" or
+ * "rpm-canbus".
  */
-class CoachFixReader(val pedal: Int?, val steering: Int? = null) {
+private val RpmPattern = Regex("^(?:obd_)?(?:engine_)?rpm(?:-obd|-canbus)?$", RegexOption.IGNORE_CASE)
+
+/** The channel the coach reads the engine speed from; null without one. */
+fun rpmChannelId(channels: Collection<ChannelDef>): Int? =
+    channels.sortedBy { it.name.lowercase() }.firstOrNull { RpmPattern.matches(it.name) }?.id
+
+/** An engine speed older than this is not the car's now: OBD over Wi-Fi gives a few a second (FBBD-326). */
+const val MaxRpmAgeMicros = 1_000_000L
+
+/**
+ * Turns a session's sample sets, in time order, into coach fixes carrying the last pedal value from
+ * [pedal], the last steering wheel angle from [steering] (FBBD-321) and the last engine speed from
+ * [rpm] (FBBD-326), each while recent.
+ */
+class CoachFixReader(val pedal: Int?, val steering: Int? = null, val rpm: Int? = null) {
     private val pedalValue = Latest(pedal)
     private val steeringValue = Latest(steering)
+    private val rpmValue = Latest(rpm, MaxRpmAgeMicros)
 
     /** The fix in [set], if it has one, with the pedal and the wheel when read in the last [MaxPedalAgeMicros]. */
     fun read(set: SampleSet): CoachFix? {
         pedalValue.read(set)
         steeringValue.read(set)
+        rpmValue.read(set)
         val fix = set.toCoachFix() ?: return null
         return fix.copy(
             throttlePct = pedalValue.at(set.tMicros) ?: fix.throttlePct,
             steerDeg = steeringValue.at(set.tMicros) ?: fix.steerDeg,
+            rpm = rpmValue.at(set.tMicros) ?: fix.rpm,
         )
     }
 
-    /** The last finite value of one channel and when it came. */
-    private class Latest(val channel: Int?) {
+    /** The last finite value of one channel and when it came, kept for [maxAgeMicros]. */
+    private class Latest(val channel: Int?, val maxAgeMicros: Long = MaxPedalAgeMicros) {
         private var value: Double? = null
         private var at = Long.MIN_VALUE
 
@@ -69,6 +86,6 @@ class CoachFixReader(val pedal: Int?, val steering: Int? = null) {
             }
         }
 
-        fun at(tMicros: Long): Double? = value?.takeIf { tMicros - at in 0..MaxPedalAgeMicros }
+        fun at(tMicros: Long): Double? = value?.takeIf { tMicros - at in 0..maxAgeMicros }
     }
 }

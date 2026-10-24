@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.geo.MetricPoint
 import com.flappedear.betterdriver.analysis.geo.unprojectCoordinate
 import com.flappedear.betterdriver.analysis.optimal.PedalState
+import com.flappedear.betterdriver.timing.gear.Gearbox
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
 import kotlinx.serialization.SerializationException
@@ -82,6 +83,28 @@ data class PlanCorner(
     val sessionBestSeconds: Double? = null,
     /** Beyond his own best (FBBD-312): a braking point to move where the target has nothing left; null without. */
     val brakeRoom: PlanBrakeRoom? = null,
+    /** A lower gear at the slowest point (FBBD-326); null without. */
+    val gear: PlanGear? = null,
+)
+
+/**
+ * [CornerGear] as kept (FBBD-326): be in [gear] at the slowest point, not [from]; [higherLaps] of
+ * [laps] laps were in [from] or above. The exit speeds are the median [ExitMeters] after the slowest
+ * point in each gear, the pulls the car's at full throttle at [apexKmh], [seconds] what the laps in
+ * [gear] were faster through the corner.
+ */
+@Serializable
+data class PlanGear(
+    val gear: Int,
+    val from: Int,
+    val apexKmh: Double,
+    val higherLaps: Int,
+    val laps: Int,
+    val lowerExitKmh: Double? = null,
+    val higherExitKmh: Double? = null,
+    val lowerPullG: Double,
+    val higherPullG: Double,
+    val seconds: Double? = null,
 )
 
 /**
@@ -139,6 +162,8 @@ data class LinePlan(
     val sessions: Int,
     /** In track order. */
     val corners: List<PlanCorner>,
+    /** The car's gears (FBBD-326): the coach reads the gear of a pass with them; null without. */
+    val gearbox: Gearbox? = null,
 ) {
     /** Most time to find first. */
     val ranked: List<PlanCorner> get() = corners.sortedByDescending { it.gainSeconds }
@@ -156,7 +181,10 @@ data class LinePlan(
         val driven = ranked.filter { it.gainSeconds > 0.0 && it.advice.any }.take(count)
         val room = corners.filter { it.brakeRoom != null && it !in driven }
             .sortedByDescending { it.brakeRoom!!.seconds }
-        return (driven + room).take(count)
+        // Then a lower gear (FBBD-326), most time first: the car's own pull, not a driven target.
+        val gears = corners.filter { it.gear != null && it !in driven && it !in room }
+            .sortedByDescending { it.gear!!.seconds ?: 0.0 }
+        return (driven + room + gears).take(count)
     }
 
     /**
@@ -277,8 +305,15 @@ fun linePlan(
                 roadRight = c.road.map { edge(it.rightMeters, it.right, it.progressMeters) },
                 sessionBestSeconds = c.sessionBestSeconds,
                 brakeRoom = beyond?.let { b -> planBrakeRoom(b, c.segmentId) },
+                gear = c.gear?.let { g ->
+                    PlanGear(
+                        g.gear, g.from, g.apexKmh, g.higherLaps, g.laps, g.lowerExitKmh, g.higherExitKmh,
+                        g.lowerPullG, g.higherPullG, g.seconds,
+                    )
+                },
             )
         },
+        gearbox = line.gearbox,
     )
 }
 

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.gear.Gearbox
 import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapEvent
 import com.flappedear.betterdriver.timing.live.LapKind
@@ -113,6 +114,7 @@ data class CoachUpdate(val cues: List<Cue>, val results: List<CueResult>) {
  * Map tab shows, until two passes of this session beat it. Passes too weak to coach from
  * ([unusable]) are never targets.
  */
+@Suppress("TooManyFunctions")
 private class CornerBook(
     val map: CornerMap,
     initialTargets: List<CornerPass>,
@@ -130,6 +132,9 @@ private class CornerBook(
     val losses = Array(n) { ArrayDeque<Long>() }
     val cuedOnLap = IntArray(n) { NeverCued }
     private val aim = arrayOfNulls<CornerPass>(n)
+
+    /** The line plan's gear at corner [i]'s slowest point (FBBD-326), from its [aim]. */
+    fun plannedGear(i: Int): Int? = aim.getOrNull(i)?.plannedGear
     /** Each corner's two fastest passes of this session that beat its [aim]. */
     private val beaten = Array(n) { mutableListOf<CornerPass>() }
 
@@ -530,6 +535,8 @@ class CueEngine(
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
         identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m), aims = r.aims) }
     }
+    /** The car's gears from the sessions (FBBD-326), to read the gear of a pass. */
+    private val gearbox = earlier?.gearbox
     private val learningLaps =
         if (sameDay && book != null) minOf(settings.learningLaps, WarmUpLaps) else settings.learningLaps
 
@@ -623,7 +630,9 @@ class CueEngine(
         val along = position?.let { p -> cursor?.along(p) }
         if (along == null) meters.forEach(PassMeter::lost)
         if (along != null) {
-            val reading = PassReading(book?.map?.offset(position!!, along), laps.throttlePct, laps.steerDeg, position)
+            val reading = PassReading(
+                book?.map?.offset(position!!, along), laps.throttlePct, laps.steerDeg, position, laps.rpm,
+            )
             for (m in meters) {
                 val pass = m.add(along, fix.tMicros, laps.speedKmh, laps.speedMeasured, reading)
                 pass?.let { onPass(it, fix.tMicros)?.let(results::add) }
@@ -704,7 +713,7 @@ class CueEngine(
             null
         } else {
             val gain = before.timeMicros - pass.timeMicros
-            CueResult(now, cue, pass, improved(cue, before, pass), gain, confidenceOf(passDoubts(pass)))
+            CueResult(now, cue, pass, improved(cue, before, pass, gearbox), gain, confidenceOf(passDoubts(pass)))
         }
         val mayPraise = !cruising && settings.verbosity >= Verbosity.Focus && timedLaps >= learningLaps
         val b = book
@@ -868,7 +877,8 @@ class CueEngine(
         val doubts = cueDoubts(last, target, b.losses[i].toList(), unidentified)
         val confidence = confidenceOf(doubts)
         // Low: weak evidence gives no advice at all; Medium: advice without its number.
-        val asked = cornerAdvice(last, target, corner).takeIf { confidence.advises }.orEmpty()
+        val asked = cornerAdvice(last, target, corner, b.plannedGear(i), gearbox)
+            .takeIf { confidence.advises }.orEmpty()
             .map { it.withPrecision(confidence.precise) }
         val also = asked.getOrNull(1)
         return asked.firstOrNull()?.let { advice ->
@@ -934,7 +944,7 @@ private fun metresBefore(corner: Corner, brakeAt: Double): Int? =
  * Whether [after] moved the way [advice] asked, from [before]: at least half of what was asked. A line
  * cue at a corner without a turn never counts as moved.
  */
-fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean =
+fun improved(advice: Advice?, before: CornerPass, after: CornerPass, gearbox: Gearbox? = null): Boolean =
     when (advice) {
         is Advice.BrakeLater -> after.brakeAt - before.brakeAt >= advice.meters / 2.0
         is Advice.BrakeEarlier ->
@@ -945,9 +955,10 @@ fun improved(advice: Advice?, before: CornerPass, after: CornerPass): Boolean =
         is Advice.Steer -> before.steering?.let { b ->
             after.steering?.let { improvedSteering(advice.what, b, it) }
         } ?: false
+        is Advice.Gear -> improvedGear(advice.gear, after, gearbox)
         null -> after.timeMicros < before.timeMicros
     }
 
 /** Whether [after] moved the way every part of [cue] asked (UI-170 B). */
-fun improved(cue: Cue, before: CornerPass, after: CornerPass): Boolean =
-    cue.asked.ifEmpty { listOf(null) }.all { improved(it, before, after) }
+fun improved(cue: Cue, before: CornerPass, after: CornerPass, gearbox: Gearbox? = null): Boolean =
+    cue.asked.ifEmpty { listOf(null) }.all { improved(it, before, after, gearbox) }

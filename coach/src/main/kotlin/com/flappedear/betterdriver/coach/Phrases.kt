@@ -116,7 +116,8 @@ private const val TenthsPerMinute = 600L
  * one cue (UI-170 B): "Turn 1, tighter at the apex, throttle 5 after the apex". The hands on the
  * FR-S (FBBD-321, round 54): why first, then what to do (UI-270 B), "Turn 6, front slid, slower in";
  * straightening with the throttle (UI-271 B), "Turn 6, straighten 10 earlier, throttle 5 after the
- * apex"; "one smooth turn" and "rear stepped out, gentler throttle" (UI-272 A).
+ * apex"; "one smooth turn" and "rear stepped out, gentler throttle" (UI-272 A). The gear (FBBD-326,
+ * round 56) with the brake cue (UI-279 A): "Turn 7, brake at 80, 10 later, second".
  */
 @Suppress("TooManyFunctions", "CyclomaticComplexMethod") // Each phrase with its few forms.
 object Phrases : PhraseBook {
@@ -155,7 +156,12 @@ object Phrases : PhraseBook {
             SteerAdvice.Oversteer -> "rear stepped out, gentler throttle"
             is SteerAdvice.OpenEarlier -> if (a.precise) "straighten ${w.meters} earlier" else "straighten earlier"
         }
+        is Advice.Gear -> gearWord(a.gear)
     }
+
+    /** The gear by its name (UI-279 A): "Turn 7, brake at 80, second". */
+    private fun gearWord(gear: Int): String =
+        listOf("first", "second", "third", "fourth", "fifth", "sixth").getOrElse(gear - 1) { "gear $gear" }
 
     /**
      * [cue] with its target only, for a straight too short for the whole cue (FBBD-242): "Turn 3,
@@ -198,6 +204,7 @@ object Phrases : PhraseBook {
             else -> "Throttle ${-a.afterApex} m before the apex"
         }
         a is Advice.Steer -> steerLine(a.what)
+        a is Advice.Gear -> gearWord(a.gear).replaceFirstChar(Char::uppercase) + " gear"
         else -> null
     }
 
@@ -228,6 +235,7 @@ object Phrases : PhraseBook {
             "Braked ${kotlin.math.abs(by).roundToInt()} m " + if (by >= 0) "later" else "earlier"
         is Advice.CarrySpeed -> "Apex ${kotlin.math.abs(by).roundToInt()} km/h " + if (by >= 0) "faster" else "slower"
         is Advice.Steer -> "Straightened ${kotlin.math.abs(by).roundToInt()} m " + if (by >= 0) "earlier" else "later"
+        is Advice.Gear -> "In ${gearWord(a.gear)}"
     }
 
     override fun plan(turns: List<Int>): String = when (turns.size) {

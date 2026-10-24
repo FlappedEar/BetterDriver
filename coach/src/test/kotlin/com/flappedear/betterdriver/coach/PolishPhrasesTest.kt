@@ -96,8 +96,10 @@ class PolishPhrasesTest {
         assertTrue("Zakręt" in polish && "200" in polish && "hundred" !in polish, polish.toString())
         assertEquals(CueClips.vocabulary, CueClips.vocabulary(Phrases))
         assertTrue("hundred" in CueClips.vocabulary && "oh" in CueClips.vocabulary)
-        // Distinct file names, so clips never overwrite each other.
-        assertEquals(polish.size, polish.map(CueClips::fileName).toSet().size)
+        // Distinct file names, so clips never overwrite each other; a corner's name and the gear of
+        // the same word ("Dwójka", "dwójka", FBBD-326) are one word and share its clip.
+        val words = polish.map { it.lowercase() }.toSet()
+        assertEquals(words.size, polish.map(CueClips::fileName).toSet().size)
     }
 
     @Test

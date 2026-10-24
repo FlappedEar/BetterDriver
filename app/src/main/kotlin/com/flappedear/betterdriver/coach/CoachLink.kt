@@ -94,7 +94,10 @@ internal class CoachLink(
         // An OBD adapter that connects later brings its pedal channel then.
         val pedal = pedalChannelId(channels.values)
         val steering = steeringChannelId(channels.values)
-        if (pedal != reader.pedal || steering != reader.steering) reader = CoachFixReader(pedal, steering)
+        val rpm = rpmChannelId(channels.values)
+        if (pedal != reader.pedal || steering != reader.steering || rpm != reader.rpm) {
+            reader = CoachFixReader(pedal, steering, rpm)
+        }
     }
 
     override fun onSamples(set: SampleSet) {
@@ -113,6 +116,7 @@ internal class CoachLink(
                 putLong(CoachProtocol.FIX_AGE_US, fixAge?.micros ?: 0L)
                 putDouble(CoachProtocol.THROTTLE, fix.throttlePct ?: Double.NaN)
                 putDouble(CoachProtocol.STEERING, fix.steerDeg ?: Double.NaN)
+                putDouble(CoachProtocol.RPM, fix.rpm ?: Double.NaN)
             }
         }
     }

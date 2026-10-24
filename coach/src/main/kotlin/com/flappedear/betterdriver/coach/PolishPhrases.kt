@@ -48,7 +48,12 @@ object PolishPhrases : PhraseBook {
             SteerAdvice.Oversteer -> "uciekł tył, łagodniej z gazem"
             is SteerAdvice.OpenEarlier -> if (a.precise) "prostuj ${w.meters} wcześniej" else "prostuj wcześniej"
         }
+        // Round 56 (FBBD-326): UI-279 A "Siódemka, hamuj na 80, dwójka".
+        is Advice.Gear -> gearWord(a.gear)
     }
+
+    private fun gearWord(gear: Int): String =
+        listOf("jedynka", "dwójka", "trójka", "czwórka", "piątka", "szóstka").getOrElse(gear - 1) { "bieg $gear" }
 
     override fun shortCorner(cue: Cue): String? {
         val a = cue.advice
@@ -76,6 +81,7 @@ object PolishPhrases : PhraseBook {
             else -> "Gaz ${-a.afterApex} m przed apeksem"
         }
         a is Advice.Steer -> steerLine(a.what)
+        a is Advice.Gear -> gearWord(a.gear).replaceFirstChar(Char::uppercase)
         else -> null
     }
 
@@ -105,6 +111,7 @@ object PolishPhrases : PhraseBook {
             "Hamowanie ${abs(by).roundToInt()} m " + if (by >= 0) "później" else "wcześniej"
         is Advice.CarrySpeed -> "Apeks ${abs(by).roundToInt()} km/h " + if (by >= 0) "szybciej" else "wolniej"
         is Advice.Steer -> "Prostowanie ${abs(by).roundToInt()} m " + if (by >= 0) "wcześniej" else "później"
+        is Advice.Gear -> "Na " + GearOn.getOrElse(a.gear - 1) { "biegu ${a.gear}" }
     }
 
     /** "Dzisiaj, Dziewiątka, Jedynka, Czwórka" (UI-174 A). */
@@ -163,3 +170,6 @@ object PolishPhrases : PhraseBook {
     private val Few = 2..4
     private val Teens = 12..14
 }
+
+/** The gears as "na dwójce" says them (FBBD-326). */
+private val GearOn = listOf("jedynce", "dwójce", "trójce", "czwórce", "piątce", "szóstce")

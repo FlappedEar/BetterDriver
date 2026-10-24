@@ -35,6 +35,7 @@ class LapCollector(track: Track) {
     private val measuredSpeeds = mutableListOf<Boolean>()
     private val throttles = mutableListOf<Double?>()
     private val steers = mutableListOf<Double?>()
+    private val rpms = mutableListOf<Double?>()
 
     /** Position of the last fix in [frame], and its speed in km/h. */
     var position: Xy? = null
@@ -54,6 +55,10 @@ class LapCollector(track: Track) {
     var steerDeg: Double? = null
         private set
 
+    /** The engine speed at the last fix (FBBD-326), null without a recent one. */
+    var rpm: Double? = null
+        private set
+
     /** Laps finished by [fix]; a lap whose start was not at the line has no usable path and is left out. */
     fun update(fix: CoachFix): List<LapEvent> {
         val p = frame.toXy(fix.lat, fix.lon)
@@ -69,6 +74,7 @@ class LapCollector(track: Track) {
         speedKmh = kmh
         throttlePct = fix.throttlePct?.takeIf { it.isFinite() }
         steerDeg = fix.steerDeg?.takeIf { it.isFinite() }
+        rpm = fix.rpm?.takeIf { it.isFinite() }
         val events = timer.update(fix.toFix())
         finished.clear()
         for (e in events) if (e is LapEvent.LapDone) onLapDone(e.lap, kmh)
@@ -79,6 +85,7 @@ class LapCollector(track: Track) {
             measuredSpeeds += speedMeasured
             throttles += throttlePct
             steers += steerDeg
+            rpms += rpm
         }
         return events
     }
@@ -99,6 +106,8 @@ class LapCollector(track: Track) {
                     ?.let { t -> listOf(t.first()) + t + throttlePct },
                 steers.takeIf { t -> t.any { it != null } }
                     ?.let { t -> listOf(t.first()) + t + steerDeg },
+                rpms.takeIf { t -> t.any { it != null } }
+                    ?.let { t -> listOf(t.first()) + t + rpm },
             )
             finished += TracedLap(lap, trace)
         }
@@ -109,6 +118,7 @@ class LapCollector(track: Track) {
         measuredSpeeds.clear()
         throttles.clear()
         steers.clear()
+        rpms.clear()
     }
 
     private fun derivedKmh(p: Xy, t: Long): Double {
