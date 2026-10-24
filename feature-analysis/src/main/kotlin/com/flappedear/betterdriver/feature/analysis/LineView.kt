@@ -26,6 +26,10 @@ import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 const val LineViewTag = "line-view"
 const val LineRowTagPrefix = "line-row-"
 
+/** Test tag of the braking points beyond your best (FBBD-312), and the group's title. */
+const val BeyondGroupTag = "line-beyond"
+const val BeyondGroupText = "Beyond your best · your braking elsewhere"
+
 /**
  * "Where to find time" in the Map tab (FBBD-306; UI-164 A, UI-165 C, UI-166 A, UI-167 B): the
  * whole lap with time to find per corner and a list ranked by it; tapping a corner zooms the map to
@@ -92,6 +96,13 @@ private fun LineSide(ui: LineUi, corner: LineCornerUi?, pick: (String?) -> Unit,
                     "Tap a corner to see what to do.",
             )
             for (row in ui.ranked) LineRow(row) { pick(row.tag) }
+            // Under the driven targets, as their own group (UI-274 A).
+            if (ui.beyond.isNotEmpty()) {
+                TrackLabel(BeyondGroupText, Modifier.padding(top = 8.dp).testTag(BeyondGroupTag))
+                for (row in ui.beyond) BeyondRow(row, row.beyond!!) { pick(row.tag) }
+            }
+        } else if (corner.beyond != null) {
+            BeyondDetail(corner, corner.beyond) { pick(null) }
         } else {
             Text("‹ All corners", Modifier.clickable { pick(null) }.padding(vertical = 4.dp), color = accent)
             Row(verticalAlignment = Alignment.Bottom) {
@@ -114,6 +125,48 @@ private fun LineSide(ui: LineUi, corner: LineCornerUi?, pick: (String?) -> Unit,
             corner.wheel?.let { WheelChart(it, Modifier.padding(top = 8.dp)) }
         }
         Dim("Lines closer than 1.5 m are treated as the same line: the RaceBox repeats a line to about that.")
+    }
+}
+
+@Composable
+private fun BeyondDetail(corner: LineCornerUi, beyond: BeyondUi, back: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    Text("‹ All corners", Modifier.clickable(onClick = back).padding(vertical = 4.dp), color = accent)
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text(
+            corner.tag,
+            Modifier.weight(1f),
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+        )
+        Text("about ${seconds(beyond.seconds)} s", color = accent, fontWeight = FontWeight.Bold)
+    }
+    Dim("Your best lap is as quick as your target here. Beyond your best: your braking elsewhere says there is more.")
+    Row {
+        Text("›", color = accent)
+        Spacer(Modifier.width(8.dp))
+        Text(beyond.todo)
+    }
+    Dim(beyond.why)
+}
+
+@Composable
+private fun BeyondRow(row: LineCornerUi, beyond: BeyondUi, onClick: () -> Unit) {
+    val accent = MaterialTheme.colorScheme.primary
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .testTag(LineRowTagPrefix + row.tag)
+            .padding(vertical = 6.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Text(row.tag, Modifier.width(56.dp), fontWeight = FontWeight.Bold)
+        Column(Modifier.weight(1f)) {
+            Text(beyond.todo)
+            Dim(beyond.why)
+        }
+        Text("≈ ${seconds(beyond.seconds)}", color = accent, fontWeight = FontWeight.Bold)
     }
 }
 

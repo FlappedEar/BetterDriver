@@ -67,4 +67,22 @@ class PlanAimTest {
         // Beaten once only, the plan's pass stays the aim.
         assertTrue(corner2Cues(planned, early2, steady, early2, early2, early2, early2).isEmpty())
     }
+
+    @Test
+    fun `a braking point beyond his best is asked for as a brake cue, the step only`() {
+        val reference = reference(steady, steady, steady)
+        val own = assertNotNull(reference.targets.firstOrNull { it.corner == 2 })
+        // Driving as he did, against his own pass, gets nothing.
+        assertTrue(corner2Cues(reference.copy(aims = listOf(own)), steady, steady, steady, steady).isEmpty())
+        // The same pass braking 10 m later and 0.2 s faster (UI-276 B): "brake 10 later", nothing more.
+        val later = own.brakingLater(10, 0.2)
+        assertEquals(own.brakeAt + 10, later.brakeAt, 1e-9)
+        assertEquals(own.timeMicros - 200_000, later.timeMicros)
+        val cues = corner2Cues(reference.copy(aims = listOf(later)), steady, steady, steady, steady)
+        assertTrue(cues.isNotEmpty())
+        cues.forEach { assertEquals(10, (it.advice as Advice.BrakeLater).meters, "$cues") }
+        assertTrue(cues.all { it.also == null }, "$cues")
+        // No step, no change.
+        assertTrue(own.brakingLater(0, 0.2) === own)
+    }
 }

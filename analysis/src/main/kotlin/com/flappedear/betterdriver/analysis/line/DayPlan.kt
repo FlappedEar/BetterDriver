@@ -60,7 +60,11 @@ fun dayPlan(
         analysis.sessions.sumOf { it.laps },
         analysis.sessions.size,
     )
-    val plan = linePlan(line, analysis.origin, trackId, lastSessionId, lastStartUtcMillis, analysis.identityRevision)
+    // No braking points beyond his best (FBBD-312): the day's focus is the corners a typical lap
+    // loses, as the day's page shows them.
+    val plan = linePlan(
+        line, analysis.origin, trackId, lastSessionId, lastStartUtcMillis, analysis.identityRevision, beyond = null,
+    )
     return DayPlan(
         trackId = trackId,
         day = day,

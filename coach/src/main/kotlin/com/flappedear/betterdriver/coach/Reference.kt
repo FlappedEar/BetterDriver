@@ -78,14 +78,27 @@ class SessionLaps(val sessionId: String, val laps: List<TracedLap>)
 fun CoachReference.aim(corner: Int): CornerPass? =
     aims.firstOrNull { it.corner == corner } ?: targets.filter { it.corner == corner }.getOrNull(ConfirmingPasses - 1)
 
-/** In the line plan of [cornerId], the target lap: session [sessionId]'s lap timed at [lapSeconds] (FBBD-306). */
-class PlannedTarget(val cornerId: String, val sessionId: String, val lapSeconds: Double)
+/**
+ * In the line plan of [cornerId], the target lap: session [sessionId]'s lap timed at [lapSeconds] (FBBD-306).
+ * Where the plan has a braking point beyond his best (FBBD-312), the aim brakes [brakeLaterMeters]
+ * later than that lap did and is [brakeLaterSeconds] faster, so the coach asks for the step.
+ */
+class PlannedTarget(
+    val cornerId: String,
+    val sessionId: String,
+    val lapSeconds: Double,
+    val brakeLaterMeters: Int = 0,
+    val brakeLaterSeconds: Double = 0.0,
+)
 
 /** The targets of a track's line plan, made from session [sessionId] (FBBD-306). */
 class PlannedTargets(val sessionId: String, val targets: List<PlannedTarget>) {
     /** The same for the same session and targets. */
     val key: String
-        get() = sessionId + targets.joinToString("") { "|${it.cornerId}=${it.sessionId}@${it.lapSeconds}" }
+        get() = sessionId + targets.joinToString("") { t ->
+            val later = if (t.brakeLaterMeters > 0) "+${t.brakeLaterMeters}" else ""
+            "|${t.cornerId}=${t.sessionId}@${t.lapSeconds}$later"
+        }
 }
 
 /** The analysis and the coach time a lap from the same fixes, apart by at most this. */
@@ -132,7 +145,8 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
 
 /**
  * The passes [plan] aims at, measured on [map]: in every corner of a planned CornerId, the pass of
- * the planned lap, when that lap is one of [timed] and the pass is not too weak to coach from.
+ * the planned lap, when that lap is one of [timed] and the pass is not too weak to coach from; at a
+ * braking corner with a braking point beyond his best, that pass braking later ([beyond]).
  */
 private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: PlannedTargets): List<CornerPass> =
     plan.targets.flatMap { p ->
@@ -145,8 +159,22 @@ private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: Pla
             emptyList()
         } else {
             map.passes(lap.trace, lap.lap.number).filter { it.corner in numbers && !it.unusable() }
+                .map { pass ->
+                    val braked = map.corners.getOrNull(pass.corner - 1)?.braked == true
+                    if (braked) pass.brakingLater(p.brakeLaterMeters, p.brakeLaterSeconds) else pass
+                }
         }
     }.distinctBy { it.corner }.sortedBy { it.corner }
+
+/**
+ * This pass braking [meters] later and [seconds] faster to the apex (FBBD-312): a braking point
+ * beyond his best as an aim, so the coach asks for it as any brake cue. As it is without either.
+ */
+internal fun CornerPass.brakingLater(meters: Int, seconds: Double): CornerPass {
+    if (meters <= 0 || seconds <= 0.0) return this
+    val faster = (seconds * MicrosPerSecond).roundToLong()
+    return copy(brakeAt = brakeAt + meters, timeMicros = timeMicros - faster, apexMicros = apexMicros?.minus(faster))
+}
 
 private const val MicrosPerSecond = 1_000_000.0
 

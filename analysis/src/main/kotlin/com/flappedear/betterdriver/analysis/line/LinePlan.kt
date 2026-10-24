@@ -14,6 +14,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.IOException
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // The line plan (FBBD-306, Confluence "Getting faster loop"): what the line analysis found at a
 // track, kept so every part of the loop says the same. The Map tab shows it, the coach says it on
@@ -79,6 +80,24 @@ data class PlanCorner(
     val roadRight: List<PlanPoint> = emptyList(),
     /** The session's fastest pass through the corner from any of its laps: what the next one is measured against. */
     val sessionBestSeconds: Double? = null,
+    /** Beyond his own best (FBBD-312): a braking point to move where the target has nothing left; null without. */
+    val brakeRoom: PlanBrakeRoom? = null,
+)
+
+/**
+ * [BrakeRoom] as kept (FBBD-312): brake [laterMeters] later than the target, worth about [seconds];
+ * braking at [trackG] all the way would be [fullLaterMeters] later and [fullSeconds]. [peakG] is
+ * the target's braking here, [trackCorners] the corners that set [trackG].
+ */
+@Serializable
+data class PlanBrakeRoom(
+    val laterMeters: Int,
+    val seconds: Double,
+    val fullLaterMeters: Int,
+    val fullSeconds: Double,
+    val peakG: Double,
+    val trackG: Double,
+    val trackCorners: List<String> = emptyList(),
 )
 
 /** [CornerAdvice] as kept: along-track metres target minus reference (positive later), tighter positive. */
@@ -128,11 +147,17 @@ data class LinePlan(
 
     /**
      * What to work on next (FBBD-20, FBBD-310): the corners with time to find and something to do
-     * differently, most time first, at most [count]. The coach, the summary and the proof in the
-     * next session all take the focus from here.
+     * differently, most time first, at most [count]. Places left over go to the braking points
+     * beyond his best, most time first (FBBD-312, UI-277 A): a driven target is surer than an
+     * estimate from other corners. The coach, the summary and the proof in the next session all take
+     * the focus from here.
      */
-    fun focus(count: Int = FocusCorners): List<PlanCorner> =
-        ranked.filter { it.gainSeconds > 0.0 && it.advice.any }.take(count)
+    fun focus(count: Int = FocusCorners): List<PlanCorner> {
+        val driven = ranked.filter { it.gainSeconds > 0.0 && it.advice.any }.take(count)
+        val room = corners.filter { it.brakeRoom != null && it !in driven }
+            .sortedByDescending { it.brakeRoom!!.seconds }
+        return (driven + room).take(count)
+    }
 
     /**
      * The perfect lap: the target through every corner one after the other. The corners' windows
@@ -185,7 +210,8 @@ data class PerfectPiece(
 /**
  * [line] as the plan of [trackId], from session [sessionId] started at [startUtcMillis]; positions
  * from [origin], the analysed session's axis origin. [identityRevision] only when the analysis's
- * corners are the track's (SessionAnalysis.identified), so the corner ids are CornerIds.
+ * corners are the track's (SessionAnalysis.identified), so the corner ids are CornerIds. [beyond]
+ * gives the braking points beyond his best (FBBD-312).
  */
 @Suppress("LongParameterList") // What the plan says where it came from.
 fun linePlan(
@@ -195,6 +221,7 @@ fun linePlan(
     sessionId: String,
     startUtcMillis: Long,
     identityRevision: Int?,
+    beyond: BeyondBest? = line.beyondBest(),
 ): LinePlan {
     fun point(p: LinePoint): PlanPoint {
         val at = unprojectCoordinate(p.eastMeters, p.northMeters, origin)
@@ -249,8 +276,18 @@ fun linePlan(
                 roadLeft = c.road.map { edge(it.leftMeters, it.left, it.progressMeters) },
                 roadRight = c.road.map { edge(it.rightMeters, it.right, it.progressMeters) },
                 sessionBestSeconds = c.sessionBestSeconds,
+                brakeRoom = beyond?.let { b -> planBrakeRoom(b, c.segmentId) },
             )
         },
+    )
+}
+
+private fun planBrakeRoom(beyond: BeyondBest, segmentId: String): PlanBrakeRoom? {
+    val room = beyond.corners.firstOrNull { it.segmentId == segmentId }?.brake ?: return null
+    val step = room.laterMeters.roundToInt()
+    return PlanBrakeRoom(
+        step, room.seconds, maxOf(step, room.fullLaterMeters.roundToInt()), room.fullSeconds,
+        room.peakG, room.trackG, beyond.limits.brakeCorners,
     )
 }
 
