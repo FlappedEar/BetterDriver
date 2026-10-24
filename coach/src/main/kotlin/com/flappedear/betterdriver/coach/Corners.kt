@@ -12,6 +12,7 @@ import kotlin.math.hypot
  * (FBBD-177); null when not known (a stored reference path). [throttlesPct] is the pedal at each point
  * in percent (FBBD-307), null at a point without a recent one, and null for a trace without any.
  */
+@Suppress("LongParameterList") // A reading of each channel at each point.
 class LapTrace(
     val points: List<Xy>,
     val timesMicros: List<Long>,
@@ -20,12 +21,15 @@ class LapTrace(
     val throttlesPct: List<Double?>? = null,
     /** The steering wheel at each point in degrees, positive left (FBBD-321); null without it. */
     val steersDeg: List<Double?>? = null,
+    /** The engine speed at each point (FBBD-326); null without it. */
+    val rpms: List<Double?>? = null,
 ) {
     init {
         require(points.size == timesMicros.size && points.size == speedsKmh.size) { "trace arrays differ in size" }
         require(speedsMeasured == null || speedsMeasured.size == points.size) { "trace arrays differ in size" }
         require(throttlesPct == null || throttlesPct.size == points.size) { "trace arrays differ in size" }
         require(steersDeg == null || steersDeg.size == points.size) { "trace arrays differ in size" }
+        require(rpms == null || rpms.size == points.size) { "trace arrays differ in size" }
         require(points.size >= 2) { "a trace needs at least two points" }
     }
 

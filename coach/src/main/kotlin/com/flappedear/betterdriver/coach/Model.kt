@@ -21,6 +21,8 @@ data class CoachFix(
     val throttlePct: Double? = null,
     /** The steering wheel in degrees, positive left (FBBD-321); null without a recent one. */
     val steerDeg: Double? = null,
+    /** The engine speed (FBBD-326); null without a recent one. */
+    val rpm: Double? = null,
 ) {
     fun toFix() = Fix(tMicros, lat, lon)
 }
@@ -118,6 +120,10 @@ data class CornerPass(
      * so a step shorter than [BrakeToleranceMeters] is still asked for; 0 for a driven pass.
      */
     val plannedBrakeLaterMeters: Int = 0,
+    /** The engine speed at the slowest point (FBBD-326); null without it, or in a pass stored before. */
+    val apexRpm: Double? = null,
+    /** As an aim, the gear the line plan asks for at the slowest point (FBBD-326); null for none. */
+    val plannedGear: Int? = null,
 )
 
 /** How much the coach says (FBBD-27). */
@@ -255,6 +261,13 @@ sealed interface Advice {
      */
     data class Steer(val what: SteerAdvice, override val precise: Boolean = true) : Advice
 
+    /**
+     * Which gear to be in at the corner (FBBD-326), from the line plan: the car pulls harder in
+     * [gear] from the slowest point than in the one the last pass was in. Said with the brake cue
+     * (UI-279 A): "Turn 7, brake at 80, second"; Arek shifts with the paddles in M (UI-278 A).
+     */
+    data class Gear(val gear: Int, override val precise: Boolean = true) : Advice
+
     /** The same advice, said with its numbers only when [precise]. */
     fun withPrecision(precise: Boolean): Advice = when (this) {
         is BrakeLater -> copy(precise = precise)
@@ -263,6 +276,7 @@ sealed interface Advice {
         is Line -> copy(precise = precise)
         is Throttle -> copy(precise = precise)
         is Steer -> copy(precise = precise)
+        is Gear -> copy(precise = precise)
     }
 
     /**
@@ -272,7 +286,7 @@ sealed interface Advice {
     fun brakeAnchor(before: CornerPass): Double? = when (this) {
         is BrakeLater -> at?.let { before.brakeAt + meters + it }
         is BrakeEarlier -> at?.let { at -> meters?.let { before.brakeAt - it + at } }
-        is CarrySpeed, is Line, is Throttle, is Steer -> null
+        is CarrySpeed, is Line, is Throttle, is Steer, is Gear -> null
     }
 }
 

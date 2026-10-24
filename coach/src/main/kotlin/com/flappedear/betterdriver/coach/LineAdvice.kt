@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.gear.Gearbox
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.steeringAdvice
 import kotlin.math.abs
@@ -97,6 +98,27 @@ fun steerChange(pass: CornerPass, target: CornerPass, corner: Corner): List<Stee
     return steeringAdvice(p, t, tighterBy(pass, target, corner.turn))
 }
 
+/**
+ * The gear to be in at the slowest point of a corner (FBBD-326, UI-279 A): [plannedGear], the line
+ * plan's, when [pass] was in a higher one there by [gearbox]. Not tied to a time lost: the gear comes
+ * from how hard the car pulls in each gear, not from a pass he drove. Null without the engine speed.
+ */
+@Suppress("ReturnCount")
+fun gearChange(pass: CornerPass, plannedGear: Int?, gearbox: Gearbox?): Int? {
+    val rpm = pass.apexRpm
+    if (plannedGear == null || gearbox == null || rpm == null) return null
+    val now = gearbox.gearAt(rpm, pass.minKmh / KmhPerMps) ?: return null
+    return plannedGear.takeIf { now > it }
+}
+
+/** Whether [after] was in [gear] or lower at the slowest point, by [gearbox], as [improved]. */
+fun improvedGear(gear: Int, after: CornerPass, gearbox: Gearbox?): Boolean {
+    val now = after.apexRpm?.let { gearbox?.gearAt(it, after.minKmh / KmhPerMps) }
+    return now != null && now <= gear
+}
+
+private const val KmhPerMps = 3.6
+
 /** At most this many things to change are said in one corner cue (UI-170 B). */
 const val MaxAdvicePerCue = 2
 
@@ -111,9 +133,16 @@ const val MaxAdvicePerCue = 2
  * throttle" against "throttle earlier"). With more than two, the half of the corner that lost more
  * time against [target] is kept: before the apex the entry and the apex, after it the exit, or the
  * apex and the first of the exit. Without the time to the apex on both passes, the first two.
+ * The gear ([gearChange], FBBD-326) goes with the entry, as "Turn 7, brake at 80, second" (UI-279 A).
  */
 @Suppress("CyclomaticComplexMethod") // Each kind of advice with its place in the corner.
-fun cornerAdvice(pass: CornerPass, target: CornerPass, corner: Corner): List<Advice> {
+fun cornerAdvice(
+    pass: CornerPass,
+    target: CornerPass,
+    corner: Corner,
+    plannedGear: Int? = null,
+    gearbox: Gearbox? = null,
+): List<Advice> {
     val steer = steerChange(pass, target, corner)
     val slid = SteerAdvice.Less in steer
     val smoother = Advice.Steer(SteerAdvice.Smoother).takeIf { SteerAdvice.Smoother in steer }
@@ -131,7 +160,8 @@ fun cornerAdvice(pass: CornerPass, target: CornerPass, corner: Corner): List<Adv
             pickupChange(pass, target)?.let { Advice.Throttle(it, afterApex = pickupAfterApex(target)) },
         )
     }
-    val all = listOfNotNull(entry, apex) + exit
+    val gear = gearChange(pass, plannedGear, gearbox)?.let { Advice.Gear(it) }
+    val all = listOfNotNull(entry, gear, apex) + exit
     val a = pass.apexMicros
     val b = target.apexMicros
     return when {
@@ -139,6 +169,6 @@ fun cornerAdvice(pass: CornerPass, target: CornerPass, corner: Corner): List<Adv
         a == null || b == null -> all.take(MaxAdvicePerCue)
         a - b >= (pass.timeMicros - a) - (target.timeMicros - b) -> all.take(MaxAdvicePerCue)
         exit.size == MaxAdvicePerCue -> exit
-        else -> listOfNotNull(apex, exit.firstOrNull()).take(MaxAdvicePerCue)
+        else -> listOfNotNull(gear ?: apex, exit.firstOrNull()).take(MaxAdvicePerCue)
     }
 }

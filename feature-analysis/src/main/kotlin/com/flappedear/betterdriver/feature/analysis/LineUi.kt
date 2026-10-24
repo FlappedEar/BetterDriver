@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.analysis.line.PerfectLapScene
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.PlanBrakeRoom
 import com.flappedear.betterdriver.analysis.line.PlanCorner
+import com.flappedear.betterdriver.analysis.line.PlanGear
 import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.analysis.line.perfectLapScene
@@ -50,7 +51,15 @@ data class LineCornerUi(
     val wheel: WheelTrace? = null,
     /** A braking point beyond your best (FBBD-312); null without one. */
     val beyond: BeyondUi? = null,
+    /** A lower gear at the slowest point (FBBD-326); null without one. */
+    val gear: GearUi? = null,
 )
+
+/**
+ * A lower gear at the slowest point (FBBD-326), worded as Arek picked on the UI review page, round
+ * 56 (UI-280 A: the gear and the reason in his own laps): [todo] says it, [why] in his own numbers.
+ */
+data class GearUi(val todo: String, val why: String)
 
 /**
  * A braking point beyond your best (FBBD-312), worded as Arek picked on the UI review page, round
@@ -134,6 +143,7 @@ fun lineUi(plan: LinePlan, sessionId: String): LineUi? {
                     ?: reference.getOrNull(reference.size / 2),
                 wheel = wheelTrace(c, ::dots),
                 beyond = c.brakeRoom?.let(::beyondUi),
+                gear = c.gear?.let(::gearUi),
             )
         },
         scene = perfectLapScene(plan),
@@ -157,6 +167,30 @@ fun beyondUi(room: PlanBrakeRoom): BeyondUi {
         if (whole) " Braking that hard all the way is worth about ${seconds(room.fullSeconds)} s." else ""
     return BeyondUi(room.seconds, todo, why)
 }
+
+/**
+ * [gear] in words (UI-280 A): "2nd at the apex", and why: "You were in 3rd on 5 of 12 laps here.
+ * In 2nd you are at 92 km/h 100 m later, in 3rd at 84." Without the speeds in both gears, how hard
+ * each pulls at full throttle at the apex speed.
+ */
+fun gearUi(gear: PlanGear): GearUi {
+    val lower = ordinal(gear.gear)
+    val higher = ordinal(gear.from)
+    val laps = "You were in $higher on ${gear.higherLaps} of ${gear.laps} laps here."
+    val low = gear.lowerExitKmh
+    val high = gear.higherExitKmh
+    val reason = if (low != null && high != null) {
+        "In $lower you are at ${low.roundToInt()} km/h 100 m later, in $higher at ${high.roundToInt()}."
+    } else {
+        val g = { v: Double -> String.format(Locale.ROOT, "%.2f g", v) }
+        "At ${gear.apexKmh.roundToInt()} km/h on full throttle $lower pulls ${g(gear.lowerPullG)}, " +
+            "$higher ${g(gear.higherPullG)}."
+    }
+    return GearUi("$lower at the apex", "$laps $reason")
+}
+
+/** "1st", "2nd", "3rd", "4th" and on. */
+private fun ordinal(n: Int) = n.toString() + (listOf("st", "nd", "rd").getOrNull(n - 1) ?: "th")
 
 /** What to do differently through [corner], in words (UI-166 A); one line saying so when nothing. */
 @Suppress("ReturnCount")

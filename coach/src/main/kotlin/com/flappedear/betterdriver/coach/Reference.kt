@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.timing.gear.Gearbox
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.track.Track
 import kotlinx.serialization.SerializationException
@@ -52,6 +53,8 @@ data class CoachReference(
      * the second fastest of [targets].
      */
     val aims: List<CornerPass> = emptyList(),
+    /** The car's gears from the sessions (FBBD-326), to read the gear of a pass; null without engine speed. */
+    val gearbox: Gearbox? = null,
 ) {
     fun path() = LapTrace(xs.indices.map { Xy(xs[it], ys[it]) }, timesMicros, speedsKmh)
 
@@ -65,9 +68,10 @@ data class CoachReference(
         /**
          * 2: two targets per corner (FBBD-177). 3: passes carry their line at the apex and their
          * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). 5: passes carry their time to
-         * the apex (UI-170 B). An older file is rebuilt from the sessions.
+         * the apex (UI-170 B). 6: aims carry the plan's gear and the reference the gearbox (FBBD-326).
+         * An older file is rebuilt from the sessions.
          */
-        const val Version = 5
+        const val Version = 6
     }
 }
 
@@ -82,6 +86,7 @@ fun CoachReference.aim(corner: Int): CornerPass? =
  * In the line plan of [cornerId], the target lap: session [sessionId]'s lap timed at [lapSeconds] (FBBD-306).
  * Where the plan has a braking point beyond his best (FBBD-312), the aim brakes [brakeLaterMeters]
  * later than that lap did and is [brakeLaterSeconds] faster, so the coach asks for the step.
+ * [gear] is the plan's gear at the slowest point (FBBD-326), asked for with the brake cue.
  */
 class PlannedTarget(
     val cornerId: String,
@@ -89,15 +94,17 @@ class PlannedTarget(
     val lapSeconds: Double,
     val brakeLaterMeters: Int = 0,
     val brakeLaterSeconds: Double = 0.0,
+    val gear: Int? = null,
 )
 
 /** The targets of a track's line plan, made from session [sessionId] (FBBD-306). */
-class PlannedTargets(val sessionId: String, val targets: List<PlannedTarget>) {
+class PlannedTargets(val sessionId: String, val targets: List<PlannedTarget>, val gearbox: Gearbox? = null) {
     /** The same for the same session and targets. */
     val key: String
         get() = sessionId + targets.joinToString("") { t ->
             val later = if (t.brakeLaterMeters > 0) "+${t.brakeLaterMeters}" else ""
-            "|${t.cornerId}=${t.sessionId}@${t.lapSeconds}$later"
+            val gear = t.gear?.let { "/$it" }.orEmpty()
+            "|${t.cornerId}=${t.sessionId}@${t.lapSeconds}$later$gear"
         }
 }
 
@@ -140,6 +147,7 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
         planSession = plan?.sessionId,
         planKey = plan?.key,
         aims = aims,
+        gearbox = plan?.gearbox,
     )
 }
 
@@ -161,7 +169,8 @@ private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: Pla
             map.passes(lap.trace, lap.lap.number).filter { it.corner in numbers && !it.unusable() }
                 .map { pass ->
                     val braked = map.corners.getOrNull(pass.corner - 1)?.braked == true
-                    if (braked) pass.brakingLater(p.brakeLaterMeters, p.brakeLaterSeconds) else pass
+                    (if (braked) pass.brakingLater(p.brakeLaterMeters, p.brakeLaterSeconds) else pass)
+                        .copy(plannedGear = p.gear)
                 }
         }
     }.distinctBy { it.corner }.sortedBy { it.corner }
