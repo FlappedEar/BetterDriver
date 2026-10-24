@@ -113,6 +113,11 @@ data class CornerPass(
      * it, at a corner without a turn, or for a pass stored before it was measured.
      */
     val steering: SteeringPass? = null,
+    /**
+     * As an aim, a braking point beyond his best (FBBD-312): the pass moved this many metres later,
+     * so a step shorter than [BrakeToleranceMeters] is still asked for; 0 for a driven pass.
+     */
+    val plannedBrakeLaterMeters: Int = 0,
 )
 
 /** How much the coach says (FBBD-27). */

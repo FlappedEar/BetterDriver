@@ -173,7 +173,12 @@ private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: Pla
 internal fun CornerPass.brakingLater(meters: Int, seconds: Double): CornerPass {
     if (meters <= 0 || seconds <= 0.0) return this
     val faster = (seconds * MicrosPerSecond).roundToLong()
-    return copy(brakeAt = brakeAt + meters, timeMicros = timeMicros - faster, apexMicros = apexMicros?.minus(faster))
+    return copy(
+        brakeAt = brakeAt + meters,
+        timeMicros = timeMicros - faster,
+        apexMicros = apexMicros?.minus(faster),
+        plannedBrakeLaterMeters = meters,
+    )
 }
 
 private const val MicrosPerSecond = 1_000_000.0

@@ -82,6 +82,10 @@ class PlanAimTest {
         assertTrue(cues.isNotEmpty())
         cues.forEach { assertEquals(10, (it.advice as Advice.BrakeLater).meters, "$cues") }
         assertTrue(cues.all { it.also == null }, "$cues")
+        // A 5 m step, under the 8 m two passes count as the same, is asked for too.
+        val five = corner2Cues(reference.copy(aims = listOf(own.brakingLater(5, 0.1))), steady, steady, steady, steady)
+        assertTrue(five.isNotEmpty())
+        five.forEach { assertEquals(5, (it.advice as Advice.BrakeLater).meters, "$five") }
         // No step, no change.
         assertTrue(own.brakingLater(0, 0.2) === own)
     }
