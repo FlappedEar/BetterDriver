@@ -228,7 +228,8 @@ class GettingFasterLoopTest {
             )
         }
         return picks to corners.associate { c ->
-            c.cornerId!! to (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gainSeconds)
+            c.cornerId!! to
+                (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gear?.seconds ?: c.gainSeconds)
         }
     }
 
@@ -239,10 +240,11 @@ class GettingFasterLoopTest {
             c.cornerId?.let {
                 PlannedTarget(
                     it, c.target.sessionId, c.target.lapSeconds,
-                    c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0,
+                    c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0, c.gear?.gear,
                 )
             }
         },
+        plan.gearbox,
     )
 
     private fun loop(files: List<String>, track: Track): Pair<List<Step>, List<Turn>> {

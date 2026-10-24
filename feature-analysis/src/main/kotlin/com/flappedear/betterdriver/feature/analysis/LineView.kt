@@ -30,6 +30,9 @@ const val LineRowTagPrefix = "line-row-"
 const val BeyondGroupTag = "line-beyond"
 const val BeyondGroupText = "Beyond your best · your braking elsewhere"
 
+/** Test tag of a corner's gear line (FBBD-326). */
+const val GearLineTag = "line-gear"
+
 /**
  * "Where to find time" in the Map tab (FBBD-306; UI-164 A, UI-165 C, UI-166 A, UI-167 B): the
  * whole lap with time to find per corner and a list ranked by it; tapping a corner zooms the map to
@@ -103,6 +106,7 @@ private fun LineSide(ui: LineUi, corner: LineCornerUi?, pick: (String?) -> Unit,
             }
         } else if (corner.beyond != null) {
             BeyondDetail(corner, corner.beyond) { pick(null) }
+            corner.gear?.let { GearLines(it) }
         } else {
             Text("‹ All corners", Modifier.clickable { pick(null) }.padding(vertical = 4.dp), color = accent)
             Row(verticalAlignment = Alignment.Bottom) {
@@ -122,6 +126,7 @@ private fun LineSide(ui: LineUi, corner: LineCornerUi?, pick: (String?) -> Unit,
                     Text(line)
                 }
             }
+            corner.gear?.let { GearLines(it) }
             corner.wheel?.let { WheelChart(it, Modifier.padding(top = 8.dp)) }
         }
         Dim("Lines closer than 1.5 m are treated as the same line: the RaceBox repeats a line to about that.")
@@ -165,9 +170,22 @@ private fun BeyondRow(row: LineCornerUi, beyond: BeyondUi, onClick: () -> Unit) 
         Column(Modifier.weight(1f)) {
             Text(beyond.todo)
             Dim(beyond.why)
+            row.gear?.let { Text(it.todo) }
         }
         Text("≈ ${seconds(beyond.seconds)}", color = accent, fontWeight = FontWeight.Bold)
     }
+}
+
+/** The gear at the slowest point (UI-280 A), as one more thing to do, with its reason under it. */
+@Composable
+private fun GearLines(gear: GearUi) {
+    val accent = MaterialTheme.colorScheme.primary
+    Row(Modifier.testTag(GearLineTag)) {
+        Text("›", color = accent)
+        Spacer(Modifier.width(8.dp))
+        Text(gear.todo)
+    }
+    Dim(gear.why)
 }
 
 private fun sessionsText(n: Int) = if (n == 1) "1 session" else "$n sessions"
@@ -186,7 +204,7 @@ private fun LineRow(row: LineCornerUi, onClick: () -> Unit) {
     ) {
         Text(row.tag, Modifier.width(56.dp), fontWeight = FontWeight.Bold)
         Column(Modifier.weight(1f)) {
-            val shown = if (row.gainSeconds > 0.0) row.todo else emptyList()
+            val shown = (if (row.gainSeconds > 0.0) row.todo else emptyList()) + listOfNotNull(row.gear?.todo)
             if (shown.isEmpty()) Dim("Nothing to find") else shown.forEach { Text(it) }
         }
         Text(

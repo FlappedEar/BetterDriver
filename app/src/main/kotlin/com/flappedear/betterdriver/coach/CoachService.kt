@@ -196,6 +196,7 @@ class CoachService : Service() {
             data.getLong(CoachProtocol.FIX_AGE_US, 0L),
             data.getDouble(CoachProtocol.THROTTLE, Double.NaN).takeUnless { it.isNaN() },
             data.getDouble(CoachProtocol.STEERING, Double.NaN).takeUnless { it.isNaN() },
+            data.getDouble(CoachProtocol.RPM, Double.NaN).takeUnless { it.isNaN() },
         )
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
@@ -340,9 +341,10 @@ private fun focusOf(plan: LinePlan, current: String, what: String): PlanFocus? {
         )
     }
     DebugLog.i("CoachService", "$what focus from ${plan.sessionId}: ${corners.joinToString { it.name }}")
-    // A braking point beyond his best (FBBD-312) is worth its step.
+    // A braking point beyond his best (FBBD-312) is worth its step, a lower gear (FBBD-326) its laps.
     val seconds = corners.associate { c ->
-        c.cornerId!! to (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gainSeconds)
+        c.cornerId!! to
+            (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gear?.seconds ?: c.gainSeconds)
     }
     return PlanFocus(plan.sessionId, picks, seconds)
 }

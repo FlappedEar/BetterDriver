@@ -189,4 +189,6 @@ fun movedBy(a: Advice, before: CornerPass, after: CornerPass): Double? = when (a
     // Metres earlier off full lock (FBBD-321); the other hands advice has no distance.
     is Advice.Steer -> before.steering?.unwindAt?.takeIf { a.what is SteerAdvice.OpenEarlier }
         ?.let { b -> after.steering?.unwindAt?.let { b - it } }
+    // A gear is in it or not (FBBD-326): no distance.
+    is Advice.Gear -> null
 }

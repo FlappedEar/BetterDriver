@@ -31,6 +31,9 @@ import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.timeOnAxis
 import com.flappedear.betterdriver.analysis.vehicle.VehicleChannel
 import com.flappedear.betterdriver.analysis.vehicle.vehicleChannel
+import com.flappedear.betterdriver.timing.gear.DriveSample
+import com.flappedear.betterdriver.timing.gear.Gearbox
+import com.flappedear.betterdriver.timing.gear.fitGearbox
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
 import com.flappedear.betterdriver.timing.steering.steeringAdvice
@@ -115,6 +118,8 @@ data class LinePass(
     val sourceId: String = "",
     /** What the hands did through the window (FBBD-321); null without the car's steering angle. */
     val steering: SteeringPass? = null,
+    /** The engine speed at the slowest point (FBBD-326); null without the car's. */
+    val apexRpm: Double? = null,
 )
 
 /** Where the laps went at one point: the road they used, at least, though not necessarily all of it. */
@@ -174,6 +179,8 @@ data class CornerLine(
     val sessionBestSeconds: Double? = null,
     /** The second fastest pass over every lap at the track: the target when it is ahead (FBBD-312). */
     val confirming: LinePass? = null,
+    /** A lower gear that pulls harder from the reference lap's slowest point (FBBD-326); null without. */
+    val gear: CornerGear? = null,
 )
 
 /** A session's fastest lap against the target pass through each corner of every lap at the track. */
@@ -185,6 +192,8 @@ data class LineAnalysis(
     /** Eligible laps compared, over [sessions] sessions. */
     val laps: Int,
     val sessions: Int,
+    /** The car's gears as the sessions show them (FBBD-326); null without engine speed or a known gearbox. */
+    val gearbox: Gearbox? = null,
 ) {
     /** Most time to find first. */
     val ranked: List<CornerLine> get() = corners.sortedByDescending { it.gainSeconds }
@@ -228,6 +237,7 @@ fun analyzeLine(
 internal fun lineOf(reader: LineReader, read: List<SessionLines>, thresholds: LineThresholds): LineAnalysis? {
     val own = read.first()
     val reference = own.reference ?: return null
+    val gearbox = fitGearbox(read.map { it.drive }.filter { it.isNotEmpty() })
     val corners = reader.windows.indices.mapNotNull { k ->
         val w = reader.windows[k]
         val refPass = reference.passes[k] ?: return@mapNotNull null
@@ -242,9 +252,10 @@ internal fun lineOf(reader: LineReader, read: List<SessionLines>, thresholds: Li
             if (ahead) advise(refPass, target, turnsLeft, reader.axis.lengthMeters, thresholds) else CornerAdvice(),
             own.fastest[k].firstOrNull()?.seconds,
             second,
+            cornerGear(gearbox, refPass.minimumSpeedKmh, refPass.apexRpm, read.flatMap { it.apexes[k] }),
         )
     }
-    return LineAnalysis(reference.number, reference.lapSeconds, corners, read.sumOf { it.laps }, read.size)
+    return LineAnalysis(reference.number, reference.lapSeconds, corners, read.sumOf { it.laps }, read.size, gearbox)
 }
 
 /** Overload for a list of sessions already read. */
@@ -256,6 +267,7 @@ fun analyzeLine(
 ): LineAnalysis? = analyzeLine(analysis, session, others.asSequence(), thresholds)
 
 /** What one session gives the line analysis; its samples are not kept. */
+@Suppress("LongParameterList") // Each kind of reading the analysis takes from a session.
 internal class SessionLines(
     /** Per window, its fastest passes (at most [ConfirmingPasses]), fastest first. */
     val fastest: List<List<LinePass>>,
@@ -266,6 +278,10 @@ internal class SessionLines(
     val laps: Int,
     /** What a day's analysis reads besides (FBBD-315); null when it was not asked for. */
     val pace: PaceLaps? = null,
+    /** Every reading for the gearbox (FBBD-326); empty without engine speed. */
+    val drive: List<DriveSample> = emptyList(),
+    /** Per window, every eligible lap's slowest point (FBBD-326); empty lists without engine speed. */
+    val apexes: List<List<ApexReading>> = emptyList(),
 )
 
 internal class ReferenceLap(val number: Int, val lapSeconds: Double, val passes: List<LinePass?>)
@@ -303,7 +319,7 @@ internal class LineReader(
      * [source]'s eligible laps; with [referenceNumber], its reference lap too. Null without one.
      * With [paceLimitSeconds], every lap's times as well ([PaceLaps]).
      */
-    @Suppress("ReturnCount", "LongMethod")
+    @Suppress("ReturnCount", "LongMethod", "CyclomaticComplexMethod")
     fun read(source: LineSession, referenceNumber: Int?, paceLimitSeconds: Double? = null): SessionLines? {
         val laps = source.laps.timedLaps.filter { it.referenceEligible }
         if (laps.isEmpty()) return null
@@ -322,12 +338,14 @@ internal class LineReader(
             )
             val slowest = measured.speeds.minimum.takeIf { measured.speeds.valid && it.value != null }
             val line = probe.line(timed.traces[i], w.window, axis.lengthMeters)
+            val apexRpm = slowest?.progressMeters?.let { timeAtProgress(timed.traces[i], it) }?.let(probe::rpmAt)
             return LinePass(
                 source.label, lap.reference as Int, laps[i].durationSeconds, seconds,
                 measured.observation.brakingPointMeters, slowest?.progressMeters,
                 slowest?.value?.let { kmh(it, measured.speeds.unit) }, measured.observation.pickupMeters,
                 measured.observation.lineOffsetMeters, line, source.id,
                 steeringOf(line, turnsLeft(k), axis.lengthMeters),
+                apexRpm,
             )
         }
         val seconds = windows.map { w -> laps.indices.map { timed.times[it].sector(w.window.id)?.seconds } }
@@ -364,7 +382,17 @@ internal class LineReader(
             }
             PaceLaps(laps.map { it.durationSeconds }, seconds, median)
         }
-        return SessionLines(fastest, road, reference, laps.size, pace)
+        val drive = driveSamples(source.session)
+        val apexes = windows.indices.map { k ->
+            if (drive.isEmpty()) {
+                emptyList()
+            } else {
+                laps.indices.mapNotNull { i ->
+                    seconds[k][i]?.let { probe.apex(timed.traces[i], windows[k].window, axis.lengthMeters, it) }
+                }
+            }
+        }
+        return SessionLines(fastest, road, reference, laps.size, pace, drive, apexes)
     }
 
     /** The road the laps of every session used through window [k], where at least [MinimumBandLaps] went. */
@@ -514,6 +542,28 @@ private class LineProbe(private val session: TelemetrySession, private val axis:
         }
 
     fun offsetAt(time: Double, progress: Double): Double? = position(time)?.let { offset(it, progress) }
+
+    private val rpm = vehicleChannel(session, VehicleChannel.Rpm)
+
+    /** The engine speed at [time] (FBBD-326); null without it or across a gap of the adapter's. */
+    fun rpmAt(time: Double): Double? = rpm?.valueAt(time, minimumGapSeconds = MaxRpmGapSeconds)
+
+    /**
+     * A lap's slowest point in [window] (FBBD-326): its speed, the engine speed there and the speed
+     * [ExitMeters] later; [seconds] is the lap's time through the window. Null without a speed in it.
+     */
+    @Suppress("ReturnCount")
+    fun apex(trace: List<ProgressSegment>, window: TrackSegment, length: Double, seconds: Double): ApexReading? {
+        var slowest: Pair<Double, Double>? = null
+        for (p in stations(window, length)) {
+            val v = timeAtProgress(trace, p)?.let(::speedAt) ?: continue
+            if (slowest == null || v < slowest.second) slowest = p to v
+        }
+        val (at, kmh) = slowest ?: return null
+        val time = timeAtProgress(trace, at) ?: return null
+        val exit = (at + ExitMeters).let { if (length > 0 && it > length) it - length else it }
+        return ApexReading(kmh, rpmAt(time), timeAtProgress(trace, exit)?.let(::speedAt), seconds)
+    }
 
     private val steering = vehicleChannel(session, VehicleChannel.SteeringAngle)
 

@@ -57,6 +57,8 @@ data class PassReading(
     val throttlePct: Double? = null,
     val steerDeg: Double? = null,
     val point: Xy? = null,
+    /** The engine speed (FBBD-326). */
+    val rpm: Double? = null,
 )
 
 /**
@@ -119,6 +121,7 @@ class CornerMap(val path: LapTrace, val corners: List<Corner>) {
             val measured = trace.speedsMeasured?.get(i) ?: true
             val reading = PassReading(
                 offset(trace.points[i], along), trace.throttlesPct?.get(i), trace.steersDeg?.get(i), trace.points[i],
+                trace.rpms?.get(i),
             )
             for (m in meters) {
                 m.add(along, trace.timesMicros[i], trace.speedsKmh[i], measured, reading)?.let { passes += it }
@@ -291,6 +294,7 @@ class PassMeter(
             pickupAt = pickup(pickupFrom(brake, apex)),
             apexMicros = timeTo(before, after, corner.apexAt)?.let { (it - t0).roundToLong() },
             steering = steering(),
+            apexRpm = inside[apex].reading.rpm,
         )
     }
 

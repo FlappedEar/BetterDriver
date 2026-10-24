@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.PlanBrakeRoom
 import com.flappedear.betterdriver.analysis.line.PlanCorner
+import com.flappedear.betterdriver.analysis.line.PlanGear
 import com.flappedear.betterdriver.analysis.line.PlanMark
 import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
@@ -138,6 +139,31 @@ class LineUiTest {
         assertEquals(listOf("T1", "T8"), ui.ranked.map { it.tag })
         assertEquals(listOf("T9", "T5"), ui.beyond.map { it.tag })
         assertNull(ui.corners[0].beyond)
+    }
+
+    @Test
+    fun `a lower gear says the gear at the apex and why, in his own laps`() {
+        // FBBD-326, UI-280 A: the gear and the reason in his own numbers.
+        val gear = PlanGear(2, 3, 64.0, 5, 12, 92.4, 84.1, 0.26, 0.17, 0.4)
+        val words = gearUi(gear)
+        assertEquals("2nd at the apex", words.todo)
+        assertEquals(
+            "You were in 3rd on 5 of 12 laps here. In 2nd you are at 92 km/h 100 m later, in 3rd at 84.",
+            words.why,
+        )
+        // Without the speeds in both gears, how hard each pulls.
+        assertEquals(
+            "You were in 3rd on 5 of 12 laps here. At 64 km/h on full throttle 2nd pulls 0.26 g, 3rd 0.17 g.",
+            gearUi(gear.copy(lowerExitKmh = null)).why,
+        )
+        val plan = LinePlan(
+            trackId = "t", sessionId = "s1", sessionStartUtcMillis = 1L, referenceLapNumber = 2,
+            referenceLapSeconds = 109.91, laps = 25, sessions = 6,
+            corners = listOf(corner(0.0, PlanAdvice(), "Corner 7").copy(gear = gear), corner(0.1, PlanAdvice())),
+        )
+        val ui = lineUi(plan, "s1")!!
+        assertEquals(words, ui.corners[0].gear)
+        assertNull(ui.corners[1].gear)
     }
 
     @Test
