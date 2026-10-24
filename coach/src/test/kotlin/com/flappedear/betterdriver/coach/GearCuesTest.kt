@@ -64,6 +64,8 @@ class GearCuesTest {
         assertNull(gearChange(pass(inSecond), 2, gearbox))
         assertNull(gearChange(pass(null), 2, gearbox))
         assertNull(gearChange(pass(inThird), 2, null))
+        // A pass so fast that 2nd would be near the top of the engine (110 km/h: 7 900 rpm): nothing.
+        assertNull(gearChange(pass(110 / 3.6 * 177.0).copy(minKmh = 110.0), 2, gearbox))
         val asked = cornerAdvice(pass(inThird), target, left, 2, gearbox)
         assertEquals(Advice.BrakeLater(10, at = metresBeforeCorner(110.0)), asked[0])
         assertEquals(Advice.Gear(2), asked[1])

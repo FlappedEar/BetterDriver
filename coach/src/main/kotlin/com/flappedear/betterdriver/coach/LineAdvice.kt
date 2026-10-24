@@ -101,14 +101,16 @@ fun steerChange(pass: CornerPass, target: CornerPass, corner: Corner): List<Stee
 /**
  * The gear to be in at the slowest point of a corner (FBBD-326, UI-279 A): [plannedGear], the line
  * plan's, when [pass] was in a higher one there by [gearbox]. Not tied to a time lost: the gear comes
- * from how hard the car pulls in each gear, not from a pass he drove. Null without the engine speed.
+ * from how hard the car pulls in each gear, not from a pass he drove. Null without the engine speed,
+ * and where [pass] was fast enough that the planned gear has no room to rev to the exit.
  */
 @Suppress("ReturnCount")
 fun gearChange(pass: CornerPass, plannedGear: Int?, gearbox: Gearbox?): Int? {
     val rpm = pass.apexRpm
     if (plannedGear == null || gearbox == null || rpm == null) return null
-    val now = gearbox.gearAt(rpm, pass.minKmh / KmhPerMps) ?: return null
-    return plannedGear.takeIf { now > it }
+    val speed = pass.minKmh / KmhPerMps
+    val now = gearbox.gearAt(rpm, speed) ?: return null
+    return plannedGear.takeIf { now > it && gearbox.hasRoom(it, speed) }
 }
 
 /** Whether [after] was in [gear] or lower at the slowest point, by [gearbox], as [improved]. */

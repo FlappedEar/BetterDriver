@@ -65,6 +65,10 @@ data class Gearbox(
             ?.takeIf { abs(it.speedMps - speedMps) <= PullStepMps }?.accelMps2
     }
 
+    /** Whether [gear] has room to rev from [speedMps]: its engine speed there at most [ExitRoomShare] of [maxRpm]. */
+    fun hasRoom(gear: Int, speedMps: Double): Boolean =
+        gears.firstOrNull { it.gear == gear }?.let { speedMps * it.rpmPerMps <= maxRpm * ExitRoomShare } == true
+
     /**
      * The gear to be in at [speedMps] instead of [current]: a lower one that pulls at least
      * [MinPullGain] harder there and has room to rev ([ExitRoomShare] of [maxRpm] still above it).
@@ -72,7 +76,7 @@ data class Gearbox(
      */
     fun lowerGear(current: Int, speedMps: Double): Int? {
         val now = pullAt(current, speedMps) ?: return null
-        return gears.filter { it.gear < current && speedMps * it.rpmPerMps <= maxRpm * ExitRoomShare }
+        return gears.filter { it.gear < current && hasRoom(it.gear, speedMps) }
             .mapNotNull { g -> pullAt(g.gear, speedMps)?.let { g.gear to it } }
             .filter { it.second >= now * (1 + MinPullGain) && it.second > 0 }
             .maxByOrNull { it.second }?.first
