@@ -29,10 +29,20 @@ internal fun coachLibrary(context: Context): CoachLibrary {
     )
 }
 
-/** The targets of [plan] in its corners with a CornerId, as the coach reference takes them. */
+/**
+ * The targets of [plan] in its corners with a CornerId, as the coach reference takes them, with the
+ * braking points beyond his best (FBBD-312, UI-276 B: "Turn 9, brake 10 later").
+ */
 internal fun plannedTargets(plan: LinePlan) = PlannedTargets(
     plan.sessionId,
-    plan.corners.mapNotNull { c -> c.cornerId?.let { PlannedTarget(it, c.target.sessionId, c.target.lapSeconds) } },
+    plan.corners.mapNotNull { c ->
+        c.cornerId?.let {
+            PlannedTarget(
+                it, c.target.sessionId, c.target.lapSeconds,
+                c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0,
+            )
+        }
+    },
 )
 
 /** How often a refresh looks whether a recording started, in milliseconds. */

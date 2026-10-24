@@ -60,6 +60,7 @@ import org.junit.jupiter.api.io.TempDir
 import java.io.File
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.roundToLong
 import kotlin.test.Test
 import kotlin.test.assertTrue
 
@@ -226,14 +227,21 @@ class GettingFasterLoopTest {
                 c.cornerId, plan.identityRevision,
             )
         }
-        return picks to corners.associate { it.cornerId!! to it.gainSeconds }
+        return picks to corners.associate { c ->
+            c.cornerId!! to (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gainSeconds)
+        }
     }
 
     /** [plan]'s targets as the app gives them to the coach (CoachReferences.plannedTargets). */
     private fun plannedTargets(plan: LinePlan) = PlannedTargets(
         plan.sessionId,
         plan.corners.mapNotNull { c ->
-            c.cornerId?.let { PlannedTarget(it, c.target.sessionId, c.target.lapSeconds) }
+            c.cornerId?.let {
+                PlannedTarget(
+                    it, c.target.sessionId, c.target.lapSeconds,
+                    c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0,
+                )
+            }
         },
     )
 
@@ -333,7 +341,9 @@ class GettingFasterLoopTest {
         return plan?.corners.orEmpty().filter { it.cornerId != null }.map { c ->
             val coach = map.corners.filter { it.cornerId == c.cornerId }.map { corner ->
                 val target = reference.aim(corner.number)
-                target?.let { t -> source(map, laps, t.lap, t.timeMicros, corner.number) } ?: "none"
+                // A braking point beyond his best (FBBD-312) aims at the plan's pass made faster by its step.
+                val step = c.brakeRoom?.let { (it.seconds * 1e6).roundToLong() }?.takeIf { corner.braked } ?: 0L
+                target?.let { t -> source(map, laps, t.lap, t.timeMicros + step, corner.number) } ?: "none"
             }.distinct().singleOrNull()
             Target(c.name, lapOf(laps, c.target.sessionId, c.target.lapSeconds), coach)
         }
@@ -444,7 +454,10 @@ class GettingFasterLoopTest {
             "Jastrząb 29 Aug", RealCorpus.JASTRZAB_DAY, RealCorpus.jastrzabTrack(),
             // Silent 4 -> 6 with the plan's aims (FBBD-307): the aim is the plan's faster pass, so Corner 7
             // (10:00) and Corner 5 (13:03) now lose on 2 passes, by line or throttle, which have no cue yet.
-            Known(uncoachable = 1, silent = 6, otherTarget = 15, unspoken = 10),
+            // Unspoken 10 -> 12 with braking points beyond his best (FBBD-312, UI-277 A): four of them join
+            // the plan's focus where the driven targets left places; Corner 5 got cues in both its turns,
+            // Corner 8 (14:37) and Corner 9 (16:06) none, and all four were faster in the next session.
+            Known(uncoachable = 1, silent = 6, otherTarget = 15, unspoken = 12),
         )
 
     @Test

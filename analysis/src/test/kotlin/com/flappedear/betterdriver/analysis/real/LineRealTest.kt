@@ -111,7 +111,8 @@ class LineRealTest {
         // The same numbers as the analysis, corner by corner.
         assertEquals(line.totalGainSeconds, plan.totalGainSeconds, 1e-9)
         assertEquals(line.ranked.first().name, plan.focus().first().name)
-        assertTrue(plan.focus().all { it.gainSeconds > 0.0 && it.advice.any })
+        // Driven targets with something to do, then braking points beyond his best (FBBD-312).
+        assertTrue(plan.focus().all { (it.gainSeconds > 0.0 && it.advice.any) || it.brakeRoom != null })
         assertTrue(plan.corners.all { it.cornerId == null }, "no CornerIds without the track's identity")
         // A target from another session names it.
         plan.corners.map { it.target }.filter { it.sessionLabel.isNotEmpty() }

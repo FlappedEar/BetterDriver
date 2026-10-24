@@ -4,14 +4,17 @@ package com.flappedear.betterdriver.analysis.real
 
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
+import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.line.BeyondBest
 import com.flappedear.betterdriver.analysis.line.BrakeRoomG
 import com.flappedear.betterdriver.analysis.line.BrakeStepMeters
+import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.MinimumBrakeStepMeters
 import com.flappedear.betterdriver.analysis.line.analyzeDay
 import com.flappedear.betterdriver.analysis.line.analyzeLine
 import com.flappedear.betterdriver.analysis.line.beyondBest
+import com.flappedear.betterdriver.analysis.line.linePlan
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.track.Track
@@ -84,6 +87,20 @@ class BeyondBestRealTest {
         val beyond = assertNotNull(line.beyondBest())
         assertTrue(beyond.corners.all { c -> line.corners.single { it.segmentId == c.segmentId }.gainSeconds == 0.0 })
         check(beyond)
+        // The plan keeps the braking points, and the focus gives them the places the driven targets leave.
+        val plan = linePlan(line, GeoCoordinate(0.0, 0.0), "t", "1606", 1L, 1)
+        val kept = plan.corners.filter { it.brakeRoom != null }
+        assertEquals(beyond.ranked.map { it.name }.toSet(), kept.map { it.name }.toSet())
+        kept.forEach { c ->
+            val room = c.brakeRoom!!
+            assertTrue(room.laterMeters in 5..10 && room.fullLaterMeters >= room.laterMeters, c.name)
+            assertEquals(beyond.limits.brakeCorners, room.trackCorners)
+        }
+        val driven = plan.ranked.filter { it.gainSeconds > 0.0 && it.advice.any }.take(LinePlan.FocusCorners)
+        val focus = plan.focus()
+        assertEquals(driven, focus.take(driven.size))
+        assertTrue(focus.drop(driven.size).all { it.brakeRoom != null })
+        assertEquals(minOf(LinePlan.FocusCorners, driven.size + kept.size), focus.size)
     }
 
     /**

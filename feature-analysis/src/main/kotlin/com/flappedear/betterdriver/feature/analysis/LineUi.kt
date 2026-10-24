@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.analysis.geo.projectCoordinate
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.PerfectLapScene
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
+import com.flappedear.betterdriver.analysis.line.PlanBrakeRoom
 import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
@@ -15,6 +16,7 @@ import com.flappedear.betterdriver.analysis.optimal.PedalState
 import com.flappedear.betterdriver.core.ui.format.formatLapTime
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -46,7 +48,16 @@ data class LineCornerUi(
     val anchor: LineDot?,
     /** The wheel through the corner, yours against your target (FBBD-321, UI-273 B); null without both. */
     val wheel: WheelTrace? = null,
+    /** A braking point beyond your best (FBBD-312); null without one. */
+    val beyond: BeyondUi? = null,
 )
+
+/**
+ * A braking point beyond your best (FBBD-312), worded as Arek picked on the UI review page, round
+ * 55 (UI-275 C: the whole room, then the step): [todo] says it, [why] in his own numbers, worth
+ * about [seconds] for the step.
+ */
+data class BeyondUi(val seconds: Double, val todo: String, val why: String)
 
 /** One point of a wheel trace: metres driven from the corner's start, degrees of wheel into the turn. */
 data class WheelDot(val meters: Double, val deg: Double)
@@ -76,8 +87,15 @@ data class LineUi(
     /** The perfect lap to drive in 3D (FBBD-308); null when a corner has no line or road to draw. */
     val scene: PerfectLapScene? = null,
 ) {
-    /** Most time first; corners with nothing to find last, in track order. */
-    val ranked: List<LineCornerUi> get() = corners.sortedByDescending { it.gainSeconds }
+    /**
+     * Most time first; corners with nothing to find last, in track order. A braking point beyond
+     * your best is in [beyond] instead.
+     */
+    val ranked: List<LineCornerUi> get() = corners.filter { it.beyond == null }.sortedByDescending { it.gainSeconds }
+
+    /** The braking points beyond your best, most time first (UI-274 A: their own group, under the targets). */
+    val beyond: List<LineCornerUi>
+        get() = corners.filter { it.beyond != null }.sortedByDescending { it.beyond!!.seconds }
 }
 
 /**
@@ -115,10 +133,29 @@ fun lineUi(plan: LinePlan, sessionId: String): LineUi? {
                 anchor = c.reference.apex?.let { dots(listOf(PlanPoint(0.0, it.latitude, it.longitude))).first() }
                     ?: reference.getOrNull(reference.size / 2),
                 wheel = wheelTrace(c, ::dots),
+                beyond = c.brakeRoom?.let(::beyondUi),
             )
         },
         scene = perfectLapScene(plan),
     )
+}
+
+/**
+ * [room] in words (UI-275 C): "Brake up to 18 m later · start with 10", and why: "You brake at
+ * 0.41 g here, 0.85 g in T4 and T7. Braking that hard all the way is worth about 0.37 s".
+ */
+fun beyondUi(room: PlanBrakeRoom): BeyondUi {
+    val whole = room.fullLaterMeters > room.laterMeters
+    val todo = if (whole) {
+        "Brake up to ${room.fullLaterMeters} m later · start with ${room.laterMeters}"
+    } else {
+        "Brake ${room.laterMeters} m later"
+    }
+    val where = room.trackCorners.map(::cornerTag).joinToString(" and ").ifEmpty { "other corners" }
+    val g = { v: Double -> String.format(Locale.ROOT, "%.2f g", v) }
+    val why = "You brake at ${g(room.peakG)} here, ${g(room.trackG)} in $where." +
+        if (whole) " Braking that hard all the way is worth about ${seconds(room.fullSeconds)} s." else ""
+    return BeyondUi(room.seconds, todo, why)
 }
 
 /** What to do differently through [corner], in words (UI-166 A); one line saying so when nothing. */

@@ -897,8 +897,12 @@ fun advise(pass: CornerPass, target: CornerPass, corner: Corner? = null): Advice
     // A corner taken on a lift (FBBD-307) has no braking to move.
     val brake = if (corner?.braked == false) 0.0 else pass.brakeAt - target.brakeAt // Negative: braked earlier.
     val speed = pass.minKmh - target.minKmh
+    // A planned step beyond his best (FBBD-312) is asked for until half of it is driven, even when
+    // shorter than the tolerance.
+    val later = target.plannedBrakeLaterMeters.takeIf { it > 0 }?.let { min(BrakeToleranceMeters, it / 2.0) }
+        ?: BrakeToleranceMeters
     return when {
-        brake <= -BrakeToleranceMeters -> {
+        brake <= -later -> {
             val metres = maxOf(MetresStep, (min(-brake, MaxBrakeLaterMeters) / MetresStep).roundToInt() * MetresStep)
             Advice.BrakeLater(metres, at = corner?.let { metresBefore(it, pass.brakeAt + metres) })
         }

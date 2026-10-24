@@ -340,7 +340,11 @@ private fun focusOf(plan: LinePlan, current: String, what: String): PlanFocus? {
         )
     }
     DebugLog.i("CoachService", "$what focus from ${plan.sessionId}: ${corners.joinToString { it.name }}")
-    return PlanFocus(plan.sessionId, picks, corners.associate { it.cornerId!! to it.gainSeconds })
+    // A braking point beyond his best (FBBD-312) is worth its step.
+    val seconds = corners.associate { c ->
+        c.cornerId!! to (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gainSeconds)
+    }
+    return PlanFocus(plan.sessionId, picks, seconds)
 }
 
 /** A session's next-session focus (FBBD-20) and its corners as coach picks, the primary first. */

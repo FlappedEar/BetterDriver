@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
+import com.flappedear.betterdriver.analysis.line.PlanBrakeRoom
 import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanMark
 import com.flappedear.betterdriver.analysis.line.PlanPass
@@ -105,6 +106,38 @@ class LineUiTest {
         val right = lineUi(plan.copy(corners = listOf(c.copy(turnsLeft = false))), "s1")!!.corners[0].wheel!!
         assertEquals(-120.0, right.reference.last().deg, 1e-9)
         assertNull(ui.corners[1].wheel)
+    }
+
+    @Test
+    fun `a braking point beyond his best says the whole room, then the step, in its own group`() {
+        val room = PlanBrakeRoom(10, 0.21, 18, 0.37, 0.41, 0.85, listOf("Corner 4", "Corner 7"))
+        val words = beyondUi(room)
+        // UI-275 C: the whole room, then the step, with his own numbers.
+        assertEquals("Brake up to 18 m later · start with 10", words.todo)
+        assertEquals(
+            "You brake at 0.41 g here, 0.85 g in T4 and T7. Braking that hard all the way is worth about 0.37 s.",
+            words.why,
+        )
+        assertEquals(0.21, words.seconds, 1e-9)
+        // When the step is all the room, it is the step alone.
+        val small = beyondUi(room.copy(laterMeters = 5, fullLaterMeters = 5))
+        assertEquals("Brake 5 m later", small.todo)
+        assertEquals("You brake at 0.41 g here, 0.85 g in T4 and T7.", small.why)
+        // UI-274 A: under the driven targets as their own group, most time first, not among them.
+        val plan = LinePlan(
+            trackId = "t", sessionId = "s1", sessionStartUtcMillis = 1L, referenceLapNumber = 2,
+            referenceLapSeconds = 109.91, laps = 25, sessions = 6,
+            corners = listOf(
+                corner(0.11, PlanAdvice(apexMeters = -5.0), "Corner 1"),
+                corner(0.0, PlanAdvice(), "Corner 5").copy(brakeRoom = room.copy(seconds = 0.20)),
+                corner(0.0, PlanAdvice(), "Corner 8"),
+                corner(0.0, PlanAdvice(), "Corner 9").copy(brakeRoom = room),
+            ),
+        )
+        val ui = lineUi(plan, "s1")!!
+        assertEquals(listOf("T1", "T8"), ui.ranked.map { it.tag })
+        assertEquals(listOf("T9", "T5"), ui.beyond.map { it.tag })
+        assertNull(ui.corners[0].beyond)
     }
 
     @Test
