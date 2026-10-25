@@ -1,0 +1,62 @@
+# The end-user guide (FBBD-327): built by .github/workflows/guide.yml and published on GitHub Pages.
+# The pictures in docs/img are copied from the screenshot goldens at build time (see guide/README.md).
+site_name: BetterDriver guide
+site_description: How to record, read and use BetterDriver, the Android track-day coach.
+site_url: https://flappedear.github.io/BetterDriver/
+repo_url: https://github.com/FlappedEar/BetterDriver
+repo_name: FlappedEar/BetterDriver
+edit_uri: edit/main/guide/docs/
+copyright: FlappedEar · BetterDriver
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: black
+    accent: amber
+  features:
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - Home: index.md
+  - Getting started:
+      - Install and first setup: getting-started.md
+      - Try it without a track: demo.md
+  - At the track:
+      - Drive and tracks: drive.md
+      - The track screen: track-screen.md
+      - The spoken coach: coach.md
+  - After the session:
+      - Sessions: sessions.md
+      - Lap analysis: analysis.md
+      - Getting faster: getting-faster.md
+      - Export and sharing: export.md
+  - Your setup:
+      - Car: car.md
+      - Equipment: equipment.md
+      - Settings: settings.md
+  - What's new: whats-new.md
+
+# Broken links and anchors fail the --strict build.
+validation:
+  omitted_files: warn
+  absolute_links: warn
+  unrecognized_links: warn
+  anchors: warn

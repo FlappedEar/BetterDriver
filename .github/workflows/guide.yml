@@ -1,0 +1,68 @@
+name: Guide
+
+# The end-user guide (FBBD-327): builds guide/ with MkDocs and publishes it on GitHub Pages
+# (https://flappedear.github.io/BetterDriver/). Pull requests only build it, with --strict, so a
+# broken link or a missing picture fails before it reaches main.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'guide/**'
+      - 'core-ui/src/test/screenshots/**'
+      - 'feature-track/src/test/screenshots/**'
+      - '.github/workflows/guide.yml'
+  pull_request:
+    paths:
+      - 'guide/**'
+      - 'core-ui/src/test/screenshots/**'
+      - 'feature-track/src/test/screenshots/**'
+      - '.github/workflows/guide.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guide-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build the guide
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: guide/requirements.txt
+      - run: pip install -r guide/requirements.txt
+      # The pictures are the screenshot goldens, so the guide shows the screens as they are.
+      - name: Copy the screenshots
+        run: |
+          mkdir -p guide/docs/img
+          cp core-ui/src/test/screenshots/*.png feature-track/src/test/screenshots/*.png guide/docs/img/
+      - run: mkdocs build --strict -f guide/mkdocs.yml -d ../site
+        env:
+          NO_MKDOCS_2_WARNING: 1
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: site
+
+  deploy:
+    name: Publish to GitHub Pages
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
