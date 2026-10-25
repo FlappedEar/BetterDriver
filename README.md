@@ -2,8 +2,10 @@
 
 Android track-day coach: logging and live timing, in-car spoken cues, and
 post-session analysis with video. Personal use, Android only: a phone in the
-car, a tablet for review. Plan: Confluence "BetterDriver Build Plan";
-work is tracked in Jira project FBBD.
+car, a tablet for review. How to use it: the
+[user guide](https://flappedear.github.io/BetterDriver/) (source in
+[guide/](guide/README.md)). Plan: Confluence "BetterDriver Build Plan"; work is
+tracked in Jira project FBBD.
 
 ## Modules
 

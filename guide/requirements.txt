@@ -1,0 +1,3 @@
+# The end-user guide's site generator (FBBD-327), pinned so the Pages build is repeatable.
+mkdocs==1.6.1
+mkdocs-material==9.8.0

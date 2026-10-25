@@ -1,0 +1,15 @@
+/* The app's OLED look: true black behind the pages, FlappedEar amber as the accent. */
+[data-md-color-scheme="slate"] {
+  --md-default-bg-color: #000000;
+  --md-default-bg-color--light: #0b0d10;
+  --md-primary-fg-color: #000000;
+  --md-accent-fg-color: #ffb020;
+  --md-typeset-a-color: #ffb020;
+}
+.md-typeset img.shot {
+  border: 1px solid #2a2f36;
+  border-radius: 8px;
+  max-width: 100%;
+}
+.md-typeset figure { margin: 1.2em 0; }
+.md-typeset figcaption { color: #9aa3ad; font-style: normal; max-width: 100%; }
