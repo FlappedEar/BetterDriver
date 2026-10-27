@@ -38,7 +38,8 @@ fun identifyCorners(corners: List<Corner>, path: LapTrace, frame: LocalFrame, id
         if (at == null || segment == null) {
             c.copy(cornerId = null, turnNumber = null, entryAt = null)
         } else {
-            val k = taken.merge(segment.id, 1, Int::plus)!! - 1
+            val k = taken[segment.id] ?: 0
+            taken[segment.id] = k + 1
             val inside = identity.segmentAt(at).id == segment.id
             val placed = starts?.get(identity.segments.indexOf(segment))?.takeIf { it <= c.apexAt }
             val entry = if (inside && k == 0) placed ?: (c.apexAt - (at - segment.startMeters).mod(length)) else null

@@ -1,7 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import kotlin.concurrent.Volatile
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
-import java.util.concurrent.ConcurrentHashMap
 
 /** One piece of a phrase said from a pre-rendered clip (FBBD-48): words or a number, and the pause after it. */
 data class ClipPart(val key: String, val pauseAfterMillis: Int)
@@ -74,14 +74,16 @@ object CueClips {
     /** Every English clip the coach can need ([vocabulary] of [Phrases]). */
     val vocabulary: Set<String> by lazy { vocabulary(Phrases) }
 
-    private val vocabularies = ConcurrentHashMap<PhraseBook, Set<String>>()
+    // Copied on write: two threads asking for a new language at once both work it out, which is harmless.
+    @Volatile
+    private var vocabularies: Map<PhraseBook, Set<String>> = emptyMap()
 
     /**
      * Every clip the coach can need in [book]'s language: the fixed words of each kind of phrase, the
      * numbers 0 to 99, "00" to "09" for a lap time's seconds, and the parts of 100 to 999.
      */
     @Suppress("SpreadOperator") // Once per language.
-    fun vocabulary(book: PhraseBook): Set<String> = vocabularies.getOrPut(book) {
+    fun vocabulary(book: PhraseBook): Set<String> = vocabularies[book] ?: run {
         val corner = Corner(1, 0.0, 0.0, 0.0, 0.0, Turn.Straight)
         val samples = listOf(
             // With the target (FBBD-242).
@@ -128,8 +130,8 @@ object CueClips {
         val words = samples.flatMap { parts(it, book) }.map { it.key }.filterNot { it.all(Char::isDigit) }
         val numbers = (0..MaxNumber).map(Int::toString) + (0..<PaddedNumbers).map { "0$it" }
         val big = (MaxNumber + 1..MaxSpokenNumber).flatMap { book.numberKeys(it.toString()) }
-        (words + numbers + big).toSortedSet()
-    }
+        (words + numbers + big).sorted().toCollection(LinkedHashSet())
+    }.also { vocabularies = vocabularies + (book to it) }
 
     /** Whether every part of [text] has a clip in [book]'s language, so it can be said without live text-to-speech. */
     fun covers(text: String, book: PhraseBook = Phrases): Boolean =

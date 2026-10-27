@@ -47,7 +47,7 @@ class LineCuesTest {
     }
 
     @Test
-    fun `two things in one cue, and its short form says the first alone`() {
+    fun `two things in one cue - and its short form says the first alone`() {
         val text = Phrases.corner(left, Advice.Line(2), Advice.Throttle(5, afterApex = 5))
         assertEquals("Turn 1, tighter at the apex, throttle 5 after the apex", text)
         assertEquals(
@@ -161,7 +161,7 @@ class LineCuesTest {
     }
 
     @Test
-    fun `line, throttle, two in one and plan cues are logged and read back`() {
+    fun `line - throttle - two in one and plan cues are logged and read back`() {
         val cue = Cue(
             7, 1_000, 5, CueKind.Corner, "Turn 1, tighter at the apex, throttle 5 after the apex", 2,
             Advice.Line(2, turn = Turn.Left), pass(toApex = 3_100_000), target, turn = 1, cornerId = "c1",

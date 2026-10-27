@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.timing.geo.Xy
 import kotlin.math.abs
 import kotlin.math.atan2
@@ -243,7 +244,7 @@ private fun turnAt(r: Resampled, brake: Int, apex: Int): Turn {
     val a0 = minOf(r.size - 1, apex + span)
     val before = heading(r, b0, brake)
     val after = heading(r, a0, a1)
-    var d = if (before == null || after == null) 0.0 else Math.toDegrees(after - before)
+    var d = if (before == null || after == null) 0.0 else toDegrees(after - before)
     while (d > HalfTurnDegrees) d -= FullTurnDegrees
     while (d < -HalfTurnDegrees) d += FullTurnDegrees
     return when {

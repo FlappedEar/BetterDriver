@@ -32,7 +32,7 @@ class PlanAimTest {
     }
 
     @Test
-    fun `without a plan the aim is the second fastest pass, and a plan of other corners aims nowhere`() {
+    fun `without a plan the aim is the second fastest pass - and a plan of other corners aims nowhere`() {
         val laps = laps(steady, early2, steady, steady)
         val plain = assertNotNull(buildReference(track, listOf(SessionLaps("s1", laps))))
         assertTrue(plain.aims.isEmpty())
@@ -48,7 +48,7 @@ class PlanAimTest {
     }
 
     @Test
-    fun `cues aim at the plan's pass, not the second fastest`() {
+    fun `cues aim at the plan's pass - not the second fastest`() {
         // Earlier, corner 2 was braked later twice: without a plan, early braking there is told to brake later.
         val reference = reference(early2, steady, steady)
         val told = corner2Cues(reference, early2, early2, early2, early2, early2)
@@ -69,7 +69,7 @@ class PlanAimTest {
     }
 
     @Test
-    fun `a braking point beyond his best is asked for as a brake cue, the step only`() {
+    fun `a braking point beyond his best is asked for as a brake cue - the step only`() {
         val reference = reference(steady, steady, steady)
         val own = assertNotNull(reference.targets.firstOrNull { it.corner == 2 })
         // Driving as he did, against his own pass, gets nothing.

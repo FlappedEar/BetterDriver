@@ -38,7 +38,7 @@ class GearCuesTest {
     private val inSecond = 72 / 3.6 * 260.0
 
     @Test
-    fun `the gear is said with the brake cue, in English and Polish`() {
+    fun `the gear is said with the brake cue - in English and Polish`() {
         val brake = Advice.BrakeLater(10, at = 80)
         assertEquals("Turn 7, brake at 80, 10 later, second", Phrases.corner(left, brake, Advice.Gear(2)))
         assertEquals("Turn 7, second", Phrases.corner(left, Advice.Gear(2)))
@@ -57,7 +57,7 @@ class GearCuesTest {
     }
 
     @Test
-    fun `a pass in 3rd where the plan has 2nd is asked for 2nd, after the entry`() {
+    fun `a pass in 3rd where the plan has 2nd is asked for 2nd - after the entry`() {
         val target = pass(inSecond, time = 6_000_000, brakeAt = 110.0, gear = 2)
         assertEquals(2, gearChange(pass(inThird), 2, gearbox))
         // Already in 2nd, or no engine speed, or no gearbox: nothing.

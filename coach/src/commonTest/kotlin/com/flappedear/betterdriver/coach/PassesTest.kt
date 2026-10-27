@@ -66,7 +66,7 @@ class PassesTest {
     }
 
     @Test
-    fun `live, a window that ends at the line closes at the crossing time`() {
+    fun `live - a window that ends at the line closes at the crossing time`() {
         val window = map.windows[1]
         val meter = PassMeter(corners[1], window, 1)
         // Positions every 10 m, 1 s apart, up to 990 m; the line is crossed 1 s after the last one.
@@ -85,7 +85,7 @@ class PassesTest {
     }
 
     @Test
-    fun `live, a window that ends short of the line closes at its own end`() {
+    fun `live - a window that ends short of the line closes at its own end`() {
         // The window ends at 980 m; the line is at 1000 m, crossed 2 s after the last position at 975 m.
         val meter = PassMeter(corners[1], 900.0..980.0, 1, lineAt = 1000.0)
         var t = 0L
@@ -102,7 +102,7 @@ class PassesTest {
     }
 
     @Test
-    fun `live, a window that starts at the line opens at the crossing time`() {
+    fun `live - a window that starts at the line opens at the crossing time`() {
         val window = map.windows[0]
         val meter = PassMeter(corners[0], window, 2)
         // The line was crossed at 0 s; the first position, 10 m on, is 1 s later.

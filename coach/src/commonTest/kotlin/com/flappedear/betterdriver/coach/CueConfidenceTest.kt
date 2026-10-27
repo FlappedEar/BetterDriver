@@ -31,7 +31,7 @@ class CueConfidenceTest {
     private val slower = target.copy(lap = 2, brakeAt = 85.0, timeMicros = 5_300_000L)
 
     @Test
-    fun `a pass with clean positions has no doubts, a gap or a near stop makes it Low`() {
+    fun `a pass with clean positions has no doubts - a gap or a near stop makes it Low`() {
         assertTrue(passDoubts(target).isEmpty())
         val gap = passDoubts(target.copy(gapMicros = 700_000))
         assertEquals(listOf(CueDoubts.GNSS_GAP), gap.map { it.code })
@@ -48,7 +48,7 @@ class CueConfidenceTest {
     }
 
     @Test
-    fun `a gain within the usual spread, too few passes, or an unmatched corner leave a cue Medium`() {
+    fun `a gain within the usual spread - too few passes - or an unmatched corner leave a cue Medium`() {
         val steadyLosses = listOf(300_000L, 310_000L, 305_000L)
         assertTrue(cueDoubts(slower, target, steadyLosses, unidentified = false).isEmpty())
         val scattered = cueDoubts(slower, target, listOf(0L, 700_000L, 300_000L), unidentified = false)

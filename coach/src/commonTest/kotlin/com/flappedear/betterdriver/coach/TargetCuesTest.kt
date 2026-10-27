@@ -31,7 +31,7 @@ class TargetCuesTest {
     }
 
     @Test
-    fun `without a corner start, or braking past it, the apex is the mark`() {
+    fun `without a corner start - or braking past it - the apex is the mark`() {
         assertEquals(Advice.BrakeLater(15, at = 160), advise(pass(brakeAt = 85.0), target, corner.copy(entryAt = null)))
         // A brake point at or past the corner's start would be "at 0" or less: counted to the apex.
         val late = corner.copy(entryAt = 102.0)
@@ -40,7 +40,7 @@ class TargetCuesTest {
     }
 
     @Test
-    fun `cues say the target, then the change`() {
+    fun `cues say the target - then the change`() {
         assertEquals("Turn 3, brake at 100, 10 later", Phrases.corner(corner, Advice.BrakeLater(10, at = 100)))
         assertEquals("Turn 3, brake at 120, 10 earlier", Phrases.corner(corner, Advice.BrakeEarlier(10, at = 120)))
         assertEquals("Turn 3, 60 at the apex, 5 more", Phrases.corner(corner, Advice.CarrySpeed(5, goalKmh = 60)))
@@ -72,7 +72,7 @@ class TargetCuesTest {
     }
 
     @Test
-    fun `targets are logged and read back, and old cues still read`() {
+    fun `targets are logged and read back - and old cues still read`() {
         for (a in listOf(
             Advice.BrakeLater(10, at = 100),
             Advice.BrakeLater(10, false, 100),

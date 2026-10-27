@@ -84,7 +84,7 @@ class CornerIdentityTest {
     }
 
     @Test
-    fun `picks are matched by corner id, and old picks by where their line is`() {
+    fun `picks are matched by corner id - and old picks by where their line is`() {
         val map = identified(reference().map(), frame, identity)
         // By id, whatever the line says: c3 is the third bend.
         assertEquals(setOf(3), pickedCorners(map, frame, listOf(pickOf(0, id = "c3", revision = 1)), identity))
