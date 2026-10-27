@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.transfer.foreign
 
+import com.flappedear.betterdriver.math.roundHalfUp
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
-import java.io.Reader
 
 /**
  * Reads RaceChrono's CSV v3 export (FBBD-164): a few "key,value" header rows ("This file is created
@@ -21,8 +21,7 @@ import java.io.Reader
  */
 internal object RaceChronoCsvReader {
 
-    fun read(input: Reader, sink: ImportSink) {
-        val lines = LineReader(input)
+    fun read(lines: LineReader, sink: ImportSink) {
         val parse = Parse(sink)
         while (true) {
             val line = lines.next() ?: break
@@ -153,7 +152,7 @@ internal object RaceChronoCsvReader {
             val lo = v(lon)
             if (seconds.isNaN() || la.isNaN() || lo.isNaN()) return null
             return ImportPoint(
-                utcMicros = Math.round(seconds * 1_000_000.0),
+                utcMicros = roundHalfUp(seconds * 1_000_000.0),
                 lat = la,
                 lon = lo,
                 speedKmh = v(speed) * speedFactor,
@@ -206,7 +205,7 @@ internal object RaceChronoCsvReader {
                 ch == '"' -> quoted = !quoted
                 ch == ',' && !quoted -> {
                     out += sb.toString()
-                    sb.setLength(0)
+                    sb.clear()
                 }
                 else -> sb.append(ch)
             }

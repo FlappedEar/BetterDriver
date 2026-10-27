@@ -1,6 +1,5 @@
 package com.flappedear.betterdriver.timing.live
 
-import com.flappedear.betterdriver.recorder.Gate
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.circuits.CircuitList
@@ -73,16 +72,3 @@ class SessionTiming(
 fun lapLineText(lap: Lap, predictedMillis: Long?): String =
     "lap=${lap.number} kind=${lap.kind.name} time_ms=${lap.timeMillis} predicted_ms=${predictedMillis ?: "none"}" +
         if (lap.gnssGap) " gnss_gap=true" else ""
-
-/** The track's name for screens: a saved track, or the directory circuit the car is at. */
-val TrackDetection.placeName: String?
-    get() = when (this) {
-        is TrackDetection.Saved -> track.displayName
-        is TrackDetection.Directory -> circuit.name
-        TrackDetection.Unknown -> null
-    }
-
-/** The start/finish line as the recorder's gate, for the session metadata and the VBO export. */
-fun Track.startFinishGate(): Gate? = startFinish?.let {
-    Gate("Start / Finish", it.left.lat, it.left.lon, it.right.lat, it.right.lon)
-}
