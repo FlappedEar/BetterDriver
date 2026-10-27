@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
+import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.vbo.VboExport
 import com.flappedear.betterdriver.recorder.vbo.VboVideo
@@ -14,6 +15,9 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSString
+import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.stringWithContentsOfFile
 import platform.posix.FILE
 import platform.posix.SEEK_SET
 import platform.posix.fclose
@@ -76,10 +80,15 @@ class SessionExport(sessionsRoot: String, private val outRoot: String) {
         return folder
     }
 
-    /** The clips of the camera the export uses; a file cut off before it was finished (no moov) is left out. */
+    /**
+     * The clips of the camera the export uses, from the session's events and its clip index
+     * (clips.json, which wins, as on Android); a file cut off before it was finished (no moov) is left out.
+     */
     private fun clips(id: String): List<VideoClip> {
         val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
-        val timeline = VideoTimeline.from(store.read(id, samples = false).events)
+        val index = NSString.stringWithContentsOfFile("$videoDir/$ClipIndexFile", NSUTF8StringEncoding, null)
+            ?.let(::indexedClips).orEmpty()
+        val timeline = VideoTimeline.from(store.read(id, samples = false).events, index)
         val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
         val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
         return present.filter { it.camera == camera }
@@ -100,6 +109,11 @@ class SessionExport(sessionsRoot: String, private val outRoot: String) {
     }
 
     private fun baseName(id: String) = "BetterDriver-$id"
+
+    private companion object {
+        /** The session's clip index in its video folder (Android's VideoIndex). */
+        const val ClipIndexFile = "clips.json"
+    }
 }
 
 /** Text written to a file as UTF-8 in 64 KB pieces, so a long session's VBO is never one string. */

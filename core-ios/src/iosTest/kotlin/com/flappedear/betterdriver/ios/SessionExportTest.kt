@@ -94,6 +94,29 @@ class SessionExportTest {
     }
 
     @Test
+    fun clipsOfTheClipIndexAreExported() {
+        // No video events: a camera's clip known only from the session's clip index (clips.json).
+        val session = LiveSession.start(
+            "$base/sessions", "$base/tracks", CircuitList.Empty,
+            SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL), receiverHasG = false,
+        )
+        val videoDir = PhoneVideoLog(session).videoDir
+        NSFileManager.defaultManager.createDirectoryAtPath(videoDir, true, null, null)
+        write("$videoDir/GX010089.MP4", box("ftyp", 12) + box("mdat", 100) + box("moov", 20))
+        val index = """{"version":1,"clips":[{"fileName":"GX010089.MP4","sourceId":"gopro","sessionOffsetUs":2000000,"status":"LOCAL"}]}"""
+        write("$videoDir/clips.json", index.encodeToByteArray())
+        for (n in 0L..500) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
+        session.stop()
+        val export = SessionExport("$base/sessions", "$base/out")
+        assertTrue(export.hasVideo(session.id))
+        val folder = export.vboWithVideo(session.id)
+        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(folder, null).orEmpty().map { it.toString() }
+        assertEquals(setOf("BetterDriver-${session.id}.vbo", "BetterDriver-${session.id}_0001.MP4"), names.toSet())
+        // The data starts at the clip, 2 s in.
+        assertEquals(451, read("$folder/BetterDriver-${session.id}.vbo")!!.substringAfter("[data]\r\n").trim().lines().size)
+    }
+
+    @Test
     fun aSessionWithoutVideoHasNone() {
         val session = LiveSession.start(
             "$base/sessions", "$base/tracks", CircuitList.Empty,
