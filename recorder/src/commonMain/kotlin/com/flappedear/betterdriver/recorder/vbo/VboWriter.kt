@@ -2,11 +2,9 @@
 
 package com.flappedear.betterdriver.recorder.vbo
 
-import java.io.Writer
-import java.time.Instant
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.format.signedFixed
+import com.flappedear.betterdriver.math.roundHalfUp
 
 /**
  * One VBO column. Standard Racelogic channels are recognised by [headerName] and get no units line;
@@ -38,7 +36,8 @@ data class VboGate(
 
 /** Everything one VBO file holds. Sections with nothing in them are left out. */
 data class VboDocument(
-    val created: Instant,
+    /** When the session started, UTC epoch milliseconds; the file's date line. */
+    val createdUtcMillis: Long,
     val columns: List<VboColumn>,
     val comments: List<String> = emptyList(),
     val gates: List<VboGate> = emptyList(),
@@ -54,7 +53,7 @@ data class VboDocument(
  * date line, [header], [channel units], [comments], [laptiming], [avi], [column names], [data],
  * CRLF line endings, blank line between sections.
  */
-class VboWriter(private val out: Writer) {
+class VboWriter(private val out: Appendable) {
 
     companion object {
         const val CRLF = "\r\n"
@@ -62,47 +61,48 @@ class VboWriter(private val out: Writer) {
         /** Header names of the standard channels this app writes. */
         val STANDARD_CHANNELS = VboStandardChannels
 
-        private val DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy '@' HH:mm:ss").withZone(ZoneOffset.UTC)
-
-        fun sats(v: Double) = String.format(Locale.ROOT, "%03d", v.toLong().coerceIn(0, 999))
+        fun sats(v: Double) = vboPadded(v.toLong().coerceIn(0, 999), 3)
 
         /** UTC milliseconds of day → hhmmss.sss. */
         fun time(utcMillis: Double): String {
-            val msOfDay = Math.floorMod(Math.round(utcMillis), 86_400_000L)
+            val msOfDay = roundHalfUp(utcMillis).mod(MillisPerDay)
             val h = msOfDay / 3_600_000
             val m = msOfDay / 60_000 % 60
             val s = msOfDay / 1_000 % 60
             val ms = msOfDay % 1_000
-            return String.format(Locale.ROOT, "%02d%02d%02d.%03d", h, m, s, ms)
+            return vboPadded(h, 2) + vboPadded(m, 2) + vboPadded(s, 2) + "." + vboPadded(ms, 3)
         }
 
         /** Degrees north → VBO latitude: minutes, 5 decimals. */
-        fun latitude(deg: Double) = String.format(Locale.ROOT, "%+012.5f", deg * 60.0)
+        fun latitude(deg: Double) = vboPadded(deg * 60.0, 5, 12, plus = true)
 
         /** Degrees east → VBO longitude: minutes with the hemisphere reversed (west positive), 5 decimals. */
-        fun longitude(deg: Double) = String.format(Locale.ROOT, "%+012.5f", -deg * 60.0)
+        fun longitude(deg: Double) = vboPadded(-deg * 60.0, 5, 12, plus = true)
 
-        fun velocity(kmh: Double) = String.format(Locale.ROOT, "%07.3f", kmh)
+        fun velocity(kmh: Double) = vboPadded(kmh, 3, 7)
 
         fun heading(deg: Double): String {
             // Rounded before wrapping: 359.996° is written 000.00, not 360.00 (FBBD-203).
-            val rounded = Math.round((((deg % 360.0) + 360.0) % 360.0) * 100.0) / 100.0
-            return String.format(Locale.ROOT, "%06.2f", if (rounded >= 360.0) 0.0 else rounded)
+            val rounded = roundHalfUp((((deg % 360.0) + 360.0) % 360.0) * 100.0) / 100.0
+            return vboPadded(if (rounded >= 360.0) 0.0 else rounded, 2, 6)
         }
 
-        fun height(m: Double) = String.format(Locale.ROOT, "%+09.2f", m)
+        fun height(m: Double) = vboPadded(m, 2, 9, plus = true)
+
         /** 1-based video file number, 4 digits as in Racelogic's example. */
-        fun aviFileIndex(v: Double) = String.format(Locale.ROOT, "%04d", v.toLong().coerceIn(0, 9_999))
+        fun aviFileIndex(v: Double) = vboPadded(v.toLong().coerceIn(0, 9_999), 4)
 
         /** Milliseconds into the video file, 9 characters as in Racelogic's example ("000000266", "-00000001"). */
-        fun aviSyncMillis(v: Double) = String.format(Locale.ROOT, "%09d", Math.round(v))
+        fun aviSyncMillis(v: Double) = vboPadded(roundHalfUp(v), 9)
 
-        fun decimal(decimals: Int): (Double) -> String = { v -> String.format(Locale.ROOT, "%.${decimals}f", v) }
+        fun decimal(decimals: Int): (Double) -> String = { v -> fixed(v, decimals) }
+
+        private const val MillisPerDay = 86_400_000L
     }
 
     fun write(doc: VboDocument) {
         val columns = doc.columns
-        line("File created on ${DATE.format(doc.created)}")
+        line("File created on ${vboDate(doc.createdUtcMillis)}")
         blank()
 
         line("[header]")
@@ -122,12 +122,8 @@ class VboWriter(private val out: Writer) {
         if (doc.gates.isNotEmpty()) {
             line("[laptiming]")
             doc.gates.forEach { g ->
-                line(
-                    String.format(
-                        Locale.ROOT, "%-7s %+.6f %+.6f %+.6f %+.6f ¬ %s",
-                        g.type, g.long1, g.lat1, g.long2, g.lat2, oneLine(g.name),
-                    ),
-                )
+                val points = listOf(g.long1, g.lat1, g.long2, g.lat2).joinToString(" ") { signedFixed(it, 6) }
+                line("${g.type.padEnd(7)} $points ¬ ${oneLine(g.name)}")
             }
             blank()
         }
@@ -153,16 +149,17 @@ class VboWriter(private val out: Writer) {
             }
             line(sb.toString())
         }
-        out.flush()
     }
 
     /** The format is line-based: free text must not be able to start a new line or a fake section. */
     private fun oneLine(s: String) = s.replace('\r', ' ').replace('\n', ' ')
 
     private fun line(s: String) {
-        out.write(s)
-        out.write(CRLF)
+        out.append(s)
+        out.append(CRLF)
     }
 
-    private fun blank() = out.write(CRLF)
+    private fun blank() {
+        out.append(CRLF)
+    }
 }

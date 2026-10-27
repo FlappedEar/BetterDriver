@@ -54,10 +54,12 @@ final class RecordingController: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var raceBoxState: RaceBoxLinkState = .off
     @Published private(set) var phoneState: PhoneGpsState = .off
+    @Published private(set) var cameraStatus: CameraStatus?
 
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var camera: PhoneCamera?
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
@@ -70,6 +72,18 @@ final class RecordingController: ObservableObject {
     var lastReceiverName: String {
         get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
+    }
+
+    /// Phone video with each session (FBBD-21), on unless turned off on the START sheet.
+    var phoneCamera: Bool {
+        get { UserDefaults.standard.object(forKey: "phoneCamera") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "phoneCamera") }
+    }
+
+    /// The phone video mode (FBBD-88), as on Android: 1080p · 60 until another is chosen.
+    var phoneVideoMode: PhoneVideoMode {
+        get { PhoneVideoMode.named(UserDefaults.standard.string(forKey: "phoneVideoMode")) }
+        set { UserDefaults.standard.set(newValue.label, forKey: "phoneVideoMode") }
     }
 
     func start(_ receiver: Receiver) {
@@ -130,6 +144,11 @@ final class RecordingController: ObservableObject {
         heartRate = strap
         strap.start()
         startCoach(live)
+        if phoneCamera {
+            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
+            camera = cam
+            cam.start()
+        }
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
         refresh()
@@ -159,6 +178,7 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        camera?.stop()
         obd?.stop()
         heartRate?.stop()
         _ = live.stop()
@@ -173,6 +193,9 @@ final class RecordingController: ObservableObject {
         voice = nil
         raceBox = nil
         phone = nil
+        camera?.stop()
+        camera = nil
+        cameraStatus = nil
         obd = nil
         heartRate = nil
         session = nil
@@ -197,7 +220,9 @@ final class RecordingController: ObservableObject {
             return
         }
         let obdOn = obd?.status().state == ObdLinkState.connected
-        let model = TrackScreenModel(now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status)
+        let model = TrackScreenModel(
+            now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus
+        )
         screen = model
         activity.update(model)
     }
@@ -257,8 +282,8 @@ struct TrackScreenModel: Equatable {
     static let slots = 6
 
     /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
-    /// strap's, when one records (FBBD-333).
-    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil) {
+    /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
+    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil, camera: CameraStatus? = nil) {
         let live = s.live
         let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
@@ -275,7 +300,9 @@ struct TrackScreenModel: Equatable {
         let heart = heartRate?.bpm.map { bpm in
             Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
         }
-        status = [place, gnss, obd, heart].compactMap { $0 }
+        // Phone video, when the camera reports (UI-07): green while it records, amber when it does not.
+        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok) }
+        status = [place, gnss, video, obd, heart].compactMap { $0 }
         coach = s.coach.map { Coach(corner: $0.corner, text: $0.text, praise: $0.praise, dim: $0.dim) }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {

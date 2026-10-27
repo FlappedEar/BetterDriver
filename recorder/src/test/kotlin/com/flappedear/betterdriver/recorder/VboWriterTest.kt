@@ -17,7 +17,7 @@ class VboWriterTest {
     private fun write(avi: String? = "session_", gates: Boolean = true): String {
         val sw = StringWriter()
         val doc = VboDocument(
-            created = Instant.parse("2026-10-11T09:02:23Z"),
+            createdUtcMillis = Instant.parse("2026-10-11T09:02:23Z").toEpochMilli(),
             columns = listOf(
                 VboColumn("satellites", "sats", "", VboWriter::sats),
                 VboColumn("time", "time", "", VboWriter::time),
