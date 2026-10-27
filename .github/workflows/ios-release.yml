@@ -167,6 +167,7 @@ jobs:
           app=build/BetterDriver.xcarchive/Products/Applications/BetterDriver.app
           want="${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }})"
           status=0
+          shopt -s nullglob
           for plist in "$app/Info.plist" "$app"/PlugIns/*.appex/Info.plist; do
             got="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"))"
             echo "$plist: $got"
