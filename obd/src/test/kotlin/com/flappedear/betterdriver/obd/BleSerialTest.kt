@@ -3,7 +3,6 @@
 package com.flappedear.betterdriver.obd
 
 import java.io.IOException
-import java.util.UUID
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -40,17 +39,17 @@ class BleSerialTest {
 
     @Test
     fun `the Vgate pair iOS apps use`() {
-        val service = UUID.fromString("e7810a71-73ae-499d-8c15-faa9aef0c3f2")
-        val ch = UUID.fromString("bef8d6c9-9c21-4c9e-b632-bd58c1009f9f")
+        val service = "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+        val ch = "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"
         val pair = BleSerial.choose(standard + GattCharacteristic(service, ch, N or W or WNR or READ))
         assertEquals(BleSerialPair(service, ch, ch, withResponse = true), pair)
     }
 
     @Test
     fun `an unknown maker's pair is still found`() {
-        val service = UUID.fromString("49535343-fe7d-4ae5-8fa9-9fafd205e455")
-        val rx = UUID.fromString("49535343-1e4d-4bd9-ba61-23c647249616")
-        val tx = UUID.fromString("49535343-8841-43f4-a8d4-ecbe34729bb3")
+        val service = "49535343-fe7d-4ae5-8fa9-9fafd205e455"
+        val rx = "49535343-1e4d-4bd9-ba61-23c647249616"
+        val tx = "49535343-8841-43f4-a8d4-ecbe34729bb3"
         val all = standard + listOf(GattCharacteristic(service, rx, N), GattCharacteristic(service, tx, WNR))
         assertEquals(BleSerialPair(service, rx, tx, withResponse = false), BleSerial.choose(all))
     }

@@ -41,7 +41,7 @@ targets:
         # FBBD-164); Xcode merges the generated keys below into it.
         INFOPLIST_FILE: Support/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: BetterDriver
-        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: BetterDriver reads your RaceBox over Bluetooth while it records.
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: BetterDriver reads your RaceBox, OBD adapter and heart-rate strap over Bluetooth while it records.
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: BetterDriver records your position on track when no GPS receiver is connected.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES

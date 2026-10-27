@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
 /// Sessions by day (UI-139 C), with + to import files (UI-292 A) and the import's progress.
@@ -6,6 +7,7 @@ struct SessionsListView: View {
     @Bindable var model: SessionsModel
     @Binding var selection: String?
     @State private var picking = false
+    @State private var showingTracks = false
 
     var body: some View {
         List(selection: $selection) {
@@ -36,12 +38,20 @@ struct SessionsListView: View {
         .background(Palette.background)
         .navigationTitle("Sessions")
         .toolbar {
+            // The iPhone has Tracks as a tab of its own (AppShell).
+            if UIDevice.current.userInterfaceIdiom == .pad {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Tracks") { showingTracks = true }
+                        .accessibilityIdentifier("openTracks")
+                }
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button { picking = true } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Import sessions")
                     .accessibilityIdentifier("importSessions")
             }
         }
+        .sheet(isPresented: $showingTracks) { TracksView() }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { model.importFiles(urls) }
         }

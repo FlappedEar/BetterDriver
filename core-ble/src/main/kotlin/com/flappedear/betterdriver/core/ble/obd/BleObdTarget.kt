@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.ObdTransport
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.io.IOException
+import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.flow.Flow
@@ -125,11 +126,12 @@ class BleObdTarget(context: Context, name: String, override val address: String)
         @Suppress("ReturnCount") // Each early return is one way the adapter is not usable.
         private fun subscribe(g: BluetoothGatt): String? {
             val all = g.services.flatMap { s ->
-                s.characteristics.map { GattCharacteristic(s.uuid, it.uuid, it.properties) }
+                s.characteristics.map { GattCharacteristic(s.uuid.toString(), it.uuid.toString(), it.properties) }
             }
             val p = BleSerial.choose(all) ?: return "no serial characteristic in ${g.services.map { it.uuid }}"
             pair = p
-            val ch = g.getService(p.service)?.getCharacteristic(p.notify) ?: return "characteristic ${p.notify} gone"
+            val ch = g.getService(UUID.fromString(p.service))?.getCharacteristic(UUID.fromString(p.notify))
+                ?: return "characteristic ${p.notify} gone"
             val cccd = ch.getDescriptor(RaceBoxGatt.CCCD) ?: return "notification descriptor not found"
             val indicate = ch.properties and BleSerial.PROPERTY_NOTIFY == 0
             val value = if (indicate) {
@@ -143,7 +145,7 @@ class BleObdTarget(context: Context, name: String, override val address: String)
 
         override fun onDescriptorWrite(g: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
             val p = pair
-            val ch = p?.let { g.getService(it.service)?.getCharacteristic(it.write) }
+            val ch = p?.let { g.getService(UUID.fromString(it.service))?.getCharacteristic(UUID.fromString(it.write)) }
             if (status != BluetoothGatt.GATT_SUCCESS || p == null || ch == null) {
                 return fail("enable notifications status $status")
             }
@@ -156,13 +158,13 @@ class BleObdTarget(context: Context, name: String, override val address: String)
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
-            if (ch.uuid == pair?.notify) connection?.notified(value)
+            if (ch.uuid.toString() == pair?.notify) connection?.notified(value)
         }
 
         @Deprecated("Called instead of the overload above before Android 13")
         @Suppress("DEPRECATION")
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic) {
-            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && ch.uuid == pair?.notify) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU && ch.uuid.toString() == pair?.notify) {
                 ch.value?.let { connection?.notified(it.copyOf()) }
             }
         }

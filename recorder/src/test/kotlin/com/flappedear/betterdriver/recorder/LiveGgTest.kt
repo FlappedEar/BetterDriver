@@ -227,8 +227,139 @@ class LiveGgTest {
         assertTrue(forward < 0.12 && left < 0.12, "rms forward $forward, left $left")
     }
 
+    /**
+     * The phone's own GPS and accelerometer (no receiver): the phone upright in a windscreen mount,
+     * tilted back [tiltDeg], its screen to the driver. Its X is the car's right, Y mostly up, Z mostly
+     * back, each with its share of gravity. Readings at 25 Hz, each in its own set; a fix a second,
+     * stamped [fixAgeMicros] before it arrives (phoneFixMicros).
+     */
+    private fun phoneDrive(
+        seconds: Double,
+        tiltDeg: Double = 25.0,
+        fixAgeMicros: Long = 600_000,
+        check: (t: Double, s: LiveSnapshot, truth: GPoint) -> Unit,
+    ): LiveSnapshot {
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now }, accelIds = AccelX to AccelY, accelZId = AccelZ)
+        val car = Drive()
+        val dt = StepMicros / 1e6
+        val c = kotlin.math.cos(Math.toRadians(tiltDeg))
+        val s = kotlin.math.sin(Math.toRadians(tiltDeg))
+        val stamped = ArrayDeque<Triple<Long, Double, Double>>()
+        var n = 0L
+        while (n * dt < seconds) {
+            val t = n * dt
+            car.step(t, dt)
+            now = n * StepMicros
+            val f = car.forward(t)
+            val l = car.left(t)
+            val shake = if (n % 2 == 0L) 0.05 else -0.05
+            tracker.onSamples(
+                SampleSet(
+                    now,
+                    listOf(
+                        ChannelValue(AccelX, -l + shake),
+                        ChannelValue(AccelY, -s * f + c + shake),
+                        ChannelValue(AccelZ, -c * f - s + shake),
+                    ),
+                ),
+            )
+            // A fix taken now arrives fixAgeMicros later.
+            if (n % 25 == 0L) stamped.addLast(Triple(now, car.speed, car.heading))
+            while (stamped.isNotEmpty() && stamped.first().first <= now - fixAgeMicros) {
+                val (at, speed, heading) = stamped.removeFirst()
+                val fix = listOf(
+                    ChannelValue(GnssChannels.LAT.id, 50.0),
+                    ChannelValue(GnssChannels.LON.id, 19.0),
+                    ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
+                    ChannelValue(GnssChannels.HEADING.id, (heading % 360 + 360) % 360),
+                )
+                tracker.onSamples(SampleSet(at, fix))
+            }
+            check(t, tracker.snapshot(), GPoint(car.forward(t - 0.25), car.left(t - 0.25)))
+            n++
+        }
+        return tracker.snapshot()
+    }
+
+    @Test
+    fun `phone GPS only, the phone's accelerometer upright in its mount gives the dot`() {
+        var shown = 0
+        phoneDrive(120.0) { t, s, truth ->
+            if (s.g != null) shown++
+            // A minute of 1 Hz fixes to match the axes; then the accelerometer's G, not the GPS's.
+            if (t > 75) assertNear(truth, s.g, 0.1, t)
+        }
+        assertTrue(shown > 2900, "the dot shows from the second fix on, shown $shown of 3000")
+    }
+
+    @Test
+    fun `phone GPS only, the G tile reads the size of the dot`() {
+        val s = phoneDrive(100.0) { _, _, _ -> }
+        val g = assertNotNull(s.g)
+        assertEquals(kotlin.math.hypot(g.forward, g.left), assertNotNull(s.gCombined), 1e-9)
+    }
+
+    /**
+     * Arek's Jastrząb 29 Aug 16:06 session again, with the phone's three axes (it sat upright, tilted
+     * back about 28°, RaceChrono 10.2.4 export, 10 Hz): how often the dot agrees with RaceChrono's G
+     * above 0.4 g, and the RMS difference forward and sideways. [fixEvery] row has a fix, in a set of
+     * its own: 10 is the phone GPS's one a second.
+     */
+    private fun jastrzabPhone(fixEvery: Int): Triple<Double, Double, Double> {
+        val csv = javaClass.getResource("/live/jastrzab-1606-phone.csv")!!.readText()
+        val rows = csv.lines().drop(1).filter { it.isNotBlank() }
+        var now = 0L
+        val tracker = LiveTracker("s", 0, { now }, accelIds = AccelX to AccelY, accelZId = AccelZ)
+        var n = 0
+        var agree = 0
+        var sf = 0.0
+        var sl = 0.0
+        for ((i, row) in rows.withIndex()) {
+            val v = row.split(',').map { it.toDouble() }
+            now = (v[0] * 1e6).toLong()
+            val accel = listOf(ChannelValue(AccelX, v[3]), ChannelValue(AccelY, v[4]), ChannelValue(AccelZ, v[5]))
+            tracker.onSamples(SampleSet(now, accel))
+            if (i % fixEvery == 0) {
+                val fix = listOf(
+                    ChannelValue(GnssChannels.LAT.id, 50.0),
+                    ChannelValue(GnssChannels.LON.id, 19.0),
+                    ChannelValue(GnssChannels.SPEED_KMH.id, v[1]),
+                    ChannelValue(GnssChannels.HEADING.id, v[2]),
+                )
+                tracker.onSamples(SampleSet(now, fix))
+            }
+            val g = tracker.snapshot().g
+            val rf = v[6]
+            val rl = v[7]
+            if (g == null || v[1] < 30 || kotlin.math.hypot(rf, rl) < 0.4) continue
+            n++
+            val sameF = abs(rf) < 0.15 || (g.forward > 0) == (rf > 0)
+            val sameL = abs(rl) < 0.15 || (g.left > 0) == (rl > 0)
+            if (sameF && sameL) agree++
+            sf += (g.forward - rf) * (g.forward - rf)
+            sl += (g.left - rl) * (g.left - rl)
+        }
+        return Triple(agree.toDouble() / n, kotlin.math.sqrt(sf / n), kotlin.math.sqrt(sl / n))
+    }
+
+    @Test
+    fun `on Arek's Jastrząb laps the phone's three axes point where RaceChrono's G does`() {
+        val (agree, forward, left) = jastrzabPhone(fixEvery = 1)
+        assertTrue(agree > 0.97, "agree $agree")
+        assertTrue(forward < 0.12 && left < 0.12, "rms forward $forward, left $left")
+    }
+
+    @Test
+    fun `on Arek's Jastrząb laps with a fix a second, as the phone's GPS, the dot still points right`() {
+        val (agree, forward, left) = jastrzabPhone(fixEvery = 10)
+        assertTrue(agree > 0.97, "agree $agree")
+        assertTrue(forward < 0.12 && left < 0.12, "rms forward $forward, left $left")
+    }
+
     private companion object {
         const val AccelX = 20
         const val AccelY = 21
+        const val AccelZ = 22
     }
 }
