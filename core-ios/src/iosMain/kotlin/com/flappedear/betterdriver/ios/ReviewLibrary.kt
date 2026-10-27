@@ -16,11 +16,16 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.StoredSession
 import com.flappedear.betterdriver.recorder.video.VideoFiles
+import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.circuits.CircuitListException
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.transfer.ReceivedBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
+import com.flappedear.betterdriver.transfer.foreign.ForeignInbox
+import com.flappedear.betterdriver.transfer.foreign.ImportedSession
+import platform.Foundation.NSBundle
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterMediumStyle
@@ -44,6 +49,7 @@ class ReviewLibrary(base: String) {
     private val store = SessionStore(sessionsRoot)
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
     private val plans = IosLinePlanStore(linePlansDir(base))
+    private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
     fun sessions(): List<StoredSession> = store.list().filter { it.state != SessionState.RECORDING }
@@ -140,6 +146,27 @@ class ReviewLibrary(base: String) {
 
     /** At app start: cleans up an import cut short. Returns whether a session came back. */
     fun clearStaging(): Boolean = inbox.clearStaging()
+
+    /**
+     * Imports the VBO or RaceChrono CSV file at [path] as a new session (FBBD-164), as Android's
+     * import does: the track is detected among the saved tracks and the built-in circuit list.
+     * [onProgress] gets the bytes read so far and the file's size. Throws ImportFormatException,
+     * with a message for the user, for a file that cannot be imported.
+     */
+    @Throws(Exception::class)
+    fun importForeign(path: String, onProgress: (read: Long, total: Long) -> Unit): ImportedSession =
+        foreign.importFile(path, path.substringAfterLast('/'), tracks(), circuits, onProgress)
+
+    /** The circuit list bundled with the app (circuits.json, as Android's), or none. */
+    private val circuits: CircuitList by lazy {
+        val path = NSBundle.mainBundle.pathForResource("circuits", "json")
+        val text = path?.let { NSString.stringWithContentsOfFile(it, NSUTF8StringEncoding, null) }
+        try {
+            text?.let(CircuitList::decode) ?: CircuitList.Empty
+        } catch (_: CircuitListException) {
+            CircuitList.Empty
+        }
+    }
 }
 
 /** At most this many other sessions at the track give targets, newest first (as on Android). */

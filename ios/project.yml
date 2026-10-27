@@ -37,13 +37,15 @@ targets:
         # iPhone and iPad.
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        # Background modes and document types; Xcode merges the generated keys below into it.
+        # Background modes and document types (.bdsession, and .vbo and .csv from other apps,
+        # FBBD-164); Xcode merges the generated keys below into it.
         INFOPLIST_FILE: Support/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: BetterDriver
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: BetterDriver reads your RaceBox, OBD adapter and heart-rate strap over Bluetooth while it records.
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: BetterDriver records your position on track when no GPS receiver is connected.
         INFOPLIST_KEY_NSCameraUsageDescription: BetterDriver films your session with the phone camera, in sync with the data.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: BetterDriver records the sound with the session video.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: BetterDriver saves the perfect lap video to your photos when you ask it to.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark

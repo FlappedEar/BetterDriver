@@ -59,10 +59,7 @@ class VboWriter(private val out: Appendable) {
         const val CRLF = "\r\n"
 
         /** Header names of the standard channels this app writes. */
-        val STANDARD_CHANNELS = setOf(
-            "satellites", "time", "latitude", "longitude", "velocity kmh", "heading", "height",
-            "avifileindex", "avisynctime",
-        )
+        val STANDARD_CHANNELS = VboStandardChannels
 
         fun sats(v: Double) = vboPadded(v.toLong().coerceIn(0, 999), 3)
 
