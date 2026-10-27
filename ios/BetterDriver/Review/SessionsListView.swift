@@ -80,6 +80,8 @@ private struct SessionRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sessionRow")
     }
 }
 

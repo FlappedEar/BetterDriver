@@ -280,4 +280,20 @@ extension ReviewBridge {
     }
 
     static func clearStaging() { _ = library.clearStaging() }
+
+    /// The Android app's built-in demo sessions (Jastrząb, Silesia Ring), added when the app is
+    /// launched with -demoSessions and has no sessions yet: the UI tests open them (FBBD-331).
+    static func addDemosIfAsked() {
+        guard ProcessInfo.processInfo.arguments.contains("-demoSessions"), library.sessions().isEmpty,
+              let dir = Bundle.main.resourceURL?.appendingPathComponent("demo") else { return }
+        // When Arek drove them, as Android names them (DemoReplay).
+        let demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
+        for (name, start) in demos {
+            _ = try? library.addDemo(
+                replayPath: dir.appendingPathComponent("\(name).replay").path,
+                trackPath: dir.appendingPathComponent("\(name).track.json").path,
+                startUtcMillis: start
+            )
+        }
+    }
 }
