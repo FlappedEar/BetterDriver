@@ -246,6 +246,8 @@ final class RecordingController: ObservableObject {
         raceBoxState = .off
         phoneState = .off
         UIApplication.shared.isIdleTimerDisabled = false
+        // The session is on disk: the Sessions list reads it again.
+        NotificationCenter.default.post(name: .sessionsChanged, object: nil)
     }
 
     private func refresh() {

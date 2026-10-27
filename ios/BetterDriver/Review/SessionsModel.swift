@@ -48,6 +48,10 @@ final class SessionsModel {
                 self?.reload()
             }
         }
+        // A recording ended: it is the newest session.
+        NotificationCenter.default.addObserver(forName: .sessionsChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        }
     }
 
     func reload() {
