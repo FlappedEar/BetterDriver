@@ -10,9 +10,12 @@ import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
 import com.flappedear.betterdriver.analysis.line.linePlan
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.feature.analysis.AnalysisUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
+import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.lineUi
+import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.geo.GeoPoint
@@ -108,6 +111,27 @@ class ReviewedSession internal constructor(
 ) {
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)
+
+    /**
+     * Android's analysis screen model of the session (sectors, corner details, Car tab, ...), with
+     * timed lap [otherIndex] compared against the fastest; null without a counted lap.
+     */
+    fun screen(otherIndex: Int): AnalysisUi? = screenOf(otherIndex)
+
+    /** As [screen], with the lap Android compares when the screen opens. */
+    fun defaultScreen(): AnalysisUi? = screenOf(analysis?.let(::defaultComparedLap))
+
+    private fun screenOf(otherIndex: Int?): AnalysisUi? {
+        val analysis = analysis ?: return null
+        val session = checkNotNull(session)
+        val fastest = analysis.laps.fastestLapIndex
+        val comparison = if (fastest != null && otherIndex != null) {
+            compareLaps(analysis, session, fastest, otherIndex)
+        } else {
+            null
+        }
+        return analysisUi("", analysis, comparison)?.let { withCar(it, analysis, session, null) }
+    }
 
     /** The fastest lap against timed lap [otherIndex]; null without a fastest lap or an axis. */
     fun compare(otherIndex: Int): ReviewCompare? {

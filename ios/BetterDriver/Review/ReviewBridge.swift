@@ -40,6 +40,8 @@ struct SessionSummary {
     let line: WhereToFindTime?
     /// The fastest lap against the second fastest, as Compare opens on Android.
     let compare: LapCompare?
+    /// Android's analysis screen model for Corners and Car, the same lap compared.
+    let screen: AnalysisUi?
 }
 
 /// A point of a chart: metres from the start/finish line and a value.
@@ -150,13 +152,19 @@ enum ReviewBridge {
             bestLap: review.bestLapSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
             theoreticalBest: review.theoreticalBestSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
             line: review.line.map(whereToFindTime),
-            compare: reviewed.defaultCompare().map(lapCompare)
+            compare: reviewed.defaultCompare().map(lapCompare),
+            screen: reviewed.defaultScreen()
         )
     }
 
     /// The fastest lap against lap [index] of [summary]'s session; nil without a fastest lap.
     static func compare(_ summary: SessionSummary, lapIndex index: Int) -> LapCompare? {
         summary.reviewed.compare(otherIndex: Int32(index)).map(lapCompare)
+    }
+
+    /// Android's analysis screen with lap [index] compared, for Corners and Car.
+    static func screen(_ summary: SessionSummary, lapIndex index: Int) -> AnalysisUi? {
+        summary.reviewed.screen(otherIndex: Int32(index))
     }
 
     private static func lapCompare(_ c: ReviewCompare) -> LapCompare {

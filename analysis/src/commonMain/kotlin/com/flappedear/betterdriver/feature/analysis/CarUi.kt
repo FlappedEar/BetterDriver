@@ -13,6 +13,7 @@ import com.flappedear.betterdriver.analysis.vehicle.lapVehicleStretches
 import com.flappedear.betterdriver.analysis.vehicle.sessionVehicleStretch
 import com.flappedear.betterdriver.analysis.vehicle.steeringStats
 import com.flappedear.betterdriver.analysis.vehicle.steeringTrace
+import com.flappedear.betterdriver.format.fixed
 import kotlin.math.roundToInt
 
 /**
@@ -34,6 +35,10 @@ data class CarUi(
     /** The temperatures any row has, in [VehicleChannel.Temperatures] order. */
     val temperatureKinds: List<VehicleChannel>
         get() = VehicleChannel.Temperatures.filter { k -> rows.any { r -> r.temperatures.any { it.kind == k } } }
+
+    /** The temperatures no row has, for "Not recorded: ...". */
+    val missingTemperatures: List<VehicleChannel>
+        get() = VehicleChannel.Temperatures.filter { it !in temperatureKinds }
 
     /** Whether the session has none of it. */
     val empty: Boolean
@@ -87,7 +92,26 @@ data class HeartRateChartUi(
     val laps: List<Pair<Double, Double>>,
     val fromSeconds: Double,
     val toSeconds: Double,
+) {
+    /** [laps] as start and end points (time, 0), for platforms without Kotlin's Pair. */
+    val lapSpans: List<List<Double>> get() = laps.map { listOf(it.first, it.second) }
+}
+
+/** A temperature's name on the Car tab: Oil, Coolant, Gearbox, Intake. */
+fun temperatureName(kind: VehicleChannel): String = TemperatureNames.getValue(kind)
+
+private val TemperatureNames = mapOf(
+    VehicleChannel.OilTemp to "Oil",
+    VehicleChannel.CoolantTemp to "Coolant",
+    VehicleChannel.GearboxTemp to "Gearbox",
+    VehicleChannel.IntakeTemp to "Intake",
+    VehicleChannel.Rpm to "RPM",
 )
+
+/** Whole seconds from 10 up, one decimal under: the Car tab's figures. */
+fun figureSeconds(s: Double): String = if (s >= TenSeconds) "${s.roundToInt()}" else fixed(s, 1)
+
+private const val TenSeconds = 10.0
 
 /** [ui] with its Car tab, from [session] as [analysis] timed it; [device] is the heart rate strap's name. */
 fun withCar(ui: AnalysisUi, analysis: SessionAnalysis, session: TelemetrySession, device: String?): AnalysisUi {

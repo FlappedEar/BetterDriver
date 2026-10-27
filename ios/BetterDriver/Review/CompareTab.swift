@@ -127,9 +127,9 @@ private struct LapChart: View {
             let y = { (v: Double) in CGFloat((high - v) / (high - low)) * h }
             Canvas { ctx, _ in
                 for band in compare.corners {
-                    let rects = band.end >= band.start
+                    let rects: [(Double, Double)] = band.end >= band.start
                         ? [(band.start, band.end)]
-                        : [(band.start, length), (0, band.end)]
+                        : [(band.start, length), (0.0, band.end)]
                     for (a, b) in rects {
                         ctx.fill(Path(CGRect(x: x(a), y: 0, width: x(b) - x(a), height: h)), with: .color(Palette.surfaceVariant))
                     }

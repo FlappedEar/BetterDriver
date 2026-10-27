@@ -62,6 +62,12 @@ class SessionReviewTest {
         // At the line the delta is the gap between the two lap times.
         assertEquals(fixed(second.deltaSeconds, 2), fixed(compare.delta.last().last().value, 2))
         assertEquals(compare, reviewed.compare(compare.otherIndex))
+        // Android's screen model, for the Corners and Car tabs: the same laps and corners.
+        val screen = checkNotNull(reviewed.defaultScreen())
+        assertEquals(19, screen.compare?.otherNumber)
+        assertEquals(12, screen.corners.size)
+        assertEquals(screen.sectors.size, screen.sectors.count { it.bestSeconds != null })
+        assertEquals("108.201", fixed(screen.theoreticalMillis!! / 1000.0, 3))
         assertTrue(compare.corners.isNotEmpty())
         assertTrue(compare.referenceSpeed.isNotEmpty() && compare.otherSpeed.isNotEmpty())
     }

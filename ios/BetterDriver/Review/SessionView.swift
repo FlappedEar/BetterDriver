@@ -32,6 +32,7 @@ struct SessionView: View {
     @State private var tab: SessionTab = .summary
     @State private var summary: SessionSummary?
     @State private var compare: LapCompare?
+    @State private var screen: AnalysisUi?
     @State private var failure: String?
 
     var body: some View {
@@ -62,17 +63,23 @@ struct SessionView: View {
             case .compare: CompareTab(compare: compare)
             case .laps: LapsTab(summary: summary) { lap in pick(lap, summary) }
             case .map: MapTab(line: summary.line)
-            default: Message(text: "\(tab.rawValue) comes in the next iPad update.")
+            case .corners: CornersTab(screen: screen)
+            case .car: CarTab(car: screen?.car)
             }
         } else {
             ProgressView().tint(Palette.accent).padding(.top, 60)
         }
     }
 
-    /// Picking a lap compares it with the fastest, so Compare opens, as on Android.
+    /// Picking a lap compares it with the fastest, on Compare, Corners and Car; Compare opens, as on Android.
     private func pick(_ lap: LapRow, _ summary: SessionSummary) {
         Task {
-            compare = await Task.detached(priority: .userInitiated) { ReviewBridge.compare(summary, lapIndex: lap.index) }.value
+            let index = lap.index
+            let picked = await Task.detached(priority: .userInitiated) {
+                (ReviewBridge.compare(summary, lapIndex: index), ReviewBridge.screen(summary, lapIndex: index))
+            }.value
+            compare = picked.0
+            screen = picked.1
             tab = .compare
         }
     }
@@ -80,12 +87,14 @@ struct SessionView: View {
     private func load() async {
         summary = nil
         compare = nil
+        screen = nil
         failure = nil
         let id = session.id
         do {
             let read = try await Task.detached(priority: .userInitiated) { try ReviewBridge.summary(id: id) }.value
             summary = read
             compare = read.compare
+            screen = read.screen
         } catch {
             failure = "This session could not be read: \(error.localizedDescription)"
         }
@@ -179,17 +188,6 @@ private struct LapsTab: View {
                 .frame(minWidth: 110, alignment: .trailing)
         }
         .contentShape(Rectangle())
-    }
-}
-
-private struct Card<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16))
     }
 }
 
