@@ -9,6 +9,7 @@ on:
     paths:
       - "ios/**"
       - "shared/**"
+      - "setup/**"
       - "recorder/**"
       - "racebox/**"
       - "obd/**"
@@ -28,6 +29,7 @@ on:
     paths:
       - "ios/**"
       - "shared/**"
+      - "setup/**"
       - "recorder/**"
       - "racebox/**"
       - "obd/**"
