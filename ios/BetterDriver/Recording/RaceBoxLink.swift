@@ -111,6 +111,8 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     func stop() {
         queue.async {
             self.running = false
+            // A lookup scan for a RaceBox this phone did not know yet may still be running.
+            if self.central?.isScanning == true { self.central?.stopScan() }
             if let p = self.peripheral { self.central?.cancelPeripheralConnection(p) }
             self.peripheral = nil
             self.report(.off)
@@ -196,6 +198,16 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             return
         }
         peripheral.setNotifyValue(true, for: tx)
+    }
+
+    func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        guard characteristic.uuid == uartTx else { return }
+        // Notifications refused: no data would ever come on this connection, so drop it and try again.
+        if error != nil || !characteristic.isNotifying { central.cancelPeripheralConnection(peripheral) }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
