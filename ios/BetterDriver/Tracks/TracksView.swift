@@ -16,6 +16,7 @@ struct TracksScreen: View {
     @StateObject private var model = TracksModel()
     @State private var editing: EditingTrack?
     @State private var naming = false
+    @State private var nameText = ""
 
     var body: some View {
         Group {
@@ -23,7 +24,10 @@ struct TracksScreen: View {
                 VStack(alignment: .leading, spacing: 12) {
                     whereYouAre
                     if let here = model.here, here.track == nil {
-                        Button { naming = true } label: {
+                        Button {
+                            nameText = ""
+                            naming = true
+                        } label: {
                             Text("Not on the list? New track here uses your position and a name you type.")
                                 .font(.subheadline)
                                 .foregroundStyle(Palette.accent)
@@ -66,7 +70,10 @@ struct TracksScreen: View {
             }
         }
         .alert("New track here", isPresented: $naming) {
-            NameField(initial: "", confirm: "Create") { name in model.createHere(name: name, open: open) }
+            TextField("Name", text: $nameText)
+            Button("Create") { model.createHere(name: nameText, open: open) }
+                .disabled(!TracksModel.library.validName(name: nameText))
+            Button("Cancel", role: .cancel) {}
         }
         .alert(model.message ?? "", isPresented: Binding(get: { model.message != nil }, set: { if !$0 { model.message = nil } })) {
             Button("OK", role: .cancel) {}

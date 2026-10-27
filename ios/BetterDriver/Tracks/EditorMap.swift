@@ -48,6 +48,7 @@ struct EditorMap: UIViewRepresentable {
         context.coordinator.drawing?.setNeedsDisplay()
     }
 
+    @MainActor
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let model: EditorModel
         weak var drawing: EditorDrawing?

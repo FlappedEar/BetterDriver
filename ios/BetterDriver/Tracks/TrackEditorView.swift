@@ -91,6 +91,8 @@ struct TrackEditorView: View {
     @State private var deleting = false
     @State private var naming = false
     @State private var editingKey = false
+    @State private var nameText = ""
+    @State private var keyText = ""
     @State private var failed: String?
 
     private var editor: TrackEditor { model.editor }
@@ -131,20 +133,32 @@ struct TrackEditorView: View {
             Text("\(editor.track.displayName): its lines will be removed from this phone. Sessions recorded there stay. This can't be undone.")
         }
         .alert("Track name", isPresented: $naming) {
-            NameField(initial: editor.track.name) { name in model.act { $0.rename(name: name) } }
+            TextField("Name", text: $nameText)
+            Button("Rename") { model.act { $0.rename(name: nameText) } }
+                .disabled(!TracksModel.library.validName(name: nameText))
+            Button("Cancel", role: .cancel) {}
         }
         .alert("MapTiler key", isPresented: $editingKey) {
-            KeyField { key in
-                MapTiles.mapTilerKey = key
-                sources = MapTiles.sources()
-                picked = nil
+            TextField("Key", text: $keyText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Save") { useKey(keyText) }
+            if MapTiles.mapTilerKey != nil {
+                Button("Remove", role: .destructive) { useKey(nil) }
             }
+            Button("Cancel", role: .cancel) {}
         } message: {
             Text("Turns on MapTiler's satellite map. The key stays on this device.")
         }
         .alert(failed ?? "", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
             Button("OK", role: .cancel) {}
         }
+    }
+
+    private func useKey(_ key: String?) {
+        MapTiles.mapTilerKey = key
+        sources = MapTiles.sources()
+        picked = nil
     }
 
     private func back() {
@@ -229,6 +243,7 @@ struct TrackEditorView: View {
                         }
                         Divider()
                         Button(MapTiles.mapTilerKey == nil ? "Add MapTiler key…" : "Change MapTiler key…") {
+                            keyText = MapTiles.mapTilerKey ?? ""
                             editingKey = true
                         }
                     } label: {
@@ -259,10 +274,10 @@ struct TrackEditorView: View {
     private var placingControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Chip(label: "From your lap", on: editor.method == .fromLap, enabled: editor.path != nil) {
-                    model.act { $0.pick(m: .fromLap) }
+                Chip(label: "From your lap", on: editor.placingFromLap, enabled: editor.path != nil) {
+                    model.act { $0.pickFromLap(fromLap: true) }
                 }
-                Chip(label: "Two taps", on: editor.method == .twoTaps) { model.act { $0.pick(m: .twoTaps) } }
+                Chip(label: "Two taps", on: !editor.placingFromLap) { model.act { $0.pickFromLap(fromLap: false) } }
             }
             if editor.path == nil {
                 Dim("No session here yet, so lines are placed with two taps.")
@@ -282,7 +297,10 @@ struct TrackEditorView: View {
 
     private var lineList: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button { naming = true } label: {
+            Button {
+                nameText = editor.track.name
+                naming = true
+            } label: {
                 HStack(spacing: 12) {
                     Text("Name")
                     Text(editor.track.name).foregroundStyle(Palette.onSurfaceVariant).lineLimit(1)
@@ -367,36 +385,5 @@ struct Dim: View {
     var body: some View {
         Text(text).font(.subheadline).foregroundStyle(Palette.onSurfaceVariant)
             .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-/// The text field and buttons of a name alert; [onDone] gets a valid name.
-struct NameField: View {
-    let initial: String
-    var confirm = "Rename"
-    let onDone: (String) -> Void
-    @State private var name = ""
-
-    var body: some View {
-        TextField("Name", text: $name).onAppear { name = initial }
-        Button(confirm) { onDone(name) }
-            .disabled(!TracksModel.library.validName(name: name))
-        Button("Cancel", role: .cancel) {}
-    }
-}
-
-private struct KeyField: View {
-    let onSave: (String?) -> Void
-    @State private var key = MapTiles.mapTilerKey ?? ""
-
-    var body: some View {
-        TextField("Key", text: $key)
-            .textInputAutocapitalization(.never)
-            .autocorrectionDisabled()
-        Button("Save") { onSave(key) }
-        if MapTiles.mapTilerKey != nil {
-            Button("Remove", role: .destructive) { onSave(nil) }
-        }
-        Button("Cancel", role: .cancel) {}
     }
 }

@@ -55,7 +55,7 @@ final class TracksTests: XCTestCase {
         let sessions = library.editorSessions(track: track)
         XCTAssertEqual(sessions.count, 1)
         let model = EditorModel(TrackEditor(initial: track, sessions: sessions, stored: track))
-        XCTAssertEqual(model.editor.method, .fromLap)
+        XCTAssertTrue(model.editor.placingFromLap)
         XCTAssertFalse(model.editor.pathCoordinates.isEmpty)
         model.act { $0.select(index: 0) }
         XCTAssertEqual(model.editor.title, "Start / finish")

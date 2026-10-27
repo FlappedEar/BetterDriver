@@ -130,6 +130,12 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
         }
     }
 
+    /** Taps place the line on the recorded lap (From your lap), not with two taps; for Swift. */
+    val placingFromLap: Boolean get() = method == PlaceMethod.FromLap
+
+    /** Picks From your lap ([fromLap]) or Two taps; for Swift. */
+    fun pickFromLap(fromLap: Boolean) = pick(if (fromLap) PlaceMethod.FromLap else PlaceMethod.TwoTaps)
+
     /** Picks how taps place the line; From your lap only with a recorded drive. */
     fun pick(m: PlaceMethod) {
         if (m == PlaceMethod.TwoTaps || path != null) {
