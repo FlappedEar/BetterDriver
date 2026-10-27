@@ -545,11 +545,12 @@ data class Setup(
  * accelerometer, which every RaceBox has (Mini, Mini S and Micro send acceleration in each data
  * message, RaceBox BLE protocol rev. 8). A plain NMEA receiver does not report one, but a RaceChrono
  * DIY device streaming $RC2/$RC3 lines over Bluetooth or Wi-Fi does (FBBD-115), and the setup
- * cannot tell them apart, so G is offered for both. Without a receiver there is nothing to show.
+ * cannot tell them apart, so G is offered for both. With the phone's own GPS the G is the phone's
+ * accelerometer, which records in every session (FBBD-218). Without a receiver there is nothing to show.
  */
 fun channelsFor(gnss: Equipment?): Set<TrackChannel> = when (gnss?.model) {
     null -> emptySet()
-    EquipmentModel.RACEBOX, EquipmentModel.NMEA_GNSS, EquipmentModel.TCP_GNSS ->
+    EquipmentModel.RACEBOX, EquipmentModel.NMEA_GNSS, EquipmentModel.TCP_GNSS, EquipmentModel.PHONE_GPS ->
         setOf(TrackChannel.SPEED, TrackChannel.G)
     else -> setOf(TrackChannel.SPEED)
 }

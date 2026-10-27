@@ -6,8 +6,10 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.SampleSet
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 private const val MicrosPerSecond = 1_000_000L
 
@@ -152,6 +154,11 @@ class LiveTracker(
     private val droppedSamples: () -> Long = { 0L },
     /** Channel ids of the receiver's X and Y acceleration in g, when it has an accelerometer. */
     private val accelIds: Pair<Int, Int>? = null,
+    /**
+     * The Z acceleration's channel id when [accelIds] are the phone's own accelerometer, which can sit
+     * any way up in its mount (receivers without one: phone GPS).
+     */
+    private val accelZId: Int? = null,
 ) : RecorderListener {
 
     private val recentFixes = ArrayDeque<Long>()
@@ -165,8 +172,11 @@ class LiveTracker(
     private var longitude: Double? = null
     private var accelX: Double? = null
     private var accelY: Double? = null
-    private val gWindow = GWindow()
-    private val gg = LiveGg()
+    private var accelZ: Double? = null
+    private val axes = if (accelZId == null) ReceiverAxes else PhoneAxes
+    private var gWindow = GWindow(axes)
+    private var gg = LiveGg(axes)
+    private val level = Level()
     private val standing = StandingBias()
     private var storageLowBytes: Long? = null
     private var stoppedReason: String? = null
@@ -199,6 +209,7 @@ class LiveTracker(
                     accel = true
                 }
                 accelIds?.second -> accelY = v.value
+                accelZId -> accelZ = v.value
                 else -> shown[v.channelId]?.update(set.tMicros, v.value)
             }
         }
@@ -221,11 +232,27 @@ class LiveTracker(
         speed?.let { gg.addFix(t, it, heading) }
         if (accel) {
             standing.update(speedKmh, accelX, accelY)
-            gWindow.add(t, accelX, accelY)
-            gWindow.mean(standing)?.let { (x, y) -> gg.addAccel(t, x, y) }
+            var a = reading()
+            if (a != null && axes == PhoneAxes) {
+                // Levelled the first time the car stands: the radar starts its match again on the new axes.
+                if (level.update(speedKmh, a)) {
+                    gWindow = GWindow(axes)
+                    gg = LiveGg(axes, turned = true, fixesFrom = gg)
+                }
+                a = level.apply(a)
+            }
+            a?.let { gWindow.add(t, it) }
+            // The radar's match takes each axis's tilt and gravity off itself, as the session goes.
+            gWindow.means()?.let { gg.addAccel(t, it) }
         } else if (speed != null) {
             gg.fixOnly(t)
         }
+    }
+
+    /** The latest value of each accelerometer axis, or null before all have one. */
+    private fun reading(): DoubleArray? {
+        val values = if (axes == PhoneAxes) listOf(accelX, accelY, accelZ) else listOf(accelX, accelY)
+        return values.filterNotNull().takeIf { it.size == axes }?.toDoubleArray()
     }
 
     /** The car's position from the newest fix only: a late one is older. */
@@ -259,7 +286,8 @@ class LiveTracker(
             storageLowBytes = storageLowBytes,
             stoppedReason = stoppedReason,
             droppedSamples = droppedSamples(),
-            gCombined = gWindow.combined(standing),
+            // The phone's axes are the car's only once matched to GPS: its G is the radar's.
+            gCombined = if (axes == 2) gWindow.combined(standing) else gg.current()?.let { hypot(it.forward, it.left) },
             g = gg.current(),
             gTrail = gg.trail(),
             receiverRateHz = receiverRateHz,
@@ -319,41 +347,94 @@ private class ShownValue(val name: String) {
 }
 
 /**
- * The receiver's X and Y readings of the last [GSmoothingMicros] before the newest. Each axis is
- * averaged before the two are combined, so road vibration cancels out instead of adding to the G.
+ * The accelerometer's readings of the last [GSmoothingMicros] before the newest, per axis. Each axis
+ * is averaged before they are combined, so road vibration cancels out instead of adding to the G.
  */
-internal class GWindow {
+internal class GWindow(private val axes: Int = 2) {
     private val times = ArrayDeque<Long>()
-    private val xs = ArrayDeque<Double>()
-    private val ys = ArrayDeque<Double>()
-    private var sumX = 0.0
-    private var sumY = 0.0
+    private val readings = ArrayDeque<DoubleArray>()
+    private val sums = DoubleArray(axes)
     private var newest = Long.MIN_VALUE
 
-    fun add(t: Long, x: Double?, y: Double?) {
-        if (x == null || y == null) return
-        if (!x.isFinite() || !y.isFinite()) return
+    fun add(t: Long, a: DoubleArray) {
+        if (a.size != axes || a.any { !it.isFinite() }) return
         times.addLast(t)
-        xs.addLast(x)
-        ys.addLast(y)
-        sumX += x
-        sumY += y
+        readings.addLast(a.copyOf())
+        for (i in 0 until axes) sums[i] += a[i]
         newest = maxOf(newest, t)
         while (times.isNotEmpty() && times.first() <= newest - GSmoothingMicros) {
             times.removeFirst()
-            sumX -= xs.removeFirst()
-            sumY -= ys.removeFirst()
+            val old = readings.removeFirst()
+            for (i in 0 until axes) sums[i] -= old[i]
         }
     }
 
-    /** The averaged X and Y, [standing] taken off; null before the first reading. */
-    fun mean(standing: StandingBias): Pair<Double, Double>? {
-        if (times.isEmpty()) return null
-        return (sumX / times.size - standing.x) to (sumY / times.size - standing.y)
-    }
+    /** Each axis averaged; null before the first reading. */
+    fun means(): DoubleArray? = if (times.isEmpty()) null else DoubleArray(axes) { sums[it] / times.size }
 
     /** The averaged X and Y combined, [standing] taken off; null before the first reading. */
-    fun combined(standing: StandingBias): Double? = mean(standing)?.let { (x, y) -> hypot(x, y) }
+    fun combined(standing: StandingBias): Double? =
+        means()?.let { hypot(it[0] - standing.x, it[1] - standing.y) }
+}
+
+/**
+ * Turns the phone's three axes so one points up, as gravity reads with the car standing, and the
+ * other two lie flat: a phone upright in its mount and tilted back reads the car's forward G on its
+ * Z axis only in part (cos 28° on Arek's Jastrząb mount), and braking pitches gravity into it. Until
+ * the car has stood for [StandingReadings] the axes are the phone's own.
+ */
+internal class Level {
+    private val sum = DoubleArray(PhoneAxes)
+    private var count = 0
+    private var basis: Array<DoubleArray>? = null
+
+    /** Adds a standing reading; true when this one levels the axes. */
+    fun update(speedKmh: Double?, a: DoubleArray): Boolean {
+        if (basis != null || speedKmh == null || speedKmh >= StandingKmh) return false
+        for (i in 0 until PhoneAxes) sum[i] += a[i]
+        if (++count >= StandingReadings) basis = basisFrom(sum)
+        return basis != null
+    }
+
+    /** [a] on the levelled axes (across, along, up), or as it is before the car has stood. */
+    fun apply(a: DoubleArray): DoubleArray = basis?.let { b -> DoubleArray(PhoneAxes) { dot(b[it], a) } } ?: a
+
+    /**
+     * Up from gravity [g], the flat axis nearest the phone's X, and the one across both: X of a phone
+     * upright or flat in its mount lies across the car. A phone on its side has X up: then its Y.
+     */
+    private fun basisFrom(g: DoubleArray): Array<DoubleArray>? {
+        val up = unit(g)
+        val axis = if (up == null || abs(up[0]) < MaxUpright) 0 else 1
+        val across = up?.let { u -> unit(DoubleArray(PhoneAxes) { (if (it == axis) 1.0 else 0.0) - u[axis] * u[it] }) }
+        if (up == null || across == null) return null
+        val along = doubleArrayOf(
+            up[1] * across[2] - up[2] * across[1],
+            up[2] * across[0] - up[0] * across[2],
+            up[0] * across[1] - up[1] * across[0],
+        )
+        return arrayOf(across, along, up)
+    }
+
+    private fun dot(u: DoubleArray, v: DoubleArray): Double = u.indices.sumOf { u[it] * v[it] }
+
+    private fun unit(v: DoubleArray): DoubleArray? {
+        val n = sqrt(dot(v, v))
+        return if (n < MinNorm) null else DoubleArray(PhoneAxes) { v[it] / n }
+    }
+
+    private companion object {
+        const val StandingKmh = 1.0
+
+        /** A second of standing at the phone's 25 Hz. */
+        const val StandingReadings = 25
+
+        /** Gravity reads about 1 g; a phone X along gravity leaves no flat X to take. */
+        const val MinNorm = 0.1
+
+        /** A phone X this near up (about 60° from flat) is not taken as the flat axis. */
+        const val MaxUpright = 0.87
+    }
 }
 
 /**
