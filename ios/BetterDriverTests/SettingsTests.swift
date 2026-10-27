@@ -97,4 +97,21 @@ final class SettingsTests: XCTestCase {
         model.update { $0.chooseGnss(id: "gps") }
         XCTAssertEqual(RecordingController.receiver(model.setup), .success(.phone))
     }
+
+    /// An empty setup.json (a crash while writing on an old build) reads as a fresh install.
+    func testAnEmptySetupFileIsAFreshInstall() throws {
+        try Data().write(to: base.appendingPathComponent("setup.json"))
+        let model = SettingsModel(base: base, defaults: UserDefaults(suiteName: "settings-\(UUID().uuidString)")!)
+        XCTAssertEqual(model.setup.equipment.map(\.modelName), [ModelName.phoneCamera])
+    }
+
+    /// A RaceBox copied from an Android setup has a MAC address, not an iPhone identifier: START says so.
+    func testAnAndroidRaceBoxDoesNotStart() {
+        let model = SettingsModel(base: base, defaults: UserDefaults(suiteName: "settings-\(UUID().uuidString)")!)
+        let raceBox = SettingsCore.shared.model(name: ModelName.raceBox)!
+        model.update {
+            SettingsCore.shared.addEquipment(setup: $0, model: raceBox, name: "RB", address: "AA:BB:CC:DD:EE:FF", id: "rb")
+        }
+        XCTAssertEqual(RecordingController.receiver(model.setup), .failure(.notOnIphone("RB")))
+    }
 }

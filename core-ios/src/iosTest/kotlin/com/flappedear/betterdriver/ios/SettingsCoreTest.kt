@@ -66,4 +66,30 @@ class SettingsCoreTest {
         assertEquals(300, SettingsCore.sessionCoach(set, 0).audioDelayMillis)
         assertEquals(false, SettingsCore.coachOn(SettingsCore.withVerbosity(set, Verbosity.Off)))
     }
+
+    /** Nothing a file holds ends the app: anything that is not a setup reads as none (FBBD-338). */
+    @Test
+    fun brokenSetupFilesReadAsNone() {
+        for (text in listOf("", " ", "[]", "null", "{", "{\"format\":\"betterdriver-setup\"}",
+            "{\"format\":\"betterdriver-setup\",\"version\":\"x\",\"setup\":{}}",
+            "{\"format\":\"betterdriver-setup\",\"version\":99,\"setup\":{}}",
+            "{\"format\":\"betterdriver-setup\",\"version\":3,\"setup\":[]}")) {
+            assertNull(SettingsCore.decodeSetup(text), text)
+        }
+        assertEquals(SettingsCore.coachSettings(null), SettingsCore.coachSettings("verbosity=Loud\nlearningLaps=-4\n\u0000"))
+    }
+
+    /** An Android version 1 file, its RaceBox at a Bluetooth MAC address, reads on the iPhone. */
+    @Test
+    fun anAndroidVersion1FileReads() {
+        val v1 = """
+            {"format":"betterdriver-setup","version":1,"setup":{"equipment":[
+              {"id":"a","model":"RACEBOX_MICRO","name":"RB","address":"AA:BB:CC:DD:EE:FF"},
+              {"id":"d","model":"PHONE_CAMERA","name":"Phone camera"}
+            ],"cars":[],"session":{"gnssId":"a","cameraIds":["d"]}}}
+        """.trimIndent()
+        val setup = SettingsCore.decodeSetup(v1)
+        assertEquals("a", setup?.active()?.gnss?.id)
+        assertEquals(true, setup?.let { SettingsCore.phoneCameraOn(it) })
+    }
 }
