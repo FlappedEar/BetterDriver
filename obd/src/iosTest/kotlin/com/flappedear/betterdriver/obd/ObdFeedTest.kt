@@ -26,8 +26,8 @@ private class SimPort(private val answers: Map<String, String>) : ObdBlePort {
         return null
     }
 
-    override fun write(chunk: NSData): Boolean {
-        val bytes = chunk.toByteArray()
+    override fun writeChunk(data: NSData): Boolean {
+        val bytes = data.toByteArray()
         check(bytes.size <= payload) { "chunk of ${bytes.size} bytes" }
         val out = ArrayList<String>()
         lock.lock()

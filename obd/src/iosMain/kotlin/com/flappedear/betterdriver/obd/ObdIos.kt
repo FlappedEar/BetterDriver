@@ -26,7 +26,7 @@ interface ObdBlePort {
     fun open(events: ObdBleEvents): String?
 
     /** Starts writing [chunk]; false when CoreBluetooth refused it. */
-    fun write(chunk: NSData): Boolean
+    fun writeChunk(data: NSData): Boolean
 
     fun disconnect()
 }
@@ -77,7 +77,7 @@ class IosBleObdTarget(override val name: String, identifier: String, private val
     }
 
     private class PortWriter(private val port: ObdBlePort) : BleSerialPort {
-        override fun write(chunk: ByteArray): Boolean = port.write(chunk.toNSData())
+        override fun write(chunk: ByteArray): Boolean = port.writeChunk(chunk.toNSData())
 
         override fun disconnect() = port.disconnect()
     }

@@ -194,7 +194,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
         return queue.sync { isOpen ? nil : (failure ?? "setup failed") }
     }
 
-    func write(chunk: Data) -> Bool {
+    func writeChunk(data chunk: Data) -> Bool {
         guard let queue else { return false }
         queue.async {
             guard self.isOpen, let ch = self.writeCh else {
