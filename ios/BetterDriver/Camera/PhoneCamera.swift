@@ -10,7 +10,8 @@ struct CameraStatus: Equatable {
 }
 
 /// Phone video with a session on the iPhone, as the Android phone camera (FBBD-21): the back wide
-/// camera at 1080p and 60 fps (30 when the phone cannot do 60), H.264 with the microphone's sound,
+/// camera in the chosen mode (1080p · 60 by default; a smaller one when the phone cannot record it,
+/// as Android's ladder), H.264 with the microphone's sound,
 /// into the session's video folder as phone_0001.mp4 and on. Every frame's capture time is known on
 /// the session clock from its timestamp, so the file is placed on the session by its frame times
 /// (PhoneVideoLog), the same way review and VBO export place Android's files.
@@ -19,9 +20,7 @@ struct CameraStatus: Equatable {
 /// there ("interrupted"), and a new file starts when the camera comes back. A camera fault never
 /// stops the data recording.
 final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
-    static let preferredFps: Int32 = 60
-    static let fallbackFps: Int32 = 30
-
+    private let mode: PhoneVideoMode
     private let log: PhoneVideoLog
     private let onStatus: (CameraStatus) -> Void
     private let queue = DispatchQueue(label: "com.flappedear.betterdriver.camera", qos: .userInitiated)
@@ -35,7 +34,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     // Everything below is used on [queue] only.
     private var running = false
     private var configured = false
-    private var fps = PhoneCamera.preferredFps
+    /// The mode the camera got: [mode], or a step down its ladder.
+    private var recording = PhoneVideoMode.standard
     private var rotation: CGFloat = 0
     private var hasAudio = false
     private var writer: AVAssetWriter?
@@ -49,7 +49,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private static let maxFailures = 3
 
     /// [onStatus] runs on the main queue.
-    init(log: PhoneVideoLog, onStatus: @escaping (CameraStatus) -> Void) {
+    init(log: PhoneVideoLog, mode: PhoneVideoMode, onStatus: @escaping (CameraStatus) -> Void) {
+        self.mode = mode
         self.log = log
         self.onStatus = onStatus
         super.init()
@@ -125,13 +126,17 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         let input = try AVCaptureDeviceInput(device: device)
         guard capture.canAddInput(input) else { throw CameraError.notSupported }
         capture.addInput(input)
-        let (format, rate) = try Self.format(of: device)
+        let pick = mode.ladder.lazy
+            .compactMap { m in PhoneVideoMode.format(of: device, for: m).map { ($0, m) } }
+            .first
+        guard let pick else { throw CameraError.notSupported }
+        let (format, got) = pick
         try device.lockForConfiguration()
         device.activeFormat = format
-        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: rate)
-        device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: rate)
+        device.activeVideoMinFrameDuration = CMTime(value: 1, timescale: got.fps)
+        device.activeVideoMaxFrameDuration = CMTime(value: 1, timescale: got.fps)
         device.unlockForConfiguration()
-        fps = rate
+        recording = got
         videoOut.alwaysDiscardsLateVideoFrames = false
         videoOut.setSampleBufferDelegate(self, queue: queue)
         guard capture.canAddOutput(videoOut) else { throw CameraError.notSupported }
@@ -146,20 +151,6 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             hasAudio = false
         }
         configured = true
-    }
-
-    /// The 1080p format at 60 fps, else at 30.
-    private static func format(of device: AVCaptureDevice) throws -> (AVCaptureDevice.Format, Int32) {
-        let fullHd = device.formats.filter { f in
-            let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
-            return d.width == 1920 && d.height == 1080
-        }
-        for rate in [preferredFps, fallbackFps] {
-            if let f = fullHd.first(where: { $0.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= Double(rate) } }) {
-                return (f, rate)
-            }
-        }
-        throw CameraError.notSupported
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -220,8 +211,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             file = name
             firstPts = pts
             lastSyncPts = pts
-            log.started(file: name, startMicros: sessionMicros(of: pts).frame, fps: fps)
-            status("1080p · \(fps)", ok: true)
+            log.started(file: name, startMicros: sessionMicros(of: pts).frame, fps: recording.fps)
+            // Green at the chosen mode, amber once stepped down (UI-07).
+            status(recording.label, ok: recording == mode)
         } catch {
             // No video for the rest of this session; the data recording carries on.
             writer = nil

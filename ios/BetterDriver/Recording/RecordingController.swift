@@ -74,6 +74,12 @@ final class RecordingController: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "phoneCamera") }
     }
 
+    /// The phone video mode (FBBD-88), as on Android: 1080p · 60 until another is chosen.
+    var phoneVideoMode: PhoneVideoMode {
+        get { PhoneVideoMode.named(UserDefaults.standard.string(forKey: "phoneVideoMode")) }
+        set { UserDefaults.standard.set(newValue.label, forKey: "phoneVideoMode") }
+    }
+
     func start(_ receiver: Receiver) {
         guard session == nil else { return }
         error = nil
@@ -122,7 +128,7 @@ final class RecordingController: ObservableObject {
             link.start()
         }
         if phoneCamera {
-            let cam = PhoneCamera(log: PhoneVideoLog(session: live)) { [weak self] in self?.cameraStatus = $0 }
+            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
             camera = cam
             cam.start()
         }
