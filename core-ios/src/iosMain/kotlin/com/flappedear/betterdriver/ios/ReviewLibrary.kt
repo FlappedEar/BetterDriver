@@ -5,14 +5,17 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
-import com.flappedear.betterdriver.analysis.review.SessionReview
-import com.flappedear.betterdriver.analysis.review.reviewOf
+import com.flappedear.betterdriver.analysis.review.LapVideoReview
+import com.flappedear.betterdriver.analysis.review.ReviewedSession
+import com.flappedear.betterdriver.analysis.review.indexedClips
+import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.StoredSession
+import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
@@ -46,12 +49,13 @@ class ReviewLibrary(base: String) {
 
     /**
      * Laps, best, theoretical best and where to find time of session [id], as Android works them
-     * out: the targets come from the other sessions at its track (LineSessions on Android).
+     * out: the targets come from the other sessions at its track (LineSessions on Android). The
+     * result keeps the analysis, so Compare can pick another lap without reading the session again.
      */
     @Throws(Exception::class)
-    fun review(id: String): SessionReview {
+    fun review(id: String): ReviewedSession {
         val saved = tracks()
-        return reviewOf(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        return reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
     }
 
     /**
@@ -78,6 +82,17 @@ class ReviewLibrary(base: String) {
                 }
             }
             .take(MaxLineSessions)
+
+    /**
+     * The fastest lap of [reviewed] (session [id]) against timed lap [otherIndex] on video, as
+     * Android's lap review; null when the review does not have both laps. Without video the laps
+     * still compare.
+     */
+    fun videoReview(reviewed: ReviewedSession, id: String, otherIndex: Int): LapVideoReview? {
+        val dir = "${store.dir(id)}/${VideoFiles.DIR}"
+        val index = readSmall("$dir/$ClipIndexFile")?.let(::indexedClips).orEmpty()
+        return reviewed.videoReview(otherIndex, index, dir) { NSFileManager.defaultManager.fileExistsAtPath(it) }
+    }
 
     /** [value] with two decimals, as Android's screens write seconds. */
     fun twoDecimals(value: Double): String = fixed(value, 2)
@@ -129,6 +144,11 @@ private const val MaxLineSessions = 20
 private const val MaxScannedSessions = 60
 
 private const val MillisPerSecond = 1000.0
+
+/** The session's clip index in its video folder (Android's VideoIndex). */
+private const val ClipIndexFile = "clips.json"
+
+private fun readSmall(path: String): String? = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
 /** "29 Aug 2026 at 17:20" in the device's language, as Android's medium date and short time. */
 private fun sessionLabel(startUtcMillis: Long): String = NSDateFormatter().apply {

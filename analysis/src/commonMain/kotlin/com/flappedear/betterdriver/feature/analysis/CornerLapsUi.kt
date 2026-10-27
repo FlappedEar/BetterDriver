@@ -4,8 +4,8 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.corners.CornerPass
 import com.flappedear.betterdriver.analysis.corners.CornerTraces
 import com.flappedear.betterdriver.analysis.corners.cornerPasses
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.Provenance
-import java.util.Locale
 
 /** A corner pass on video, for the inline player: the file at [path] from [startMillis] to [endMillis]. */
 data class CornerVideoUi(val path: String, val startMillis: Long, val endMillis: Long)
@@ -161,7 +161,7 @@ fun highlightedPasses(ui: CornerLapsUi, ticked: List<Int>): Highlight {
 }
 
 /** At most this many laps are ticked: the lap review compares two. */
-internal const val ComparedLaps = 2
+const val ComparedLaps = 2
 
 /**
  * The ticked laps after [lapIndex] is tapped: untick it, or tick it; a third tick drops the first
@@ -180,21 +180,21 @@ fun comparedPair(ui: CornerLapsUi, ticked: List<Int>): Pair<Int, Int>? {
 }
 
 /** Ticked laps as saved state: "3,5". */
-internal fun encodeTicked(ticked: List<Int>) = ticked.joinToString(",")
+fun encodeTicked(ticked: List<Int>) = ticked.joinToString(",")
 
-internal fun decodeTicked(text: String): List<Int> = text.split(',').mapNotNull { it.toIntOrNull() }
+fun decodeTicked(text: String): List<Int> = text.split(',').mapNotNull { it.toIntOrNull() }
 
 /** The braking point of [row], metres before the corner: "≈42 m" when inferred, "–" without one. */
-internal fun brakingText(row: CornerLapRow): String = marked(
+fun brakingText(row: CornerLapRow): String = marked(
     formatMeasure(row.brakingMeters, CornerMeasure.Meters, ""),
     if (row.brakingInferred) Provenance.INFERRED else null,
 )
 
 /** The minimum speed of [row]: "82 km/h", "≈82 km/h" from a speed that is not measured, "–" without one. */
-internal fun minimumText(row: CornerLapRow, unit: String, provenance: Provenance? = null): String =
+fun minimumText(row: CornerLapRow, unit: String, provenance: Provenance? = null): String =
     marked(
         row.minimumSpeed?.let {
-            val speed = String.format(Locale.ROOT, "%.0f", it)
+            val speed = fixed(it, 0)
             if (unit.isEmpty()) speed else "$speed $unit"
         } ?: Missing,
         provenance,

@@ -26,7 +26,6 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.format.formatLapTime
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
@@ -137,14 +136,9 @@ private fun CarFigures(modifier: Modifier, figures: List<CarFigure>) {
     }
 }
 
-/** Whole seconds from 10 up, one decimal under. */
-private fun figureSeconds(s: Double): String =
-    if (s >= TenSeconds) "${s.roundToInt()}" else String.format(Locale.ROOT, "%.1f", s)
-
 internal const val SteeringCardTag = "car-steering"
 internal const val BrakePressureTag = "car-brake-pressure"
 
 private const val SteeringChartMinDegrees = 200.0
 private const val SteeringGridDegrees = 90.0
-private const val TenSeconds = 10.0
 private const val MillisPerSecond = 1000.0

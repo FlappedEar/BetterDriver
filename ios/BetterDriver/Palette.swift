@@ -12,6 +12,12 @@ enum Palette {
     static let outline = Color(hex: 0x26313A)
     /// The best lap, purple as on Android (TrackColors.best).
     static let best = Color(hex: 0xC58BFF)
+    /// The other lap of a comparison (TrackColors.cold).
+    static let cold = Color(hex: 0x51A7FF)
+    /// The time delta line (TrackColors.warning).
+    static let warning = Color(hex: 0xFFB020)
+    static let gain = Color(hex: 0x22D37A)
+    static let loss = Color(hex: 0xFF6863)
 }
 
 extension Color {
