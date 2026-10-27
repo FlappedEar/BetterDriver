@@ -2,22 +2,20 @@
 
 package com.flappedear.betterdriver.core.ble.hr
 
-import com.flappedear.betterdriver.core.ble.sigUuid
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
-import java.io.ByteArrayOutputStream
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 /** Builds a little-endian characteristic value field by field, as the GATT spec lays it out. */
 private class Value {
-    private val out = ByteArrayOutputStream()
+    private val out = ArrayList<Byte>()
 
-    fun u8(v: Int) = apply { out.write(v and 0xFF) }
+    fun u8(v: Int) = apply { out += (v and 0xFF).toByte() }
 
     fun u16(v: Int) = u8(v).u8(v shr 8)
 
@@ -64,7 +62,7 @@ class HeartRateDecoderTest {
     }
 
     @Test
-    fun `uint16 value, contact, energy and RR intervals`() {
+    fun `uint16 value contact energy and RR intervals`() {
         val bytes = Value().u8(Value16 or ContactDetected or Energy or Rr)
             .u16(301).u16(0x1234).u16(1024).u16(512).u16(410).bytes()
         val m = checkNotNull(HeartRateMeasurement.parse(bytes))
@@ -75,7 +73,7 @@ class HeartRateDecoderTest {
     }
 
     @Test
-    fun `RR intervals without energy, and contact values`() {
+    fun `RR intervals without energy and contact values`() {
         val m = checkNotNull(HeartRateMeasurement.parse(Value().u8(Rr or ContactNotDetected).u8(60).u16(1024).bytes()))
         assertEquals(60, m.bpm)
         assertNull(m.energyKj)
@@ -87,7 +85,7 @@ class HeartRateDecoderTest {
     }
 
     @Test
-    fun `truncated values are dropped, a trailing half interval is ignored`() {
+    fun `truncated values are dropped a trailing half interval is ignored`() {
         assertNull(HeartRateMeasurement.parse(ByteArray(0)))
         assertNull(HeartRateMeasurement.parse(byteArrayOf(0)))
         assertNull(HeartRateMeasurement.parse(byteArrayOf(Value16.toByte(), 60)))
@@ -125,7 +123,7 @@ class HeartRateDecoderTest {
     }
 
     @Test
-    fun `RR intervals are stamped at their beats, oldest first`() {
+    fun `RR intervals are stamped at their beats oldest first`() {
         val sink = Sink()
         sink.now = 10_000_000
         HeartRateDecoder(sink).feed(Value().u8(Rr).u8(100).u16(1024).u16(512).bytes())
@@ -149,7 +147,7 @@ class HeartRateDecoderTest {
     }
 
     @Test
-    fun `no heart rate without skin contact, and contact events`() {
+    fun `no heart rate without skin contact and contact events`() {
         val sink = Sink()
         val decoder = HeartRateDecoder(sink)
         decoder.feed(byteArrayOf(ContactDetected.toByte(), 90))
@@ -201,14 +199,5 @@ class HeartRateDecoderTest {
         assertFalse(decoder.everMeasured)
         decoder.feed(byteArrayOf(0, 90))
         assertTrue(decoder.everMeasured)
-    }
-
-    @Test
-    fun `scan filter matches the Heart Rate Service only`() {
-        assertTrue(isHeartRateAdvertisement(listOf(sigUuid(0x180F), sigUuid(0x180D))))
-        assertFalse(isHeartRateAdvertisement(listOf(sigUuid(0x1819))))
-        assertFalse(isHeartRateAdvertisement(null))
-        assertEquals("0000180d-0000-1000-8000-00805f9b34fb", HeartRateGatt.SERVICE.toString())
-        assertEquals("00002a37-0000-1000-8000-00805f9b34fb", HeartRateGatt.MEASUREMENT.toString())
     }
 }

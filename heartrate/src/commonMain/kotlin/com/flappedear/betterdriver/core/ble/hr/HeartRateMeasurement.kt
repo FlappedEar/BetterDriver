@@ -1,8 +1,5 @@
 package com.flappedear.betterdriver.core.ble.hr
 
-import com.flappedear.betterdriver.core.ble.LeReader
-import com.flappedear.betterdriver.core.ble.TruncatedValue
-
 /** Bits of the Flags field (uint8). */
 private const val Value16Bit = 1 shl 0
 private const val ContactShift = 1
@@ -67,12 +64,12 @@ data class HeartRateMeasurement(
          * an RR-Interval would be is dropped, as it cannot be half an interval.
          */
         fun parse(bytes: ByteArray): HeartRateMeasurement? = try {
-            read(LeReader(bytes))
-        } catch (_: TruncatedValue) {
+            read(Reader(bytes))
+        } catch (_: Truncated) {
             null
         }
 
-        private fun read(r: LeReader): HeartRateMeasurement {
+        private fun read(r: Reader): HeartRateMeasurement {
             val flags = r.uint8()
             val bpm = if (flags and Value16Bit != 0) r.uint16() else r.uint8()
             val energy = if (flags and EnergyPresent != 0) r.uint16() else null
@@ -85,3 +82,27 @@ data class HeartRateMeasurement(
         }
     }
 }
+
+/** Reads little-endian unsigned fields in order; a value too short throws [Truncated]. */
+private class Reader(private val bytes: ByteArray) {
+    private var at = 0
+
+    val remaining: Int get() = bytes.size - at
+
+    fun uint8(): Int {
+        if (at >= bytes.size) throw Truncated()
+        return bytes[at++].toInt() and ByteMask
+    }
+
+    fun uint16(): Int {
+        if (remaining < 2) throw Truncated()
+        return uint8() or (uint8() shl Bits8)
+    }
+
+    private companion object {
+        const val ByteMask = 0xFF
+        const val Bits8 = 8
+    }
+}
+
+private class Truncated : Exception("characteristic value truncated")

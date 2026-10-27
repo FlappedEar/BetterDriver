@@ -57,6 +57,7 @@ final class RecordingController: ObservableObject {
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
     private var obd: ObdLink?
+    private var heartRate: HeartRateStrapLink?
     private var timer: Timer?
 
     var isRecording: Bool { session != nil }
@@ -118,6 +119,10 @@ final class RecordingController: ObservableObject {
         let car = ObdLink(sink: live)
         obd = car
         car.start()
+        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333).
+        let strap = HeartRateStrapLink(sink: live)
+        heartRate = strap
+        strap.start()
         UIApplication.shared.isIdleTimerDisabled = true
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -131,6 +136,7 @@ final class RecordingController: ObservableObject {
         raceBox?.stop()
         phone?.stop()
         obd?.stop()
+        heartRate?.stop()
         _ = live.stop()
         end()
     }
@@ -141,6 +147,7 @@ final class RecordingController: ObservableObject {
         raceBox = nil
         phone = nil
         obd = nil
+        heartRate = nil
         session = nil
         screen = nil
         receiver = nil
@@ -157,12 +164,13 @@ final class RecordingController: ObservableObject {
             raceBox?.stop()
             phone?.stop()
             obd?.stop()
+            heartRate?.stop()
             end()
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
         let obdOn = obd?.status().state == ObdLinkState.connected
-        screen = TrackScreenModel(now, receiverHasG: receiver != .phone, obdConnected: obdOn)
+        screen = TrackScreenModel(now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status)
     }
 }
 
@@ -208,8 +216,9 @@ struct TrackScreenModel: Equatable {
     static let noValue = "–"
     static let slots = 6
 
-    /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B).
-    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false) {
+    /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
+    /// strap's, when one records (FBBD-333).
+    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil) {
         let live = s.live
         let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
@@ -222,7 +231,11 @@ struct TrackScreenModel: Equatable {
             s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
         }
         let obd = obdConnected ? Status(label: "OBD", value: "Connected", ok: true, icon: "car.fill") : nil
-        status = [place, gnss, obd].compactMap { $0 }
+        // Heart rate (FBBD-268): shown only while it arrives, the strap's last value, never older than 5 s.
+        let heart = heartRate?.bpm.map { bpm in
+            Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
+        }
+        status = [place, gnss, obd, heart].compactMap { $0 }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)
