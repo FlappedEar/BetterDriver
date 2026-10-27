@@ -25,13 +25,6 @@ import java.util.zip.CRC32
  * ```
  * All integers are big-endian.
  */
-sealed interface Record {
-    data class Channel(val def: ChannelDef) : Record
-    data class Samples(val set: SampleSet) : Record
-    data class Event(val event: RecorderEvent) : Record
-    /** Written on a clean stop. A session without it was interrupted. */
-    data class End(val tMicros: Long, val reason: String) : Record
-}
 
 object Frames {
     const val MAGIC = 0x42445231

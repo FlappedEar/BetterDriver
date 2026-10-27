@@ -1,5 +1,8 @@
 package com.flappedear.betterdriver.timing.demo
 
+import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.math.toDegrees
+import com.flappedear.betterdriver.math.toRadians
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -12,7 +15,6 @@ import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.live.timeSession
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
-import java.util.Locale
 import kotlin.math.atan2
 import kotlin.math.cos
 import kotlin.math.sin
@@ -71,7 +73,8 @@ class SessionReplay private constructor(
     fun write(): String = buildString {
         append(FormatLine).append('\n')
         for (p in points) {
-            append("%.3f %.8f %.8f %s %s\n".format(Locale.ROOT, p.t, p.lat, p.lon, p.kmh.text(2), p.alt.text(1)))
+            append("${fixed(p.t, TimeDecimals)} ${fixed(p.lat, DegreeDecimals)} ${fixed(p.lon, DegreeDecimals)} ")
+            append("${p.kmh.text(SpeedDecimals)} ${p.alt.text(AltitudeDecimals)}\n")
         }
     }
 
@@ -85,16 +88,16 @@ class SessionReplay private constructor(
         return timeSession(track, fixes.asSequence()).laps.count { it.kind == LapKind.Timed } >= 2
     }
 
-    private fun Double?.text(decimals: Int) = this?.let { "%.${decimals}f".format(Locale.ROOT, it) } ?: "-"
+    private fun Double?.text(decimals: Int) = this?.let { fixed(it, decimals) } ?: "-"
 
     /** Degrees clockwise from north, from [a] to [b]. */
     private fun heading(a: Point, b: Point): Double {
-        val dLon = Math.toRadians(b.lon - a.lon)
-        val la = Math.toRadians(a.lat)
-        val lb = Math.toRadians(b.lat)
+        val dLon = toRadians(b.lon - a.lon)
+        val la = toRadians(a.lat)
+        val lb = toRadians(b.lat)
         val y = sin(dLon) * cos(lb)
         val x = cos(la) * sin(lb) - sin(la) * cos(lb) * cos(dLon)
-        return (Math.toDegrees(atan2(y, x)) + FullCircle) % FullCircle
+        return (toDegrees(atan2(y, x)) + FullCircle) % FullCircle
     }
 
     companion object {
@@ -102,6 +105,12 @@ class SessionReplay private constructor(
         private const val FullCircle = 360.0
         private const val Satellites = 16.0
         private const val MicrosPerSecond = 1_000_000.0
+
+        // Decimals of a written point: milliseconds, about a millimetre, centi-km/h, decimetres.
+        private const val TimeDecimals = 3
+        private const val DegreeDecimals = 8
+        private const val SpeedDecimals = 2
+        private const val AltitudeDecimals = 1
 
         /** A lap slower than this times the median lap had a stop or a spin in it. */
         private const val SlowLap = 1.5
