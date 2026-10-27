@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.android.library) apply false
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.jvm) apply false
+    alias(libs.plugins.kotlin.multiplatform) apply false
     alias(libs.plugins.kotlin.compose) apply false
     alias(libs.plugins.kotlin.serialization) apply false
     alias(libs.plugins.roborazzi) apply false
@@ -23,6 +24,11 @@ allprojects {
             "src/debug/kotlin",
             "src/release/kotlin",
             "src/testDebug/kotlin",
+            // Kotlin Multiplatform modules (:shared, FBBD-329).
+            "src/commonMain/kotlin",
+            "src/commonTest/kotlin",
+            "src/jvmMain/kotlin",
+            "src/iosMain/kotlin",
         )
     }
     // detekt 1.23.8 is built against Kotlin 2.0.21 and refuses to run on a

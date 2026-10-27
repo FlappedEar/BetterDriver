@@ -18,7 +18,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.min
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 
 /** A lap time not known yet, as wide as a real one (a placeholder per digit). */
 private val NoTime = "$DigitPlaceholder:$DigitPlaceholder$DigitPlaceholder.$DigitPlaceholder$DigitPlaceholder"

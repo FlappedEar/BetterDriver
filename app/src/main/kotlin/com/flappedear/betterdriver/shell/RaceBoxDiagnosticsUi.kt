@@ -5,7 +5,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxData
 import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsSnapshot
 import com.flappedear.betterdriver.core.ble.Vec3
 import com.flappedear.betterdriver.core.ble.RaceBoxPower
-import com.flappedear.betterdriver.core.ui.format.Minus
+import com.flappedear.betterdriver.format.Minus
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import java.time.Instant
 import java.time.ZoneId

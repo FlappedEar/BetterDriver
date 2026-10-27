@@ -35,7 +35,7 @@ import com.flappedear.betterdriver.analysis.vehicle.PedalShares
 import com.flappedear.betterdriver.analysis.vehicle.VehicleChannel
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 import kotlin.math.roundToInt
 
 /**

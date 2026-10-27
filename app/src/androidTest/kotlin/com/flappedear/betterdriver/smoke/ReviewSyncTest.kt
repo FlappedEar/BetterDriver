@@ -15,7 +15,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTouchInput
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.feature.review.Comparison
 import com.flappedear.betterdriver.feature.review.LapReviewProbe
 import com.flappedear.betterdriver.feature.review.ReviewChartTag

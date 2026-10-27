@@ -43,7 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatDelta
+import com.flappedear.betterdriver.format.formatDelta
 
 /**
  * Opens the Corner laps screen of a corner (its segment id, FBBD-153); null where nothing can show
