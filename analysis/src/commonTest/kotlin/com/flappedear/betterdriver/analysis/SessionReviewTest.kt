@@ -51,7 +51,7 @@ class SessionReviewTest {
     }
 
     @Test
-    fun `the review keeps the line plan it shows, for the next session's coach`() {
+    fun `the review keeps the line plan it shows for the next session's coach`() {
         val reviewed = reviewSession(demo(), listOf(track))
         val plan = checkNotNull(reviewed.linePlan)
         assertEquals(track.id, plan.trackId)
