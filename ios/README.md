@@ -1,20 +1,52 @@
 # BetterDriver for iPhone and iPad
 
 Native SwiftUI app (iOS 17+, iPhone 12 and newer, iPad) around the shared Kotlin
-Multiplatform core in [`../shared`](../shared). Plan: Confluence "iOS / iPadOS app plan",
+Multiplatform core in [`../shared`](../shared) and the modules [`../core-ios`](../core-ios) exports. Plan: Confluence "iOS / iPadOS app plan",
 Jira epic FBBD-328.
 
-## Build (macOS)
+## Build and test on your Mac
 
-Needs Xcode, JDK 17+ and [XcodeGen](https://github.com/yonaskolb/XcodeGen) (`brew install xcodegen`).
+Needs a Mac with Apple silicon (the core builds for the arm64 simulator only).
+
+One-time setup:
 
 ```sh
-./generate.sh            # builds BetterDriverCore.xcframework, generates BetterDriver.xcodeproj
-open BetterDriver.xcodeproj
+# Xcode 16+ from the App Store, opened once (installs the iOS simulator), then:
+xcodebuild -runFirstLaunch
+brew install xcodegen
+brew install --cask temurin@17      # skip if `java -version` already shows 17 or newer
+git clone https://github.com/FlappedEar/BetterDriver.git
 ```
 
+Build and open:
+
+```sh
+cd BetterDriver
+ios/generate.sh                     # builds BetterDriverCore.xcframework, generates ios/BetterDriver.xcodeproj
+open ios/BetterDriver.xcodeproj
+```
+
+The first `generate.sh` downloads Gradle and the Kotlin/Native toolchain (~1 GB, a few
+minutes). In Xcode pick an iPad or iPhone simulator and press ⌘R to run, ⌘U to test.
+
+Tests from the terminal:
+
+```sh
+./gradlew -Pbetterdriver.coreOnly iosSimulatorArm64Test        # Kotlin core on the simulator
+xcrun simctl list devices available | grep -E "iPad|iPhone"    # pick a simulator name
+xcodebuild test -project ios/BetterDriver.xcodeproj -scheme BetterDriver \
+  -destination "platform=iOS Simulator,name=<name from the list>"
+```
+
+On a real iPad or iPhone: connect it by cable, turn on Settings > Privacy & Security >
+Developer Mode, and pick it in Xcode. Signing needs a team: a free Apple ID works (the app
+then runs for 7 days), the Developer Program account works without that limit. Pass your
+team id so regenerating keeps it, for example `BETTERDRIVER_TEAM=ABCDE12345 ios/generate.sh`
+(team id: developer.apple.com > Account > Membership details), or choose the team in
+Signing & Capabilities after each `generate.sh`.
+
 `BetterDriver.xcodeproj` is generated from `project.yml` and not committed. Run
-`./generate.sh` again after changing the Kotlin core or `project.yml`.
+`ios/generate.sh` again after changing the Kotlin core or `project.yml`.
 
 ## CI
 

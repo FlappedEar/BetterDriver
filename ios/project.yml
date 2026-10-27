@@ -40,6 +40,8 @@ targets:
         # Standard HTTPS/TLS only, so TestFlight builds skip the export-compliance question.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         CODE_SIGN_STYLE: Automatic
+        # Your team for device runs (generate.sh: BETTERDRIVER_TEAM); CI passes its own.
+        DEVELOPMENT_TEAM: ${BETTERDRIVER_TEAM}
         # Load every Objective-C class of the static Kotlin framework, so the hosted unit tests
         # find the core's classes in the app even when the app itself does not use them yet.
         OTHER_LDFLAGS: $(inherited) -ObjC
