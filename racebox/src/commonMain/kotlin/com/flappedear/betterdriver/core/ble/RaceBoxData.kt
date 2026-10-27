@@ -2,12 +2,6 @@
 
 package com.flappedear.betterdriver.core.ble
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import java.time.DateTimeException
-import java.time.LocalDateTime
-import java.time.ZoneOffset
-
 /** RaceBox Data Message: class 0xFF, id 0x01, 80-byte payload, sent at the GNSS rate (up to 25 Hz). */
 const val RaceBoxClass = 0xFF
 const val RaceBoxDataId = 0x01
@@ -81,7 +75,7 @@ data class RaceBoxData(
          */
         fun parse(payload: ByteArray): RaceBoxData? {
             if (payload.size < RaceBoxDataLength) return null
-            val b = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+            val b = LittleEndian(payload)
             fun u8(i: Int) = b.get(i).toInt() and ByteMask
             fun u16(i: Int) = b.getShort(i).toInt() and ShortMask
             fun u32(i: Int) = b.getInt(i).toLong() and IntMask
@@ -122,11 +116,7 @@ data class RaceBoxData(
 
         /** [nano] is signed: the receiver can round the second up and report a negative fraction. */
         @Suppress("LongParameterList")
-        private fun utc(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, nano: Int): Long? = try {
-            LocalDateTime.of(year, month, day, hour, minute, second).toInstant(ZoneOffset.UTC).toEpochMilli() +
-                Math.floorDiv(nano.toLong(), NanosPerMilli)
-        } catch (_: DateTimeException) {
-            null
-        }
+        private fun utc(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int, nano: Int): Long? =
+            utcEpochMillis(year, month, day, hour, minute, second)?.let { it + nano.toLong().floorDiv(NanosPerMilli) }
     }
 }

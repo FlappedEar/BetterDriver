@@ -2,12 +2,11 @@
 
 package com.flappedear.betterdriver.core.ble
 
-import java.time.Instant
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class RaceBoxDataTest {
     private fun parse(edit: (ByteArray) -> Unit = {}) =
@@ -16,7 +15,7 @@ class RaceBoxDataTest {
     @Test
     fun `decodes every field of RaceBox's documented example`() {
         val d = parse()
-        assertEquals(Instant.parse("2022-01-10T08:51:08.239Z").toEpochMilli(), d.utcMillis)
+        assertEquals(1641804668239L /* 2022-01-10T08:51:08.239Z */, d.utcMillis)
         assertEquals(3, d.fixType)
         assertTrue(d.fixOk)
         assertFalse(d.headingValid)
@@ -83,11 +82,11 @@ class RaceBoxDataTest {
     fun `negative nanoseconds round the time back`() {
         // -1,000,000 ns = 0xFFF0BDC0: one millisecond before 08:51:08.
         val d = parse { p -> intArrayOf(0xC0, 0xBD, 0xF0, 0xFF).forEachIndexed { i, b -> p[16 + i] = b.toByte() } }
-        assertEquals(Instant.parse("2022-01-10T08:51:07.999Z").toEpochMilli(), d.utcMillis)
+        assertEquals(1641804667999L /* 2022-01-10T08:51:07.999Z */, d.utcMillis)
     }
 
     @Test
-    fun `a fix needs the fix OK flag, a 3D fix and valid coordinates, as RaceBox recommends`() {
+    fun `a fix needs the fix OK flag a 3D fix and valid coordinates as RaceBox recommends`() {
         assertTrue(parse().hasFix)
         assertFalse(parse { it[21] = 0x00 }.hasFix)
         assertFalse(parse { it[20] = 0x00 }.hasFix)

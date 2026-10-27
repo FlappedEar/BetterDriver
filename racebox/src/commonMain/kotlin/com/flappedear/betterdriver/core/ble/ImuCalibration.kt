@@ -2,7 +2,8 @@
 
 package com.flappedear.betterdriver.core.ble
 
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
+import kotlin.math.PI
 import kotlin.math.acos
 import kotlin.math.atan2
 import kotlin.math.cos
@@ -49,7 +50,7 @@ data class ImuCalibration(
 
     /** One line, as stored on disk and written into each session's events. */
     fun encode(): String = (listOf(gyroBias.x, gyroBias.y, gyroBias.z) + level + listOf(rollDeg, pitchDeg))
-        .joinToString(" ") { String.format(Locale.ROOT, "%.6f", it) } + " $atMillis"
+        .joinToString(" ") { fixed(it, EncodedDecimals) } + " $atMillis"
 
     /** Why a calibration could not be taken. */
     enum class Failure(val text: String) {
@@ -73,8 +74,9 @@ data class ImuCalibration(
         private const val MinG = 0.85
         private const val MaxG = 1.15
         private const val Eps = 1e-9
-        private const val DegPerRad = 180.0 / Math.PI
+        private const val DegPerRad = 180.0 / PI
         private const val Fields = 14
+        private const val EncodedDecimals = 6
 
         fun from(samples: List<ImuSample>, atMillis: Long): Result {
             val failure = problem(samples)
