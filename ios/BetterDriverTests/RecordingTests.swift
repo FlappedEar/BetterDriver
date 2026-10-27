@@ -1,0 +1,95 @@
+import XCTest
+import BetterDriverCore
+import UIKit
+@testable import BetterDriver
+
+/// Recording on the iPhone (FBBD-332): a session at a saved track shows its laps on the track screen
+/// as the Android app does, and the screen's fonts and the circuit directory ship in the app.
+@MainActor
+final class RecordingTests: XCTestCase {
+    private var base: URL!
+
+    override func setUpWithError() throws {
+        base = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: base.appendingPathComponent("tracks"), withIntermediateDirectories: true
+        )
+    }
+
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: base)
+    }
+
+    /// The demo ring of the Kotlin tests: 200 m radius, a 40 s lap at 25 Hz.
+    private let gnss = FakeGnss(
+        rateHz: 25, centerLat: 52.0, centerLon: 21.0, radiusM: 200.0, lapSeconds: 40.0,
+        startUtcMillis: 1_760_169_600_000
+    )
+
+    /// A saved track around the ring with its start/finish line, as a track file of the app.
+    private func saveRing() throws {
+        let gate = gnss.startFinish
+        let json = """
+        {"format": "betterdriver-track", "version": 1, "track": {
+          "id": "ring", "name": "Fake ring", "center": {"lat": \(gnss.centerLat), "lon": \(gnss.centerLon)},
+          "startFinish": {"left": {"lat": \(gate.lat1), "lon": \(gate.lon1)}, "right": {"lat": \(gate.lat2), "lon": \(gate.lon2)}}
+        }}
+        """
+        try json.write(to: base.appendingPathComponent("tracks/ring.json"), atomically: true, encoding: .utf8)
+    }
+
+    private func start(receiverHasG: Bool) throws -> LiveSession {
+        let info = SessionInfo(
+            startUtcMillis: gnss.startUtcMillis, car: "", track: "", devices: ["Phone GPS"],
+            startFinish: nil, channels: GnssChannels.shared.ALL, imported: nil
+        )
+        return try LiveSession.companion.start(
+            sessionsDir: base.appendingPathComponent("sessions").path,
+            tracksDir: base.appendingPathComponent("tracks").path,
+            circuits: CircuitList.companion.Empty,
+            info: info,
+            receiverHasG: receiverHasG
+        )
+    }
+
+    func testLapsAtASavedTrackShowOnTheTrackScreen() throws {
+        try saveRing()
+        let session = try start(receiverHasG: false)
+        for n in Int64(0)...Int64(25 * 140) {
+            session.submit(set: SampleSet(tMicros: n * 40_000, values: gnss.fix(n: n)))
+        }
+        let model = TrackScreenModel(session.screen(), receiverHasG: false)
+        XCTAssertEqual(model.bestMillis, 40_000)
+        XCTAssertEqual(model.lastMillis, 40_000)
+        XCTAssertNil(model.alert)
+        XCTAssertEqual(model.status, [TrackScreenModel.Status(label: "GNSS", value: "25 Hz · 14 sats", ok: true)])
+        // Speed, then four empty slots: the phone gives no G, so its tile is left out (UI-126 B).
+        XCTAssertEqual(model.tiles.count, 5)
+        XCTAssertEqual(model.tiles.first??.label, "Speed")
+        XCTAssertEqual(model.tiles.first??.value, "113")
+        XCTAssertTrue(session.stop())
+    }
+
+    func testBeforeTheFirstFixTheScreenWaits() throws {
+        let session = try start(receiverHasG: true)
+        let model = TrackScreenModel(session.screen(), receiverHasG: true)
+        XCTAssertEqual(model.status.first?.value, "Waiting")
+        XCTAssertNil(model.lapNumber)
+        XCTAssertEqual(model.tiles.compactMap { $0?.label }, ["Speed", "G"])
+        XCTAssertEqual(model.tiles.count, 6)
+        XCTAssertTrue(session.stop())
+    }
+
+    func testRecordingClock() {
+        XCTAssertEqual(TrackScreenModel.clock(micros: 83_000_000), "1:23")
+        XCTAssertEqual(TrackScreenModel.clock(micros: 3_725_000_000), "1:02:05")
+    }
+
+    func testTheTrackScreenFontsAndTheCircuitListShipInTheApp() {
+        _ = TrackFonts.register
+        for face in ["SairaSemiCondensed-Bold", "SairaSemiCondensed-SemiBold", "Barlow-SemiBold"] {
+            XCTAssertNotNil(UIFont(name: face, size: 12), face)
+        }
+        XCTAssertGreaterThan(BundledCircuits.list.circuits.count, 0)
+    }
+}
