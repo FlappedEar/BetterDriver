@@ -2,35 +2,26 @@ package com.flappedear.betterdriver.core.ble.obd
 
 import android.os.SystemClock
 import com.flappedear.betterdriver.obd.CarProfile
+import com.flappedear.betterdriver.obd.ObdSession
+import com.flappedear.betterdriver.obd.ObdSessionEvents
 import com.flappedear.betterdriver.obd.ObdStatus
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.PidChannel
 import com.flappedear.betterdriver.obd.PollSet
-import com.flappedear.betterdriver.obd.StandardPids
-import com.flappedear.betterdriver.recorder.ChannelDef
-import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.DataSource
-import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
 
-/** Session events of the OBD-II reader (FBBD-15). */
+/** Session events of the OBD-II reader (FBBD-15), shared with the iOS app ([ObdSessionEvents]). */
 object ObdEvents {
     /**
      * Text "host=<adapter: host:port, or name and transport> transport=<Wi-Fi|Bluetooth|Bluetooth LE>
      * adapter=<ATI answer> protocol=<ATDPN answer> pids=<supported, hex>".
      */
-    const val CONNECTED = "obd_connected"
+    const val CONNECTED = ObdSessionEvents.CONNECTED
 
     /** Text "reason=<why the connection ended>". */
-    const val DISCONNECTED = "obd_disconnected"
+    const val DISCONNECTED = ObdSessionEvents.DISCONNECTED
 }
-
-private const val MicrosPerMs = 1_000L
-
-/** Channel ids of OBD channels: [ObdChannelBase] + the PID's place in [StandardPids.all]. */
-private const val ObdChannelBase = 800
-private const val ObdChannelOther = 850
-private const val ObdDecimals = 2
 
 /**
  * An ELM327 OBD-II adapter as a recorder [DataSource] (FBBD-15 Wi-Fi, FBBD-121 Bluetooth Classic and
@@ -54,7 +45,6 @@ class ObdSource(
     override val name = "obd"
 
     private var link: ObdLink? = null
-    private val defined = HashMap<String, ChannelDef>()
 
     fun status(): ObdStatus? = link?.status()
 
@@ -71,43 +61,23 @@ class ObdSource(
         if (current === this) current = null
     }
 
-    private inner class Listener(private val sink: SampleSink) : ObdLinkListener {
+    /** Records what the link reads, as the iOS app does ([ObdSession]). */
+    private class Listener(sink: SampleSink) : ObdLinkListener {
+        private val session = ObdSession(sink, SystemClock::elapsedRealtime)
+
         override fun ready(
             target: ObdTarget,
             adapter: String,
             protocol: String,
             supported: Set<Int>,
             channels: List<PidChannel>,
-        ) {
-            val pids = supported.joinToString(",") { "%02X".format(it) }
-            val how = target.transport.label
-            val text = "host=${target.where} transport=$how adapter=$adapter protocol=$protocol pids=$pids"
-            sink.event(ObdEvents.CONNECTED, text)
-            for (c in channels) defineOnce(c)
-        }
+        ) = session.ready(target, adapter, protocol, supported, channels)
 
-        override fun polling(target: ObdTarget, channels: List<PidChannel>) {
-            for (c in channels) defineOnce(c)
-        }
+        override fun polling(target: ObdTarget, channels: List<PidChannel>) = session.polling(channels)
 
-        override fun value(channel: PidChannel, value: Double, atMs: Long) {
-            val def = defined[channel.id] ?: return
-            val ageMicros = (SystemClock.elapsedRealtime() - atMs) * MicrosPerMs
-            sink.submit(SampleSet(sink.nowMicros() - ageMicros, listOf(ChannelValue(def.id, value))))
-        }
+        override fun value(channel: PidChannel, value: Double, atMs: Long) = session.value(channel, value, atMs)
 
-        override fun ended(target: ObdTarget, reason: String) {
-            sink.event(ObdEvents.DISCONNECTED, "reason=$reason")
-        }
-
-        private fun defineOnce(c: PidChannel) {
-            if (c.id in defined) return
-            val standard = StandardPids.all.indexOfFirst { it.id == c.id }
-            val id = if (standard >= 0) ObdChannelBase + standard else ObdChannelOther + defined.size
-            val def = ChannelDef(id, "obd_${c.id}", c.unit, "obd", ObdDecimals)
-            defined[c.id] = def
-            sink.defineChannel(def)
-        }
+        override fun ended(target: ObdTarget, reason: String) = session.ended(reason)
     }
 
     companion object {

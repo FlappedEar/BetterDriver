@@ -28,7 +28,7 @@ struct CarsPage: View {
             }
             ShellCard { ListRow("Units", value: "km/h, °C", divider: false) }
         }
-        .sheet(isPresented: $adding) { CarEditSheet(car: nil) }
+        .sheet(isPresented: $adding) { CarEditSheet(carId: nil) }
     }
 }
 
@@ -61,7 +61,7 @@ struct CarHome: View {
                 }
             }
         }
-        .sheet(isPresented: $adding) { CarEditSheet(car: nil) }
+        .sheet(isPresented: $adding) { CarEditSheet(carId: nil) }
     }
 }
 
@@ -101,14 +101,15 @@ struct CarPage: View {
                     Button("Edit") { editing = true }.tint(Palette.accent)
                 }
             }
-            .sheet(isPresented: $editing) { CarEditSheet(car: car) }
+            .sheet(isPresented: $editing) { CarEditSheet(carId: car.id) }
         }
     }
 }
 
-/// Adding or editing a car (UI-35): name and notes. [car] is nil when adding.
+/// Adding or editing a car (UI-35): name and notes. [carId] is nil when adding. (An id, not the
+/// car: setup's and obd's CarProfile share a name, so Swift sees one of them renamed.)
 struct CarEditSheet: View {
-    let car: CarProfile?
+    let carId: String?
     @EnvironmentObject private var settings: SettingsModel
     @Environment(\.dismiss) private var dismiss
     @State private var name = ""
@@ -116,7 +117,7 @@ struct CarEditSheet: View {
 
     var body: some View {
         NavigationStack {
-            ShellPage(title: car == nil ? "Add car" : "Edit car") {
+            ShellPage(title: carId == nil ? "Add car" : "Edit car") {
                 TextField("Name", text: $name)
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("carName")
@@ -136,15 +137,15 @@ struct CarEditSheet: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-                if let car {
-                    if settings.setup.session.carId != car.id {
+                if let carId {
+                    if settings.setup.session.carId != carId {
                         ShellTonalButton(text: "Use for the next session") {
-                            settings.update { $0.chooseCar(id: car.id) }
+                            settings.update { $0.chooseCar(id: carId) }
                             dismiss()
                         }
                     }
                     RemoveButton(text: "Remove car") {
-                        settings.update { $0.removeCar(id: car.id) }
+                        settings.update { $0.removeCar(id: carId) }
                         dismiss()
                     }
                 }
@@ -154,6 +155,7 @@ struct CarEditSheet: View {
             }
         }
         .onAppear {
+            let car = carId.flatMap { settings.setup.car(id: $0) }
             name = car?.name ?? ""
             notes = car?.notes ?? ""
         }
@@ -161,8 +163,8 @@ struct CarEditSheet: View {
     }
 
     private func save() {
-        if let car {
-            settings.update { SettingsCore.shared.updateCar(setup: $0, id: car.id, name: name, notes: notes) }
+        if let carId {
+            settings.update { SettingsCore.shared.updateCar(setup: $0, id: carId, name: name, notes: notes) }
         } else {
             let id = SettingsModel.newId()
             settings.update { SettingsCore.shared.addCar(setup: $0, name: name, notes: notes, id: id) }

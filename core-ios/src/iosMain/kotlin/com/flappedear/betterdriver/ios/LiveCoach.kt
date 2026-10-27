@@ -1,0 +1,266 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
+
+package com.flappedear.betterdriver.ios
+
+import com.flappedear.betterdriver.coach.AudioDelayUsed
+import com.flappedear.betterdriver.coach.CoachEvents
+import com.flappedear.betterdriver.coach.CoachFix
+import com.flappedear.betterdriver.coach.CoachLanguage
+import com.flappedear.betterdriver.coach.CoachReference
+import com.flappedear.betterdriver.coach.CoachReferenceJson
+import com.flappedear.betterdriver.coach.CoachSession
+import com.flappedear.betterdriver.coach.CoachSettings
+import com.flappedear.betterdriver.coach.CoachStatus
+import com.flappedear.betterdriver.coach.SessionLaps
+import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.buildReference
+import com.flappedear.betterdriver.coach.coachFixes
+import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.coach.tracedLaps
+import com.flappedear.betterdriver.recorder.store.SessionState
+import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.store.StoredSession
+import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackDetection
+import com.flappedear.betterdriver.timing.track.TrackEvent
+import platform.Foundation.NSDate
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSString
+import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.create
+import platform.Foundation.stringWithContentsOfFile
+import platform.Foundation.timeIntervalSince1970
+import platform.Foundation.writeToFile
+import platform.darwin.dispatch_async
+import platform.darwin.dispatch_queue_create
+import platform.darwin.dispatch_sync
+import kotlin.concurrent.Volatile
+
+/**
+ * The phone's voice, as the app gives it to the coach (FBBD-333): Swift's AVSpeechSynthesizer. [speaking]
+ * is true while a phrase still plays, so no cue cuts one off (FBBD-253). [say] starts saying [text] and
+ * returns false when it was refused; [speech] then hears when its sound started and ended.
+ */
+interface CoachSpeaker {
+    val speaking: Boolean
+
+    fun say(text: String, speech: CoachSpeech): Boolean
+}
+
+/** What became of one phrase; called from any thread. */
+interface CoachSpeech {
+    /** Its sound started, to [route] ("headset" or "speaker") on output type [device]. */
+    fun started(route: String, device: String)
+
+    /** Its sound ended: "done", "stopped" (cut off) or "error". */
+    fun ended(end: String)
+}
+
+/** The coach settings the iPhone uses (FBBD-333): the Android defaults, in [polish] or English. */
+fun coachSettings(polish: Boolean, audioDelayMillis: Int): CoachSettings = CoachSettings(
+    language = if (polish) CoachLanguage.Polish else CoachLanguage.English,
+    audioDelayMillis = audioDelayMillis.coerceIn(0, CoachSettings.MaxAudioDelayMillis),
+)
+
+/**
+ * The live coach of one recording on the iPhone (FBBD-333), as the Android app's coach process runs it
+ * (CoachService): at the first fix, once the recording knows its place, a saved track with laps gets its
+ * reference from earlier sessions there and a [CoachSession]; every fix after that goes to it, and its
+ * cues are said by [speaker]. Cues, results and their sounds are logged with [log] as Android's
+ * recorder logs them, so the cue review reads them the same.
+ *
+ * Everything runs on one serial queue of its own: fixes that arrive while the reference loads wait
+ * there, and their late cues are dropped, as on Android. A failure is logged as a coach problem and
+ * never reaches the recording (FBBD-69). [audioDelayFromPhone]: the settings' delay is the output
+ * latency iOS reports for the route at the start, so the cue's VOICE event says "measured".
+ */
+@Suppress("LongParameterList") // What one coached recording needs, one parameter each.
+class LiveCoach internal constructor(
+    private val sessionId: String,
+    private val sessionsDir: String,
+    private val referencesDir: String,
+    private val settings: CoachSettings,
+    private val audioDelayFromPhone: Boolean,
+    private val speaker: CoachSpeaker,
+    private val now: () -> Long,
+    private val log: (tMicros: Long, kind: String, text: String) -> Unit,
+) {
+    private val queue = dispatch_queue_create("coach", null)
+
+    /** Whether the recording's place has been handed over; the caller's lock is held. */
+    private var placed = false
+    private var atSavedTrack = false
+
+    /** Coach queue only. */
+    private var coach: CoachSession? = null
+
+    /** The coach line, for the track screen. */
+    @Volatile
+    var status: CoachStatus = CoachStatus.None
+        private set
+
+    /** Whether the coach speaks in this session: off in the settings, the line is left out (UI-142 B). */
+    val on: Boolean get() = settings.verbosity != Verbosity.Off
+
+    /**
+     * A fix of the recording and the place it is at; called with the recording's live lock held, so
+     * the fixes come in order. Never blocks: the work is queued.
+     */
+    internal fun onFix(fix: CoachFix?, detection: TrackDetection?) {
+        if (!placed && detection != null) {
+            placed = true
+            val saved = (detection as? TrackDetection.Saved)?.track
+            atSavedTrack = saved != null
+            if (saved != null) queued { start(saved) }
+        }
+        if (fix != null && atSavedTrack) queued { fix(fix) }
+    }
+
+    @Suppress("TooGenericExceptionCaught") // A coach failure is logged in the session and never ends coaching.
+    private fun queued(body: () -> Unit) = dispatch_async(queue) {
+        try {
+            body()
+        } catch (t: Throwable) {
+            report(now(), CoachEvents.PROBLEM, "error $t")
+        }
+    }
+
+    /** Loads [track]'s reference and starts the coach there, as CoachService.track. */
+    private fun start(track: Track) {
+        val focus = coaches(track) && settings.verbosity >= Verbosity.Focus
+        val library = IosCoachLibrary(sessionsDir, referencesDir)
+        val reference = if (focus) library.reference(track, exclude = sessionId) else null
+        // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
+        val nowUtc = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
+        val sameDay = reference != null && library.drivenSameDay(reference, nowUtc)
+        val c = CoachSession(settings, track, reference, sameDay = sameDay)
+        coach = c
+        status = c.status
+    }
+
+    private fun fix(fix: CoachFix) {
+        val c = coach ?: return
+        var asked: Asked? = null
+        // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
+        val out = c.onFix(fix, now(), voiceFree = !speaker.speaking) { text ->
+            val ask = Asked(now()).also { asked = it }
+            speaker.say(text, Speech(ask))
+        }
+        for (e in out.events) report(e.tMicros, e.kind, e.text)
+        // At most one cue per fix; its sound start is logged against its number (FBBD-183).
+        asked?.seq = out.events.firstOrNull { it.kind == CoachEvents.CUE }
+            ?.let { CoachEvents.parseCue(it.tMicros, it.text)?.seq }
+        status = out.status
+    }
+
+    /** A cue asked of the voice at session time [askedMicros]; [seq] is set once the coach has logged it. */
+    private class Asked(val askedMicros: Long) {
+        @Volatile
+        var seq: Int? = null
+    }
+
+    /** Logs the sound of [ask] on the coach queue, after the fix that asked for it has numbered it. */
+    private inner class Speech(private val ask: Asked) : CoachSpeech {
+        override fun started(route: String, device: String) {
+            val at = now()
+            queued {
+                val seq = ask.seq ?: return@queued
+                val source = if (audioDelayFromPhone) AudioDelayUsed.Measured else AudioDelayUsed.Set
+                val text = CoachEvents.voiceText(
+                    seq, Path, ask.askedMicros, route, device = device, outDelayMillis = settings.audioDelayMillis,
+                    outDelaySource = source, timedSource = source,
+                )
+                report(at, CoachEvents.VOICE, text)
+            }
+        }
+
+        override fun ended(end: String) {
+            val at = now()
+            queued { ask.seq?.let { report(at, CoachEvents.VOICE_END, CoachEvents.voiceEndText(it, end)) } }
+        }
+    }
+
+    private fun report(tMicros: Long, kind: String, text: String) = log(tMicros, kind, text.take(MaxEventChars))
+
+    /** Waits until the work queued so far is done, for tests. */
+    internal fun awaitIdle() = dispatch_sync(queue) {}
+
+    private companion object {
+        /** iOS says every cue with live text-to-speech. */
+        const val Path = "live"
+
+        /** The longest coach event text the Android recorder logs. */
+        const val MaxEventChars = 1_000
+        const val MillisPerSecond = 1_000.0
+    }
+}
+
+/**
+ * The coach references on the iPhone (FBBD-333), one file per track in [referencesDir] as on Android
+ * (`<track id>.coach.json`), built from the sessions in [sessionsDir] that recorded the track. A
+ * reference is rebuilt only when those sessions or the track's lines changed.
+ */
+internal class IosCoachLibrary(sessionsDir: String, private val referencesDir: String) {
+    private val sessions = SessionStore(sessionsDir)
+
+    /** The reference for [track], rebuilt first if needed; sessions still recording, and [exclude], are left out. */
+    fun reference(track: Track, exclude: String): CoachReference? {
+        val here = sessions.list()
+            .filter { it.state != SessionState.RECORDING && it.id != exclude && recordedAt(it) == track.id }
+            .map { it.id }
+        val current = read(track.id)
+        val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
+            current.planKey == null
+        if (upToDate) return current
+        val laps = here.mapNotNull { id -> readOrNull(id)?.let { SessionLaps(id, tracedLaps(track, it.coachFixes())) } }
+        val built = buildReference(track, laps)
+        if (built == null) {
+            NSFileManager.defaultManager.removeItemAtPath(fileFor(track.id), null)
+        } else {
+            write(built)
+        }
+        return built
+    }
+
+    /** Whether a session [reference] was built from ended within 12 hours before [nowUtcMillis] (FBBD-190). */
+    fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
+        val ids = reference.sessions.toSet()
+        val ended = sessions.list().filter { it.id in ids }
+            .maxOfOrNull { it.info.startUtcMillis + (it.durationMicros ?: 0L) / MicrosPerMilli }
+        return ended != null && nowUtcMillis - ended in 0..SameDayMillis
+    }
+
+    /** The saved track session [s] recorded it was at, from its events; null if none or unreadable. */
+    // A damaged session is skipped, never a reason to stop coaching.
+    @Suppress("TooGenericExceptionCaught")
+    private fun recordedAt(s: StoredSession): String? = try {
+        TrackEvent.savedTrackId(sessions.read(s.id, samples = false).events)
+    } catch (_: Exception) {
+        null
+    }
+
+    @Suppress("TooGenericExceptionCaught")
+    private fun readOrNull(id: String) = try {
+        sessions.read(id)
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun fileFor(trackId: String) = "$referencesDir/$trackId$Suffix"
+
+    private fun read(trackId: String): CoachReference? =
+        NSString.stringWithContentsOfFile(fileFor(trackId), NSUTF8StringEncoding, null)
+            ?.let { CoachReferenceJson.decode(it, trackId) }
+
+    private fun write(reference: CoachReference) {
+        NSFileManager.defaultManager.createDirectoryAtPath(referencesDir, true, null, null)
+        NSString.create(string = CoachReferenceJson.encode(reference))
+            .writeToFile(fileFor(reference.trackId), true, NSUTF8StringEncoding, null)
+    }
+
+    private companion object {
+        const val Suffix = ".coach.json"
+        const val MicrosPerMilli = 1_000L
+        const val SameDayMillis = 12L * 60 * 60 * 1_000
+    }
+}
