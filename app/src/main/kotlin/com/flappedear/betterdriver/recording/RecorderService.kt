@@ -96,17 +96,25 @@ private fun gnssFrom(intent: Intent): GnssRef? = when {
 /**
  * G for the track screen (UI-38): the RaceBox accelerometer, or a RaceChrono DIY device's $RC2/$RC3
  * lines over Bluetooth or Wi-Fi (FBBD-115). Other receivers have none: the VBOX Sport's G channels
- * and the Dragy Pro's IMU are not read (FBBD-116, FBBD-117).
+ * and the Dragy Pro's IMU are not read (FBBD-116, FBBD-117). With the phone's own GPS it is the
+ * phone's accelerometer, all three axes (its Z too): the phone sits any way up in its mount.
  */
 private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
     GnssType.RACEBOX -> RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
     GnssType.NMEA, GnssType.TCP -> RcChannels.ACCEL_X.id to RcChannels.ACCEL_Y.id
+    GnssType.PHONE -> PhoneImuChannels.ACCEL_X.id to PhoneImuChannels.ACCEL_Y.id
     else -> null
 }
 
-/** How old the receiver's fixes are, so cues allow for it (FBBD-229); logged as it is measured. */
-private fun fixAgeFor(gnss: GnssRef): LiveFixAge? = accelIdsFor(gnss)?.let { (x, y) ->
-    LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age.text}") }
+/**
+ * How old the receiver's fixes are, so cues allow for it (FBBD-229); logged as it is measured. It
+ * needs the receiver's own acceleration in the fix's set, so not with the phone's GPS.
+ */
+private fun fixAgeFor(gnss: GnssRef): LiveFixAge? {
+    if (gnss.type == GnssType.PHONE) return null
+    return accelIdsFor(gnss)?.let { (x, y) ->
+        LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age.text}") }
+    }
 }
 
 private fun sensorsFrom(intent: Intent): List<SensorRef> =
@@ -271,6 +279,7 @@ class RecorderService : Service() {
                 recording::nowMicros,
                 droppedSamples = { recording.droppedCount },
                 accelIds = accelIdsFor(gnss),
+                accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { gnss.type == GnssType.PHONE },
             )
             recording.listeners.add(tracker)
             // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a

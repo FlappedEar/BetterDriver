@@ -1,5 +1,11 @@
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.coach.CoachFixReader
+import com.flappedear.betterdriver.coach.CoachSettings
+import com.flappedear.betterdriver.coach.CoachStatus
+import com.flappedear.betterdriver.coach.pedalChannelId
+import com.flappedear.betterdriver.coach.rpmChannelId
+import com.flappedear.betterdriver.coach.steeringChannelId
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.EventKinds
@@ -42,8 +48,9 @@ private const val MaxErrorText = 500
  * Android, and the same live values and lap timing as the Android recorder service (LiveTracker,
  * SessionTiming). The links (RaceBox, phone GPS) push into it as a [SampleSink] from their own
  * queues; one lock keeps the live state consistent, and a failure there is logged in the session
- * and never stops the recording (FBBD-69).
+ * and never stops the recording (FBBD-69). The live coach rides on it as on Android's recorder (FBBD-333).
  */
+@Suppress("TooManyFunctions") // The recording's one Kotlin entry for the app: samples, screen, coach, stop.
 class LiveSession private constructor(
     private val recording: Recording,
     private val tracker: LiveTracker,
@@ -51,6 +58,15 @@ class LiveSession private constructor(
 ) : SampleSink {
     private val lock = NSRecursiveLock()
     private var liveFailed = false
+
+    /** The live coach (FBBD-333), once [startCoach] started it; under the lock. */
+    private var coach: LiveCoach? = null
+
+    /** The session's channels, to find the pedal, wheel and engine speed by (FBBD-307); under the lock. */
+    private val coachChannels = HashMap<Int, ChannelDef>()
+
+    /** Reads each fix with the last pedal, wheel and engine speed, as Android's CoachLink; under the lock. */
+    private var coachReader = CoachFixReader(null)
 
     val id: String get() = recording.id
 
@@ -66,7 +82,23 @@ class LiveSession private constructor(
 
     override fun defineChannel(def: ChannelDef) {
         recording.defineChannel(def)
-        live { tracker.onChannel(def) }
+        live {
+            tracker.onChannel(def)
+            coachChannel(def)
+        }
+    }
+
+    /** An OBD adapter that connects later brings its pedal, wheel and engine speed then (CoachLink). */
+    private fun coachChannel(def: ChannelDef) {
+        coachChannels[def.id] = def
+        val all = coachChannels.values
+        val pedal = pedalChannelId(all)
+        val steering = steeringChannelId(all)
+        val rpm = rpmChannelId(all)
+        val r = coachReader
+        if (pedal != r.pedal || steering != r.steering || rpm != r.rpm) {
+            coachReader = CoachFixReader(pedal, steering, rpm)
+        }
     }
 
     override fun submit(set: SampleSet) {
@@ -74,8 +106,33 @@ class LiveSession private constructor(
         live {
             tracker.onSamples(set)
             timing.onSamples(set)
+            // Read before the coach starts, so the pedal value is there for its first fix.
+            val fix = coachReader.read(set)
+            coach?.onFix(fix, timing.detection)
         }
     }
+
+    /**
+     * Starts the live coach (FBBD-333), as the Android recorder binds its coach when the coach is on:
+     * it coaches at a saved track with laps, from the sessions in [sessionsDir] and the references it
+     * keeps in [referencesDir], and says its cues with [speaker]. Its events go into this recording at
+     * their own times. [audioDelayFromPhone]: [settings]' delay is the output latency iOS reported.
+     */
+    fun startCoach(
+        sessionsDir: String,
+        referencesDir: String,
+        settings: CoachSettings,
+        audioDelayFromPhone: Boolean,
+        speaker: CoachSpeaker,
+    ) {
+        val c = LiveCoach(
+            recording.id, sessionsDir, referencesDir, settings, audioDelayFromPhone, speaker, recording::nowMicros,
+        ) { t, kind, text -> recording.eventAt(t, kind, text) }
+        guarded { if (coach == null) coach = c }
+    }
+
+    /** Waits for the coach's queued work, for tests. */
+    internal fun awaitCoach() = guarded { coach }?.awaitIdle()
 
     override fun event(kind: String, text: String) = recording.event(kind, text)
 
@@ -95,6 +152,7 @@ class LiveSession private constructor(
                 place = detection?.placeName,
                 placeSaved = detection is TrackDetection.Saved,
                 stoppedReason = ended,
+                coach = coach?.takeIf { it.on }?.status,
             )
         }
     }
@@ -183,6 +241,8 @@ data class LiveScreen(
     val place: String?,
     val placeSaved: Boolean,
     val stoppedReason: String?,
+    /** The coach line (FBBD-333): null when the coach is off, so the tiles take its place (UI-142 B). */
+    val coach: CoachStatus? = null,
 ) {
     val gnss: GnssState get() = live.gnss
 

@@ -141,7 +141,10 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         videoOut.setSampleBufferDelegate(self, queue: queue)
         guard capture.canAddOutput(videoOut) else { throw CameraError.notSupported }
         capture.addOutput(videoOut)
-        if hasAudio, let mic = AVCaptureDevice.default(for: .audio),
+        // The app sets its own audio session, so the coach's voice keeps going to the headset or the
+        // speaker while the microphone records (the capture session's own setting would not allow A2DP).
+        capture.automaticallyConfiguresApplicationAudioSession = false
+        if hasAudio, Self.recordAudio(), let mic = AVCaptureDevice.default(for: .audio),
            let micInput = try? AVCaptureDeviceInput(device: mic), capture.canAddInput(micInput),
            capture.canAddOutput(audioOut) {
             capture.addInput(micInput)
@@ -151,6 +154,21 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             hasAudio = false
         }
         configured = true
+    }
+
+    /// Sound from the phone's microphone, with the coach still heard over Bluetooth, the car or the speaker.
+    private static func recordAudio() -> Bool {
+        let audio = AVAudioSession.sharedInstance()
+        do {
+            try audio.setCategory(
+                .playAndRecord, mode: .videoRecording,
+                options: [.defaultToSpeaker, .allowBluetoothA2DP, .duckOthers]
+            )
+            try audio.setActive(true)
+            return true
+        } catch {
+            return false
+        }
     }
 
     func captureOutput(_ output: AVCaptureOutput, didOutput sample: CMSampleBuffer, from connection: AVCaptureConnection) {
