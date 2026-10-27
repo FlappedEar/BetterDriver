@@ -57,6 +57,7 @@ final class RecordingController: ObservableObject {
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
     private var timer: Timer?
+    private let activity = RecordingActivity()
 
     var isRecording: Bool { session != nil }
 
@@ -114,6 +115,7 @@ final class RecordingController: ObservableObject {
             link.start()
         }
         UIApplication.shared.isIdleTimerDisabled = true
+        activity.start(at: Date())
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -130,6 +132,7 @@ final class RecordingController: ObservableObject {
     }
 
     private func end() {
+        activity.end()
         timer?.invalidate()
         timer = nil
         raceBox = nil
@@ -153,7 +156,9 @@ final class RecordingController: ObservableObject {
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
-        screen = TrackScreenModel(now, receiverHasG: receiver != .phone)
+        let model = TrackScreenModel(now, receiverHasG: receiver != .phone)
+        screen = model
+        activity.update(model)
     }
 }
 
