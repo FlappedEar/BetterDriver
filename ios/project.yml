@@ -73,6 +73,9 @@ targets:
       path: LiveActivity/Info.plist
       properties:
         CFBundleDisplayName: BetterDriver
+        # The app's version and build number: App Store Connect wants them equal (ITMS-90473).
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
     settings:

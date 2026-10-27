@@ -160,6 +160,19 @@ jobs:
             -destination generic/platform=iOS -archivePath build/BetterDriver.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" 2>&1 | tail -n 60
+      # App Store Connect warns when an extension's version or build differs from the app's (ITMS-90473).
+      - name: Bundle versions match
+        shell: bash
+        run: |
+          app=build/BetterDriver.xcarchive/Products/Applications/BetterDriver.app
+          want="${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }})"
+          status=0
+          for plist in "$app/Info.plist" "$app"/PlugIns/*.appex/Info.plist; do
+            got="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"))"
+            echo "$plist: $got"
+            [ "$got" = "$want" ] || { echo "::error::$plist is $got, not $want"; status=1; }
+          done
+          exit $status
       - name: Upload to TestFlight
         if: steps.signing.outputs.ready == 'true'
         shell: bash
