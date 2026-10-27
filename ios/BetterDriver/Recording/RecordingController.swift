@@ -36,6 +36,8 @@ enum AppFolders {
     static var tracks: URL { folder("tracks") }
     /// The coach's references from earlier sessions, as coach/references on Android (FBBD-333).
     static var coachReferences: URL { folder("coach/references") }
+    /// The line plans the review keeps for the coach, as coach/lines on Android (FBBD-333).
+    static var coachLines: URL { folder("coach/lines") }
 
     private static func folder(_ name: String) -> URL {
         let url = base.appendingPathComponent(name, isDirectory: true)
@@ -197,6 +199,7 @@ final class RecordingController: ObservableObject {
         live.startCoach(
             sessionsDir: AppFolders.sessions.path,
             referencesDir: AppFolders.coachReferences.path,
+            linePlansDir: AppFolders.coachLines.path,
             settings: settings,
             audioDelayFromPhone: true,
             speaker: voice
