@@ -62,6 +62,7 @@ final class RecordingController: ObservableObject {
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
     private var timer: Timer?
+    private let activity = RecordingActivity()
 
     var isRecording: Bool { session != nil }
 
@@ -118,6 +119,8 @@ final class RecordingController: ObservableObject {
             phone = link
             link.start()
         }
+        // The link can end the session as it starts (phone GPS without location access).
+        guard session != nil else { return }
         // OBD-II from a Bluetooth LE adapter nearby (FBBD-333); none found, none read.
         let car = ObdLink(sink: live)
         obd = car
@@ -128,6 +131,7 @@ final class RecordingController: ObservableObject {
         strap.start()
         startCoach(live)
         UIApplication.shared.isIdleTimerDisabled = true
+        activity.start(at: Date())
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
@@ -162,6 +166,7 @@ final class RecordingController: ObservableObject {
     }
 
     private func end() {
+        activity.end()
         timer?.invalidate()
         timer = nil
         voice?.shutdown()
@@ -192,7 +197,9 @@ final class RecordingController: ObservableObject {
             return
         }
         let obdOn = obd?.status().state == ObdLinkState.connected
-        screen = TrackScreenModel(now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status)
+        let model = TrackScreenModel(now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status)
+        screen = model
+        activity.update(model)
     }
 }
 

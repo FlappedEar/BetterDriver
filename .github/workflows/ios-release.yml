@@ -99,6 +99,8 @@ jobs:
           echo "key=$key" >> "$GITHUB_OUTPUT"
           python3 -m pip install --quiet --break-system-packages 'pyjwt[crypto]==2.10.1'
           team=$(ASC_KEY_PATH="$key" python3 ios/ci/asc.py team "$BUNDLE_ID" BetterDriver)
+          # The Live Activity's widget extension (UI-284 A) signs with its own App ID.
+          ASC_KEY_PATH="$key" python3 ios/ci/asc.py team "$BUNDLE_ID.LiveActivity" "BetterDriver Live Activity" > /dev/null
           echo "id=$team" >> "$GITHUB_OUTPUT"
       - name: Archive (signed)
         if: steps.signing.outputs.ready == 'true'
