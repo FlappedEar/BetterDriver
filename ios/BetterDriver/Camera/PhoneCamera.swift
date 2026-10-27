@@ -72,6 +72,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
 
     /// Ends the file now, logged before the session ends. Call before the session stops; safe to call twice.
     func stop() {
+        // A second call (the recording's end calls it again) returns at once: it would otherwise wait
+        // on the main queue for the camera to stop running, which made leaving the recording slow.
+        guard !stopped else { return }
         stopped = true
         queue.sync {
             running = false
@@ -239,31 +242,37 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         }
     }
 
-    /// H.264 settings for the file, made from the frame's size and the mode's rate. Not the output's
-    /// recommended settings: they throw an Objective-C exception, which Swift cannot catch, when the
-    /// phone does not offer H.264 for them (the app crashed on the first frame, 1.14 TestFlight).
+    /// The file's video settings, made from the frame's size and the mode's rate: H.264, or HEVC when
+    /// the phone records this mode only in HEVC (a 4K or 10-bit format). Not the output's recommended
+    /// settings: those throw an Objective-C exception, which Swift cannot catch, for a codec the output
+    /// does not offer (the app crashed on the first frame, TestFlight of 2026-10-27).
     private func videoSettings(for frame: CMSampleBuffer) -> [String: Any] {
         let size = CMSampleBufferGetFormatDescription(frame).map(CMVideoFormatDescriptionGetDimensions)
-        return Self.h264Settings(
+        let offered = videoOut.availableVideoCodecTypesForAssetWriter(writingTo: .mp4)
+        return Self.videoSettings(
+            codec: !offered.contains(.h264) && offered.contains(.hevc) ? .hevc : .h264,
             width: size?.width ?? recording.size.width,
             height: size?.height ?? recording.size.height,
             fps: recording.fps
         )
     }
 
-    /// H.264 at [width]×[height] and [fps], about 0.15 bit per pixel (1080p · 60 ≈ 19 Mbit/s).
-    static func h264Settings(width: Int32, height: Int32, fps: Int32) -> [String: Any] {
-        let bits = max(Int(Double(width) * Double(height) * Double(fps) * 0.15), 1_000_000)
+    /// [codec] at [width]×[height] and [fps], about 0.15 bit per pixel for H.264 (1080p · 60 ≈ 19 Mbit/s),
+    /// two thirds of that for HEVC; a key frame every second.
+    static func videoSettings(codec: AVVideoCodecType, width: Int32, height: Int32, fps: Int32) -> [String: Any] {
+        let perPixel = codec == .hevc ? 0.1 : 0.15
+        let bits = max(Int(Double(width) * Double(height) * Double(fps) * perPixel), 1_000_000)
+        var compression: [String: Any] = [
+            AVVideoAverageBitRateKey: bits,
+            AVVideoExpectedSourceFrameRateKey: Int(fps),
+            AVVideoMaxKeyFrameIntervalKey: Int(fps),
+        ]
+        if codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
         return [
-            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoCodecKey: codec,
             AVVideoWidthKey: Int(width),
             AVVideoHeightKey: Int(height),
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: bits,
-                AVVideoExpectedSourceFrameRateKey: Int(fps),
-                AVVideoMaxKeyFrameIntervalKey: Int(fps),
-                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel,
-            ],
+            AVVideoCompressionPropertiesKey: compression,
         ]
     }
 
