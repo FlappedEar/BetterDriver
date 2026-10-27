@@ -98,12 +98,27 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.tests
         GENERATE_INFOPLIST_FILE: YES
+  # The smoke test that gates TestFlight (ios-release.yml): record, stop, open, on the simulator.
+  BetterDriverUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - BetterDriverUITests
+    dependencies:
+      - target: BetterDriver
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: BetterDriver
 schemes:
   BetterDriver:
     build:
       targets:
         BetterDriver: all
         BetterDriverTests: [test]
+        BetterDriverUITests: [test]
     test:
       targets:
         - BetterDriverTests
+        - BetterDriverUITests

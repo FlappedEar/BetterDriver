@@ -7,12 +7,21 @@ import UIKit
 enum Receiver: Equatable {
     case raceBox(FoundRaceBoxDevice)
     case phone
+    /// The UI smoke test's receiver (UITestMode).
+    case simulated
 
     var name: String {
         switch self {
         case .raceBox(let device): device.name
         case .phone: "Phone GPS"
+        case .simulated: "Simulated GPS"
         }
+    }
+
+    /// A RaceBox measures G itself; otherwise the phone's accelerometer gives it (FBBD-337).
+    var hasG: Bool {
+        if case .raceBox = self { return true }
+        return false
     }
 }
 
@@ -59,6 +68,7 @@ final class RecordingController: ObservableObject {
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var simulated: SimulatedGpsLink?
     private var imu: PhoneImuLink?
     private var camera: PhoneCamera?
     private var obd: ObdLink?
@@ -117,7 +127,7 @@ final class RecordingController: ObservableObject {
                 tracksDir: AppFolders.tracks.path,
                 circuits: BundledCircuits.list,
                 info: info,
-                receiverHasG: receiver != .phone
+                receiverHasG: receiver.hasG
             )
         } catch {
             self.error = "Could not start recording: \(error.localizedDescription)"
@@ -147,6 +157,10 @@ final class RecordingController: ObservableObject {
                 }
             }
             phone = link
+            link.start()
+        case .simulated:
+            let link = SimulatedGpsLink(sink: live)
+            simulated = link
             link.start()
         }
         // The link can end the session as it starts (phone GPS without location access).
@@ -194,6 +208,7 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        simulated?.stop()
         imu?.stop()
         camera?.stop()
         obd?.stop()
@@ -210,6 +225,7 @@ final class RecordingController: ObservableObject {
         voice = nil
         raceBox = nil
         phone = nil
+        simulated = nil
         imu = nil
         camera?.stop()
         camera = nil
@@ -231,6 +247,7 @@ final class RecordingController: ObservableObject {
             // Ended by the recorder itself (storage full, write error): the files stay for recovery.
             raceBox?.stop()
             phone?.stop()
+            simulated?.stop()
             imu?.stop()
             obd?.stop()
             heartRate?.stop()

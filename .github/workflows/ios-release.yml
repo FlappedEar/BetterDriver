@@ -2,6 +2,10 @@ name: iOS release
 
 # Builds the iPhone/iPad app for the App Store and uploads it to TestFlight (FBBD-334).
 #
+# Gate: nothing is archived or uploaded unless the UI smoke test passes first on an iPhone
+# simulator (BetterDriverUITests: fresh install, START with camera, OBD, heart rate and coach on,
+# stop, open the saved session).
+#
 # Runs after each successful Release (the Android release, same version and commit) and
 # from the Actions tab. Signing is automatic from the App Store Connect API key in the
 # secrets ASC_ISSUER_ID, ASC_KEY_ID and ASC_KEY_P8; the team id comes from the bundle id,
@@ -86,6 +90,36 @@ jobs:
         env:
           BETTERDRIVER_CORE_BUILD: release
         run: ios/generate.sh
+      - name: Smoke test on the iPhone simulator (gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build
+          sim=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in runtimes if "iOS" in k), key=lambda k: [int(p) for p in k.rsplit("iOS-", 1)[1].split("-")])
+          print(next(d["udid"] for d in runtimes[ios[-1]] if d["name"].startswith("iPhone")))
+          ')
+          xcodebuild test \
+            -project ios/BetterDriver.xcodeproj -scheme BetterDriver \
+            -destination "platform=iOS Simulator,id=$sim" \
+            -only-testing:BetterDriverUITests \
+            -resultBundlePath build/smoke.xcresult \
+            CODE_SIGNING_ALLOWED=NO > build/smoke.log 2>&1 && status=0 || status=$?
+          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/smoke.log || true
+          [ $status -eq 0 ] || echo "::error::Smoke test failed: nothing goes to TestFlight"
+          exit $status
+      - name: Smoke test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: |
+            build/smoke.xcresult
+            build/smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: App Store Connect key and team
         id: team
         if: steps.signing.outputs.ready == 'true'

@@ -49,7 +49,8 @@ struct DriveView: View {
         .onAppear {
             camera = recorder.phoneCamera
             videoMode = recorder.phoneVideoMode
-            place.find()
+            // The UI test runs without location access and its prompt.
+            if !UITestMode.on { place.find() }
         }
     }
 }
@@ -130,6 +131,10 @@ struct ReceiverSheet: View {
                 .padding(.vertical, 12)
             }
             row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
+            if UITestMode.on {
+                row("Simulated GPS", "UI test", ok: true) { onPick(.simulated) }
+                    .accessibilityIdentifier("receiver.simulated")
+            }
             // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
             Toggle("Phone camera video", isOn: $camera)
                 .tint(Palette.accent)
