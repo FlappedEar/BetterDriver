@@ -38,7 +38,7 @@ final class SmokeTests: XCTestCase {
         }
         // The RaceBox scan's Bluetooth prompt can come up after the sheet does.
         allowSystemAlerts()
-        // The camera is on after a fresh install; the toggle only has to say so.
+        // The camera starts off: the smoke test records with it on.
         let camera = app.switches["phoneCameraToggle"]
         if camera.waitForExistence(timeout: 5), (camera.value as? String) != "1" { camera.tap() }
         // By id, or by its label if a parent's id ever covers the row's own.

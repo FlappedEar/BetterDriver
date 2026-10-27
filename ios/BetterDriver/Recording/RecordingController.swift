@@ -98,10 +98,11 @@ final class RecordingController: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
     }
 
-    /// Phone video with each session (FBBD-21), on unless turned off on the START sheet.
+    /// Phone video with each session (FBBD-21), turned on on the START sheet. Off until the iPhone
+    /// camera has a device test: a new key, so a camera left on by an earlier build starts off too.
     var phoneCamera: Bool {
-        get { UserDefaults.standard.object(forKey: "phoneCamera") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "phoneCamera") }
+        get { UserDefaults.standard.object(forKey: "phoneCameraOn") as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: "phoneCameraOn") }
     }
 
     /// The phone video mode (FBBD-88), as on Android: 1080p · 60 until another is chosen.
