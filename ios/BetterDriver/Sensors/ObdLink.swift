@@ -51,7 +51,7 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// The connection as the track screen shows it (Android: RecorderState.obd).
     func status() -> ObdStatus { feed.status() }
 
-    func log(text: String) { NSLog("Obd %@", text) }
+    func log(text: String) { AppLog.i("Obd", text) }
 
     /// The adapters to try now, on the OBD thread: the one used last, then any other seen nearby.
     private func targets() -> [ObdTarget] {
