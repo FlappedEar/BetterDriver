@@ -8,7 +8,8 @@ import os
 /// file, Application Support/logs/betterdriver.log, kept across sessions and app restarts, in the
 /// Android log's line format (LogLine.kt), so the same checks read both. Lines also go to the system
 /// log. Crashes are written before the app ends: Objective-C and Kotlin exceptions with their stack,
-/// signals (a Swift trap, a bad access, an abort) as a note the next start copies into the log.
+/// signals (a Swift trap, a bad access, an abort) as a note the next start copies into the log, the
+/// stack of those from iOS's own report (MetricKit).
 /// Nothing deletes the log except Settings › Diagnostics › Clear log.
 enum AppLog {
     static let shared = LogWriter(dir: AppFolders.base.appendingPathComponent("logs", isDirectory: true))

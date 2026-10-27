@@ -8,16 +8,14 @@ private var crashFd: Int32 = -1
 /// an abort (what an uncaught Objective-C or Kotlin exception ends in), an illegal instruction.
 private let crashSignals: [Int32] = [SIGABRT, SIGSEGV, SIGBUS, SIGILL, SIGFPE, SIGTRAP, SIGSYS]
 
-/// Frames written for a signal; the handler's own buffer, on its own stack.
-private let crashFrames = 64
-
 /// Writes [text] to the crash file; async-signal-safe.
 private func crashWrite(_ text: StaticString) {
     _ = write(crashFd, text.utf8Start, text.utf8CodeUnitCount)
 }
 
-/// The signal handler: "signal <n>" and the stack to the crash file, then the default action, so iOS
-/// still ends the app and writes its own crash report. Only async-signal-safe calls.
+/// The signal handler: "signal <n>" to the crash file, then the default action, so iOS still ends the
+/// app and writes its own crash report, with the stack (MetricKit hands it to the log a later start).
+/// Only async-signal-safe calls: no backtrace, no allocation, no Swift runtime.
 private func onCrashSignal(_ signal: Int32) {
     if crashFd >= 0 {
         crashWrite("signal ")
@@ -33,10 +31,6 @@ private func onCrashSignal(_ signal: Int32) {
             _ = write(crashFd, buf.baseAddress! + at, buf.count - at)
         }
         crashWrite("\n")
-        withUnsafeTemporaryAllocation(of: UnsafeMutableRawPointer?.self, capacity: crashFrames) { frames in
-            let count = backtrace(frames.baseAddress!, Int32(crashFrames))
-            backtrace_symbols_fd(frames.baseAddress!, count, crashFd)
-        }
     }
     Darwin.signal(signal, SIG_DFL)
     raise(signal)
@@ -74,7 +68,7 @@ enum CrashLog {
         let number = lines.first.flatMap { Int32($0.dropFirst("signal ".count)) }
         let name = number.map(signalName) ?? "a signal"
         let stack = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-        log.write("E", "Crash", "the previous run ended by \(name)\n\(stack)")
+        log.write("E", "Crash", stack.isEmpty ? "the previous run ended by \(name)" : "the previous run ended by \(name)\n\(stack)")
         try? FileManager.default.removeItem(at: note)
     }
 
