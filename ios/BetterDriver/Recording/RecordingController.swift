@@ -137,6 +137,8 @@ final class RecordingController: ObservableObject {
         }
         self.receiver = receiver
         session = live
+        AppLog.session = live.id
+        AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
         // The phone's accelerometer records in every session, as on Android; with phone GPS it gives the G.
         let imu = PhoneImuLink(sink: live)
         self.imu = imu
@@ -217,6 +219,7 @@ final class RecordingController: ObservableObject {
         obd?.stop()
         heartRate?.stop()
         _ = live.stop()
+        AppLog.i("Recording", "stop")
         end()
     }
 
@@ -236,6 +239,7 @@ final class RecordingController: ObservableObject {
         obd = nil
         heartRate = nil
         session = nil
+        AppLog.session = nil
         screen = nil
         receiver = nil
         raceBoxState = .off

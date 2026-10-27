@@ -75,7 +75,7 @@ final class SettingsModel: ObservableObject {
             // Written to a temporary file and moved over the old one, so a crash leaves one or the other.
             try Data(text.utf8).write(to: url, options: .atomic)
         } catch {
-            NSLog("BetterDriver: settings not saved: \(error.localizedDescription)")
+            AppLog.w("Settings", "settings not saved: \(error.localizedDescription)")
         }
     }
 
