@@ -76,9 +76,11 @@ jobs:
           --stacktrace
       - name: Generate the Xcode project
         run: SKIP_CORE=1 ios/generate.sh
-      # The default shell runs with -e -o pipefail, so a failing xcodebuild fails the step.
+      # The full log goes to the artifact; the step log keeps the errors and test results.
       - name: App unit tests (iPad + iPhone)
+        shell: bash
         run: |
+          set -o pipefail
           mkdir -p build
           xcodebuild test \
             -project ios/BetterDriver.xcodeproj \
@@ -86,7 +88,9 @@ jobs:
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.ipad }}" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.iphone }}" \
             -resultBundlePath build/ios-tests.xcresult \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tee build/xcodebuild.log
+            CODE_SIGNING_ALLOWED=NO > build/xcodebuild.log 2>&1 && status=0 || status=$?
+          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
+          exit $status
       - name: Test results
         if: always()
         uses: actions/upload-artifact@v4
