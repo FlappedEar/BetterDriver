@@ -24,6 +24,10 @@ targets:
         buildPhase: resources
       - path: ../timing/src/main/resources/circuits/circuits.json
         buildPhase: resources
+      # The Android app's built-in demo sessions (FBBD-331), added with -demoSessions for the UI tests.
+      - path: ../app/src/main/assets/demo
+        type: folder
+        buildPhase: resources
     dependencies:
       - framework: ../core-ios/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false
@@ -98,12 +102,26 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.tests
         GENERATE_INFOPLIST_FILE: YES
+  BetterDriverUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - BetterDriverUITests
+    dependencies:
+      - target: BetterDriver
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_TARGET_NAME: BetterDriver
 schemes:
   BetterDriver:
     build:
       targets:
         BetterDriver: all
         BetterDriverTests: [test]
+        BetterDriverUITests: [test]
     test:
       targets:
         - BetterDriverTests
+        - BetterDriverUITests

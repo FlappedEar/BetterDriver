@@ -280,4 +280,30 @@ extension ReviewBridge {
     }
 
     static func clearStaging() { _ = library.clearStaging() }
+
+    /// The UI tests' launch arguments (FBBD-331), in debug builds only: -freshInstall starts with no
+    /// sessions or tracks, as a new install; -demoSessions adds the Android app's built-in demo
+    /// sessions (Jastrząb, Silesia Ring) when they are not here yet.
+    static func prepareForUITests() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        let base = URL(fileURLWithPath: library.sessionsRoot).deletingLastPathComponent()
+        if arguments.contains("-freshInstall") {
+            for dir in ["sessions", "tracks", "transfer"] {
+                try? FileManager.default.removeItem(at: base.appendingPathComponent(dir))
+            }
+        }
+        guard arguments.contains("-demoSessions"), library.sessions().isEmpty,
+              let demo = Bundle.main.resourceURL?.appendingPathComponent("demo") else { return }
+        // When Arek drove them, as Android names them (DemoReplay).
+        let demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
+        for (name, start) in demos {
+            _ = try? library.addDemo(
+                replayPath: demo.appendingPathComponent("\(name).replay").path,
+                trackPath: demo.appendingPathComponent("\(name).track.json").path,
+                startUtcMillis: start
+            )
+        }
+        #endif
+    }
 }
