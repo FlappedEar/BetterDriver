@@ -9,6 +9,26 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
 }
 
+// Where the common tests read the app's built-in demo replays (DemoParityTest, FBBD-330): the same
+// files on the JVM and on the iOS simulator, which shares the Mac's file system.
+val generateDemoAssets by tasks.registering {
+    val dir = file("../app/src/main/assets/demo").absolutePath
+    val outDir = layout.buildDirectory.dir("generated/demoAssets")
+    inputs.property("dir", dir)
+    outputs.dir(outDir)
+    doLast {
+        val file = outDir.get().file("com/flappedear/betterdriver/analysis/DemoAssetsDir.kt").asFile
+        file.parentFile.mkdirs()
+        file.writeText(
+            """
+            |package com.flappedear.betterdriver.analysis
+            |
+            |internal const val DemoAssetsDir = "$dir"
+            |""".trimMargin(),
+        )
+    }
+}
+
 kotlin {
     jvmToolchain(17)
     jvm()
@@ -24,8 +44,11 @@ kotlin {
             // api: QualityReport is @Serializable, so its users see the serializer types.
             api(libs.kotlinx.serialization.json)
         }
-        commonTest.dependencies {
-            implementation(kotlin("test"))
+        commonTest {
+            kotlin.srcDir(generateDemoAssets)
+            dependencies {
+                implementation(kotlin("test"))
+            }
         }
         jvmMain {
             kotlin.srcDir("src/main/kotlin")

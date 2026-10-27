@@ -1,11 +1,11 @@
 package com.flappedear.betterdriver.recorder.store
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.log.logInfo
 import com.flappedear.betterdriver.recorder.packedValues
-import com.flappedear.betterdriver.recorder.log.DebugLog
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
@@ -107,8 +107,8 @@ fun gnssFixAge(sets: List<SampleSet>, accelIds: Set<Int>): FixAge {
 /** The age the [best] wait gives, or why it is taken as none. */
 private fun fixAgeOf(best: Lag): FixAge {
     val micros = (best.steps * StepSeconds * MicrosPerSecond).roundToLong()
-    val fit = "agreement ${"%.2f".format(Locale.ROOT, best.agreement)} at ${micros / MicrosPerMilli} ms, " +
-        "${"%.2f".format(Locale.ROOT, best.atZero)} at 0 ms"
+    val fit = "agreement ${fixed(best.agreement, 2)} at ${micros / MicrosPerMilli} ms, " +
+        "${fixed(best.atZero, 2)} at 0 ms"
     val onTime = best.atZero.isFinite() && best.agreement - best.atZero < MinGain || micros < MinShiftMicros
     return when {
         best.agreement < MinAgreement -> FixAge(null, "not measured: accelerometer disagrees with GNSS ($fit)")
@@ -133,7 +133,7 @@ private class Lag(val steps: Int, val agreement: Double, val atZero: Double)
 fun SessionData.withGnssAtFixTime(): SessionData {
     val accelIds = channels.values.filter { it.name in AccelNames }.map { it.id }.toSet()
     val fixAge = if (info.imported == null) gnssFixAge(sampleSets, accelIds) else null
-    if (fixAge != null && accelIds.isNotEmpty()) DebugLog.i("SessionStore", "$id: gnss fix age ${fixAge.text}")
+    if (fixAge != null && accelIds.isNotEmpty()) logInfo("SessionStore", "$id: gnss fix age ${fixAge.text}")
     val age = fixAge?.micros ?: return this
     val gnssIds = channels.values
         .filter { it.id in GnssChannels.IDS || it.name.startsWith("gnss_") }

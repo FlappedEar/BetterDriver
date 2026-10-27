@@ -9,6 +9,8 @@ import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
 import com.flappedear.betterdriver.analysis.map.AccelerometerSmoothingSeconds
 import com.flappedear.betterdriver.analysis.map.sessionGpsG
 import com.flappedear.betterdriver.analysis.map.smoothedAt
+import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.format.signedFixed
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.accel.AxisDirection
@@ -18,11 +20,10 @@ import com.flappedear.betterdriver.recorder.accel.MountFit
 import com.flappedear.betterdriver.recorder.accel.WindowMeans
 import com.flappedear.betterdriver.recorder.accel.fitMount
 import com.flappedear.betterdriver.recorder.accel.fuseDirection
-import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.log.logInfo
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackLine
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -206,7 +207,7 @@ private fun correctedAccelerometer(session: TelemetrySession): List<TelemetryCha
             val names = axes.joinToString("/") { it.name }
             "$names forward ${describe(axes, fit?.forward)} left ${describe(axes, fit?.left)}"
         }
-        DebugLog.i(
+        logInfo(
             "AccelFit",
             "$each: forward from ${forwardFused?.second ?: "GPS"}, left from ${leftFused?.second ?: "GPS"}",
         )
@@ -292,8 +293,8 @@ private fun fused(
     val base = channels.first().first
     return fuseDirection(readings, gps)?.let { result ->
         val how = result.shares.joinToString(" + ") { s ->
-            val lag = if (s.lagSeconds != 0.0) " (${"%+.2f".format(Locale.ROOT, s.lagSeconds)} s)" else ""
-            "${s.name} ${"%.2f".format(Locale.ROOT, s.weight)}$lag"
+            val lag = if (s.lagSeconds != 0.0) " (${signedFixed(s.lagSeconds, 2)} s)" else ""
+            "${s.name} ${fixed(s.weight, 2)}$lag"
         } + result.left.joinToString("") { ", $it left out" }
         // The clock kept: the first reading's when averaged in, else the best one's (lag 0 either way).
         val kept = readings.map { it.name }.firstOrNull { n ->
@@ -317,9 +318,9 @@ private const val AlignedWeight = 0.985
 /** The agreement with GPS and the direction, e.g. "0.93 (accel_x -0.99, accel_y 0.10, accel_z 0.05)". */
 private fun describe(axes: List<TelemetryChannel>, d: AxisDirection?): String = d?.let {
     val weights = axes.indices.joinToString { k ->
-        "${axes[k].name} ${"%.2f".format(Locale.ROOT, it.weights[k] * it.fit.sign)}"
+        "${axes[k].name} ${fixed(it.weights[k] * it.fit.sign, 2)}"
     }
-    "${"%.2f".format(Locale.ROOT, it.fit.correlation)} ($weights)"
+    "${fixed(it.fit.correlation, 2)} ($weights)"
 } ?: "-"
 
 /** The step the accelerometer is compared with GPS at: fine enough for a braking point. */
