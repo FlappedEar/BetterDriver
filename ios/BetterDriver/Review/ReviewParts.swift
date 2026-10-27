@@ -27,7 +27,7 @@ struct SectionTitle: View {
     }
 }
 
-/// Android's Dim: secondary text.
+/// Android's Dim: secondary text, wrapping (the review and the Tracks screens).
 struct Dim: View {
     let text: String
     var color: Color = Palette.onSurfaceVariant
@@ -38,6 +38,7 @@ struct Dim: View {
 
     var body: some View {
         Text(text).font(.subheadline).foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
     }
 }
 

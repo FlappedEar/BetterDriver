@@ -377,13 +377,3 @@ private struct Chip: View {
     }
 }
 
-/// Secondary text (Android's DimLine).
-struct Dim: View {
-    let text: String
-    init(_ text: String) { self.text = text }
-
-    var body: some View {
-        Text(text).font(.subheadline).foregroundStyle(Palette.onSurfaceVariant)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}

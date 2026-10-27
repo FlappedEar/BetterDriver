@@ -37,7 +37,7 @@ struct TracksScreen: View {
                         .accessibilityIdentifier("newTrackHere")
                     }
                     SectionLabel("My tracks")
-                    Card {
+                    TrackCard {
                         if model.tracks.isEmpty { Dim("No tracks yet") }
                         ForEach(Array(model.tracks.enumerated()), id: \.element.id) { i, t in
                             Button { open(t) } label: {
@@ -83,7 +83,7 @@ struct TracksScreen: View {
     private func open(_ track: Track) { editing = EditingTrack(id: track.id) }
 
     private var whereYouAre: some View {
-        Card {
+        TrackCard {
             SectionLabel("Where you are")
             if let here = model.here {
                 if let track = here.track {
@@ -110,7 +110,7 @@ private struct EditingTrack: Identifiable {
     let id: String
 }
 
-private struct Card<Content: View>: View {
+private struct TrackCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
