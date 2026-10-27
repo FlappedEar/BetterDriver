@@ -46,6 +46,7 @@ struct SessionView: View {
         .background(Palette.background)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) } }
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
 

@@ -136,6 +136,9 @@ class LiveSession private constructor(
 
     override fun event(kind: String, text: String) = recording.event(kind, text)
 
+    /** An event stamped by its source at [tMicros] on the session clock, such as a camera's (PhoneVideoLog). */
+    internal fun eventAt(tMicros: Long, kind: String, text: String) = recording.eventAt(tMicros, kind, text)
+
     /** What the track screen shows now; call it on a timer, so a lost signal shows without new data. */
     fun screen(): LiveScreen {
         // Read before taking the lock: the recorder calls in with its own lock held (storage low).

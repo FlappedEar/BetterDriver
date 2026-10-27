@@ -263,32 +263,18 @@ class RecordingVideoSink(
 ) : VideoSink {
     override fun nowMicros() = recording.nowMicros()
 
-    override fun started(file: String, startMicros: Long, fps: Int?) = recording.eventAt(
-        startMicros,
-        EventKinds.VIDEO_START,
-        VideoEventText.format(VideoEventText.CAMERA to camera, VideoEventText.FILE to file) +
-            fps?.let { " ${VideoEventText.FPS}=$it" }.orEmpty(),
-    )
+    override fun started(file: String, startMicros: Long, fps: Int?) =
+        recording.eventAt(startMicros, EventKinds.VIDEO_START, VideoEventText.started(camera, file, fps))
 
-    override fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long?) = recording.eventAt(
-        atMicros,
-        EventKinds.VIDEO_SYNC,
-        VideoEventText.format(
-            VideoEventText.CAMERA to camera,
-            VideoEventText.FILE to file,
-            VideoEventText.MEDIA_US to mediaMicros,
-        ) + frameMicros?.let { " ${VideoEventText.FRAME_US}=$it" }.orEmpty(),
-    )
+    override fun synced(file: String, atMicros: Long, mediaMicros: Long, frameMicros: Long?) =
+        recording.eventAt(
+            atMicros,
+            EventKinds.VIDEO_SYNC,
+            VideoEventText.synced(camera, file, mediaMicros, frameMicros),
+        )
 
-    override fun stopped(file: String, atMicros: Long, reason: String) = recording.eventAt(
-        atMicros,
-        EventKinds.VIDEO_STOP,
-        VideoEventText.format(
-            VideoEventText.CAMERA to camera,
-            VideoEventText.FILE to file,
-            VideoEventText.REASON to reason,
-        ),
-    )
+    override fun stopped(file: String, atMicros: Long, reason: String) =
+        recording.eventAt(atMicros, EventKinds.VIDEO_STOP, VideoEventText.stopped(camera, file, reason))
 
     override fun status(text: String, ok: Boolean) = onStatus(camera, text, ok)
 
