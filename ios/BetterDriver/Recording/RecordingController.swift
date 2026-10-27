@@ -1,4 +1,5 @@
 import AudioToolbox
+import AVFoundation
 import BetterDriverCore
 import CoreLocation
 import SwiftUI
@@ -226,6 +227,9 @@ final class RecordingController: ObservableObject {
         phone = nil
         camera?.stop()
         camera = nil
+        // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
+        // activates the audio session too.
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         cameraStatus = nil
         obd = nil
         heartRate = nil
