@@ -3,10 +3,8 @@
 package com.flappedear.betterdriver.transfer.foreign
 
 import com.flappedear.betterdriver.recorder.Provenance
-import com.flappedear.betterdriver.recorder.vbo.VboWriter
-import java.io.Reader
-import java.time.LocalDate
-import java.time.ZoneOffset
+import com.flappedear.betterdriver.math.roundHalfUp
+import com.flappedear.betterdriver.recorder.vbo.VboStandardChannels
 
 /**
  * Reads Racelogic VBO text (FBBD-164), as Racelogic loggers, Circuit Tools, RaceChrono and this
@@ -22,12 +20,11 @@ import java.time.ZoneOffset
  *   other numeric column an extra channel with its [channel units] unit, and its provenance when
  *   RaceChrono's name says it ([provenanceOf]); video columns are dropped.
  *
- * Without a date line the file's times are put on [fallbackDate].
+ * Without a date line the file's times are put on [fallbackEpochDay] (days since 1970-01-01, UTC).
  */
-internal class VboReader(private val fallbackDate: LocalDate) {
+internal class VboReader(private val fallbackEpochDay: Long) {
 
-    fun read(input: Reader, sink: ImportSink) {
-        val lines = LineReader(input)
+    fun read(lines: LineReader, sink: ImportSink) {
         val parse = Parse(sink)
         while (true) {
             val line = lines.next() ?: break
@@ -46,7 +43,8 @@ internal class VboReader(private val fallbackDate: LocalDate) {
 
     /** One file being read, line by line. */
     private inner class Parse(private val sink: ImportSink) {
-        private var date: LocalDate? = null
+        /** The date line's day, days since 1970-01-01. */
+        private var date: Long? = null
         private var section = ""
         private val headers = ArrayList<String>()
         private val units = ArrayList<String>()
@@ -85,8 +83,8 @@ internal class VboReader(private val fallbackDate: LocalDate) {
             } else {
                 if (lastMsOfDay >= 0 && msOfDay < lastMsOfDay - HalfDayMs) day++
                 lastMsOfDay = msOfDay
-                val midnight = (date ?: fallbackDate).plusDays(day).atStartOfDay(ZoneOffset.UTC)
-                sink.point(l.point(row, (midnight.toInstant().toEpochMilli() + msOfDay) * MicrosPerMilli))
+                val midnight = ((date ?: fallbackEpochDay) + day) * MsPerDay
+                sink.point(l.point(row, (midnight + msOfDay) * MicrosPerMilli))
             }
         }
     }
@@ -153,7 +151,7 @@ internal class VboReader(private val fallbackDate: LocalDate) {
                     find("sats", "satellites"), forward, lateral,
                 )
                 // [channel units] lists one line per non-standard column, in column order.
-                val nonStandard = names.indices.filter { header[it] !in VboWriter.STANDARD_CHANNELS }
+                val nonStandard = names.indices.filter { header[it] !in VboStandardChannels }
                 val unitOf = if (units.size == nonStandard.size) nonStandard.zip(units).toMap() else emptyMap()
                 val accelUnit = (unitOf[forward] ?: unitOf[lateral]).orEmpty().lowercase()
                 val extras = names.indices
@@ -198,6 +196,7 @@ internal class VboReader(private val fallbackDate: LocalDate) {
         val Whitespace = Regex("\\s+")
         val DateIn = Regex("(\\d{1,2})/(\\d{1,2})/(\\d{4})")
         const val HalfDayMs = 12 * 3_600_000L
+        const val MsPerDay = 86_400_000L
         const val MicrosPerMilli = 1_000L
         const val KmhPerKnot = 1.852
         const val StandardGravity = 9.80665
@@ -219,11 +218,16 @@ internal class VboReader(private val fallbackDate: LocalDate) {
 
         fun letters(s: String) = s.lowercase().filter { it in 'a'..'z' }
 
-        /** The date of a "File created on dd/mm/yyyy …" line, or null. */
-        fun dateIn(line: String): LocalDate? = DateIn.find(line)
+        /** The date of a "File created on dd/mm/yyyy …" line as days since 1970-01-01, or null. */
+        fun dateIn(line: String): Long? = DateIn.find(line)
             ?.takeIf { line.lowercase().startsWith("file created on") }
             ?.destructured
-            ?.let { (d, mo, y) -> runCatching { LocalDate.of(y.toInt(), mo.toInt(), d.toInt()) }.getOrNull() }
+            ?.let { (d, mo, y) ->
+                val year = y.toIntOrNull()
+                val month = mo.toIntOrNull()
+                val dayOfMonth = d.toIntOrNull()
+                if (year == null || month == null || dayOfMonth == null) null else epochDayOf(year, month, dayOfMonth)
+            }
 
         /** "095637.20" (hhmmss.ss, UTC) as milliseconds of the day, or null. */
         fun timeOfDayMillis(s: String): Long? {
@@ -232,7 +236,7 @@ internal class VboReader(private val fallbackDate: LocalDate) {
             val h = whole / 10_000
             val m = whole / 100 % 100
             val sec = whole % 100
-            val ms = h * 3_600_000 + m * 60_000 + sec * 1_000 + Math.round((v - whole) * 1000)
+            val ms = h * 3_600_000 + m * 60_000 + sec * 1_000 + roundHalfUp((v - whole) * 1000)
             return ms.takeIf { m < 60 && sec < 61 }
         }
     }

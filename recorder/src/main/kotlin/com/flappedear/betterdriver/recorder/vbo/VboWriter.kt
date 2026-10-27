@@ -60,10 +60,7 @@ class VboWriter(private val out: Writer) {
         const val CRLF = "\r\n"
 
         /** Header names of the standard channels this app writes. */
-        val STANDARD_CHANNELS = setOf(
-            "satellites", "time", "latitude", "longitude", "velocity kmh", "heading", "height",
-            "avifileindex", "avisynctime",
-        )
+        val STANDARD_CHANNELS = VboStandardChannels
 
         private val DATE = DateTimeFormatter.ofPattern("dd/MM/yyyy '@' HH:mm:ss").withZone(ZoneOffset.UTC)
 
