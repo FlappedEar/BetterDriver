@@ -36,12 +36,18 @@ final class SmokeTests: XCTestCase {
             print("SMOKE springboard:\n\(XCUIApplication(bundleIdentifier: "com.apple.springboard").debugDescription)")
             XCTFail("the START sheet")
         }
-        let camera = app.switches["phoneCameraToggle"].exists
-            ? app.switches["phoneCameraToggle"] : app.descendants(matching: .any)["phoneCameraToggle"]
-        XCTAssertTrue(camera.waitForExistence(timeout: 10), "the camera toggle")
-        if (camera.value as? String) != "1" { camera.tap() }
-        let simulated = app.descendants(matching: .any)["receiver.simulated"]
-        XCTAssertTrue(simulated.waitForExistence(timeout: 10), "the simulated receiver")
+        // The RaceBox scan's Bluetooth prompt can come up after the sheet does.
+        allowSystemAlerts()
+        // The camera is on after a fresh install; the toggle only has to say so.
+        let camera = app.switches["phoneCameraToggle"]
+        if camera.waitForExistence(timeout: 5), (camera.value as? String) != "1" { camera.tap() }
+        let simulated = app.buttons["receiver.simulated"].exists
+            ? app.buttons["receiver.simulated"] : app.descendants(matching: .any)["receiver.simulated"]
+        if !simulated.waitForExistence(timeout: 10) {
+            print("SMOKE app:\n\(app.debugDescription)")
+            print("SMOKE springboard:\n\(XCUIApplication(bundleIdentifier: "com.apple.springboard").debugDescription)")
+            XCTFail("the simulated receiver")
+        }
         simulated.tap()
         allowSystemAlerts()
 
