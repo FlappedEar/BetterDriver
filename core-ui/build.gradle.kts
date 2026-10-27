@@ -49,6 +49,8 @@ tasks.matching { it.name == "testReleaseUnitTest" }.configureEach {
 }
 
 dependencies {
+    // Lap time and delta formatting, shared with the iOS app (FBBD-329).
+    api(project(":shared"))
     api(platform(libs.compose.bom))
     api(libs.compose.ui)
     api(libs.compose.material3)

@@ -1,7 +1,7 @@
 package com.flappedear.betterdriver.recording
 
-import com.flappedear.betterdriver.core.ui.format.formatDelta
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatDelta
+import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.feature.track.NoTileValue
 import com.flappedear.betterdriver.feature.track.TileChoice
 import com.flappedear.betterdriver.feature.track.TileChoiceGroup

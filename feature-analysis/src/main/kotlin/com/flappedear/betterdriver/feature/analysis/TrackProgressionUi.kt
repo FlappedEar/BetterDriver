@@ -15,7 +15,7 @@ import com.flappedear.betterdriver.analysis.progression.ProgressionPoint
 import com.flappedear.betterdriver.analysis.progression.TrackProgression
 import com.flappedear.betterdriver.analysis.progression.coachingProgression
 import com.flappedear.betterdriver.analysis.progression.trackProgression
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId

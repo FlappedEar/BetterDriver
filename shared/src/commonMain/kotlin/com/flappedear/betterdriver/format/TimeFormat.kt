@@ -1,6 +1,5 @@
-package com.flappedear.betterdriver.core.ui.format
+package com.flappedear.betterdriver.format
 
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToLong
 
@@ -25,7 +24,7 @@ fun formatLapTime(millis: Long): String {
     val minutes = centis / HundredthsPerMinute
     val seconds = (centis / HundredthsPerSecond) % SecondsPerMinute
     val hundredths = centis % HundredthsPerSecond
-    return String.format(Locale.ROOT, "%d:%02d.%02d", minutes, seconds, hundredths)
+    return "$minutes:${twoDigits(seconds)}.${twoDigits(hundredths)}"
 }
 
 /**
@@ -34,13 +33,8 @@ fun formatLapTime(millis: Long): String {
  */
 fun formatRunningTime(millis: Long): String {
     val tenths = millis.coerceAtLeast(0) / MillisPerTenth
-    return String.format(
-        Locale.ROOT,
-        "%d:%02d.%d",
-        tenths / TenthsPerMinute,
-        (tenths / TenthsPerSecond) % SecondsPerMinute,
-        tenths % TenthsPerSecond,
-    )
+    val seconds = (tenths / TenthsPerSecond) % SecondsPerMinute
+    return "${tenths / TenthsPerMinute}:${twoDigits(seconds)}.${tenths % TenthsPerSecond}"
 }
 
 /**
@@ -52,7 +46,7 @@ fun formatDelta(seconds: Double): String {
     val hundredths = deltaHundredths(seconds)
     val sign = if (hundredths < 0) Minus else "+"
     val a = abs(hundredths)
-    return String.format(Locale.ROOT, "%s%d.%02d", sign, a / HundredthsPerSecond, a % HundredthsPerSecond)
+    return "$sign${a / HundredthsPerSecond}.${twoDigits(a % HundredthsPerSecond)}"
 }
 
 /**
@@ -64,3 +58,6 @@ fun isDeltaGain(seconds: Double): Boolean = deltaHundredths(seconds) < 0
 
 private fun deltaHundredths(seconds: Double): Long =
     (seconds * HundredthsPerSecond).roundToLong().coerceIn(-MaxDeltaHundredths, MaxDeltaHundredths)
+
+/** Zero-padded to two digits, as "%02d" (String.format is JVM-only). */
+private fun twoDigits(value: Long): String = value.toString().padStart(2, '0')

@@ -16,7 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatDelta
+import com.flappedear.betterdriver.format.formatDelta
 
 /**
  * Where time goes (FBBD-103, UI-67): the corners and straights where the fastest lap is slowest

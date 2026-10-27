@@ -12,8 +12,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.flappedear.betterdriver.core.ui.format.formatDelta
-import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.format.formatDelta
+import com.flappedear.betterdriver.format.isDeltaGain
 import com.flappedear.betterdriver.core.ui.TrackTheme
 
 /**

@@ -1,0 +1,64 @@
+# XcodeGen spec for the iOS/iPadOS app (FBBD-329). The Xcode project is generated, never
+# committed: run ./generate.sh (see README.md).
+name: BetterDriver
+options:
+  bundleIdPrefix: com.flappedear
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    # From gradle.properties betterdriver.version (generate.sh), as the Android app.
+    MARKETING_VERSION: ${BETTERDRIVER_VERSION}
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+targets:
+  BetterDriver:
+    type: application
+    platform: iOS
+    sources:
+      - BetterDriver
+    dependencies:
+      - framework: ../shared/build/XCFrameworks/debug/BetterDriverCore.xcframework
+        embed: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver
+        PRODUCT_NAME: BetterDriver
+        # iPhone and iPad.
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: BetterDriver
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIUserInterfaceStyle: Dark
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # Load every Objective-C class of the static Kotlin framework, so the hosted unit tests
+        # find the core's classes in the app even when the app itself does not use them yet.
+        OTHER_LDFLAGS: $(inherited) -ObjC
+  BetterDriverTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - BetterDriverTests
+    dependencies:
+      - target: BetterDriver
+      # Headers only: the core's code is in the host app (one Kotlin runtime per process).
+      - framework: ../shared/build/XCFrameworks/debug/BetterDriverCore.xcframework
+        embed: false
+        link: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.tests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  BetterDriver:
+    build:
+      targets:
+        BetterDriver: all
+        BetterDriverTests: [test]
+    test:
+      targets:
+        - BetterDriverTests

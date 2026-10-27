@@ -13,9 +13,9 @@ import com.flappedear.betterdriver.analysis.summary.quicker
 import com.flappedear.betterdriver.analysis.summary.slower
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatDelta
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
-import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.format.formatDelta
+import com.flappedear.betterdriver.format.formatLapTime
+import com.flappedear.betterdriver.format.isDeltaGain
 import kotlin.math.roundToLong
 
 private const val MillisPerSecond = 1000.0

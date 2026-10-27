@@ -25,7 +25,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.ceil

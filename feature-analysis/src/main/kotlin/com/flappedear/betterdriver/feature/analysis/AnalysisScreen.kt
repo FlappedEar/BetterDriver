@@ -52,9 +52,9 @@ import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.NumberText
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatDelta
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
-import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.format.formatDelta
+import com.flappedear.betterdriver.format.formatLapTime
+import com.flappedear.betterdriver.format.isDeltaGain
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import java.util.Locale
 import kotlin.math.roundToInt

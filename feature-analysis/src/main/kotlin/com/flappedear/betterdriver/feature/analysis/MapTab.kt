@@ -34,8 +34,8 @@ import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import com.flappedear.betterdriver.core.ui.format.formatDelta
-import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.format.formatDelta
+import com.flappedear.betterdriver.format.isDeltaGain
 import com.flappedear.betterdriver.core.ui.layout.HeightClass
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.core.ui.layout.WidthClass

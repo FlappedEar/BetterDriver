@@ -46,8 +46,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
-import com.flappedear.betterdriver.core.ui.format.formatRunningTime
+import com.flappedear.betterdriver.format.formatLapTime
+import com.flappedear.betterdriver.format.formatRunningTime
 import com.flappedear.betterdriver.core.ui.numberStyle
 import kotlinx.coroutines.flow.first
 import java.util.Locale

@@ -14,7 +14,7 @@ import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.analysis.line.perfectLapScene
 import com.flappedear.betterdriver.analysis.optimal.PedalState
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
 import java.util.Locale

@@ -20,9 +20,9 @@ import androidx.media3.effect.StaticOverlaySettings
 import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.core.ui.TrackColors
 import com.flappedear.betterdriver.core.ui.TrackColorsGreenRed
-import com.flappedear.betterdriver.core.ui.format.formatDelta
-import com.flappedear.betterdriver.core.ui.format.formatRunningTime
-import com.flappedear.betterdriver.core.ui.format.isDeltaGain
+import com.flappedear.betterdriver.format.formatDelta
+import com.flappedear.betterdriver.format.formatRunningTime
+import com.flappedear.betterdriver.format.isDeltaGain
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.Box

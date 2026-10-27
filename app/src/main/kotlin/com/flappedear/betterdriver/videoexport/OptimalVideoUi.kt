@@ -4,7 +4,7 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapResult
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapUnavailable
-import com.flappedear.betterdriver.core.ui.format.formatLapTime
+import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.feature.analysis.lapsText
 import kotlin.math.roundToLong
 
