@@ -18,6 +18,12 @@ targets:
     platform: iOS
     sources:
       - BetterDriver
+      # The Android app's track screen fonts (core-ui) and circuit directory (timing, FBBD-79),
+      # copied into the app bundle; TrackFonts registers the fonts at launch.
+      - path: ../core-ui/src/main/res/font
+        buildPhase: resources
+      - path: ../timing/src/main/resources/circuits/circuits.json
+        buildPhase: resources
     dependencies:
       - framework: ../core-ios/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false

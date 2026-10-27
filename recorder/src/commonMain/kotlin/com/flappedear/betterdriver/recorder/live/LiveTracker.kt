@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder.live
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderListener
@@ -138,9 +139,10 @@ fun gnssCue(before: GnssState?, now: GnssState?): GnssCue? = when {
 }
 
 /**
- * Keeps the latest live values of one recording. It is a [RecorderListener], so it runs on the
- * recorder's listener thread and can never hold up or break the recording (FBBD-69). [snapshot]
+ * Keeps the latest live values of one recording. It is a [RecorderListener], so on Android it runs on
+ * the recorder's listener thread and can never hold up or break the recording (FBBD-69). [snapshot]
  * reads the clock, so a snapshot taken on a timer shows [GnssState.Lost] without a new sample.
+ * Synchronised on the JVM; on iOS the caller serialises the calls.
  */
 class LiveTracker(
     private val sessionId: String,
@@ -170,11 +172,13 @@ class LiveTracker(
     private var stoppedReason: String? = null
     private val shown = HashMap<Int, ShownValue>()
 
-    override fun onChannel(def: ChannelDef) = synchronized(this) {
+    @JvmSynchronized
+    override fun onChannel(def: ChannelDef) {
         if (isShownLive(def)) shown[def.id] = ShownValue(def.name)
     }
 
-    override fun onSamples(set: SampleSet) = synchronized(this) {
+    @JvmSynchronized
+    override fun onSamples(set: SampleSet) {
         var lat: Double? = null
         var lon: Double? = null
         var accel = false
@@ -231,17 +235,19 @@ class LiveTracker(
         longitude = lon
     }
 
-    override fun onStatus(status: RecorderStatus) = synchronized(this) {
+    @JvmSynchronized
+    override fun onStatus(status: RecorderStatus) {
         when (status) {
             is RecorderStatus.StorageLow -> storageLowBytes = status.usableBytes
             is RecorderStatus.Stopped -> stoppedReason = status.reason
         }
     }
 
-    fun snapshot(): LiveSnapshot = synchronized(this) {
+    @JvmSynchronized
+    fun snapshot(): LiveSnapshot {
         val now = nowMicros()
         trim(now)
-        LiveSnapshot(
+        return LiveSnapshot(
             sessionId = sessionId,
             startUtcMillis = startUtcMillis,
             elapsedMicros = now,
