@@ -71,6 +71,13 @@ jobs:
         run: |
           echo "version=$(sed -n 's/^betterdriver.version=//p' gradle.properties)" >> "$GITHUB_OUTPUT"
           echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+      # App Store Connect takes only builds made with the iOS 26 SDK or later (Xcode 26+).
+      - name: Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app
+          xcode=$(ls -d /Applications/Xcode_26*.app | sort -V | tail -n 1)
+          [ -n "$xcode" ] || { echo "::error::No Xcode 26 on this runner image"; exit 1; }
+          sudo xcode-select -s "$xcode/Contents/Developer"
       - name: Tools
         run: |
           xcodebuild -version
