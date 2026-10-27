@@ -14,6 +14,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import platform.posix.usleep
 
 /** The iOS recorder writes sessions the shared reader reads back, and survives being cut off (FBBD-332). */
 class RecorderTest {
@@ -110,5 +111,37 @@ class RecorderTest {
         assertEquals(listOf(set(0)), data.sampleSets)
         assertTrue(data.events.isEmpty())
         assertEquals("user", data.end?.reason)
+    }
+
+    /** Waits up to [ms] for [done], polling every 10 ms. */
+    private fun waitFor(ms: Int, done: () -> Boolean): Boolean {
+        repeat(ms / 10) {
+            if (done()) return true
+            usleep(10_000u)
+        }
+        return done()
+    }
+
+    @Test
+    fun dataIsSyncedWhenNoMoreArrives() {
+        val rec = Recorder(store, RecorderConfig(syncIntervalMs = 50)).start(info)
+        rec.submit(set(0))
+        assertTrue(rec.isDirtyForTest)
+        // Nothing else is submitted: the timer must sync on its own.
+        assertTrue(waitFor(2_000) { !rec.isDirtyForTest })
+        rec.stop()
+    }
+
+    @Test
+    fun aFailedPeriodicSyncEndsTheRecordingWithAnError() {
+        val rec = Recorder(store, RecorderConfig(syncIntervalMs = 50)).start(info)
+        var ended: String? = null
+        rec.onEnded = { ended = it }
+        rec.submit(set(0))
+        rec.breakFileForTest()
+        assertTrue(waitFor(2_000) { !rec.isRecording })
+        assertEquals("error", rec.endReason)
+        assertEquals("error", ended)
+        assertEquals(SessionState.INTERRUPTED, store.state(rec.id))
     }
 }

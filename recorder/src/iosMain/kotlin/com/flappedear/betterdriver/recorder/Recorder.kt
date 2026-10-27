@@ -10,6 +10,11 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.finishedEntries
 import com.flappedear.betterdriver.recorder.store.metaEntries
 import platform.Foundation.NSRecursiveLock
+import platform.darwin.DISPATCH_QUEUE_PRIORITY_DEFAULT
+import platform.darwin.DISPATCH_TIME_NOW
+import platform.darwin.dispatch_after
+import platform.darwin.dispatch_get_global_queue
+import platform.darwin.dispatch_time
 import kotlin.time.TimeSource
 
 private const val Mib = 1L shl 20
@@ -20,6 +25,7 @@ private const val DefaultWarnMib = 200L
 private const val DefaultStopMib = 50L
 private const val DefaultStorageCheckMs = 2_000L
 private const val MaxSyncIntervalMs = 1_000L
+private const val NanosPerMilli = 1_000_000L
 
 /** As RecorderConfig on Android, without its queues: on iOS each write goes straight to the file. */
 data class RecorderConfig(
@@ -54,8 +60,9 @@ class Recorder(private val store: SessionStore, private val config: RecorderConf
 /**
  * One running recording. Sources push into it through [SampleSink] from any thread; each call
  * appends its frame to the current chunk with write(2) before it returns, so an app crash loses
- * nothing already submitted, and the chunk is fsynced at least every [RecorderConfig.syncIntervalMs].
- * A write failure ends the recording with reason "error" and leaves the files for recovery.
+ * nothing already submitted, and the chunk is fsynced at least every [RecorderConfig.syncIntervalMs],
+ * also when no more data comes (a timer on a background queue). A write or fsync failure ends the
+ * recording with reason "error" and leaves the files for recovery.
  */
 // The sink, stop and failure paths of one recording share its lock and file; splitting it would hide the ordering.
 @Suppress("TooManyFunctions")
@@ -103,6 +110,22 @@ class Recording internal constructor(
             PosixFiles.unlock(lockFd)
             throw e
         }
+        scheduleSync()
+    }
+
+    /**
+     * Syncs written data every [RecorderConfig.syncIntervalMs] even when no record arrives to do it,
+     * e.g. after a source drops; stops once the recording has ended.
+     */
+    private fun scheduleSync() {
+        val at = dispatch_time(DISPATCH_TIME_NOW, config.syncIntervalMs * NanosPerMilli)
+        dispatch_after(at, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) {
+            val running = guarded {
+                if (endReason == null && elapsedMs() - lastSyncMs >= config.syncIntervalMs) syncOrFail()
+                endReason == null
+            }
+            if (running) scheduleSync()
+        }
     }
 
     private fun elapsedMs() = started.elapsedNow().inWholeMilliseconds
@@ -135,6 +158,14 @@ class Recording internal constructor(
         true
     }
 
+    /** Tests only: whether written data still waits for its fsync. */
+    internal val isDirtyForTest: Boolean get() = guarded { dirty }
+
+    /** Tests only: closes the chunk behind the recorder's back, so its next fsync fails. */
+    internal fun breakFileForTest() = guarded {
+        platform.posix.close(fd)
+    }
+
     /** Tests only: drops the files and the lock as a killed app would, without an end record. */
     internal fun abandonForTest() = guarded {
         if (fd >= 0) platform.posix.close(fd)
@@ -160,7 +191,17 @@ class Recording internal constructor(
         if (storageExhausted(now)) {
             finish(STORAGE_FULL)
         } else if (now - lastSyncMs >= config.syncIntervalMs) {
+            syncOrFail()
+        }
+    }
+
+    /** A periodic fsync; a failure ends the recording, which then waits for recovery. */
+    @Suppress("TooGenericExceptionCaught") // Any failure must still end the recording, keeping what is on disk.
+    private fun syncOrFail() {
+        try {
             sync()
+        } catch (t: Throwable) {
+            fail(t)
         }
     }
 
