@@ -58,7 +58,7 @@ class MountFitTest {
 
     /** Fitting each direction alone would let the cornering that comes with braking leak into forward. */
     @Test
-    fun `forward and left come out at right angles, so braking in a corner does not leak`() {
+    fun `forward and left come out at right angles so braking in a corner does not leak`() {
         val axes = readings(0.6, 1.2, forward, left)
         val fit = assertNotNull(fitMount(axes, forward, left))
         val f = assertNotNull(fit.forward).weights
@@ -81,7 +81,7 @@ class MountFitTest {
      * where braking and cornering come together: the one axis must not be both forward and left.
      */
     @Test
-    fun `a one-axis accelerometer gives one direction, not the same reading twice`() {
+    fun `a one-axis accelerometer gives one direction and not the same reading twice`() {
         val trailBraking = DoubleArray(n) { i -> 0.9 * forward[i] + 0.1 * sin(i * 0.05) }
         val axes = readings(0.0, 0.0, forward, trailBraking).take(1)
         val fit = assertNotNull(fitMount(axes, forward, trailBraking))
