@@ -1,5 +1,4 @@
 import SwiftUI
-import UIKit
 
 /// The app's top level, the Android app's bottom bar and tablet rail (UI-282 B, UI-136 B) on the
 /// iPhone and the iPad alike: Drive records, Sessions holds the sessions and their review, Car is the

@@ -139,6 +139,8 @@ struct AppPage: View {
                 }
                 .buttonStyle(.plain)
                 ListRow("Version", value: AppInfo.version)
+                NavigationLink { NotImplementedPage(title: "Set up") } label: { ListRow("Run setup again", chevron: true) }
+                    .buttonStyle(.plain)
                 NavigationLink { AboutPage() } label: { ListRow("About and credits", chevron: true) }
                     .buttonStyle(.plain)
             }

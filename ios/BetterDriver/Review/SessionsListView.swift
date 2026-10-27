@@ -8,6 +8,7 @@ struct SessionsListView: View {
     @Binding var selection: String?
     @State private var picking = false
     @State private var showingTracks = false
+    @State private var notYet: String?
 
     var body: some View {
         List(selection: $selection) {
@@ -25,12 +26,24 @@ struct SessionsListView: View {
                     ForEach(day.sessions) { session in
                         SessionRowView(session: session)
                             .tag(session.id)
+                            // Android's session card buttons: Delete, Share, and the coach's review.
+                            .contextMenu {
+                                Button("Coach review") { notYet = "Coach review" }
+                                Button("Share") { notYet = "Sharing a session" }
+                                Button("Delete", role: .destructive) { notYet = "Deleting a session" }
+                            }
                             .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)
                     }
                 } header: {
-                    Text(dayTitle(day.day, day.sessions))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.onSurfaceVariant)
+                    HStack {
+                        Text(dayTitle(day.day, day.sessions))
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Palette.onSurfaceVariant)
+                        Spacer()
+                        // Android's day heading opens the day at its track (FBBD-315).
+                        Button("Track day") { notYet = "Track day" }
+                            .font(.caption.weight(.semibold))
+                    }
                 }
             }
         }
@@ -52,6 +65,7 @@ struct SessionsListView: View {
             }
         }
         .sheet(isPresented: $showingTracks) { TracksView() }
+        .notImplementedAlert($notYet)
         .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { model.importFiles(urls) }
         }
