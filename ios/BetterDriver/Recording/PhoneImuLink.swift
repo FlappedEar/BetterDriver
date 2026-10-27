@@ -43,8 +43,8 @@ final class PhoneImuLink {
     /// negated. [measuredAt] and [uptime] are on the boot clock: their difference is the reading's age.
     static func sampleSet(_ a: CMAcceleration, measuredAt: TimeInterval, uptime: TimeInterval, nowMicros: Int64) -> SampleSet {
         let ageMicros = Int64(((uptime - measuredAt) * 1_000_000).rounded())
-        return PhoneImuKt.phoneAccelSet(
-            tMicros: PhoneImuKt.phoneImuMicrosByAge(nowMicros: nowMicros, ageMicros: ageMicros),
+        return PhoneImuChannelsKt.phoneAccelSet(
+            tMicros: PhoneImuChannelsKt.phoneImuMicrosByAge(nowMicros: nowMicros, ageMicros: ageMicros),
             x: -a.x,
             y: -a.y,
             z: -a.z

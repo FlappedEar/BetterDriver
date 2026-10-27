@@ -27,6 +27,9 @@ fun phoneAccelSet(tMicros: Long, x: Double, y: Double, z: Double): SampleSet = S
 /** A reading is measured within this of its delivery; an older stamp is on an unexpected clock. */
 private const val MaxImuAgeMicros = 1_000_000L
 
-/** The time on the recorder's clock a reading [ageMicros] old at [nowMicros] was measured; delivery time if the age is implausible. */
+/**
+ * The time on the recorder's clock a reading [ageMicros] old at [nowMicros] was measured; delivery time
+ * if the age is implausible.
+ */
 fun phoneImuMicrosByAge(nowMicros: Long, ageMicros: Long): Long =
     if (ageMicros in 0..MaxImuAgeMicros) nowMicros - ageMicros else nowMicros
