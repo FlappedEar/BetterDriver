@@ -37,13 +37,13 @@ struct TracksScreen: View {
                         .accessibilityIdentifier("newTrackHere")
                     }
                     SectionLabel("My tracks")
-                    Card {
-                        if model.tracks.isEmpty { Dim("No tracks yet") }
+                    TrackCard {
+                        if model.tracks.isEmpty { DimLine("No tracks yet") }
                         ForEach(Array(model.tracks.enumerated()), id: \.element.id) { i, t in
                             Button { open(t) } label: {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(t.displayName).foregroundStyle(Palette.onBackground)
-                                    Dim(t.detail)
+                                    DimLine(t.detail)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.vertical, 10)
@@ -83,24 +83,24 @@ struct TracksScreen: View {
     private func open(_ track: Track) { editing = EditingTrack(id: track.id) }
 
     private var whereYouAre: some View {
-        Card {
+        TrackCard {
             SectionLabel("Where you are")
             if let here = model.here {
                 if let track = here.track {
                     BigName(track.displayName)
-                    Dim("Your track · \(here.away) · \(track.detail)")
+                    DimLine("Your track · \(here.away) · \(track.detail)")
                     TonalButton("Edit lines") { open(track) }
                 } else if let circuit = here.circuit {
                     BigName(circuit.name)
-                    Dim("From the circuit list · \(here.away) · no lines yet")
+                    DimLine("From the circuit list · \(here.away) · no lines yet")
                     TonalButton("Create track") { model.create(from: circuit, open: open) }
                 } else {
-                    Dim("No circuit on the list is near you.")
+                    DimLine("No circuit on the list is near you.")
                 }
             } else if model.locating {
-                Dim("Finding where you are…")
+                DimLine("Finding where you are…")
             } else {
-                Dim("Your position is not known: allow BetterDriver to use your location in Settings to make a track here.")
+                DimLine("Your position is not known: allow BetterDriver to use your location in Settings to make a track here.")
             }
         }
     }
@@ -110,7 +110,7 @@ private struct EditingTrack: Identifiable {
     let id: String
 }
 
-private struct Card<Content: View>: View {
+private struct TrackCard<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {

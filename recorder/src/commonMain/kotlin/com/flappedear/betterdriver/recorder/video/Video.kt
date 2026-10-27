@@ -90,6 +90,19 @@ object VideoEventText {
     fun format(vararg pairs: Pair<String, Any>): String =
         pairs.joinToString(" ") { (k, v) -> "$k=${v.toString().replace(Regex("\\s+"), "_")}" }
 
+    /** The text of a [com.flappedear.betterdriver.recorder.EventKinds.VIDEO_START] event of [camera]'s [file]. */
+    fun started(camera: String, file: String, fps: Int?): String =
+        format(CAMERA to camera, FILE to file) + fps?.let { " $FPS=$it" }.orEmpty()
+
+    /** The text of a [com.flappedear.betterdriver.recorder.EventKinds.VIDEO_SYNC] event (see [VideoSink.synced]). */
+    fun synced(camera: String, file: String, mediaMicros: Long, frameMicros: Long?): String =
+        format(CAMERA to camera, FILE to file, MEDIA_US to mediaMicros) +
+            frameMicros?.let { " $FRAME_US=$it" }.orEmpty()
+
+    /** The text of a [com.flappedear.betterdriver.recorder.EventKinds.VIDEO_STOP] event. */
+    fun stopped(camera: String, file: String, reason: String): String =
+        format(CAMERA to camera, FILE to file, REASON to reason)
+
     fun parse(text: String): Map<String, String> = text.split(' ')
         .mapNotNull { part ->
             val eq = part.indexOf('=')
