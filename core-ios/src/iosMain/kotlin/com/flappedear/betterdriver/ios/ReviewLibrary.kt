@@ -34,6 +34,7 @@ import platform.Foundation.stringWithContentsOfFile
  * imports staged in base/transfer. Everything Swift calls that can fail is marked @Throws, so a bad
  * file becomes a Swift error instead of ending the app.
  */
+@Suppress("TooManyFunctions") // The app's one Kotlin entry for the review: list, read, import.
 class ReviewLibrary(base: String) {
     val sessionsRoot = "$base/sessions"
     private val tracksRoot = "$base/tracks"
@@ -104,10 +105,16 @@ class ReviewLibrary(base: String) {
     /** A session with the received one's id is already here. */
     fun exists(received: ReceivedBundle): Boolean = inbox.exists(received)
 
-    /** Adds the received session; with one of its id here, [replace] picks which stays. */
+    /** The bundle's track differs from the saved track of its id: ask before replacing it. */
+    fun trackDiffers(received: ReceivedBundle): Boolean = inbox.trackDiffers(received)
+
+    /**
+     * Adds the received session; with one of its id here, [replace] picks which stays, and
+     * [replaceTrack] whether the bundle's track replaces a saved one of its id.
+     */
     @Throws(Exception::class)
-    fun accept(received: ReceivedBundle, replace: Boolean): ImportOutcome =
-        if (inbox.accept(received, replace)) ImportOutcome.ADDED else ImportOutcome.KEPT
+    fun accept(received: ReceivedBundle, replace: Boolean, replaceTrack: Boolean): ImportOutcome =
+        if (inbox.accept(received, replace, replaceTrack)) ImportOutcome.ADDED else ImportOutcome.KEPT
 
     fun discard(received: ReceivedBundle) = inbox.discard(received)
 

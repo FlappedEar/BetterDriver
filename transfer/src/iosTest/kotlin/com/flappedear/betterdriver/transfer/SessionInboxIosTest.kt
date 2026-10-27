@@ -17,6 +17,14 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import platform.Foundation.create
+import platform.posix.LOCK_EX
+import platform.posix.LOCK_NB
+import platform.posix.LOCK_UN
+import platform.posix.O_CREAT
+import platform.posix.O_WRONLY
+import platform.posix.close
+import platform.posix.flock
+import platform.posix.open
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -44,7 +52,7 @@ class SessionInboxIosTest {
         return path
     }
 
-    private fun bundle(car: String = "FR-S", video: Int = 150_000) = bundleOf(
+    private fun bundle(car: String = "FR-S", video: Int = 150_000, track: Track = this.track) = bundleOf(
         "bundle.properties" to writeProperties(
             mapOf("format" to SessionBundleReceiver.Format, "version" to "1", "session" to id, "track" to track.id),
         ),
@@ -89,5 +97,34 @@ class SessionInboxIosTest {
         assertFailsWith<BundleDamagedException> { inbox.receive(write(good.copyOf(good.size - 10))) }
         assertEquals(emptyList(), fm.contentsOfDirectoryAtPath("$root/staging", null).orEmpty())
         assertFalse(fm.fileExistsAtPath("$root/sessions/$id"))
+    }
+
+    @Test
+    fun neverReplacesASessionStillRecording() {
+        inbox.accept(inbox.receive(write(bundle(car = "first"))), replace = false)
+        val lock = open("$root/sessions/$id/${SessionFileNames.LOCK}", O_WRONLY or O_CREAT, 420u)
+        assertTrue(lock >= 0 && flock(lock, LOCK_EX or LOCK_NB) == 0)
+        try {
+            val second = inbox.receive(write(bundle(car = "second")))
+            assertFailsWith<ImportFileException> { inbox.accept(second, replace = true) }
+            assertTrue(fm.fileExistsAtPath("$root/sessions/$id/${SessionFileNames.META}"))
+            assertEquals(emptyList(), fm.contentsOfDirectoryAtPath("$root/staging", null).orEmpty())
+        } finally {
+            flock(lock, LOCK_UN)
+            close(lock)
+        }
+    }
+
+    @Test
+    fun aChangedTrackIsKeptOrReplacedOnRequest() {
+        inbox.accept(inbox.receive(write(bundle())), replace = false)
+        val moved = track.copy(name = "Jastrząb new lines")
+        val second = inbox.receive(write(bundle(track = moved)))
+        assertTrue(inbox.trackDiffers(second))
+        inbox.accept(second, replace = true, replaceTrack = false)
+        val third = inbox.receive(write(bundle(track = moved)))
+        assertTrue(inbox.trackDiffers(third))
+        inbox.accept(third, replace = true, replaceTrack = true)
+        assertFalse(inbox.trackDiffers(inbox.receive(write(bundle(track = moved)))))
     }
 }

@@ -177,9 +177,15 @@ extension ReviewBridge {
 
     static func exists(_ received: ReceivedImport) -> Bool { library.exists(received: received.bundle) }
 
-    /// Adds the session; with one of its id here, [replace] picks which stays. True when added.
-    static func accept(_ received: ReceivedImport, replace: Bool) throws -> Bool {
-        try library.accept(received: received.bundle, replace: replace) == ImportOutcome.added
+    /// The file's track has other lines or corners than the saved one of its id.
+    static func trackDiffers(_ received: ReceivedImport) -> Bool { library.trackDiffers(received: received.bundle) }
+
+    static func trackName(_ received: ReceivedImport) -> String { received.bundle.session.track?.displayName ?? "" }
+
+    /// Adds the session; with one of its id here, [replace] picks which stays, and [replaceTrack]
+    /// whether the file's track replaces the saved one. True when added.
+    static func accept(_ received: ReceivedImport, replace: Bool, replaceTrack: Bool) throws -> Bool {
+        try library.accept(received: received.bundle, replace: replace, replaceTrack: replaceTrack) == ImportOutcome.added
     }
 
     static func discard(_ received: ReceivedImport) { library.discard(received: received.bundle) }

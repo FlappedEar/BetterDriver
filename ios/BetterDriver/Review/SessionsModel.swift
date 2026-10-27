@@ -20,9 +20,20 @@ final class SessionsModel {
         var id: String { received.sessionId }
     }
 
+    /// A session being added whose track differs from the saved track of its id: keep or replace.
+    struct TrackChange: Identifiable {
+        let received: ReceivedImport
+        let replace: Bool
+        let track: String
+        var id: String { received.sessionId }
+    }
+
     private(set) var sessions: [SessionRow] = []
     private(set) var importing: ImportProgress?
+    /// Goes up with every session or track added, so an open review reads its session again.
+    private(set) var revision = 0
     var duplicate: Duplicate?
+    var trackChange: TrackChange?
     var message: String?
     private var queue: [URL] = []
 
@@ -54,7 +65,7 @@ final class SessionsModel {
     /// Imports [urls] one after the other, in file-name order (the recorder names files by time, UI-193 A).
     func importFiles(_ urls: [URL]) {
         queue += urls.sorted { $0.lastPathComponent < $1.lastPathComponent }
-        if importing == nil && duplicate == nil { next() }
+        if importing == nil && duplicate == nil && trackChange == nil { next() }
     }
 
     private func next() {
@@ -92,9 +103,25 @@ final class SessionsModel {
         add(d.received, replace: replace)
     }
 
+    /// The answer to [trackChange]: use the file's track, or keep the one here.
+    func resolveTrack(replace: Bool) {
+        guard let t = trackChange else { return }
+        trackChange = nil
+        store(t.received, replace: t.replace, replaceTrack: replace)
+    }
+
     private func add(_ received: ReceivedImport, replace: Bool) {
+        let adds = replace || !ReviewBridge.exists(received)
+        if adds && ReviewBridge.trackDiffers(received) {
+            trackChange = TrackChange(received: received, replace: replace, track: ReviewBridge.trackName(received))
+        } else {
+            store(received, replace: replace, replaceTrack: false)
+        }
+    }
+
+    private func store(_ received: ReceivedImport, replace: Bool, replaceTrack: Bool) {
         do {
-            _ = try ReviewBridge.accept(received, replace: replace)
+            if try ReviewBridge.accept(received, replace: replace, replaceTrack: replaceTrack) { revision += 1 }
         } catch {
             message = "Could not add the session: \(error.localizedDescription)"
         }

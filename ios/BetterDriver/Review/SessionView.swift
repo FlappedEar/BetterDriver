@@ -27,6 +27,8 @@ enum SessionTab: String, CaseIterable, Identifiable {
 /// One session's review (FBBD-331): its numbers come from the shared core, as on Android.
 struct SessionView: View {
     let session: SessionRow
+    /// The imports so far; a new one may have replaced this session or its track.
+    var revision = 0
     @State private var tab: SessionTab = .summary
     @State private var summary: SessionSummary?
     @State private var failure: String?
@@ -41,7 +43,7 @@ struct SessionView: View {
         .background(Palette.background)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: session.id) { await load() }
+        .task(id: "\(session.id)#\(revision)") { await load() }
     }
 
     private var title: String {

@@ -16,7 +16,7 @@ struct RootView: View {
             NavigationStack {
                 Group {
                     if let id = selection, let session = model.row(id) {
-                        SessionView(session: session).id(id)
+                        SessionView(session: session, revision: model.revision).id(id)
                     } else {
                         PickSession()
                     }
@@ -48,6 +48,16 @@ struct RootView: View {
             Button("Keep the one here", role: .cancel) { model.resolveDuplicate(replace: false) }
         } message: {
             Text(model.duplicate.map { "\($0.name) holds a session you already have." } ?? "")
+        }
+        .confirmationDialog(
+            "The track in this file has changed",
+            isPresented: Binding(get: { model.trackChange != nil }, set: { if !$0 { model.resolveTrack(replace: false) } }),
+            titleVisibility: .visible
+        ) {
+            Button("Use the track from the file") { model.resolveTrack(replace: true) }
+            Button("Keep the track here", role: .cancel) { model.resolveTrack(replace: false) }
+        } message: {
+            Text(model.trackChange.map { "\($0.track) in this file has other lines or corners than yours. Every session at this track is timed with the one you keep." } ?? "")
         }
         .alert(
             model.message ?? "",

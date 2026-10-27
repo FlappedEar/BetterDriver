@@ -2,6 +2,11 @@
 
 package com.flappedear.betterdriver.transfer
 
+import com.flappedear.betterdriver.recorder.store.SessionState
+import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackFormatException
+import com.flappedear.betterdriver.timing.track.TrackJson
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -12,9 +17,11 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSNumber
+import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.closeFile
 import platform.Foundation.create
+import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.fileHandleForReadingAtPath
 import platform.Foundation.fileHandleForWritingAtPath
 import platform.Foundation.readDataOfLength
@@ -47,6 +54,7 @@ class SessionInbox(
     private val tracksRoot: String,
 ) {
     private val fm get() = NSFileManager.defaultManager
+    private val tracks = TrackFiles(tracksRoot)
 
     /**
      * Unpacks and checks the bundle at [path]. [onProgress] gets the bytes read so far and the
@@ -81,11 +89,22 @@ class SessionInbox(
     fun exists(received: ReceivedBundle): Boolean = fm.fileExistsAtPath(target(received))
 
     /**
+     * The bundle's track has the id of a saved track with other lines or corners, so [accept] needs
+     * a keep-or-replace choice for it too, as Android's import asks.
+     */
+    fun trackDiffers(received: ReceivedBundle): Boolean {
+        val track = received.session.track ?: return false
+        return tracks.saved(track.id)?.let { it != track } ?: false
+    }
+
+    /**
      * Moves the received session into the list and keeps its track. With a session of the same id
-     * here, [replace] false keeps the one here; true swaps them. Returns whether it was added.
+     * here, [replace] false keeps the one here; true swaps them. A track of the same id is kept
+     * unless [replaceTrack]. Returns whether the session was added. A session still recording is
+     * never replaced.
      */
     @Throws(Exception::class)
-    fun accept(received: ReceivedBundle, replace: Boolean): Boolean {
+    fun accept(received: ReceivedBundle, replace: Boolean, replaceTrack: Boolean = false): Boolean {
         val target = target(received)
         val here = fm.fileExistsAtPath(target)
         try {
@@ -93,7 +112,7 @@ class SessionInbox(
                 !here -> move(received.sessionDir, target)
                 replace -> swap(received.sessionDir, target)
             }
-            if (!here || replace) keepTrack(received.session)
+            if (!here || replace) tracks.keep(received.session, replaceTrack)
         } finally {
             discard(received)
         }
@@ -127,7 +146,10 @@ class SessionInbox(
     private fun target(received: ReceivedBundle) = "$sessionsRoot/${received.session.sessionId}"
 
     private fun swap(incoming: String, target: String) {
-        // A session that is recording holds its lock file; the recorder's own store refuses those too.
+        // A lock does not stop a rename: the recorder would go on writing into a deleted folder.
+        if (SessionStore(sessionsRoot).state(target) == SessionState.RECORDING) {
+            throw ImportFileException("${target.substringAfterLast('/')} is still recording")
+        }
         val old = "$stagingRoot/$OldPrefix${target.substringAfterLast('/')}"
         move(target, old)
         try {
@@ -137,20 +159,6 @@ class SessionInbox(
             throw e
         }
         fm.removeItemAtPath(old, null)
-    }
-
-    private fun keepTrack(session: ReceivedSession) {
-        val track = session.track
-        val json = session.trackJson
-        val path = "$tracksRoot/${track?.id}.json"
-        val wanted = track != null && json != null && SessionEntryLimits.validSessionId(track.id)
-        if (wanted && !fm.fileExistsAtPath(path)) {
-            mkdirs(tracksRoot)
-            val tmp = "$path.tmp"
-            val bytes = checkNotNull(json).encodeToByteArray()
-            fm.createFileAtPath(tmp, bytes.toNSData(0, bytes.size), null)
-            fm.moveItemAtPath(tmp, path, null)
-        }
     }
 
     private fun move(from: String, to: String) {
@@ -205,6 +213,47 @@ private fun mkdirs(path: String) {
 private fun sizeOf(path: String): Long =
     (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)?.longLongValue
         ?: throw ImportFileException("cannot read $path")
+
+/** The saved tracks, one [root]/<track id>.json each, as TrackJson writes them. */
+private class TrackFiles(private val root: String) {
+    private val fm get() = NSFileManager.defaultManager
+
+    fun saved(id: String): Track? {
+        val bytes = if (SessionEntryLimits.validSessionId(id)) readSmall("$root/$id.json") else null
+        return try {
+            bytes?.let { TrackJson.decode(it.decodeToString()) }
+        } catch (_: TrackFormatException) {
+            null
+        }
+    }
+
+    /** Keeps the session's track if none of its id is saved, or over the saved one with [replace]. */
+    fun keep(session: ReceivedSession, replace: Boolean) {
+        val track = session.track
+        val json = session.trackJson
+        val path = "$root/${track?.id}.json"
+        val wanted = track != null && json != null && SessionEntryLimits.validSessionId(track.id)
+        if (wanted && (replace || !fm.fileExistsAtPath(path))) {
+            mkdirs(root)
+            val tmp = "$path.tmp"
+            val bytes = checkNotNull(json).encodeToByteArray()
+            fm.createFileAtPath(tmp, bytes.toNSData(0, bytes.size), null)
+            if (fm.fileExistsAtPath(path)) {
+                fm.replaceItemAtURL(NSURL.fileURLWithPath(path), NSURL.fileURLWithPath(tmp), null, 0u, null, null)
+            } else {
+                fm.moveItemAtPath(tmp, path, null)
+            }
+        }
+    }
+}
+
+/** The whole file at [path] if it is there and small enough to read whole. */
+private fun readSmall(path: String): ByteArray? {
+    val size = (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)
+        ?.longLongValue
+    val fits = size != null && size <= SessionEntryLimits.MaxSmallFileBytes
+    return if (fits) NSData.dataWithContentsOfFile(path)?.toByteArray() else null
+}
 
 /** Reads the file at [path] in pieces, handing each to [block] with its length. */
 private fun pump(path: String, block: (ByteArray, Int) -> Unit) {
