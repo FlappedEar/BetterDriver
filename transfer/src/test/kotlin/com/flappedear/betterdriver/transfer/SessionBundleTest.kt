@@ -140,6 +140,39 @@ class SessionBundleTest {
     }
 
     @Test
+    fun `the common reader of the iOS import stages the same files and info as the JVM inbox (FBBD-331)`() {
+        val phone = SessionStore(File(tmp, "phone/sessions"))
+        val dir = session(phone)
+        val bytes = bundle(phone, dir)
+        val jvm = SessionInbox(SessionStore(File(tmp, "tablet/sessions")), File(tmp, "tablet/transfer"))
+            .receive(bytes.inputStream())
+
+        val staged = linkedMapOf<String, ByteArray>()
+        val receiver = SessionBundleReceiver(object : StagingFiles {
+            private var path = ""
+            private val buf = ByteArrayOutputStream()
+            override fun create(path: String) {
+                this.path = path
+                buf.reset()
+            }
+            override fun write(bytes: ByteArray, from: Int, to: Int) = buf.write(bytes, from, to - from)
+            override fun close() {
+                staged[path] = buf.toByteArray()
+            }
+            override fun freeBytes() = Long.MAX_VALUE
+        })
+        val unpacker = BundleUnpacker(receiver)
+        bytes.toList().chunked(65_521).forEach { unpacker.feed(it.toByteArray()) }
+        unpacker.finish()
+        val common = receiver.result()
+
+        assertEquals(jvm.sessionId, common.sessionId)
+        assertEquals(jvm.info, common.info)
+        assertEquals(jvm.track, common.track)
+        assertEquals(files(jvm.sessionDir), staged.mapValues { it.value.contentHashCode().toString() })
+    }
+
+    @Test
     fun `import progress of a bundle climbs to its file size and never goes back (FBBD-314)`() {
         val phone = SessionStore(File(tmp, "phone/sessions"))
         val bytes = bundle(phone, session(phone))

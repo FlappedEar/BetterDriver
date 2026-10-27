@@ -15,35 +15,22 @@ import java.io.IOException
  */
 internal object SessionLimits {
     /** meta.properties: one session's info and its channel table. */
-    const val MaxMetaBytes = 1L shl 20
+    const val MaxMetaBytes = SessionEntryLimits.MaxMetaBytes
 
     /** Far more channels than any receiver records; a larger count is a damaged file. */
     const val MaxChannels = 1024
 
-    /**
-     * A chunk is read whole (SessionStore.read). The recorder starts a new chunk at 8 MiB
-     * (RecorderConfig.chunkMaxBytes) and a frame holds at most 1 MiB (Frames.MAX_PAYLOAD), so a
-     * chunk it writes stays under 10 MiB; this leaves room for a larger setting.
-     */
-    const val MaxChunkBytes = 32L shl 20
+    /** A chunk is read whole (SessionStore.read); see [SessionEntryLimits.MaxChunkBytes]. */
+    const val MaxChunkBytes = SessionEntryLimits.MaxChunkBytes
 
     /** Marker properties and JSON indexes (video/clips.json, gopro-recordings.json, quality.json). */
-    const val MaxSmallFileBytes = 4L shl 20
+    const val MaxSmallFileBytes = SessionEntryLimits.MaxSmallFileBytes
 
     /** Kept free on the device while receiving, for the app and the session list. */
-    const val SpaceMarginBytes = 64L shl 20
+    const val SpaceMarginBytes = SessionEntryLimits.SpaceMarginBytes
 
     /** The largest size allowed for the session file at [path], or null when it is streamed and unbounded. */
-    fun maxBytes(path: String): Long? {
-        val name = path.substringAfterLast('/')
-        return when {
-            path == SessionFiles.META -> MaxMetaBytes
-            !path.contains('/') && name.startsWith(SessionFiles.CHUNK_PREFIX) &&
-                name.endsWith(SessionFiles.CHUNK_SUFFIX) -> MaxChunkBytes
-            name.endsWith(".properties") || name.endsWith(".json") -> MaxSmallFileBytes
-            else -> null
-        }
-    }
+    fun maxBytes(path: String): Long? = SessionEntryLimits.maxBytes(path)
 
     /** Refuses the session file at [path] of [size] bytes when it is over its limit. */
     fun checkEntry(path: String, size: Long) {

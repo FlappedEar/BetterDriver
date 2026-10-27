@@ -145,11 +145,6 @@ fun gainLossLimit(rates: List<Double>): Double {
     return GainLossSteps.firstOrNull { it >= typical } ?: GainLossSteps.last()
 }
 
-private val CornerName = Regex("""Corners? (\d+(?:[–-]\d+)?)""")
-
-/** A corner's map label: "Corner 1" is T1, "Corners 2–3" is T2–3; any other name is kept. */
-fun cornerTag(name: String): String = CornerName.matchEntire(name)?.let { "T" + it.groupValues[1] } ?: name
-
 /** Pixels per metre at the least, so a map with no room still inverts. */
 private const val MinimumScale = 1e-6
 
