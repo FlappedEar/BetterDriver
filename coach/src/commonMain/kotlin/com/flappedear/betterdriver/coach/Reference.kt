@@ -188,3 +188,21 @@ private const val MicrosPerSecond = 1_000_000.0
 fun bestPasses(passes: List<CornerPass>, count: Int = 1): List<CornerPass> =
     passes.filterNot { it.unusable() }.groupBy { it.corner }.entries.sortedBy { it.key }
         .flatMap { (_, p) -> p.sortedBy { it.timeMicros }.take(count) }
+
+/** A coach reference file's text (`<track id>.coach.json`), as CoachReferenceStore keeps it on Android. */
+object CoachReferenceJson {
+    private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
+    fun encode(reference: CoachReference): String = json.encodeToString(CoachReference.serializer(), reference)
+
+    /** The reference of [trackId] in [text]; null when it does not read as one of this format and version. */
+    fun decode(text: String, trackId: String): CoachReference? = try {
+        json.decodeFromString(CoachReference.serializer(), text)
+            .takeIf { it.format == CoachReference.Format && it.version == CoachReference.Version }
+            ?.takeIf { it.trackId == trackId }
+    } catch (_: kotlinx.serialization.SerializationException) {
+        null
+    } catch (_: IllegalArgumentException) {
+        null
+    }
+}

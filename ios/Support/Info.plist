@@ -8,6 +8,8 @@
 	<array>
 		<string>bluetooth-central</string>
 		<string>location</string>
+		<!-- The coach keeps saying its cues with the phone locked (FBBD-333). -->
+		<string>audio</string>
 	</array>
 	<!-- Sessions open from Files, AirDrop and other apps' Share sheet (FBBD-331, UI-292 A). -->
 	<key>CFBundleDocumentTypes</key>

@@ -67,6 +67,46 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(model.tiles.count, 5)
         XCTAssertEqual(model.tiles.first??.label, "Speed")
         XCTAssertEqual(model.tiles.first??.value, "113")
+        // No coach started: no coach line, the tiles take its place.
+        XCTAssertNil(model.coach)
+        XCTAssertTrue(session.stop())
+    }
+
+    /// Says nothing aloud, and remembers what it was asked to say.
+    private final class SilentSpeaker: NSObject, CoachSpeaker {
+        private(set) var said: [String] = []
+        var speaking: Bool { false }
+
+        func say(text: String, speech: CoachSpeech) -> Bool {
+            said.append(text)
+            speech.started(route: "speaker", device: "Speaker")
+            speech.ended(end: "done")
+            return true
+        }
+    }
+
+    /// The coach (FBBD-333) times the laps at a saved track and its last cue shows on the coach line.
+    func testTheCoachSaysTheLapTimesOnTheCoachLine() throws {
+        try saveRing()
+        let session = try start(receiverHasG: false)
+        let speaker = SilentSpeaker()
+        session.startCoach(
+            sessionsDir: base.appendingPathComponent("sessions").path,
+            referencesDir: base.appendingPathComponent("coach/references").path,
+            settings: LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0),
+            audioDelayFromPhone: false,
+            speaker: speaker
+        )
+        for n in Int64(0)...Int64(25 * 140) {
+            session.submit(set: SampleSet(tMicros: n * 40_000, values: gnss.fix(n: n)))
+        }
+        // The coach works on a queue of its own.
+        let deadline = Date().addingTimeInterval(10)
+        while TrackScreenModel(session.screen(), receiverHasG: false).coach?.text != "40 point 0", Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertEqual(TrackScreenModel(session.screen(), receiverHasG: false).coach?.text, "40 point 0")
+        XCTAssertEqual(speaker.said.first, "Best lap, 40 point 0")
         XCTAssertTrue(session.stop())
     }
 
