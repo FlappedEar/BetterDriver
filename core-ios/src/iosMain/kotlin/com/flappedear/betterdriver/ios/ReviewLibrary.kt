@@ -48,6 +48,7 @@ class ReviewLibrary(base: String) {
     private val tracksRoot = "$base/tracks"
     private val store = SessionStore(sessionsRoot)
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
+    private val plans = IosLinePlanStore(linePlansDir(base))
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
@@ -57,11 +58,15 @@ class ReviewLibrary(base: String) {
      * Laps, best, theoretical best and where to find time of session [id], as Android works them
      * out: the targets come from the other sessions at its track (LineSessions on Android). The
      * result keeps the analysis, so Compare can pick another lap without reading the session again.
+     * The session's line plan is kept for the track's next coached session, as Android keeps it
+     * (FBBD-333); a plan that cannot be saved only leaves the coach without one.
      */
     @Throws(Exception::class)
     fun review(id: String): ReviewedSession {
         val saved = tracks()
-        return reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        val reviewed = reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        reviewed.linePlan?.let(plans::save)
+        return reviewed
     }
 
     /**

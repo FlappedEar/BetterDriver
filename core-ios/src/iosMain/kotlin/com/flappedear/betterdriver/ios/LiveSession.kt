@@ -115,18 +115,22 @@ class LiveSession private constructor(
     /**
      * Starts the live coach (FBBD-333), as the Android recorder binds its coach when the coach is on:
      * it coaches at a saved track with laps, from the sessions in [sessionsDir] and the references it
-     * keeps in [referencesDir], and says its cues with [speaker]. Its events go into this recording at
-     * their own times. [audioDelayFromPhone]: [settings]' delay is the output latency iOS reported.
+     * keeps in [referencesDir], aimed at the line plans the review keeps in [linePlansDir], and says its
+     * cues with [speaker]. Its events go into this recording at their own times.
+     * [audioDelayFromPhone]: [settings]' delay is the output latency iOS reported.
      */
+    @Suppress("LongParameterList") // Where the coach's files are, and how it speaks.
     fun startCoach(
         sessionsDir: String,
         referencesDir: String,
+        linePlansDir: String,
         settings: CoachSettings,
         audioDelayFromPhone: Boolean,
         speaker: CoachSpeaker,
     ) {
         val c = LiveCoach(
-            recording.id, sessionsDir, referencesDir, settings, audioDelayFromPhone, speaker, recording::nowMicros,
+            recording.id, sessionsDir, referencesDir, linePlansDir, settings, audioDelayFromPhone, speaker,
+            recording::nowMicros,
         ) { t, kind, text -> recording.eventAt(t, kind, text) }
         guarded { if (coach == null) coach = c }
     }

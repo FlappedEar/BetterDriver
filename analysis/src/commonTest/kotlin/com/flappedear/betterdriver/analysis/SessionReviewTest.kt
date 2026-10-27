@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.analysis
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewOf
 import com.flappedear.betterdriver.analysis.review.reviewSession
+import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -47,6 +48,15 @@ class SessionReviewTest {
             listOf("T11:0.281", "T1:0.112"),
             line.ranked.take(2).map { "${it.tag}:${fixed(it.gainSeconds, 3)}" },
         )
+    }
+
+    @Test
+    fun `the review keeps the line plan it shows for the next session's coach`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val plan = checkNotNull(reviewed.linePlan)
+        assertEquals(track.id, plan.trackId)
+        assertEquals("jastrzab", plan.sessionId)
+        assertEquals(reviewed.review.line, lineUi(plan, "jastrzab"))
     }
 
     @Test

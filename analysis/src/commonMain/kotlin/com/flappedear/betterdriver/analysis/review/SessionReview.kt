@@ -10,6 +10,7 @@ import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
+import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.linePlan
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
@@ -108,13 +109,15 @@ data class ReviewCompare(
 
 /**
  * A reviewed session: its [review], and its analysis kept so another lap can be compared without
- * analysing the session again.
+ * analysing the session again. [linePlan] is the track's line plan made from it (FBBD-306), which
+ * the app keeps for the next session's coach as Android does; null without one.
  */
 class ReviewedSession internal constructor(
     val review: SessionReview,
     private val analysis: SessionAnalysis?,
     private val session: TelemetrySession?,
     private val data: SessionData? = null,
+    val linePlan: LinePlan? = null,
 ) {
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)
@@ -222,10 +225,11 @@ fun reviewSession(
         ReviewLap(lap.number, lap.durationSeconds, lap.deltaToBestSeconds, i == fastest, lap.referenceEligible)
     }
     val origin = analysis.axis?.origin
-    val line = origin?.let { analyzeLine(analysis, session, others(track)) }?.let {
+    val plan = origin?.let { analyzeLine(analysis, session, others(track)) }?.let {
         val identity = analysis.identity?.number?.takeIf { analysis.identified }
-        lineUi(linePlan(it, origin, track.id, data.id, data.info.startUtcMillis, identity), data.id)
+        linePlan(it, origin, track.id, data.id, data.info.startUtcMillis, identity)
     }
+    val line = plan?.let { lineUi(it, data.id) }
     val review = SessionReview(
         track,
         laps,
@@ -233,5 +237,5 @@ fun reviewSession(
         analysis.theoreticalBest?.totalSeconds,
         line,
     )
-    return ReviewedSession(review, analysis, session, data)
+    return ReviewedSession(review, analysis, session, data, plan)
 }
