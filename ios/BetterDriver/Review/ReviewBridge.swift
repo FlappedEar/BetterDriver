@@ -33,6 +33,7 @@ struct LapRow: Identifiable, Hashable {
 struct SessionSummary {
     /// The core's reviewed session, kept to compare laps without reading the session again.
     fileprivate let reviewed: ReviewedSession
+    fileprivate let id: String
     let trackName: String?
     let laps: [LapRow]
     let bestLap: String?
@@ -147,6 +148,7 @@ enum ReviewBridge {
         }
         return SessionSummary(
             reviewed: reviewed,
+            id: id,
             trackName: review.track?.name,
             laps: laps,
             bestLap: review.bestLapSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
@@ -160,6 +162,11 @@ enum ReviewBridge {
     /// The fastest lap against lap [index] of [summary]'s session; nil without a fastest lap.
     static func compare(_ summary: SessionSummary, lapIndex index: Int) -> LapCompare? {
         summary.reviewed.compare(otherIndex: Int32(index)).map(lapCompare)
+    }
+
+    /// The fastest lap against lap [index] on video, as Android's lap review; nil without both laps.
+    static func videoReview(_ summary: SessionSummary, lapIndex index: Int) -> LapVideoReview? {
+        library.videoReview(reviewed: summary.reviewed, id: summary.id, otherIndex: Int32(index))
     }
 
     /// Android's analysis screen with lap [index] compared, for Corners and Car.

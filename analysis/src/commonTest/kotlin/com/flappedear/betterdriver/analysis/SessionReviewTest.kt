@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis
 
+import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewOf
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.format.fixed
@@ -70,6 +71,31 @@ class SessionReviewTest {
         assertEquals("108.201", fixed(screen.theoreticalMillis!! / 1000.0, 3))
         assertTrue(compare.corners.isNotEmpty())
         assertTrue(compare.referenceSpeed.isNotEmpty() && compare.otherSpeed.isNotEmpty())
+    }
+
+    @Test
+    fun `the video review plays the fastest and the compared lap from the session's clip index`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val index = """{"version":1,"clips":[
+            {"fileName":"p.mp4","kind":"PHONE","sourceId":"phone","sessionOffsetUs":0,
+             "alignment":{"method":"CAPTURE_CLOCK","uncertaintyUs":0}},
+            {"fileName":"g.mp4","kind":"GOPRO","sourceId":"gopro","sessionOffsetUs":0,
+             "alignment":{"method":"GPS_MATCH","uncertaintyUs":0},"status":"ON_CAMERA"}]}"""
+        val clips = indexedClips(index)
+        assertEquals(listOf("p.mp4"), clips.map { it.file })
+        val other = checkNotNull(reviewed.defaultCompare()).otherIndex
+        val video = checkNotNull(reviewed.videoReview(other, clips, "v") { it == "v/p.mp4" })
+        assertEquals("109.906", fixed(video.a.timeMillis / 1000.0, 3))
+        assertEquals(reviewed.review.laps[other].seconds, video.b.timeMillis / 1000.0, 0.01)
+        assertTrue(video.a.hasVideo && video.b.hasVideo)
+        val start = checkNotNull(video.a.videoAt(0))
+        assertEquals("v/p.mp4", video.a.path(start))
+        assertEquals(video.a.trace.lap.startMicros / 1000, start.mediaMillis)
+        // Without the file there is no video, but the laps still compare.
+        val none = checkNotNull(reviewed.videoReview(other, clips, "v") { false })
+        assertNull(none.a.videoAt(0))
+        assertEquals(video.traces.lengthMicros, none.traces.lengthMicros)
+        assertEquals(emptyList(), indexedClips("not json"))
     }
 
     @Test

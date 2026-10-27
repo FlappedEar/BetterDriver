@@ -60,7 +60,7 @@ struct SessionView: View {
         } else if let summary {
             switch tab {
             case .summary: SummaryTab(summary: summary)
-            case .compare: CompareTab(compare: compare)
+            case .compare: CompareTab(compare: compare, summary: summary)
             case .laps: LapsTab(summary: summary) { lap in pick(lap, summary) }
             case .map: MapTab(line: summary.line)
             case .corners: CornersTab(screen: screen)

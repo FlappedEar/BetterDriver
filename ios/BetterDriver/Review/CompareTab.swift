@@ -4,6 +4,7 @@ import SwiftUI
 /// corners shaded behind; touch or drag to read a point.
 struct CompareTab: View {
     let compare: LapCompare?
+    let summary: SessionSummary
     @State private var cursor: Double?
 
     var body: some View {
@@ -14,6 +15,15 @@ struct CompareTab: View {
                         Text("Lap \(compare.otherNumber)").foregroundStyle(Palette.cold).fontWeight(.semibold)
                         Text(" vs best lap ").foregroundStyle(Palette.onSurfaceVariant)
                         Text("\(compare.referenceNumber)").foregroundStyle(Palette.best).fontWeight(.semibold)
+                        Spacer()
+                        // Both laps side by side on video, as Android's lap review (FBBD-93).
+                        NavigationLink {
+                            LapVideoLoader(summary: summary, lapIndex: compare.otherIndex)
+                        } label: {
+                            Label("Video", systemImage: "play.rectangle")
+                        }
+                        .foregroundStyle(Palette.accent)
+                        .accessibilityIdentifier("openLapVideo")
                     }
                     Readout(compare: compare, cursor: cursor)
                     SectionLabel("Time delta")
@@ -57,6 +67,35 @@ struct CompareTab: View {
                 .foregroundStyle(Palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
                 .padding(40)
+        }
+    }
+}
+
+/// Reads the two laps and their video off the main thread, then shows them.
+private struct LapVideoLoader: View {
+    let summary: SessionSummary
+    let lapIndex: Int
+    @State private var review: LapVideoReview?
+    @State private var done = false
+
+    var body: some View {
+        Group {
+            if let review {
+                LapVideoView(review: review)
+            } else if done {
+                Text("These laps are not in the lap review.")
+                    .foregroundStyle(Palette.onSurfaceVariant)
+                    .padding(40)
+            } else {
+                ProgressView().tint(Palette.accent)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.background)
+        .task {
+            let s = summary, i = lapIndex
+            review = await Task.detached(priority: .userInitiated) { ReviewBridge.videoReview(s, lapIndex: i) }.value
+            done = true
         }
     }
 }

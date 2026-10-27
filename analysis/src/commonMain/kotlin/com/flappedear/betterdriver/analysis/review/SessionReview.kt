@@ -4,6 +4,8 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
+import com.flappedear.betterdriver.analysis.corners.sameLap
+import com.flappedear.betterdriver.analysis.corners.sessionMicros
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.line.LineSession
@@ -18,9 +20,13 @@ import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.recorder.video.VideoClip
+import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
+import com.flappedear.betterdriver.timing.replay.LapTrace
+import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 
 import com.flappedear.betterdriver.timing.track.trackAlong
@@ -108,6 +114,7 @@ class ReviewedSession internal constructor(
     val review: SessionReview,
     private val analysis: SessionAnalysis?,
     private val session: TelemetrySession?,
+    private val data: SessionData? = null,
 ) {
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)
@@ -131,6 +138,36 @@ class ReviewedSession internal constructor(
             null
         }
         return analysisUi("", analysis, comparison)?.let { withCar(it, analysis, session, null) }
+    }
+
+    /**
+     * The fastest lap against timed lap [otherIndex] on video, as Android's lap review opens on them
+     * (FBBD-93): the review's laps are matched to the analysis's by their start. The video is the
+     * session's clips, from its events and its clip index [indexed], with files [present] in [dir]
+     * (see [LapVideoSource.of]). Null when the review does not have both laps.
+     */
+    fun videoReview(
+        otherIndex: Int,
+        indexed: List<VideoClip>,
+        dir: String,
+        present: (String) -> Boolean,
+    ): LapVideoReview? {
+        val data = data
+        val track = review.track
+        val fastest = analysis?.laps?.fastestLapIndex
+        if (data == null || track == null || fastest == null) return null
+        val laps = checkNotNull(analysis).laps.timedLaps
+        // As telemetrySessionOf: telemetry time 0 is the first sample.
+        val origin = data.sampleSets.minOfOrNull { it.tMicros } ?: 0L
+        val traces = replayLaps(data.id, data.sampleSets, track).laps
+        val starts = traces.associate { it.lap.number to it.lap.startMicros }
+        fun trace(index: Int): LapTrace? = laps.getOrNull(index)
+            ?.let { sameLap(sessionMicros(origin, it.startTelemetryTime), starts) }
+            ?.let { n -> traces.firstOrNull { it.lap.number == n } }
+        val a = trace(fastest)
+        val b = trace(otherIndex)
+        val source = LapVideoSource.of(VideoTimeline.from(data.events, indexed), dir, present)
+        return if (a != null && b != null) LapVideoReview(VideoLap(a, source), VideoLap(b, source)) else null
     }
 
     /** The fastest lap against timed lap [otherIndex]; null without a fastest lap or an axis. */
@@ -196,5 +233,5 @@ fun reviewSession(
         analysis.theoreticalBest?.totalSeconds,
         line,
     )
-    return ReviewedSession(review, analysis, session)
+    return ReviewedSession(review, analysis, session, data)
 }
