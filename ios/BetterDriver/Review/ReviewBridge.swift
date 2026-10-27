@@ -18,6 +18,8 @@ struct SessionRow: Identifiable, Hashable {
 
 /// One timed lap of a session's review.
 struct LapRow: Identifiable, Hashable {
+    /// Its index among the session's timed laps, for Compare.
+    let index: Int
     let number: Int
     let time: String
     /// Behind the fastest lap, for example +1.24; nil for the fastest and for laps that do not count.
@@ -29,11 +31,44 @@ struct LapRow: Identifiable, Hashable {
 
 /// What the review shows of one session, worked out by the shared core as on Android.
 struct SessionSummary {
+    /// The core's reviewed session, kept to compare laps without reading the session again.
+    fileprivate let reviewed: ReviewedSession
     let trackName: String?
     let laps: [LapRow]
     let bestLap: String?
     let theoreticalBest: String?
     let line: WhereToFindTime?
+    /// The fastest lap against the second fastest, as Compare opens on Android.
+    let compare: LapCompare?
+}
+
+/// A point of a chart: metres from the start/finish line and a value.
+struct ChartDot: Hashable {
+    let meters: Double
+    let value: Double
+}
+
+/// A corner on the lap's distance axis; it may wrap past the line.
+struct Band: Hashable {
+    let name: String
+    let start: Double
+    let end: Double
+
+    func contains(_ m: Double) -> Bool { end >= start ? (start...end).contains(m) : (m >= start || m <= end) }
+}
+
+/// The Compare tab (FBBD-102): lap [otherNumber] against the fastest lap by distance, as Android
+/// draws it. Each series is runs of continuous coverage; a GPS gap starts a new run.
+struct LapCompare: Hashable {
+    let referenceNumber: Int
+    let otherNumber: Int
+    let otherIndex: Int
+    let lengthMeters: Double
+    /// The other lap's time minus the fastest's, seconds; positive: behind.
+    let delta: [[ChartDot]]
+    let referenceSpeed: [[ChartDot]]
+    let otherSpeed: [[ChartDot]]
+    let corners: [Band]
 }
 
 /// What the pedals do on a stretch of a lap, for its colour (UI-165 C).
@@ -96,9 +131,11 @@ enum ReviewBridge {
     }
 
     static func summary(id: String) throws -> SessionSummary {
-        let review = try library.review(id: id)
-        let laps = review.laps.map { lap in
+        let reviewed = try library.review(id: id)
+        let review = reviewed.review
+        let laps = review.laps.enumerated().map { i, lap in
             LapRow(
+                index: i,
                 number: Int(lap.number),
                 time: CoreBridge.lapTime(millis: millis(lap.seconds)),
                 delta: lap.fastest || !lap.counts ? nil : CoreBridge.delta(seconds: lap.deltaSeconds),
@@ -107,11 +144,32 @@ enum ReviewBridge {
             )
         }
         return SessionSummary(
+            reviewed: reviewed,
             trackName: review.track?.name,
             laps: laps,
             bestLap: review.bestLapSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
             theoreticalBest: review.theoreticalBestSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
-            line: review.line.map(whereToFindTime)
+            line: review.line.map(whereToFindTime),
+            compare: reviewed.defaultCompare().map(lapCompare)
+        )
+    }
+
+    /// The fastest lap against lap [index] of [summary]'s session; nil without a fastest lap.
+    static func compare(_ summary: SessionSummary, lapIndex index: Int) -> LapCompare? {
+        summary.reviewed.compare(otherIndex: Int32(index)).map(lapCompare)
+    }
+
+    private static func lapCompare(_ c: ReviewCompare) -> LapCompare {
+        func runs(_ r: [[ChartPoint]]) -> [[ChartDot]] { r.map { $0.map { ChartDot(meters: $0.distanceMeters, value: $0.value) } } }
+        return LapCompare(
+            referenceNumber: Int(c.referenceNumber),
+            otherNumber: Int(c.otherNumber),
+            otherIndex: Int(c.otherIndex),
+            lengthMeters: c.lengthMeters,
+            delta: runs(c.delta),
+            referenceSpeed: runs(c.referenceSpeed),
+            otherSpeed: runs(c.otherSpeed),
+            corners: c.corners.map { Band(name: $0.name, start: $0.startMeters, end: $0.endMeters) }
         )
     }
 

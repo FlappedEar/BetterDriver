@@ -31,4 +31,14 @@ final class ReviewTests: XCTestCase {
         XCTAssertEqual(a.y - b.y, 150, accuracy: 1e-9)
         XCTAssertEqual(LineColors.pedal(.braking), LineColors.loss)
     }
+
+    func testChartReadsBetweenPointsAndNotInAGap() {
+        let runs = [[ChartDot(meters: 0, value: 0), ChartDot(meters: 10, value: 1)], [ChartDot(meters: 20, value: 5)]]
+        XCTAssertEqual(ChartMath.value(runs, at: 5) ?? .nan, 0.5, accuracy: 1e-9)
+        XCTAssertNil(ChartMath.value(runs, at: 15))
+        let (low, high) = ChartMath.range([runs], includeZero: true)
+        XCTAssertEqual(low, -0.4, accuracy: 1e-9)
+        XCTAssertEqual(high, 5.4, accuracy: 1e-9)
+        XCTAssertTrue(Band(name: "T1", start: 1900, end: 50).contains(10))
+    }
 }

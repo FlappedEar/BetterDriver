@@ -442,9 +442,3 @@ internal fun firstCornerRows(ui: AnalysisUi): CornerRows {
     return CornerRows(gains, losses)
 }
 
-/** The lap compared with the fastest when the screen opens: the second fastest counted lap, or null. */
-fun defaultComparedLap(analysis: SessionAnalysis): Int? {
-    val fastest = analysis.laps.fastestLapIndex ?: return null
-    val counted = analysis.laps.timedLaps.withIndex().filter { it.value.referenceEligible && it.index != fastest }
-    return counted.minByOrNull { it.value.durationSeconds }?.index
-}

@@ -11,4 +11,7 @@ enum CoreBridge {
 
     /// Signed gap with two decimals, minus = gain, for example −0.34 (core: formatDelta).
     static func delta(seconds: Double) -> String { TimeFormatKt.formatDelta(seconds: seconds) }
+
+    /// Whether [delta] shows a gain; a gap that rounds to +0.00 is not one (core: isDeltaGain).
+    static func isGain(seconds: Double) -> Bool { TimeFormatKt.isDeltaGain(seconds: seconds) }
 }

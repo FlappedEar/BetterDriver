@@ -5,8 +5,8 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
-import com.flappedear.betterdriver.analysis.review.SessionReview
-import com.flappedear.betterdriver.analysis.review.reviewOf
+import com.flappedear.betterdriver.analysis.review.ReviewedSession
+import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.format.fixed
@@ -46,12 +46,13 @@ class ReviewLibrary(base: String) {
 
     /**
      * Laps, best, theoretical best and where to find time of session [id], as Android works them
-     * out: the targets come from the other sessions at its track (LineSessions on Android).
+     * out: the targets come from the other sessions at its track (LineSessions on Android). The
+     * result keeps the analysis, so Compare can pick another lap without reading the session again.
      */
     @Throws(Exception::class)
-    fun review(id: String): SessionReview {
+    fun review(id: String): ReviewedSession {
         val saved = tracks()
-        return reviewOf(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        return reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
     }
 
     /**
