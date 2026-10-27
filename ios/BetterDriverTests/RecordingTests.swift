@@ -80,6 +80,20 @@ final class RecordingTests: XCTestCase {
         XCTAssertTrue(session.stop())
     }
 
+    func testTheLiveActivityShowsLapDeltaAndBest() throws {
+        try saveRing()
+        let session = try start(receiverHasG: false)
+        let empty = RecordingActivity.state(TrackScreenModel(session.screen(), receiverHasG: false))
+        XCTAssertEqual(empty, RecordingAttributes.ContentState(lap: nil, delta: nil, gain: false, best: nil))
+        for n in Int64(0)...Int64(25 * 140) {
+            session.submit(set: SampleSet(tMicros: n * 40_000, values: gnss.fix(n: n)))
+        }
+        let state = RecordingActivity.state(TrackScreenModel(session.screen(), receiverHasG: false))
+        XCTAssertNotNil(state.lap)
+        XCTAssertEqual(state.best, "0:40.00")
+        XCTAssertTrue(session.stop())
+    }
+
     func testRecordingClock() {
         XCTAssertEqual(TrackScreenModel.clock(micros: 83_000_000), "1:23")
         XCTAssertEqual(TrackScreenModel.clock(micros: 3_725_000_000), "1:02:05")

@@ -1,17 +1,17 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.corners.CornerTraces
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
 
 // The words and numbers of the Corner laps screen (FBBD-93): no number below High confidence
 // (FBBD-177), none for a value in no known unit, and ≈ on what is not measured (FBBD-174).
 
 /** The time through the corner of [row] as the list shows it: "4.21 s", or "–" without a precise one. */
-internal fun passSecondsText(row: CornerLapRow): String =
+fun passSecondsText(row: CornerLapRow): String =
     if (row.confidence.doubtful) Missing else row.seconds?.let { "${seconds(it)} s" } ?: Missing
 
 /** A number of [row] ([text]) as the list shows it: none below High confidence (FBBD-177). */
-internal fun gated(text: String, row: CornerLapRow): String = if (row.confidence.doubtful) Missing else text
+fun gated(text: String, row: CornerLapRow): String = if (row.confidence.doubtful) Missing else text
 
 /**
  * Whether the speed trace may carry numbers: a measured speed in a known unit (FBBD-174). Otherwise
@@ -28,7 +28,7 @@ const val NotInSessionText =
 const val NoVideoText = "No video of this corner in this session; the traces show every pass."
 
 /** The line under a pass's time: its braking point and minimum speed, none below High confidence (FBBD-177). */
-internal fun passDetailText(ui: CornerLapsUi, row: CornerLapRow): String {
+fun passDetailText(ui: CornerLapsUi, row: CornerLapRow): String {
     // A speed in no known unit is no number to act on.
     val min = if (ui.speedUnit.isEmpty()) Missing else minimumText(row, ui.speedUnit, ui.speedProvenance)
     // The lap names of the summary (FBBD-178): never "optimal" alone, never "best lap" for the best actual lap.
@@ -40,7 +40,7 @@ internal fun passDetailText(ui: CornerLapsUi, row: CornerLapRow): String {
 }
 
 /** The compare bar's line: which two laps go side by side, and whether with video. */
-internal fun compareText(ui: CornerLapsUi, pair: Pair<Int, Int>?): String {
+fun compareText(ui: CornerLapsUi, pair: Pair<Int, Int>?): String {
     val (a, b) = pair?.let { (x, y) -> ui.row(x) to ui.row(y) } ?: return "Tick two laps to compare"
     val both = a?.video != null && b?.video != null
     val how = if (both) ", videos side by side" else ""
@@ -52,21 +52,21 @@ internal fun compareText(ui: CornerLapsUi, pair: Pair<Int, Int>?): String {
  * otherwise. The range is of the passes of [ui] at High confidence only (FBBD-177): a doubtful pass
  * is drawn as a shape, its numbers shown nowhere.
  */
-internal fun speedLabel(ui: CornerLapsUi, traces: CornerTraces): String {
+fun speedLabel(ui: CornerLapsUi, traces: CornerTraces): String {
     val trusted = traces.passes.filter { ui.row(it.lapIndex)?.confidence?.doubtful == false }
     val values = trusted.flatMap { p -> p.speed.flatten().map { it.value } }
     return if (!speedNumbersShown(traces) || values.isEmpty()) {
         marked("Speed", traces.speedProvenance)
     } else {
-        String.format(Locale.ROOT, "Speed · %.0f–%.0f %s", values.min(), values.max(), traces.speedUnit)
+        "Speed · ${fixed(values.min(), 0)}–${fixed(values.max(), 0)} ${traces.speedUnit}"
     }
 }
 
 /** "120 m": how much of the approach the traces show. */
-internal fun approachText(traces: CornerTraces) = String.format(Locale.ROOT, "%.0f m", traces.entryMeters)
+fun approachText(traces: CornerTraces) = "${fixed(traces.entryMeters, 0)} m"
 
 /** "Lap 7", with what stands out about the pass: "Lap 7 · fastest here", "Lap 3 · best actual lap". */
-internal fun passName(row: CornerLapRow): String {
+fun passName(row: CornerLapRow): String {
     val what = listOfNotNull(
         if (row.best) "fastest here" else null,
         if (row.bestLap && !row.best) BestActualLapLabel.lowercase() else null,

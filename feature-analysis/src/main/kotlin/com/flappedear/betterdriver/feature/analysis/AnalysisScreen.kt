@@ -56,7 +56,6 @@ import com.flappedear.betterdriver.format.formatDelta
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.format.isDeltaGain
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
-import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -429,7 +428,7 @@ private fun Laps(ui: AnalysisUi, onCompare: (Int) -> Unit, modifier: Modifier) {
                 when {
                     lap.note.isNotEmpty() -> Dim(lap.note, color = c.warning)
                     lap.best -> Dim("Best", color = c.best)
-                    lap.deltaSeconds != null -> Text(formatDelta(lap.deltaSeconds), color = c.loss)
+                    lap.deltaSeconds != null -> Text(formatDelta(checkNotNull(lap.deltaSeconds)), color = c.loss)
                 }
                 if (heartRate) LapHeartRateCell(lap.heartRate)
             }
@@ -494,8 +493,6 @@ private val SpreadWidth = 52.dp
  * counted lap, which has nothing to be compared with (never a bare "Lap ").
  */
 internal fun comparedColumn(ui: AnalysisUi): String? = ui.compare?.otherNumber?.let { "Lap $it" }
-
-internal fun seconds(value: Double) = String.format(Locale.ROOT, "%.2f", value)
 
 @Composable
 internal fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {

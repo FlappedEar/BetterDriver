@@ -10,8 +10,8 @@ import com.flappedear.betterdriver.analysis.driving.Coasting
 import com.flappedear.betterdriver.analysis.driving.cornerCoasting
 import com.flappedear.betterdriver.analysis.driving.cornerCoastingConsistency
 import com.flappedear.betterdriver.analysis.segments.ConsistencySummary
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.Provenance
-import java.util.Locale
 
 /** What a corner detail measures, which decides how it is written. */
 enum class CornerMeasure { Meters, Speed, G, Seconds }
@@ -119,7 +119,7 @@ private fun coastingRow(analysis: SessionAnalysis, id: String, bestIndex: Int, o
 }
 
 /** Where a coasting time comes from: inferred, or the less measured of the two pedals. */
-internal fun coastingProvenance(coasting: Coasting?, sources: AnalysisProvenance): Provenance? = when {
+fun coastingProvenance(coasting: Coasting?, sources: AnalysisProvenance): Provenance? = when {
     coasting == null -> null
     coasting.provenance != BrakingProvenanceMeasured -> Provenance.INFERRED
     else -> listOf(sources.brake, sources.throttle).firstOrNull { it.notMeasured }
@@ -189,11 +189,11 @@ private fun rows(
 private fun spread(summary: ConsistencySummary?) = summary?.takeIf { it.available }?.interquartileRange
 
 /** [value] in its measure, with [speedUnit] for speeds; a dash when missing. */
-internal fun formatMeasure(value: Double?, measure: CornerMeasure, speedUnit: String): String = when {
+fun formatMeasure(value: Double?, measure: CornerMeasure, speedUnit: String): String = when {
     value == null -> Missing
-    measure == CornerMeasure.Meters -> String.format(Locale.ROOT, "%.0f m", value)
-    measure == CornerMeasure.G -> String.format(Locale.ROOT, "%.2f g", value)
-    measure == CornerMeasure.Seconds -> String.format(Locale.ROOT, "%.2f s", value)
-    speedUnit.isEmpty() -> String.format(Locale.ROOT, "%.1f", value)
-    else -> String.format(Locale.ROOT, "%.1f %s", value, speedUnit)
+    measure == CornerMeasure.Meters -> "${fixed(value, 0)} m"
+    measure == CornerMeasure.G -> "${fixed(value, 2)} g"
+    measure == CornerMeasure.Seconds -> "${fixed(value, 2)} s"
+    speedUnit.isEmpty() -> fixed(value, 1)
+    else -> "${fixed(value, 1)} $speedUnit"
 }

@@ -33,7 +33,7 @@ struct CarsPage: View {
 }
 
 /// The Car tab (UI-136 B): the next session's car's page, or the cars to choose from, or Add car.
-struct CarTab: View {
+struct CarHome: View {
     @EnvironmentObject private var settings: SettingsModel
     @State private var adding = false
 
@@ -46,7 +46,7 @@ struct CarTab: View {
                 ShellPage(title: "Car", large: true) {
                     if setup.cars.isEmpty {
                         DimText("No cars yet. Add the car you drive; its name goes into each session and its export.")
-                        TonalButton(text: "Add car") { adding = true }
+                        ShellTonalButton(text: "Add car") { adding = true }
                     } else {
                         DimText("No car is chosen for the next session. Pick one to see its live values.")
                         ShellCard {
@@ -93,7 +93,7 @@ struct CarPage: View {
                     DimText("The adapter reads the car in every session while it is listed. Add one in Settings › Equipment.")
                 } else {
                     DimText("Live values show on the next session's car: the adapter reads the car it is plugged into.")
-                    TonalButton(text: "Use for the next session") { settings.update { $0.chooseCar(id: car.id) } }
+                    ShellTonalButton(text: "Use for the next session") { settings.update { $0.chooseCar(id: car.id) } }
                 }
             }
             .toolbar {
@@ -138,7 +138,7 @@ struct CarEditSheet: View {
                 .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
                 if let car {
                     if settings.setup.session.carId != car.id {
-                        TonalButton(text: "Use for the next session") {
+                        ShellTonalButton(text: "Use for the next session") {
                             settings.update { $0.chooseCar(id: car.id) }
                             dismiss()
                         }

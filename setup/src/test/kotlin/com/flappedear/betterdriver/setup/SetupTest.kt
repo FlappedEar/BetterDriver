@@ -215,6 +215,12 @@ class SetupTest {
     }
 
     @Test
+    fun phoneGpsOffersGFromThePhonesAccelerometer() {
+        val s = Setup().addEquipment(EquipmentModel.PHONE_GPS, newId = ids)
+        assertEquals(setOf(TrackChannel.SPEED, TrackChannel.G), channelsFor(s.active().gnss))
+    }
+
+    @Test
     fun nmeaReceiverKeepsGForRaceChronoDiyLines() {
         val s = Setup().addEquipment(EquipmentModel.NMEA_GNSS, "Qstarz 818XT", "AA", ids)
             .chooseTiles(listOf(TrackChannel.SPEED, TrackChannel.G))

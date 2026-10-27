@@ -2,10 +2,11 @@ import BetterDriverCore
 import SwiftUI
 
 /// Settings topics as on Android (UI-137 B): one short page lists them, each saying what is set, and
-/// each opens a page of its own. Tracks joins them when the iPhone has its Tracks screen.
+/// each opens a page of its own; Tracks opens the Tracks screen (FBBD-336).
 enum SettingsTopic: String, CaseIterable, Identifiable {
     case equipment = "Equipment"
     case cars = "Cars"
+    case tracks = "Tracks"
     case trackScreen = "Track screen"
     case video = "Video"
     case coach = "Spoken coach"
@@ -40,6 +41,7 @@ struct SettingsView: View {
         switch topic {
         case .equipment: EquipmentPage()
         case .cars: CarsPage()
+        case .tracks: TracksScreen()
         case .trackScreen: TrackScreenPage()
         case .video: VideoPage()
         case .coach: CoachSettingsPage()
@@ -59,6 +61,9 @@ struct SettingsView: View {
         case .cars:
             if let car = setup.car(id: setup.session.carId) { return "\(car.name) · next session" }
             return setup.cars.isEmpty ? "No cars yet" : "\(setup.cars.count) cars"
+        case .tracks:
+            let count = TrackFiles.shared.read(dir: AppFolders.tracks.path).count
+            return count == 1 ? "1 track and its lines" : "\(count) tracks and their lines"
         case .trackScreen:
             let light = settings.fullBrightness ? "Full brightness" : "Phone's brightness"
             return "\(light) · GNSS sound \(settings.gnssSound ? "on" : "off")"
@@ -183,7 +188,7 @@ private struct AboutPage: View {
                 DimText("Version \(AppInfo.version)")
             }
             ForEach(Self.sections, id: \.self) { section in
-                SectionLabel(section.title)
+                ShellLabel(section.title)
                 ShellCard {
                     ForEach(Array(section.credits.enumerated()), id: \.element) { i, credit in
                         VStack(spacing: 0) {

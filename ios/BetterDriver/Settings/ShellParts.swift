@@ -85,7 +85,7 @@ struct DimText: View {
 }
 
 /// Small uppercase caption above a group.
-struct SectionLabel: View {
+struct ShellLabel: View {
     let text: String
 
     init(_ text: String) { self.text = text }
@@ -168,7 +168,7 @@ struct RemoveButton: View {
 }
 
 /// A full-width tonal button, as Android's FilledTonalButton.
-struct TonalButton: View {
+struct ShellTonalButton: View {
     let text: String
     var enabled = true
     let action: () -> Void

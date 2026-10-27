@@ -12,7 +12,7 @@ struct EquipmentPage: View {
             ForEach(SettingsCore.shared.groupOrder, id: \.name) { kind in
                 let items = settings.setup.equipment.filter { $0.kindName == kind.name }
                 if !items.isEmpty {
-                    SectionLabel(groupLabel(kind.name))
+                    ShellLabel(groupLabel(kind.name))
                     ShellCard {
                         ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
                             NavigationLink { EquipmentItemPage(id: item.id) } label: {
@@ -167,7 +167,7 @@ struct AddEquipmentPage: View {
         let nearby = scanner.found.values.filter { !listed.contains($0.address) }.sorted { $0.rssi > $1.rssi }
         ShellPage(title: "Add equipment") {
             ShellCard {
-                SectionLabel("Found nearby")
+                ShellLabel("Found nearby")
                 if nearby.isEmpty {
                     HStack(spacing: 12) {
                         if scanner.searching { ProgressView() }
@@ -198,7 +198,7 @@ struct AddEquipmentPage: View {
                 !settings.setup.equipment.contains { $0.modelName == m.name }
             }
             if !without.isEmpty {
-                SectionLabel("Add without Bluetooth")
+                ShellLabel("Add without Bluetooth")
                 ShellCard {
                     ForEach(Array(without.enumerated()), id: \.element.name) { i, m in
                         ListRow(m.label, value: withoutNote(m.name), divider: i > 0) {
