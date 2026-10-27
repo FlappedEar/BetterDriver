@@ -1,0 +1,143 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
+package com.flappedear.betterdriver.ios
+
+import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.fake.FakeGnss
+import com.flappedear.betterdriver.timing.circuits.Circuit
+import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.geo.GeoPoint
+import platform.Foundation.NSFileManager
+import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUUID
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
+
+/** A track made on the iPhone at a place the app does not know times laps from the next session (FBBD-336). */
+class TrackLibraryTest {
+    private val base = NSTemporaryDirectory() + "track-library-test-" + NSUUID().UUIDString
+    private val sessions = "$base/sessions"
+    private val tracks = "$base/tracks"
+    private val library = TrackLibrary(tracks, sessions)
+    private val gnss = FakeGnss()
+    private val circuits =
+        CircuitList(1, "test", listOf(Circuit("Q1", "Ring circuit", "PL", GeoPoint(gnss.centerLat, gnss.centerLon))))
+    private val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
+
+    @AfterTest
+    fun cleanUp() {
+        NSFileManager.defaultManager.removeItemAtPath(base, null)
+    }
+
+    /** Records three and a half laps of 40 s at 25 Hz; returns what the track screen showed at the end. */
+    private fun record(): LiveScreen {
+        val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
+        for (n in 0L..(25 * 140)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
+        return session.screen().also { session.stop() }
+    }
+
+    @Test
+    fun aNewTrackHereIsSavedAndListed() {
+        val made = library.createAt(gnss.centerLat, gnss.centerLon, "  Moto ring ")
+        assertEquals("Moto ring", made.name)
+        assertEquals(1, made.revision)
+        assertEquals(listOf(made.id), library.list().map { it.id })
+        assertEquals(listOf(made.id), TrackFiles.read(tracks).map { it.id })
+        val again = library.save(made.copy(name = "Renamed"))
+        assertEquals(2, again.revision)
+        assertEquals("Renamed", library.get(made.id)?.name)
+        assertTrue(library.delete(made.id))
+        assertNull(library.get(made.id))
+        assertTrue(library.list().isEmpty())
+    }
+
+    @Test
+    fun whereYouAreNamesTheTrackThenTheCircuit() {
+        val fromList = library.here(gnss.centerLat, gnss.centerLon, circuits)
+        assertEquals("Ring circuit", fromList.circuit?.name)
+        assertNull(fromList.track)
+        assertEquals("here", fromList.away)
+        val made = library.createFrom(assertNotNull(fromList.circuit))
+        assertEquals("Ring circuit", made.name)
+        assertEquals(made.id, library.here(gnss.centerLat, gnss.centerLon, circuits).track?.id)
+        val nothing = library.here(0.0, 0.0, circuits)
+        assertNull(nothing.track)
+        assertNull(nothing.circuit)
+    }
+
+    @Test
+    fun aLineFromTheLapGivesLiveLapsInTheNextSession() {
+        // Session 1 at an unknown place: no laps.
+        assertNull(record().timing)
+        val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        val found = library.editorSessions(track)
+        assertEquals(1, found.size)
+        val editor = TrackEditor(track, found)
+        assertEquals(PlaceMethod.FromLap, editor.method)
+        assertFalse(editor.changed)
+        editor.select(0)
+        assertEquals("Start / finish", editor.title)
+        val gate = gnss.startFinish
+        editor.onTap((gate.lat1 + gate.lat2) / 2, (gate.lon1 + gate.lon2) / 2)
+        assertNotNull(editor.selectedLine)
+        editor.done()
+        assertTrue(editor.changed)
+        assertTrue(editor.lines().first().placed)
+        assertTrue("1 session" in editor.retimeNote())
+        val sent = editor.track
+        editor.saved(sent, library.save(sent))
+        assertFalse(editor.changed)
+
+        // Session 2: timed from the first fix.
+        val timing = assertNotNull(record().timing)
+        assertEquals(40_000L, timing.bestMillis)
+    }
+
+    @Test
+    fun twoTapsAreTurnedTheWayTheLapGoesAndFlipTurnsThemBack() {
+        record()
+        val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        val editor = TrackEditor(track, library.editorSessions(track))
+        editor.select(0)
+        editor.pick(PlaceMethod.TwoTaps)
+        val gate = gnss.startFinish
+        // The edges tapped right to left: the line is turned so the lap crosses it forwards.
+        editor.onTap(gate.lat2, gate.lon2)
+        assertEquals("Now tap the other edge.", editor.hint)
+        editor.onTap(gate.lat1, gate.lon1)
+        val placed = assertNotNull(editor.selectedLine)
+        assertEquals(placed, assertNotNull(editor.path).oriented(placed))
+        editor.flip()
+        assertEquals(placed.flipped(), editor.selectedLine)
+        editor.cancel()
+        assertNull(editor.track.startFinish)
+        assertFalse(editor.changed)
+    }
+
+    @Test
+    fun withoutASessionLinesArePlacedWithTwoTaps() {
+        val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        val editor = TrackEditor(track, library.editorSessions(track))
+        assertEquals(PlaceMethod.TwoTaps, editor.method)
+        editor.pick(PlaceMethod.FromLap)
+        assertEquals(PlaceMethod.TwoTaps, editor.method)
+        assertTrue(editor.retimeNote().startsWith("No sessions here yet."))
+        editor.addSector()
+        assertEquals("Sector line 1", editor.title)
+        editor.onTap(gnss.centerLat, gnss.centerLon)
+        editor.onTap(gnss.centerLat + 0.0002, gnss.centerLon)
+        editor.done()
+        val circuit = listOf("Start / finish", "Sector line 1", "Pit entry", "Pit exit")
+        assertEquals(circuit, editor.lines().map { it.label })
+        editor.setPointToPoint(true)
+        assertEquals(listOf("Start", "Sector line 1", "Finish"), editor.lines().map { it.label })
+        assertNotNull(editor.kindNote)
+    }
+}

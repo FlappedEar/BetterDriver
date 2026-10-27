@@ -40,6 +40,13 @@ final class SessionsModel {
     init() {
         ReviewBridge.clearStaging()
         reload()
+        // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
+        NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.revision += 1
+                self?.reload()
+            }
+        }
     }
 
     func reload() {
