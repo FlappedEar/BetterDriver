@@ -72,6 +72,12 @@ final class RecordingController: ObservableObject {
     init() {
         // A Live Activity left by a session the app died in would count on the lock screen.
         RecordingActivity.endLeftOver()
+        // Swiped away while recording: close the session's files and its Live Activity as a stop does.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stop() }
+        }
     }
 
     /// The RaceBox used last, so the sheet can mark it (UI-285 B).

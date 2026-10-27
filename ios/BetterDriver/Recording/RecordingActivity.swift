@@ -48,7 +48,13 @@ final class RecordingActivity {
         guard let activity else { return }
         self.activity = nil
         shown = nil
-        Task { await activity.end(nil, dismissalPolicy: .immediate) }
+        // Ended before the process exits when the app is swiped away (willTerminate).
+        let done = DispatchSemaphore(value: 0)
+        Task.detached {
+            await activity.end(nil, dismissalPolicy: .immediate)
+            done.signal()
+        }
+        _ = done.wait(timeout: .now() + 1)
     }
 
     static func state(_ model: TrackScreenModel) -> RecordingAttributes.ContentState {
