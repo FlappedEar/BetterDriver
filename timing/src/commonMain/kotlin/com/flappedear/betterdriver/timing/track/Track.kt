@@ -1,12 +1,13 @@
 package com.flappedear.betterdriver.timing.track
 
+import com.flappedear.betterdriver.math.toRadians
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
-import kotlinx.serialization.SerialName
-import kotlinx.serialization.Serializable
 import kotlin.math.cos
 import kotlin.math.sin
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
 
 /**
  * A timing line between two points. Direction matters: a car crosses it forwards when [left] is on
@@ -26,7 +27,7 @@ data class TrackLine(val left: GeoPoint, val right: GeoPoint) {
         fun across(center: GeoPoint, headingDeg: Double, widthMeters: Double = DefaultLineWidthMeters): TrackLine {
             require(widthMeters > 0) { "line width must be positive" }
             val frame = LocalFrame(center)
-            val h = Math.toRadians(headingDeg)
+            val h = toRadians(headingDeg)
             // Unit vector of travel (x east, y north) and its left-hand normal.
             val forward = Xy(sin(h), cos(h))
             val leftward = Xy(-forward.y, forward.x)

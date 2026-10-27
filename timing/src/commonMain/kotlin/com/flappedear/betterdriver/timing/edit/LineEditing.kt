@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.timing.edit
 
+import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
@@ -143,7 +144,7 @@ class LapPath(val points: List<GeoPoint>) {
         var b = segment + 1
         while (b < xy.size - 1 && (xy[b] - xy[segment + 1]).length() < HeadingSpanMeters) b++
         val d = xy[b] - xy[a]
-        val deg = Math.toDegrees(atan2(d.x, d.y))
+        val deg = toDegrees(atan2(d.x, d.y))
         return (deg + FullCircle) % FullCircle
     }
 
