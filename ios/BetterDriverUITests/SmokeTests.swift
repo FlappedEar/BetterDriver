@@ -30,7 +30,12 @@ final class SmokeTests: XCTestCase {
         allowSystemAlerts()
 
         let sheet = app.descendants(matching: .any)["receiverSheet"]
-        XCTAssertTrue(sheet.waitForExistence(timeout: 20), "the START sheet")
+        if !sheet.waitForExistence(timeout: 20) {
+            // What is on screen instead, for the CI log.
+            print("SMOKE app:\n\(app.debugDescription)")
+            print("SMOKE springboard:\n\(XCUIApplication(bundleIdentifier: "com.apple.springboard").debugDescription)")
+            XCTFail("the START sheet")
+        }
         let camera = app.switches["phoneCameraToggle"].exists
             ? app.switches["phoneCameraToggle"] : app.descendants(matching: .any)["phoneCameraToggle"]
         XCTAssertTrue(camera.waitForExistence(timeout: 10), "the camera toggle")

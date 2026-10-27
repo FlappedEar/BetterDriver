@@ -108,7 +108,11 @@ jobs:
             -resultBundlePath build/smoke.xcresult \
             CODE_SIGNING_ALLOWED=NO > build/smoke.log 2>&1 && status=0 || status=$?
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/smoke.log || true
-          [ $status -eq 0 ] || echo "::error::Smoke test failed: nothing goes to TestFlight"
+          if [ $status -ne 0 ]; then
+            # The test prints what was on screen when it failed.
+            sed -n '/SMOKE app:/,/Test Case .*failed/p' build/smoke.log | head -n 400
+            echo "::error::Smoke test failed: nothing goes to TestFlight"
+          fi
           exit $status
       - name: Smoke test results
         if: failure()
