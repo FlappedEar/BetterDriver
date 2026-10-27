@@ -54,11 +54,17 @@ struct PhoneVideoMode: Hashable, Identifiable {
     }
 
     /// A format of [device] that records [mode].
+    /// An 8-bit format first: H.264 records those, while a 10-bit (HDR) one would need HEVC.
     static func format(of device: AVCaptureDevice, for mode: PhoneVideoMode) -> AVCaptureDevice.Format? {
-        device.formats.first { f in
+        let fits = device.formats.filter { f in
             let d = CMVideoFormatDescriptionGetDimensions(f.formatDescription)
             return d.width == mode.size.width && d.height == mode.size.height &&
                 f.videoSupportedFrameRateRanges.contains { $0.maxFrameRate >= Double(mode.fps) }
         }
+        return fits.first { eightBit.contains(CMFormatDescriptionGetMediaSubType($0.formatDescription)) } ?? fits.first
     }
+
+    private static let eightBit: Set<FourCharCode> = [
+        kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange, kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+    ]
 }

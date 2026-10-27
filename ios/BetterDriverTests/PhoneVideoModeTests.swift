@@ -1,3 +1,4 @@
+import AVFoundation
 import XCTest
 @testable import BetterDriver
 
@@ -13,5 +14,17 @@ final class PhoneVideoModeTests: XCTestCase {
     func testTheLadderKeepsTheFrameRateFirst() {
         XCTAssertEqual(PhoneVideoMode(size: .uhd, fps: 60).ladder.map(\.label), ["4K · 60", "1080p · 60", "720p · 60", "720p · 30"])
         XCTAssertEqual(PhoneVideoMode(size: .fhd, fps: 30).ladder.map(\.label), ["1080p · 30", "720p · 30"])
+    }
+
+    /// The camera's own H.264 settings when the phone gives none (the first-frame crash, 1.14 TestFlight).
+    func testH264SettingsFromTheFrame() {
+        let s = PhoneCamera.h264Settings(width: 1920, height: 1080, fps: 60)
+        XCTAssertEqual(s[AVVideoCodecKey] as? AVVideoCodecType, .h264)
+        XCTAssertEqual(s[AVVideoWidthKey] as? Int, 1920)
+        XCTAssertEqual(s[AVVideoHeightKey] as? Int, 1080)
+        let c = s[AVVideoCompressionPropertiesKey] as? [String: Any]
+        XCTAssertEqual(c?[AVVideoAverageBitRateKey] as? Int, 18_662_400)
+        let writer = try? AVAssetWriter(outputURL: FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4"), fileType: .mp4)
+        XCTAssertTrue(writer?.canApply(outputSettings: s, forMediaType: .video) ?? false)
     }
 }
