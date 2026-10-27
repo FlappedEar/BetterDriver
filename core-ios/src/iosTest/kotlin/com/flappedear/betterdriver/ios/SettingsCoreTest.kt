@@ -76,7 +76,10 @@ class SettingsCoreTest {
             "{\"format\":\"betterdriver-setup\",\"version\":3,\"setup\":[]}")) {
             assertNull(SettingsCore.decodeSetup(text), text)
         }
-        assertEquals(SettingsCore.coachSettings(null), SettingsCore.coachSettings("verbosity=Loud\nlearningLaps=-4\n\u0000"))
+        // An unknown value is the default, one out of range the nearest allowed.
+        val odd = SettingsCore.coachSettings("verbosity=Loud\nlearningLaps=-4\n\u0000")
+        assertEquals(SettingsCore.coachSettings(null).verbosity, odd.verbosity)
+        assertEquals(0, odd.learningLaps)
     }
 
     /** An Android version 1 file, its RaceBox at a Bluetooth MAC address, reads on the iPhone. */
