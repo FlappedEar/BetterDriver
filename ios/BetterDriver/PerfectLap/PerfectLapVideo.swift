@@ -54,7 +54,14 @@ enum PerfectLapVideo {
         do {
             for i in 0 ..< frames {
                 try Task.checkCancellation()
-                while !input.isReadyForMoreMediaData { Thread.sleep(forTimeInterval: 0.005) }
+                // A writer that fails while the input waits (a full disk) never takes more: stop with its error.
+                while !input.isReadyForMoreMediaData {
+                    try Task.checkCancellation()
+                    if writer.status == .failed || writer.status == .cancelled {
+                        throw writer.error ?? Failure.encoder("the video could not be written")
+                    }
+                    Thread.sleep(forTimeInterval: 0.005)
+                }
                 guard let pool = adaptor.pixelBufferPool else { throw Failure.encoder("no video buffers") }
                 var buffer: CVPixelBuffer?
                 CVPixelBufferPoolCreatePixelBuffer(nil, pool, &buffer)
