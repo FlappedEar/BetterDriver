@@ -102,7 +102,14 @@ final class RecordingController: ObservableObject {
             raceBox = link
             link.start()
         case .phone:
-            let link = PhoneGpsLink(sink: live) { [weak self] state in self?.phoneState = state }
+            let link = PhoneGpsLink(sink: live) { [weak self] state in
+                self?.phoneState = state
+                // Without location access the phone records nothing: end the session and say why.
+                if state == .notAllowed, let self, self.session != nil {
+                    self.stop()
+                    self.error = "Location access is off. Allow it in Settings › BetterDriver › Location."
+                }
+            }
             phone = link
             link.start()
         }

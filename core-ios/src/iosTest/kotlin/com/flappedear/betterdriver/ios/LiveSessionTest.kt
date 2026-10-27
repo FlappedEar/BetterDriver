@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -95,6 +96,17 @@ class LiveSessionTest {
         assertFalse(screen.placeSaved)
         assertNull(screen.timing)
         assertEquals(GnssState.Ok, screen.gnss)
+        session.stop()
+    }
+
+    @Test
+    fun lowStorageShowsOnTheTrackScreen() {
+        // Any disk is below this warning level, and above the default stop level.
+        val config = RecorderConfig(storageWarnBytes = Long.MAX_VALUE)
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false, config = config)
+        session.submit(SampleSet(0, gnss.fix(0)))
+        assertNotNull(session.screen().live.storageLowBytes)
+        assertTrue(session.isRecording)
         session.stop()
     }
 

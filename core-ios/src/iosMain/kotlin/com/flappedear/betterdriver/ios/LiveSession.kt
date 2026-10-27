@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.Recorder
+import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -79,17 +80,24 @@ class LiveSession private constructor(
     override fun event(kind: String, text: String) = recording.event(kind, text)
 
     /** What the track screen shows now; call it on a timer, so a lost signal shows without new data. */
-    fun screen(): LiveScreen = guarded {
-        val live = tracker.snapshot()
-        val detection = timing.detection
-        LiveScreen(
-            live = live,
-            timing = timing.state,
-            place = detection?.placeName,
-            placeSaved = detection is TrackDetection.Saved,
-            stoppedReason = recording.endReason,
-        )
+    fun screen(): LiveScreen {
+        // Read before taking the lock: the recorder calls in with its own lock held (storage low).
+        val ended = recording.endReason
+        return guarded {
+            val live = tracker.snapshot()
+            val detection = timing.detection
+            LiveScreen(
+                live = live,
+                timing = timing.state,
+                place = detection?.placeName,
+                placeSaved = detection is TrackDetection.Saved,
+                stoppedReason = ended,
+            )
+        }
     }
+
+    /** The recorder's warning that free space is low, for the track screen's alert. */
+    private fun storageLow(bytes: Long) = live { tracker.onStatus(RecorderStatus.StorageLow(bytes)) }
 
     /** Ends the recording cleanly; false if it had already ended. */
     fun stop(): Boolean = recording.stop().also { stopped ->
@@ -131,8 +139,19 @@ class LiveSession private constructor(
             circuits: CircuitList,
             info: SessionInfo,
             receiverHasG: Boolean,
+        ): LiveSession = start(sessionsDir, tracksDir, circuits, info, receiverHasG, RecorderConfig())
+
+        /** As [start] with the recorder's [config], for tests. */
+        @Suppress("LongParameterList")
+        internal fun start(
+            sessionsDir: String,
+            tracksDir: String,
+            circuits: CircuitList,
+            info: SessionInfo,
+            receiverHasG: Boolean,
+            config: RecorderConfig,
         ): LiveSession {
-            val recording = Recorder(SessionStore(sessionsDir)).start(info)
+            val recording = Recorder(SessionStore(sessionsDir), config).start(info)
             val tracker = LiveTracker(
                 recording.id,
                 info.startUtcMillis,
@@ -145,7 +164,9 @@ class LiveSession private constructor(
                 recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
             }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
             info.channels.forEach(tracker::onChannel)
-            return LiveSession(recording, tracker, timing)
+            return LiveSession(recording, tracker, timing).also { session ->
+                recording.onStorageLow = session::storageLow
+            }
         }
     }
 }
