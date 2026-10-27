@@ -8,6 +8,8 @@ struct DriveView: View {
     @EnvironmentObject private var recorder: RecordingController
     @StateObject private var place = PlaceFinder()
     @State private var picking = false
+    @State private var camera = true
+    @State private var videoMode = PhoneVideoMode.standard
 
     var body: some View {
         NavigationStack {
@@ -32,7 +34,9 @@ struct DriveView: View {
             .navigationTitle("Drive")
         }
         .sheet(isPresented: $picking) {
-            ReceiverSheet(lastUsed: recorder.lastReceiverName) { receiver in
+            ReceiverSheet(lastUsed: recorder.lastReceiverName, camera: $camera, videoMode: $videoMode) { receiver in
+                recorder.phoneCamera = camera
+                recorder.phoneVideoMode = videoMode
                 picking = false
                 recorder.start(receiver)
             }
@@ -42,7 +46,11 @@ struct DriveView: View {
         .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
             TrackScreenView(model: recorder.screen) { recorder.stop() }
         }
-        .onAppear { place.find() }
+        .onAppear {
+            camera = recorder.phoneCamera
+            videoMode = recorder.phoneVideoMode
+            place.find()
+        }
     }
 }
 
@@ -89,10 +97,13 @@ private struct Chip: View {
 /// and the phone's own GPS.
 struct ReceiverSheet: View {
     let lastUsed: String
+    @Binding var camera: Bool
+    @Binding var videoMode: PhoneVideoMode
     let onPick: (Receiver) -> Void
 
     @State private var found: [UUID: FoundRaceBoxDevice] = [:]
     @State private var scanner: RaceBoxScanner?
+    @State private var modes: [PhoneVideoMode] = [PhoneVideoMode.standard]
 
     private var devices: [FoundRaceBoxDevice] {
         found.values.sorted { a, b in
@@ -119,12 +130,34 @@ struct ReceiverSheet: View {
                 .padding(.vertical, 12)
             }
             row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
+            // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
+            Toggle("Phone camera video", isOn: $camera)
+                .tint(Palette.accent)
+                .padding(.vertical, 12)
+                .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
+                .accessibilityIdentifier("phoneCameraToggle")
+            if camera {
+                // Only modes this phone records, as Android's video dialog (FBBD-88).
+                HStack {
+                    Text("Video")
+                    Spacer()
+                    Picker("Video", selection: $videoMode) {
+                        ForEach(modes) { Text($0.label).tag($0) }
+                    }
+                    .pickerStyle(.menu)
+                    .tint(Palette.accent)
+                }
+                .padding(.vertical, 6)
+                .accessibilityIdentifier("phoneVideoMode")
+            }
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
         .padding(.top, 22)
         .foregroundStyle(Palette.onBackground)
         .onAppear {
+            let supported = PhoneVideoMode.supported()
+            modes = supported.contains(videoMode) ? supported : supported + [videoMode]
             let s = RaceBoxScanner { device in found[device.id] = device }
             scanner = s
             s.start()

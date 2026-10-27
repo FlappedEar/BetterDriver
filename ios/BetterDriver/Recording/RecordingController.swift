@@ -25,6 +25,8 @@ enum AppFolders {
 
     static var sessions: URL { folder("sessions") }
     static var tracks: URL { folder("tracks") }
+    /// The coach's references from earlier sessions, as coach/references on Android (FBBD-333).
+    static var coachReferences: URL { folder("coach/references") }
 
     private static func folder(_ name: String) -> URL {
         let url = base.appendingPathComponent(name, isDirectory: true)
@@ -52,11 +54,16 @@ final class RecordingController: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var raceBoxState: RaceBoxLinkState = .off
     @Published private(set) var phoneState: PhoneGpsState = .off
+    @Published private(set) var cameraStatus: CameraStatus?
 
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
     private var imu: PhoneImuLink?
+    private var camera: PhoneCamera?
+    private var obd: ObdLink?
+    private var heartRate: HeartRateStrapLink?
+    private var voice: CoachVoice?
     private var timer: Timer?
     private let activity = RecordingActivity()
 
@@ -66,6 +73,18 @@ final class RecordingController: ObservableObject {
     var lastReceiverName: String {
         get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
+    }
+
+    /// Phone video with each session (FBBD-21), on unless turned off on the START sheet.
+    var phoneCamera: Bool {
+        get { UserDefaults.standard.object(forKey: "phoneCamera") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "phoneCamera") }
+    }
+
+    /// The phone video mode (FBBD-88), as on Android: 1080p · 60 until another is chosen.
+    var phoneVideoMode: PhoneVideoMode {
+        get { PhoneVideoMode.named(UserDefaults.standard.string(forKey: "phoneVideoMode")) }
+        set { UserDefaults.standard.set(newValue.label, forKey: "phoneVideoMode") }
     }
 
     func start(_ receiver: Receiver) {
@@ -121,6 +140,20 @@ final class RecordingController: ObservableObject {
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
+        // OBD-II from a Bluetooth LE adapter nearby (FBBD-333); none found, none read.
+        let car = ObdLink(sink: live)
+        obd = car
+        car.start()
+        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333).
+        let strap = HeartRateStrapLink(sink: live)
+        heartRate = strap
+        strap.start()
+        startCoach(live)
+        if phoneCamera {
+            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
+            camera = cam
+            cam.start()
+        }
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
         refresh()
@@ -129,12 +162,31 @@ final class RecordingController: ObservableObject {
         }
     }
 
+    /// The live coach (FBBD-333), on as the Android coach is by default, in the coach's language, its
+    /// cues timed for the output delay iOS reports now.
+    private func startCoach(_ live: LiveSession) {
+        let polish = CoachLanguagePick.polish
+        let voice = CoachVoice(polish: polish)
+        self.voice = voice
+        let settings = LiveCoachKt.coachSettings(polish: polish, audioDelayMillis: Int32(CoachVoice.outputDelayMillis))
+        live.startCoach(
+            sessionsDir: AppFolders.sessions.path,
+            referencesDir: AppFolders.coachReferences.path,
+            settings: settings,
+            audioDelayFromPhone: true,
+            speaker: voice
+        )
+    }
+
     /// The hold on the track screen (UI-16): ends the session cleanly and closes the screen.
     func stop() {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
         imu?.stop()
+        camera?.stop()
+        obd?.stop()
+        heartRate?.stop()
         _ = live.stop()
         end()
     }
@@ -143,9 +195,16 @@ final class RecordingController: ObservableObject {
         activity.end()
         timer?.invalidate()
         timer = nil
+        voice?.shutdown()
+        voice = nil
         raceBox = nil
         phone = nil
         imu = nil
+        camera?.stop()
+        camera = nil
+        cameraStatus = nil
+        obd = nil
+        heartRate = nil
         session = nil
         screen = nil
         receiver = nil
@@ -162,12 +221,17 @@ final class RecordingController: ObservableObject {
             raceBox?.stop()
             phone?.stop()
             imu?.stop()
+            obd?.stop()
+            heartRate?.stop()
             end()
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
+        let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
-        let model = TrackScreenModel(now, receiverHasG: true)
+        let model = TrackScreenModel(
+            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus
+        )
         screen = model
         activity.update(model)
     }
@@ -179,6 +243,10 @@ struct TrackScreenModel: Equatable {
         let label: String
         let value: String
         let ok: Bool
+        /// An SF Symbol in place of the dot and the label (UI-110 B); the label is then only read out.
+        var icon: String? = nil
+        /// The value stays on the quiet strip while ok, as for the heart rate (UI-141 B).
+        var keepValue = false
         var id: String { label }
     }
 
@@ -190,6 +258,15 @@ struct TrackScreenModel: Equatable {
         let dim: Bool
     }
 
+    /// The coach's last cue with its corner, or whether it is learning (CoachStatus).
+    struct Coach: Equatable {
+        let corner: String?
+        let text: String?
+        /// A praise or a cue that worked, drawn green; a cue not done yet, grey (UI-173 A).
+        let praise: Bool
+        let dim: Bool
+    }
+
     struct Alert: Equatable {
         let title: String
         let detail: String
@@ -197,6 +274,8 @@ struct TrackScreenModel: Equatable {
     }
 
     let status: [Status]
+    /// The coach line (FBBD-98); nil when the coach is off, so the tiles take its place (UI-142 B).
+    let coach: Coach?
     let recordingTime: String
     let alert: Alert?
     let deltaSeconds: Double?
@@ -211,7 +290,9 @@ struct TrackScreenModel: Equatable {
     static let noValue = "–"
     static let slots = 6
 
-    init(_ s: LiveScreen, receiverHasG: Bool) {
+    /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
+    /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
+    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil, camera: CameraStatus? = nil) {
         let live = s.live
         let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
@@ -223,7 +304,15 @@ struct TrackScreenModel: Equatable {
         let place = s.place.flatMap { name in
             s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
         }
-        status = [place, gnss].compactMap { $0 }
+        let obd = obdConnected ? Status(label: "OBD", value: "Connected", ok: true, icon: "car.fill") : nil
+        // Heart rate (FBBD-268): shown only while it arrives, the strap's last value, never older than 5 s.
+        let heart = heartRate?.bpm.map { bpm in
+            Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
+        }
+        // Phone video, when the camera reports (UI-07): green while it records, amber when it does not.
+        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok) }
+        status = [place, gnss, video, obd, heart].compactMap { $0 }
+        coach = s.coach.map { Coach(corner: $0.corner, text: $0.text, praise: $0.praise, dim: $0.dim) }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)
