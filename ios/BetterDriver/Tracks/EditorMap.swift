@@ -58,7 +58,9 @@ struct EditorMap: UIViewRepresentable {
         init(_ model: EditorModel) { self.model = model }
 
         func show(_ source: TileSource, on map: MKMapView) {
-            if overlay?.source.id == source.id { return }
+            // By address as well as id: a changed MapTiler key keeps the id but needs the new key.
+            if let current = overlay?.source, current.id == source.id,
+               current.url(z: 0, x: 0, y: 0) == source.url(z: 0, x: 0, y: 0) { return }
             if let old = overlay { map.removeOverlay(old) }
             let next = CachedTileOverlay(source: source)
             map.addOverlay(next, level: .aboveLabels)
