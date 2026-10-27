@@ -382,18 +382,46 @@ internal class GWindow(private val axes: Int = 2) {
  * other two lie flat: a phone upright in its mount and tilted back reads the car's forward G on its
  * Z axis only in part (cos 28° on Arek's Jastrząb mount), and braking pitches gravity into it. Until
  * the car has stood for [StandingReadings] the axes are the phone's own.
+ *
+ * The phone's GPS gives a speed a second, often late, so "standing" can still be the last fix when
+ * the car pulls away. Only a run of readings that hold still ([MaxSpread]) and read gravity alone
+ * ([MaxGravityError]) levels the axes; any other run starts again.
  */
 internal class Level {
     private val sum = DoubleArray(PhoneAxes)
+    private val squares = DoubleArray(PhoneAxes)
     private var count = 0
     private var basis: Array<DoubleArray>? = null
 
     /** Adds a standing reading; true when this one levels the axes. */
     fun update(speedKmh: Double?, a: DoubleArray): Boolean {
-        if (basis != null || speedKmh == null || speedKmh >= StandingKmh) return false
-        for (i in 0 until PhoneAxes) sum[i] += a[i]
-        if (++count >= StandingReadings) basis = basisFrom(sum)
+        if (basis != null) return false
+        if (speedKmh == null || speedKmh >= StandingKmh) {
+            restart()
+        } else {
+            for (i in 0 until PhoneAxes) {
+                sum[i] += a[i]
+                squares[i] += a[i] * a[i]
+            }
+            if (++count >= StandingReadings) {
+                basis = if (still()) basisFrom(sum) else null
+                restart()
+            }
+        }
         return basis != null
+    }
+
+    /** The run held still, each axis within [MaxSpread], and its mean is gravity alone. */
+    private fun still(): Boolean {
+        val mean = DoubleArray(PhoneAxes) { sum[it] / count }
+        val steady = (0 until PhoneAxes).all { squares[it] / count - mean[it] * mean[it] <= MaxSpread * MaxSpread }
+        return steady && abs(sqrt(dot(mean, mean)) - 1.0) <= MaxGravityError
+    }
+
+    private fun restart() {
+        sum.fill(0.0)
+        squares.fill(0.0)
+        count = 0
     }
 
     /** [a] on the levelled axes (across, along, up), or as it is before the car has stood. */
@@ -431,6 +459,12 @@ internal class Level {
 
         /** Gravity reads about 1 g; a phone X along gravity leaves no flat X to take. */
         const val MinNorm = 0.1
+
+        /** Engine idle shakes a phone in its mount by about 0.01 g; pulling away moves it far more. */
+        const val MaxSpread = 0.03
+
+        /** Gravity alone reads 1 g; a gentle 0.3 g start already reads 1.04 g. */
+        const val MaxGravityError = 0.03
 
         /** A phone X this near up (about 60° from flat) is not taken as the flat axis. */
         const val MaxUpright = 0.87
