@@ -55,6 +55,7 @@ final class TracksModel: NSObject, ObservableObject, CLLocationManagerDelegate {
             do {
                 let track = try make()
                 await MainActor.run {
+                    NotificationCenter.default.post(name: .tracksChanged, object: nil)
                     self.refresh()
                     open(track)
                 }
@@ -85,6 +86,11 @@ final class TracksModel: NSObject, ObservableObject, CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         Task { @MainActor in self.locating = false }
     }
+}
+
+extension Notification.Name {
+    /// A track was saved or deleted here: an open session review is timed again with its lines.
+    static let tracksChanged = Notification.Name("BetterDriver.tracksChanged")
 }
 
 extension Track {

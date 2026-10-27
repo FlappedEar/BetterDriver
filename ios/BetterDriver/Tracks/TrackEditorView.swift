@@ -42,7 +42,10 @@ final class EditorModel: ObservableObject {
             let stored = try? TracksModel.library.save(track: sent)
             await MainActor.run {
                 self.saving = false
-                if let stored { self.act { $0.saved(sent: sent, stored: stored) } }
+                if let stored {
+                    self.act { $0.saved(sent: sent, stored: stored) }
+                    NotificationCenter.default.post(name: .tracksChanged, object: nil)
+                }
                 done(stored != nil)
             }
         }
@@ -158,7 +161,14 @@ struct TrackEditorView: View {
         let id = editor.track.id
         Task.detached {
             let gone = TracksModel.library.delete(id: id)
-            await MainActor.run { if gone { onClose() } else { failed = "Delete failed" } }
+            await MainActor.run {
+                if gone {
+                    NotificationCenter.default.post(name: .tracksChanged, object: nil)
+                    onClose()
+                } else {
+                    failed = "Delete failed"
+                }
+            }
         }
     }
 
