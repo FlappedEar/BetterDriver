@@ -17,7 +17,7 @@ dependencyResolutionManagement {
 rootProject.name = "BetterDriver"
 
 // The Kotlin Multiplatform core of the iOS app (FBBD-328): :core-ios exports the others.
-val iosCore = listOf(":shared", ":recorder", ":timing", ":analysis", ":core-ios")
+val iosCore = listOf(":shared", ":recorder", ":timing", ":coach", ":analysis", ":core-ios")
 
 // -Pbetterdriver.coreOnly builds only the Kotlin Multiplatform core, without the Android
 // modules (and so without the Android SDK): the iOS workflows on macOS use it (FBBD-329).
@@ -26,7 +26,6 @@ if (providers.gradleProperty("betterdriver.coreOnly").isPresent) {
 } else {
     include(
         ":app",
-        ":coach",
         ":video",
         ":gopro",
         ":setup",

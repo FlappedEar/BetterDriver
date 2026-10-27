@@ -33,6 +33,10 @@ final class CoreBridgeTests: XCTestCase {
         XCTAssertEqual(ChannelUnitsKt.normalizedSpeedUnit(unit: " KM/H "), "km/h")
     }
 
+    func testCoachIsExported() {
+        XCTAssertEqual(Phrases.shared.lapTime(millis: 92_400, best: false), "1 32 point 4")
+    }
+
     func testDelta() {
         XCTAssertEqual(CoreBridge.delta(seconds: -0.34), "\u{2212}0.34")
         XCTAssertEqual(CoreBridge.delta(seconds: 0.08), "+0.08")

@@ -1,7 +1,7 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.Confidence
-import java.util.Locale
 
 // How far a corner cue can be trusted (FBBD-177): no precise advice from weak evidence. A pass
 // whose positions stop for a while, or that nearly stops, is not something to coach from at all
@@ -60,7 +60,7 @@ fun passDoubts(pass: CornerPass): List<CueDoubt> = buildList {
     val gapLimit = maxOf(CueGapMicros, CueGapIntervals * pass.intervalMicros)
     if (pass.gapMicros > gapLimit) {
         val seconds = pass.gapMicros / MicrosPerSecond
-        add(doubt(CueDoubts.GNSS_GAP, String.format(Locale.ROOT, "no position for %.1f s", seconds)))
+        add(doubt(CueDoubts.GNSS_GAP, "no position for ${fixed(seconds, 1)} s"))
     }
     if (pass.minKmh < CueVeryLowKmh) add(doubt(CueDoubts.VERY_LOW_SPEED))
     if (pass.intervalMicros > CueWeakIntervalMicros) add(doubt(CueDoubts.WEAK_INTERPOLATION))

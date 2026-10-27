@@ -1,7 +1,6 @@
 package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.Confidence
-import java.util.Locale
 
 /**
  * The words of the cue review (FBBD-99) in the language the cues were said in (FBBD-245, UI-100 B):
@@ -9,7 +8,8 @@ import java.util.Locale
  */
 @Suppress("TooManyFunctions") // One function per sentence of the review.
 internal interface ReviewWords {
-    val locale: Locale
+    /** Whether numbers take a decimal comma, as in Polish. */
+    val comma: Boolean
 
     /** "12 cues", "1 cue". */
     fun cues(n: Int): String
@@ -66,7 +66,7 @@ internal interface ReviewWords {
 
 @Suppress("TooManyFunctions") // One function per sentence of the review.
 internal object EnglishReview : ReviewWords {
-    override val locale: Locale = Locale.ROOT
+    override val comma = false
 
     override fun cues(n: Int) = if (n == 1) "1 cue" else "$n cues"
 
@@ -114,16 +114,12 @@ internal object EnglishReview : ReviewWords {
     }
 
     override fun time(gained: Boolean, seconds: Double?): String {
-        val s = seconds?.let { String.format(locale, "%.2f s", it) } ?: "time"
+        val s = seconds?.let { decimals(it, 2, comma) + " s" } ?: "time"
         return if (gained) "$s gained" else "$s lost"
     }
 
-    override fun faster(seconds: Double, worked: Boolean) = String.format(
-        locale,
-        "%.2f s faster than %s",
-        seconds,
-        if (worked) "before the cue" else "your best until then",
-    )
+    override fun faster(seconds: Double, worked: Boolean) =
+        "${decimals(seconds, 2, comma)} s faster than " + if (worked) "before the cue" else "your best until then"
 
     /** "9 m " with a number, nothing without: the sentence reads the same either way. */
     private fun amount(n: Int?, unit: String) = if (n != null) "$n $unit " else ""
@@ -132,7 +128,7 @@ internal object EnglishReview : ReviewWords {
 /** The review in Polish, with a decimal comma: "Hamowanie na 108 m, 8 m później niż poprzednio · zysk 0,12 s". */
 @Suppress("TooManyFunctions") // One function per sentence of the review.
 internal object PolishReview : ReviewWords {
-    override val locale: Locale = Locale.forLanguageTag("pl")
+    override val comma = true
 
     override fun cues(n: Int) = "$n " + plural(n, "wskazówka", "wskazówki", "wskazówek")
 
@@ -193,16 +189,12 @@ internal object PolishReview : ReviewWords {
     }
 
     override fun time(gained: Boolean, seconds: Double?): String {
-        val s = seconds?.let { " " + String.format(locale, "%.2f s", it) } ?: " czasu"
+        val s = seconds?.let { " " + decimals(it, 2, comma) + " s" } ?: " czasu"
         return (if (gained) "zysk" else "strata") + s
     }
 
-    override fun faster(seconds: Double, worked: Boolean) = String.format(
-        locale,
-        "%.2f s szybciej niż %s",
-        seconds,
-        if (worked) "przed wskazówką" else "dotychczas najlepiej",
-    )
+    override fun faster(seconds: Double, worked: Boolean) =
+        "${decimals(seconds, 2, comma)} s szybciej niż " + if (worked) "przed wskazówką" else "dotychczas najlepiej"
 
     private fun amount(n: Int?, unit: String) = if (n != null) "$n $unit " else ""
 

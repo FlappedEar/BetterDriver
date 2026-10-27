@@ -1,11 +1,11 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
-import java.util.Locale
 
 /**
  * How cues and their results are written into the session as events (FBBD-98), so the cue review
@@ -48,7 +48,7 @@ object CoachEvents {
 
     fun planText(sessionId: String, cornerIds: List<String>, gainSeconds: Double) =
         "source=$sessionId corners=${cornerIds.joinToString(",")} gain_s=" +
-            String.format(Locale.ROOT, "%.2f", gainSeconds)
+            fixed(gainSeconds, 2)
 
     /**
      * The coach went quiet for the rest of a lap (FBBD-202): text "lap=<n> reason=<[COOLING_DOWN] or
@@ -109,7 +109,7 @@ object CoachEvents {
         if (cue.turns.isNotEmpty()) append(" turns=").append(cue.turns.joinToString(","))
         cue.before?.let { append(" before=").append(passText(it)) }
         cue.target?.let { append(" target=").append(passText(it)) }
-        cue.zoneMeters?.let { append(" zone_m=").append(String.format(Locale.ROOT, "%.1f", it)) }
+        cue.zoneMeters?.let { append(" zone_m=").append(fixed(it, 1)) }
         cue.turn?.let { append(" turn=").append(it) }
         cue.cornerId?.let { append(" corner_id=").append(it) }
         if (cue.kind == CueKind.Corner) append(" conf=").append(cue.confidence.name)
@@ -299,24 +299,23 @@ object CoachEvents {
      * ",peakDeg,peakAt,turnInAt,unwindAt,corrections,countersteer,pushDeg", countersteer 1 or 0.
      * Passes logged before have six or nine fields.
      */
-    private fun passText(p: CornerPass) = String.format(
-        Locale.ROOT,
-        "%d,%.1f,%.1f,%.1f,%.1f,%d",
-        p.lap, p.brakeAt, p.apexAt, p.entryKmh, p.minKmh, p.timeMicros,
-    ) + listOf(
-        p.apexOffsetMeters?.let { String.format(Locale.ROOT, "%.2f", it) },
-        p.pickupAt?.let { String.format(Locale.ROOT, "%.1f", it) },
+    private fun passText(p: CornerPass) = listOf(
+        p.lap.toString(), fixed(p.brakeAt, 1), fixed(p.apexAt, 1), fixed(p.entryKmh, 1), fixed(p.minKmh, 1),
+        p.timeMicros.toString(),
+    ).joinToString(",") + listOf(
+        p.apexOffsetMeters?.let { fixed(it, 2) },
+        p.pickupAt?.let { fixed(it, 1) },
         p.apexMicros?.toString(),
     ).joinToString("") { "," + it.orEmpty() } + p.steering?.let(::steeringText).orEmpty()
 
     private fun steeringText(s: SteeringPass): String = listOf(
-        String.format(Locale.ROOT, "%.1f", s.peakDeg),
-        String.format(Locale.ROOT, "%.1f", s.peakAt),
-        String.format(Locale.ROOT, "%.1f", s.turnInAt),
-        s.unwindAt?.let { String.format(Locale.ROOT, "%.1f", it) },
+        fixed(s.peakDeg, 1),
+        fixed(s.peakAt, 1),
+        fixed(s.turnInAt, 1),
+        s.unwindAt?.let { fixed(it, 1) },
         s.corrections.toString(),
         if (s.countersteer) "1" else "0",
-        s.pushDeg?.let { String.format(Locale.ROOT, "%.1f", it) },
+        s.pushDeg?.let { fixed(it, 1) },
     ).joinToString("") { "," + it.orEmpty() }
 
     private fun parseSteering(v: List<String>): SteeringPass = SteeringPass(

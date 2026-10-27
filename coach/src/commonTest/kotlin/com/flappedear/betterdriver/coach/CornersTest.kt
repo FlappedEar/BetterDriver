@@ -89,7 +89,7 @@ class CornersTest {
     )
 
     @Test
-    fun `a stop past the line and a lift are not corners, the braking is (FBBD-202)`() {
+    fun `a stop past the line and a lift are not corners - the braking is - FBBD-202`() {
         val trace = stopThenCorner()
         val corners = findCorners(trace)
         assertEquals(1, corners.size, "corners: $corners")
@@ -109,7 +109,7 @@ class CornersTest {
     }
 
     @Test
-    fun `a pass entered slowly is measured at the corner, and a pass with a stop is no pass (FBBD-202)`() {
+    fun `a pass entered slowly is measured at the corner - and a pass with a stop is no pass - FBBD-202`() {
         val trace = stopThenCorner()
         val map = CornerMap(trace, findCorners(trace))
         // The window starts while the car is still getting going, slower than at the apex.

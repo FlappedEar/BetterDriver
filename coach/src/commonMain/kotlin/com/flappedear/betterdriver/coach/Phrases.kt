@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import kotlin.math.roundToInt
 
@@ -83,18 +84,20 @@ data class Moved(val advice: Advice, val by: Double?)
 
 /** "−0.09 s" for time gained, "+0.05 s" for time lost, with [comma] as the decimal mark. */
 internal fun signedSeconds(gainSeconds: Double, comma: Boolean): String {
-    val s = String.format(java.util.Locale.ROOT, "%.2f", kotlin.math.abs(gainSeconds))
-    return (if (gainSeconds >= 0) "\u2212" else "+") + (if (comma) s.replace('.', ',') else s) + " s"
+    return (if (gainSeconds >= 0) "\u2212" else "+") + decimals(kotlin.math.abs(gainSeconds), 2, comma) + " s"
 }
 
 /** [n] to one decimal place, with [comma] as the decimal mark. */
-internal fun oneDecimal(n: Double, comma: Boolean): String =
-    String.format(java.util.Locale.ROOT, "%.1f", n).let { if (comma) it.replace('.', ',') else it }
+internal fun oneDecimal(n: Double, comma: Boolean): String = decimals(n, 1, comma)
+
+/** [n] to [digits] decimal places, with [comma] as the decimal mark. */
+internal fun decimals(n: Double, digits: Int, comma: Boolean): String =
+    fixed(n, digits).let { if (comma) it.replace('.', ',') else it }
 
 /** A lap time in tenths, as minutes, zero-padded seconds and the tenth: 92 400 ms is (1, "32", 4). */
 internal fun lapTimeParts(millis: Long): Triple<Long, String, Long> {
     val tenths = (millis + HalfTenth) / MillisPerTenth
-    val seconds = "%02d".format(tenths % TenthsPerMinute / TenthsPerSecond)
+    val seconds = (tenths % TenthsPerMinute / TenthsPerSecond).toString().padStart(2, '0')
     return Triple(tenths / TenthsPerMinute, seconds, tenths % TenthsPerSecond)
 }
 

@@ -28,7 +28,7 @@ class InLapTest {
     }
 
     @Test
-    fun `lifting off on a straight for 3 s is cooling down, to the end of the lap (FBBD-202)`() {
+    fun `lifting off on a straight for 3 s is cooling down - to the end of the lap - FBBD-202`() {
         val lap = InLap()
         lap.drive(130.0, 1.5, 2.5)
         assertFalse(lap.quiet, "2.5 s of lifting")
@@ -40,7 +40,7 @@ class InLapTest {
     }
 
     @Test
-    fun `a lift for traffic ends after two corners in a row at race pace (FBBD-252)`() {
+    fun `a lift for traffic ends after two corners in a row at race pace - FBBD-252`() {
         val lap = InLap()
         lap.drive(130.0, 1.5, 3.5)
         assertTrue(lap.cruising)
@@ -57,7 +57,7 @@ class InLapTest {
     }
 
     @Test
-    fun `braking, easing off before it and driving on are not cooling down (FBBD-202)`() {
+    fun `braking - easing off before it and driving on are not cooling down - FBBD-202`() {
         val lap = InLap()
         lap.drive(130.0, 6.0, 4.0)
         lap.drive(130.0, 0.0, 5.0, startMicros = 10_000_000L)
@@ -69,7 +69,7 @@ class InLapTest {
     }
 
     @Test
-    fun `slowing below race pace, out of the pit lane, is not cooling down`() {
+    fun `slowing below race pace - out of the pit lane - is not cooling down`() {
         val lap = InLap()
         // 70 km/h where the reference lap does 130: still getting up to speed.
         lap.drive(70.0, 1.0, 4.0)
@@ -78,7 +78,7 @@ class InLapTest {
     }
 
     @Test
-    fun `a lap that ends in the pit lane is an in-lap until the car is back up to speed (FBBD-202)`() {
+    fun `a lap that ends in the pit lane is an in-lap until the car is back up to speed - FBBD-202`() {
         val lap = InLap()
         assertTrue(lap.onLapDone(20.0, path))
         assertTrue(lap.quiet)

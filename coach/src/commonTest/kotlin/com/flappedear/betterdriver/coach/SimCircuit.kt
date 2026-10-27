@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
@@ -80,7 +81,7 @@ class SimCircuit(val origin: GeoPoint = GeoPoint(52.40, 16.80)) {
     fun headingDeg(s: Double): Double {
         val a = xy(s)
         val b = xy(s + 0.5)
-        return (Math.toDegrees(atan2(b.x - a.x, b.y - a.y)) + 360) % 360
+        return (toDegrees(atan2(b.x - a.x, b.y - a.y)) + 360) % 360
     }
 
     fun track() = Track(

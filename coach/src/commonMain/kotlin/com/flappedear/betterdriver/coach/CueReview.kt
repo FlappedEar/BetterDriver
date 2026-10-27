@@ -1,8 +1,6 @@
 package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.RecorderEvent
-import com.flappedear.betterdriver.recorder.store.SessionStore
-import java.io.IOException
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -63,20 +61,6 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
                 }
             }
             return CueReview(cues, unsaid)
-        }
-
-        /**
-         * The review of session [id] in [store]. Only its events are read, so an hour at 25 Hz is not
-         * held in memory for them; a missing or damaged session has no cues, never a crash. Run it off
-         * the main thread.
-         */
-        @Suppress("TooGenericExceptionCaught") // As the session list's cue counts (CoachedSessions).
-        fun read(store: SessionStore, id: String): CueReview = try {
-            of(store.read(store.dir(id), samples = false).events)
-        } catch (_: IOException) {
-            CueReview(emptyList(), 0)
-        } catch (_: RuntimeException) {
-            CueReview(emptyList(), 0)
         }
 
         /** The cue number of a "late seq=…" or "no voice seq=…" problem; null for any other problem. */

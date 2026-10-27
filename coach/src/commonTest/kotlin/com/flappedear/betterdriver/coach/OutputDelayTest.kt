@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.coach
 
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 
@@ -16,7 +16,7 @@ class OutputDelayTest {
     }
 
     @Test
-    fun `the median of the readings, rounded and kept within the coach's range`() {
+    fun `the median of the readings - rounded and kept within the coach's range`() {
         assertEquals(190, OutputDelay.of(listOf(181.0, 400.0, 188.0, 192.0, 10.0)))
         assertEquals(0, OutputDelay.of(listOf(-4.0, -2.0, 3.0)))
         assertEquals(CoachSettings.MaxAudioDelayMillis, OutputDelay.of(listOf(5_000.0, 5_000.0, 5_000.0)))
@@ -24,7 +24,7 @@ class OutputDelayTest {
     }
 
     @Test
-    fun `a session uses the measured delay, and the set one only when nothing was measured`() {
+    fun `a session uses the measured delay - and the set one only when nothing was measured`() {
         assertEquals(AudioDelayUsed(190, AudioDelayUsed.Measured), OutputDelay.effective(300, 190))
         assertEquals(AudioDelayUsed(0, AudioDelayUsed.Measured), OutputDelay.effective(300, 0))
         assertEquals(AudioDelayUsed(300, AudioDelayUsed.Set), OutputDelay.effective(300, null))

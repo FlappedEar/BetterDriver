@@ -47,7 +47,7 @@ class SteerCuesTest {
     private fun steer(a: Advice) = assertIs<Advice.Steer>(a).what
 
     @Test
-    fun `the words - why first, then what to do, in English and Polish`() {
+    fun `the words - why first - then what to do - in English and Polish`() {
         fun en(w: SteerAdvice, also: Advice? = null) = Phrases.corner(left, Advice.Steer(w), also)
         fun pl(w: SteerAdvice, also: Advice? = null) = PolishPhrases.corner(left, Advice.Steer(w), also)
         assertEquals("Turn 6, front slid, slower in", en(SteerAdvice.Less))
@@ -112,7 +112,7 @@ class SteerCuesTest {
     }
 
     @Test
-    fun `with more than two, the half that lost more keeps its own`() {
+    fun `with more than two - the half that lost more keeps its own`() {
         // Front slid at the entry, wide with the line, late off lock and on throttle.
         val many = pass(
             steering = wheel(peak = 120.0, push = 70.0, unwindAt = 187.0), offset = 0.0, pickup = 175.0, min = 64.0,
@@ -131,7 +131,7 @@ class SteerCuesTest {
     }
 
     @Test
-    fun `a cue about the hands is logged, read back, and judged by the next pass's wheel`() {
+    fun `a cue about the hands is logged - read back - and judged by the next pass's wheel`() {
         val advice = Advice.Steer(SteerAdvice.OpenEarlier(10))
         val before = pass(steering = wheel(unwindAt = 187.0))
         val cue = Cue(
