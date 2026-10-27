@@ -21,7 +21,8 @@ final class ReviewScreensTests: XCTestCase {
             let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
             XCTAssertTrue(rows.element(boundBy: index).waitForExistence(timeout: 120), "no session row \(index)")
             rows.element(boundBy: index).tap()
-            XCTAssertTrue(app.staticTexts["Best lap"].waitForExistence(timeout: 120), "\(name): no summary")
+            // Figure writes its label in capitals.
+            XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "\(name): no summary")
             XCTAssertTrue(app.staticTexts[laps].exists, "\(name): not \(laps) laps")
             for tab in ["Summary", "Compare", "Map", "Laps", "Corners", "Car"] {
                 app.buttons["tab\(tab)"].tap()
