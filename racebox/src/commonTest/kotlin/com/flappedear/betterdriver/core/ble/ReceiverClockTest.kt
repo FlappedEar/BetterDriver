@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.core.ble
 
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class ReceiverClockTest {
     /** Arrival delays in microseconds, repeating: Bluetooth delivers in bursts, but in order. */
@@ -66,8 +66,8 @@ class ReceiverClockTest {
             lastBacklog = clock.backlogMicros(arrival, tow)
         }
         // Rising 100 ppm over the 16 min after the backlog built up is at most 96 ms, not 275 ms.
-        assertTrue("stamps up to $worstLate µs late", worstLate < 100_000)
-        assertTrue("backlog $lastBacklog µs", lastBacklog > 175_000)
+        assertTrue(worstLate < 100_000, "stamps up to $worstLate µs late")
+        assertTrue(lastBacklog > 175_000, "backlog $lastBacklog µs")
     }
 
     @Test
@@ -82,7 +82,7 @@ class ReceiverClockTest {
                 val t = clock.stamp(real + delays[i % delays.size] - 30_000, tow)
                 if (i > 250) worst = maxOf(worst, kotlin.math.abs(t - real))
             }
-            assertTrue("$ppm ppm: stamps off by up to $worst µs", worst < 1_000)
+            assertTrue(worst < 1_000, "$ppm ppm: stamps off by up to $worst µs")
         }
     }
 
@@ -125,7 +125,7 @@ class ReceiverClockTest {
      * holds a backlog off again afterwards.
      */
     @Test
-    fun `follows the receiver's time settling after a first fix, then caps a backlog again`() {
+    fun `follows the receiver's time settling after a first fix then caps a backlog again`() {
         val clock = ReceiverClock()
         clock.settle()
         var real = 0L
@@ -137,10 +137,10 @@ class ReceiverClockTest {
             val t = clock.stamp(real + delays[i % delays.size] - 30_000, tow)
             if (i >= SettleMessages) worstAfterSettle = maxOf(worstAfterSettle, kotlin.math.abs(t - real))
         }
-        assertTrue("stamps off by up to $worstAfterSettle µs after settling", worstAfterSettle < 1_000)
+        assertTrue(worstAfterSettle < 1_000, "stamps off by up to $worstAfterSettle µs after settling")
         // Settled: a backlog of 275 ms building up now is held off by the cap.
         val tow = 5_000_000L + 3_000 * 40
         val t = clock.stamp(tow * 1_000 + 30_000 + 170_000 + 275_000, tow)
-        assertTrue("stamp ${t - real} µs after the last real time", t - (tow * 1_000 + 200_000) < 1_000)
+        assertTrue(t - (tow * 1_000 + 200_000) < 1_000, "stamp ${t - real} µs after the last real time")
     }
 }

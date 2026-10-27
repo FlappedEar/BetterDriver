@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Keys Xcode cannot generate from build settings; it merges them with the generated ones. -->
+<!-- Keys Xcode cannot generate from INFOPLIST_KEY_ settings; the generated ones are merged in (project.yml). -->
 <plist version="1.0">
 <dict>
+	<!-- A recording keeps reading the RaceBox with the phone locked (FBBD-332). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<!-- Sessions open from Files, AirDrop and other apps' Share sheet (FBBD-331, UI-292 A). -->
 	<key>CFBundleDocumentTypes</key>
 	<array>

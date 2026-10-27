@@ -3,9 +3,9 @@ package com.flappedear.betterdriver.core.ble
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
-import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
+import kotlin.concurrent.Volatile
 
 /**
  * RaceBox channels beyond the shared [GnssChannels]. Ids 100 to 199 are reserved for the RaceBox,
@@ -49,10 +49,12 @@ private const val KmhPerMps = 3.6
  * stamped on the recorder's clock from the receiver's time of week ([ReceiverClock]). Position,
  * speed, heading and altitude are only included while there is a fix, so the VBO export (one row
  * per set with a position) never gets rows at 0°, 0°. Synchronized: notifications may arrive on
- * more than one binder thread.
+ * more than one binder thread (on the JVM; iOS feeds it from one queue).
  *
  * With a [calibration] (FBBD-89), acceleration and rotation are written levelled and with the gyro
  * offset removed.
+ *
+ * [log] gets a line of message counts every minute or so ([StreamStats]) for the debug log.
  *
  * [onSlowLink] is told, with the reason, when the link carries fewer messages than the RaceBox sends
  * (FBBD-218): the messages arrive ever later (a backlog over [SlowLinkBacklogMicros]) or one is
@@ -64,6 +66,7 @@ class RaceBoxDecoder(
     private val sink: SampleSink,
     private val isMicro: Boolean = true,
     private val calibration: ImuCalibration? = null,
+    private val log: (String) -> Unit = {},
     private val onSlowLink: (String) -> Unit = {},
 ) {
     private val reader = UbxFrameReader()
@@ -78,14 +81,15 @@ class RaceBoxDecoder(
     var messages = 0L
         private set
 
-    val checksumErrors: Long get() = synchronized(this) { reader.checksumErrors }
+    val checksumErrors: Long
+        @JvmSynchronized get() = reader.checksumErrors
 
     fun defineChannels() {
         GnssChannels.ALL.forEach(sink::defineChannel)
         RaceBoxChannels.ALL.filter { isMicro || it != RaceBoxChannels.INPUT_VOLTS }.forEach(sink::defineChannel)
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun feed(bytes: ByteArray) {
         stats.notification()
         val decoded = mutableListOf<RaceBoxData>()
@@ -128,7 +132,7 @@ class RaceBoxDecoder(
         // After the whole notification, so its messages and the notification count stay in one line.
         stats.line()?.let {
             val reads = "${reader.checksumErrors} checksum errors, ${reader.skippedBytes} bytes skipped"
-            DebugLog.i("RaceBox", "$it, $reads")
+            log("$it, $reads")
         }
     }
 
@@ -150,7 +154,7 @@ class RaceBoxDecoder(
     }
 
     /** Drops a partial packet left from before a reconnect. */
-    @Synchronized
+    @JvmSynchronized
     fun reset() {
         reader.reset()
         clock.reset()
@@ -204,7 +208,7 @@ private const val GapSteps = 1.5
  * the RaceBox counts its time of week from a guess, and it jumps to GPS time once it has one. On the
  * 2026-10-14 drive that one jump counted as 6897400 missing messages.
  */
-internal const val ClockJumpMs = 5_000L
+const val ClockJumpMs = 5_000L
 
 /**
  * Message counts for the debug log (FBBD-147): after every [StatsEveryMessages] messages (a minute
@@ -223,7 +227,7 @@ internal class StreamStats(private val skipsWithoutFix: Boolean = true) {
     private var missed = 0L
     private var missedOnSecond = 0L
     private var notifications = 0L
-    private val others = sortedMapOf<String, Int>()
+    private val others = mutableMapOf<String, Int>()
     private var maxBacklog = 0L
 
     /**
@@ -247,7 +251,7 @@ internal class StreamStats(private val skipsWithoutFix: Boolean = true) {
 
     /** A whole frame that is not a RaceBox Data Message, or one too short to read. */
     fun other(frame: UbxFrame) {
-        val key = "%02x %02x %d B".format(frame.messageClass, frame.messageId, frame.payload.size)
+        val key = "${hex2(frame.messageClass)} ${hex2(frame.messageId)} ${frame.payload.size} B"
         others[key] = (others[key] ?: 0) + 1
     }
 
@@ -268,7 +272,8 @@ internal class StreamStats(private val skipsWithoutFix: Boolean = true) {
         val otherText = if (otherCount == 0) {
             "0 other frames"
         } else {
-            "$otherCount other frames (" + others.entries.joinToString { "${it.key} ×${it.value}" } + ")"
+            val counts = others.entries.sortedBy { it.key }.joinToString { "${it.key} ×${it.value}" }
+            "$otherCount other frames ($counts)"
         }
         val line = "$count messages in $notifications notifications, $missed missing " +
             "($missedOnSecond on a whole second), up to ${maxBacklog / MicrosPerMilli} ms behind, $otherText"
@@ -315,7 +320,11 @@ internal class StreamStats(private val skipsWithoutFix: Boolean = true) {
         return ms < step / 2 || ms > MillisPerSecond - step / 2
     }
 
+    /** As "%02x": at least two lowercase hex digits. */
+    private fun hex2(value: Int) = value.toString(HexRadix).padStart(2, '0')
+
     private companion object {
         const val MillisPerSecond = 1_000L
+        const val HexRadix = 16
     }
 }

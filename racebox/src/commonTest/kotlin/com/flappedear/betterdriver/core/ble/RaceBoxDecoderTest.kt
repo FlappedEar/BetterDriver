@@ -6,10 +6,10 @@ import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlin.test.Test
 
 class RaceBoxDecoderTest {
     private class Sink : SampleSink {
@@ -55,7 +55,7 @@ class RaceBoxDecoderTest {
     }
 
     @Test
-    fun `one sample set per message, on the recorder clock`() {
+    fun `one sample set per message on the recorder clock`() {
         val sink = Sink()
         val decoder = RaceBoxDecoder(sink)
         sink.now = 1_000
@@ -86,7 +86,7 @@ class RaceBoxDecoderTest {
     }
 
     @Test
-    fun `without a fix there is no position, so no VBO row, but IMU data is kept`() {
+    fun `without a fix there is no position so no VBO row but IMU data is kept`() {
         val sink = Sink()
         RaceBoxDecoder(sink).feed(RaceBoxTestData.packet { it[21] = 0x00 })
         val s = sink.sets.single()
@@ -96,7 +96,7 @@ class RaceBoxDecoderTest {
     }
 
     @Test
-    fun `fix changes are logged as events, starting without a fix is not`() {
+    fun `fix changes are logged as events starting without a fix is not`() {
         val sink = Sink()
         val decoder = RaceBoxDecoder(sink)
         decoder.feed(RaceBoxTestData.packet { it[21] = 0x00 })
@@ -157,7 +157,7 @@ class RaceBoxDecoderTest {
         assertTrue(reasons.isEmpty())
         // The delay grows by 2 ms a message: 100 ms behind after 50 messages.
         for (i in 1..60) message(30_000L + i * 2_000L)
-        assertTrue(reasons.toString(), reasons.any { it.endsWith("ms behind") })
+        assertTrue(reasons.any { it.endsWith("ms behind") }, reasons.toString())
         reasons.clear()
         // Caught up again, then one message never comes.
         repeat(20) { message(30_000) }
@@ -181,7 +181,7 @@ class RaceBoxDecoderTest {
             }
             tow += 40
         }
-        assertTrue(reasons.toString(), reasons.isEmpty())
+        assertTrue(reasons.isEmpty(), reasons.toString())
     }
 
     /** The Micro skips the whole-second message without a fix too; a Mini sends it, so its loss counts. */
