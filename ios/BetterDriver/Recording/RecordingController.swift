@@ -56,6 +56,7 @@ final class RecordingController: ObservableObject {
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var heartRate: HeartRateStrapLink?
     private var timer: Timer?
 
     var isRecording: Bool { session != nil }
@@ -113,6 +114,10 @@ final class RecordingController: ObservableObject {
             phone = link
             link.start()
         }
+        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333).
+        let strap = HeartRateStrapLink(sink: live)
+        heartRate = strap
+        strap.start()
         UIApplication.shared.isIdleTimerDisabled = true
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -125,6 +130,7 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        heartRate?.stop()
         _ = live.stop()
         end()
     }
@@ -134,6 +140,7 @@ final class RecordingController: ObservableObject {
         timer = nil
         raceBox = nil
         phone = nil
+        heartRate = nil
         session = nil
         screen = nil
         receiver = nil
@@ -149,11 +156,12 @@ final class RecordingController: ObservableObject {
             // Ended by the recorder itself (storage full, write error): the files stay for recovery.
             raceBox?.stop()
             phone?.stop()
+            heartRate?.stop()
             end()
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
-        screen = TrackScreenModel(now, receiverHasG: receiver != .phone)
+        screen = TrackScreenModel(now, receiverHasG: receiver != .phone, heartRate: heartRate?.status)
     }
 }
 
@@ -195,7 +203,8 @@ struct TrackScreenModel: Equatable {
     static let noValue = "–"
     static let slots = 6
 
-    init(_ s: LiveScreen, receiverHasG: Bool) {
+    /// [heartRate] is the strap's, when one records (FBBD-333).
+    init(_ s: LiveScreen, receiverHasG: Bool, heartRate: HeartRateStatus? = nil) {
         let live = s.live
         let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
@@ -207,7 +216,11 @@ struct TrackScreenModel: Equatable {
         let place = s.place.flatMap { name in
             s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
         }
-        status = [place, gnss].compactMap { $0 }
+        // Heart rate (FBBD-268): shown only while it arrives, the strap's last value, never older than 5 s.
+        let heart = heartRate?.bpm.map { bpm in
+            Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
+        }
+        status = [place, gnss, heart].compactMap { $0 }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)

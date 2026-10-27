@@ -1,10 +1,12 @@
 package com.flappedear.betterdriver.core.ble.hr
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
+import kotlin.concurrent.Volatile
 
 /** Heart rate monitor channels. Ids 400 to 499 are reserved for heart rate monitors. */
 object HeartRateChannels {
@@ -68,8 +70,8 @@ private const val HexRadix = 16
  * RR-Intervals, when sent, each get their own set, stamped at the beat that ended them: the
  * newest at arrival, each older one earlier by the intervals after it. A stamp is never before
  * the previous interval's, nor before the session start, nor after arrival, so the channel stays
- * in order even if the monitor's and the phone's clocks drift apart. Synchronized, so a
- * reconnect can [reset] it from another thread.
+ * in order even if the monitor's and the phone's clocks drift apart. Synchronized on the JVM, so a
+ * reconnect can [reset] it from another thread; on iOS one queue makes every call.
  */
 class HeartRateDecoder(private val sink: SampleSink) {
     private var contact: SensorContact? = null
@@ -116,7 +118,7 @@ class HeartRateDecoder(private val sink: SampleSink) {
         HeartRateChannels.ALL.forEach(sink::defineChannel)
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun feed(bytes: ByteArray) {
         val arrival = sink.nowMicros()
         val m = HeartRateMeasurement.parse(bytes)
@@ -153,7 +155,7 @@ class HeartRateDecoder(private val sink: SampleSink) {
     }
 
     /** Forgets the contact state from before a reconnect. RR stamps stay in order across it. */
-    @Synchronized
+    @JvmSynchronized
     fun reset() {
         contact = null
         noContact = false
