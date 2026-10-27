@@ -27,18 +27,15 @@ import java.util.zip.CRC32
  * for a session.
  */
 internal object BundleFile {
-    val Magic = "BDBUNDLE".toByteArray(Charsets.US_ASCII)
-    const val Version = 1
-    const val FileTag = 1
-    const val EndTag = 0
-    const val MaxPathChars = 512
+    val Magic = BundleFormat.SessionMagic
+    const val Version = BundleFormat.Version
+    const val FileTag = BundleFormat.FileTag
+    const val EndTag = BundleFormat.EndTag
+    const val MaxPathChars = BundleFormat.MaxPathChars
     const val CopyBuffer = 1 shl 16
 
-    /** Relative paths of letters, digits, '.', '-' and '_', split by '/', with no empty, '.' or '..' part. */
-    fun validPath(path: String) = path.isNotEmpty() && path.length <= MaxPathChars &&
-        path.split('/').all { part ->
-            part.isNotEmpty() && part != "." && part != ".." && part.all { it.isLetterOrDigit() || it in ".-_" }
-        }
+    /** See [BundleFormat.validPath]. */
+    fun validPath(path: String) = BundleFormat.validPath(path)
 
     fun checkPath(path: String) {
         if (!validPath(path)) throw BundleFormatException("bad path in bundle: $path")

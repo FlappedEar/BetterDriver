@@ -10,6 +10,8 @@ enum Palette {
     static let onBackground = Color(hex: 0xEEF2F4)
     static let onSurfaceVariant = Color(hex: 0x8C9AA5)
     static let outline = Color(hex: 0x26313A)
+    /// The best lap, purple as on Android (TrackColors.best).
+    static let best = Color(hex: 0xC58BFF)
 }
 
 extension Color {

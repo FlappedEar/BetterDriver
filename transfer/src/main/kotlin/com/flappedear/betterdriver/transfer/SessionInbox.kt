@@ -88,12 +88,9 @@ class SessionInbox(private val store: SessionStore, private val staging: File) {
     }
 
     companion object {
-        private const val MaxIdChars = 64
         private const val OldPrefix = "old-"
 
         /** Session ids are made by [SessionStore.createSession]; anything else could escape the folder. */
-        fun validId(id: String) = id.isNotEmpty() && id.length <= MaxIdChars &&
-            id.all { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' || it == '-' || it == '_' } &&
-            !id.startsWith("-")
+        fun validId(id: String) = SessionEntryLimits.validSessionId(id)
     }
 }

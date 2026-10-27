@@ -65,7 +65,7 @@ class UnpackedBackup internal constructor(
  */
 @Suppress("TooManyFunctions") // Writing, reading and checking one format, in small steps.
 object Backup {
-    internal val Magic = "BDBACKUP".toByteArray(Charsets.US_ASCII)
+    internal val Magic = BundleFormat.BackupMagic
     internal const val Format = "betterdriver-backup"
     internal const val Version = 1
     internal const val ManifestEntry = "manifest.properties"
