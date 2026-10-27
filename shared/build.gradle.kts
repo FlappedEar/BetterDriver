@@ -1,8 +1,6 @@
-import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
-
-// Kotlin Multiplatform core shared by the Android app (JVM target) and the iOS app
-// (BetterDriverCore.xcframework, FBBD-329). Code here must not use JVM-only APIs; the pure
-// Kotlin modules move their platform-free code here or gain iOS targets themselves (FBBD-330).
+// Kotlin Multiplatform base shared by the Android app (JVM target) and the iOS app (FBBD-329):
+// formatting, maths and the version, used by every core module. Code here must not use JVM-only
+// APIs. The iOS app gets it, with the other core modules, through :core-ios.
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
 }
@@ -31,18 +29,8 @@ kotlin {
     jvm()
 
     // Device and Apple-silicon simulator. GitHub's macOS runners and current Macs are arm64.
-    val xcframework = XCFramework("BetterDriverCore")
-    listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
-        target.binaries.framework {
-            baseName = "BetterDriverCore"
-            isStatic = true
-            xcframework.add(this)
-        }
-    }
-    // The simulator the common tests run on (name or UDID); ios.yml passes one that exists.
-    providers.gradleProperty("iosSimulator").orNull?.let { device ->
-        iosSimulatorArm64().testRuns.named("test") { deviceId = device }
-    }
+    iosArm64()
+    iosSimulatorArm64()
 
     sourceSets {
         commonMain {

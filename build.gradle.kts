@@ -10,6 +10,19 @@ plugins {
     alias(libs.plugins.detekt)
 }
 
+// The simulator the Kotlin Multiplatform modules' common tests run on (name or UDID); ios.yml
+// passes one that exists on its runner.
+providers.gradleProperty("iosSimulator").orNull?.let { device ->
+    subprojects {
+        plugins.withId("org.jetbrains.kotlin.multiplatform") {
+            extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinMultiplatformExtension> {
+                targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTargetWithSimulatorTests>()
+                    .configureEach { testRuns.named("test") { deviceId = device } }
+            }
+        }
+    }
+}
+
 // Static analysis for every module: ./gradlew detekt
 allprojects {
     apply(plugin = "io.gitlab.arturbosch.detekt")

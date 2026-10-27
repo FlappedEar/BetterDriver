@@ -22,7 +22,7 @@ class WindowMeansTest {
     }
 
     @Test
-    fun `every window's mean matches the walk, with gaps, missing values and a shift`() {
+    fun `every window's mean matches the walk with gaps and missing values and a shift`() {
         val random = Random(7)
         // About 110 samples a second as the phone records, with a 1 s gap and some values missing.
         val times = (0 until 2_000).map { it / 109.3 }.filterNot { it in 5.0..6.0 }.toDoubleArray()

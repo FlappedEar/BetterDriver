@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder.live
 
+import com.flappedear.betterdriver.math.toRadians
 import kotlin.math.abs
 import kotlin.math.sqrt
 
@@ -123,7 +124,7 @@ internal class LiveGg {
             0.0
         } else {
             // Heading grows clockwise, so a left turn makes it smaller.
-            -speed * Math.toRadians(wrap(h1 - h0)) / dt / StandardGravity
+            -speed * toRadians(wrap(h1 - h0)) / dt / StandardGravity
         }
         return GPoint(forward, left)
     }
@@ -273,3 +274,10 @@ private const val StandardGravity = 9.80665
 private const val MicrosPerSecond = 1_000_000.0
 private const val HalfTurn = 180.0
 private const val FullTurn = 360.0
+
+/**
+ * How far back the live G averages the accelerometer (FBBD-302). RaceChrono's G channels in Arek's
+ * Jastrząb exports match GPS acceleration smoothed over 0.5 to 0.7 s; a single 25 Hz reading jumps
+ * with every bump, and combining unsmoothed X and Y adds that noise to the G shown.
+ */
+const val GSmoothingMicros = 500_000L

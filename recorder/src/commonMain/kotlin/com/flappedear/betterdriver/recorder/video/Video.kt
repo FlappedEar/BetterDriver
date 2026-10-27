@@ -65,9 +65,12 @@ interface VideoSink {
 object VideoFiles {
     const val DIR = "video"
 
+    /** Digits of the file number in a live file name. */
+    private const val INDEX_DIGITS = 4
+
     /** Name of the [index]th (1-based) file a camera records live, for example phone_0001.mp4. */
     fun liveName(camera: String, index: Int, extension: String = "mp4") =
-        String.format(java.util.Locale.ROOT, "%s_%04d.%s", camera, index, extension)
+        "${camera}_${index.toString().padStart(INDEX_DIGITS, '0')}.$extension"
 }
 
 /**
