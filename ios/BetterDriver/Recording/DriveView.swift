@@ -40,7 +40,8 @@ struct DriveView: View {
                 picking = false
                 recorder.start(receiver)
             }
-            .presentationDetents([.medium, .large])
+            // Full height in the UI test, so every row and the camera toggle are on screen.
+            .presentationDetents(UITestMode.on ? [.large] : [.medium, .large])
             .presentationBackground(Palette.surface)
         }
         .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
@@ -118,6 +119,11 @@ struct ReceiverSheet: View {
             Text("GPS receiver for this session")
                 .font(.title3.weight(.semibold))
                 .padding(.bottom, 6)
+            // The UI test's receiver, on top where the sheet's first height shows it.
+            if UITestMode.on {
+                row("Simulated GPS", "UI test", ok: true) { onPick(.simulated) }
+                    .accessibilityIdentifier("receiver.simulated")
+            }
             ForEach(devices) { device in
                 row(device.name, device.name == lastUsed ? "Nearby · last used" : "Nearby", ok: true) {
                     onPick(.raceBox(device))
@@ -131,10 +137,6 @@ struct ReceiverSheet: View {
                 .padding(.vertical, 12)
             }
             row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
-            if UITestMode.on {
-                row("Simulated GPS", "UI test", ok: true) { onPick(.simulated) }
-                    .accessibilityIdentifier("receiver.simulated")
-            }
             // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
             Toggle("Phone camera video", isOn: $camera)
                 .tint(Palette.accent)
