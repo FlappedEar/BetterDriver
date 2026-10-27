@@ -1,7 +1,11 @@
 package com.flappedear.betterdriver.recording
 
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.PhoneFix
+import com.flappedear.betterdriver.recorder.PhoneGnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
+import com.flappedear.betterdriver.recorder.phoneFixMicros
+import com.flappedear.betterdriver.recorder.phoneFixSet
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
 import org.junit.Assert.assertEquals
