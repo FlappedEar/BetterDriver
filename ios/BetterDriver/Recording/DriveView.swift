@@ -42,8 +42,8 @@ struct DriveView: View {
             }
             // Full height in the UI test, so every row and the camera toggle are on screen.
             .presentationDetents(UITestMode.on ? [.large] : [.medium, .large])
-                // On the iPad a tap beside the sheet closes it; a UI test's taps must not.
-                .interactiveDismissDisabled(UITestMode.on)
+            // On the iPad a tap beside the sheet closes it; a UI test's taps must not.
+            .interactiveDismissDisabled(UITestMode.on)
             .presentationBackground(Palette.surface)
         }
         .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
