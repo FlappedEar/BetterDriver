@@ -5,17 +5,22 @@ import UIKit
 /// Draws the perfect lap in 3D at one moment (FBBD-308, FBBD-316), as Android's PerfectLapPainter:
 /// the shared scene (SceneFrame) gives every shape in screen pixels, this colours them and writes the
 /// corner, the speed, the lap clock and the best lap's gap over them. The player and the saved video
-/// both draw with it, so the video is what the player showed. Without a map photo on the iPhone the
-/// road is drawn (UI-201 A).
+/// both draw with it, so the video is what the player showed. [tiles] gives MapTiler's satellite
+/// photo under the road (UI-201 B); without it the road is drawn (UI-201 A). [waitForTiles] reads or
+/// fetches each tile before drawing it, for the video; the player draws the tiles at hand.
 final class PerfectLapPainter {
     let scene: PerfectLapScene
     private let ground: SceneGround
+    private let tiles: PerfectLapTiles?
+    private let waitForTiles: Bool
 
     /// How far the camera is from the car, times the normal distance: pinched in the player.
     var distance = 1.0
 
-    init(scene: PerfectLapScene) {
+    init(scene: PerfectLapScene, tiles: PerfectLapTiles? = nil, waitForTiles: Bool = false) {
         self.scene = scene
+        self.tiles = tiles
+        self.waitForTiles = waitForTiles
         ground = SceneGround(scene: scene)
     }
 
@@ -29,11 +34,98 @@ final class PerfectLapPainter {
         let frame = SceneFrameKt.sceneFrame(
             scene: scene, ground: ground, seconds: seconds, width: width, height: height, distance: distance
         )
-        for shape in frame.shapes { fill(cg, shape) }
+        // The drawn road first, the photo over it where a tile is at hand, then the line and the cars.
+        let shapes = frame.shapes
+        for shape in shapes where Self.underMap(shape.paint) { fill(cg, shape) }
+        let photos = photo(cg, frame.tiles)
+        for shape in shapes where !Self.underMap(shape.paint) { fill(cg, shape) }
         UIGraphicsPushContext(cg)
         defer { UIGraphicsPopContext() }
         for label in frame.labels { word(label) }
         hud(frame, seconds: seconds, size: size, clock: controlsHeight <= 0)
+        if photos > 0, let tiles { credit(tiles.attribution, size: size, bottom: size.height - controlsHeight) }
+    }
+
+    /// The road and its edges go under the photo (the scene's ScenePaint.underMap).
+    private static func underMap(_ paint: ScenePaint) -> Bool { paint.name == "Road" || paint.name == "RoadEdge" }
+
+    /// The map tiles on the ground, each piece pinned at its four corners; how many were drawn.
+    private func photo(_ cg: CGContext, _ pieces: [SceneTile]) -> Int {
+        guard let tiles else { return 0 }
+        var drawn = 0
+        for t in pieces {
+            let image = waitForTiles ? tiles.load(z: t.z, x: t.x, y: t.y) : tiles.tile(z: t.z, x: t.x, y: t.y)
+            if let image, piece(cg, t, image) { drawn += 1 }
+        }
+        return drawn
+    }
+
+    /// Draws the part of [image] that [t] says on its four screen corners; false when they make no shape.
+    /// Core Graphics has no perspective transform, so the piece is drawn as two triangles, each with the
+    /// affine map of its three corners (Android maps the four corners at once). The pieces are small,
+    /// so the two agree to well under a pixel along the shared edge.
+    private func piece(_ cg: CGContext, _ t: SceneTile, _ image: CGImage) -> Bool {
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        // Corners in the order top left, top right, bottom right, bottom left, as the scene gives them.
+        let src = [
+            CGPoint(x: CGFloat(t.u0) * w, y: CGFloat(t.v0) * h), CGPoint(x: CGFloat(t.u1) * w, y: CGFloat(t.v0) * h),
+            CGPoint(x: CGFloat(t.u1) * w, y: CGFloat(t.v1) * h), CGPoint(x: CGFloat(t.u0) * w, y: CGFloat(t.v1) * h),
+        ]
+        let dst = (0 ..< 4).map { k in CGPoint(x: CGFloat(t.xs.get(index: Int32(k))), y: CGFloat(t.ys.get(index: Int32(k)))) }
+        var drew = false
+        for tri in [[0, 1, 2], [0, 2, 3]] {
+            guard let map = Self.affine(from: tri.map { src[$0] }, to: tri.map { dst[$0] }) else { continue }
+            cg.saveGState()
+            cg.addPath(Self.widened(tri.map { dst[$0] }))
+            cg.clip()
+            cg.concatenate(map)
+            // The image's rows go down in tile pixels, as the context's do; Core Graphics draws an image bottom up.
+            cg.translateBy(x: 0, y: h)
+            cg.scaleBy(x: 1, y: -1)
+            cg.interpolationQuality = .medium
+            cg.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            cg.restoreGState()
+            drew = true
+        }
+        return drew
+    }
+
+    /// The affine map taking the three points [s] to [d]; nil when [s] or [d] lie on a line.
+    private static func affine(from s: [CGPoint], to d: [CGPoint]) -> CGAffineTransform? {
+        let ux = s[1].x - s[0].x, uy = s[1].y - s[0].y, vx = s[2].x - s[0].x, vy = s[2].y - s[0].y
+        let px = d[1].x - d[0].x, py = d[1].y - d[0].y, qx = d[2].x - d[0].x, qy = d[2].y - d[0].y
+        let det = ux * vy - vx * uy
+        guard abs(det) > 1e-9, abs(px * qy - qx * py) > 1e-6 else { return nil }
+        let a = (px * vy - qx * uy) / det, c = (qx * ux - px * vx) / det
+        let b = (py * vy - qy * uy) / det, dd = (qy * ux - py * vx) / det
+        return CGAffineTransform(
+            a: a, b: b, c: c, d: dd,
+            tx: d[0].x - (a * s[0].x + c * s[0].y), ty: d[0].y - (b * s[0].x + dd * s[0].y)
+        )
+    }
+
+    /// The triangle [p] a pixel wider than it is, so neighbours overlap: cut exactly, the edges of two
+    /// pieces each half cover their pixels and the ground shows through as a seam (as on Android).
+    private static func widened(_ p: [CGPoint]) -> CGPath {
+        let cx = p.map(\.x).reduce(0, +) / CGFloat(p.count), cy = p.map(\.y).reduce(0, +) / CGFloat(p.count)
+        let path = CGMutablePath()
+        for (k, q) in p.enumerated() {
+            let dx = q.x - cx, dy = q.y - cy
+            let l = max(hypot(dx, dy), 1e-6)
+            let at = CGPoint(x: q.x + dx / l * seamPx, y: q.y + dy / l * seamPx)
+            if k == 0 { path.move(to: at) } else { path.addLine(to: at) }
+        }
+        path.closeSubpath()
+        return path
+    }
+
+    private static let seamPx: CGFloat = 1
+
+    /// The map's credit, bottom right above the player's bar, as MapTiler's terms ask whenever its map is shown.
+    private func credit(_ text: String, size: CGSize, bottom: CGFloat) {
+        let u = size.height / 100
+        Self.text(text, UIFont.systemFont(ofSize: 2.6 * u, weight: .bold), ScenePalette.text,
+                  baseline: CGPoint(x: size.width - 2 * u, y: bottom - 2 * u), align: .right)
     }
 
     private func fill(_ cg: CGContext, _ s: SceneShape) {
