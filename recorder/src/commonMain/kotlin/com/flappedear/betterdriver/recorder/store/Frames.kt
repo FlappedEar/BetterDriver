@@ -1,14 +1,13 @@
 package com.flappedear.betterdriver.recorder.store
 
+import com.flappedear.betterdriver.io.ByteFormatException
+import com.flappedear.betterdriver.io.ByteSink
+import com.flappedear.betterdriver.io.ByteSource
+import com.flappedear.betterdriver.io.Crc32
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.PackedValues
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
-import java.io.ByteArrayOutputStream
-import java.io.DataInputStream
-import java.io.DataOutputStream
-import java.nio.ByteBuffer
-import java.util.zip.CRC32
 
 /**
  * On-disk record framing for chunk files.
@@ -23,7 +22,8 @@ import java.util.zip.CRC32
  * payload
  * crc32   u32  over type, length and payload
  * ```
- * All integers are big-endian.
+ * All integers are big-endian. Text is java.io's modified UTF-8, so Android and iOS write and
+ * read the same bytes (FBBD-332).
  */
 
 object Frames {
@@ -43,14 +43,13 @@ object Frames {
     private const val T_END: Int = 4
 
     fun encode(record: Record): ByteArray {
-        val payload = ByteArrayOutputStream()
-        val out = DataOutputStream(payload)
+        val out = ByteSink()
         val type = when (record) {
             is Record.Channel -> {
                 out.writeShort(record.def.id)
-                out.writeUTF(record.def.name)
-                out.writeUTF(record.def.unit)
-                out.writeUTF(record.def.source)
+                out.writeUtf(record.def.name)
+                out.writeUtf(record.def.unit)
+                out.writeUtf(record.def.source)
                 out.writeByte(record.def.decimals)
                 T_CHANNEL
             }
@@ -66,25 +65,24 @@ object Frames {
             }
             is Record.Event -> {
                 out.writeLong(record.event.tMicros)
-                out.writeUTF(bounded(record.event.kind))
-                out.writeUTF(bounded(record.event.text))
+                out.writeUtf(bounded(record.event.kind))
+                out.writeUtf(bounded(record.event.text))
                 T_EVENT
             }
             is Record.End -> {
                 out.writeLong(record.tMicros)
-                out.writeUTF(bounded(record.reason))
+                out.writeUtf(bounded(record.reason))
                 T_END
             }
         }
-        out.flush()
-        val body = payload.toByteArray()
-        val frame = ByteBuffer.allocate(HEADER_BYTES + body.size + TRAILER_BYTES)
-        frame.putInt(MAGIC)
-        frame.put(type.toByte())
-        frame.putInt(body.size)
-        frame.put(body)
-        frame.putInt(crc(type, body))
-        return frame.array()
+        val body = out.toByteArray()
+        val frame = ByteSink(HEADER_BYTES + body.size + TRAILER_BYTES)
+        frame.writeInt(MAGIC)
+        frame.writeByte(type)
+        frame.writeInt(body.size)
+        frame.write(body)
+        frame.writeInt(crc(type, body, 0, body.size))
+        return frame.toByteArray()
     }
 
     /**
@@ -97,12 +95,13 @@ object Frames {
         return s.substring(0, end)
     }
 
-    private fun crc(type: Int, body: ByteArray): Int {
-        val c = CRC32()
+    private fun crc(type: Int, data: ByteArray, from: Int, to: Int): Int {
+        val c = Crc32()
         c.update(type)
-        c.update(ByteBuffer.allocate(INT_BYTES).putInt(body.size).array())
-        c.update(body)
-        return c.value.toInt()
+        val len = ByteSink(INT_BYTES).apply { writeInt(to - from) }.toByteArray()
+        c.update(len)
+        c.update(data, from, to)
+        return c.value
     }
 
     /** Result of scanning one chunk. [validBytes] counts bytes in frames that passed their checksum. */
@@ -118,14 +117,13 @@ object Frames {
      * next magic number; an incomplete frame at the end (a crash mid-write) is dropped.
      */
     fun scan(data: ByteArray, onRecord: (Record) -> Unit): ScanResult {
-        val buf = ByteBuffer.wrap(data)
         var pos = 0
         var records = 0
         var valid = 0L
         var skipped = 0L
         var truncated = 0L
         while (pos < data.size) {
-            when (val f = frameAt(buf, pos)) {
+            when (val f = frameAt(data, pos)) {
                 is FrameAt.Valid -> {
                     onRecord(f.record)
                     records++
@@ -153,44 +151,47 @@ object Frames {
         data object Tail : FrameAt
     }
 
-    private fun frameAt(buf: ByteBuffer, pos: Int): FrameAt {
-        val remaining = buf.limit() - pos
-        val len = if (remaining >= HEADER_BYTES) buf.getInt(pos + MAGIC_BYTES + 1) else -1
+    private fun frameAt(data: ByteArray, pos: Int): FrameAt {
+        val remaining = data.size - pos
+        val len = if (remaining >= HEADER_BYTES) intAt(data, pos + MAGIC_BYTES + 1) else -1
         val frameLen = HEADER_BYTES + len + TRAILER_BYTES
         return when {
             remaining < HEADER_BYTES + TRAILER_BYTES -> FrameAt.Tail
-            buf.getInt(pos) != MAGIC || len < 0 || len > MAX_PAYLOAD -> FrameAt.Invalid(1)
+            intAt(data, pos) != MAGIC || len < 0 || len > MAX_PAYLOAD -> FrameAt.Invalid(1)
             // Either the tail written during a crash, or a damaged length field: look for a later frame.
-            frameLen > remaining -> findMagic(buf, pos + 1, buf.limit()).let { next ->
+            frameLen > remaining -> findMagic(data, pos + 1).let { next ->
                 if (next < 0) FrameAt.Tail else FrameAt.Invalid(next - pos)
             }
             else -> {
-                val type = buf.get(pos + MAGIC_BYTES).toInt() and BYTE_MASK
-                val body = buf.array().copyOfRange(pos + HEADER_BYTES, pos + HEADER_BYTES + len)
-                val record = if (buf.getInt(pos + HEADER_BYTES + len) == crc(type, body)) decode(type, body) else null
+                val type = data[pos + MAGIC_BYTES].toInt() and BYTE_MASK
+                val from = pos + HEADER_BYTES
+                val ok = intAt(data, from + len) == crc(type, data, from, from + len)
+                val record = if (ok) decode(type, data, from, from + len) else null
                 if (record == null) FrameAt.Invalid(1) else FrameAt.Valid(record, frameLen)
             }
         }
     }
 
-    private fun findMagic(buf: ByteBuffer, from: Int, end: Int): Int {
+    private fun intAt(data: ByteArray, pos: Int): Int = ByteSource(data, pos).readInt()
+
+    private fun findMagic(data: ByteArray, from: Int): Int {
         var i = from
-        while (i + MAGIC_BYTES <= end) {
-            if (buf.getInt(i) == MAGIC) return i
+        while (i + MAGIC_BYTES <= data.size) {
+            if (intAt(data, i) == MAGIC) return i
             i++
         }
         return -1
     }
 
-    private fun decode(type: Int, body: ByteArray): Record? = try {
-        val inp = DataInputStream(body.inputStream())
+    private fun decode(type: Int, data: ByteArray, from: Int, to: Int): Record? = try {
+        val inp = ByteSource(data, from, to)
         val r = when (type) {
             T_CHANNEL -> Record.Channel(
                 ChannelDef(
                     id = inp.readUnsignedShort(),
-                    name = inp.readUTF(),
-                    unit = inp.readUTF(),
-                    source = inp.readUTF(),
+                    name = inp.readUtf(),
+                    unit = inp.readUtf(),
+                    source = inp.readUtf(),
                     decimals = inp.readUnsignedByte(),
                 ),
             )
@@ -206,12 +207,12 @@ object Frames {
                 // Packed: a long session read back is millions of values (FBBD-232).
                 Record.Samples(SampleSet(t, PackedValues(ids, values)))
             }
-            T_EVENT -> Record.Event(RecorderEvent(inp.readLong(), inp.readUTF(), inp.readUTF()))
-            T_END -> Record.End(inp.readLong(), inp.readUTF())
+            T_EVENT -> Record.Event(RecorderEvent(inp.readLong(), inp.readUtf(), inp.readUtf()))
+            T_END -> Record.End(inp.readLong(), inp.readUtf())
             else -> null
         }
-        if (inp.available() != 0) null else r
-    } catch (_: java.io.IOException) {
+        if (inp.remaining != 0) null else r
+    } catch (_: ByteFormatException) {
         null // truncated or malformed payload
     } catch (_: IllegalArgumentException) {
         null // e.g. a channel definition with out-of-range values
