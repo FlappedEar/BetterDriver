@@ -5,6 +5,8 @@ import BetterDriverCore
 extension UTType {
     /// A session as one file (FBBD-23), the same on Android and iOS.
     static let bdsession = UTType(exportedAs: "com.flappedear.betterdriver.session")
+    /// A Racelogic VBO log (FBBD-164), from Racelogic loggers, Circuit Tools, RaceChrono or Android.
+    static let vbo = UTType(importedAs: "com.racelogic.vbo")
 }
 
 /// One session in the list.
@@ -262,6 +264,17 @@ extension ReviewBridge {
     }
 
     static func discard(_ received: ReceivedImport) { library.discard(received: received.bundle) }
+
+    /// A file from another app (VBO, RaceChrono CSV) rather than a BetterDriver session.
+    static func isForeign(_ url: URL) -> Bool { url.pathExtension.lowercased() != "bdsession" }
+
+    /// Imports the VBO or RaceChrono CSV file at [url] as a new session, as Android does (FBBD-164);
+    /// [progress] gets bytes read and the file's size.
+    static func importForeign(_ url: URL, progress: @escaping (Int64, Int64) -> Void) throws {
+        _ = try library.importForeign(path: url.path) { read, total in
+            progress(read.int64Value, total.int64Value)
+        }
+    }
 
     static func clearStaging() { _ = library.clearStaging() }
 }

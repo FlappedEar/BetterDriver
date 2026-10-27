@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Sessions by day (UI-139 C), with + to import files (UI-292 A) and the import's progress.
 struct SessionsListView: View {
@@ -13,7 +14,7 @@ struct SessionsListView: View {
                     .listRowBackground(Palette.surface)
             }
             if model.sessions.isEmpty && model.importing == nil {
-                Text("No sessions yet. Open a .bdsession from Files, AirDrop or another app, or tap +.")
+                Text("No sessions yet. Open a .bdsession or .vbo from Files, AirDrop or another app, or tap +.")
                     .foregroundStyle(Palette.onSurfaceVariant)
                     .listRowBackground(Palette.background)
             }
@@ -41,7 +42,7 @@ struct SessionsListView: View {
                     .accessibilityIdentifier("importSessions")
             }
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession], allowsMultipleSelection: true) { result in
+        .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { model.importFiles(urls) }
         }
     }

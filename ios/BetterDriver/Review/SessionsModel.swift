@@ -77,14 +77,29 @@ final class SessionsModel {
             let scoped = url.startAccessingSecurityScopedResource()
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
-                let received = try ReviewBridge.receive(url) { read, total in
-                    Task { @MainActor in self.importing?.read = read; self.importing?.total = total }
+                if ReviewBridge.isForeign(url) {
+                    // A VBO or RaceChrono CSV becomes a new session with a new id: nothing to ask.
+                    try ReviewBridge.importForeign(url) { read, total in
+                        Task { @MainActor in self.importing?.read = read; self.importing?.total = total }
+                    }
+                    await self.imported()
+                } else {
+                    let received = try ReviewBridge.receive(url) { read, total in
+                        Task { @MainActor in self.importing?.read = read; self.importing?.total = total }
+                    }
+                    await self.received(received, name: name)
                 }
-                await self.received(received, name: name)
             } catch {
                 await self.failed(name, error)
             }
         }
+    }
+
+    private func imported() {
+        importing = nil
+        revision += 1
+        reload()
+        next()
     }
 
     private func received(_ received: ReceivedImport, name: String) {
