@@ -16,10 +16,13 @@ dependencyResolutionManagement {
 
 rootProject.name = "BetterDriver"
 
+// The Kotlin Multiplatform core of the iOS app (FBBD-328): :core-ios exports the others.
+val iosCore = listOf(":shared", ":recorder", ":core-ios")
+
 // -Pbetterdriver.coreOnly builds only the Kotlin Multiplatform core, without the Android
-// modules (and so without the Android SDK): the iOS workflow on macOS uses it (FBBD-329).
+// modules (and so without the Android SDK): the iOS workflows on macOS use it (FBBD-329).
 if (providers.gradleProperty("betterdriver.coreOnly").isPresent) {
-    include(":shared")
+    include(iosCore)
 } else {
     include(
         ":app",
@@ -38,9 +41,8 @@ if (providers.gradleProperty("betterdriver.coreOnly").isPresent) {
         ":feature-track",
         ":feature-review",
         ":feature-analysis",
-        // Kotlin Multiplatform core shared with the iOS app (FBBD-328).
-        ":shared",
         // FR-S CAN/OBD reader, a separate test APK (FBBD-319).
         ":tools:canreader",
     )
+    include(iosCore)
 }

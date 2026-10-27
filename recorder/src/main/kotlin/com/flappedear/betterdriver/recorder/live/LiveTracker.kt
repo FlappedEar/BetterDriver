@@ -313,13 +313,6 @@ private class ShownValue(val name: String) {
 }
 
 /**
- * How far back the live G averages the accelerometer (FBBD-302). RaceChrono's G channels in Arek's
- * Jastrząb exports match GPS acceleration smoothed over 0.5 to 0.7 s; a single 25 Hz reading jumps
- * with every bump, and combining unsmoothed X and Y adds that noise to the G shown.
- */
-const val GSmoothingMicros = 500_000L
-
-/**
  * The receiver's X and Y readings of the last [GSmoothingMicros] before the newest. Each axis is
  * averaged before the two are combined, so road vibration cancels out instead of adding to the G.
  */

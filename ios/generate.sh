@@ -6,7 +6,14 @@ cd "$(dirname "$0")"
 root=..
 BETTERDRIVER_VERSION=$(sed -n 's/^betterdriver.version=//p' "$root/gradle.properties")
 export BETTERDRIVER_VERSION
+# debug (default) or release: which build of the Kotlin core the app links.
+export BETTERDRIVER_CORE_BUILD=${BETTERDRIVER_CORE_BUILD:-debug}
 if [[ "${SKIP_CORE:-}" != 1 ]]; then
-    "$root/gradlew" -p "$root" -Pbetterdriver.coreOnly :shared:assembleBetterDriverCoreDebugXCFramework
+    # macOS ships bash 3.2: no ${var^}.
+    case $BETTERDRIVER_CORE_BUILD in
+        release) task=assembleBetterDriverCoreReleaseXCFramework ;;
+        *) task=assembleBetterDriverCoreDebugXCFramework ;;
+    esac
+    "$root/gradlew" -p "$root" -Pbetterdriver.coreOnly ":core-ios:$task"
 fi
 xcodegen generate

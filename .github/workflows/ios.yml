@@ -1,13 +1,16 @@
 name: iOS
 
-# The iPhone/iPad app (FBBD-328) on a macOS runner: the shared Kotlin core's common
-# tests on the iOS simulator, its XCFramework, and the SwiftUI app's unit tests on an
-# iPad and an iPhone simulator. Runs when the app, the shared core or the build changes.
+# The iPhone/iPad app (FBBD-328) on a macOS runner: the Kotlin core modules' common
+# tests on the iOS simulator (ci.yml runs their JVM tests), the XCFramework, and the
+# SwiftUI app's unit tests on an iPad and an iPhone simulator. Runs when the app, a core
+# module with iOS targets or the build changes.
 on:
   pull_request:
     paths:
       - "ios/**"
       - "shared/**"
+      - "recorder/**"
+      - "core-ios/**"
       - "gradle/**"
       - "*.gradle.kts"
       - "gradle.properties"
@@ -17,6 +20,8 @@ on:
     paths:
       - "ios/**"
       - "shared/**"
+      - "recorder/**"
+      - "core-ios/**"
       - "gradle/**"
       - "*.gradle.kts"
       - "gradle.properties"
@@ -72,7 +77,7 @@ jobs:
       - name: Shared core on the iOS simulator
         run: >
           ./gradlew -Pbetterdriver.coreOnly -PiosSimulator=${{ steps.sim.outputs.iphone }}
-          :shared:jvmTest :shared:iosSimulatorArm64Test :shared:assembleBetterDriverCoreDebugXCFramework
+          iosSimulatorArm64Test :core-ios:assembleBetterDriverCoreDebugXCFramework
           --stacktrace
       - name: Generate the Xcode project
         run: SKIP_CORE=1 ios/generate.sh
@@ -99,5 +104,5 @@ jobs:
           path: |
             build/ios-tests.xcresult
             build/xcodebuild.log
-            shared/build/reports/tests
+            */build/reports/tests
           if-no-files-found: ignore

@@ -19,7 +19,7 @@ targets:
     sources:
       - BetterDriver
     dependencies:
-      - framework: ../shared/build/XCFrameworks/debug/BetterDriverCore.xcframework
+      - framework: ../shared/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false
     settings:
       base:
@@ -35,8 +35,11 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad: UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
-        # No app icon yet (comes with TestFlight, FBBD-334); XcodeGen's default "AppIcon" must exist.
-        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        # The Android app's icon (UI-18 A), rendered from app/src/main/res/drawable/ic_launcher_foreground.xml.
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Standard HTTPS/TLS only, so TestFlight builds skip the export-compliance question.
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        CODE_SIGN_STYLE: Automatic
         # Load every Objective-C class of the static Kotlin framework, so the hosted unit tests
         # find the core's classes in the app even when the app itself does not use them yet.
         OTHER_LDFLAGS: $(inherited) -ObjC
@@ -48,7 +51,7 @@ targets:
     dependencies:
       - target: BetterDriver
       # Headers only: the core's code is in the host app (one Kotlin runtime per process).
-      - framework: ../shared/build/XCFrameworks/debug/BetterDriverCore.xcframework
+      - framework: ../shared/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false
         link: false
     settings:

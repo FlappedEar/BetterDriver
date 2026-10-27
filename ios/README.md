@@ -20,3 +20,11 @@ open BetterDriver.xcodeproj
 
 `.github/workflows/ios.yml` runs on a macOS runner: the core's common tests on the iOS
 simulator, the XCFramework, and the app's unit tests on an iPad and an iPhone simulator.
+
+## TestFlight
+
+`.github/workflows/ios-release.yml` archives the app with the release build of the core
+after each Release and from the Actions tab. With the App Store Connect API key in the
+secrets `ASC_ISSUER_ID`, `ASC_KEY_ID` and `ASC_KEY_P8` it signs automatically (team from
+the registered bundle id `com.flappedear.betterdriver`) and uploads to TestFlight;
+without them it only checks that the unsigned release archive builds.

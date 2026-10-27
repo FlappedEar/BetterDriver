@@ -19,6 +19,10 @@ final class CoreBridgeTests: XCTestCase {
         XCTAssertEqual(CoreBridge.lapTime(millis: -5), "0:00.00")
     }
 
+    func testRecorderIsExported() {
+        XCTAssertEqual(VideoFiles.shared.liveName(camera: "phone", index: 1, extension: "mp4"), "phone_0001.mp4")
+    }
+
     func testDelta() {
         XCTAssertEqual(CoreBridge.delta(seconds: -0.34), "\u{2212}0.34")
         XCTAssertEqual(CoreBridge.delta(seconds: 0.08), "+0.08")
