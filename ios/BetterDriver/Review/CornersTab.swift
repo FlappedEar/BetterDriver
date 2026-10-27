@@ -103,7 +103,7 @@ private struct CornerDetailCard: View {
             Dim("Brakes: metres before the corner. Throttle: metres after its start. Coasting: off both pedals.")
             if corner.rows.contains(where: { $0.marked }) { Dim(CoreText.legend) }
             if let spread = corner.lineSpreadMeters {
-                let line = CornerDetailsUiKt.formatMeasure(value: KotlinDouble(value: spread), measure: .meters, speedUnit: "")
+                let line = CornerDetailsUiKt.formatMeasure(value: spread, measure: .meters, speedUnit: "")
                 Dim(corner.lineWithinGps ? "Line spread \(line), within GPS accuracy" : "Line spread \(line)")
             }
         }
