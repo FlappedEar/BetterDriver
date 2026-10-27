@@ -25,6 +25,8 @@ enum AppFolders {
 
     static var sessions: URL { folder("sessions") }
     static var tracks: URL { folder("tracks") }
+    /// The coach's references from earlier sessions, as coach/references on Android (FBBD-333).
+    static var coachReferences: URL { folder("coach/references") }
 
     private static func folder(_ name: String) -> URL {
         let url = base.appendingPathComponent(name, isDirectory: true)
@@ -58,6 +60,7 @@ final class RecordingController: ObservableObject {
     private var phone: PhoneGpsLink?
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
+    private var voice: CoachVoice?
     private var timer: Timer?
 
     var isRecording: Bool { session != nil }
@@ -123,11 +126,28 @@ final class RecordingController: ObservableObject {
         let strap = HeartRateStrapLink(sink: live)
         heartRate = strap
         strap.start()
+        startCoach(live)
         UIApplication.shared.isIdleTimerDisabled = true
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.refresh() }
         }
+    }
+
+    /// The live coach (FBBD-333), on as the Android coach is by default, in the coach's language, its
+    /// cues timed for the output delay iOS reports now.
+    private func startCoach(_ live: LiveSession) {
+        let polish = CoachLanguagePick.polish
+        let voice = CoachVoice(polish: polish)
+        self.voice = voice
+        let settings = LiveCoachKt.coachSettings(polish: polish, audioDelayMillis: Int32(CoachVoice.outputDelayMillis))
+        live.startCoach(
+            sessionsDir: AppFolders.sessions.path,
+            referencesDir: AppFolders.coachReferences.path,
+            settings: settings,
+            audioDelayFromPhone: true,
+            speaker: voice
+        )
     }
 
     /// The hold on the track screen (UI-16): ends the session cleanly and closes the screen.
@@ -144,6 +164,8 @@ final class RecordingController: ObservableObject {
     private func end() {
         timer?.invalidate()
         timer = nil
+        voice?.shutdown()
+        voice = nil
         raceBox = nil
         phone = nil
         obd = nil
@@ -195,6 +217,15 @@ struct TrackScreenModel: Equatable {
         let dim: Bool
     }
 
+    /// The coach's last cue with its corner, or whether it is learning (CoachStatus).
+    struct Coach: Equatable {
+        let corner: String?
+        let text: String?
+        /// A praise or a cue that worked, drawn green; a cue not done yet, grey (UI-173 A).
+        let praise: Bool
+        let dim: Bool
+    }
+
     struct Alert: Equatable {
         let title: String
         let detail: String
@@ -202,6 +233,8 @@ struct TrackScreenModel: Equatable {
     }
 
     let status: [Status]
+    /// The coach line (FBBD-98); nil when the coach is off, so the tiles take its place (UI-142 B).
+    let coach: Coach?
     let recordingTime: String
     let alert: Alert?
     let deltaSeconds: Double?
@@ -236,6 +269,7 @@ struct TrackScreenModel: Equatable {
             Status(label: "Heart rate", value: "\(bpm.intValue)", ok: true, icon: "heart.fill", keepValue: true)
         }
         status = [place, gnss, obd, heart].compactMap { $0 }
+        coach = s.coach.map { Coach(corner: $0.corner, text: $0.text, praise: $0.praise, dim: $0.dim) }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)

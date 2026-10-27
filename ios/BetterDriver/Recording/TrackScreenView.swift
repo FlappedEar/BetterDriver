@@ -3,8 +3,8 @@ import UIKit
 
 /// The in-car track screen on the iPhone (FBBD-332): the Android layout (UI-10 A with the tile row of
 /// UI-120 A) over the full landscape width, the notch over the left edge (UI-283 B). Status strip,
-/// delta left and lap times right, then one row of six tiles, which take the coach line's place while
-/// iOS has no coach (UI-142 B). A 3 s hold anywhere stops the session (UI-16).
+/// delta left and lap times right, the coach line, then one row of six tiles, which take the coach
+/// line's place when the coach is off (UI-142 B). A 3 s hold anywhere stops the session (UI-16).
 struct TrackScreenView: View {
     let model: TrackScreenModel?
     let onStop: () -> Void
@@ -13,8 +13,9 @@ struct TrackScreenView: View {
 
     private static let gap: CGFloat = 6
     private static let topHeight: CGFloat = 30
-    /// The tile row with the coach line's 44 and its gap (UI-142 B).
-    private static let panelHeight: CGFloat = 80 + 44 + 6
+    /// UI-120 A: one row of tiles; the coach line above it (UI-09 A).
+    private static let panelHeight: CGFloat = 80
+    private static let coachHeight: CGFloat = 44
     static let holdSeconds = 3.0
 
     var body: some View {
@@ -30,7 +31,14 @@ struct TrackScreenView: View {
                             LapTimesView(model: model)
                         }
                     }
-                    TileRow(tiles: model.tiles).frame(height: Self.panelHeight)
+                    if let coach = model.coach {
+                        CoachLineView(coach: coach).frame(height: Self.coachHeight)
+                        TileRow(tiles: model.tiles, valueSize: 34).frame(height: Self.panelHeight)
+                    } else {
+                        // Without the coach line the tiles grow into its place (UI-142 B).
+                        TileRow(tiles: model.tiles, valueSize: 50)
+                            .frame(height: Self.panelHeight + Self.coachHeight + Self.gap)
+                    }
                 }
                 .padding(Self.gap)
             } else {
@@ -203,15 +211,47 @@ private struct LapTimesView: View {
     }
 }
 
-/// One row of tiles (UI-120 A); an empty slot is a dashed outline (UI-125 B).
+/// The coach's last cue (CoachLine, UI-09 A): a speaker, the corner and the text; an empty line keeps
+/// its slot, so the layout never moves. A praise or a cue that worked is green, one not done yet grey.
+private struct CoachLineView: View {
+    let coach: TrackScreenModel.Coach
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let text = coach.text {
+                Image(systemName: "speaker.wave.2.fill")
+                    .font(.system(size: 16))
+                    .foregroundStyle(TrackColors.textDim)
+                    .frame(width: 20, height: 20)
+                if let corner = coach.corner {
+                    Text(corner).font(TrackFonts.number(20)).foregroundStyle(TrackColors.textDim)
+                }
+                Text(text)
+                    .font(TrackFonts.text(20, .medium))
+                    .foregroundStyle(coach.praise ? TrackColors.gain : coach.dim ? TrackColors.textDim : TrackColors.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(TrackColors.surface, in: RoundedRectangle(cornerRadius: 6))
+        .accessibilityIdentifier("coachLine")
+    }
+}
+
+/// One row of tiles (UI-120 A); an empty slot is a dashed outline (UI-125 B). Values are fitted to
+/// the row, at most [valueSize]: 34 under the coach line, 50 without it (UI-142 B).
 private struct TileRow: View {
     let tiles: [TrackScreenModel.Tile?]
+    let valueSize: CGFloat
 
     var body: some View {
         HStack(spacing: 6) {
             ForEach(Array(tiles.enumerated()), id: \.offset) { _, tile in
                 if let tile {
-                    TileView(tile: tile)
+                    TileView(tile: tile, valueSize: valueSize)
                 } else {
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(TrackColors.line, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
@@ -221,9 +261,10 @@ private struct TileRow: View {
     }
 }
 
-/// One value with its label and unit (ValueTile), the value as large as the row allows up to 50.
+/// One value with its label and unit (ValueTile), the value as large as the row allows up to [valueSize].
 private struct TileView: View {
     let tile: TrackScreenModel.Tile
+    let valueSize: CGFloat
 
     var body: some View {
         GeometryReader { geo in
@@ -236,7 +277,7 @@ private struct TileView: View {
                     }
                 }
                 Text(tile.value)
-                    .font(TrackFonts.number(min(50, max(14, (geo.size.height - 12 - 14 - 1) / 1.2)), .semibold))
+                    .font(TrackFonts.number(min(valueSize, max(14, (geo.size.height - 12 - 14 - 1) / 1.2)), .semibold))
                     .foregroundStyle(tile.dim ? TrackColors.textDim : TrackColors.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.5)

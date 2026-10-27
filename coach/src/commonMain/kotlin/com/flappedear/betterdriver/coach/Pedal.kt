@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.recorder.store.SessionData
 
 // The driver's pedal for the coach (FBBD-307): where the throttle goes back on in a corner cannot be
 // read from the speed (the car still slows on a part throttle), so the coach takes it from OBD, as
@@ -88,4 +89,12 @@ class CoachFixReader(val pedal: Int?, val steering: Int? = null, val rpm: Int? =
 
         fun at(tMicros: Long): Double? = value?.takeIf { tMicros - at in 0..maxAgeMicros }
     }
+}
+
+/** The session's fixes, in time order, with the pedal where it recorded one (FBBD-307). */
+fun SessionData.coachFixes(): Sequence<CoachFix> {
+    val reader = CoachFixReader(
+        pedalChannelId(channels.values), steeringChannelId(channels.values), rpmChannelId(channels.values),
+    )
+    return sampleSets.asSequence().mapNotNull(reader::read)
 }
