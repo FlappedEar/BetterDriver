@@ -61,33 +61,85 @@ final class PerfectLapPainter {
     }
 
     /// Draws the part of [image] that [t] says on its four screen corners; false when they make no shape.
-    /// Core Graphics has no perspective transform, so the piece is drawn as two triangles, each with the
-    /// affine map of its three corners (Android maps the four corners at once). The pieces are small,
-    /// so the two agree to well under a pixel along the shared edge.
+    /// Core Graphics has no perspective transform (Android maps the four corners at once), so the piece
+    /// is cut into cells through the exact perspective map of its corners, finer where the ground runs
+    /// away from the camera, until each cell is flat to within a pixel; each cell is drawn as two
+    /// triangles with the affine map of their corners.
     private func piece(_ cg: CGContext, _ t: SceneTile, _ image: CGImage) -> Bool {
-        let w = CGFloat(image.width), h = CGFloat(image.height)
-        // Corners in the order top left, top right, bottom right, bottom left, as the scene gives them.
-        let src = [
-            CGPoint(x: CGFloat(t.u0) * w, y: CGFloat(t.v0) * h), CGPoint(x: CGFloat(t.u1) * w, y: CGFloat(t.v0) * h),
-            CGPoint(x: CGFloat(t.u1) * w, y: CGFloat(t.v1) * h), CGPoint(x: CGFloat(t.u0) * w, y: CGFloat(t.v1) * h),
-        ]
         let dst = (0 ..< 4).map { k in CGPoint(x: CGFloat(t.xs.get(index: Int32(k))), y: CGFloat(t.ys.get(index: Int32(k)))) }
-        var drew = false
-        for tri in [[0, 1, 2], [0, 2, 3]] {
-            guard let map = Self.affine(from: tri.map { src[$0] }, to: tri.map { dst[$0] }) else { continue }
-            cg.saveGState()
-            cg.addPath(Self.widened(tri.map { dst[$0] }))
-            cg.clip()
-            cg.concatenate(map)
-            // The image's rows go down in tile pixels, as the context's do; Core Graphics draws an image bottom up.
-            cg.translateBy(x: 0, y: h)
-            cg.scaleBy(x: 1, y: -1)
-            cg.interpolationQuality = .medium
-            cg.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
-            cg.restoreGState()
-            drew = true
+        guard let map = Perspective(dst) else { return false }
+        let w = CGFloat(image.width), h = CGFloat(image.height)
+        // A point (s, t) of the piece, 0...1 across and down, in the tile image's pixels (rows going down).
+        let texel = { (s: CGFloat, v: CGFloat) in
+            CGPoint(x: (CGFloat(t.u0) + s * CGFloat(t.u1 - t.u0)) * w, y: (CGFloat(t.v0) + v * CGFloat(t.v1 - t.v0)) * h)
         }
+        cg.interpolationQuality = .medium
+        var drew = false
+        func cell(_ s0: CGFloat, _ t0: CGFloat, _ s1: CGFloat, _ t1: CGFloat, depth: Int) {
+            let st = [(s0, t0), (s1, t0), (s1, t1), (s0, t1)]
+            let corners = st.map { map.point($0.0, $0.1) }
+            let mid = map.point((s0 + s1) / 2, (t0 + t1) / 2)
+            // How far the true middle is from where the two triangles would put it.
+            let flatA = CGPoint(x: (corners[0].x + corners[2].x) / 2, y: (corners[0].y + corners[2].y) / 2)
+            let flatB = CGPoint(x: (corners[1].x + corners[3].x) / 2, y: (corners[1].y + corners[3].y) / 2)
+            let error = max(hypot(mid.x - flatA.x, mid.y - flatA.y), hypot(mid.x - flatB.x, mid.y - flatB.y))
+            if error > Self.flatPx, depth < Self.maxDepth {
+                let sm = (s0 + s1) / 2, tm = (t0 + t1) / 2
+                cell(s0, t0, sm, tm, depth: depth + 1)
+                cell(sm, t0, s1, tm, depth: depth + 1)
+                cell(s0, tm, sm, t1, depth: depth + 1)
+                cell(sm, tm, s1, t1, depth: depth + 1)
+                return
+            }
+            let src = st.map { texel($0.0, $0.1) }
+            for tri in [[0, 1, 2], [0, 2, 3]] {
+                guard let affine = Self.affine(from: tri.map { src[$0] }, to: tri.map { corners[$0] }) else { continue }
+                cg.saveGState()
+                cg.addPath(Self.widened(tri.map { corners[$0] }))
+                cg.clip()
+                cg.concatenate(affine)
+                // The image's rows go down in tile pixels, as the context's do; Core Graphics draws an image bottom up.
+                cg.translateBy(x: 0, y: h)
+                cg.scaleBy(x: 1, y: -1)
+                cg.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+                cg.restoreGState()
+                drew = true
+            }
+        }
+        cell(0, 0, 1, 1, depth: 0)
         return drew
+    }
+
+    /// A cell is drawn flat once its middle is within this of the true one.
+    private static let flatPx: CGFloat = 0.75
+    /// At most 4^6 cells a piece, for a piece seen almost edge on.
+    private static let maxDepth = 6
+
+    /// The perspective map of the unit square onto four screen corners (top left, top right, bottom right,
+    /// bottom left), as Android's Matrix.setPolyToPoly with four points (Heckbert's square to quad).
+    private struct Perspective {
+        let a, b, c, d, e, f, g, h: CGFloat
+
+        init?(_ p: [CGPoint]) {
+            let dx1 = p[1].x - p[2].x, dx2 = p[3].x - p[2].x, dx3 = p[0].x - p[1].x + p[2].x - p[3].x
+            let dy1 = p[1].y - p[2].y, dy2 = p[3].y - p[2].y, dy3 = p[0].y - p[1].y + p[2].y - p[3].y
+            let det = dx1 * dy2 - dx2 * dy1
+            guard abs(det) > 1e-9 else { return nil }
+            let g = (dx3 * dy2 - dx2 * dy3) / det, h = (dx1 * dy3 - dx3 * dy1) / det
+            self.g = g
+            self.h = h
+            a = p[1].x - p[0].x + g * p[1].x
+            b = p[3].x - p[0].x + h * p[3].x
+            c = p[0].x
+            d = p[1].y - p[0].y + g * p[1].y
+            e = p[3].y - p[0].y + h * p[3].y
+            f = p[0].y
+        }
+
+        func point(_ s: CGFloat, _ t: CGFloat) -> CGPoint {
+            let q = g * s + h * t + 1
+            return CGPoint(x: (a * s + b * t + c) / q, y: (d * s + e * t + f) / q)
+        }
     }
 
     /// The affine map taking the three points [s] to [d]; nil when [s] or [d] lie on a line.
