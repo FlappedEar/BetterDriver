@@ -27,6 +27,8 @@ dependencies {
     api(project(":recorder"))
     // The RaceBox protocol, shared with the iOS app (FBBD-332).
     api(project(":racebox"))
+    // The heart-rate strap decoder and session, shared with the iOS app (FBBD-333).
+    api(project(":heartrate"))
     // ObdSource drives the ELM327 reader and decodes PIDs (FBBD-15).
     implementation(project(":obd"))
     // The scanner and link state are Flows.
