@@ -1,8 +1,8 @@
 import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 // The iOS app's view of the Kotlin core (FBBD-329, FBBD-330): one BetterDriverCore.xcframework
-// that exports every core module with iOS targets. Only one small entry of its own (CoreIos, which a
-// framework link needs); each module tests its common code on the iOS simulator itself.
+// that exports every core module with iOS targets, plus the app's glue around them (LiveSession);
+// each module tests its common code on the iOS simulator itself.
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
 }
@@ -25,6 +25,9 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             exported.forEach { api(project(it)) }
+        }
+        commonTest.dependencies {
+            implementation(kotlin("test"))
         }
     }
 }

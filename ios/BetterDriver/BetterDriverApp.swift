@@ -4,9 +4,11 @@ import SwiftUI
 /// from the shared Kotlin core (BetterDriverCore); this app is the native UI around it.
 @main
 struct BetterDriverApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
-            RootView()
+            AppShell()
                 .preferredColorScheme(.dark)
                 .tint(Palette.accent)
         }

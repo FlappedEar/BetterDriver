@@ -65,11 +65,6 @@ fun interface StorageProbe {
     }
 }
 
-sealed interface RecorderStatus {
-    data class StorageLow(val usableBytes: Long) : RecorderStatus
-    data class Stopped(val reason: String, val error: Throwable? = null) : RecorderStatus
-}
-
 /**
  * Crash-safe session recorder. Depends only on data sources and the session store (FBBD-69).
  * Samples are appended to chunk files as they arrive; nothing waits for a final save (FBBD-70).

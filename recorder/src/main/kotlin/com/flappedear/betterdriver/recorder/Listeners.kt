@@ -10,17 +10,6 @@ private const val MaxErrorText = 500
 private const val ErrorLogIntervalNanos = 1_000_000_000L
 
 /**
- * Live consumers (track screen, live engine, cue engine). They run on their own thread, every call
- * is wrapped, and the recording never waits for them or stops because of them (FBBD-69).
- */
-interface RecorderListener {
-    fun onChannel(def: ChannelDef) = Unit
-    fun onSamples(set: SampleSet) = Unit
-    fun onEvent(event: RecorderEvent) = Unit
-    fun onStatus(status: RecorderStatus) = Unit
-}
-
-/**
  * Delivers recorder output to listeners on one background thread. If listeners fall behind, the
  * oldest undelivered updates are dropped; the recording itself is never affected.
  */

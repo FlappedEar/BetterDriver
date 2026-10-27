@@ -1,0 +1,233 @@
+import BetterDriverCore
+import CoreLocation
+import SwiftUI
+import UIKit
+
+/// The receiver a session records from, picked on the sheet at START (UI-285 B).
+enum Receiver: Equatable {
+    case raceBox(FoundRaceBoxDevice)
+    case phone
+
+    var name: String {
+        switch self {
+        case .raceBox(let device): device.name
+        case .phone: "Phone GPS"
+        }
+    }
+}
+
+/// Where the app keeps its files (agreed with the iPad review): sessions in Application Support/sessions,
+/// tracks in Application Support/tracks/<id>.json, as the Android app's folders.
+enum AppFolders {
+    static var base: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    }
+
+    static var sessions: URL { folder("sessions") }
+    static var tracks: URL { folder("tracks") }
+
+    private static func folder(_ name: String) -> URL {
+        let url = base.appendingPathComponent(name, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
+    }
+}
+
+/// The circuit directory bundled with the app (timing's circuits.json, FBBD-79), read once.
+enum BundledCircuits {
+    static let list: CircuitList = {
+        let url = Bundle.main.url(forResource: "circuits", withExtension: "json")
+        let text = url.flatMap { try? String(contentsOf: $0, encoding: .utf8) }
+        return TrackFiles.shared.circuits(json: text)
+    }()
+}
+
+/// Runs one recording on the iPhone (FBBD-332), as the Android recorder service does: the session
+/// with its live timing (LiveSession), the receiver's link feeding it, and the track screen's values
+/// read four times a second. The screen stays on while recording.
+@MainActor
+final class RecordingController: ObservableObject {
+    @Published private(set) var session: LiveSession?
+    @Published private(set) var screen: TrackScreenModel?
+    @Published private(set) var error: String?
+    @Published private(set) var raceBoxState: RaceBoxLinkState = .off
+    @Published private(set) var phoneState: PhoneGpsState = .off
+
+    private var receiver: Receiver?
+    private var raceBox: RaceBoxLink?
+    private var phone: PhoneGpsLink?
+    private var timer: Timer?
+
+    var isRecording: Bool { session != nil }
+
+    /// The RaceBox used last, so the sheet can mark it (UI-285 B).
+    var lastReceiverName: String {
+        get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
+    }
+
+    func start(_ receiver: Receiver) {
+        guard session == nil else { return }
+        error = nil
+        let info = SessionInfo(
+            startUtcMillis: Int64(Date().timeIntervalSince1970 * 1_000),
+            car: "",
+            track: "",
+            devices: [receiver.name],
+            startFinish: nil,
+            channels: [],
+            imported: nil
+        )
+        let live: LiveSession
+        do {
+            live = try LiveSession.companion.start(
+                sessionsDir: AppFolders.sessions.path,
+                tracksDir: AppFolders.tracks.path,
+                circuits: BundledCircuits.list,
+                info: info,
+                receiverHasG: receiver != .phone
+            )
+        } catch {
+            self.error = "Could not start recording: \(error.localizedDescription)"
+            return
+        }
+        self.receiver = receiver
+        session = live
+        switch receiver {
+        case .raceBox(let device):
+            lastReceiverName = device.name
+            let link = RaceBoxLink(deviceId: device.id, deviceName: device.name, sink: live) { [weak self] state in
+                self?.raceBoxState = state
+            }
+            raceBox = link
+            link.start()
+        case .phone:
+            let link = PhoneGpsLink(sink: live) { [weak self] state in self?.phoneState = state }
+            phone = link
+            link.start()
+        }
+        UIApplication.shared.isIdleTimerDisabled = true
+        refresh()
+        timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refresh() }
+        }
+    }
+
+    /// The hold on the track screen (UI-16): ends the session cleanly and closes the screen.
+    func stop() {
+        guard let live = session else { return }
+        raceBox?.stop()
+        phone?.stop()
+        _ = live.stop()
+        end()
+    }
+
+    private func end() {
+        timer?.invalidate()
+        timer = nil
+        raceBox = nil
+        phone = nil
+        session = nil
+        screen = nil
+        receiver = nil
+        raceBoxState = .off
+        phoneState = .off
+        UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    private func refresh() {
+        guard let live = session, let receiver else { return }
+        let now = live.screen()
+        if let reason = now.stoppedReason, reason != "user" {
+            // Ended by the recorder itself (storage full, write error): the files stay for recovery.
+            raceBox?.stop()
+            phone?.stop()
+            end()
+            error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
+            return
+        }
+        screen = TrackScreenModel(now, receiverHasG: receiver != .phone)
+    }
+}
+
+/// Everything the track screen shows, from one LiveScreen; the Android app's liveTrackState.
+struct TrackScreenModel: Equatable {
+    struct Status: Equatable, Identifiable {
+        let label: String
+        let value: String
+        let ok: Bool
+        var id: String { label }
+    }
+
+    struct Tile: Equatable {
+        let label: String
+        let value: String
+        let unit: String
+        /// No value now: drawn dim, as the delta's dash.
+        let dim: Bool
+    }
+
+    struct Alert: Equatable {
+        let title: String
+        let detail: String
+        let critical: Bool
+    }
+
+    let status: [Status]
+    let recordingTime: String
+    let alert: Alert?
+    let deltaSeconds: Double?
+    let lapNumber: Int?
+    let lapMillis: Int64?
+    let lastMillis: Int64?
+    let bestMillis: Int64?
+    /// The row of six slots (UI-120 A) with the Android defaults, speed and G; nil is an empty slot,
+    /// drawn as an outline (UI-125 B). A tile that cannot have data here is left out (UI-126 B).
+    let tiles: [Tile?]
+
+    static let noValue = "–"
+    static let slots = 6
+
+    init(_ s: LiveScreen, receiverHasG: Bool) {
+        let live = s.live
+        let ok = s.gnss == GnssState.ok
+        let gnss: Status = switch s.gnss {
+        case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false)
+        case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false)
+        default: Status(label: "GNSS", value: "\(s.shownRateHz) Hz · \(live.sats.map { "\($0.intValue)" } ?? Self.noValue) sats", ok: true)
+        }
+        // The quiet strip (UI-141 B) names the track only when a saved track has no timing.
+        let place = s.place.flatMap { name in
+            s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
+        }
+        status = [place, gnss].compactMap { $0 }
+        recordingTime = Self.clock(micros: live.elapsedMicros)
+        if s.gnss == GnssState.lost {
+            alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)
+        } else if let low = live.storageLowBytes {
+            alert = Alert(title: "Storage low", detail: "\(low.int64Value / 1_000_000) MB free", critical: false)
+        } else {
+            alert = nil
+        }
+        let timing = s.timing
+        deltaSeconds = timing?.deltaSeconds?.doubleValue
+        lapNumber = timing.map { Int($0.lapNumber) }
+        lapMillis = timing?.lapMillis?.int64Value
+        lastMillis = timing?.lastMillis?.int64Value
+        bestMillis = timing?.bestMillis?.int64Value
+        // The receiver's last speed stays known after the fix is lost; it is not the car's speed now.
+        let speed = ok ? live.speedKmh.map { "\(Int($0.doubleValue.rounded()))" } : nil
+        let g = live.gCombined.map { String(format: "%.2f", $0.doubleValue) }
+        let speedTile = Tile(label: "Speed", value: speed ?? Self.noValue, unit: "km/h", dim: speed == nil)
+        let gTile = Tile(label: "G", value: g ?? Self.noValue, unit: "g", dim: g == nil)
+        let filled: [Tile?] = receiverHasG ? [speedTile, gTile] : [speedTile]
+        tiles = filled + Array(repeating: nil, count: Self.slots - 2)
+    }
+
+    /// Recording time as m:ss, or h:mm:ss from one hour (formatClock).
+    static func clock(micros: Int64) -> String {
+        let s = max(micros, 0) / 1_000_000
+        let h = s / 3_600, m = (s % 3_600) / 60, sec = s % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, sec) : String(format: "%d:%02d", m, sec)
+    }
+}

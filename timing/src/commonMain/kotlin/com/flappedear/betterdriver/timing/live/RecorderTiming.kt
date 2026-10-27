@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.detectTrack
+import kotlin.concurrent.Volatile
 
 /**
  * Feeds the recorder's live output into [LiveTiming] and hands each new state to [onState]. Runs
