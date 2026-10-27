@@ -71,10 +71,14 @@ final class SmokeTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["recordingError"].exists, "no recording error")
 
         tab("Sessions").tap()
-        let row = app.cells.firstMatch
+        // The row as the review tests find it: a cell can be the day's header.
+        let row = app.descendants(matching: .any).matching(identifier: "sessionRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 20), "the recorded session in the list")
         row.tap()
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "tabSummary").firstMatch.waitForExistence(timeout: 20), "the session opens")
+        if !app.buttons["tabSummary"].waitForExistence(timeout: 30) {
+            print("SMOKE app:\n\(app.debugDescription)")
+            XCTFail("the session opens")
+        }
         XCTAssertEqual(app.state, .runningForeground)
     }
 
