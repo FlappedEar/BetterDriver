@@ -63,7 +63,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
                 list.append(known)
             }
             list += seen.values.filter { p in !list.contains { $0.identifier == p.identifier } }
-            if list.isEmpty { scan() }
+            // Keep looking while no adapter is open: the remembered one may be out of range and another near.
+            scan()
             return list.map { p in
                 let name = p.name ?? UserDefaults.standard.string(forKey: Self.lastNameKey) ?? "OBD adapter"
                 return IosBleObdTarget(name: name, identifier: p.identifier.uuidString, port: ObdBlePortLink(link: self, peripheral: p))
@@ -92,6 +93,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     fileprivate func disconnect(_ port: ObdBlePortLink) {
         if self.port === port { self.port = nil }
         central?.cancelPeripheralConnection(port.peripheral)
+        // A failed or ended connection: look for adapters again, the didDisconnect callback no longer will.
+        scan()
     }
 
     fileprivate func ready(_ port: ObdBlePortLink) {
@@ -117,7 +120,12 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         rssi RSSI: NSNumber
     ) {
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name
-        guard ObdAdapterNames.shared.isCandidate(name: name), seen[peripheral.identifier] == nil else { return }
+        guard ObdAdapterNames.shared.isCandidate(name: name) else { return }
+        guard seen[peripheral.identifier] == nil else {
+            // Known already: nothing new to try, so the scan can stop until the next round asks again.
+            central.stopScan()
+            return
+        }
         seen[peripheral.identifier] = peripheral
         log(text: "found \(name ?? "?") \(peripheral.identifier.uuidString)")
         central.stopScan()

@@ -90,7 +90,9 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
             self?.end()
         }
         session = s
-        s.start()
+        // The start window counts from the session start, not from when the strap was found.
+        let sinceStart = Int64(Date().timeIntervalSince(startedAt) * 1_000_000)
+        s.start(windowStartMicros: sink.nowMicros() - sinceStart)
     }
 
     private var searching: Bool {

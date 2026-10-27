@@ -62,8 +62,14 @@ class HeartRateSession(
     /** Whether data flowed since the last drop; a drop before any data is not a disconnect. */
     private var wasStreaming = false
 
-    fun start() {
-        startedMicros = sink.nowMicros()
+    fun start() = start(sink.nowMicros())
+
+    /**
+     * As [start], with the start window counted from [windowStartMicros] on the session clock: a strap
+     * found during the window still has to qualify within the session's first 45 s (FBBD-285).
+     */
+    fun start(windowStartMicros: Long) {
+        startedMicros = windowStartMicros
         decoder.defineChannels()
         sink.event(HeartRateEvents.DEVICE, "address=$address name=$deviceName")
     }

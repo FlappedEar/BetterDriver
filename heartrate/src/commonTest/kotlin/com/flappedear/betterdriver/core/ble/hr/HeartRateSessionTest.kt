@@ -75,6 +75,21 @@ class HeartRateSessionTest {
     }
 
     @Test
+    fun `a strap found late in the start window still has to qualify within it`() {
+        val sink = Sink()
+        var offs = 0
+        val session = HeartRateSession(sink, "A1", "strap") { offs++ }
+        // Found 40 s into the session: the window still ends at 45 s, not 40 s later.
+        sink.now = 40_000_000
+        session.start(windowStartMicros = 0)
+        session.streaming()
+        sink.now = 46_000_000
+        session.feed(worn)
+        assertTrue(session.off)
+        assertEquals(1, offs)
+    }
+
+    @Test
     fun `a strap not worn at the start is off for the session`() {
         val sink = Sink()
         var offs = 0
