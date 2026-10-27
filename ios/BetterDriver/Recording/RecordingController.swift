@@ -69,6 +69,11 @@ final class RecordingController: ObservableObject {
 
     var isRecording: Bool { session != nil }
 
+    init() {
+        // A Live Activity left by a session the app died in would count on the lock screen.
+        RecordingActivity.endLeftOver()
+    }
+
     /// The RaceBox used last, so the sheet can mark it (UI-285 B).
     var lastReceiverName: String {
         get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }

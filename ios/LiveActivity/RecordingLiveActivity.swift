@@ -20,17 +20,20 @@ private let rec = Color(red: 0xFF / 255, green: 0x4B / 255, blue: 0x4B / 255)
 struct RecordingLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: RecordingAttributes.self) { context in
-            LockScreenView(started: context.attributes.startedAt, state: context.state)
+            LockScreenView(started: context.attributes.startedAt, state: context.state, stale: context.isStale)
                 .activityBackgroundTint(surface)
                 .activitySystemActionForegroundColor(.white)
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.state.lap.map { "Lap \($0)" } ?? "Recording").foregroundStyle(dim)
+                    Text(context.isStale ? "Not recording" : context.state.lap.map { "Lap \($0)" } ?? "Recording")
+                        .foregroundStyle(dim)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
-                        .monospacedDigit()
+                    if !context.isStale {
+                        Text(timerInterval: context.attributes.startedAt...Date.distantFuture, countsDown: false)
+                            .monospacedDigit()
+                    }
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     DeltaText(state: context.state, size: 30)
@@ -47,19 +50,25 @@ struct RecordingLiveActivity: Widget {
 }
 
 /// The lock screen card: "● BetterDriver · recording 23:41" and the lap, then the delta and best.
+/// [stale]: the app sent nothing for a while (it died), so the card says so and stops the clock.
 private struct LockScreenView: View {
     let started: Date
     let state: RecordingAttributes.ContentState
+    let stale: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 HStack(spacing: 6) {
-                    Circle().fill(rec).frame(width: 8, height: 8)
-                    Text("BetterDriver · recording")
-                    Text(timerInterval: started...Date.distantFuture, countsDown: false)
-                        .monospacedDigit()
-                        .frame(maxWidth: 70, alignment: .leading)
+                    Circle().fill(stale ? dim : rec).frame(width: 8, height: 8)
+                    if stale {
+                        Text("BetterDriver · not recording, open the app")
+                    } else {
+                        Text("BetterDriver · recording")
+                        Text(timerInterval: started...Date.distantFuture, countsDown: false)
+                            .monospacedDigit()
+                            .frame(maxWidth: 70, alignment: .leading)
+                    }
                 }
                 Spacer()
                 if let lap = state.lap {
