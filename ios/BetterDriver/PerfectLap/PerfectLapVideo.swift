@@ -48,7 +48,8 @@ enum PerfectLapVideo {
         writer.add(input)
         guard writer.startWriting() else { throw writer.error ?? Failure.encoder("the video could not be written") }
         writer.startSession(atSourceTime: .zero)
-        let painter = PerfectLapPainter(scene: scene)
+        // The satellite photo as in the player, each tile read or fetched before its frame is drawn.
+        let painter = PerfectLapPainter(scene: scene, tiles: PerfectLapTiles.make(), waitForTiles: true)
         painter.distance = distance
         let frames = Int((scene.durationSeconds * Double(fps)).rounded(.up)) + 1
         do {

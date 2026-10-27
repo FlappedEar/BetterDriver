@@ -74,14 +74,9 @@ final class TracksTests: XCTestCase {
         XCTAssertEqual(try record(), 40_000)
     }
 
-    func testWithoutAKeyTheMapIsOpenStreetMap() {
-        MapTiles.mapTilerKey = nil
-        let sources = MapTiles.sources()
-        XCTAssertEqual(sources.map(\.id), ["osm"])
-        let overlay = CachedTileOverlay(source: sources[0])
-        XCTAssertEqual(
-            overlay.url(forTilePath: MKTileOverlayPath(x: 1, y: 2, z: 3, contentScaleFactor: 2)).absoluteString,
-            "https://tile.openstreetmap.org/3/1/2.png"
-        )
+    func testTheEditorMapIsAppleMapsSatelliteFirst() {
+        XCTAssertEqual(EditorBackground.allCases, [.satellite, .standard])
+        XCTAssertTrue(EditorBackground.satellite.configuration is MKImageryMapConfiguration)
+        XCTAssertTrue(EditorBackground.standard.configuration is MKStandardMapConfiguration)
     }
 }
