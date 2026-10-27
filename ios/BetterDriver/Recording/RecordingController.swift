@@ -52,10 +52,12 @@ final class RecordingController: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var raceBoxState: RaceBoxLinkState = .off
     @Published private(set) var phoneState: PhoneGpsState = .off
+    @Published private(set) var cameraStatus: CameraStatus?
 
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var camera: PhoneCamera?
     private var timer: Timer?
 
     var isRecording: Bool { session != nil }
@@ -64,6 +66,12 @@ final class RecordingController: ObservableObject {
     var lastReceiverName: String {
         get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
+    }
+
+    /// Phone video with each session (FBBD-21), on unless turned off on the START sheet.
+    var phoneCamera: Bool {
+        get { UserDefaults.standard.object(forKey: "phoneCamera") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "phoneCamera") }
     }
 
     func start(_ receiver: Receiver) {
@@ -113,6 +121,11 @@ final class RecordingController: ObservableObject {
             phone = link
             link.start()
         }
+        if phoneCamera {
+            let cam = PhoneCamera(log: PhoneVideoLog(session: live)) { [weak self] in self?.cameraStatus = $0 }
+            camera = cam
+            cam.start()
+        }
         UIApplication.shared.isIdleTimerDisabled = true
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -125,6 +138,7 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        camera?.stop()
         _ = live.stop()
         end()
     }
@@ -134,6 +148,9 @@ final class RecordingController: ObservableObject {
         timer = nil
         raceBox = nil
         phone = nil
+        camera?.stop()
+        camera = nil
+        cameraStatus = nil
         session = nil
         screen = nil
         receiver = nil
@@ -153,7 +170,7 @@ final class RecordingController: ObservableObject {
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
-        screen = TrackScreenModel(now, receiverHasG: receiver != .phone)
+        screen = TrackScreenModel(now, receiverHasG: receiver != .phone, camera: cameraStatus)
     }
 }
 
@@ -195,7 +212,7 @@ struct TrackScreenModel: Equatable {
     static let noValue = "–"
     static let slots = 6
 
-    init(_ s: LiveScreen, receiverHasG: Bool) {
+    init(_ s: LiveScreen, receiverHasG: Bool, camera: CameraStatus? = nil) {
         let live = s.live
         let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
@@ -207,7 +224,9 @@ struct TrackScreenModel: Equatable {
         let place = s.place.flatMap { name in
             s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
         }
-        status = [place, gnss].compactMap { $0 }
+        // Phone video, when the camera reports (UI-07): green while it records, amber when it does not.
+        let video = camera.map { Status(label: "Camera", value: $0.text, ok: $0.ok) }
+        status = [place, gnss, video].compactMap { $0 }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)

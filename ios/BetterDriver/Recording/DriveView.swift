@@ -8,6 +8,7 @@ struct DriveView: View {
     @EnvironmentObject private var recorder: RecordingController
     @StateObject private var place = PlaceFinder()
     @State private var picking = false
+    @State private var camera = true
 
     var body: some View {
         NavigationStack {
@@ -32,7 +33,8 @@ struct DriveView: View {
             .navigationTitle("Drive")
         }
         .sheet(isPresented: $picking) {
-            ReceiverSheet(lastUsed: recorder.lastReceiverName) { receiver in
+            ReceiverSheet(lastUsed: recorder.lastReceiverName, camera: $camera) { receiver in
+                recorder.phoneCamera = camera
                 picking = false
                 recorder.start(receiver)
             }
@@ -42,7 +44,10 @@ struct DriveView: View {
         .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
             TrackScreenView(model: recorder.screen) { recorder.stop() }
         }
-        .onAppear { place.find() }
+        .onAppear {
+            camera = recorder.phoneCamera
+            place.find()
+        }
     }
 }
 
@@ -89,6 +94,7 @@ private struct Chip: View {
 /// and the phone's own GPS.
 struct ReceiverSheet: View {
     let lastUsed: String
+    @Binding var camera: Bool
     let onPick: (Receiver) -> Void
 
     @State private var found: [UUID: FoundRaceBoxDevice] = [:]
@@ -119,6 +125,12 @@ struct ReceiverSheet: View {
                 .padding(.vertical, 12)
             }
             row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
+            // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
+            Toggle("Phone camera video", isOn: $camera)
+                .tint(Palette.accent)
+                .padding(.vertical, 12)
+                .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
+                .accessibilityIdentifier("phoneCameraToggle")
             Spacer(minLength: 0)
         }
         .padding(.horizontal, 20)
