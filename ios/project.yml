@@ -19,7 +19,7 @@ targets:
     sources:
       - BetterDriver
     dependencies:
-      - framework: ../shared/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
+      - framework: ../core-ios/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false
     settings:
       base:
@@ -51,7 +51,7 @@ targets:
     dependencies:
       - target: BetterDriver
       # Headers only: the core's code is in the host app (one Kotlin runtime per process).
-      - framework: ../shared/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
+      - framework: ../core-ios/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false
         link: false
     settings:
