@@ -53,7 +53,8 @@ final class SmokeTests: XCTestCase {
         simulated.tap()
         allowSystemAlerts()
 
-        let screen = app.descendants(matching: .any)["trackScreen"]
+        // The screen's id reaches its children too: the first match is the screen itself.
+        let screen = app.descendants(matching: .any).matching(identifier: "trackScreen").firstMatch
         XCTAssertTrue(screen.waitForExistence(timeout: 20), "the track screen")
         // Records for a while with every link running; a tap lets the permission monitor answer.
         let until = Date().addingTimeInterval(15)
@@ -73,7 +74,7 @@ final class SmokeTests: XCTestCase {
         let row = app.cells.firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 20), "the recorded session in the list")
         row.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["tabSummary"].waitForExistence(timeout: 20), "the session opens")
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "tabSummary").firstMatch.waitForExistence(timeout: 20), "the session opens")
         XCTAssertEqual(app.state, .runningForeground)
     }
 
