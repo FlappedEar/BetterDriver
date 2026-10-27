@@ -105,7 +105,7 @@ private fun LineSide(ui: LineUi, corner: LineCornerUi?, pick: (String?) -> Unit,
                 for (row in ui.beyond) BeyondRow(row, row.beyond!!) { pick(row.tag) }
             }
         } else if (corner.beyond != null) {
-            BeyondDetail(corner, corner.beyond) { pick(null) }
+            BeyondDetail(corner, checkNotNull(corner.beyond)) { pick(null) }
             corner.gear?.let { GearLines(it) }
         } else {
             Text("‹ All corners", Modifier.clickable { pick(null) }.padding(vertical = 4.dp), color = accent)
