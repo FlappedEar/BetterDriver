@@ -31,7 +31,6 @@ import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
-import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.detectTrack
 import kotlin.concurrent.Volatile
@@ -281,13 +280,14 @@ object TrackFiles {
 
     /** Every readable track in [dir]; a file that cannot be read is skipped and left as it is. */
     @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+    @Suppress("TooGenericExceptionCaught") // Any damaged file is skipped, never a crash in Swift.
     fun read(dir: String): List<Track> {
         val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null).orEmpty()
         return names.filterIsInstance<String>().filter { it.endsWith(Suffix) }.mapNotNull { name ->
             val text = NSString.stringWithContentsOfFile("$dir/$name", NSUTF8StringEncoding, null)
             try {
                 text?.let(TrackJson::decode)
-            } catch (_: TrackFormatException) {
+            } catch (_: Exception) {
                 null
             }
         }.sortedBy { it.displayName.lowercase() }

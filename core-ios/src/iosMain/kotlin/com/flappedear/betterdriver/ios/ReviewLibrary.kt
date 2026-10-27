@@ -157,6 +157,22 @@ class ReviewLibrary(base: String) {
     fun importForeign(path: String, onProgress: (read: Long, total: Long) -> Unit): ImportedSession =
         foreign.importFile(path, path.substringAfterLast('/'), tracks(), circuits, onProgress)
 
+    /**
+     * Adds the demo replay at [replayPath] at the track in [trackPath] (the Android app's built-in
+     * demos) as a finished session starting at [startUtcMillis], for the app's UI tests; see
+     * DemoSessions. Returns the session's id.
+     */
+    @Throws(Exception::class)
+    fun addDemo(replayPath: String, trackPath: String, startUtcMillis: Long): String {
+        val replay = checkNotNull(NSString.stringWithContentsOfFile(replayPath, NSUTF8StringEncoding, null)) {
+            "cannot read $replayPath"
+        }
+        val track = checkNotNull(NSString.stringWithContentsOfFile(trackPath, NSUTF8StringEncoding, null)) {
+            "cannot read $trackPath"
+        }
+        return DemoSessions.add(store, tracksRoot, replay, TrackJson.decode(track), startUtcMillis)
+    }
+
     /** The circuit list bundled with the app (circuits.json, as Android's), or none. */
     private val circuits: CircuitList by lazy {
         val path = NSBundle.mainBundle.pathForResource("circuits", "json")

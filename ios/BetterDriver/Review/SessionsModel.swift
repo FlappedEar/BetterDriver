@@ -39,6 +39,7 @@ final class SessionsModel {
 
     init() {
         ReviewBridge.clearStaging()
+        ReviewBridge.prepareForUITests()
         reload()
         // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
         NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in
