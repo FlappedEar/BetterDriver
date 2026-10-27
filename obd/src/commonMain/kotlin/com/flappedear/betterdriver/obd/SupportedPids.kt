@@ -38,7 +38,7 @@ object SupportedPids {
 
     /** Every PID in the bitmask answers among [messages] (all ECUs, all ranges). */
     fun fromMessages(messages: Iterable<EcuMessage>): Set<Int> =
-        messages.flatMapTo(sortedSetOf()) { fromMessage(it.bytes).orEmpty() }
+        messages.flatMap { fromMessage(it.bytes).orEmpty() }.sorted().toSet()
 
     /** The next bitmask request after `01 [base]`, or null when [supported] says there is none. */
     fun nextBitmask(base: Int, supported: Set<Int>): Int? {

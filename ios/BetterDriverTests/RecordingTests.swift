@@ -70,6 +70,17 @@ final class RecordingTests: XCTestCase {
         XCTAssertTrue(session.stop())
     }
 
+    func testAnObdConnectionShowsAsTheCarIcon() throws {
+        let session = try start(receiverHasG: false)
+        for n in Int64(0)...Int64(25) {
+            session.submit(set: SampleSet(tMicros: n * 40_000, values: gnss.fix(n: n)))
+        }
+        let model = TrackScreenModel(session.screen(), receiverHasG: false, obdConnected: true)
+        XCTAssertEqual(model.status.last?.label, "OBD")
+        XCTAssertEqual(model.status.last?.icon, "car.fill")
+        XCTAssertTrue(session.stop())
+    }
+
     func testBeforeTheFirstFixTheScreenWaits() throws {
         let session = try start(receiverHasG: true)
         let model = TrackScreenModel(session.screen(), receiverHasG: true)

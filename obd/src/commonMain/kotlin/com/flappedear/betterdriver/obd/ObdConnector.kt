@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.obd
 
-import java.io.IOException
+import kotlin.concurrent.Volatile
 
 /** What an [ObdConnector] reports, on its thread. */
 @Suppress("LongParameterList") // ready() carries everything the car and adapter answered.
@@ -39,8 +39,8 @@ interface ObdConnectorListener {
  * [run] blocks until [running] turns false; [stop] closes the open connection so it returns. No
  * exception ends the loop while [running] holds: a round that fails in an unexpected way is logged
  * and retried, and an interrupted one ends quietly (FBBD-269). The [tracker] follows every step for
- * the OBD page. [pollSet] is what each connection reads (FBBD-283). Pure JVM, so the whole loop
- * is tested against simulated adapters.
+ * the OBD page. [pollSet] is what each connection reads (FBBD-283). Common Kotlin, so Android and
+ * iOS run the same loop; it is tested on the JVM against simulated adapters.
  */
 @Suppress("LongParameterList") // Collaborators, each replaced in the tests.
 class ObdConnector(
@@ -75,15 +75,18 @@ class ObdConnector(
                 connectOnce()
             } catch (e: IOException) {
                 "connection lost: ${e.message}"
-            } catch (e: SecurityException) {
-                "no permission: ${e.message}"
-            } catch (_: InterruptedException) {
-                // Only stopping interrupts; the loop condition ends the run.
-                "interrupted"
             } catch (e: RuntimeException) {
-                // A bug in one round must not end car data for the session, nor the recorder process.
-                listener.log("round failed: $e")
-                "failed: $e"
+                if (isNoPermission(e)) {
+                    "no permission: ${e.message}"
+                } else {
+                    // A bug in one round must not end car data for the session, nor the recorder process.
+                    listener.log("round failed: $e")
+                    "failed: $e"
+                }
+            } catch (e: Exception) {
+                // Only stopping interrupts; the loop condition ends the run.
+                if (!isInterrupted(e)) throw e
+                "interrupted"
             }
             if (!running()) break
             // A connection that opened and ended is retried soon; no adapter at all backs off.
@@ -156,7 +159,8 @@ class ObdConnector(
         all.asSequence().takeWhile { running() }.firstNotNullOfOrNull { t -> tryOpen(t, errors)?.let { t to it } }
 
     /** The line to [t] once it opened, or null after adding why it did not to [errors]. */
-    @Suppress("ReturnCount") // Opened, or one of two ways it failed.
+    // Opened, or one of two ways it failed; a missing permission is the platform's RuntimeException.
+    @Suppress("ReturnCount", "TooGenericExceptionCaught")
     private fun tryOpen(t: ObdTarget, errors: MutableList<String>): ElmLine? {
         lateinit var connection: ObdConnection
         val line = ElmLine(write = { connection.write(it) })
@@ -169,7 +173,8 @@ class ObdConnector(
         } catch (e: IOException) {
             errors += "${t.where} ${e.message}"
             return null
-        } catch (e: SecurityException) {
+        } catch (e: RuntimeException) {
+            if (!isNoPermission(e)) throw e
             errors += "${t.where} no permission: ${e.message}"
             return null
         }
@@ -206,7 +211,7 @@ class ObdConnector(
             channels: List<PidChannel>,
         ) {
             val clean = adapter.replace(Regex("\\s+"), " ")
-            val pids = supported.joinToString(",") { "%02X".format(it) }
+            val pids = supported.joinToString(",") { hex(it, 2) }
             val polled = channels.joinToString(",") { it.id }
             listener.log("car answered: protocol $protocol, PIDs $pids, polling $polled")
             tracker.ready(clean, protocol, voltage, channels, clock.nowMs())

@@ -2,9 +2,9 @@ package com.flappedear.betterdriver.obd.equation
 
 /**
  * Evaluation stops here: the response is too short, an integer division by zero, NaN where an
- * integer is needed. Thrown without a stack trace, since it is an expected outcome per response.
+ * integer is needed. One object, so its stack trace is filled once, not per response.
  */
-internal object EvalFailure : RuntimeException(null, null, false, false)
+internal object EvalFailure : RuntimeException("evaluation failed")
 
 /**
  * One node of a parsed equation. Its type is fixed when it is parsed: [isInt] nodes compute in

@@ -1,7 +1,5 @@
 package com.flappedear.betterdriver.obd
 
-import java.io.IOException
-
 /**
  * The serial line to an ELM327 (FBBD-15), whatever carries it: Bluetooth Classic SPP or a BLE
  * serial characteristic. The transport passes every byte it receives to [feed], on its own thread,
@@ -11,7 +9,7 @@ import java.io.IOException
  * One command at a time: an ELM327 answers one request before it reads the next.
  */
 class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long = DEFAULT_RESYNC_MS) {
-    private val lock = Object()
+    private val lock = ObdMonitor()
     private val received = StringBuilder()
     private var closed: String? = null
 
@@ -20,17 +18,17 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
 
     /** Bytes from the adapter. NUL bytes, which some clones send before the prompt, are dropped. */
     fun feed(bytes: ByteArray) {
-        synchronized(lock) {
+        lock.locked {
             for (b in bytes) if (b.toInt() != 0) received.append((b.toInt() and ByteMask).toChar())
-            lock.notifyAll()
+            lock.signalAll()
         }
     }
 
     /** The transport is gone: a waiting [command] throws, with [reason]. */
     fun close(reason: String) {
-        synchronized(lock) {
+        lock.locked {
             closed = reason
-            lock.notifyAll()
+            lock.signalAll()
         }
     }
 
@@ -43,14 +41,14 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      * when the waiting thread is interrupted (stopping a session does that, FBBD-269).
      */
     fun command(text: String, timeoutMs: Long): String? {
-        synchronized(lock) {
+        lock.locked {
             if (outstanding) awaitPrompt(resyncMs)
             outstanding = false
             closed?.let { throw IOException(it) }
-            received.setLength(0)
+            received.clear()
         }
-        write((text + "\r").toByteArray(Charsets.US_ASCII))
-        synchronized(lock) {
+        write((text + "\r").encodeToByteArray())
+        lock.locked {
             val answer = awaitPrompt(timeoutMs)
             if (answer == null) outstanding = true
             return answer
@@ -67,18 +65,18 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      * [command].
      */
     fun monitor(text: String, windowMs: Long, timeoutMs: Long): String? {
-        synchronized(lock) {
+        lock.locked {
             if (outstanding) awaitPrompt(resyncMs)
             outstanding = false
             closed?.let { throw IOException(it) }
-            received.setLength(0)
+            received.clear()
         }
-        write((text + "\r").toByteArray(Charsets.US_ASCII))
-        synchronized(lock) {
+        write((text + "\r").encodeToByteArray())
+        lock.locked {
             awaitPrompt(windowMs)?.let { return it }
         }
         write(STOP_MONITOR)
-        synchronized(lock) {
+        lock.locked {
             val answer = awaitPrompt(timeoutMs)
             if (answer == null) outstanding = true
             return answer
@@ -93,26 +91,26 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
      * resyncs as after [command].
      */
     fun monitorLines(text: String, windowMs: Long, timeoutMs: Long, onLines: (List<String>) -> Unit): Boolean {
-        synchronized(lock) {
+        lock.locked {
             if (outstanding) awaitPrompt(resyncMs)
             outstanding = false
             closed?.let { throw IOException(it) }
-            received.setLength(0)
+            received.clear()
         }
-        write((text + "\r").toByteArray(Charsets.US_ASCII))
-        val windowEnd = System.nanoTime() + windowMs * NanosPerMs
+        write((text + "\r").encodeToByteArray())
+        val windowEnd = monoNanos() + windowMs * NanosPerMs
         var stopped = false
         var stopDeadline = 0L
         while (true) {
-            val (lines, prompt) = synchronized(lock) { awaitLines(if (stopped) stopDeadline else windowEnd) }
+            val (lines, prompt) = lock.locked { awaitLines(if (stopped) stopDeadline else windowEnd) }
             if (lines.isNotEmpty()) onLines(lines)
             if (prompt) return true
-            if (!stopped && System.nanoTime() >= windowEnd) {
+            if (!stopped && monoNanos() >= windowEnd) {
                 write(STOP_MONITOR)
                 stopped = true
-                stopDeadline = System.nanoTime() + timeoutMs * NanosPerMs
-            } else if (stopped && System.nanoTime() >= stopDeadline) {
-                synchronized(lock) { outstanding = true }
+                stopDeadline = monoNanos() + timeoutMs * NanosPerMs
+            } else if (stopped && monoNanos() >= stopDeadline) {
+                lock.locked { outstanding = true }
                 return false
             }
         }
@@ -129,46 +127,37 @@ class ElmLine(private val write: (ByteArray) -> Unit, private val resyncMs: Long
             val end = if (prompt >= 0) prompt else received.lastIndexOf("\r")
             val text = if (end < 0) "" else received.substring(0, end)
             val lines = text.split('\r', '\n').filter { it.isNotBlank() }
-            if (end >= 0) received.delete(0, end + 1)
+            if (end >= 0) received.deleteRange(0, end + 1)
             closed?.takeIf { prompt < 0 && lines.isEmpty() }?.let { throw IOException(it) }
-            val leftMs = (deadline - System.nanoTime()) / NanosPerMs
+            val leftMs = (deadline - monoNanos()) / NanosPerMs
             if (prompt >= 0 || lines.isNotEmpty() || leftMs <= 0) return lines to (prompt >= 0)
-            try {
-                lock.wait(leftMs)
-            } catch (e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw IOException("interrupted", e)
-            }
+            // Throws when the thread is interrupted (stopping a session, FBBD-269).
+            lock.await(leftMs)
         }
     }
 
     /** Under [lock]: what came before the next prompt, consumed with it, or null after [timeoutMs]. */
     private fun awaitPrompt(timeoutMs: Long): String? {
-        val deadline = System.nanoTime() + timeoutMs * NanosPerMs
+        val deadline = monoNanos() + timeoutMs * NanosPerMs
         while (true) {
             val prompt = received.indexOf(">")
             if (prompt >= 0) {
                 val answer = received.substring(0, prompt)
-                received.delete(0, prompt + 1)
+                received.deleteRange(0, prompt + 1)
                 return answer
             }
             closed?.let { throw IOException(it) }
-            val leftMs = (deadline - System.nanoTime()) / NanosPerMs
+            val leftMs = (deadline - monoNanos()) / NanosPerMs
             if (leftMs <= 0) return null
-            try {
-                lock.wait(leftMs)
-            } catch (e: InterruptedException) {
-                // An uncaught InterruptedException here killed the recorder process at Stop (FBBD-269).
-                Thread.currentThread().interrupt()
-                throw IOException("interrupted", e)
-            }
+            // Throws when the thread is interrupted: uncaught, that killed the recorder at Stop (FBBD-269).
+            lock.await(leftMs)
         }
     }
 
     companion object {
         /** How long a command waits for the late prompt of one that timed out. */
         const val DEFAULT_RESYNC_MS = 2_000L
-        private val STOP_MONITOR = " ".toByteArray(Charsets.US_ASCII)
+        private val STOP_MONITOR = " ".encodeToByteArray()
         private const val NanosPerMs = 1_000_000L
     }
 }

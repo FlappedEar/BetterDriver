@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.obd
 
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
 
 /** What an [ElmPoller] reports. Called on the poller's thread. */
 interface ObdListener {
@@ -599,7 +599,7 @@ class ElmPoller(
 
     /** The mode 01 PIDs the car has, from the `01 00`, `01 20`, … bitmasks; null when none answered. */
     private fun discover(): Set<Int>? {
-        val supported = sortedSetOf<Int>()
+        val supported = LinkedHashSet<Int>()
         var base: Int? = SupportedPids.bitmaskPids.first()
         while (base != null) {
             val cmd = "01" + hex(base, 2)
@@ -614,7 +614,7 @@ class ElmPoller(
             supported += found
             base = SupportedPids.nextBitmask(base, found)
         }
-        return supported.takeIf { it.isNotEmpty() }
+        return supported.takeIf { it.isNotEmpty() }?.sorted()?.toSet()
     }
 
     /** Polls [groups] until stopped (why, for the log) or until [pollSet] is no longer [set] (null). */
@@ -823,23 +823,23 @@ class ElmPoller(
 
     private fun logRates(scheduler: PollScheduler, channels: List<PidChannel>, nowMs: Long) {
         val rates = channels.joinToString(" ") {
-            "${it.id}=${"%.1f".format(Locale.ROOT, scheduler.achievedHz(it, nowMs))}"
+            "${it.id}=${fixed(scheduler.achievedHz(it, nowMs), 1)}"
         }
-        val latency = scheduler.latencyMs?.let { "%.0f".format(Locale.ROOT, it) } ?: "n/a"
+        val latency = scheduler.latencyMs?.let { fixed(it, 0) } ?: "n/a"
         // Over the whole interval, idle waits for slow channels included.
         val elapsed = nowMs - rateStartMs
         val perSecond = if (elapsed > 0) requests * MS_PER_S / elapsed else 0.0
         listener.log(
-            "rates_hz $rates latency_ms=$latency requests_per_s=${"%.1f".format(Locale.ROOT, perSecond)}" +
+            "rates_hz $rates latency_ms=$latency requests_per_s=${fixed(perSecond, 1)}" +
                 " response_count=${if (countOn) "on" else "off"}",
         )
         if (listenFrames.isNotEmpty() && elapsed > 0) {
             val can = listenFrames.entries.joinToString(" ") { (id, n) ->
-                "${hex(id, CAN_ID_DIGITS)}=${"%.1f".format(Locale.ROOT, n * MS_PER_S / elapsed)}"
+                "${hex(id, CAN_ID_DIGITS)}=${fixed(n * MS_PER_S / elapsed, 1)}"
             }
             val mode = if (stnFilters == true) "stn" else "one_id"
             listener.log(
-                "can_hz $can listen_share=${"%.2f".format(Locale.ROOT, listenMs.toDouble() / elapsed)} mode=$mode",
+                "can_hz $can listen_share=${fixed(listenMs.toDouble() / elapsed, 2)} mode=$mode",
             )
             listenFrames.clear()
             listenMs = 0
@@ -848,7 +848,7 @@ class ElmPoller(
         rateStartMs = nowMs
         // The latest value of every channel, so slow ones (oil, coolant) can be read from the log.
         if (lastValues.isNotEmpty()) {
-            val values = lastValues.entries.joinToString(" ") { (id, v) -> "$id=${"%.1f".format(Locale.ROOT, v)}" }
+            val values = lastValues.entries.joinToString(" ") { (id, v) -> "$id=${fixed(v, 1)}" }
             listener.log("values $values")
         }
     }

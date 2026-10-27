@@ -56,6 +56,7 @@ final class RecordingController: ObservableObject {
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var obd: ObdLink?
     private var timer: Timer?
 
     var isRecording: Bool { session != nil }
@@ -113,6 +114,10 @@ final class RecordingController: ObservableObject {
             phone = link
             link.start()
         }
+        // OBD-II from a Bluetooth LE adapter nearby (FBBD-333); none found, none read.
+        let car = ObdLink(sink: live)
+        obd = car
+        car.start()
         UIApplication.shared.isIdleTimerDisabled = true
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
@@ -125,6 +130,7 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        obd?.stop()
         _ = live.stop()
         end()
     }
@@ -134,6 +140,7 @@ final class RecordingController: ObservableObject {
         timer = nil
         raceBox = nil
         phone = nil
+        obd = nil
         session = nil
         screen = nil
         receiver = nil
@@ -149,11 +156,13 @@ final class RecordingController: ObservableObject {
             // Ended by the recorder itself (storage full, write error): the files stay for recovery.
             raceBox?.stop()
             phone?.stop()
+            obd?.stop()
             end()
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
-        screen = TrackScreenModel(now, receiverHasG: receiver != .phone)
+        let obdOn = obd?.status().state == ObdLinkState.connected
+        screen = TrackScreenModel(now, receiverHasG: receiver != .phone, obdConnected: obdOn)
     }
 }
 
@@ -163,6 +172,10 @@ struct TrackScreenModel: Equatable {
         let label: String
         let value: String
         let ok: Bool
+        /// An SF Symbol in place of the dot and the label (UI-110 B); the label is then only read out.
+        var icon: String? = nil
+        /// The value stays on the quiet strip while ok, as for the heart rate (UI-141 B).
+        var keepValue = false
         var id: String { label }
     }
 
@@ -195,7 +208,8 @@ struct TrackScreenModel: Equatable {
     static let noValue = "–"
     static let slots = 6
 
-    init(_ s: LiveScreen, receiverHasG: Bool) {
+    /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B).
+    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false) {
         let live = s.live
         let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
@@ -207,7 +221,8 @@ struct TrackScreenModel: Equatable {
         let place = s.place.flatMap { name in
             s.placeSaved && s.timing == nil ? Status(label: "Track", value: name, ok: false) : nil
         }
-        status = [place, gnss].compactMap { $0 }
+        let obd = obdConnected ? Status(label: "OBD", value: "Connected", ok: true, icon: "car.fill") : nil
+        status = [place, gnss, obd].compactMap { $0 }
         recordingTime = Self.clock(micros: live.elapsedMicros)
         if s.gnss == GnssState.lost {
             alert = Alert(title: "GNSS signal lost", detail: "Recording continues", critical: true)

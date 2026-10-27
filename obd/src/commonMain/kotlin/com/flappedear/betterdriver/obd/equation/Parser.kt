@@ -72,7 +72,7 @@ internal class Parser(private val text: String) {
         while (pos < text.length && text[pos].isHexDigit()) pos++
         val digits = text.substring(start + 2, pos)
         if (digits.isEmpty() || digits.length > HEX_DIGITS) fail("Bad hexadecimal number", start)
-        return IntConst(java.lang.Long.parseUnsignedLong(digits, HEX))
+        return IntConst(digits.toULong(HEX).toLong())
     }
 
     private fun identifier(): Node {

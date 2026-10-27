@@ -1,17 +1,33 @@
 package com.flappedear.betterdriver.obd
 
-import java.io.IOException
-import java.util.UUID
+/**
+ * A GATT characteristic as service discovery found it; [properties] are Android's PROPERTY_* bits
+ * (the same bits as CoreBluetooth's CBCharacteristicProperties). [service] and [uuid] are UUID texts
+ * in any form a platform prints them ("FFF0", upper or lower case); they are compared as
+ * [BleSerial.uuid] makes them.
+ */
+class GattCharacteristic(service: String, uuid: String, val properties: Int) {
+    val service: String = BleSerial.uuid(service)
+    val uuid: String = BleSerial.uuid(uuid)
 
-/** A GATT characteristic as service discovery found it; [properties] are Android's PROPERTY_* bits. */
-data class GattCharacteristic(val service: UUID, val uuid: UUID, val properties: Int)
+    override fun equals(other: Any?) =
+        other is GattCharacteristic && other.service == service && other.uuid == uuid && other.properties == properties
+
+    override fun hashCode() = (service.hashCode() * HashPrime + uuid.hashCode()) * HashPrime + properties
+
+    override fun toString() = "GattCharacteristic(service=$service, uuid=$uuid, properties=$properties)"
+
+    private companion object {
+        const val HashPrime = 31
+    }
+}
 
 /**
  * The serial pair of a Bluetooth LE ELM327 (FBBD-121): [notify] carries the adapter's answers to the
  * phone, [write] takes the phone's commands; they can be one characteristic. [withResponse] is true
  * when [write] takes acknowledged writes, which pace the phone to the adapter.
  */
-data class BleSerialPair(val service: UUID, val notify: UUID, val write: UUID, val withResponse: Boolean)
+data class BleSerialPair(val service: String, val notify: String, val write: String, val withResponse: Boolean)
 
 /**
  * Finds the serial characteristics of a Bluetooth LE OBD-II adapter. These adapters have no standard
@@ -26,7 +42,7 @@ object BleSerial {
     const val PROPERTY_INDICATE = 0x20
 
     /** A known pair: service, notify characteristic, write characteristic. */
-    private data class Profile(val service: UUID, val notify: UUID, val write: UUID)
+    private data class Profile(val service: String, val notify: String, val write: String)
 
     /**
      * Pairs seen on ELM327 adapters that work over Bluetooth LE. FFF0 (FFF1 notify, FFF2 write) is
@@ -38,9 +54,9 @@ object BleSerial {
         Profile(short(0xFFF0), short(0xFFF1), short(0xFFF2)),
         Profile(short(0xFFE0), short(0xFFE1), short(0xFFE1)),
         Profile(
-            UUID.fromString("e7810a71-73ae-499d-8c15-faa9aef0c3f2"),
-            UUID.fromString("bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"),
-            UUID.fromString("bef8d6c9-9c21-4c9e-b632-bd58c1009f9f"),
+            "e7810a71-73ae-499d-8c15-faa9aef0c3f2",
+            "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f",
+            "bef8d6c9-9c21-4c9e-b632-bd58c1009f9f",
         ),
         Profile(short(0x18F0), short(0x2AF0), short(0x2AF1)),
     )
@@ -59,7 +75,7 @@ object BleSerial {
         return if (notify == null || write == null) null else pair(p.service, notify, write)
     }
 
-    private fun pair(service: UUID, notify: GattCharacteristic, write: GattCharacteristic) =
+    private fun pair(service: String, notify: GattCharacteristic, write: GattCharacteristic) =
         BleSerialPair(service, notify.uuid, write.uuid, write.properties and PROPERTY_WRITE != 0)
 
     /** The first non-standard service with a notifying and a writable characteristic. */
@@ -78,8 +94,26 @@ object BleSerial {
 
     private fun GattCharacteristic.writes() = properties and (PROPERTY_WRITE or PROPERTY_WRITE_NO_RESPONSE) != 0
 
-    /** A 16-bit UUID on the Bluetooth base UUID. */
-    fun short(id: Int): UUID = UUID.fromString("0000%04x-0000-1000-8000-00805f9b34fb".format(id))
+    /** A 16-bit UUID on the Bluetooth base UUID, as text: "0000fff0-0000-1000-8000-00805f9b34fb". */
+    fun short(id: Int): String = "0000${id.toString(HEX).padStart(SHORT_DIGITS, '0')}$BASE_SUFFIX"
+
+    /**
+     * [text] as a full lower-case UUID, the form java.util.UUID prints: a 16-bit ("FFF0") or 32-bit
+     * short form, as CoreBluetooth prints them, goes on the Bluetooth base UUID.
+     */
+    fun uuid(text: String): String {
+        val t = text.trim().lowercase()
+        return when (t.length) {
+            SHORT_DIGITS -> "0000$t$BASE_SUFFIX"
+            LONG_DIGITS -> "$t$BASE_SUFFIX"
+            else -> t
+        }
+    }
+
+    private const val HEX = 16
+    private const val SHORT_DIGITS = 4
+    private const val LONG_DIGITS = 8
+    private const val BASE_SUFFIX = "-0000-1000-8000-00805f9b34fb"
 }
 
 /** The GATT side a [BleSerialConnection] drives; the app implements it over BluetoothGatt. */
@@ -103,7 +137,7 @@ class BleSerialConnection(
     private val payload: Int,
     private val writeTimeoutMs: Long = DEFAULT_WRITE_TIMEOUT_MS,
 ) : ObdConnection {
-    private val lock = Object()
+    private val lock = ObdMonitor()
     private var ended: String? = null
     private var pending = false
     private var failed = false
@@ -126,28 +160,27 @@ class BleSerialConnection(
     }
 
     private fun writeChunk(chunk: ByteArray) {
-        synchronized(lock) {
+        lock.locked {
             ended?.let { throw IOException(it) }
             pending = true
             failed = false
         }
         val accepted = port.write(chunk)
-        val error = synchronized(lock) { if (accepted) awaitAck() else "write refused".also { pending = false } }
+        val error = lock.locked { if (accepted) awaitAck() else "write refused".also { pending = false } }
         error?.let { throw IOException(it) }
     }
 
     /** Under [lock]: waits for [writeDone]; null when the write went through, else why not. */
     private fun awaitAck(): String? {
-        val deadline = System.nanoTime() + writeTimeoutMs * NanosPerMs
+        val deadline = monoNanos() + writeTimeoutMs * NanosPerMs
         var interrupted = false
         while (pending && !reported && !interrupted) {
-            val left = (deadline - System.nanoTime()) / NanosPerMs
+            val left = (deadline - monoNanos()) / NanosPerMs
             if (left <= 0) return "write not acknowledged in $writeTimeoutMs ms"
             try {
-                lock.wait(left)
-            } catch (_: InterruptedException) {
+                lock.await(left)
+            } catch (_: IOException) {
                 // Stopping a session interrupts the OBD thread; a write then fails, never crashes (FBBD-269).
-                Thread.currentThread().interrupt()
                 interrupted = true
             }
         }
@@ -156,16 +189,16 @@ class BleSerialConnection(
 
     /** The GATT stack finished the last write, [ok] when it succeeded. */
     fun writeDone(ok: Boolean) {
-        synchronized(lock) {
+        lock.locked {
             pending = false
             failed = !ok
-            lock.notifyAll()
+            lock.signalAll()
         }
     }
 
     /** A notification from the adapter. */
     fun notified(value: ByteArray) {
-        if (synchronized(lock) { ended == null }) bytes.received(value)
+        if (lock.locked { ended == null }) bytes.received(value)
     }
 
     /** The link dropped, with [reason]; [close] still releases the GATT connection. */
@@ -173,20 +206,20 @@ class BleSerialConnection(
 
     override fun close() {
         end("closed")
-        val first = synchronized(lock) { !released.also { released = true } }
+        val first = lock.locked { !released.also { released = true } }
         if (first) port.disconnect()
     }
 
     private fun end(reason: String) {
-        synchronized(lock) {
+        lock.locked {
             if (ended != null) return
             ended = reason
         }
         // The reader hears why before a waiting write fails, so the line closes with this reason.
         bytes.closed(reason)
-        synchronized(lock) {
+        lock.locked {
             reported = true
-            lock.notifyAll()
+            lock.signalAll()
         }
     }
 

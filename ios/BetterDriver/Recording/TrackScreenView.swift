@@ -96,10 +96,20 @@ private struct TopStrip: View {
             HStack(spacing: 18) {
                 ForEach(model.status) { item in
                     HStack(spacing: 6) {
-                        Dot(color: item.ok ? TrackColors.gain : TrackColors.warning)
-                        Text(item.label).font(TrackFonts.text(13, .medium)).foregroundStyle(TrackColors.textDim)
-                        if !item.ok {
-                            Text(item.value).font(TrackFonts.number(15, .semibold)).foregroundStyle(TrackColors.warning)
+                        let tint = item.ok ? TrackColors.gain : TrackColors.warning
+                        if let icon = item.icon {
+                            Image(systemName: icon)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(tint)
+                                .accessibilityLabel(item.label)
+                        } else {
+                            Dot(color: tint)
+                            Text(item.label).font(TrackFonts.text(13, .medium)).foregroundStyle(TrackColors.textDim)
+                        }
+                        if !item.ok || item.keepValue {
+                            Text(item.value)
+                                .font(TrackFonts.number(15, .semibold))
+                                .foregroundStyle(item.ok ? TrackColors.text : TrackColors.warning)
                         }
                     }
                     .lineLimit(1)
