@@ -134,6 +134,8 @@ struct StatusDot: View {
 /// A settings page: a scrolling column of groups, 12 points apart, on black, titled as on Android.
 struct ShellPage<Content: View>: View {
     let title: String
+    /// A tab's own page has the large title; a page opened from it the small one.
+    var large = false
     @ViewBuilder let content: Content
 
     var body: some View {
@@ -144,7 +146,7 @@ struct ShellPage<Content: View>: View {
         }
         .background(Palette.background)
         .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
+        .navigationBarTitleDisplayMode(large ? .large : .inline)
     }
 }
 

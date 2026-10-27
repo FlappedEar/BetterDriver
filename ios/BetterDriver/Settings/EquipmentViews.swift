@@ -248,21 +248,15 @@ struct NearbyDevice {
 
     /// The thresholds of the Android pairing screen.
     var bars: Int {
-        switch rssi {
-        case -60...: 4
-        case -70...: 3
-        case -80...: 2
-        case -90...: 1
-        default: 0
-        }
+        if rssi >= -60 { return 4 }
+        if rssi >= -70 { return 3 }
+        if rssi >= -80 { return 2 }
+        return rssi >= -90 ? 1 : 0
     }
 
     var note: String? {
-        switch model {
-        case ModelName.obdBluetooth: "OBD-II adapter · Bluetooth LE"
-        case ModelName.heartRate: "Heart-rate monitor"
-        default: nil
-        }
+        if model == ModelName.obdBluetooth { return "OBD-II adapter · Bluetooth LE" }
+        return model == ModelName.heartRate ? "Heart-rate monitor" : nil
     }
 }
 

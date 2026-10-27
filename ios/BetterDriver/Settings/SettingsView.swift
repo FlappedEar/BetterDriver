@@ -20,7 +20,7 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            ShellPage(title: "Settings") {
+            ShellPage(title: "Settings", large: true) {
                 ShellCard {
                     ForEach(Array(SettingsTopic.allCases.enumerated()), id: \.element) { i, topic in
                         NavigationLink(value: topic) {
@@ -31,7 +31,6 @@ struct SettingsView: View {
                     }
                 }
             }
-            .navigationBarTitleDisplayMode(.large)
             .navigationDestination(for: SettingsTopic.self) { topic in page(topic) }
         }
     }
@@ -103,19 +102,21 @@ struct TrackScreenPage: View {
 /// Settings › Video: one row per camera the app sets, with its mode, and the storage left (UI-39).
 struct VideoPage: View {
     @EnvironmentObject private var settings: SettingsModel
-    @State private var choosing: Equipment?
+    @State private var choosing: SheetId?
 
     var body: some View {
         let cams = settings.setup.equipment.filter { $0.videoMode != nil }
         ShellPage(title: "Video") {
             ShellCard {
                 ForEach(Array(cams.enumerated()), id: \.element.id) { i, cam in
-                    ListRow(cam.name, value: cam.videoMode?.label, divider: i > 0) { choosing = cam }
+                    ListRow(cam.name, value: cam.videoMode?.label, divider: i > 0) { choosing = SheetId(id: cam.id) }
                 }
                 ListRow("Storage", value: Storage.freeLabel, divider: !cams.isEmpty)
             }
         }
-        .sheet(item: $choosing) { cam in VideoModeSheet(item: cam) }
+        .sheet(item: $choosing) { chosen in
+            if let cam = settings.setup.equipment(id: chosen.id) { VideoModeSheet(item: cam) }
+        }
     }
 }
 
@@ -224,5 +225,7 @@ enum Storage {
     }
 }
 
-extension Equipment: Identifiable {}
-extension CarProfile: Identifiable {}
+/// A sheet's subject by id: Kotlin classes are not made Identifiable here.
+struct SheetId: Identifiable {
+    let id: String
+}

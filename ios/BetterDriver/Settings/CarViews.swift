@@ -43,7 +43,7 @@ struct CarTab: View {
             if let id = setup.session.carId, setup.car(id: id) != nil {
                 CarPage(id: id, showsBack: false)
             } else {
-                ShellPage(title: "Car") {
+                ShellPage(title: "Car", large: true) {
                     if setup.cars.isEmpty {
                         DimText("No cars yet. Add the car you drive; its name goes into each session and its export.")
                         TonalButton(text: "Add car") { adding = true }
@@ -59,7 +59,6 @@ struct CarTab: View {
                         }
                     }
                 }
-                .navigationBarTitleDisplayMode(.large)
             }
         }
         .sheet(isPresented: $adding) { CarEditSheet(car: nil) }
@@ -78,7 +77,7 @@ struct CarPage: View {
         let setup = settings.setup
         if let car = setup.car(id: id) {
             let chosen = setup.session.carId == car.id
-            ShellPage(title: car.name) {
+            ShellPage(title: car.name, large: !showsBack) {
                 let line = [car.notes, chosen ? "next session" : ""].filter { !$0.isEmpty }
                 if !line.isEmpty { DimText(line.joined(separator: " · ")) }
                 if chosen {
@@ -97,7 +96,6 @@ struct CarPage: View {
                     TonalButton(text: "Use for the next session") { settings.update { $0.chooseCar(id: car.id) } }
                 }
             }
-            .navigationBarTitleDisplayMode(showsBack ? .inline : .large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Edit") { editing = true }.tint(Palette.accent)
