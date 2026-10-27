@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.analysis.data.provenanceText
 import com.flappedear.betterdriver.analysis.recorded.HorizontalAccuracy
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
@@ -24,22 +25,6 @@ private val AccuracyChannels = HorizontalAccuracy
 
 /** Positions, whose confidence includes the receiver's accuracy. */
 private val PositionIds = setOf(GnssChannels.LAT.id, GnssChannels.LON.id)
-
-/** How each provenance is written in the report. */
-internal fun provenanceText(p: Provenance): String = when (p) {
-    Provenance.MEASURED_GPS -> "measured by GPS"
-    Provenance.MEASURED_GNSS_RECEIVER -> "measured by the GNSS receiver"
-    Provenance.MEASURED_ACCELEROMETER -> "measured by the accelerometer"
-    Provenance.MEASURED_OBD -> "measured through OBD"
-    Provenance.MEASURED_CAN -> "measured on the CAN bus"
-    Provenance.MEASURED_SENSOR -> "measured by a sensor"
-    Provenance.CALCULATED -> "calculated"
-    Provenance.INFERRED -> "inferred"
-    Provenance.FUSED -> "fused from several sources"
-    Provenance.INTERPOLATED -> "interpolated"
-    Provenance.SIMULATED -> "simulated"
-    Provenance.UNKNOWN -> "of unknown source"
-}
 
 /**
  * One information metric per channel the session holds, in id order: its sample rate as the value,

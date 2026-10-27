@@ -1,0 +1,321 @@
+package com.flappedear.betterdriver.analysis.line
+
+import com.flappedear.betterdriver.analysis.geo.GeoCoordinate
+import com.flappedear.betterdriver.analysis.geo.MetricPoint
+import com.flappedear.betterdriver.analysis.geo.unprojectCoordinate
+import com.flappedear.betterdriver.analysis.optimal.PedalState
+import com.flappedear.betterdriver.timing.gear.Gearbox
+import com.flappedear.betterdriver.timing.steering.SteerAdvice
+import com.flappedear.betterdriver.timing.steering.SteeringPass
+import kotlinx.serialization.Serializable
+import kotlin.math.abs
+import kotlin.math.roundToInt
+
+// The line plan (FBBD-306, Confluence "Getting faster loop"): what the line analysis found at a
+// track, kept so every part of the loop says the same. The Map tab shows it, the coach says it on
+// track, the 3D export draws it and the next session measures against it. Only the line analysis
+// makes it; the others read it and never work out targets of their own.
+
+/** One point of a line, where it is on the earth and on the lap. */
+@Serializable
+data class PlanPoint(
+    val progressMeters: Double,
+    val latitude: Double,
+    val longitude: Double,
+    /** From the analysed session's axis, positive left of travel. */
+    val offsetMeters: Double? = null,
+    val speedKmh: Double? = null,
+    val pedal: PedalState? = null,
+    /** The steering wheel, degrees, positive left (FBBD-321). */
+    val steerDeg: Double? = null,
+)
+
+/** Where something happens on a pass: braking starts, the slowest point, back on throttle. */
+@Serializable
+data class PlanMark(
+    val progressMeters: Double,
+    val latitude: Double,
+    val longitude: Double,
+    val speedKmh: Double? = null,
+)
+
+/** One lap through one corner. */
+@Serializable
+data class PlanPass(
+    /** The session's id, and what the screen calls it (empty for the analysed session). */
+    val sessionId: String,
+    val sessionLabel: String,
+    val lapNumber: Int,
+    val lapSeconds: Double,
+    /** Through the corner's window. */
+    val seconds: Double,
+    val brake: PlanMark? = null,
+    val apex: PlanMark? = null,
+    val throttle: PlanMark? = null,
+    val line: List<PlanPoint> = emptyList(),
+    /** What the hands did (FBBD-321); null without the car's steering angle. */
+    val steering: SteeringPass? = null,
+)
+
+/** One corner of the plan; [cornerId] is the track's CornerId (FBBD-172), null when the analysis had none. */
+@Serializable
+data class PlanCorner(
+    val cornerId: String?,
+    val name: String,
+    val turnsLeft: Boolean,
+    val startMeters: Double,
+    val endMeters: Double,
+    /** Time to find here: the analysed lap against the target, 0 when nothing beyond noise. */
+    val gainSeconds: Double,
+    val reference: PlanPass,
+    val target: PlanPass,
+    val advice: PlanAdvice,
+    /** The road the laps used, left and right edge, where enough laps went. */
+    val roadLeft: List<PlanPoint> = emptyList(),
+    val roadRight: List<PlanPoint> = emptyList(),
+    /** The session's fastest pass through the corner from any of its laps: what the next one is measured against. */
+    val sessionBestSeconds: Double? = null,
+    /** Beyond his own best (FBBD-312): a braking point to move where the target has nothing left; null without. */
+    val brakeRoom: PlanBrakeRoom? = null,
+    /** A lower gear at the slowest point (FBBD-326); null without. */
+    val gear: PlanGear? = null,
+)
+
+/**
+ * [CornerGear] as kept (FBBD-326): be in [gear] at the slowest point, not [from]; [higherLaps] of
+ * [laps] laps were in [from] or above. The exit speeds are the median [ExitMeters] after the slowest
+ * point in each gear, the pulls the car's at full throttle at [apexKmh], [seconds] what the laps in
+ * [gear] were faster through the corner.
+ */
+@Serializable
+data class PlanGear(
+    val gear: Int,
+    val from: Int,
+    val apexKmh: Double,
+    val higherLaps: Int,
+    val laps: Int,
+    val lowerExitKmh: Double? = null,
+    val higherExitKmh: Double? = null,
+    val lowerPullG: Double,
+    val higherPullG: Double,
+    val seconds: Double? = null,
+)
+
+/**
+ * [BrakeRoom] as kept (FBBD-312): brake [laterMeters] later than the target, worth about [seconds];
+ * braking at [trackG] all the way would be [fullLaterMeters] later and [fullSeconds]. [peakG] is
+ * the target's braking here, [trackCorners] the corners that set [trackG].
+ */
+@Serializable
+data class PlanBrakeRoom(
+    val laterMeters: Int,
+    val seconds: Double,
+    val fullLaterMeters: Int,
+    val fullSeconds: Double,
+    val peakG: Double,
+    val trackG: Double,
+    val trackCorners: List<String> = emptyList(),
+)
+
+/** [CornerAdvice] as kept: along-track metres target minus reference (positive later), tighter positive. */
+@Serializable
+data class PlanAdvice(
+    val brakeMeters: Double? = null,
+    val apexMeters: Double? = null,
+    val tighterMeters: Double? = null,
+    val minimumSpeedKmh: Double? = null,
+    val pickupMeters: Double? = null,
+    /**
+     * What to do with the wheel (FBBD-321), in driving order; shown as Arek picked on the UI review
+     * page, round 54 (UI-273 B: words and the wheel trace).
+     */
+    val steering: List<SteerAdvice> = emptyList(),
+) {
+    val any: Boolean
+        get() = listOf(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters).any { it != null } ||
+            steering.isNotEmpty()
+}
+
+/**
+ * The line plan of a track, from the latest analysed session there: its fastest lap against the
+ * target through each corner (the second fastest pass over every session at the track, FBBD-177).
+ */
+@Serializable
+data class LinePlan(
+    val format: String = Format,
+    val version: Int = Version,
+    val trackId: String,
+    /** The session it was made from, and when that session started: a later session's plan replaces it. */
+    val sessionId: String,
+    val sessionStartUtcMillis: Long,
+    /** The track's corner identity revision the corner ids are in (FBBD-172); null without one. */
+    val identityRevision: Int? = null,
+    val referenceLapNumber: Int,
+    val referenceLapSeconds: Double,
+    val laps: Int,
+    val sessions: Int,
+    /** In track order. */
+    val corners: List<PlanCorner>,
+    /** The car's gears (FBBD-326): the coach reads the gear of a pass with them; null without. */
+    val gearbox: Gearbox? = null,
+) {
+    /** Most time to find first. */
+    val ranked: List<PlanCorner> get() = corners.sortedByDescending { it.gainSeconds }
+
+    val totalGainSeconds: Double get() = corners.sumOf { it.gainSeconds }
+
+    /**
+     * What to work on next (FBBD-20, FBBD-310): the corners with time to find and something to do
+     * differently, most time first, at most [count]. Places left over go to the braking points
+     * beyond his best, most time first (FBBD-312, UI-277 A): a driven target is surer than an
+     * estimate from other corners. The coach, the summary and the proof in the next session all take
+     * the focus from here.
+     */
+    fun focus(count: Int = FocusCorners): List<PlanCorner> {
+        val driven = ranked.filter { it.gainSeconds > 0.0 && it.advice.any }.take(count)
+        val room = corners.filter { it.brakeRoom != null && it !in driven }
+            .sortedByDescending { it.brakeRoom!!.seconds }
+        // Then a lower gear (FBBD-326), most time first: the car's own pull, not a driven target.
+        val gears = corners.filter { it.gear != null && it !in driven && it !in room }
+            .sortedByDescending { it.gear!!.seconds ?: 0.0 }
+        return (driven + room + gears).take(count)
+    }
+
+    /**
+     * The perfect lap: the target through every corner one after the other. The corners' windows
+     * tile the lap, so the pieces join end to end and the time is the lap's less every gain.
+     */
+    fun perfectLap(): PerfectLap {
+        val points = mutableListOf<PlanPoint>()
+        val pieces = corners.map { c ->
+            val line = c.target.line.dropWhile { p -> points.lastOrNull()?.let { same(it, p) } == true }
+            val from = points.size
+            points += line
+            PerfectPiece(
+                c.cornerId, c.name, c.target.sessionId, c.target.sessionLabel, c.target.lapNumber,
+                from, points.size, c.target.brake, c.target.apex, c.target.throttle,
+            )
+        }
+        return PerfectLap(referenceLapSeconds - totalGainSeconds, points, pieces)
+    }
+
+    companion object {
+        const val Format = "betterdriver-line-plan"
+        const val Version = 1
+
+        /** The coach works on at most this many corners in a session, as the session focus (FBBD-20). */
+        const val FocusCorners = 3
+    }
+}
+
+private fun same(a: PlanPoint, b: PlanPoint) = abs(a.progressMeters - b.progressMeters) < SameProgressMeters
+
+private const val SameProgressMeters = 0.01
+
+/** The perfect lap as one line, and which pass each stretch of it comes from. */
+data class PerfectLap(val seconds: Double, val points: List<PlanPoint>, val pieces: List<PerfectPiece>)
+
+/** One corner's stretch of the perfect lap: [points] from [fromIndex] to before [toIndex]. */
+data class PerfectPiece(
+    val cornerId: String?,
+    val name: String,
+    val sessionId: String,
+    val sessionLabel: String,
+    val lapNumber: Int,
+    val fromIndex: Int,
+    val toIndex: Int,
+    val brake: PlanMark?,
+    val apex: PlanMark?,
+    val throttle: PlanMark?,
+)
+
+/**
+ * [line] as the plan of [trackId], from session [sessionId] started at [startUtcMillis]; positions
+ * from [origin], the analysed session's axis origin. [identityRevision] only when the analysis's
+ * corners are the track's (SessionAnalysis.identified), so the corner ids are CornerIds. [beyond]
+ * gives the braking points beyond his best (FBBD-312).
+ */
+@Suppress("LongParameterList") // What the plan says where it came from.
+fun linePlan(
+    line: LineAnalysis,
+    origin: GeoCoordinate,
+    trackId: String,
+    sessionId: String,
+    startUtcMillis: Long,
+    identityRevision: Int?,
+    beyond: BeyondBest? = line.beyondBest(),
+): LinePlan {
+    fun point(p: LinePoint): PlanPoint {
+        val at = unprojectCoordinate(p.eastMeters, p.northMeters, origin)
+        return PlanPoint(
+            p.progressMeters, at.latitudeDegrees, at.longitudeDegrees, p.offsetMeters, p.speedKmh, p.pedal, p.steerDeg,
+        )
+    }
+    fun mark(pass: LinePass, progress: Double?, speed: Double? = null): PlanMark? {
+        val near = progress?.let { p -> pass.line.minByOrNull { abs(it.progressMeters - p) } } ?: return null
+        val at = unprojectCoordinate(near.eastMeters, near.northMeters, origin)
+        return PlanMark(progress!!, at.latitudeDegrees, at.longitudeDegrees, speed ?: near.speedKmh)
+    }
+    fun pass(p: LinePass) = PlanPass(
+        sessionId = p.sourceId.ifEmpty { sessionId },
+        sessionLabel = p.source,
+        lapNumber = p.lapNumber,
+        lapSeconds = p.lapSeconds,
+        seconds = p.seconds,
+        brake = mark(p, p.brakingPointMeters),
+        apex = mark(p, p.minimumSpeedMeters, p.minimumSpeedKmh),
+        throttle = mark(p, p.pickupMeters),
+        line = p.line.map(::point),
+        steering = p.steering,
+    )
+    fun edge(meters: Double, at: MetricPoint, progress: Double): PlanPoint {
+        val g = unprojectCoordinate(at.eastMeters, at.northMeters, origin)
+        return PlanPoint(progress, g.latitudeDegrees, g.longitudeDegrees, meters)
+    }
+    return LinePlan(
+        trackId = trackId,
+        sessionId = sessionId,
+        sessionStartUtcMillis = startUtcMillis,
+        identityRevision = identityRevision,
+        referenceLapNumber = line.referenceLapNumber,
+        referenceLapSeconds = line.referenceLapSeconds,
+        laps = line.laps,
+        sessions = line.sessions,
+        corners = line.corners.map { c ->
+            val a = c.advice
+            PlanCorner(
+                cornerId = c.segmentId.takeIf { identityRevision != null },
+                name = c.name,
+                turnsLeft = c.turnsLeft,
+                startMeters = c.startMeters,
+                endMeters = c.endMeters,
+                gainSeconds = c.gainSeconds,
+                reference = pass(c.reference),
+                target = pass(c.target),
+                advice = PlanAdvice(
+                    a.brakeMeters, a.apexMeters, a.tighterMeters, a.minimumSpeedKmh, a.pickupMeters, a.steering,
+                ),
+                roadLeft = c.road.map { edge(it.leftMeters, it.left, it.progressMeters) },
+                roadRight = c.road.map { edge(it.rightMeters, it.right, it.progressMeters) },
+                sessionBestSeconds = c.sessionBestSeconds,
+                brakeRoom = beyond?.let { b -> planBrakeRoom(b, c.segmentId) },
+                gear = c.gear?.let { g ->
+                    PlanGear(
+                        g.gear, g.from, g.apexKmh, g.higherLaps, g.laps, g.lowerExitKmh, g.higherExitKmh,
+                        g.lowerPullG, g.higherPullG, g.seconds,
+                    )
+                },
+            )
+        },
+        gearbox = line.gearbox,
+    )
+}
+
+private fun planBrakeRoom(beyond: BeyondBest, segmentId: String): PlanBrakeRoom? {
+    val room = beyond.corners.firstOrNull { it.segmentId == segmentId }?.brake ?: return null
+    val step = room.laterMeters.roundToInt()
+    return PlanBrakeRoom(
+        step, room.seconds, maxOf(step, room.fullLaterMeters.roundToInt()), room.fullSeconds,
+        room.peakG, room.trackG, beyond.limits.brakeCorners,
+    )
+}

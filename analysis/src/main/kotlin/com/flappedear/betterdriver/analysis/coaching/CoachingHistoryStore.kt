@@ -76,10 +76,6 @@ class CoachingHistoryStore(private val dir: File) {
     }
 }
 
-/** Sessions in the order they were driven; the id breaks a tie. */
-internal val SessionOrder: Comparator<SessionCoachingRecord> =
-    compareBy({ it.sessionStartUtcMillis }, { it.sessionId })
-
 /** A track or session [id], once it is known to be safe as a file name. */
 internal fun checkedId(id: String): String {
     require(id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_." } && id != "." && id != "..") {
