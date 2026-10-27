@@ -114,8 +114,8 @@ jobs:
             CODE_SIGNING_ALLOWED=NO > build/xcodebuild.log 2>&1 && status=0 || status=$?
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
           # With two destinations xcodebuild prints no per-test lines: the result bundle names the failures.
-          xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult --compact 2>/dev/null \
-            | python3 -c 'import json,sys; [print("FAILED", f.get("testIdentifierString"), "on", f.get("targetName"), "-", f.get("failureText")) for f in json.load(sys.stdin).get("testFailures", [])]' || true
+          xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/summary.json || true
+          python3 -c 'import json; d=json.load(open("build/summary.json")); print("RESULT", d.get("result"), d.get("passedTests"), "passed", d.get("failedTests"), "failed"); [print("FAILED", json.dumps(f)) for f in d.get("testFailures", [])]' || head -c 3000 build/summary.json
           exit $status
       # The UI tests' screenshots of the demo sessions' review (FBBD-331), one PNG per tab and device.
       - name: Review screenshots
