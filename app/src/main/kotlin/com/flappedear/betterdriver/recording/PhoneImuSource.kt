@@ -11,13 +11,14 @@ import android.os.SystemClock
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.DataSource
+import com.flappedear.betterdriver.recorder.PhoneGnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
 import com.flappedear.betterdriver.recorder.log.DebugLog
 
 /** The phone's own accelerometer, in g along the phone's axes, gravity included like the RaceBox's. */
 object PhoneImuChannels {
-    const val SOURCE = "phone"
+    const val SOURCE = PhoneGnssChannels.SOURCE
     val ACCEL_X = ChannelDef(700, "phone_accel_x", "g", SOURCE, 3)
     val ACCEL_Y = ChannelDef(701, "phone_accel_y", "g", SOURCE, 3)
     val ACCEL_Z = ChannelDef(702, "phone_accel_z", "g", SOURCE, 3)

@@ -3,10 +3,11 @@
 <!-- Keys Xcode cannot generate from INFOPLIST_KEY_ settings; the generated ones are merged in (project.yml). -->
 <plist version="1.0">
 <dict>
-	<!-- A recording keeps reading the RaceBox with the phone locked (FBBD-332). -->
+	<!-- A recording keeps reading the RaceBox and the phone's GPS with the phone locked (FBBD-332). -->
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>bluetooth-central</string>
+		<string>location</string>
 	</array>
 </dict>
 </plist>

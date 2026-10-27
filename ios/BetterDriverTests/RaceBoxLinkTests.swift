@@ -1,4 +1,5 @@
 import XCTest
+import CoreLocation
 import BetterDriverCore
 @testable import BetterDriver
 
@@ -42,9 +43,39 @@ final class RaceBoxLinkTests: XCTestCase {
     }
 
     func testRecordsWithThePhoneLocked() {
-        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
-        XCTAssertEqual(modes, ["bluetooth-central"])
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        XCTAssertTrue(modes.contains("bluetooth-central"))
         let why = Bundle.main.object(forInfoDictionaryKey: "NSBluetoothAlwaysUsageDescription") as? String
+        XCTAssertFalse(why?.isEmpty ?? true)
+    }
+}
+
+/// The phone's GPS on iPhone (FBBD-332): positions become the same sets as on Android.
+final class PhoneGpsLinkTests: XCTestCase {
+    func testAPositionIsStampedWhenMeasured() {
+        let now = Date(timeIntervalSince1970: 1_790_000_000)
+        let location = CLLocation(
+            coordinate: CLLocationCoordinate2D(latitude: 50.1, longitude: 19.9),
+            altitude: 220,
+            horizontalAccuracy: 3.5,
+            verticalAccuracy: 5,
+            course: 90,
+            speed: 25,
+            timestamp: now.addingTimeInterval(-0.3)
+        )
+        let set = PhoneGpsLink.sampleSet(location, nowMicros: 60_000_000, now: now)
+        XCTAssertEqual(set.tMicros, 59_700_000)
+        let values = Dictionary(uniqueKeysWithValues: set.values.map { ($0.channelId, $0.value) })
+        XCTAssertEqual(values[GnssChannels.shared.LAT.id], 50.1)
+        XCTAssertEqual(values[GnssChannels.shared.SPEED_KMH.id] ?? 0, 90, accuracy: 1e-9)
+        XCTAssertEqual(values[PhoneGnssChannels.shared.ACCURACY.id], 3.5)
+        XCTAssertNil(values[GnssChannels.shared.SATS.id])
+    }
+
+    func testRecordsPositionsWithThePhoneLocked() {
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String] ?? []
+        XCTAssertTrue(modes.contains("location"))
+        let why = Bundle.main.object(forInfoDictionaryKey: "NSLocationWhenInUseUsageDescription") as? String
         XCTAssertFalse(why?.isEmpty ?? true)
     }
 }
