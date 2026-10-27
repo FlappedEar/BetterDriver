@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.core.ble
 import android.content.Context
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
+import com.flappedear.betterdriver.recorder.log.DebugLog
 import kotlinx.coroutines.flow.StateFlow
 
 /**
@@ -30,19 +31,17 @@ class RaceBoxSource(
     val state: StateFlow<LinkState>? get() = link?.state
 
     override fun start(sink: SampleSink) {
-        val decoder = RaceBoxDecoder(sink, isMicro, calibration) { reason -> link?.requestFastLink(reason) }
-        decoder.defineChannels()
-        sink.event(RaceBoxEvents.IMU_CALIBRATION, calibration?.encode() ?: "none")
-        var wasStreaming = false
-        link = RaceBoxLink(context, address, onData = decoder::feed, onState = { s ->
-            logLink(address, s, wasStreaming)
-            val streaming = s is LinkState.Streaming
-            if (streaming && !wasStreaming) sink.event(RaceBoxEvents.CONNECTED, address)
-            if (s is LinkState.Reconnecting) {
-                if (wasStreaming) sink.event(RaceBoxEvents.DISCONNECTED, s.reason)
-                decoder.reset()
+        val session = RaceBoxSession(sink, isMicro, calibration, log = { DebugLog.i("RaceBox", it) }) { reason ->
+            link?.requestFastLink(reason)
+        }
+        session.start()
+        link = RaceBoxLink(context, address, onData = session::feed, onState = { s ->
+            logLink(address, s, session.wasStreaming)
+            when (s) {
+                is LinkState.Streaming -> session.streaming(address)
+                is LinkState.Reconnecting -> session.reconnecting(s.reason)
+                else -> Unit
             }
-            if (streaming || s is LinkState.Reconnecting) wasStreaming = streaming
         }).also { it.start() }
     }
 
