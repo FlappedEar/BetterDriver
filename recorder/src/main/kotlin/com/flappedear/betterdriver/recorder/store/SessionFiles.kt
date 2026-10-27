@@ -1,9 +1,5 @@
 package com.flappedear.betterdriver.recorder.store
 
-import com.flappedear.betterdriver.recorder.ChannelDef
-import com.flappedear.betterdriver.recorder.Gate
-import com.flappedear.betterdriver.recorder.ImportOrigin
-import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.SessionInfo
 import java.io.File
 import java.io.FileOutputStream
@@ -25,17 +21,17 @@ import java.util.Properties
  * ```
  */
 object SessionFiles {
-    const val META = "meta.properties"
-    const val LOCK = "session.lock"
-    const val FINISHED = "finished.properties"
-    const val RECOVERY = "recovery.properties"
-    const val CHUNK_PREFIX = "chunk-"
-    const val CHUNK_SUFFIX = ".bdr"
+    const val META = SessionFileNames.META
+    const val LOCK = SessionFileNames.LOCK
+    const val FINISHED = SessionFileNames.FINISHED
+    const val RECOVERY = SessionFileNames.RECOVERY
+    const val CHUNK_PREFIX = SessionFileNames.CHUNK_PREFIX
+    const val CHUNK_SUFFIX = SessionFileNames.CHUNK_SUFFIX
 
-    fun chunkName(index: Int) = "%s%06d%s".format(CHUNK_PREFIX, index, CHUNK_SUFFIX)
+    fun chunkName(index: Int) = SessionFileNames.chunkName(index)
 
     fun chunks(dir: File): List<File> =
-        (dir.listFiles { f -> f.name.startsWith(CHUNK_PREFIX) && f.name.endsWith(CHUNK_SUFFIX) } ?: emptyArray())
+        (dir.listFiles { f -> SessionFileNames.isChunk(f.name) } ?: emptyArray())
             .sortedBy { it.name }
 
     /** Writes [props] to [target] via a synced temp file and a rename, so readers never see half a file. */
@@ -113,83 +109,9 @@ object SessionFiles {
         }
     }
 
-    fun metaToProps(id: String, info: SessionInfo): Properties = Properties().apply {
-        setProperty("format", "1")
-        setProperty("id", id)
-        setProperty("startUtcMillis", info.startUtcMillis.toString())
-        setProperty("car", info.car)
-        setProperty("track", info.track)
-        setProperty("devices", info.devices.joinToString("\n"))
-        info.startFinish?.let { g ->
-            setProperty("startFinish.name", g.name)
-            setProperty("startFinish.lat1", g.lat1.toString())
-            setProperty("startFinish.lon1", g.lon1.toString())
-            setProperty("startFinish.lat2", g.lat2.toString())
-            setProperty("startFinish.lon2", g.lon2.toString())
-        }
-        info.imported?.let { o ->
-            setProperty("imported.format", o.format)
-            setProperty("imported.file", o.fileName)
-            if (o.receiver.isNotEmpty()) setProperty("imported.receiver", o.receiver)
-            o.sampleRateHz?.let { setProperty("imported.sampleRateHz", it.toString()) }
-        }
-        setProperty("channels", info.channels.size.toString())
-        info.channels.forEachIndexed { i, c ->
-            setProperty("channel.$i.id", c.id.toString())
-            setProperty("channel.$i.name", c.name)
-            setProperty("channel.$i.unit", c.unit)
-            setProperty("channel.$i.source", c.source)
-            setProperty("channel.$i.decimals", c.decimals.toString())
-            // Added by FBBD-174; older builds ignore it.
-            setProperty("channel.$i.provenance", c.provenance.name)
-        }
-    }
+    fun metaToProps(id: String, info: SessionInfo): Properties =
+        Properties().apply { metaEntries(id, info).forEach { (k, v) -> setProperty(k, v) } }
 
-    fun propsToMeta(p: Properties): SessionInfo {
-        val gate = p.getProperty("startFinish.name")?.let {
-            Gate(
-                it,
-                p.getProperty("startFinish.lat1").toDouble(),
-                p.getProperty("startFinish.lon1").toDouble(),
-                p.getProperty("startFinish.lat2").toDouble(),
-                p.getProperty("startFinish.lon2").toDouble(),
-            )
-        }
-        val devices = p.getProperty("devices", "").split("\n").filter { it.isNotEmpty() }
-        val imported = p.getProperty("imported.format")?.let {
-            ImportOrigin(
-                it,
-                p.getProperty("imported.file", ""),
-                p.getProperty("imported.receiver", ""),
-                p.getProperty("imported.sampleRateHz")?.toDoubleOrNull(),
-            )
-        }
-        val n = p.getProperty("channels", "0").toInt()
-        val channels = (0 until n).map { i ->
-            val def = ChannelDef(
-                p.getProperty("channel.$i.id").toInt(),
-                p.getProperty("channel.$i.name"),
-                p.getProperty("channel.$i.unit"),
-                p.getProperty("channel.$i.source"),
-                p.getProperty("channel.$i.decimals").toInt(),
-            )
-            // A session stored before FBBD-174 has none: derived from what its metadata says. A kind
-            // this version does not know (from a newer app) is unknown, never guessed as measured.
-            val provenance = when (val stored = p.getProperty("channel.$i.provenance")) {
-                null -> Provenance.forSession(def, devices, imported)
-                else -> Provenance.parse(stored) ?: Provenance.UNKNOWN
-            }
-            def.copy(provenance = provenance)
-        }
-        return SessionInfo(
-            startUtcMillis = p.getProperty("startUtcMillis").toLong(),
-            car = p.getProperty("car", ""),
-            track = p.getProperty("track", ""),
-            devices = devices,
-            startFinish = gate,
-            channels = channels,
-            imported = imported,
-        )
-    }
-
+    fun propsToMeta(p: Properties): SessionInfo =
+        metaFromEntries(p.stringPropertyNames().associateWith { p.getProperty(it) })
 }

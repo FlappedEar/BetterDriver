@@ -1,9 +1,5 @@
 package com.flappedear.betterdriver.recorder.store
 
-import com.flappedear.betterdriver.recorder.ChannelDef
-import com.flappedear.betterdriver.recorder.Provenance
-import com.flappedear.betterdriver.recorder.RecorderEvent
-import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import java.io.File
 import java.time.Instant
@@ -22,16 +18,6 @@ data class SessionSummary(
 )
 
 private const val IdSuffixChars = 8
-
-/**
- * [def], read from a chunk (which stores no provenance), with its provenance from [info]: the
- * metadata's entry for its id, which the recorder keeps up to date for every channel it writes
- * (FBBD-174), else one derived as for a session stored before provenance was ([Provenance.forSession]).
- */
-private fun withProvenance(def: ChannelDef, info: SessionInfo): ChannelDef {
-    val stored = info.channels.firstOrNull { it.id == def.id && it.name == def.name }?.provenance
-    return def.copy(provenance = stored ?: Provenance.forSession(def, info.devices, info.imported))
-}
 
 /** Name prefix of a session directory being deleted; such directories are never listed. */
 private const val DeletingPrefix = ".deleting-"
@@ -136,35 +122,10 @@ class SessionStore(
         list().filter { it.state == SessionState.INTERRUPTED }.map { recover(it.dir) }
 
     private fun recover(dir: File): RecoveryReport {
-        var records = 0L
-        var sets = 0L
-        var last: Long? = null
-        var truncated = 0L
-        var skipped = 0L
-        val chunks = SessionFiles.chunks(dir)
-        for (c in chunks) {
-            val r = Frames.scan(c.readBytes()) { rec ->
-                if (rec is Record.Samples) {
-                    sets++
-                    last = maxOf(last ?: Long.MIN_VALUE, rec.set.tMicros)
-                }
-            }
-            records += r.records
-            truncated += r.truncatedTailBytes
-            skipped += r.skippedBytes
-        }
-        val report = RecoveryReport(dir.name, chunks.size, records, sets, last, truncated, skipped)
+        val report = recoveryReportOf(dir.name, SessionFiles.chunks(dir).map { c -> { c.readBytes() } })
         SessionFiles.writeAtomically(
             File(dir, SessionFiles.RECOVERY),
-            Properties().apply {
-                setProperty("recoveredAtUtcMillis", System.currentTimeMillis().toString())
-                setProperty("chunks", report.chunks.toString())
-                setProperty("records", report.records.toString())
-                setProperty("sampleSets", report.sampleSets.toString())
-                setProperty("lastSampleMicros", report.lastSampleMicros?.toString() ?: "")
-                setProperty("truncatedBytes", report.truncatedBytes.toString())
-                setProperty("skippedBytes", report.skippedBytes.toString())
-            },
+            Properties().apply { recoveryEntries(report, System.currentTimeMillis()).forEach(::setProperty) },
         )
         return report
     }
@@ -181,27 +142,7 @@ class SessionStore(
         val props = SessionFiles.readProps(File(dir, SessionFiles.META))
             ?: error("no readable ${SessionFiles.META} in ${dir.path}")
         val info = SessionFiles.propsToMeta(props)
-        val channels = LinkedHashMap<Int, ChannelDef>()
-        info.channels.forEach { channels[it.id] = it }
-        val sets = ArrayList<SampleSet>()
-        val events = ArrayList<RecorderEvent>()
-        var end: Record.End? = null
-        var truncated = 0L
-        var skipped = 0L
-        for (c in SessionFiles.chunks(dir)) {
-            val r = Frames.scan(c.readBytes()) { rec ->
-                when (rec) {
-                    is Record.Channel -> channels[rec.def.id] = withProvenance(rec.def, info)
-                    is Record.Samples -> if (samples) sets += rec.set
-                    is Record.Event -> events += rec.event
-                    is Record.End -> end = rec
-                }
-            }
-            truncated += r.truncatedTailBytes
-            skipped += r.skippedBytes
-        }
-        val data = SessionData(dir.name, info, state(dir), channels, sets, events, end, truncated, skipped)
-        // The GNSS fix a receiver sends with its acceleration is older than it (FBBD-229): put it back at its time.
-        return if (samples) data.withGnssAtFixTime() else data
+        val chunks = SessionFiles.chunks(dir).asSequence().map { it.readBytes() }
+        return sessionDataOf(dir.name, info, state(dir), chunks, samples)
     }
 }

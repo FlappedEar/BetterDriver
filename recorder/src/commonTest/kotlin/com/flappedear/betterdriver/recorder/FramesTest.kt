@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.recorder
 
+import com.flappedear.betterdriver.io.Crc32
 import com.flappedear.betterdriver.recorder.store.Frames
 import com.flappedear.betterdriver.recorder.store.Record
-import java.io.ByteArrayOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -16,7 +16,7 @@ class FramesTest {
     )
 
     private fun encodeAll(rs: List<Record>) =
-        ByteArrayOutputStream().apply { rs.forEach { write(Frames.encode(it)) } }.toByteArray()
+        rs.fold(ByteArray(0)) { acc, r -> acc + Frames.encode(r) }
 
     private fun decodeAll(bytes: ByteArray): Pair<List<Record>, Frames.ScanResult> {
         val out = mutableListOf<Record>()
@@ -63,5 +63,22 @@ class FramesTest {
         val (decoded, r) = decodeAll(ByteArray(1000) { (it * 31).toByte() })
         assertEquals(emptyList(), decoded)
         assertEquals(1000L, r.skippedBytes + r.truncatedTailBytes)
+    }
+
+    /**
+     * The bytes of [records] in the stored format, worked out independently (Python struct and
+     * zlib.crc32, as java.io and java.util.zip write them). Any change here breaks reading sessions
+     * across Android, iOS and app versions (FBBD-332).
+     */
+    @Test
+    fun `encoding is byte for byte the stored format`() {
+        val bytes = encodeAll(records)
+        assertEquals(GoldenSize, bytes.size)
+        assertEquals(GoldenCrc, Crc32().apply { update(bytes) }.value)
+    }
+
+    private companion object {
+        const val GoldenSize = 194
+        const val GoldenCrc = 1_608_125_146
     }
 }

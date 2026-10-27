@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.store.ChunkWriter
 import com.flappedear.betterdriver.recorder.store.Frames
 import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFiles
+import com.flappedear.betterdriver.recorder.store.finishedEntries
 import java.io.File
 import java.util.Properties
 import java.util.Queue
@@ -149,11 +150,7 @@ internal class RecordingWriter(
         chunks.close()
         SessionFiles.writeAtomically(
             File(dir, SessionFiles.FINISHED),
-            Properties().apply {
-                setProperty("reason", reason)
-                setProperty("endMicros", nowMicros().toString())
-                setProperty("droppedSamples", dropped.get().toString())
-            },
+            Properties().apply { finishedEntries(reason, nowMicros(), dropped.get()).forEach(::setProperty) },
         )
     }
 

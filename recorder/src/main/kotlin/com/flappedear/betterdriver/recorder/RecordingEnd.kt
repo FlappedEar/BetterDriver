@@ -44,6 +44,11 @@ class RecordingEnd(private val recording: Recording, private val onEnded: (reaso
         return false
     }
 
+    /**
+     * Synchronized so that a [stop] which finds the end already taken by the status listener's
+     * thread returns only once that thread's [onEnded] has run, as [stop] promises.
+     */
+    @Synchronized
     private fun end(reason: String) {
         if (ended.compareAndSet(false, true)) onEnded(reason)
     }
