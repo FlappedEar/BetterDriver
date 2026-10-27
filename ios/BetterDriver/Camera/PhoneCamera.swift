@@ -45,6 +45,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var fileIndex: Int32 = 0
     private var firstPts: CMTime = .invalid
     private var lastSyncPts: CMTime = .invalid
+    private var failures = 0
+    private static let maxFailures = 3
 
     /// [onStatus] runs on the main queue.
     init(log: PhoneVideoLog, onStatus: @escaping (CameraStatus) -> Void) {
@@ -164,11 +166,15 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         guard running else { return }
         let pts = CMSampleBufferGetPresentationTimeStamp(sample)
         if output === videoOut {
-            if writer == nil { open(at: pts) }
+            // A writer that failed on its own (a full disk, a failed sound sample) ends its file; the
+            // next frame starts a new one, up to [maxFailures] times in a session.
+            if let writer, writer.status == .failed || writer.status == .cancelled {
+                failedFile()
+            }
+            if writer == nil, running { open(at: pts) }
             guard let writer, writer.status == .writing, let videoIn else { return }
             if videoIn.isReadyForMoreMediaData, !videoIn.append(sample) {
-                finishFile(reason: "error")
-                status("Camera error", ok: false)
+                failedFile()
                 return
             }
             sync(at: pts)
@@ -248,15 +254,24 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private func finishFile(reason: String) {
         guard let writer, let file else { return }
         log.stopped(file: file, reason: reason)
-        videoIn?.markAsFinished()
-        audioIn?.markAsFinished()
+        // A failed writer is left as it is: its inputs only take marks while it writes.
         if writer.status == .writing {
+            videoIn?.markAsFinished()
+            audioIn?.markAsFinished()
             writer.finishWriting {}
         }
         self.writer = nil
         self.videoIn = nil
         self.audioIn = nil
         self.file = nil
+    }
+
+    /// The file failed while recording: it ends, the camera says so, and after [maxFailures] there is no more video.
+    private func failedFile() {
+        finishFile(reason: "error")
+        failures += 1
+        if failures >= Self.maxFailures { running = false }
+        status("Camera error", ok: false)
     }
 
     private func interrupted() {
