@@ -114,6 +114,8 @@ final class RecordingController: ObservableObject {
             phone = link
             link.start()
         }
+        // The link can end the session as it starts (phone GPS without location access).
+        guard session != nil else { return }
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
         refresh()
