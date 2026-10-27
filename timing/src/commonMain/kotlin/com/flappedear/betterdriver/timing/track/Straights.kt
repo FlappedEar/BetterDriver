@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.timing.track
 
+import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.timing.geo.Xy
 import kotlin.math.atan2
 
@@ -21,7 +22,7 @@ internal fun smooth(loop: List<Xy>): List<Xy> {
         var x = 0.0
         var y = 0.0
         for (o in -SmoothPoints..SmoothPoints) {
-            val p = ring[Math.floorMod(k + o, n)]
+            val p = ring[(k + o).mod(n)]
             x += p.x
             y += p.y
         }
@@ -64,7 +65,7 @@ internal fun longestStraight(ring: List<Xy>): Straight? {
     val end = ring[(bestFrom + bestSteps) % n]
     val middle = clearSpot(ring, bestFrom, bestSteps)
     val d = end - start
-    val heading = (Math.toDegrees(atan2(d.x, d.y)) + FullCircle) % FullCircle
+    val heading = (toDegrees(atan2(d.x, d.y)) + FullCircle) % FullCircle
     return Straight(middle, heading, bestSteps * SpacingMeters)
 }
 
@@ -80,7 +81,7 @@ private fun clearSpot(ring: List<Xy>, from: Int, steps: Int): Xy {
     fun isClear(k: Int): Boolean {
         val p = ring[k % n]
         return (0 until n).all { q ->
-            val along = Math.floorMod(q - from, n)
+            val along = (q - from).mod(n)
             val d = ring[q] - p
             along in 0..steps || d.dot(d) > clear
         }

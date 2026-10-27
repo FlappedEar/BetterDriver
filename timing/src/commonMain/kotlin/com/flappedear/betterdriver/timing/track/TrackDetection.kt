@@ -4,8 +4,8 @@ import com.flappedear.betterdriver.timing.circuits.Circuit
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
-import java.util.Locale
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /** What [detectTrack] found where the session starts (FBBD-55). */
 sealed interface TrackDetection {
@@ -67,4 +67,5 @@ fun newTrackFrom(circuit: Circuit, id: String = newTrackId()): Track = Track(
 fun newTrackAt(position: GeoPoint, name: String, id: String = newTrackId()): Track =
     Track(id = id, name = name, center = position)
 
-fun newTrackId(): String = UUID.randomUUID().toString().lowercase(Locale.ROOT)
+@OptIn(ExperimentalUuidApi::class)
+fun newTrackId(): String = Uuid.random().toString()

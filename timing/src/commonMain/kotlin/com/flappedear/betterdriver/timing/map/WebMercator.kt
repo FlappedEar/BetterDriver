@@ -2,6 +2,8 @@
 
 package com.flappedear.betterdriver.timing.map
 
+import com.flappedear.betterdriver.math.toDegrees
+import com.flappedear.betterdriver.math.toRadians
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import kotlin.math.PI
 import kotlin.math.atan
@@ -39,7 +41,7 @@ object WebMercator {
     fun toPx(p: GeoPoint, zoom: Double): WorldPx {
         val size = worldSize(zoom)
         val lat = p.lat.coerceIn(-MaxMercatorLatitude, MaxMercatorLatitude)
-        val sinLat = sin(Math.toRadians(lat))
+        val sinLat = sin(toRadians(lat))
         val y = (0.5 - ln((1 + sinLat) / (1 - sinLat)) / (4 * PI)) * size
         return WorldPx((p.lon + 180.0) / 360.0 * size, y)
     }
@@ -47,7 +49,7 @@ object WebMercator {
     fun toGeo(px: WorldPx, zoom: Double): GeoPoint {
         val size = worldSize(zoom)
         val lon = px.x / size * 360.0 - 180.0
-        val lat = Math.toDegrees(atan(sinh(PI - 2 * PI * px.y / size)))
+        val lat = toDegrees(atan(sinh(PI - 2 * PI * px.y / size)))
         return GeoPoint(lat.coerceIn(-MaxMercatorLatitude, MaxMercatorLatitude), wrapLongitude(lon))
     }
 
@@ -61,7 +63,7 @@ object WebMercator {
 
     /** Ground metres per pixel at [lat] and [zoom]. */
     fun metersPerPixel(lat: Double, zoom: Double): Double =
-        cos(Math.toRadians(lat)) * 2 * HalfWorldMeters / worldSize(zoom)
+        cos(toRadians(lat)) * 2 * HalfWorldMeters / worldSize(zoom)
 
     /** The EPSG:3857 bounds of tile ([x], [y]) at zoom [z]: min x, min y, max x, max y in metres. */
     fun tileBounds(z: Int, x: Int, y: Int): DoubleArray {

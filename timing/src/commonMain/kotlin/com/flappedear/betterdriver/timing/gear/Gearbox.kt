@@ -1,9 +1,10 @@
 package com.flappedear.betterdriver.timing.gear
 
-import kotlinx.serialization.Serializable
 import kotlin.math.abs
+import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.roundToInt
+import kotlinx.serialization.Serializable
 
 // Which gear the car is in and which gear pulls hardest at a speed (FBBD-326), from the engine speed
 // and the road speed the car itself recorded. The gen-1 FR-S Arek drives has the 6-speed automatic,
@@ -168,10 +169,10 @@ private fun bestScale(logs: List<Double>, spec: GearSpec): Pair<Double, Double>?
         .groupingBy { (it / CandidateStep).roundToInt() }.eachCount()
         .entries.sortedByDescending { it.value }.take(MaxCandidates).map { it.key * CandidateStep }
     return candidates.map { c ->
-        val gears = spec.ratios.map { Math.exp(c) * it }
+        val gears = spec.ratios.map { exp(c) * it }
         // Refine: the median scale of the readings that sit on a gear.
         val on = logs.mapNotNull { l -> nearest(l, gears)?.let { l - ln(spec.ratios[it]) } }
-        val scale = if (on.isEmpty()) Math.exp(c) else Math.exp(median(on))
+        val scale = if (on.isEmpty()) exp(c) else exp(median(on))
         val refined = spec.ratios.map { scale * it }
         scale to logs.count { nearest(it, refined) != null }.toDouble() / logs.size
     }.maxByOrNull { it.second }

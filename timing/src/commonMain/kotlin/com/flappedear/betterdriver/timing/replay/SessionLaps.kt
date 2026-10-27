@@ -1,17 +1,18 @@
 package com.flappedear.betterdriver.timing.replay
 
+import com.flappedear.betterdriver.math.roundHalfUp
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.export.ExportLap
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
-import com.flappedear.betterdriver.timing.live.defaultMinLapSeconds
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.Lap
 import com.flappedear.betterdriver.timing.live.LapBook
 import com.flappedear.betterdriver.timing.live.LapEvent
 import com.flappedear.betterdriver.timing.live.LapTimer
+import com.flappedear.betterdriver.timing.live.defaultMinLapSeconds
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
 import kotlin.math.hypot
@@ -57,7 +58,7 @@ data class LapTrace(val sessionId: String, val lap: Lap, val points: List<TraceP
         val b = points[i + 1]
         val span = b.distanceMeters - a.distanceMeters
         val u = if (span <= 0) 0.0 else ((meters - a.distanceMeters) / span).coerceIn(0.0, 1.0)
-        return a.lapMicros + Math.round(u * (b.lapMicros - a.lapMicros))
+        return a.lapMicros + roundHalfUp(u * (b.lapMicros - a.lapMicros))
     }
 
     /** Index of the segment [i, i + 1] holding [x], by the increasing key [of]. */
@@ -174,8 +175,8 @@ private fun interpolate(a: TracePoint, b: TracePoint, u: Double): TracePoint {
     fun mix(x: Double, y: Double) = x + u * (y - x)
     val speed = if (a.speedKmh != null && b.speedKmh != null) mix(a.speedKmh, b.speedKmh) else a.speedKmh
     return TracePoint(
-        tMicros = a.tMicros + Math.round(u * (b.tMicros - a.tMicros)),
-        lapMicros = a.lapMicros + Math.round(u * (b.lapMicros - a.lapMicros)),
+        tMicros = a.tMicros + roundHalfUp(u * (b.tMicros - a.tMicros)),
+        lapMicros = a.lapMicros + roundHalfUp(u * (b.lapMicros - a.lapMicros)),
         lat = mix(a.lat, b.lat),
         lon = mix(a.lon, b.lon),
         xy = Xy(mix(a.xy.x, b.xy.x), mix(a.xy.y, b.xy.y)),

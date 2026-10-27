@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.timing.track
 
+import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.Fix
@@ -117,11 +118,11 @@ internal fun resample(path: List<Xy>): List<Xy> {
 internal fun headingAt(run: List<Xy>, k: Int, wrap: Boolean = false): Double {
     val n = run.size
     val d = if (wrap) {
-        run[Math.floorMod(k + ChordPoints, n)] - run[Math.floorMod(k - ChordPoints, n)]
+        run[(k + ChordPoints).mod(n)] - run[(k - ChordPoints).mod(n)]
     } else {
         run[minOf(k + ChordPoints, n - 1)] - run[maxOf(k - ChordPoints, 0)]
     }
-    return (Math.toDegrees(atan2(d.x, d.y)) + FullCircle) % FullCircle
+    return (toDegrees(atan2(d.x, d.y)) + FullCircle) % FullCircle
 }
 
 /** [b] minus [a] in degrees, in [-180, 180). */

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.timing.replay
 
+import com.flappedear.betterdriver.math.roundHalfUp
 import com.flappedear.betterdriver.timing.live.DeltaReference
 
 /** The delta at one place of the reference lap: [deltaMicros] is other minus reference, positive when slower. */
@@ -47,11 +48,11 @@ class LapAlignment(val reference: LapTrace, val other: LapTrace) {
 
     /** Lap time of [other] at the place [reference] was at [referenceLapMicros]; clamped to the laps. */
     fun otherMicrosAt(referenceLapMicros: Long): Long =
-        Math.round(interpolate(refTimes, otherTimes, referenceLapMicros.toDouble()))
+        roundHalfUp(interpolate(refTimes, otherTimes, referenceLapMicros.toDouble()))
 
     /** Lap time of [reference] at the place [other] was at [otherLapMicros]; clamped to the laps. */
     fun referenceMicrosAt(otherLapMicros: Long): Long =
-        Math.round(interpolate(otherTimes, refTimes, otherLapMicros.toDouble()))
+        roundHalfUp(interpolate(otherTimes, refTimes, otherLapMicros.toDouble()))
 
     /** Other minus reference at the place [reference] was at [referenceLapMicros]. */
     fun deltaMicrosAt(referenceLapMicros: Long): Long {

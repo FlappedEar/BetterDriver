@@ -1,7 +1,6 @@
 package com.flappedear.betterdriver.timing.live
 
 import com.flappedear.betterdriver.recorder.Gate
-import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.circuits.CircuitList
@@ -9,24 +8,6 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.detectTrack
-
-/**
- * The GNSS position in a recorder sample set, or null if it has none. Receivers without a fix can
- * report 0, 0; that is no position either, so live timing and replay see the same fixes.
- */
-fun SampleSet.toFix(): Fix? {
-    var lat: Double? = null
-    var lon: Double? = null
-    for (v in values) {
-        when (v.channelId) {
-            GnssChannels.LAT.id -> lat = v.value
-            GnssChannels.LON.id -> lon = v.value
-        }
-    }
-    if (lat == null || lon == null) return null
-    val noFix = lat == 0.0 && lon == 0.0
-    return if (lat.isFinite() && lon.isFinite() && !noFix) Fix(tMicros, lat, lon) else null
-}
 
 /**
  * Feeds the recorder's live output into [LiveTiming] and hands each new state to [onState]. Runs
