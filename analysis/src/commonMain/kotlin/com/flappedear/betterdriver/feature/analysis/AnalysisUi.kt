@@ -430,11 +430,11 @@ fun nextSession(analysis: SessionAnalysis): NextSession {
  * The rows of Where time goes (by index in [AnalysisUi.gains] and [AnalysisUi.losses]) that carry a
  * corner's coach toggle (FBBD-148): the first row each pickable corner appears in, so each has one.
  */
-internal class CornerRows(val gains: Set<Int>, val losses: Set<Int>) {
+class CornerRows(val gains: Set<Int>, val losses: Set<Int>) {
     val any: Boolean get() = gains.isNotEmpty() || losses.isNotEmpty()
 }
 
-internal fun firstCornerRows(ui: AnalysisUi): CornerRows {
+fun firstCornerRows(ui: AnalysisUi): CornerRows {
     val seen = mutableSetOf<String>()
     fun first(id: String?) = id != null && id in ui.coachPickable && seen.add(id)
     val gains = ui.gains.indices.filter { first(ui.gains[it].cornerId) }.toSet()

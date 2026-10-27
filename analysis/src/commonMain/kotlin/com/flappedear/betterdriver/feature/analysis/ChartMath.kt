@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.feature.analysis
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
+import com.flappedear.betterdriver.format.fixed
 
 /** The value of [runs] at [meters], interpolated within a run; null outside every run. */
 @Suppress("ReturnCount")
@@ -25,3 +26,6 @@ fun defaultComparedLap(analysis: SessionAnalysis): Int? {
     val counted = analysis.laps.timedLaps.withIndex().filter { it.value.referenceEligible && it.index != fastest }
     return counted.minByOrNull { it.value.durationSeconds }?.index
 }
+
+/** Seconds with two decimals, as the screens show a time that is not a lap time. */
+fun seconds(value: Double) = fixed(value, 2)

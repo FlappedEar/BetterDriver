@@ -219,7 +219,7 @@ private fun PassRow(ui: CornerLapsUi, row: CornerLapRow, ticked: Boolean, shown:
                 )
                 when {
                     row.best -> Dim("Best", color = c.best)
-                    row.deltaSeconds != null -> Text(formatDelta(row.deltaSeconds), color = c.loss)
+                    row.deltaSeconds != null -> Text(formatDelta(checkNotNull(row.deltaSeconds)), color = c.loss)
                 }
             }
             Dim(passDetailText(ui, row), Modifier.padding(start = 14.dp))
