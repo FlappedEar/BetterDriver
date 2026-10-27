@@ -42,9 +42,14 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
     private var running = false
     private var flowing = false
 
-    /// [sink] is the recording.
-    init(sink: SampleSink) {
+    /// The strap listed in Settings › Equipment (FBBD-338), recorded as Android records it; without one
+    /// the strap found before, else the first one found.
+    private let listed: (id: UUID, name: String)?
+
+    /// [sink] is the recording; [listed] the strap in Settings, if any.
+    init(sink: SampleSink, listed: (id: UUID, name: String)? = nil) {
         self.sink = sink
+        self.listed = listed
         super.init()
     }
 
@@ -52,7 +57,11 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         queue.async {
             guard !self.running else { return }
             self.running = true
-            if let id = RememberedStrap.id { self.begin(id: id, name: RememberedStrap.name) }
+            if let strap = self.listed {
+                self.begin(id: strap.id, name: strap.name)
+            } else if let id = RememberedStrap.id {
+                self.begin(id: id, name: RememberedStrap.name)
+            }
             self.central = CBCentralManager(delegate: self, queue: self.queue)
             // A strap that never answers sends no state changes on iOS (a pending connect waits for it),
             // so the 45 s start window is checked on a timer, as Android's reconnect attempts check it.

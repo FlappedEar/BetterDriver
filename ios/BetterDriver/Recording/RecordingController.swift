@@ -1,3 +1,4 @@
+import AudioToolbox
 import BetterDriverCore
 import CoreLocation
 import SwiftUI
@@ -64,34 +65,55 @@ final class RecordingController: ObservableObject {
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
     private var timer: Timer?
+    /// The GNSS state at the last refresh, for the lost and back sounds.
+    private var lastGnss: GnssState?
     private let activity = RecordingActivity()
 
     var isRecording: Bool { session != nil }
 
-    /// The RaceBox used last, so the sheet can mark it (UI-285 B).
-    var lastReceiverName: String {
-        get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
+    /// The receiver of the next session as chosen in Settings (FBBD-338), or why it cannot record:
+    /// the iPhone records from a RaceBox or its own GPS.
+    static func receiver(_ setup: Setup) -> Result<Receiver, StartError> {
+        guard let gnss = setup.active().gnss else { return .failure(.noReceiver) }
+        switch gnss.modelName {
+        case ModelName.phoneGps:
+            return .success(.phone)
+        case ModelName.raceBox:
+            guard let id = gnss.address.flatMap(UUID.init(uuidString:)) else { return .failure(.notOnIphone(gnss.name)) }
+            return .success(.raceBox(FoundRaceBoxDevice(id: id, name: gnss.name, rssi: 0)))
+        default:
+            return .failure(.notOnIphone(gnss.name))
+        }
     }
 
-    /// Phone video with each session (FBBD-21), on unless turned off on the START sheet.
-    var phoneCamera: Bool {
-        get { UserDefaults.standard.object(forKey: "phoneCamera") as? Bool ?? true }
-        set { UserDefaults.standard.set(newValue, forKey: "phoneCamera") }
+    enum StartError: Error, Equatable {
+        case noReceiver
+        case notOnIphone(String)
+
+        var text: String {
+            switch self {
+            case .noReceiver: "Add a GNSS receiver to start"
+            case .notOnIphone(let name): "\(name) can't record on the iPhone. Choose a RaceBox or Phone GPS."
+            }
+        }
     }
 
-    /// The phone video mode (FBBD-88), as on Android: 1080p · 60 until another is chosen.
-    var phoneVideoMode: PhoneVideoMode {
-        get { PhoneVideoMode.named(UserDefaults.standard.string(forKey: "phoneVideoMode")) }
-        set { UserDefaults.standard.set(newValue.label, forKey: "phoneVideoMode") }
+    /// Starts the next session as Settings has it: its receiver, car, cameras, sensors and coach.
+    func start(settings: SettingsModel) {
+        switch Self.receiver(settings.setup) {
+        case .success(let receiver): start(receiver, settings: settings)
+        case .failure(let problem): error = problem.text
+        }
     }
 
-    func start(_ receiver: Receiver) {
+    private func start(_ receiver: Receiver, settings: SettingsModel) {
         guard session == nil else { return }
         error = nil
+        let setup = settings.setup
+        let active = setup.active()
         let info = SessionInfo(
             startUtcMillis: Int64(Date().timeIntervalSince1970 * 1_000),
-            car: "",
+            car: active.car?.name ?? "",
             track: "",
             devices: [receiver.name],
             startFinish: nil,
@@ -115,7 +137,6 @@ final class RecordingController: ObservableObject {
         session = live
         switch receiver {
         case .raceBox(let device):
-            lastReceiverName = device.name
             let link = RaceBoxLink(deviceId: device.id, deviceName: device.name, sink: live) { [weak self] state in
                 self?.raceBoxState = state
             }
@@ -135,17 +156,18 @@ final class RecordingController: ObservableObject {
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
-        // OBD-II from a Bluetooth LE adapter nearby (FBBD-333); none found, none read.
-        let car = ObdLink(sink: live)
+        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338); with none listed, one nearby.
+        let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
         obd = car
         car.start()
         // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333).
-        let strap = HeartRateStrapLink(sink: live)
+        let strap = HeartRateStrapLink(sink: live, listed: Self.listed(active.sensors, ModelName.heartRate).first)
         heartRate = strap
         strap.start()
-        startCoach(live)
-        if phoneCamera {
-            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
+        startCoach(live, settings.coach)
+        if SettingsCore.shared.phoneCameraOn(setup: setup) {
+            let mode = PhoneVideoMode.named(SettingsCore.shared.phoneVideoLabel(setup: setup))
+            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: mode) { [weak self] in self?.cameraStatus = $0 }
             camera = cam
             cam.start()
         }
@@ -157,18 +179,27 @@ final class RecordingController: ObservableObject {
         }
     }
 
-    /// The live coach (FBBD-333), on as the Android coach is by default, in the coach's language, its
-    /// cues timed for the output delay iOS reports now.
-    private func startCoach(_ live: LiveSession) {
-        let polish = CoachLanguagePick.polish
-        let voice = CoachVoice(polish: polish)
+    /// Settings items of [model] that iOS reaches by their Bluetooth identifier.
+    private static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
+        items.compactMap { item in
+            guard item.modelName == model, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
+            return (id, item.name)
+        }
+    }
+
+    /// The live coach (FBBD-333) as Settings › Spoken coach has it (FBBD-338), unless it is off; its cues
+    /// are timed for the output delay iOS reports now, else for the delay set there.
+    private func startCoach(_ live: LiveSession, _ coach: CoachSettings) {
+        guard SettingsCore.shared.coachOn(s: coach) else { return }
+        let phoneDelay = CoachVoice.outputDelayMillis
+        let settings = SettingsCore.shared.sessionCoach(s: coach, phoneDelayMillis: Int32(phoneDelay))
+        let voice = CoachVoice(settings: settings)
         self.voice = voice
-        let settings = LiveCoachKt.coachSettings(polish: polish, audioDelayMillis: Int32(CoachVoice.outputDelayMillis))
         live.startCoach(
             sessionsDir: AppFolders.sessions.path,
             referencesDir: AppFolders.coachReferences.path,
             settings: settings,
-            audioDelayFromPhone: true,
+            audioDelayFromPhone: phoneDelay > 0,
             speaker: voice
         )
     }
@@ -199,11 +230,24 @@ final class RecordingController: ObservableObject {
         obd = nil
         heartRate = nil
         session = nil
+        lastGnss = nil
         screen = nil
         receiver = nil
         raceBoxState = .off
         phoneState = .off
         UIApplication.shared.isIdleTimerDisabled = false
+    }
+
+    /// A short sound when GNSS goes from OK to lost and another when it is back (FBBD-64), when
+    /// Settings › Track screen has it on, as on Android (GnssSound, gnssCue).
+    private func gnssSound(_ now: GnssState) {
+        defer { lastGnss = now }
+        guard SettingsModel.shared.gnssSound, let before = lastGnss else { return }
+        if before == GnssState.ok && now == GnssState.lost {
+            AudioServicesPlaySystemSound(1053)
+        } else if before == GnssState.lost && now == GnssState.ok {
+            AudioServicesPlaySystemSound(1054)
+        }
     }
 
     private func refresh() {
@@ -219,6 +263,7 @@ final class RecordingController: ObservableObject {
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
+        gnssSound(now.gnss)
         let obdOn = obd?.status().state == ObdLinkState.connected
         let model = TrackScreenModel(
             now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus

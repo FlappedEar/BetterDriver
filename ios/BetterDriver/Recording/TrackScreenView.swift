@@ -63,8 +63,14 @@ struct TrackScreenView: View {
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .accessibilityIdentifier("trackScreen")
-        .onAppear { OrientationLock.set(.landscape) }
-        .onDisappear { OrientationLock.set(.portrait) }
+        .onAppear {
+            OrientationLock.set(.landscape)
+            ScreenLight.full(SettingsModel.shared.fullBrightness)
+        }
+        .onDisappear {
+            OrientationLock.set(.portrait)
+            ScreenLight.restore()
+        }
     }
 }
 
@@ -324,5 +330,24 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         supportedInterfaceOrientationsFor window: UIWindow?
     ) -> UIInterfaceOrientationMask {
         OrientationLock.mask
+    }
+}
+
+/// The track screen at full brightness while it shows (FBBD-63), when Settings › Track screen has it
+/// on (the default), as on Android; the brightness before comes back when it closes.
+@MainActor
+enum ScreenLight {
+    private static var before: CGFloat?
+
+    static func full(_ on: Bool) {
+        guard on, before == nil else { return }
+        before = UIScreen.main.brightness
+        UIScreen.main.brightness = 1
+    }
+
+    static func restore() {
+        guard let level = before else { return }
+        UIScreen.main.brightness = level
+        before = nil
     }
 }

@@ -71,6 +71,48 @@ object SettingsCore {
     val groupOrder: List<EquipmentKind> =
         listOf(EquipmentKind.GNSS, EquipmentKind.CAR_DATA, EquipmentKind.SENSOR, EquipmentKind.CAMERA)
 
+    // The next session, as START uses it.
+
+    /** The phone camera records the next session. */
+    fun phoneCameraOn(setup: Setup): Boolean = setup.active().uses(EquipmentModel.PHONE_CAMERA)
+
+    /** The phone camera's video mode ("1080p · 60"), or null when no phone camera is listed. */
+    fun phoneVideoLabel(setup: Setup): String? =
+        setup.equipment.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }?.videoMode?.label
+
+    /** Turns the phone camera on or off for the next session. */
+    fun withPhoneCamera(setup: Setup, on: Boolean): Setup =
+        setup.equipment.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
+            ?.let { setup.useCamera(it.id, on) } ?: setup
+
+    /** Sets the phone camera's video mode by its [label]; one it does not record changes nothing. */
+    fun withPhoneVideo(setup: Setup, label: String): Setup {
+        val camera = setup.equipment.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
+        val mode = camera?.videoModes?.firstOrNull { it.label == label }
+        return if (camera != null && mode != null) setup.chooseVideo(camera.id, mode) else setup
+    }
+
+    /** How many of the listed cameras record the next session, as Android's home says it. */
+    fun camerasLine(setup: Setup): String {
+        val all = setup.ofKind(EquipmentKind.CAMERA)
+        val on = all.count { it.id in setup.session.cameraIds }
+        return when {
+            all.isEmpty() -> "No cameras"
+            all.size == 1 -> if (on == 1) "${all[0].name} on" else "${all[0].name} off"
+            else -> "$on of ${all.size} cameras on"
+        }
+    }
+
+    /** The coach is on: anything but Off. */
+    fun coachOn(s: CoachSettings): Boolean = s.verbosity != Verbosity.Off
+
+    /**
+     * The coach settings a session uses: the output delay iOS reports now ([phoneDelayMillis]) replaces
+     * the one set, as Android's measured delay does (FBBD-49); the set one is used when iOS gives none.
+     */
+    fun sessionCoach(s: CoachSettings, phoneDelayMillis: Int): CoachSettings =
+        if (phoneDelayMillis > 0) withDelay(s, phoneDelayMillis) else s
+
     // The spoken coach.
 
     val verbosities: List<Verbosity> = Verbosity.entries.toList()

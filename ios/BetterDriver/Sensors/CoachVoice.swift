@@ -1,20 +1,6 @@
 import AVFoundation
 import BetterDriverCore
 
-/// The coach's language on the iPhone (FBBD-333): Polish when the phone's first language is Polish,
-/// else English, the two the Android coach speaks (FBBD-245). Stored once picked, as the Android setting.
-enum CoachLanguagePick {
-    private static let key = "coachLanguage"
-
-    static var polish: Bool {
-        get {
-            if let saved = UserDefaults.standard.string(forKey: key) { return saved == "pl" }
-            return Locale.preferredLanguages.first?.hasPrefix("pl") == true
-        }
-        set { UserDefaults.standard.set(newValue ? "pl" : "en", forKey: key) }
-    }
-}
-
 /// The coach's voice on the iPhone (FBBD-333), as Voice on Android: live text-to-speech in the coach's
 /// language, to whatever output is connected (a helmet headset or the car over Bluetooth, else the
 /// speaker), with music ducked under it while a phrase plays (FBBD-47). A new phrase replaces one
@@ -22,15 +8,17 @@ enum CoachLanguagePick {
 final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
     private let voice: AVSpeechSynthesisVoice?
+    private let rate: Float
+    private let pitch: Float
     private let lock = NSLock()
     private var current: [ObjectIdentifier: CoachSpeech] = [:]
     private var playing = 0
 
-    init(polish: Bool) {
-        // The phone's own voice of the language: British, then American or any English; Polish.
-        let tags = polish ? ["pl-PL"] : ["en-GB", "en-US"]
-        voice = tags.lazy.compactMap { AVSpeechSynthesisVoice(language: $0) }.first
-            ?? AVSpeechSynthesisVoice(language: polish ? "pl" : "en")
+    /// The voice, speed and pitch chosen in Settings › Spoken coach (FBBD-338), as Test voice says them.
+    init(settings: CoachSettings) {
+        voice = CoachVoiceChoice.voice(settings)
+        rate = CoachVoiceChoice.rate(settings)
+        pitch = settings.speech.pitch
         super.init()
         synthesizer.delegate = self
         // Spoken prompts over music: other audio ducks while a phrase plays, as navigation guidance.
@@ -54,6 +42,8 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         guard voice != nil else { return false }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
+        utterance.rate = rate
+        utterance.pitchMultiplier = pitch
         lock.lock()
         current[ObjectIdentifier(utterance)] = speech
         playing += 1

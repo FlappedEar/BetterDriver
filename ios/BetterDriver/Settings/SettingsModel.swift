@@ -20,13 +20,52 @@ final class SettingsModel: ObservableObject {
 
     private let base: URL
 
-    init(base: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]) {
+    /// [defaults] holds what the iPhone remembered before it had Settings; a first start moves it in.
+    init(
+        base: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
+        defaults: UserDefaults = .standard
+    ) {
         self.base = base
+        let hadSetup = FileManager.default.fileExists(atPath: SettingsModel.setupFile(base).path)
+        let hadCoach = FileManager.default.fileExists(atPath: SettingsModel.coachFile(base).path)
         setup = SettingsModel.loadSetup(base: base)
         let coachText = try? String(contentsOf: SettingsModel.coachFile(base), encoding: .utf8)
         coach = SettingsCore.shared.coachSettings(text: coachText)
-        fullBrightness = UserDefaults.standard.object(forKey: Keys.brightness) as? Bool ?? true
-        gnssSound = UserDefaults.standard.bool(forKey: Keys.gnssSound)
+        fullBrightness = defaults.object(forKey: Keys.brightness) as? Bool ?? true
+        gnssSound = defaults.bool(forKey: Keys.gnssSound)
+        if !hadSetup { update { SettingsModel.earlierChoices($0, defaults) } }
+        if !hadCoach { updateCoach { SettingsModel.earlierLanguage($0, defaults) } }
+    }
+
+    /// The phone camera switch and video mode of the START sheet and the OBD-II adapter and heart-rate
+    /// strap the iPhone found by itself before it had Settings (FBBD-333), as Settings items.
+    private static func earlierChoices(_ setup: Setup, _ defaults: UserDefaults) -> Setup {
+        let core = SettingsCore.shared
+        var next = setup
+        if defaults.object(forKey: "phoneCamera") as? Bool == false {
+            next = core.withPhoneCamera(setup: next, on: false)
+        }
+        if let label = defaults.string(forKey: "phoneVideoMode") {
+            next = core.withPhoneVideo(setup: next, label: label)
+        }
+        let found = [
+            (ModelName.obdBluetooth, "lastObdAdapterId", "lastObdAdapterName", "OBD adapter"),
+            (ModelName.heartRate, "heartRateStrapId", "heartRateStrapName", "Heart rate"),
+        ]
+        for (model, idKey, nameKey, fallback) in found {
+            guard let id = defaults.string(forKey: idKey), let m = core.model(name: model) else { continue }
+            let name = defaults.string(forKey: nameKey).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+            next = core.addEquipment(setup: next, model: m, name: name, address: id, id: newId())
+        }
+        return next
+    }
+
+    /// The coach's language as the iPhone picked it before Settings: as saved, else the phone's.
+    private static func earlierLanguage(_ coach: CoachSettings, _ defaults: UserDefaults) -> CoachSettings {
+        let saved = defaults.string(forKey: "coachLanguage")
+        let polish = saved.map { $0 == "pl" } ?? (Locale.preferredLanguages.first?.hasPrefix("pl") == true)
+        guard polish, let pl = SettingsCore.shared.languages.first(where: { $0.name == "Polish" }) else { return coach }
+        return SettingsCore.shared.withLanguage(s: coach, l: pl)
     }
 
     /// Applies a change to the setup and saves it.
