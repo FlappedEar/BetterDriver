@@ -273,6 +273,8 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
     @Published private(set) var found: [String: NearbyDevice] = [:]
     @Published private(set) var searching = false
     private var central: CBCentralManager?
+    /// True while Add equipment is open: a Bluetooth restart resumes the scan only then.
+    private var wanted = false
 
     private static let heartRate = CBUUID(string: "180D")
     private static let obdParts = [
@@ -281,17 +283,19 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
     ]
 
     func start() {
+        wanted = true
         if central == nil { central = CBCentralManager(delegate: self, queue: nil) }
         scan()
     }
 
     func stop() {
+        wanted = false
         central?.stopScan()
         searching = false
     }
 
     private func scan() {
-        guard let central, central.state == .poweredOn else {
+        guard wanted, let central, central.state == .poweredOn else {
             searching = false
             return
         }
