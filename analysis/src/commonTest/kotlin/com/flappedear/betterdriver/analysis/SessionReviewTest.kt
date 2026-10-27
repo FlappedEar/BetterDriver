@@ -38,6 +38,12 @@ class SessionReviewTest {
         assertEquals("109.906", fixed(review.bestLapSeconds!!, 3))
         assertEquals("108.201", fixed(review.theoreticalBestSeconds!!, 3))
         assertEquals("0.000", fixed(review.laps.single { it.fastest }.deltaSeconds, 3))
+        // The same top 3 as DemoParityTest's line plan focus, from the Map tab's ranked corners.
+        val line = checkNotNull(review.line)
+        assertEquals(
+            listOf("T11:0.281", "T1:0.112"),
+            line.ranked.take(2).map { "${it.tag}:${fixed(it.gainSeconds, 3)}" },
+        )
     }
 
     @Test

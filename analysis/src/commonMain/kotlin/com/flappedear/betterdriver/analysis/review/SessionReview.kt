@@ -1,7 +1,12 @@
 package com.flappedear.betterdriver.analysis.review
 
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.line.LineSession
+import com.flappedear.betterdriver.analysis.line.analyzeLine
+import com.flappedear.betterdriver.analysis.line.linePlan
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.feature.analysis.LineUi
+import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.timing.geo.GeoPoint
@@ -55,20 +60,37 @@ data class SessionReview(
     val laps: List<ReviewLap>,
     val bestLapSeconds: Double?,
     val theoreticalBestSeconds: Double?,
+    /** Where to find time (FBBD-306): the Map tab's corners, as Android shows them; null without a line. */
+    val line: LineUi? = null,
 )
 
-/** Reviews [data] at the track it was driven on, among [tracks] (see [trackFor]). */
-fun reviewOf(data: SessionData, tracks: List<Track>): SessionReview {
+/**
+ * Reviews [data] (session [SessionData.id]) at the track it was driven on, among [tracks] (see
+ * [trackFor]). [others] gives the other sessions at that track, read one at a time, whose passes
+ * set the targets of where to find time, as on Android (LineSessions).
+ */
+fun reviewOf(
+    data: SessionData,
+    tracks: List<Track>,
+    others: (Track) -> Sequence<LineSession> = { emptySequence() },
+): SessionReview {
     val track = trackFor(data, tracks) ?: return SessionReview(null, emptyList(), null, null)
-    val analysis = analyzeSession(telemetrySessionOf(data, track), identity = track.identity)
+    val session = telemetrySessionOf(data, track)
+    val analysis = analyzeSession(session, identity = track.identity)
     val fastest = analysis.laps.fastestLapIndex
     val laps = analysis.laps.timedLaps.mapIndexed { i, lap ->
         ReviewLap(lap.number, lap.durationSeconds, lap.deltaToBestSeconds, i == fastest, lap.referenceEligible)
+    }
+    val origin = analysis.axis?.origin
+    val line = origin?.let { analyzeLine(analysis, session, others(track)) }?.let {
+        val identity = analysis.identity?.number?.takeIf { analysis.identified }
+        lineUi(linePlan(it, origin, track.id, data.id, data.info.startUtcMillis, identity), data.id)
     }
     return SessionReview(
         track,
         laps,
         fastest?.let { analysis.laps.timedLaps[it].durationSeconds },
         analysis.theoreticalBest?.totalSeconds,
+        line,
     )
 }

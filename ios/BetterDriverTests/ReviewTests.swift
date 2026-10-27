@@ -22,4 +22,13 @@ final class ReviewTests: XCTestCase {
         try Data("hello".utf8).write(to: url)
         XCTAssertThrowsError(try ReviewBridge.receive(url) { _, _ in })
     }
+
+    func testTheMapIsNorthUpOnOneScale() {
+        let dots = [MapDot(east: 0, north: 0, pedal: nil), MapDot(east: 100, north: 50, pedal: .braking)]
+        let frame = MapFrame(dots: dots, size: CGSize(width: 300, height: 300), padding: 0, margin: 0)
+        let a = frame.point(dots[0]), b = frame.point(dots[1])
+        XCTAssertEqual(b.x - a.x, 300, accuracy: 1e-9)
+        XCTAssertEqual(a.y - b.y, 150, accuracy: 1e-9)
+        XCTAssertEqual(LineColors.pedal(.braking), LineColors.loss)
+    }
 }

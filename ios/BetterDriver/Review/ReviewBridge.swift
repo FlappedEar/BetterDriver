@@ -33,6 +33,45 @@ struct SessionSummary {
     let laps: [LapRow]
     let bestLap: String?
     let theoreticalBest: String?
+    let line: WhereToFindTime?
+}
+
+/// What the pedals do on a stretch of a lap, for its colour (UI-165 C).
+enum Pedal { case braking, coasting, accelerating }
+
+/// A point of a drawn line, metres east and north of the map's origin.
+struct MapDot: Hashable {
+    let east: Double
+    let north: Double
+    let pedal: Pedal?
+}
+
+/// One corner of "Where to find time" (FBBD-306), as Android's Map tab shows it.
+struct LineCorner: Identifiable, Hashable {
+    let tag: String
+    let gainSeconds: Double
+    let gain: String
+    let todo: [String]
+    let targetFrom: String
+    let reference: [MapDot]
+    let target: [MapDot]
+    let roadLeft: [MapDot]
+    let roadRight: [MapDot]
+    let anchor: MapDot?
+    var id: String { tag }
+}
+
+/// "Where to find time": the best lap against the target through each corner.
+struct WhereToFindTime {
+    let bestLap: String
+    let bestLapNumber: Int
+    let total: String
+    let laps: Int
+    let sessions: Int
+    /// In track order.
+    let corners: [LineCorner]
+    /// Most time first, corners with nothing to find last (LineUi.ranked).
+    let ranked: [LineCorner]
 }
 
 /// The one place the review talks to the Kotlin core (ReviewLibrary), so Kotlin types stay out
@@ -71,9 +110,52 @@ enum ReviewBridge {
             trackName: review.track?.name,
             laps: laps,
             bestLap: review.bestLapSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
-            theoreticalBest: review.theoreticalBestSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) }
+            theoreticalBest: review.theoreticalBestSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
+            line: review.line.map(whereToFindTime)
         )
     }
+
+    private static func whereToFindTime(_ ui: LineUi) -> WhereToFindTime {
+        WhereToFindTime(
+            bestLap: CoreBridge.lapTime(millis: millis(ui.bestLapSeconds)),
+            bestLapNumber: Int(ui.bestLapNumber),
+            total: twoDecimals(ui.totalGainSeconds),
+            laps: Int(ui.laps),
+            sessions: Int(ui.sessions),
+            corners: ui.corners.map(corner),
+            ranked: ui.ranked.map(corner)
+        )
+    }
+
+    private static func corner(_ c: LineCornerUi) -> LineCorner {
+        LineCorner(
+            tag: c.tag,
+            gainSeconds: c.gainSeconds,
+            gain: twoDecimals(c.gainSeconds),
+            todo: c.todo,
+            targetFrom: c.targetFrom,
+            reference: c.reference.map(dot),
+            target: c.target.map(dot),
+            roadLeft: c.roadLeft.map(dot),
+            roadRight: c.roadRight.map(dot),
+            anchor: c.anchor.map(dot)
+        )
+    }
+
+    private static func dot(_ d: LineDot) -> MapDot {
+        var pedal: Pedal?
+        if d.pedal == PedalState.braking {
+            pedal = .braking
+        } else if d.pedal == PedalState.accelerating {
+            pedal = .accelerating
+        } else if d.pedal == PedalState.coasting {
+            pedal = .coasting
+        }
+        return MapDot(east: d.eastMeters, north: d.northMeters, pedal: pedal)
+    }
+
+    /// Seconds with two decimals, as Android shows them (core: fixed).
+    private static func twoDecimals(_ v: Double) -> String { library.twoDecimals(value: v) }
 
     private static func millis(_ seconds: Double) -> Int64 { Int64((seconds * 1000).rounded()) }
 }

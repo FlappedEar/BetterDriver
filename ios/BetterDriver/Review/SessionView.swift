@@ -57,6 +57,7 @@ struct SessionView: View {
             switch tab {
             case .summary: SummaryTab(summary: summary)
             case .laps: LapsTab(summary: summary)
+            case .map: MapTab(line: summary.line)
             default: Message(text: "\(tab.rawValue) comes in the next iPad update.")
             }
         } else {
