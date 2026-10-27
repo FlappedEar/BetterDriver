@@ -1,4 +1,5 @@
 import SwiftUI
+import BetterDriverCore
 
 /// The sections of a session, the same six tabs as Android (UI-62 B, UI-157 B), drawn as
 /// Android's tab row: an icon over a small name (UI-163 C, UI-291 A). Summary opens first (UI-293 A).
@@ -31,6 +32,8 @@ struct SessionView: View {
     var revision = 0
     @State private var tab: SessionTab = .summary
     @State private var summary: SessionSummary?
+    @State private var compare: LapCompare?
+    @State private var screen: AnalysisUi?
     @State private var failure: String?
 
     var body: some View {
@@ -59,21 +62,41 @@ struct SessionView: View {
         } else if let summary {
             switch tab {
             case .summary: SummaryTab(summary: summary)
-            case .laps: LapsTab(summary: summary)
+            case .compare: CompareTab(compare: compare, summary: summary)
+            case .laps: LapsTab(summary: summary) { lap in pick(lap, summary) }
             case .map: MapTab(line: summary.line)
-            default: Message(text: "\(tab.rawValue) comes in the next iPad update.")
+            case .corners: CornersTab(screen: screen)
+            case .car: CarTab(car: screen?.car)
             }
         } else {
             ProgressView().tint(Palette.accent).padding(.top, 60)
         }
     }
 
+    /// Picking a lap compares it with the fastest, on Compare, Corners and Car; Compare opens, as on Android.
+    private func pick(_ lap: LapRow, _ summary: SessionSummary) {
+        Task {
+            let index = lap.index
+            let picked = await Task.detached(priority: .userInitiated) {
+                (ReviewBridge.compare(summary, lapIndex: index), ReviewBridge.screen(summary, lapIndex: index))
+            }.value
+            compare = picked.0
+            screen = picked.1
+            tab = .compare
+        }
+    }
+
     private func load() async {
         summary = nil
+        compare = nil
+        screen = nil
         failure = nil
         let id = session.id
         do {
-            summary = try await Task.detached(priority: .userInitiated) { try ReviewBridge.summary(id: id) }.value
+            let read = try await Task.detached(priority: .userInitiated) { try ReviewBridge.summary(id: id) }.value
+            summary = read
+            compare = read.compare
+            screen = read.screen
         } catch {
             failure = "This session could not be read: \(error.localizedDescription)"
         }
@@ -140,36 +163,33 @@ private struct SummaryTab: View {
 
 private struct LapsTab: View {
     let summary: SessionSummary
+    let pick: (LapRow) -> Void
 
     var body: some View {
         List(summary.laps) { lap in
-            HStack {
-                Text("Lap \(lap.number)").foregroundStyle(Palette.onSurfaceVariant)
-                Spacer()
-                if let delta = lap.delta {
-                    Text(delta).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.onSurfaceVariant)
-                }
-                Text(lap.time)
-                    .font(.title3.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(lap.fastest ? Palette.best : (lap.counts ? Palette.onBackground : Palette.onSurfaceVariant))
-                    .frame(minWidth: 110, alignment: .trailing)
-            }
-            .listRowBackground(Palette.background)
+            Button { pick(lap) } label: { row(lap) }
+                .disabled(lap.fastest || !lap.counts)
+                .listRowBackground(Palette.background)
+                .accessibilityIdentifier("lap\(lap.number)")
         }
         .scrollContentBackground(.hidden)
         .frame(maxWidth: 900)
         .accessibilityIdentifier("lapList")
     }
-}
 
-private struct Card<Content: View>: View {
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16))
+    private func row(_ lap: LapRow) -> some View {
+        HStack {
+            Text("Lap \(lap.number)").foregroundStyle(Palette.onSurfaceVariant)
+            Spacer()
+            if let delta = lap.delta {
+                Text(delta).font(.subheadline.monospacedDigit()).foregroundStyle(Palette.onSurfaceVariant)
+            }
+            Text(lap.time)
+                .font(.title3.weight(.semibold).monospacedDigit())
+                .foregroundStyle(lap.fastest ? Palette.best : (lap.counts ? Palette.onBackground : Palette.onSurfaceVariant))
+                .frame(minWidth: 110, alignment: .trailing)
+        }
+        .contentShape(Rectangle())
     }
 }
 

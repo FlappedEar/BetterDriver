@@ -5,7 +5,7 @@ import com.flappedear.betterdriver.analysis.compare.LapComparison
 import com.flappedear.betterdriver.analysis.driving.lapCoasting
 
 /** The two laps [comparison] sets side by side, with [corners] shaded behind its charts. */
-internal fun compareUi(analysis: SessionAnalysis, comparison: LapComparison, corners: List<CornerBand>): CompareUi {
+fun compareUi(analysis: SessionAnalysis, comparison: LapComparison, corners: List<CornerBand>): CompareUi {
     val laps = analysis.laps.timedLaps
     val reference = comparison.referenceIndex
     val other = comparison.otherIndex

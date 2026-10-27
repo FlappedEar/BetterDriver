@@ -32,7 +32,6 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.vehicle.PedalMinimumSpeedKmh
 import com.flappedear.betterdriver.analysis.vehicle.PedalShares
-import com.flappedear.betterdriver.analysis.vehicle.VehicleChannel
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.format.formatLapTime
@@ -148,7 +147,7 @@ private fun TemperatureCard(car: CarUi, modifier: Modifier) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             TrackLabel(shared.orEmpty(), Modifier.weight(1f))
             for (k in kinds) {
-                val name = TemperatureNames.getValue(k)
+                val name = temperatureName(k)
                 TrackLabel(
                     if (shared == null) "$name ${units.getValue(k)}" else name,
                     Modifier.width(TemperatureWidth).padding(start = 4.dp),
@@ -176,9 +175,9 @@ private fun TemperatureCard(car: CarUi, modifier: Modifier) {
                 }
             }
         }
-        val missing = VehicleChannel.Temperatures.filter { it !in kinds }
+        val missing = car.missingTemperatures
         if (missing.isNotEmpty()) {
-            Dim("Not recorded: " + missing.joinToString(", ") { TemperatureNames.getValue(it).lowercase() })
+            Dim("Not recorded: " + missing.joinToString(", ") { temperatureName(it).lowercase() })
         }
     }
 }
@@ -277,14 +276,6 @@ private fun Key(keys: List<Pair<Color, String>>) {
 private fun pct(share: Double) = "${(share * Percent).roundToInt()} %"
 
 private const val Percent = 100.0
-
-private val TemperatureNames = mapOf(
-    VehicleChannel.OilTemp to "Oil",
-    VehicleChannel.CoolantTemp to "Coolant",
-    VehicleChannel.GearboxTemp to "Gearbox",
-    VehicleChannel.IntakeTemp to "Intake",
-    VehicleChannel.Rpm to "RPM",
-)
 
 internal const val PedalCardTag = "car-pedals"
 internal const val TemperatureCardTag = "car-temperatures"
