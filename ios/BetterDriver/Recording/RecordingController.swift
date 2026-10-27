@@ -56,6 +56,7 @@ final class RecordingController: ObservableObject {
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var imu: PhoneImuLink?
     private var timer: Timer?
     private let activity = RecordingActivity()
 
@@ -94,6 +95,10 @@ final class RecordingController: ObservableObject {
         }
         self.receiver = receiver
         session = live
+        // The phone's accelerometer records in every session, as on Android; with phone GPS it gives the G.
+        let imu = PhoneImuLink(sink: live)
+        self.imu = imu
+        imu.start()
         switch receiver {
         case .raceBox(let device):
             lastReceiverName = device.name
@@ -129,6 +134,7 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        imu?.stop()
         _ = live.stop()
         end()
     }
@@ -139,6 +145,7 @@ final class RecordingController: ObservableObject {
         timer = nil
         raceBox = nil
         phone = nil
+        imu = nil
         session = nil
         screen = nil
         receiver = nil
@@ -148,17 +155,19 @@ final class RecordingController: ObservableObject {
     }
 
     private func refresh() {
-        guard let live = session, let receiver else { return }
+        guard let live = session else { return }
         let now = live.screen()
         if let reason = now.stoppedReason, reason != "user" {
             // Ended by the recorder itself (storage full, write error): the files stay for recovery.
             raceBox?.stop()
             phone?.stop()
+            imu?.stop()
             end()
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
-        let model = TrackScreenModel(now, receiverHasG: receiver != .phone)
+        // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
+        let model = TrackScreenModel(now, receiverHasG: true)
         screen = model
         activity.update(model)
     }

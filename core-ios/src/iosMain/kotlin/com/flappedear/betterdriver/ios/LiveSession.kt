@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.PhoneImuChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.RecorderStatus
@@ -130,7 +131,8 @@ class LiveSession private constructor(
         /**
          * Starts a recording in [sessionsDir], timed against the tracks in [tracksDir] and named from
          * [circuits] when the car is at a track not saved yet. [receiverHasG]: the receiver is a RaceBox,
-         * whose accelerometer gives the G tile. Throws when the session cannot be created.
+         * whose accelerometer gives the G tile; otherwise it is the phone's GPS, and the G comes from
+         * the phone's own accelerometer (FBBD-337). Throws when the session cannot be created.
          */
         @Throws(Exception::class)
         fun start(
@@ -156,7 +158,12 @@ class LiveSession private constructor(
                 recording.id,
                 info.startUtcMillis,
                 recording::nowMicros,
-                accelIds = if (receiverHasG) RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id else null,
+                accelIds = if (receiverHasG) {
+                    RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
+                } else {
+                    PhoneImuChannels.ACCEL_X.id to PhoneImuChannels.ACCEL_Y.id
+                },
+                accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { !receiverHasG },
             )
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12); each lap is logged
             // with the predicted lap time shown before its line (FBBD-183), as on Android.
