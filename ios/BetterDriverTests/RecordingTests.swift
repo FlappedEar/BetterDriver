@@ -93,6 +93,7 @@ final class RecordingTests: XCTestCase {
         session.startCoach(
             sessionsDir: base.appendingPathComponent("sessions").path,
             referencesDir: base.appendingPathComponent("coach/references").path,
+            linePlansDir: base.appendingPathComponent("coach/lines").path,
             settings: LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0),
             audioDelayFromPhone: false,
             speaker: speaker
