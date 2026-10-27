@@ -48,7 +48,7 @@ final class SmokeTests: XCTestCase {
         if !simulated.waitForExistence(timeout: 10) {
             print("SMOKE app:\n\(app.debugDescription)")
             print("SMOKE springboard:\n\(XCUIApplication(bundleIdentifier: "com.apple.springboard").debugDescription)")
-            XCTFail("the simulated receiver")
+            XCTFail("the simulated receiver; on screen: \(onScreen())")
         }
         simulated.tap()
         allowSystemAlerts()
@@ -93,6 +93,12 @@ final class SmokeTests: XCTestCase {
             guard let allow else { return }
             allow.tap()
         }
+    }
+
+    /// The buttons and switches on screen, short enough for the failure text the CI log prints.
+    private func onScreen() -> String {
+        let elements = app.buttons.allElementsBoundByIndex + app.switches.allElementsBoundByIndex
+        return elements.prefix(40).map { "\($0.label)#\($0.identifier)" }.joined(separator: " | ")
     }
 
     /// A top-level tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
