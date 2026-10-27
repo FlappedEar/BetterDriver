@@ -8,7 +8,7 @@ plugins {
 }
 
 // The modules the app sees, in dependency order. Add a module here when it gains iOS targets.
-val exported = listOf(":shared", ":recorder", ":racebox", ":obd", ":heartrate", ":timing", ":coach", ":analysis", ":transfer")
+val exported = listOf(":shared", ":setup", ":recorder", ":racebox", ":obd", ":heartrate", ":timing", ":coach", ":analysis", ":transfer")
 
 kotlin {
     // Device and Apple-silicon simulator. GitHub's macOS runners and current Macs are arm64.

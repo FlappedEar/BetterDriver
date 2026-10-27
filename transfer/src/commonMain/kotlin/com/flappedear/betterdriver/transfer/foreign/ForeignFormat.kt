@@ -1,9 +1,6 @@
 package com.flappedear.betterdriver.transfer.foreign
 
 import com.flappedear.betterdriver.recorder.Provenance
-import java.io.IOException
-import java.io.InputStream
-import java.io.Reader
 
 /** A session file from another app that [SessionImport] can turn into a session (FBBD-164). */
 enum class ForeignFormat(val label: String) {
@@ -28,7 +25,7 @@ enum class ForeignFormat(val label: String) {
          * the file name: a VBO renamed .txt or a GPX saved as .xml still imports. A NUL byte means binary.
          */
         fun detect(head: ByteArray): ForeignFormat? {
-            val text = head.toString(Charsets.UTF_8).removePrefix(Bom)
+            val text = head.decodeToString().removePrefix(Bom)
             val lines = text.lineSequence().map { it.trim().lowercase() }.filter { it.isNotEmpty() }.toList()
             val first = lines.firstOrNull().orEmpty()
             return when {
@@ -50,7 +47,8 @@ enum class ForeignFormat(val label: String) {
 }
 
 /** A file that cannot be imported: not a known format, damaged, empty or too large. The message is for the user. */
-class ImportFormatException(message: String, cause: Throwable? = null) : IOException(message, cause)
+// An IOException on the JVM, as before the import was common code (FBBD-331).
+expect class ImportFormatException(message: String, cause: Throwable? = null) : Exception
 
 /** Limits on what one import reads, so a huge or hostile file cannot exhaust the phone. */
 object ImportLimits {
@@ -127,8 +125,10 @@ interface ImportSink {
 /**
  * Reads lines up to [ImportLimits.MaxLineChars]; a longer line fails the import instead of filling memory.
  * A byte order mark before the first line is dropped, so that line reads as the text it holds.
+ * [read] fills the buffer it is given and returns the chars read, or -1 (or 0) at the end, as
+ * java.io.Reader.read(CharArray) does.
  */
-internal class LineReader(private val reader: Reader) {
+internal class LineReader(private val read: (CharArray) -> Int) {
     private val buf = CharArray(BufferChars)
     private var pos = 0
     private var end = 0
@@ -150,55 +150,125 @@ internal class LineReader(private val reader: Reader) {
 
     /** Makes sure a char is buffered; false at the end. */
     private fun fill(): Boolean {
-        if (pos < end) return true
-        end = reader.read(buf).coerceAtLeast(0)
-        pos = 0
-        if (!started) {
-            started = true
-            if (end > 0 && buf[0] == Bom) pos = 1
+        // Read again after a first read of the byte order mark alone: that is not the end of the file.
+        while (pos >= end) {
+            end = read(buf).coerceAtLeast(0)
+            pos = 0
+            if (end == 0) return false
+            if (!started) {
+                started = true
+                if (buf[0] == Bom) pos = 1
+            }
         }
-        return pos < end
+        return true
     }
 
     private companion object {
         const val BufferChars = 64 * 1024
-        const val Bom = '\uFEFF'
+        const val Bom = '﻿'
     }
 }
 
 /**
- * Counts what passes through: [onBytes] for progress, and the import fails beyond [limit] bytes
- * (a decompressed file can be far larger than the one picked).
+ * UTF-8 text from bytes, a piece at a time, for platforms without java.io.Reader (iOS, FBBD-331).
+ * [readBytes] fills (bytes, offset, length) and returns the bytes read, or -1 (or 0) at the end.
+ * A character split between two pieces is kept whole; bytes that are not UTF-8 read as U+FFFD,
+ * as with InputStreamReader.
  */
-internal class CountingInput(
-    private val input: InputStream,
-    private val limit: Long,
-    private val onBytes: (Int) -> Unit = {},
-) : InputStream() {
-    var count = 0L
-        private set
+internal class Utf8Chars(private val readBytes: (ByteArray, Int, Int) -> Int) {
+    private var bytes = ByteArray(0)
+    private var carry = 0
+    private var ended = false
 
-    override fun read(): Int {
-        val b = input.read()
-        if (b >= 0) counted(1)
-        return b
+    /** Fills [out] with up to its size in chars; returns how many, or -1 at the end. */
+    fun read(out: CharArray): Int {
+        if (bytes.size != out.size) bytes = bytes.copyOf(out.size.coerceAtLeast(MaxSequence))
+        var text = ""
+        while (text.isEmpty() && !ended) {
+            val n = readBytes(bytes, carry, bytes.size - carry)
+            if (n <= 0) {
+                ended = true
+            } else {
+                val total = carry + n
+                val cut = boundary(total)
+                carry = total - cut
+                text = bytes.decodeToString(0, cut)
+                bytes.copyInto(bytes, 0, cut, total)
+            }
+        }
+        if (text.isEmpty() && carry > 0) {
+            // What is left at the end is a cut-off character.
+            text = bytes.decodeToString(0, carry)
+            carry = 0
+        }
+        return if (text.isEmpty()) -1 else copy(text, out)
     }
 
-    override fun read(b: ByteArray, off: Int, len: Int): Int {
-        val n = input.read(b, off, len)
-        if (n > 0) counted(n)
-        return n
+    /** UTF-8 never takes more chars than bytes, so [text] fits [out]. */
+    private fun copy(text: String, out: CharArray): Int {
+        for (i in text.indices) out[i] = text[i]
+        return text.length
     }
 
-    private fun counted(n: Int) {
-        count += n
-        if (count > limit) throw ImportFormatException("the file is too large (over ${limit / BytesPerMegabyte} MB)")
-        onBytes(n)
+    /** Where the last whole character among the first [total] bytes ends. */
+    private fun boundary(total: Int): Int {
+        var i = total - 1
+        while (i > 0 && total - i < MaxSequence && isContinuation(bytes[i])) i--
+        val lead = bytes[i].toInt() and ByteMask
+        val length = when {
+            lead and TwoMask == TwoLead -> TwoBytes
+            lead and ThreeMask == ThreeLead -> ThreeBytes
+            lead and FourMask == FourLead -> MaxSequence
+            else -> 1
+        }
+        return if (i + length > total) i else total
     }
 
-    override fun close() = input.close()
+    private fun isContinuation(b: Byte) = b.toInt() and ContinuationMask == ContinuationBits
 
     private companion object {
-        const val BytesPerMegabyte = 1L shl 20
+        const val MaxSequence = 4
+        const val TwoBytes = 2
+        const val ThreeBytes = 3
+        const val ByteMask = 0xFF
+        const val ContinuationMask = 0xC0
+        const val ContinuationBits = 0x80
+        const val TwoMask = 0xE0
+        const val TwoLead = 0xC0
+        const val ThreeMask = 0xF0
+        const val ThreeLead = 0xE0
+        const val FourMask = 0xF8
+        const val FourLead = 0xF0
     }
+}
+
+private const val DaysPer400Years = 146_097L
+private const val DaysTo1970 = 719_468L
+private const val MonthsPerYear = 12
+private const val February = 2
+private const val DaysInFebruary = 28
+private const val DaysInLongMonth = 31
+private const val DaysInShortMonth = 30
+
+/**
+ * Days from 1970-01-01 to [year]-[month]-[day] (proleptic Gregorian, as java.time.LocalDate's
+ * toEpochDay), or null for a date that does not exist, such as 31/04 or 29/02 of a common year.
+ */
+@Suppress("MagicNumber") // The civil-calendar arithmetic of Howard Hinnant's days_from_civil.
+internal fun epochDayOf(year: Int, month: Int, day: Int): Long? {
+    if (month !in 1..MonthsPerYear || day < 1 || day > daysInMonth(year, month)) return null
+    val y = (if (month <= February) year - 1 else year).toLong()
+    val era = y.floorDiv(400L)
+    val yoe = y - era * 400
+    val mp = (month + 9) % 12
+    val doy = (153 * mp + 2) / 5 + day - 1
+    val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+    return era * DaysPer400Years + doe - DaysTo1970
+}
+
+@Suppress("MagicNumber") // The Gregorian leap year rule and the 30-day months.
+private fun daysInMonth(year: Int, month: Int): Int = when (month) {
+    February -> if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) DaysInFebruary + 1 else DaysInFebruary
+    4, 6, 9, 11 -> DaysInShortMonth
+    else -> DaysInLongMonth
 }

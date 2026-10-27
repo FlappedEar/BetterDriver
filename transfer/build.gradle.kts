@@ -6,7 +6,8 @@
 //
 // Kotlin Multiplatform (FBBD-331): the bundle format and its checks are common Kotlin in
 // src/commonMain and also build for iOS, where src/iosMain imports bundles into the iOS session
-// store; the java.io-based writers, readers, backup and foreign readers stay JVM code in src/main.
+// store; the java.io-based writers, readers and backup stay JVM code in src/main. Of the foreign
+// readers, VBO and RaceChrono CSV and the session they make are common; GPX (SAX) and gzip stay JVM.
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
 }
@@ -16,6 +17,11 @@ kotlin {
     jvm()
     iosArm64()
     iosSimulatorArm64()
+
+    // ImportFormatException is an expect class: an IOException on the JVM, as before the import was common.
+    compilerOptions {
+        freeCompilerArgs.add("-Xexpect-actual-classes")
+    }
 
     sourceSets {
         commonMain.dependencies {
