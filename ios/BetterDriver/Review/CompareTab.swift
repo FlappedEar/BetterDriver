@@ -1,4 +1,5 @@
 import SwiftUI
+import BetterDriverCore
 
 /// The Compare tab (FBBD-102), as on Android: the time delta and both laps' speed by distance,
 /// corners shaded behind; touch or drag to read a point.
