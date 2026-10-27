@@ -6,30 +6,34 @@ import XCTest
 /// Runs in name order: the fresh install first.
 final class ReviewScreensTests: XCTestCase {
     private let app = XCUIApplication()
-    private var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
-    private var device: String { phone ? "iPhone" : "iPad" }
+    private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
 
     override func setUp() {
         continueAfterFailure = false
+        // A permission prompt (Bluetooth, location) on a fresh install is answered, not left in the way.
+        addUIInterruptionMonitor(withDescription: "Permission prompt") { alert in
+            let allow = alert.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allow'")).firstMatch
+            (allow.exists ? allow : alert.buttons.firstMatch).tap()
+            return true
+        }
     }
 
     func testAFreshInstallOpensEveryScreenWithoutSessions() {
         app.launchArguments = ["-freshInstall"]
         app.launch()
-        if phone {
-            keep("Drive, fresh install")
-            app.tabBars.buttons["Tracks"].tap()
-            keep("Tracks, fresh install")
-            app.tabBars.buttons["Sessions"].tap()
+        // Every tab the app has (Drive, Sessions, Tracks, ...), as a new user would open them.
+        let tabs = app.tabBars.buttons
+        for i in 0..<tabs.count {
+            let tab = tabs.element(boundBy: i)
+            let label = tab.label
+            tab.tap()
+            XCTAssertEqual(app.state, .runningForeground, "\(label): the app stopped")
+            keep("\(label), fresh install")
         }
+        openSessions()
         let empty = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'No sessions yet'")).firstMatch
         XCTAssertTrue(empty.waitForExistence(timeout: 30), "no empty session list")
         keep("Sessions, fresh install")
-        if !phone {
-            app.buttons["openTracks"].tap()
-            keep("Tracks, fresh install")
-        }
-        XCTAssertEqual(app.state, .runningForeground)
     }
 
     func testTheDemoSessionsOpenOnEveryTab() {
@@ -38,7 +42,7 @@ final class ReviewScreensTests: XCTestCase {
             // A fresh launch for each, so the list shows; the first starts empty and adds the demos.
             app.launchArguments = index == 0 ? ["-freshInstall", "-demoSessions"] : ["-demoSessions"]
             app.launch()
-            if phone { app.tabBars.buttons["Sessions"].tap() }
+            openSessions()
             let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
             XCTAssertTrue(rows.element(boundBy: index).waitForExistence(timeout: 120), "no session row \(index)")
             rows.element(boundBy: index).tap()
@@ -53,6 +57,12 @@ final class ReviewScreensTests: XCTestCase {
                 keep("\(name) \(tab)")
             }
         }
+    }
+
+    /// The Sessions tab, where the app has a tab bar (the iPhone, and the iPad with four tabs).
+    private func openSessions() {
+        let sessions = app.tabBars.buttons["Sessions"]
+        if sessions.waitForExistence(timeout: 5) { sessions.tap() }
     }
 
     private func keep(_ name: String) {
