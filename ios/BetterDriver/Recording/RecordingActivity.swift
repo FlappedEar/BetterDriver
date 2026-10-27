@@ -11,6 +11,9 @@ final class RecordingActivity {
     private var shown: RecordingAttributes.ContentState?
     private var sentAt = Date.distantPast
 
+    /// Off until the app is stable (Arek, 2026-10-27): no card is started; leftovers still end at launch.
+    static let enabled = false
+
     static let heartbeat: TimeInterval = 5
     static let staleAfter: TimeInterval = 15
 
@@ -22,7 +25,7 @@ final class RecordingActivity {
     }
 
     func start(at started: Date) {
-        guard activity == nil, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard Self.enabled, activity == nil, ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let state = RecordingAttributes.ContentState(lap: nil, delta: nil, gain: false, best: nil)
         activity = try? Activity.request(
             attributes: RecordingAttributes(startedAt: started),
