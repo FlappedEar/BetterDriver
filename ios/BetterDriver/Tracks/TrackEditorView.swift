@@ -280,7 +280,7 @@ struct TrackEditorView: View {
                 Chip(label: "Two taps", on: !editor.placingFromLap) { model.act { $0.pickFromLap(fromLap: false) } }
             }
             if editor.path == nil {
-                Dim("No session here yet, so lines are placed with two taps.")
+                DimLine("No session here yet, so lines are placed with two taps.")
             }
             HStack(spacing: 16) {
                 Button("Flip direction") { model.act { $0.flip() } }
@@ -290,7 +290,7 @@ struct TrackEditorView: View {
                     .foregroundStyle(TrackColors.loss)
             }
             .padding(.vertical, 4)
-            Dim("The arrow shows the way you drive across the line. Crossings the other way never count.")
+            DimLine("The arrow shows the way you drive across the line. Crossings the other way never count.")
         }
         .padding(.vertical, 8)
     }
@@ -318,7 +318,7 @@ struct TrackEditorView: View {
                 Chip(label: "Point to point", on: editor.pointToPoint) { model.act { $0.setPointToPoint(on: true) } }
             }
             .padding(.vertical, 8)
-            if let note = editor.kindNote { Dim(note).padding(.bottom, 8) }
+            if let note = editor.kindNote { DimLine(note).padding(.bottom, 8) }
             Divider().overlay(Palette.outline)
             ForEach(editor.lines(), id: \.index) { line in
                 Button { model.act { $0.select(index: line.index) } } label: {
@@ -330,7 +330,7 @@ struct TrackEditorView: View {
                         if line.placed {
                             Text("✓").fontWeight(.bold).foregroundStyle(TrackColors.gain)
                         } else {
-                            Dim("Not set")
+                            DimLine("Not set")
                         }
                     }
                     .padding(.vertical, 12)
@@ -349,7 +349,7 @@ struct TrackEditorView: View {
             }
             .buttonStyle(.plain)
             .disabled(!editor.canAddSector)
-            Dim(model.retimeNote).padding(.top, 6)
+            DimLine(model.retimeNote).padding(.top, 6)
         }
     }
 }
@@ -378,7 +378,7 @@ private struct Chip: View {
 }
 
 /// Secondary text (Android's DimLine).
-struct Dim: View {
+struct DimLine: View {
     let text: String
     init(_ text: String) { self.text = text }
 

@@ -2,7 +2,6 @@ package com.flappedear.betterdriver.recorder.vbo
 
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
-import java.util.Locale
 
 /** How avisynctime is written. Racelogic does not document it; see [VboVideo]. */
 enum class AviSyncFormat {
@@ -25,7 +24,7 @@ enum class AviSyncFormat {
  * - `avisynctime` is milliseconds into the file. Circuit Tools, checked with the sync kit (FBBD-51):
  *   milliseconds line up when the data starts at the first video's start; with data rows before
  *   the video (avisynctime -1), Circuit Tools plays file 1 from the first row and is early by that
- *   much. So [VboExporter] leaves out rows before [startMicros].
+ *   much. So [VboExport] leaves out rows before [startMicros].
  */
 data class VboVideo(
     val baseName: String,
@@ -43,7 +42,7 @@ data class VboVideo(
     /** The name each clip gets next to the VBO, in avifileindex order. */
     fun fileNames(): List<String> = orderedClips.indices.map(::fileName)
 
-    fun fileName(index: Int): String = String.format(Locale.ROOT, "%s%04d.%s", baseName, index + 1, extension)
+    fun fileName(index: Int): String = "$baseName${vboPadded((index + 1).toLong(), IndexDigits)}.$extension"
 
     private val timeline = VideoTimeline(orderedClips.map { it.copy(camera = Camera) })
 
@@ -81,5 +80,6 @@ data class VboVideo(
         const val MicrosPerMilli = 1_000.0
         const val MillisPerSecond = 1_000.0
         const val SecondsDecimals = 3
+        const val IndexDigits = 4
     }
 }
