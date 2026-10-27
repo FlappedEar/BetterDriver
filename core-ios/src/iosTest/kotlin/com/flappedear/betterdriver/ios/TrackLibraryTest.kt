@@ -153,7 +153,7 @@ class TrackLibraryTest {
         assertTrue(library.list().isEmpty())
         assertTrue(TrackFiles.read(tracks).isEmpty())
         assertNull(library.get("nope"))
-        assertFalse(library.delete("nope"))
+        assertTrue(library.delete("nope")) // nothing there: already gone
         assertNull(library.here(gnss.centerLat, gnss.centerLon, CircuitList.Empty).track)
         val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
         assertTrue(library.editorSessions(track).isEmpty())
