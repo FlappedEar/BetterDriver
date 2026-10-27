@@ -26,7 +26,7 @@ struct RecordingLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Text(context.isStale ? "Not recording" : context.state.lap.map { "Lap \($0)" } ?? "Recording")
+                    Text(context.isStale ? "Stopped" : context.state.lap.map { "Lap \($0)" } ?? "Recording")
                         .foregroundStyle(dim)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
@@ -50,7 +50,7 @@ struct RecordingLiveActivity: Widget {
 }
 
 /// The lock screen card: "● BetterDriver · recording 23:41" and the lap, then the delta and best.
-/// [stale]: the app sent nothing for a while (it died), so the card says so and stops the clock.
+/// [stale]: the app sent nothing for a while (it died and could not end the card), so the clock stops.
 private struct LockScreenView: View {
     let started: Date
     let state: RecordingAttributes.ContentState
@@ -62,7 +62,7 @@ private struct LockScreenView: View {
                 HStack(spacing: 6) {
                     Circle().fill(stale ? dim : rec).frame(width: 8, height: 8)
                     if stale {
-                        Text("BetterDriver · not recording, open the app")
+                        Text("BetterDriver · stopped")
                     } else {
                         Text("BetterDriver · recording")
                         Text(timerInterval: started...Date.distantFuture, countsDown: false)
