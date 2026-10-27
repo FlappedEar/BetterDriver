@@ -11,6 +11,7 @@ enum SettingsTopic: String, CaseIterable, Identifiable {
     case video = "Video"
     case coach = "Spoken coach"
     case app = "App"
+    case diagnostics = "Diagnostics"
 
     var id: String { rawValue }
 }
@@ -46,6 +47,7 @@ struct SettingsView: View {
         case .video: VideoPage()
         case .coach: CoachSettingsPage()
         case .app: AppPage()
+        case .diagnostics: DiagnosticsPage()
         }
     }
 
@@ -77,6 +79,8 @@ struct SettingsView: View {
             return coachLabel(settings.coach)
         case .app:
             return "\(AppInfo.version) · about"
+        case .diagnostics:
+            return "Share or clear the app's log"
         }
     }
 }

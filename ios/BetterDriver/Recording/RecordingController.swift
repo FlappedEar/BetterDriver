@@ -115,6 +115,8 @@ final class RecordingController: ObservableObject {
         }
         self.receiver = receiver
         session = live
+        AppLog.session = live.id
+        AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
         switch receiver {
         case .raceBox(let device):
             lastReceiverName = device.name
@@ -185,6 +187,7 @@ final class RecordingController: ObservableObject {
         obd?.stop()
         heartRate?.stop()
         _ = live.stop()
+        AppLog.i("Recording", "stop")
         end()
     }
 
@@ -202,6 +205,7 @@ final class RecordingController: ObservableObject {
         obd = nil
         heartRate = nil
         session = nil
+        AppLog.session = nil
         screen = nil
         receiver = nil
         raceBoxState = .off
