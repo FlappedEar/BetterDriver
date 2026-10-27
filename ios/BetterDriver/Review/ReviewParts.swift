@@ -61,6 +61,6 @@ enum CoreText {
     static let legend = "≈ calculated or inferred, not measured"
 
     static func seconds(_ v: Double) -> String { ChartMathKt.seconds(value: v) }
-    static func fixed(_ v: Double, _ decimals: Int) -> String { NumberFormatKt.fixed(value: v, decimals: Int32(decimals)) }
+    static func fixed(_ v: Double, _ decimals: Int) -> String { NumberFormat_iosKt.fixed(value: v, decimals: Int32(decimals)) }
     static func marked(_ text: String, _ provenance: Provenance?) -> String { ProvenanceMarkKt.marked(text: text, provenance: provenance) }
 }
