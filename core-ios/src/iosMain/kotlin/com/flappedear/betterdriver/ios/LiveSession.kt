@@ -28,6 +28,7 @@ import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.detectTrack
+import kotlin.concurrent.Volatile
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
@@ -52,6 +53,13 @@ class LiveSession private constructor(
 ) : SampleSink {
     private val lock = NSRecursiveLock()
     private var liveFailed = false
+
+    // The recorder's low-space warning, for the next look. The recorder calls in with its own lock
+    // held, and lap and track events take the recorder's lock inside this session's, so the warning
+    // must not take this lock: the links feed the session from several queues (RaceBox or GPS, the
+    // phone's accelerometer) and the two orders would deadlock.
+    @Volatile
+    private var storageLowBytes: Long? = null
 
     val id: String get() = recording.id
 
@@ -85,6 +93,7 @@ class LiveSession private constructor(
         // Read before taking the lock: the recorder calls in with its own lock held (storage low).
         val ended = recording.endReason
         return guarded {
+            storageLowBytes?.let { tracker.onStatus(RecorderStatus.StorageLow(it)) }
             val live = tracker.snapshot()
             val detection = timing.detection
             LiveScreen(
@@ -98,7 +107,9 @@ class LiveSession private constructor(
     }
 
     /** The recorder's warning that free space is low, for the track screen's alert. */
-    private fun storageLow(bytes: Long) = live { tracker.onStatus(RecorderStatus.StorageLow(bytes)) }
+    private fun storageLow(bytes: Long) {
+        storageLowBytes = bytes
+    }
 
     /** Ends the recording cleanly; false if it had already ended. */
     fun stop(): Boolean = recording.stop().also { stopped ->
