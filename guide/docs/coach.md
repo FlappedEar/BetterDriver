@@ -38,14 +38,12 @@ the change, with up to two things per cue.
 When the straight is too short for the whole cue, you hear the target alone ("Turn 3, brake at
 100"). Numbers from 100 to 999 are said the way track people say them ("1 50", "1 oh 5").
 
-!!! note "Not released yet: gear in the corner"
-    For a car with OBD-II engine speed, the coach can add a gear to the cue: "Turn 7, brake at 80,
-    second", where a lower gear pulls clearly harder at that apex speed and still has room to rev.
-    Gears are found from your own sessions in that car.
+For a car with OBD-II engine speed, the coach can add a gear to the cue: "Turn 7, brake at 80,
+second", where a lower gear pulls clearly harder at that apex speed and still has room to rev.
+Gears are found from your own sessions in that car.
 
-!!! note "Not released yet: beyond your best"
-    Where your best lap already matches its target, the coach can ask for a braking point later
-    than you have driven, in steps, as an ordinary brake cue.
+Where your best lap already matches its target, the coach can ask for a braking point later
+than you have driven, in steps, as an ordinary brake cue.
 
 ### No precise advice from weak evidence
 

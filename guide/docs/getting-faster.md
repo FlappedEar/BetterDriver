@@ -20,16 +20,14 @@ One line plan is kept per track, from the latest analysed session. At that track
 the out-lap it names today's corners once: "Today, turns 9, 1 and 4". The track screen's coach
 line shows the same, for example "Today: T9 · T1 · T4 · ≈ 1.0 s to find".
 
-!!! note "Not released yet: beyond your best"
-    Where your best lap already matches its target, *Where to find time* adds the corners braked
-    well short of the track's own braking limit as their own group, worded as the whole room and
-    then the step: "Brake up to 18 m later · start with 10". These fill the focus places the
-    driven targets leave, and the coach asks for the step.
+Where your best lap already matches its target, *Where to find time* adds the corners braked
+well short of the track's own braking limit as their own group, worded as the whole room and
+then the step: "Brake up to 18 m later · start with 10". These fill the focus places the
+driven targets leave, and the coach asks for the step.
 
-!!! note "Not released yet: gear in the corner"
-    With OBD-II engine speed, a corner can say "2nd at the apex" with the reason from your own
-    laps, where a lower gear pulls clearly harder at the apex speed. The gearbox is worked out
-    from the car's own sessions.
+With OBD-II engine speed, a corner can say "2nd at the apex" with the reason from your own
+laps, where a lower gear pulls clearly harder at the apex speed. The gearbox is worked out
+from the car's own sessions.
 
 ## Perfect lap in 3D
 

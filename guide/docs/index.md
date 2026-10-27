@@ -43,11 +43,11 @@ try timing and coaching anywhere. See [Try it without a track](demo.md).
 
 ## About this guide
 
-This guide describes **BetterDriver 1.13.0**, the latest release, and marks features that are
+This guide describes **BetterDriver 1.14.0**, the latest release, and marks features that are
 merged but not yet released like this:
 
 !!! note "Not released yet"
-    Merged after 1.13.0. It ships in the next release.
+    Merged after 1.14.0. It ships in the next release.
 
 The pictures are the app's own screenshot tests, drawn from test data, so the numbers in them are
 examples. Screen and button names in **bold** are the app's own words.

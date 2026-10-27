@@ -4,9 +4,7 @@ The full notes of every release are on
 [GitHub Releases](https://github.com/FlappedEar/BetterDriver/releases) and in
 [docs/release-notes](https://github.com/FlappedEar/BetterDriver/tree/main/docs/release-notes).
 
-## Coming in the next release
-
-Merged after 1.13.0:
+## 1.14.0
 
 - **Beyond your best**: where your best lap already matches its target, *Where to find time* lists
   the braking points you can move beyond your own best ("Brake up to 18 m later · start with
