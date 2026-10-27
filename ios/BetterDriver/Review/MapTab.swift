@@ -1,3 +1,4 @@
+import BetterDriverCore
 import SwiftUI
 
 /// The Map tab's "Where to find time" (FBBD-306) on the iPad, as on Android: the whole lap with a
@@ -7,28 +8,30 @@ import SwiftUI
 struct MapTab: View {
     let line: WhereToFindTime?
     @State private var picked: String?
+    @State private var driving = false
 
     var body: some View {
         if let line {
             let corner = line.corners.first { $0.tag == picked }
-            GeometryReader { geo in
-                let wide = geo.size.width > geo.size.height
-                let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
-                layout {
-                    VStack(alignment: .leading, spacing: 6) {
-                        LineMap(line: line, corner: corner) { picked = $0 }
-                        Legend(corner: corner, line: line)
+            VStack(spacing: 0) {
+                // The perfect lap in 3D starts from the view's header (UI-184 A).
+                if line.scene != nil {
+                    HStack {
+                        Spacer()
+                        Button("▶ Perfect lap in 3D") { driving = true }
+                            .buttonStyle(.borderedProminent)
+                            .tint(Palette.accent)
+                            .accessibilityIdentifier("perfectLapButton")
                     }
-                    .padding(16)
-                    Group {
-                        if let corner {
-                            CornerCard(corner: corner) { picked = nil }
-                        } else {
-                            RankedList(line: line) { picked = $0 }
-                        }
-                    }
-                    .frame(width: wide ? min(400, geo.size.width * 0.4) : nil)
-                    .frame(maxHeight: wide ? .infinity : geo.size.height * 0.45)
+                    .padding([.horizontal, .top], 16)
+                }
+                map(line, corner: corner)
+            }
+            .fullScreenCover(isPresented: $driving) {
+                if let scene = line.scene {
+                    // From the corner tapped on the view, or the start of the lap.
+                    let start = line.corners.firstIndex { $0.tag == picked } ?? 0
+                    PerfectLapPlayer(scene: scene, startCorner: start) { driving = false }
                 }
             }
         } else {
@@ -36,6 +39,29 @@ struct MapTab: View {
                 .foregroundStyle(Palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
                 .padding(40)
+        }
+    }
+
+    private func map(_ line: WhereToFindTime, corner: LineCorner?) -> some View {
+        GeometryReader { geo in
+            let wide = geo.size.width > geo.size.height
+            let layout = wide ? AnyLayout(HStackLayout(spacing: 0)) : AnyLayout(VStackLayout(spacing: 0))
+            layout {
+                VStack(alignment: .leading, spacing: 6) {
+                    LineMap(line: line, corner: corner) { picked = $0 }
+                    Legend(corner: corner, line: line)
+                }
+                .padding(16)
+                Group {
+                    if let corner {
+                        CornerCard(corner: corner) { picked = nil }
+                    } else {
+                        RankedList(line: line) { picked = $0 }
+                    }
+                }
+                .frame(width: wide ? min(400, geo.size.width * 0.4) : nil)
+                .frame(maxHeight: wide ? .infinity : geo.size.height * 0.45)
+            }
         }
     }
 }

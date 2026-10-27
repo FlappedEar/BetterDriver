@@ -44,6 +44,7 @@ targets:
         INFOPLIST_KEY_NSLocationWhenInUseUsageDescription: BetterDriver records your position on track when no GPS receiver is connected.
         INFOPLIST_KEY_NSCameraUsageDescription: BetterDriver films your session with the phone camera, in sync with the data.
         INFOPLIST_KEY_NSMicrophoneUsageDescription: BetterDriver records the sound with the session video.
+        INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription: BetterDriver saves the perfect lap video to your photos when you ask it to.
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
         INFOPLIST_KEY_UIUserInterfaceStyle: Dark
