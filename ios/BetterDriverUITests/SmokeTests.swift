@@ -41,8 +41,10 @@ final class SmokeTests: XCTestCase {
         // The camera is on after a fresh install; the toggle only has to say so.
         let camera = app.switches["phoneCameraToggle"]
         if camera.waitForExistence(timeout: 5), (camera.value as? String) != "1" { camera.tap() }
-        let simulated = app.buttons["receiver.simulated"].exists
-            ? app.buttons["receiver.simulated"] : app.descendants(matching: .any)["receiver.simulated"]
+        // By id, or by its label if a parent's id ever covers the row's own.
+        let byId = app.buttons["receiver.simulated"]
+        let simulated = byId.exists
+            ? byId : app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "Simulated GPS")).firstMatch
         if !simulated.waitForExistence(timeout: 10) {
             print("SMOKE app:\n\(app.debugDescription)")
             print("SMOKE springboard:\n\(XCUIApplication(bundleIdentifier: "com.apple.springboard").debugDescription)")

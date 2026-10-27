@@ -119,6 +119,8 @@ struct ReceiverSheet: View {
             Text("GPS receiver for this session")
                 .font(.title3.weight(.semibold))
                 .padding(.bottom, 6)
+                // On the title only: on the whole sheet it would replace every row's own id.
+                .accessibilityIdentifier("receiverSheet")
             // The UI test's receiver, on top where the sheet's first height shows it.
             if UITestMode.on {
                 row("Simulated GPS", "UI test", ok: true) { onPick(.simulated) }
@@ -170,7 +172,6 @@ struct ReceiverSheet: View {
             s.start()
         }
         .onDisappear { scanner?.stop() }
-        .accessibilityIdentifier("receiverSheet")
     }
 
     private func row(_ name: String, _ detail: String, ok: Bool, pick: @escaping () -> Void) -> some View {
