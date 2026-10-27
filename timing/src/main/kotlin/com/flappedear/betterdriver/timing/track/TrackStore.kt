@@ -44,20 +44,14 @@ class TrackStore(private val dir: File) {
      *
      * With [adoptIdentity], for a track received from the other device with the driver's corner
      * corrections (FBBD-179), its identity replaces the one here as the next revision after it
-     * ([adoptedOver]).
+     * ([storedOver]).
      */
     fun save(
         track: Track,
         nowUtcMillis: Long = System.currentTimeMillis(),
         adoptIdentity: Boolean = false,
     ): Track = locked {
-        val previous = get(track.id)
-        val received = track.identity?.takeIf { adoptIdentity }
-        val stored = track.copy(
-            revision = maxOf(track.revision, (previous?.revision ?: 0) + 1),
-            updatedUtcMillis = nowUtcMillis,
-            identity = received?.adoptedOver(previous?.identity) ?: previous?.identity ?: track.identity,
-        )
+        val stored = track.storedOver(get(track.id), nowUtcMillis, adoptIdentity)
         writeAtomically(fileFor(track.id), TrackJson.encode(stored))
         stored
     }
