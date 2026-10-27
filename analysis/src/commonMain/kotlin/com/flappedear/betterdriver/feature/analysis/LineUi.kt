@@ -14,17 +14,19 @@ import com.flappedear.betterdriver.analysis.line.PlanPass
 import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.analysis.line.perfectLapScene
 import com.flappedear.betterdriver.analysis.optimal.PedalState
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.timing.steering.SteerAdvice
 import com.flappedear.betterdriver.timing.steering.SteeringPass
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-// Pure Kotlin (no Android): the Map tab's "Where to find time" view (FBBD-306, UI-164 A, UI-165 C,
-// UI-166 A, UI-167 B), made from the track's line plan and tested on the JVM.
+// Common Kotlin: the Map tab's "Where to find time" view (FBBD-306, UI-164 A, UI-165 C, UI-166 A,
+// UI-167 B), made from the track's line plan. Android (feature-analysis) and the iPad review
+// (FBBD-331) both draw it, so the words are the same on both; it keeps feature-analysis's package
+// so the Android screens use it unchanged.
 
 /** One point of a drawn line, in metres east and north of the view's origin. */
 data class LineDot(val eastMeters: Double, val northMeters: Double, val pedal: PedalState?)
@@ -162,9 +164,9 @@ fun beyondUi(room: PlanBrakeRoom): BeyondUi {
         "Brake ${room.laterMeters} m later"
     }
     val where = room.trackCorners.map(::cornerTag).joinToString(" and ").ifEmpty { "other corners" }
-    val g = { v: Double -> String.format(Locale.ROOT, "%.2f g", v) }
+    val g = { v: Double -> "${fixed(v, 2)} g" }
     val why = "You brake at ${g(room.peakG)} here, ${g(room.trackG)} in $where." +
-        if (whole) " Braking that hard all the way is worth about ${seconds(room.fullSeconds)} s." else ""
+        if (whole) " Braking that hard all the way is worth about ${fixed(room.fullSeconds, 2)} s." else ""
     return BeyondUi(room.seconds, todo, why)
 }
 
@@ -182,7 +184,7 @@ fun gearUi(gear: PlanGear): GearUi {
     val reason = if (low != null && high != null) {
         "In $lower you are at ${low.roundToInt()} km/h 100 m later, in $higher at ${high.roundToInt()}."
     } else {
-        val g = { v: Double -> String.format(Locale.ROOT, "%.2f g", v) }
+        val g = { v: Double -> "${fixed(v, 2)} g" }
         "At ${gear.apexKmh.roundToInt()} km/h on full throttle $lower pulls ${g(gear.lowerPullG)}, " +
             "$higher ${g(gear.higherPullG)}."
     }
@@ -301,7 +303,7 @@ private const val MillisPerSecond = 1000.0
 private const val MinOutShare = 0.1
 
 /** A lap time as the app shows one. */
-internal fun lineLapTime(seconds: Double): String = formatLapTime((seconds * MillisPerSecond).roundToLong())
+fun lineLapTime(seconds: Double): String = formatLapTime((seconds * MillisPerSecond).roundToLong())
 
 /** The east and north extent of [dots], metres; a unit square without any. */
 fun lineExtent(dots: List<LineDot>): Pair<ClosedFloatingPointRange<Double>, ClosedFloatingPointRange<Double>> {
@@ -310,11 +312,7 @@ fun lineExtent(dots: List<LineDot>): Pair<ClosedFloatingPointRange<Double>, Clos
         dots.minOf { it.northMeters }..dots.maxOf { it.northMeters }
 }
 
-/** What the view shows: the plan while it is worked out, why there is none, or the view. */
-sealed interface LineState {
-    data object Reading : LineState
+private val CornerName = Regex("""Corners? (\d+(?:[–-]\d+)?)""")
 
-    data class Unavailable(val why: String) : LineState
-
-    data class Ready(val ui: LineUi) : LineState
-}
+/** A corner's map label: "Corner 1" is T1, "Corners 2–3" is T2–3; any other name is kept. */
+fun cornerTag(name: String): String = CornerName.matchEntire(name)?.let { "T" + it.groupValues[1] } ?: name

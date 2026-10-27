@@ -18,7 +18,7 @@ log="$(mktemp)"
 trap 'rm -f "$log"' EXIT
 # Gradle's output goes to a file first so that its failure stops the script (a pipe into grep would
 # hide it, and a bundle left from an earlier run would look like success).
-if ! "$root/gradlew" -p "$root" :transfer:test --tests '*MockSessionTest*' --rerun -i \
+if ! "$root/gradlew" -p "$root" :transfer:jvmTest --tests '*MockSessionTest*' --rerun -i \
   -PmockVbo="$vbo" -PmockVideo="$video" -PmockVideoStartUtcMs="$start_ms" \
   -PmockVideoDurationUs="$duration_us" -PmockOut="$out" >"$log" 2>&1; then
   cat "$log" >&2

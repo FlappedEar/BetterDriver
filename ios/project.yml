@@ -28,7 +28,7 @@ targets:
         # iPhone and iPad.
         TARGETED_DEVICE_FAMILY: "1,2"
         GENERATE_INFOPLIST_FILE: YES
-        # Background modes; Xcode merges the generated keys below into it.
+        # Background modes and document types; Xcode merges the generated keys below into it.
         INFOPLIST_FILE: Support/Info.plist
         INFOPLIST_KEY_CFBundleDisplayName: BetterDriver
         INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: BetterDriver reads your RaceBox over Bluetooth while it records.
