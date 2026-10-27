@@ -110,6 +110,8 @@ struct WhereToFindTime {
     let corners: [LineCorner]
     /// Most time first, corners with nothing to find last (LineUi.ranked).
     let ranked: [LineCorner]
+    /// The perfect lap to drive in 3D (FBBD-308); nil when a corner has no line or road to draw.
+    let scene: PerfectLapScene?
 }
 
 /// The one place the review talks to the Kotlin core (ReviewLibrary), so Kotlin types stay out
@@ -196,7 +198,8 @@ enum ReviewBridge {
             laps: Int(ui.laps),
             sessions: Int(ui.sessions),
             corners: ui.corners.map(corner),
-            ranked: ui.ranked.map(corner)
+            ranked: ui.ranked.map(corner),
+            scene: ui.scene
         )
     }
 
