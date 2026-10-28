@@ -67,6 +67,9 @@ private func modelNote(_ model: String) -> String {
     case ModelName.obdBluetooth, ModelName.obdWifi:
         "Reads the car in every session while it is listed. The Car page shows its values."
     case ModelName.phoneCamera: "Records video with each session it is turned on for."
+    case ModelName.goProFiles: "Start it by hand. Add its videos to the session afterwards."
+    case ModelName.cameraFiles:
+        "Start it by hand. Add its MP4 videos to the session afterwards; they are lined up by the camera's clock."
     default: "Records position and speed for each session it is chosen for."
     }
 }
@@ -174,6 +177,8 @@ struct AddEquipmentPage: View {
     @EnvironmentObject private var settings: SettingsModel
     @Environment(\.dismiss) private var dismiss
     @StateObject private var scanner = NearbyScanner()
+    // A GoPro started by hand is added by generation, picked in a dialog (FBBD-105), as on Android.
+    @State private var pickingGoPro = false
 
     var body: some View {
         let listed = Set(settings.setup.equipment.compactMap(\.address))
@@ -207,15 +212,17 @@ struct AddEquipmentPage: View {
                     ? "Searching for RaceBox, heart-rate monitors and Bluetooth LE OBD-II adapters."
                     : "Allow Bluetooth for BetterDriver in the iPhone's Settings to search for a RaceBox."
             )
-            let without = SettingsCore.shared.withoutBluetooth.filter { m in
-                !settings.setup.equipment.contains { $0.modelName == m.name }
-            }
+            let without = SettingsCore.shared.withoutBluetooth(setup: settings.setup)
             if !without.isEmpty {
                 ShellLabel("Add without Bluetooth")
                 ShellCard {
                     ForEach(Array(without.enumerated()), id: \.element.name) { i, m in
                         ListRow(m.label, value: withoutNote(m.name), divider: i > 0) {
-                            add(m.name, name: m.label, address: nil)
+                            if m.name == ModelName.goProFiles {
+                                pickingGoPro = true
+                            } else {
+                                add(m.name, name: m.label, address: nil)
+                            }
                         }
                     }
                 }
@@ -223,10 +230,25 @@ struct AddEquipmentPage: View {
         }
         .onAppear { scanner.start() }
         .onDisappear { scanner.stop() }
+        .confirmationDialog("Which GoPro", isPresented: $pickingGoPro, titleVisibility: .visible) {
+            ForEach(GoProCore.shared.fileImportModels, id: \.name) { m in
+                Button(GoProCore.shared.choiceLabel(model: m)) {
+                    let id = SettingsModel.newId()
+                    settings.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: m, id: id) }
+                    dismiss()
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        }
     }
 
     private func withoutNote(_ model: String) -> String {
-        model == ModelName.phoneGps ? "This phone's own GPS, about 1 position a second" : "Built in"
+        switch model {
+        case ModelName.phoneGps: "This phone's own GPS, about 1 position a second"
+        case ModelName.goProFiles: "HERO8 or older, MAX"
+        case ModelName.cameraFiles: "DJI Action, Insta360, Garmin and others"
+        default: "Built in"
+        }
     }
 
     private func add(_ model: String, name: String, address: String?) {

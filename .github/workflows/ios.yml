@@ -17,6 +17,7 @@ on:
       - "timing/**"
       - "coach/**"
       - "analysis/**"
+      - "videosync/**"
       - "core-ios/**"
       # The track screen's fonts, bundled into the app.
       - "core-ui/src/main/res/font/**"
@@ -37,6 +38,7 @@ on:
       - "timing/**"
       - "coach/**"
       - "analysis/**"
+      - "videosync/**"
       - "core-ios/**"
       # The track screen's fonts, bundled into the app.
       - "core-ui/src/main/res/font/**"

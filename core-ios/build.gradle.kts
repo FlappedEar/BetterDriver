@@ -8,7 +8,7 @@ plugins {
 }
 
 // The modules the app sees, in dependency order. Add a module here when it gains iOS targets.
-val exported = listOf(":shared", ":setup", ":recorder", ":racebox", ":obd", ":heartrate", ":timing", ":coach", ":analysis", ":transfer")
+val exported = listOf(":shared", ":setup", ":recorder", ":videosync", ":racebox", ":obd", ":heartrate", ":timing", ":coach", ":analysis", ":transfer")
 
 // Where the tests read the app's built-in demo replays (DemoSessionsTest, FBBD-331), as :analysis
 // does: the iOS simulator shares the Mac's file system.

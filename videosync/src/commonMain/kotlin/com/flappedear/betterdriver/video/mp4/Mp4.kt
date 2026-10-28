@@ -2,40 +2,40 @@
 
 package com.flappedear.betterdriver.video.mp4
 
-import java.io.File
-import java.io.IOException
-import java.io.RandomAccessFile
-import java.nio.BufferUnderflowException
-import java.nio.ByteBuffer
-import java.time.DateTimeException
+import com.flappedear.betterdriver.video.IoProblem
 
 /**
  * Thrown when a file is not an MP4 (or GPMF payload) this reader understands. The parser contract
  * (audit A04): a malformed input ends with this exception and nothing else, so a caller that
- * handles [IOException] handles every damaged file; no other exception type leaves [Mp4Reader] or
- * the GPMF reader for a bad file.
+ * handles [IoProblem] (IOException on the JVM) handles every damaged file; no other exception type
+ * leaves [Mp4Parser] or the GPMF reader for a bad file.
  */
-class Mp4FormatException(message: String, cause: Throwable? = null) : IOException(message, cause)
+class Mp4FormatException(message: String, cause: Throwable? = null) : IoProblem(message, cause)
 
 /**
  * Runs [block] on input that may be damaged: an out-of-range read the explicit checks missed
  * ends as [Mp4FormatException] rather than reaching the caller as a runtime exception.
  */
-@Suppress("ThrowsCount", "TooGenericExceptionCaught") // The safety net of the contract above.
+@Suppress("TooGenericExceptionCaught") // The safety net of the contract above.
 internal inline fun <T> parsing(what: String, block: () -> T): T = try {
     block()
-} catch (e: BufferUnderflowException) {
+} catch (e: CutShort) {
     throw Mp4FormatException("$what is cut short", e)
-} catch (e: IllegalArgumentException) {
-    throw Mp4FormatException("$what is damaged: ${e.message}", e)
-} catch (e: IndexOutOfBoundsException) {
-    throw Mp4FormatException("$what is damaged: ${e.message}", e)
-} catch (e: NegativeArraySizeException) {
-    throw Mp4FormatException("$what is damaged: ${e.message}", e)
 } catch (e: ArithmeticException) {
     throw Mp4FormatException("$what has out-of-range numbers", e)
-} catch (e: DateTimeException) {
-    throw Mp4FormatException("$what has a bad date: ${e.message}", e)
+} catch (e: RuntimeException) {
+    // IllegalArgumentException, IndexOutOfBoundsException and, on the JVM, NegativeArraySizeException.
+    throw Mp4FormatException("$what is damaged: ${e.message}", e)
+}
+
+/**
+ * A file the readers can read: its [length], and [read] of bytes at any offset. A read past the end
+ * throws [IoProblem]. Android reads a java.io.File, iOS a file through Foundation.
+ */
+interface Mp4Source : AutoCloseable {
+    val length: Long
+
+    fun read(offset: Long, size: Int): ByteArray
 }
 
 /** One sample (for GPMF: one payload) of a track: where it is in the file and when it plays. */
@@ -68,7 +68,7 @@ private const val TelemetryFormat = "gpmd"
  * against what the box and the file can hold before work or memory depends on it (audit A04/A05).
  */
 @Suppress("TooManyFunctions") // One small function per box.
-object Mp4Reader {
+object Mp4Parser {
     private const val MaxMoovBytes = 64L * 1024 * 1024
     private const val SecondsFrom1904To1970 = 2_082_844_800L
     private const val MicrosPerSecond = 1_000_000L
@@ -79,50 +79,46 @@ object Mp4Reader {
     /** One GPMF payload: a second of every sensor is a few KB; anything this large is damage. */
     internal const val MaxTelemetrySampleBytes = 4 * 1024 * 1024
 
-    fun read(file: File): Mp4Info = RandomAccessFile(file, "r").use { raf ->
-        val moov = findMoov(raf) ?: throw Mp4FormatException("no moov box")
-        val length = raf.length()
-        parsing("${file.name}: moov") { parseMoov(ByteBuffer.wrap(moov), length) }
+    /** The index of the file [name] that [source] reads. */
+    fun read(source: Mp4Source, name: String): Mp4Info {
+        val moov = findMoov(source) ?: throw Mp4FormatException("no moov box")
+        return parsing("$name: moov") { parseMoov(ByteReader(moov), source.length) }
     }
 
     /** Reads [sample]'s bytes; a sample that is too large or lies outside the file is refused before any allocation. */
-    fun readSample(file: File, sample: Mp4Sample): ByteArray = RandomAccessFile(file, "r").use { raf ->
-        checkSample(sample.offset, sample.size.toLong(), raf.length())
-        ByteArray(sample.size).also {
-            raf.seek(sample.offset)
-            raf.readFully(it)
-        }
+    fun readSample(source: Mp4Source, sample: Mp4Sample): ByteArray {
+        checkSample(sample.offset, sample.size.toLong(), source.length)
+        return source.read(sample.offset, sample.size)
     }
 
     /**
-     * Whether [file] is a finished MP4: it has a `moov` box. A recording cut off by a crash (the camera
+     * Whether [source] is a finished MP4: it has a `moov` box. A recording cut off by a crash (the camera
      * process died, the phone switched off) has only its media data and cannot be played. Reads box
      * headers only, so it is fast on large files.
      */
-    fun isComplete(file: File): Boolean = try {
-        RandomAccessFile(file, "r").use { moovBody(it) != null }
-    } catch (_: IOException) {
+    fun isComplete(source: Mp4Source): Boolean = try {
+        moovBody(source) != null
+    } catch (_: IoProblem) {
         false
     }
 
-    private fun findMoov(raf: RandomAccessFile): ByteArray? = moovBody(raf)?.let { (start, size) ->
-        raf.seek(start)
-        ByteArray(size).also { raf.readFully(it) }
+    private fun findMoov(source: Mp4Source): ByteArray? = moovBody(source)?.let { (start, size) ->
+        source.read(start, size)
     }
 
     /** Where the `moov` box's body starts and its size, or null when there is none. */
     @Suppress("ReturnCount", "ThrowsCount") // One reason per way a box header can be bad.
-    private fun moovBody(raf: RandomAccessFile): Pair<Long, Int>? {
+    private fun moovBody(source: Mp4Source): Pair<Long, Int>? {
         var pos = 0L
-        val length = raf.length()
+        val length = source.length
         while (pos + 8 <= length) {
-            raf.seek(pos)
-            var size = raf.readInt().toLong() and 0xFFFFFFFFL
-            val type = ByteArray(4).also { raf.readFully(it) }.toString(Charsets.US_ASCII)
+            val head = ByteReader(source.read(pos, 8))
+            var size = head.uint()
+            val type = fourCc(head)
             var header = 8L
             if (size == 1L) {
                 if (pos + 16 > length) throw Mp4FormatException("$type box header cut short at $pos")
-                size = raf.readLong()
+                size = ByteReader(source.read(pos + 8, 8)).long
                 header = 16L
             } else if (size == 0L) {
                 size = length - pos
@@ -142,7 +138,7 @@ object Mp4Reader {
         return null
     }
 
-    private fun parseMoov(buf: ByteBuffer, fileLength: Long): Mp4Info {
+    private fun parseMoov(buf: ByteReader, fileLength: Long): Mp4Info {
         var creation: Long? = null
         var durationUs = 0L
         val tracks = mutableListOf<Mp4Track>()
@@ -176,11 +172,11 @@ object Mp4Reader {
         return Mp4Info(creation, durationUs, tracks)
     }
 
-    private fun parseTrak(buf: ByteBuffer, fileLength: Long): Mp4Track? {
+    private fun parseTrak(buf: ByteReader, fileLength: Long): Mp4Track? {
         val mdia = children(buf).firstOrNull { it.type == "mdia" } ?: return null
         var timescale = 0L
         var handler = ""
-        var stbl: ByteBuffer? = null
+        var stbl: ByteReader? = null
         for (box in children(mdia.body)) {
             when (box.type) {
                 "mdhd" -> {
@@ -206,7 +202,7 @@ object Mp4Reader {
         return stbl?.let { parseStbl(it, handler, timescale, fileLength) }
     }
 
-    private fun parseStbl(buf: ByteBuffer, handler: String, timescale: Long, fileLength: Long): Mp4Track {
+    private fun parseStbl(buf: ByteReader, handler: String, timescale: Long, fileLength: Long): Mp4Track {
         val boxes = children(buf).associateBy { it.type }
         val format = boxes["stsd"]?.body?.let(::sampleFormat).orEmpty()
         if (format != TelemetryFormat) return Mp4Track(handler, format, timescale, emptyList())
@@ -214,7 +210,7 @@ object Mp4Reader {
     }
 
     /** The first sample description's format, or "" when the box lists none. */
-    private fun sampleFormat(b: ByteBuffer): String {
+    private fun sampleFormat(b: ByteReader): String {
         b.need(8, "stsd")
         b.int
         if (b.uint() == 0L) return ""
@@ -230,8 +226,8 @@ object Mp4Reader {
         }
     }
 
-    internal fun scale(ticks: Long, timescale: Long): Long = Math.addExact(
-        Math.multiplyExact(ticks / timescale, MicrosPerSecond),
+    internal fun scale(ticks: Long, timescale: Long): Long = addExact(
+        multiplyExact(ticks / timescale, MicrosPerSecond),
         ticks % timescale * MicrosPerSecond / timescale,
     )
 }
@@ -239,7 +235,7 @@ object Mp4Reader {
 /**
  * The telemetry track's sample tables (stts, stsc, stsz, stco/co64) expanded into samples. Every
  * count is checked against the bytes its box holds, and the expansion never does more work than
- * the samples the track declares, which are at most [Mp4Reader.MaxTelemetrySamples] (audit A05).
+ * the samples the track declares, which are at most [Mp4Parser.MaxTelemetrySamples] (audit A05).
  * `stsz` with one size for all samples has no per-sample entries (audit A06; ISO/IEC 14496-12 8.7.3).
  */
 private object SampleTables {
@@ -267,14 +263,14 @@ private object SampleTables {
             val take = minOf(n, (offsets.size - result.size).toLong()).toInt()
             repeat(take) {
                 val i = result.size
-                Mp4Reader.checkSample(offsets[i], sizes.size(i).toLong(), fileLength)
+                Mp4Parser.checkSample(offsets[i], sizes.size(i).toLong(), fileLength)
                 result += Mp4Sample(
                     offsets[i],
                     sizes.size(i),
-                    Mp4Reader.scale(ticks, timescale),
-                    Mp4Reader.scale(delta, timescale),
+                    Mp4Parser.scale(ticks, timescale),
+                    Mp4Parser.scale(delta, timescale),
                 )
-                ticks = Math.addExact(ticks, delta)
+                ticks = addExact(ticks, delta)
             }
             if (result.size == offsets.size) break
         }
@@ -287,20 +283,20 @@ private object SampleTables {
     }
 
     @Suppress("ThrowsCount") // One reason per way the table can be bad.
-    private fun sizes(b: ByteBuffer): Sizes {
+    private fun sizes(b: ByteReader): Sizes {
         b.need(12, "stsz")
         b.int
         val fixed = b.uint()
         val count = b.uint()
-        if (count > Mp4Reader.MaxTelemetrySamples) throw Mp4FormatException("stsz lists $count telemetry samples")
+        if (count > Mp4Parser.MaxTelemetrySamples) throw Mp4FormatException("stsz lists $count telemetry samples")
         if (fixed != 0L) {
-            if (fixed > Mp4Reader.MaxTelemetrySampleBytes) throw Mp4FormatException("telemetry sample of $fixed bytes")
+            if (fixed > Mp4Parser.MaxTelemetrySampleBytes) throw Mp4FormatException("telemetry sample of $fixed bytes")
             return Sizes(count.toInt(), fixed.toInt(), null)
         }
         if (count * 4 > b.remaining()) throw Mp4FormatException("stsz table of $count larger than its box")
         val each = IntArray(count.toInt()) {
             val size = b.uint()
-            if (size > Mp4Reader.MaxTelemetrySampleBytes) throw Mp4FormatException("telemetry sample of $size bytes")
+            if (size > Mp4Parser.MaxTelemetrySampleBytes) throw Mp4FormatException("telemetry sample of $size bytes")
             size.toInt()
         }
         return Sizes(count.toInt(), 0, each)
@@ -320,7 +316,7 @@ private object SampleTables {
             var offset = chunkOffset
             repeat(take) {
                 offsets[sample] = offset
-                offset = Math.addExact(offset, sizes.size(sample).toLong())
+                offset = addExact(offset, sizes.size(sample).toLong())
                 sample++
             }
         }
@@ -329,20 +325,20 @@ private object SampleTables {
     }
 
     /** A table of `entry count` entries of [entryBytes] each, checked against its box before it is read. */
-    private fun <T> table(b: ByteBuffer, what: String, entryBytes: Int, entry: (ByteBuffer) -> T): List<T> {
+    private fun <T> table(b: ByteReader, what: String, entryBytes: Int, entry: (ByteReader) -> T): List<T> {
         b.need(8, what)
         b.int
         val n = b.uint()
         if (n * entryBytes > b.remaining()) throw Mp4FormatException("$what table of $n larger than its box")
         // A telemetry track needs no more entries than samples; more is a damaged table.
-        if (n > Mp4Reader.MaxTelemetrySamples) throw Mp4FormatException("$what table of $n entries")
+        if (n > Mp4Parser.MaxTelemetrySamples) throw Mp4FormatException("$what table of $n entries")
         return List(n.toInt()) { entry(b) }
     }
 }
 
-private class Box(val type: String, val body: ByteBuffer)
+private class Box(val type: String, val body: ByteReader)
 
-private fun children(buf: ByteBuffer): List<Box> {
+private fun children(buf: ByteReader): List<Box> {
     val boxes = mutableListOf<Box>()
     val b = buf.duplicate()
     while (b.remaining() >= 8) {
@@ -367,7 +363,7 @@ private fun children(buf: ByteBuffer): List<Box> {
 }
 
 /** Reads a full box's version and flags; versions 0 and 1 are the ones ISO/IEC 14496-12 defines. */
-private fun fullBoxVersion(b: ByteBuffer, what: String): Int {
+private fun fullBoxVersion(b: ByteReader, what: String): Int {
     b.need(4, what)
     val version = b.get().toInt() and 0xFF
     b.position(b.position() + 3)
@@ -376,10 +372,25 @@ private fun fullBoxVersion(b: ByteBuffer, what: String): Int {
 }
 
 /** Fails with [Mp4FormatException] unless [bytes] are left in this box. */
-internal fun ByteBuffer.need(bytes: Int, what: String) {
+internal fun ByteReader.need(bytes: Int, what: String) {
     if (remaining() < bytes) throw Mp4FormatException("$what is cut short (needs $bytes bytes, has ${remaining()})")
 }
 
-private fun fourCc(b: ByteBuffer): String = ByteArray(4).also { b.get(it) }.toString(Charsets.US_ASCII)
+private fun fourCc(b: ByteReader): String = ByteArray(4).also { b.get(it) }.ascii()
 
-private fun ByteBuffer.uint(): Long = int.toLong() and 0xFFFFFFFFL
+private fun ByteReader.uint(): Long = int.toLong() and 0xFFFFFFFFL
+
+/** [a] + [b], or [ArithmeticException] when it does not fit a Long, as Math.addExact. */
+internal fun addExact(a: Long, b: Long): Long {
+    val r = a + b
+    if ((a xor r) and (b xor r) < 0) throw ArithmeticException("long overflow")
+    return r
+}
+
+/** [a] × [b], or [ArithmeticException] when it does not fit a Long, as Math.multiplyExact. */
+internal fun multiplyExact(a: Long, b: Long): Long {
+    val r = a * b
+    val minTimesMinusOne = a == -1L && b == Long.MIN_VALUE
+    if (a != 0L && (minTimesMinusOne || r / a != b)) throw ArithmeticException("long overflow")
+    return r
+}
