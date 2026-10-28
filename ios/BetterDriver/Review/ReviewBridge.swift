@@ -290,6 +290,9 @@ extension ReviewBridge {
         }
     }
 
+    /// The track day of sessions [ids] (FBBD-315), read and worded by the shared core as on Android.
+    static func trackDay(_ ids: [String]) -> TrackDayState { library.trackDay(ids: ids) }
+
     /// Session [id] as a .bdsession to share, as Android's Share: its files, video included, and its track.
     static func share(_ id: String) throws -> URL {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
@@ -319,14 +322,16 @@ extension ReviewBridge {
         let arguments = ProcessInfo.processInfo.arguments
         let base = URL(fileURLWithPath: library.sessionsRoot).deletingLastPathComponent()
         if arguments.contains("-freshInstall") {
-            for dir in ["sessions", "tracks", "transfer"] {
+            for dir in ["sessions", "tracks", "transfer", "coach"] {
                 try? FileManager.default.removeItem(at: base.appendingPathComponent(dir))
             }
         }
         guard arguments.contains("-demoSessions"), library.sessions().isEmpty,
               let demo = Bundle.main.resourceURL?.appendingPathComponent("demo") else { return }
         // When Arek drove them, as Android names them (DemoReplay).
-        let demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
+        var demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
+        // A second Jastrząb session an hour later the same day, for the track day (FBBD-315).
+        if arguments.contains("-demoTrackDay") { demos.append(("jastrzab", 1_787_994_009_000)) }
         for (name, start) in demos {
             _ = try? library.addDemo(
                 replayPath: demo.appendingPathComponent("\(name).replay").path,

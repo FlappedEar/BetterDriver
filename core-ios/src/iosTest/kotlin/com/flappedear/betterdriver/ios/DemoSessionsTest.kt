@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import platform.Foundation.NSDate
@@ -102,9 +103,33 @@ class DemoSessionsTest {
         assertTrue(fm.fileExistsAtPath(recent), "a recent bundle was removed")
     }
 
+    @Test
+    fun twoSessionsAtOneTrackMakeATrackDayAndTheNextDayMeasuresIt() {
+        val demo = "$DemoAssetsDir/jastrzab.replay" to "$DemoAssetsDir/jastrzab.track.json"
+        val day1 = listOf(StartUtcMillis, StartUtcMillis + HourMillis)
+            .map { library.addDemo(demo.first, demo.second, it) }
+        val first = library.trackDay(day1)
+        assertTrue(first is TrackDayState.Ready, "$first")
+        val ui = first.ui
+        assertTrue(ui.title.startsWith("Jastrząb"), ui.title)
+        assertTrue(ui.subtitle.startsWith("2 sessions · "), ui.subtitle)
+        assertEquals("1:49.91", ui.best)
+        assertEquals(2, ui.sessions.size)
+        assertTrue(ui.next.isNotEmpty())
+        assertEquals(null, ui.proof)
+        val day2 = listOf(StartUtcMillis + DayMillis, StartUtcMillis + DayMillis + HourMillis)
+            .map { library.addDemo(demo.first, demo.second, it) }
+        val second = library.trackDay(day2)
+        assertTrue(second is TrackDayState.Ready, "$second")
+        assertTrue(checkNotNull(second.ui.proof).title.startsWith("Last day here"), "${second.ui.proof}")
+        assertTrue(library.trackDay(day1.take(1)) is TrackDayState.Unavailable)
+    }
+
     private fun read(path: String) = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
     private companion object {
         const val StartUtcMillis = 1_790_000_000_000L
+        const val HourMillis = 3_600_000L
+        const val DayMillis = 24 * HourMillis
     }
 }

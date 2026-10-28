@@ -10,6 +10,7 @@ struct SessionsListView: View {
     @State private var showingTracks = false
     @State private var notYet: String?
     @State private var deleting: SessionRow?
+    @State private var trackDay: TrackDayLink?
 
     var body: some View {
         List(selection: $selection) {
@@ -36,14 +37,19 @@ struct SessionsListView: View {
                             .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)
                     }
                 } header: {
-                    HStack {
-                        Text(dayTitle(day.day, day.sessions))
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(Palette.onSurfaceVariant)
-                        Spacer()
-                        // Android's day heading opens the day at its track (FBBD-315).
-                        Button("Track day") { notYet = "Track day" }
-                            .font(.caption.weight(.semibold))
+                    // Android's day heading: a "Track day ›" link for each track driven twice that day (FBBD-315).
+                    let links = TrackDayLink.of(day.sessions)
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Text(dayTitle(day.day, day.sessions))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Palette.onSurfaceVariant)
+                            Spacer()
+                            if links.count == 1 { trackDayButton("Track day ›", links[0]) }
+                        }
+                        if links.count > 1 {
+                            ForEach(links) { trackDayButton("Track day at \($0.track) ›", $0) }
+                        }
                     }
                 }
             }
@@ -66,6 +72,7 @@ struct SessionsListView: View {
             }
         }
         .sheet(isPresented: $showingTracks) { TracksView() }
+        .sheet(item: $trackDay) { TrackDayView(link: $0) }
         .notImplementedAlert($notYet)
         .alert(
             "Delete session?",
@@ -84,6 +91,13 @@ struct SessionsListView: View {
         .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { model.importFiles(urls) }
         }
+    }
+
+    private func trackDayButton(_ text: String, _ link: TrackDayLink) -> some View {
+        Button(text) { trackDay = link }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Palette.accent)
+            .accessibilityIdentifier("trackDayLink")
     }
 
     /// Android's delete question (UI-48 A): the session, what goes and how much space it frees.

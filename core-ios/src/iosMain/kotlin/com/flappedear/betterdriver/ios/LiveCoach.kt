@@ -140,7 +140,12 @@ class LiveCoach internal constructor(
         // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
         val nowUtc = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
         val sameDay = reference != null && library.drivenSameDay(reference, nowUtc)
-        val plan = line?.let { planFocus(it, sessionId) }
+        // The first session of a new day there works on the last track day's focus (FBBD-315, UI-214 B),
+        // while no session since that day made a newer line plan, as CoachService.planFocusOf.
+        val days = IosDayPlanStore(dayPlansBeside(linePlansDir))
+        val day = if (focus && !sameDay) days.days(track.id).lastOrNull() else null
+        val fresh = day?.plan?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
+        val plan = fresh?.let { planFocus(it, sessionId) } ?: line?.let { planFocus(it, sessionId) }
         val c = CoachSession(
             settings, track, reference, sameDay = sameDay, focus = plan?.picks.orEmpty(),
             focusSeconds = plan?.seconds.orEmpty(),

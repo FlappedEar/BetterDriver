@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
+import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -51,6 +52,7 @@ class ReviewLibrary(base: String) {
     private val store = SessionStore(sessionsRoot)
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
     private val plans = IosLinePlanStore(linePlansDir(base))
+    private val days = IosDayPlanStore(dayPlansDir(base))
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
@@ -118,6 +120,12 @@ class ReviewLibrary(base: String) {
                 }
             }
             .take(MaxLineSessions)
+
+    /**
+     * The track day of sessions [ids] (FBBD-315), as Android's track day page reads it; kept as the
+     * track's day plan, so the next day there starts on its focus and measures it.
+     */
+    fun trackDay(ids: List<String>): TrackDayState = trackDayState(store, tracks(), days, ids)
 
     /**
      * The fastest lap of [reviewed] (session [id]) against timed lap [otherIndex] on video, as
