@@ -41,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The released commit; its commit count is the build number, as on Android.
+          # The released commit; its commit count (plus 1000, below) is the build number.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-java@v4
@@ -74,7 +74,10 @@ jobs:
         id: version
         run: |
           echo "version=$(sed -n 's/^betterdriver.version=//p' gradle.properties)" >> "$GITHUB_OUTPUT"
-          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          # Build 403 went up from a branch whose unsquashed history counted more commits than
+          # main, so main's builds (386 on 2026-10-28) sorted below it in TestFlight. The 1000
+          # puts main's builds above every earlier upload; dispatch from main only.
+          echo "build=$(( $(git rev-list --count HEAD) + 1000 ))" >> "$GITHUB_OUTPUT"
       # App Store Connect takes only builds made with the iOS 26 SDK or later (Xcode 26+).
       - name: Xcode 26
         run: |
