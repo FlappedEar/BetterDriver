@@ -49,6 +49,8 @@ data class SessionVideoExport(
     val recording: Boolean = false,
     val onExport: (SessionSummary) -> Unit = {},
     val onCancel: (SessionSummary) -> Unit = {},
+    /** Opens the session's whole video with the data overlay in the app (FBBD-341). */
+    val onWatch: (SessionSummary) -> Unit = {},
 ) {
     internal fun menuItem(onClick: () -> Unit) = DataVideoItem(
         enabled = !recording && running == null,

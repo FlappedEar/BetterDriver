@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,7 +34,8 @@ import java.util.Locale
 
 /**
  * Everything a session offers, in the sheet its ⋮ opens (UI-139 C): its GoPro video, the coach's
- * review, export, share and delete, with their progress. The title opens lap analysis, as the row does.
+ * review, watching its video (FBBD-341), export, share and delete, with their progress. The title
+ * opens lap analysis, as the row does.
  */
 @Suppress("LongParameterList")
 @Composable
@@ -76,6 +78,14 @@ internal fun SessionActions(
         TransferLine(sending)
         if (free) SaveInstead(sending) { transfer.onSave(s) }
         VideoExportLine(videoExport.states[s.id], rendering) { videoExport.onCancel(s) }
+        // Any session with video, with or without laps (FBBD-341): a commute's video can be watched too.
+        if (video && s.state != SessionState.RECORDING) {
+            FilledTonalButton(
+                onClick = { videoExport.onWatch(s) },
+                enabled = delete != DeleteState.Running,
+                modifier = Modifier.fillMaxWidth(),
+            ) { Text("Watch video") }
+        }
         CardButtons(
             video = video,
             idle = free,

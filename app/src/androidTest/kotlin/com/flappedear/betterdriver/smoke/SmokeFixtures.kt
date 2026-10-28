@@ -131,19 +131,20 @@ object SmokeFixtures {
 
     /**
      * Records [samples] with the recorder, its clock following the samples so the session lasts as
-     * long as they do. The session names [track] as the app does when it starts at a saved track.
+     * long as they do. The session names [track] as the app does when it starts at a saved track; null
+     * for a drive that started at none.
      * With [video], the phone camera's file covers the whole session.
      */
     internal fun record(
         store: SessionStore,
         info: SessionInfo,
-        track: Track,
+        track: Track?,
         samples: List<Sample>,
         video: (() -> InputStream)?,
     ): File {
         val clock = AtomicLong(0L)
         val recording = Recorder(store, nanoTime = clock::get).start(info)
-        recording.eventAt(0, "track", "saved ${track.id} rev ${track.revision} ${track.displayName}")
+        track?.let { recording.eventAt(0, "track", "saved ${it.id} rev ${it.revision} ${it.displayName}") }
         val end = samples.last().tMicros + 1_000_000
         if (video != null) {
             val dir = File(recording.dir, VideoFiles.DIR).apply { mkdirs() }
@@ -405,6 +406,35 @@ object SmokeFixtures {
                 startFinish = TrackLine(GeoPoint(line.lat1, line.lon1), GeoPoint(line.lat2, line.lon2)),
             )
         }
+
+    /** The car of the drive [seedCommute] writes (WatchVideoSmokeTest). */
+    const val CommuteCar = "Commute car"
+
+    /** 13 Sep 2026 07:00 UTC, after the other sessions, so it is first in the list. */
+    private const val CommuteStartUtc = 1_789_282_800_000L
+    private const val CommuteLatOffset = 1.0
+
+    /**
+     * A drive away from every saved track, with phone video (FBBD-341): the hill runs a degree north,
+     * where no track's radius reaches, so the session has no track and no laps, as a commute.
+     */
+    fun seedCommute(filesDir: File, video: () -> InputStream) {
+        val samples = hillSamples().map { s ->
+            val values = s.values.map { v ->
+                if (v.channelId == GnssChannels.LAT.id) ChannelValue(v.channelId, v.value + CommuteLatOffset) else v
+            }
+            Sample(s.tMicros, values)
+        }
+        val info = SessionInfo(
+            startUtcMillis = CommuteStartUtc,
+            car = CommuteCar,
+            track = "",
+            devices = listOf("RaceBox Mini S"),
+            channels = Gnss + listOf(HorizontalAccuracy, AccelX, AccelY),
+        )
+        // No track event: the drive did not start at a saved track.
+        record(SessionStore(File(filesDir, "sessions")), info, null, samples, video)
+    }
 
     /** The track and session [seedOld] writes as older builds did (StoredDataSmokeTest). */
     const val OldTrackName = "Old Ring"
