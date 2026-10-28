@@ -8,6 +8,7 @@ struct RootView: View {
     @State private var model = SessionsModel()
     @State private var selection: String?
     @State private var columns: NavigationSplitViewVisibility = .all
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
@@ -22,7 +23,9 @@ struct RootView: View {
                     }
                 }
                 .toolbar {
-                    if columns == .detailOnly {
+                    // Collapsed (iPhone, narrow iPad window) the system back button returns to the
+                    // list and columns do nothing: a second ‹ there was dead (Arek, TestFlight).
+                    if sizeClass == .regular && columns == .detailOnly {
                         ToolbarItem(placement: .topBarLeading) {
                             Button { columns = .all } label: {
                                 Label("Sessions", systemImage: "chevron.left").labelStyle(.titleAndIcon)

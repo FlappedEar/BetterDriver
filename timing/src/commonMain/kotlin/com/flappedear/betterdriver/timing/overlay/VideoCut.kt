@@ -60,5 +60,30 @@ fun videoCuts(
 /** The export's length: all its cuts back to back. */
 fun List<VideoCut>.totalMicros(): Long = sumOf { it.durationMicros }
 
+/**
+ * A place in cuts played one after the other, as a player plays them (FBBD-341): cut [index], and
+ * [intoMicros] from that cut's first frame (the player's position in a clipped item).
+ */
+data class CutPosition(val index: Int, val intoMicros: Long)
+
+/**
+ * Where [outputMicros] of these cuts, back to back, falls: before the start, the first frame; past
+ * the end, the last cut's end. Null without cuts.
+ */
+fun List<VideoCut>.positionAt(outputMicros: Long): CutPosition? {
+    if (isEmpty()) return null
+    val i = indexOfLast { it.outputStartMicros <= outputMicros }.coerceAtLeast(0)
+    val c = this[i]
+    return CutPosition(i, (outputMicros - c.outputStartMicros).coerceIn(0L, c.durationMicros))
+}
+
+/** The time into all the cuts of [at]; null for a cut that is not there. */
+fun List<VideoCut>.outputMicrosAt(at: CutPosition): Long? =
+    getOrNull(at.index)?.let { it.outputStartMicros + at.intoMicros.coerceIn(0L, it.durationMicros) }
+
+/** The session time shown at [at], for the overlay; null for a cut that is not there. */
+fun List<VideoCut>.sessionMicrosAt(at: CutPosition): Long? =
+    getOrNull(at.index)?.let { it.sessionStartMicros + at.intoMicros.coerceIn(0L, it.durationMicros) }
+
 /** Shorter pieces are not worth a seam in the export. */
 const val MinCutMicros = 200_000L

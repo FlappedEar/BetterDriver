@@ -90,6 +90,8 @@ dependencies {
     implementation(libs.guava)
     // "Video with data" export (FBBD-152): renders the data overlay into the session's video on the phone.
     implementation(libs.androidx.media3.transformer)
+    // Watch video (FBBD-341): plays a session's whole video with the data overlay drawn live.
+    implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.effect)
     implementation(libs.androidx.navigation.compose)
     implementation(libs.compose.material3.window.size)

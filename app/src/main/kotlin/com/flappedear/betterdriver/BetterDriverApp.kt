@@ -173,6 +173,7 @@ private fun AppNavHost(
         progressionDestination(nav, padding)
         trackDayDestination(nav, padding)
         cueReview(nav, padding, layout)
+        watchVideo(nav, padding)
         composable(Routes.Settings) {
             Box(Modifier.padding(padding)) { Settings(nav, prefs, repo, tracks, topic = null, onBack = null) }
         }
@@ -347,7 +348,7 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
     val recording = recorder.state.recording || recorder.state.starting
     var picked by rememberSaveable { mutableStateOf<String?>(null) }
     val shown = shownSession(picked, sessions.list.map { it.id })
-    VideoExportFlow(sessions.list, recording) { videoExport ->
+    VideoExportFlow(sessions.list, recording, onWatch = { s -> nav.navigate(Routes.watchVideo(s.id)) }) { videoExport ->
         SessionsListDetail(
             layout = layout,
             shown = shown,

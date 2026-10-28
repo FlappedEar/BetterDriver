@@ -76,6 +76,11 @@ object Routes {
     fun sessionAnalysis(id: String, corner: String? = null) =
         "sessions/$id/analysis" + (corner?.let { "?corner=${Uri.encode(it)}" } ?: "")
 
+    /** One session's whole video with the data overlay (FBBD-341). */
+    const val WatchVideoPattern = "sessions/{id}/video"
+
+    fun watchVideo(id: String) = "sessions/$id/video"
+
     /** The cue review of one session (FBBD-99). */
     const val CueReviewPattern = "sessions/{id}/cues"
 
