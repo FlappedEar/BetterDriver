@@ -21,6 +21,8 @@ struct DriveCards: View {
             DriveRoute(drive: drive, cursor: $cursor)
                 .aspectRatio(drive.aspect, contentMode: .fit)
                 .frame(maxWidth: .infinity)
+                .accessibilityElement()
+                .accessibilityLabel("Route coloured by speed")
                 .accessibilityIdentifier("driveMap")
             legend
             Dim("Average while moving. No laps, so the route is the whole session; GPS gaps leave it open.")
@@ -30,6 +32,8 @@ struct DriveCards: View {
                 SectionTitle("Speed, km/h")
                 DriveChart(drive: drive, cursor: $cursor)
                     .frame(height: 150)
+                    .accessibilityElement()
+                    .accessibilityLabel("Speed along the drive")
                     .accessibilityIdentifier("driveSpeedChart")
                 HStack {
                     Dim("0")
