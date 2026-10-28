@@ -26,6 +26,14 @@ A lap's video starts a few seconds before the start/finish line and ends as long
 Overlays exports one lap. Its lap time shows 0:00 until the line, runs during the lap, and
 keeps the final time and the gap to your best lap after it.
 
+    The video uses the **Tech HUD** layout of FlappedEar Overlays, so a video from the phone looks like
+    one made in Overlays. Along the bottom: the RPM gauge with the speed in it, the lap (lap number,
+    running time, best lap and the delta to it), throttle and brake, OIL, ATF and COOLANT with their
+    ranges, tyres and the steering wheel. Top left the track map with the lap's trail and the car, top
+    right the heart rate, bottom right the G radar with its last second and the G numbers. A widget
+    whose value the session did not record (no OBD adapter, no heart-rate strap, no tyre sensors, no
+    steering angle) is left out. **Watch video** shows the same.
+
 When the session has video, the lap analysis also plays the realistic optimal lap as one video,
 stitched from the laps it is made of (the raw theoretical best is there too). The plan's perfect
 lap has its own video: the [perfect lap in 3D](getting-faster.md#perfect-lap-in-3d).

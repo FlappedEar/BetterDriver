@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * Reads the frame number the review fixture videos carry (ReviewFixtures, tools/review-fixtures):
- * a 12-bit Gray code in the top row of twelve cells, its complement in the row under it. A picture
+ * a 12-bit Gray code in a row of twelve cells (y 40-52), its complement in the row under it (52-64). A picture
  * of any size is read at the cells' centres, so a player's surface scaled to the screen reads the
  * same as the 192 x 112 file.
  */
@@ -26,8 +26,8 @@ object FrameCode {
     private const val CodeWidth = 192f
     private const val CodeHeight = 112f
     private const val CellWidth = 16f
-    private const val TopRowY = 12f
-    private const val BottomRowY = 36f
+    private const val TopRowY = 46f
+    private const val BottomRowY = 58f
     private const val Threshold = 128
 
     /**

@@ -1,70 +1,66 @@
 package com.flappedear.betterdriver.videoexport
 
-import android.content.Context
-import android.content.res.Resources
 import android.graphics.Canvas
-import android.graphics.LinearGradient
-import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PorterDuff
-import android.graphics.Shader
-import android.graphics.Typeface
 import androidx.annotation.OptIn
-import androidx.compose.ui.graphics.toArgb
-import androidx.core.content.res.ResourcesCompat
 import androidx.media3.common.OverlaySettings
 import androidx.media3.common.util.Size
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.effect.CanvasOverlay
 import androidx.media3.effect.StaticOverlaySettings
+import androidx.media3.effect.TextureOverlay
 import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
-import com.flappedear.betterdriver.core.ui.TrackColors
-import com.flappedear.betterdriver.core.ui.TrackColorsGreenRed
-import com.flappedear.betterdriver.format.formatDelta
-import com.flappedear.betterdriver.format.formatRunningTime
-import com.flappedear.betterdriver.format.isDeltaGain
-import com.flappedear.betterdriver.timing.geo.Xy
-import com.flappedear.betterdriver.timing.live.LapKind
-import com.flappedear.betterdriver.timing.overlay.Box
-import com.flappedear.betterdriver.timing.overlay.DefaultMaxG
-import com.flappedear.betterdriver.timing.overlay.LapPhase
-import com.flappedear.betterdriver.timing.overlay.MapFit
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
-import com.flappedear.betterdriver.timing.overlay.OverlayLayout
+import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.VideoCut
-import com.flappedear.betterdriver.timing.overlay.gDot
-import com.flappedear.betterdriver.timing.overlay.thin
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
- * The data overlay of one cut of the export (FBBD-152): a band along the bottom of the picture,
- * drawn for every frame from the session data at that frame's session time. The exporter stamps
- * each frame with its time in the export; [cut] turns that into session time.
- *
- * The band is its own canvas, only as tall as [OverlayLayout] makes it, so a 4K export uploads a
- * strip, not a whole frame, per frame. Drawn on the exporter's GL thread.
+ * The data overlay of one cut of the export (FBBD-152) in Overlays' Tech HUD layout (FBBD-347),
+ * drawn for every frame from the session data at that frame's session time. The exporter stamps each
+ * frame with its time in the export; [cut] turns that into session time.
  */
 @OptIn(UnstableApi::class)
-internal class DataOverlay(
-    private val data: OverlayData,
-    private val cut: VideoCut,
-    private val painter: OverlayPainter,
-) : CanvasOverlay(false) {
-    private var layout: OverlayLayout? = null
+internal fun dataOverlays(data: OverlayData, cut: VideoCut, painter: TechHudPainter): List<TextureOverlay> =
+    List(MaxStrips) { strip ->
+        HudStrip(painter, strip) { t -> cut.sessionMicrosAt(t).let { HudMoment(it, data.at(it)) } }
+    }
 
-    /** The band's bottom edge on the picture's bottom edge, centred. */
-    private val settings: OverlaySettings = StaticOverlaySettings.Builder()
-        .setBackgroundFrameAnchor(0f, -1f)
-        .setOverlayFrameAnchor(0f, -1f)
-        .build()
+/** The Tech HUD has widgets along the top and along the bottom of the picture: two strips at most. */
+internal const val MaxStrips = 2
+
+/** What one frame shows: the data at [sessionMicros] and, for a composite lap (FBBD-163), its lap tile. */
+internal class HudMoment(val sessionMicros: Long, val frame: OverlayFrame, val optimal: OptimalOverlayText? = null)
+
+/**
+ * Strip [strip] of the Tech HUD (FBBD-347), as wide as the picture, so a 4K export uploads the strips
+ * with widgets, not a whole frame, per frame: [at] gives what a frame shows from its time in the
+ * export. A picture with fewer strips leaves this one a single clear pixel. Drawn on the
+ * exporter's GL thread.
+ */
+@OptIn(UnstableApi::class)
+internal class HudStrip(
+    private val painter: TechHudPainter,
+    private val strip: Int,
+    private val at: (Long) -> HudMoment,
+) : CanvasOverlay(false) {
+    private var layout: TechHudLayout? = null
+    private var top = 0
+    private var settings: OverlaySettings = StaticOverlaySettings.Builder().build()
 
     override fun configure(videoSize: Size) {
         super.configure(videoSize)
-        val l = OverlayLayout.of(videoSize.width, videoSize.height)
-        layout = l
-        setCanvasSize(l.width, l.height)
+        val l = painter.layout(videoSize.width, videoSize.height)
+        val range = l.strips.getOrNull(strip)
+        layout = l.takeIf { range != null }
+        top = range?.first ?: 0
+        val height = range?.let { (it.last - it.first).coerceAtLeast(1) } ?: 1
+        setCanvasSize(if (range != null) videoSize.width else 1, height)
+        // The strip's top edge on its row of the picture (NDC: +1 at the top, -1 at the bottom).
+        settings = StaticOverlaySettings.Builder()
+            .setOverlayFrameAnchor(0f, 1f)
+            .setBackgroundFrameAnchor(0f, 1f - 2f * top / videoSize.height)
+            .build()
     }
 
     override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings = settings
@@ -72,228 +68,10 @@ internal class DataOverlay(
     override fun onDraw(canvas: Canvas, presentationTimeUs: Long) {
         canvas.drawColor(0, PorterDuff.Mode.CLEAR)
         val l = layout ?: return
-        painter.draw(canvas, l, data.at(cut.sessionMicrosAt(presentationTimeUs)))
+        val m = at(presentationTimeUs)
+        canvas.save()
+        canvas.translate(0f, -top.toFloat())
+        painter.draw(canvas, l, m.sessionMicros, m.frame, m.optimal)
+        canvas.restore()
     }
 }
-
-/**
- * Draws the band (UI for FBBD-152), left to right: speed, lap and lap time, delta to the best lap
- * in the track screen's gain and loss colours; at the right a G meter and the track map with the
- * car. Light text on a dark gradient, in the app's number and label fonts, so it reads on any
- * picture. Sizes all come from [OverlayLayout]. On a point-to-point track ([pointToPoint],
- * FBBD-155) the laps are runs, labelled "RUN".
- */
-internal class OverlayPainter(
-    fonts: OverlayFonts,
-    outline: List<Xy>,
-    private val pointToPoint: Boolean = false,
-    colors: TrackColors = TrackColorsGreenRed,
-) {
-    private val outline = thin(outline)
-    private val text = colors.text.toArgb()
-    private val dim = colors.textDim.toArgb()
-    private val gain = colors.gain.toArgb()
-    private val loss = colors.loss.toArgb()
-    private val best = colors.best.toArgb()
-    private val shade = colors.background.toArgb()
-
-    private val number = Paint(Paint.ANTI_ALIAS_FLAG).apply { typeface = fonts.number }
-    private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = fonts.label
-        letterSpacing = LabelSpacing
-    }
-    private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
-        strokeJoin = Paint.Join.ROUND
-    }
-    private val fill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
-    private val scrim = Paint()
-
-    /** Made for the layout of the cut being drawn, and kept while that cut lasts. */
-    private var shaped: Shaped? = null
-
-    private class Shaped(val layout: OverlayLayout, val map: MapFit, val track: Path, val scrim: Shader)
-
-    /**
-     * Draws frame [f]. With [optimal] (the optimal lap's video, FBBD-163) the lap slot shows the lap
-     * the part comes from over the theoretical lap's running time, and the delta what it has gained
-     * on the fastest lap so far.
-     */
-    fun draw(canvas: Canvas, l: OverlayLayout, f: OverlayFrame, optimal: OptimalOverlayText? = null) {
-        val s = shaped(l)
-        scrim.shader = s.scrim
-        canvas.drawRect(0f, 0f, l.width.toFloat(), l.height.toFloat(), scrim)
-        number.textSize = l.numberSize
-        label.textSize = l.labelSize
-        speed(canvas, l.speed, f)
-        if (optimal == null) {
-            lap(canvas, l.lap, f)
-            delta(canvas, l.delta, f)
-        } else {
-            optimalSlots(canvas, l, optimal)
-        }
-        gMeter(canvas, l, f)
-        map(canvas, l, s, f)
-    }
-
-    private fun shaped(l: OverlayLayout): Shaped = shaped?.takeIf { it.layout === l } ?: run {
-        val fit = MapFit(outline, l.map, l.stroke * MapInsetStrokes)
-        val path = Path()
-        outline.forEachIndexed { i, p ->
-            val q = fit.project(p)
-            if (i == 0) path.moveTo(q.x, q.y) else path.lineTo(q.x, q.y)
-        }
-        val gradient = LinearGradient(
-            0f,
-            0f,
-            0f,
-            l.height.toFloat(),
-            intArrayOf(withAlpha(shade, 0f), withAlpha(shade, ScrimMid), withAlpha(shade, ScrimBottom)),
-            floatArrayOf(0f, ScrimMidAt, 1f),
-            Shader.TileMode.CLAMP,
-        )
-        Shaped(l, fit, path, gradient).also { shaped = it }
-    }
-
-    /** A small label above a big number, both at the left of [box], in the colours [ink] sets. */
-    private fun slot(canvas: Canvas, box: Box, caption: String, value: String) {
-        canvas.drawText(caption, box.left, box.top + label.textSize, label)
-        canvas.drawText(value, box.left, box.bottom - box.height * NumberBottomPad, number)
-    }
-
-    private fun ink(caption: Int, value: Int) {
-        label.color = caption
-        number.color = value
-    }
-
-    private fun speed(canvas: Canvas, box: Box, f: OverlayFrame) {
-        ink(dim, text)
-        slot(canvas, box, "KM/H", f.speedKmh?.roundToInt()?.toString() ?: Dash)
-    }
-
-    private fun lap(canvas: Canvas, box: Box, f: OverlayFrame) {
-        val lap = f.lap
-        val word = if (pointToPoint) "RUN" else "LAP"
-        if (lap == null) {
-            ink(dim, dim)
-            slot(canvas, box, word, Dash)
-            return
-        }
-        val kind = when {
-            lap.isBest -> " · BEST"
-            lap.kind == LapKind.Out -> " · OUT"
-            lap.kind == LapKind.In -> " · IN"
-            else -> ""
-        }
-        // A single-lap export's lap after its line keeps its final time, in the gain colour (Overlays' hotlap).
-        ink(if (lap.isBest) best else dim, if (lap.phase == LapPhase.Finished) gain else text)
-        slot(canvas, box, "$word ${lap.number}$kind", formatRunningTime(lap.lapMicros / MicrosPerMilli))
-    }
-
-    private fun delta(canvas: Canvas, box: Box, f: OverlayFrame) {
-        val micros = f.lap?.deltaMicros
-        val seconds = micros?.let { it / MicrosPerSecond }
-        val color = when {
-            seconds == null -> dim
-            isDeltaGain(seconds) -> gain
-            abs(seconds) < HalfHundredth -> text
-            else -> loss
-        }
-        ink(dim, color)
-        // Without laps (no saved track) the slot stays empty; on out and in laps it shows a dash.
-        if (f.lap != null) slot(canvas, box, "VS BEST", seconds?.let(::formatDelta) ?: Dash)
-    }
-
-    private fun gMeter(canvas: Canvas, l: OverlayLayout, f: OverlayFrame) {
-        val box = l.gMeter
-        val r = box.width / 2
-        line.strokeWidth = l.stroke
-        line.color = withAlpha(dim, RingAlpha)
-        canvas.drawCircle(box.centerX, box.centerY, r, line)
-        canvas.drawCircle(box.centerX, box.centerY, r / DefaultMaxG.toFloat(), line) // 1 g
-        canvas.drawLine(box.left, box.centerY, box.right, box.centerY, line)
-        canvas.drawLine(box.centerX, box.top, box.centerX, box.bottom, line)
-        val g = f.g ?: return
-        val dot = gDot(g, box)
-        fill.color = text
-        canvas.drawCircle(dot.x, dot.y, r * DotShare, fill)
-    }
-
-    private fun map(canvas: Canvas, l: OverlayLayout, s: Shaped, f: OverlayFrame) {
-        line.strokeWidth = l.stroke * TrackStrokes
-        line.color = withAlpha(text, TrackAlpha)
-        canvas.drawPath(s.track, line)
-        val p = f.position ?: return
-        val car = s.map.project(p)
-        val r = l.height * CarShare
-        fill.color = shade
-        canvas.drawCircle(car.x, car.y, r * CarRimShare, fill)
-        fill.color = best
-        canvas.drawCircle(car.x, car.y, r, fill)
-    }
-
-    /**
-     * The optimal lap's slots: the part's lap and name (as much of it as fits) over the theoretical
-     * lap's running time, then the gain on the fastest lap so far.
-     */
-    private fun optimalSlots(canvas: Canvas, l: OverlayLayout, o: OptimalOverlayText) {
-        ink(best, text)
-        val box = l.lap
-        val caption = o.captions.firstOrNull { label.measureText(it) <= box.width } ?: o.captions.lastOrNull().orEmpty()
-        slot(canvas, box, caption, formatRunningTime(o.theoreticalMicros / MicrosPerMilli))
-        val seconds = o.deltaSeconds
-        val color = when {
-            seconds == null -> dim
-            isDeltaGain(seconds) -> gain
-            abs(seconds) < HalfHundredth -> text
-            else -> loss
-        }
-        ink(dim, color)
-        slot(canvas, l.delta, if (pointToPoint) "VS BEST RUN" else "VS BEST LAP", seconds?.let(::formatDelta) ?: Dash)
-    }
-
-    private companion object {
-        const val Dash = "—"
-        const val MicrosPerSecond = 1_000_000.0
-        const val MicrosPerMilli = 1_000L
-        const val HalfHundredth = 0.005
-        const val LabelSpacing = 0.08f
-        const val NumberBottomPad = 0.02f
-        const val ScrimMid = 0.45f
-        const val ScrimMidAt = 0.35f
-        const val ScrimBottom = 0.75f
-        const val RingAlpha = 0.6f
-        const val TrackAlpha = 0.85f
-        const val TrackStrokes = 1.6f
-        const val MapInsetStrokes = 4f
-        const val DotShare = 0.14f
-        const val CarShare = 0.045f
-        const val CarRimShare = 1.45f
-    }
-}
-
-/** The app's number and label fonts (core-ui), as Android typefaces for the painter. */
-internal class OverlayFonts(val number: Typeface, val label: Typeface) {
-    companion object {
-        /** Reads the fonts; falls back to the system's if a font cannot be read. */
-        fun load(context: Context) = OverlayFonts(
-            font(context, com.flappedear.betterdriver.core.ui.R.font.saira_semi_condensed_bold, Typeface.DEFAULT_BOLD),
-            font(context, com.flappedear.betterdriver.core.ui.R.font.barlow_semibold, Typeface.DEFAULT),
-        )
-
-        private fun font(context: Context, id: Int, fallback: Typeface): Typeface = try {
-            ResourcesCompat.getFont(context, id) ?: fallback
-        } catch (ignored: Resources.NotFoundException) {
-            fallback
-        }
-    }
-}
-
-/** [color] with its alpha set to [alpha], 0 to 1. */
-private fun withAlpha(color: Int, alpha: Float): Int =
-    (color and RgbMask) or ((alpha * MaxAlpha).roundToInt() shl AlphaShift)
-
-private const val RgbMask = 0x00FFFFFF
-private const val MaxAlpha = 255
-private const val AlphaShift = 24
