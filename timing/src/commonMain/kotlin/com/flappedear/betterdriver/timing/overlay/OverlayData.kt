@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.timing.overlay
 
+import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.geo.GeoPoint
@@ -35,6 +36,8 @@ data class OverlayFrame(
     /** In the frame of [OverlayData.outline]. */
     val position: Xy?,
     val g: GForce?,
+    /** The car's own values (FBBD-347): engine, pedals, wheel, temperatures, the driver's heart rate. */
+    val car: CarFrame = CarFrame(),
 )
 
 /**
@@ -53,9 +56,16 @@ class MeasuredG(val forward: List<Pair<Long, Double>>?, val right: List<Pair<Lon
  * G comes from [measured], the accelerometers as the analysis corrects them, so the video shows the
  * G-G diagram's numbers; a direction without one comes from the GNSS path.
  *
+ * The car's values (FBBD-347) come from the session's [channels] by name ([CarValue]).
+ *
  * Not thread-safe: the exporter draws frames one at a time.
  */
-class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG? = null) {
+class OverlayData(
+    sets: List<SampleSet>,
+    laps: SessionLaps?,
+    measured: MeasuredG? = null,
+    channels: Collection<ChannelDef> = emptyList(),
+) {
     private val x: TimeSeries
     private val y: TimeSeries
     private val speed: TimeSeries
@@ -65,6 +75,16 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
     private val best: LapTrace? = laps?.best
     private val starts = LongArray(traces.size) { traces[it].lap.startMicros }
     private val alignments = HashMap<Int, LapAlignment>()
+    private val car: Map<CarValue, TimeSeries>
+
+    /** The car's values this session has samples of (FBBD-347): the overlay leaves out the rest. */
+    val carValues: Set<CarValue> get() = car.keys
+
+    /** The session's best lap time; null without one. */
+    val bestLapMicros: Long? = best?.lap?.let { it.endMicros - it.startMicros }
+
+    /** The start/finish line's ends, in the frame of [outline]; null without a saved track's line. */
+    val startLine: Pair<Xy, Xy>?
 
     /** The laps are runs of a point-to-point track (FBBD-155): the overlay says "Run", and between runs shows none. */
     val pointToPoint: Boolean = laps?.track?.pointToPoint == true
@@ -101,6 +121,65 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
         gLong = smoothed(measured?.forward) ?: gnssLong
         gLat = smoothed(measured?.right) ?: gnssLat
         outline = (best ?: traces.maxByOrNull { it.lengthMeters })?.points?.map { it.xy } ?: path
+        startLine = laps?.track?.startFinish?.let { line ->
+            frame?.let { it.toXy(line.left) to it.toXy(line.right) }
+        }
+        car = carSeries(sorted, carChannelIds(channels))
+    }
+
+    /** The G at [sessionMicros], as [at] has it; the radar's trail reads it back in time. */
+    fun gAt(sessionMicros: Long): GForce? {
+        val gl = gLong.at(sessionMicros) ?: return null
+        val gt = gLat.at(sessionMicros) ?: return null
+        return GForce(gl, gt)
+    }
+
+    /**
+     * Where the car went up to [sessionMicros], as Overlays' map trail (KAN-271): from the start of
+     * the lap being driven, else the last [TrailFallbackMicros], at most [TrailMaxPoints] points at
+     * least [TrailMinStepMicros] apart. A null breaks the line where there was no fix.
+     */
+    fun trail(sessionMicros: Long): List<Xy?> {
+        val lapStart = traces.lastOrNull { it.lap.startMicros <= sessionMicros && sessionMicros < it.lap.endMicros }
+            ?.lap?.startMicros
+        val start = lapStart ?: (sessionMicros - TrailFallbackMicros)
+        val step = maxOf(TrailMinStepMicros, (sessionMicros - start) / TrailMaxPoints)
+        val out = ArrayList<Xy?>()
+        var open = false
+        fun add(t: Long) {
+            val px = x.at(t)
+            val py = y.at(t)
+            if (px != null && py != null) {
+                out += Xy(px, py)
+                open = true
+            } else if (open) {
+                out += null
+                open = false
+            }
+        }
+        var t = start
+        while (t < sessionMicros) {
+            add(t)
+            t += step
+        }
+        add(sessionMicros)
+        return out
+    }
+
+    private fun carAt(t: Long): CarFrame {
+        fun v(value: CarValue) = car[value]?.at(t)
+        return CarFrame(
+            rpm = v(CarValue.Rpm),
+            throttlePct = v(CarValue.Accelerator) ?: v(CarValue.Throttle),
+            brakePct = v(CarValue.Brake),
+            steeringDeg = v(CarValue.SteeringAngle),
+            heartRate = v(CarValue.HeartRate),
+            oilC = v(CarValue.OilTemp),
+            gearboxC = v(CarValue.GearboxTemp),
+            coolantC = v(CarValue.CoolantTemp),
+            tyreTemps = CarValue.TyreTemps.map(::v),
+            tyrePressures = CarValue.TyrePressures.map(::v),
+        )
     }
 
     fun at(sessionMicros: Long): OverlayFrame {
@@ -113,6 +192,7 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
             lap = lapAt(sessionMicros),
             position = if (px != null && py != null) Xy(px, py) else null,
             g = if (gl != null && gt != null) GForce(gl, gt) else null,
+            car = if (car.isEmpty()) CarFrame() else carAt(sessionMicros),
         )
     }
 
@@ -154,6 +234,9 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
     private companion object {
         /** About a third of a second in all: smooth enough to read, quick enough for a braking point. */
         const val AccelHalfWindowMicros = 150_000L
+        const val TrailFallbackMicros = 30_000_000L
+        const val TrailMinStepMicros = 100_000L
+        const val TrailMaxPoints = 600L
     }
 }
 
@@ -161,3 +244,18 @@ private fun SampleSet.valueOf(channelId: Int): Double? =
     values.firstOrNull { it.channelId == channelId }?.value?.takeIf { it.isFinite() }
 
 private const val KmhPerMs = 3.6
+
+/** A series for each of [ids]' values that has samples in [sorted]. */
+private fun carSeries(sorted: List<SampleSet>, ids: Map<CarValue, Int>): Map<CarValue, TimeSeries> {
+    if (ids.isEmpty()) return emptyMap()
+    val byId = ids.entries.groupBy({ it.value }, { it.key })
+    val samples = HashMap<Int, ArrayList<Pair<Long, Double>>>()
+    for (s in sorted) {
+        for (v in s.values) {
+            if (v.channelId in byId && v.value.isFinite()) {
+                samples.getOrPut(v.channelId) { ArrayList() } += s.tMicros to v.value
+            }
+        }
+    }
+    return ids.mapNotNull { (value, id) -> samples[id]?.let { value to TimeSeries.of(it) } }.toMap()
+}

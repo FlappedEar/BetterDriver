@@ -60,7 +60,6 @@ import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.overlay.CutPosition
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
-import com.flappedear.betterdriver.timing.overlay.OverlayLayout
 import com.flappedear.betterdriver.timing.overlay.VideoCut
 import com.flappedear.betterdriver.timing.overlay.outputMicrosAt
 import com.flappedear.betterdriver.timing.overlay.positionAt
@@ -90,10 +89,10 @@ sealed interface WatchLoad {
 }
 
 /**
- * Watch video (FBBD-341): a session's whole video with the data band of Video with data (FBBD-152)
- * drawn live over the picture: speed, lap and delta where the session has laps, G and the map with
- * the car. A drive with no saved track (a commute) has no laps, so the band leaves those empty and
- * the map is the driven path. Play/Pause and a seek bar; the screen stays on while it plays.
+ * Watch video (FBBD-341): a session's whole video with the data overlay of Video with data (FBBD-152,
+ * Overlays' Tech HUD, FBBD-347) drawn live over the picture: speed, lap and delta where the session
+ * has laps, G and the map with the car. A drive with no saved track (a commute) has no laps, so the
+ * lap tile shows dashes and the map is the driven path. Play/Pause and a seek bar; the screen stays on while it plays.
  */
 @Composable
 fun WatchVideoScreen(title: String, load: WatchLoad, onBack: () -> Unit, modifier: Modifier = Modifier) {
@@ -141,17 +140,16 @@ private fun ColumnScope.Watch(source: WatchSource) {
         view.keepScreenOn = w.playing
         onDispose { view.keepScreenOn = false }
     }
-    val fonts = remember(context) { OverlayFonts.load(context) }
-    val painter = remember(source) { OverlayPainter(fonts, source.data.outline, source.data.pointToPoint) }
-    val frame = source.cuts.sessionMicrosAt(w.at)?.let(source.data::at)
-    Picture(w, painter, frame, Modifier.weight(1f, fill = false))
+    val fonts = remember(context) { HudFonts.load(context) }
+    val painter = remember(source) { TechHudPainter(fonts, source.data) }
+    val moment = source.cuts.sessionMicrosAt(w.at)?.let { HudMoment(it, source.data.at(it)) }
+    Picture(w, painter, moment, Modifier.weight(1f, fill = false))
     Transport(w, source.totalMicros)
 }
 
-/** The video, letterboxed, with the data band along the picture's bottom edge as in the export. */
+/** The video, letterboxed, with the data overlay (Overlays' Tech HUD, FBBD-347) over it as in the export. */
 @Composable
-private fun Picture(w: WatchPlayer, painter: OverlayPainter, frame: OverlayFrame?, modifier: Modifier) {
-    val layouts = remember(painter) { Layouts() }
+private fun Picture(w: WatchPlayer, painter: TechHudPainter, moment: HudMoment?, modifier: Modifier) {
     Box(modifier.fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
         // As wide as it can be, else as tall as the space it has.
         Box(Modifier.aspectRatio(w.aspect)) {
@@ -160,18 +158,12 @@ private fun Picture(w: WatchPlayer, painter: OverlayPainter, frame: OverlayFrame
                 onRelease = { v -> w.player.clearVideoSurfaceView(v) },
                 modifier = Modifier.fillMaxSize(),
             )
-            Canvas(Modifier.fillMaxSize().semantics { contentDescription = overlayDescription(frame) }) {
+            Canvas(Modifier.fillMaxSize().semantics { contentDescription = overlayDescription(moment?.frame) }) {
                 val width = size.width.roundToInt()
                 val height = size.height.roundToInt()
-                if (frame == null || width <= 0 || height <= 0) return@Canvas
-                val l = layouts.of(width, height)
-                drawIntoCanvas { c ->
-                    val n = c.nativeCanvas
-                    n.save()
-                    n.translate(0f, (height - l.height).toFloat())
-                    painter.draw(n, l, frame)
-                    n.restore()
-                }
+                if (moment == null || width <= 0 || height <= 0) return@Canvas
+                val l = painter.layout(width, height)
+                drawIntoCanvas { c -> painter.draw(c.nativeCanvas, l, moment.sessionMicros, moment.frame) }
             }
         }
     }
@@ -301,20 +293,7 @@ private class WatchPlayer(context: Context, private val source: WatchSource) : P
     }
 }
 
-/** The band's layout for the picture's size, kept while the size stays so the painter keeps its shapes. */
-private class Layouts {
-    private var last: OverlayLayout? = null
-    private var width = 0
-    private var height = 0
-
-    fun of(w: Int, h: Int): OverlayLayout = last?.takeIf { w == width && h == height } ?: OverlayLayout.of(w, h).also {
-        last = it
-        width = w
-        height = h
-    }
-}
-
-/** What the band shows, in words, for TalkBack and the emulator tests: "Data: 54 km/h, lap 3 1:23.4". */
+/** What the overlay shows, in words, for TalkBack and the emulator tests: "Data: 54 km/h, lap 3 1:23.4". */
 internal fun overlayDescription(frame: OverlayFrame?): String {
     if (frame == null) return "Data: none"
     val speed = frame.speedKmh?.let { "${it.roundToInt()} km/h" } ?: "no speed"

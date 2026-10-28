@@ -21,6 +21,17 @@ Pick **Whole session** or a lap from the list; the app renders the MP4 on the ph
 Sessions says "Rendering video with data…" while it runs, and the session cannot be changed
 meanwhile; **Cancel video** stops it.
 
+!!! note "Not released yet"
+    Merged after 1.15.0. It ships in the next release.
+
+The video uses the **Tech HUD** layout of FlappedEar Overlays, so a video from the phone looks like
+one made in Overlays. Along the bottom: the RPM gauge with the speed in it, the lap (lap number,
+running time, best lap and the delta to it), throttle and brake, OIL, ATF and COOLANT with their
+ranges, tyres and the steering wheel. Top left the track map with the lap's trail and the car, top
+right the heart rate, bottom right the G radar with its last second and the G numbers. A widget
+whose value the session did not record (no OBD adapter, no heart-rate strap, no tyre sensors, no
+steering angle) is left out. **Watch video** shows the same.
+
 When the session has video, the lap analysis also plays the realistic optimal lap as one video,
 stitched from the laps it is made of (the raw theoretical best is there too). The plan's perfect
 lap has its own video: the [perfect lap in 3D](getting-faster.md#perfect-lap-in-3d).
