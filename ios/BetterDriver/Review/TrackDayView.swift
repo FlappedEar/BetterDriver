@@ -39,7 +39,8 @@ struct TrackDayView: View {
         }
         .task(id: link) {
             let ids = link.ids
-            state = await Task.detached { ReviewBridge.trackDay(ids) }.value
+            // Below the UI's priority, so the screen stays responsive while every lap of the day is read.
+            state = await Task.detached(priority: .utility) { ReviewBridge.trackDay(ids) }.value
         }
     }
 
