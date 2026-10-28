@@ -79,7 +79,7 @@ class TechHudTest {
     }
 
     @Test
-    fun `a missing temperature row leaves no hole: the rows below move up and keep one plate`() {
+    fun `a missing temperature row leaves no hole, the rows below move up and keep one plate`() {
         val l = TechHudLayout(1920, 1080, setOf(HudWidget.Oil, HudWidget.Coolant))
         assertEquals(0.829f * 1080, l.boxes.getValue(HudWidget.Oil).top, 0.01f)
         assertEquals(0.8823f * 1080, l.boxes.getValue(HudWidget.Coolant).top, 0.01f)
@@ -91,7 +91,7 @@ class TechHudTest {
     }
 
     @Test
-    fun `a phone-only drive shows the gauge, lap, G and map; the car's widgets come with its channels`() {
+    fun `a phone-only drive shows the gauge, lap, G and map, the car's widgets come with its channels`() {
         val drive = circuit.drive(listOf(1.0, 1.0))
         val plain = OverlayData(session(drive), replayLaps("s", session(drive), track))
         assertEquals(
