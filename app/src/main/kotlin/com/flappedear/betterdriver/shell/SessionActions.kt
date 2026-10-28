@@ -78,14 +78,7 @@ internal fun SessionActions(
         TransferLine(sending)
         if (free) SaveInstead(sending) { transfer.onSave(s) }
         VideoExportLine(videoExport.states[s.id], rendering) { videoExport.onCancel(s) }
-        // Any session with video, with or without laps (FBBD-341): a commute's video can be watched too.
-        if (video && s.state != SessionState.RECORDING) {
-            FilledTonalButton(
-                onClick = { videoExport.onWatch(s) },
-                enabled = delete != DeleteState.Running,
-                modifier = Modifier.fillMaxWidth(),
-            ) { Text("Watch video") }
-        }
+        WatchButton(s, video, delete) { videoExport.onWatch(s) }
         CardButtons(
             video = video,
             idle = free,
@@ -108,6 +101,20 @@ internal fun SessionActions(
             onDismiss = { asking = false },
         )
     }
+}
+
+/**
+ * Watch video (FBBD-341), for any session with video, with or without laps: a commute's video can be
+ * watched too. Not while it records; off while it is being deleted.
+ */
+@Composable
+private fun WatchButton(s: SessionSummary, video: Boolean, delete: DeleteState?, onWatch: () -> Unit) {
+    if (!video || s.state == SessionState.RECORDING) return
+    FilledTonalButton(
+        onClick = onWatch,
+        enabled = delete != DeleteState.Running,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Watch video") }
 }
 
 /** Lap analysis opens for a session, except while it records or is being deleted (UI-61 B). */
