@@ -32,8 +32,13 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     private static let lastIdKey = "lastObdAdapterId"
     private static let lastNameKey = "lastObdAdapterName"
 
-    /// [sink] is the recording.
-    init(sink: SampleSink) {
+    /// The adapters listed in Settings › Equipment (FBBD-338): only these are tried, as on Android. With
+    /// none listed, the one used last and any other found nearby.
+    private let listed: [(id: UUID, name: String)]
+
+    /// [sink] is the recording; [listed] the Bluetooth LE adapters in Settings.
+    init(sink: SampleSink, listed: [(id: UUID, name: String)] = []) {
+        self.listed = listed
         super.init()
         feed = ObdFeed(sink: sink, targets: { [weak self] in self?.targets() ?? [] }, listener: self)
     }
@@ -89,19 +94,29 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         monitor.start(queue: queue)
     }
 
-    /// Queue only. The Bluetooth adapters: the one used last, then any other seen nearby.
+    /// Queue only. The Bluetooth adapters: those listed in Settings (FBBD-338); with none listed, the one
+    /// used last, then any other seen nearby.
     private func bluetoothTargets() -> [ObdTarget] {
         guard central?.state == .poweredOn else { return [] }
         var list: [CBPeripheral] = []
-        if let text = UserDefaults.standard.string(forKey: Self.lastIdKey), let id = UUID(uuidString: text),
-           let known = seen[id] ?? central.retrievePeripherals(withIdentifiers: [id]).first {
-            list.append(known)
+        if !listed.isEmpty {
+            for item in listed {
+                if let known = seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
+                    list.append(known)
+                }
+            }
+        } else {
+            if let text = UserDefaults.standard.string(forKey: Self.lastIdKey), let id = UUID(uuidString: text),
+               let known = seen[id] ?? central.retrievePeripherals(withIdentifiers: [id]).first {
+                list.append(known)
+            }
+            list += seen.values.filter { p in !list.contains { $0.identifier == p.identifier } }
         }
-        list += seen.values.filter { p in !list.contains { $0.identifier == p.identifier } }
         // Keep looking while no adapter is open: the remembered one may be out of range and another near.
         scan()
         return list.map { p in
-            let name = p.name ?? UserDefaults.standard.string(forKey: Self.lastNameKey) ?? "OBD adapter"
+            let name = listed.first { $0.id == p.identifier }?.name
+                ?? p.name ?? UserDefaults.standard.string(forKey: Self.lastNameKey) ?? "OBD adapter"
             return IosBleObdTarget(name: name, identifier: p.identifier.uuidString, port: ObdBlePortLink(link: self, peripheral: p))
         }
     }

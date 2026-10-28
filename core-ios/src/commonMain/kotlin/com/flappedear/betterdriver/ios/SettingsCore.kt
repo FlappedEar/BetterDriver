@@ -100,6 +100,18 @@ object SettingsCore {
     val groupOrder: List<EquipmentKind> =
         listOf(EquipmentKind.GNSS, EquipmentKind.CAR_DATA, EquipmentKind.SENSOR, EquipmentKind.CAMERA)
 
+    // A session's coach.
+
+    /** The coach is on: anything but Off. */
+    fun coachOn(s: CoachSettings): Boolean = s.verbosity != Verbosity.Off
+
+    /**
+     * The coach settings a session uses: the output delay iOS reports now ([phoneDelayMillis]) replaces
+     * the one set, as Android's measured delay does (FBBD-49); the set one is used when iOS gives none.
+     */
+    fun sessionCoach(s: CoachSettings, phoneDelayMillis: Int): CoachSettings =
+        if (phoneDelayMillis > 0) withDelay(s, phoneDelayMillis) else s
+
     // The spoken coach.
 
     val verbosities: List<Verbosity> = Verbosity.entries.toList()

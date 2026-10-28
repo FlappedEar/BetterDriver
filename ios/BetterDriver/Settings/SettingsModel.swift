@@ -20,13 +20,18 @@ final class SettingsModel: ObservableObject {
 
     private let base: URL
 
-    init(base: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]) {
+    /// [defaults] holds what the iPhone remembered before it had Settings; the first start moves it in.
+    init(
+        base: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
+        defaults: UserDefaults = .standard
+    ) {
         self.base = base
+        let hadCoach = FileManager.default.fileExists(atPath: SettingsModel.coachFile(base).path)
         setup = SettingsModel.loadSetup(base: base)
         let coachText = try? String(contentsOf: SettingsModel.coachFile(base), encoding: .utf8)
         coach = SettingsCore.shared.coachSettings(text: coachText)
-        fullBrightness = UserDefaults.standard.object(forKey: Keys.brightness) as? Bool ?? true
-        gnssSound = UserDefaults.standard.bool(forKey: Keys.gnssSound)
+        fullBrightness = defaults.object(forKey: Keys.brightness) as? Bool ?? true
+        gnssSound = defaults.bool(forKey: Keys.gnssSound)
         #if DEBUG
         // An Open GoPro camera that is never there, for the smoke test's start and stop (FBBD-343).
         if ProcessInfo.processInfo.arguments.contains("-openGoPro"),
@@ -39,6 +44,39 @@ final class SettingsModel: ObservableObject {
             }
         }
         #endif
+        // Once, also over a setup.json from a build before this move (TestFlight 1.15.0): after it,
+        // Settings › Equipment is the one list, so an item removed there stays removed.
+        if !defaults.bool(forKey: Keys.earlierChoicesMoved) {
+            update { SettingsModel.earlierChoices($0, defaults) }
+            defaults.set(true, forKey: Keys.earlierChoicesMoved)
+        }
+        if !hadCoach { updateCoach { SettingsModel.earlierLanguage($0, defaults) } }
+    }
+
+    /// The OBD-II adapter and heart-rate strap the iPhone found by itself before it had Settings
+    /// (FBBD-333), as Settings items.
+    private static func earlierChoices(_ setup: Setup, _ defaults: UserDefaults) -> Setup {
+        let core = SettingsCore.shared
+        var next = setup
+        let found = [
+            (ModelName.obdBluetooth, "lastObdAdapterId", "lastObdAdapterName", "OBD adapter"),
+            (ModelName.heartRate, "heartRateStrapId", "heartRateStrapName", "Heart rate"),
+        ]
+        for (model, idKey, nameKey, fallback) in found {
+            guard let id = defaults.string(forKey: idKey), let m = core.model(name: model),
+                  !next.equipment.contains(where: { $0.address == id }) else { continue }
+            let name = defaults.string(forKey: nameKey).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
+            next = core.addEquipment(setup: next, model: m, name: name, address: id, id: newId())
+        }
+        return next
+    }
+
+    /// The coach's language as the iPhone picked it before Settings: as saved, else the phone's.
+    private static func earlierLanguage(_ coach: CoachSettings, _ defaults: UserDefaults) -> CoachSettings {
+        let saved = defaults.string(forKey: "coachLanguage")
+        let polish = saved.map { $0 == "pl" } ?? (Locale.preferredLanguages.first?.hasPrefix("pl") == true)
+        guard polish, let pl = SettingsCore.shared.languages.first(where: { $0.name == "Polish" }) else { return coach }
+        return SettingsCore.shared.withLanguage(s: coach, l: pl)
     }
 
     /// Applies a change to the setup and saves it.
@@ -94,6 +132,7 @@ final class SettingsModel: ObservableObject {
     private enum Keys {
         static let brightness = "trackFullBrightness"
         static let gnssSound = "trackGnssSound"
+        static let earlierChoicesMoved = "earlierChoicesMoved"
     }
 }
 

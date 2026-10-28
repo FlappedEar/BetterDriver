@@ -112,6 +112,46 @@ final class RecordingTests: XCTestCase {
         XCTAssertTrue(session.stop())
     }
 
+    /// Settings › Spoken coach reaches the session's coach (audit BD-01): off speaks nothing; the
+    /// language, verbosity and learning laps set are the ones it runs with.
+    func testTheCoachRunsWithTheSettings() throws {
+        let core = SettingsCore.shared
+        let off = try XCTUnwrap(core.verbosities.first { $0.name == "Off" })
+        XCTAssertNil(RecordingController.sessionCoach(core.withVerbosity(s: core.coachSettings(text: nil), v: off), phoneDelayMillis: 0))
+        let polish = try XCTUnwrap(core.languages.first { $0.name == "Polish" })
+        var set = core.withLanguage(s: core.coachSettings(text: nil), l: polish)
+        set = core.withLearningLaps(s: set, laps: 2)
+        let settings = try XCTUnwrap(RecordingController.sessionCoach(set, phoneDelayMillis: 120))
+        XCTAssertEqual(settings.language.name, "Polish")
+        XCTAssertEqual(settings.verbosity, set.verbosity)
+        XCTAssertEqual(settings.learningLaps, 2)
+        XCTAssertEqual(settings.audioDelayMillis, 120)
+        let spoken = try XCTUnwrap(RecordingController.sessionCoach(core.withLanguage(s: core.coachSettings(text: nil), l: polish), phoneDelayMillis: 0))
+
+        try saveRing()
+        let session = try start(receiverHasG: false)
+        let speaker = SilentSpeaker()
+        session.startCoach(
+            sessionsDir: base.appendingPathComponent("sessions").path,
+            referencesDir: base.appendingPathComponent("coach/references").path,
+            linePlansDir: base.appendingPathComponent("coach/lines").path,
+            settings: spoken,
+            audioDelayFromPhone: false,
+            speaker: speaker
+        )
+        for n in Int64(0)...Int64(25 * 140) {
+            session.submit(set: SampleSet(tMicros: n * 40_000, values: gnss.fix(n: n)))
+        }
+        let deadline = Date().addingTimeInterval(10)
+        while speaker.said.isEmpty, Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        // The lap is said in Polish, not as the English "Best lap, 40 point 0".
+        XCTAssertFalse(speaker.said.isEmpty)
+        XCTAssertNotEqual(speaker.said.first, "Best lap, 40 point 0")
+        XCTAssertTrue(session.stop())
+    }
+
     func testAnObdConnectionShowsAsTheCarIcon() throws {
         let session = try start(receiverHasG: false)
         for n in Int64(0)...Int64(25) {
@@ -131,6 +171,22 @@ final class RecordingTests: XCTestCase {
         XCTAssertEqual(model.tiles.compactMap { $0?.label }, ["Speed", "G"])
         XCTAssertEqual(model.tiles.count, 6)
         XCTAssertTrue(session.stop())
+    }
+
+    /// The car's layout from Settings (FBBD-345): a tile without data in the session is left out, an
+    /// empty slot stays; Settings draws every tile so each can be tapped.
+    func testTheTrackScreenShowsTheCarsLayout() throws {
+        let session = try start(receiverHasG: false)
+        let ids = ["speed", "obd_coolant_temp", "", "g", "heart_rate", ""]
+        let model = TrackScreenModel(session.screen(), receiverHasG: false, tileIds: ids)
+        XCTAssertEqual(model.tiles.count, 3)
+        XCTAssertEqual(model.tiles.first??.label, "Speed")
+        XCTAssertNil(model.tiles[1])
+        XCTAssertTrue(session.stop())
+        let layout = TrackScreenModel(layout: ids, receiverHasG: false, coachOn: true)
+        XCTAssertEqual(layout.tiles.map { $0?.label }, ["Speed", "Coolant temp", nil, "G", "Heart rate", nil])
+        XCTAssertNotNil(layout.coach)
+        XCTAssertNil(TrackScreenModel(layout: ids, receiverHasG: true, coachOn: false).coach)
     }
 
     func testTheLiveActivityShowsLapDeltaAndBest() throws {

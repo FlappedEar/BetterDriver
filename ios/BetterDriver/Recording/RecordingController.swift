@@ -1,3 +1,5 @@
+import AudioToolbox
+import AVFoundation
 import BetterDriverCore
 import CoreLocation
 import SwiftUI
@@ -73,6 +75,10 @@ final class RecordingController: ObservableObject {
     private var simulated: SimulatedGpsLink?
     private var imu: PhoneImuLink?
     private var camera: PhoneCamera?
+    /// The GNSS state at the last refresh, for the lost and back sounds.
+    private var lastGnss: GnssState?
+    /// The main screen's tiles of the session's car (FBBD-345), as Settings had them at the start.
+    private var tileIds = TrackScreenModel.defaultTiles
     /// The Open GoPro cameras turned on for the session (FBBD-343).
     private var goPros: OpenGoPros?
     private var obd: ObdLink?
@@ -118,7 +124,7 @@ final class RecordingController: ObservableObject {
         error = nil
         let info = SessionInfo(
             startUtcMillis: Int64(Date().timeIntervalSince1970 * 1_000),
-            car: "",
+            car: SettingsModel.shared.setup.active().car?.name ?? "",
             track: "",
             devices: [receiver.name],
             startFinish: nil,
@@ -139,6 +145,8 @@ final class RecordingController: ObservableObject {
             return
         }
         self.receiver = receiver
+        let setup = SettingsModel.shared.setup
+        tileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: false)
         session = live
         AppLog.session = live.id
         AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
@@ -172,15 +180,20 @@ final class RecordingController: ObservableObject {
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
-        // OBD-II from a Bluetooth LE adapter nearby (FBBD-333); none found, none read.
-        let car = ObdLink(sink: live)
+        let active = SettingsModel.shared.setup.active()
+        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338), with none listed one
+        // nearby, and the Wi-Fi adapter.
+        let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
         obd = car
         car.start()
-        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333).
-        let strap = HeartRateStrapLink(sink: live)
-        heartRate = strap
-        strap.start()
-        startCoach(live)
+        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a
+        // listed one.
+        if let listed = Self.listed(active.sensors, ModelName.heartRate).first {
+            let strap = HeartRateStrapLink(sink: live, listed: listed)
+            heartRate = strap
+            strap.start()
+        }
+        startCoach(live, SettingsModel.shared.coach)
         if phoneCamera {
             let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
             camera = cam
@@ -195,19 +208,34 @@ final class RecordingController: ObservableObject {
         }
     }
 
-    /// The live coach (FBBD-333), on as the Android coach is by default, in the coach's language, its
-    /// cues timed for the output delay iOS reports now.
-    private func startCoach(_ live: LiveSession) {
-        let polish = CoachLanguagePick.polish
-        let voice = CoachVoice(polish: polish)
+    /// Settings items of [model] that iOS reaches by their Bluetooth identifier.
+    private static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
+        items.compactMap { item in
+            guard item.modelName == model, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
+            return (id, item.name)
+        }
+    }
+
+    /// The live coach (FBBD-333) as Settings › Spoken coach has it (FBBD-338), unless it is off; its cues
+    /// are timed for the output delay iOS reports now, else for the delay set there.
+    /// What the session's coach runs with: Settings › Spoken coach with the delay iOS reports, or nil
+    /// when the coach is off, so nothing speaks.
+    static func sessionCoach(_ coach: CoachSettings, phoneDelayMillis: Int) -> CoachSettings? {
+        guard SettingsCore.shared.coachOn(s: coach) else { return nil }
+        return SettingsCore.shared.sessionCoach(s: coach, phoneDelayMillis: Int32(phoneDelayMillis))
+    }
+
+    private func startCoach(_ live: LiveSession, _ coach: CoachSettings) {
+        let phoneDelay = CoachVoice.outputDelayMillis
+        guard let settings = Self.sessionCoach(coach, phoneDelayMillis: phoneDelay) else { return }
+        let voice = CoachVoice(settings: settings)
         self.voice = voice
-        let settings = LiveCoachKt.coachSettings(polish: polish, audioDelayMillis: Int32(CoachVoice.outputDelayMillis))
         live.startCoach(
             sessionsDir: AppFolders.sessions.path,
             referencesDir: AppFolders.coachReferences.path,
             linePlansDir: AppFolders.coachLines.path,
             settings: settings,
-            audioDelayFromPhone: true,
+            audioDelayFromPhone: phoneDelay > 0,
             speaker: voice
         )
     }
@@ -252,6 +280,9 @@ final class RecordingController: ObservableObject {
         imu = nil
         camera?.stop()
         camera = nil
+        // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
+        // activates the audio session too.
+        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         cameraStatus = nil
         // The cameras answer in their own time; the stop is noted in the ended session's events.
         goPros?.stop()
@@ -259,6 +290,7 @@ final class RecordingController: ObservableObject {
         obd = nil
         heartRate = nil
         session = nil
+        lastGnss = nil
         AppLog.session = nil
         screen = nil
         receiver = nil
@@ -267,6 +299,18 @@ final class RecordingController: ObservableObject {
         UIApplication.shared.isIdleTimerDisabled = false
         // The session is on disk: the Sessions list reads it again.
         NotificationCenter.default.post(name: .sessionsChanged, object: nil)
+    }
+
+    /// A short sound when GNSS goes from OK to lost and another when it is back (FBBD-64), when
+    /// Settings › Track screen has it on, as on Android (GnssSound, gnssCue).
+    private func gnssSound(_ now: GnssState) {
+        defer { lastGnss = now }
+        guard SettingsModel.shared.gnssSound, let before = lastGnss else { return }
+        if before == GnssState.ok && now == GnssState.lost {
+            AudioServicesPlaySystemSound(1053)
+        } else if before == GnssState.lost && now == GnssState.ok {
+            AudioServicesPlaySystemSound(1054)
+        }
     }
 
     private func refresh() {
@@ -284,10 +328,12 @@ final class RecordingController: ObservableObject {
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
         }
+        gnssSound(now.gnss)
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
-            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus
+            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus,
+            tileIds: tileIds
         )
         screen = model
         activity.update(model)
@@ -340,18 +386,22 @@ struct TrackScreenModel: Equatable {
     let lapMillis: Int64?
     let lastMillis: Int64?
     let bestMillis: Int64?
-    /// The row of six slots (UI-120 A) with the Android defaults, speed and G; nil is an empty slot,
-    /// drawn as an outline (UI-125 B). A tile that cannot have data here is left out (UI-126 B).
+    /// The row of six slots (UI-120 A) of the car's layout (FBBD-345), by default speed and G; nil is an
+    /// empty slot, drawn as an outline (UI-125 B). A tile that cannot have data here is left out (UI-126 B).
     let tiles: [Tile?]
 
-    static let noValue = "–"
-    static let slots = 6
+    static let noValue = TrackTiles.shared.NO_VALUE
+    /// A fresh install's main screen: speed, G and four empty slots.
+    static let defaultTiles = TrackTiles.shared.ids(setup: SettingsCore.shared.freshSetup(id: "default"), carId: nil, second: false)
 
     /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
     /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
-    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil, camera: CameraStatus? = nil) {
+    /// [tileIds]: the main screen of the session's car (TrackTiles.ids), "" for an empty slot.
+    init(
+        _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
+        camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles
+    ) {
         let live = s.live
-        let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
         case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false)
         case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false)
@@ -384,13 +434,28 @@ struct TrackScreenModel: Equatable {
         lapMillis = timing?.lapMillis?.int64Value
         lastMillis = timing?.lastMillis?.int64Value
         bestMillis = timing?.bestMillis?.int64Value
-        // The receiver's last speed stays known after the fix is lost; it is not the car's speed now.
-        let speed = ok ? live.speedKmh.map { "\(Int($0.doubleValue.rounded()))" } : nil
-        let g = live.gCombined.map { String(format: "%.2f", $0.doubleValue) }
-        let speedTile = Tile(label: "Speed", value: speed ?? Self.noValue, unit: "km/h", dim: speed == nil)
-        let gTile = Tile(label: "G", value: g ?? Self.noValue, unit: "g", dim: g == nil)
-        let filled: [Tile?] = receiverHasG ? [speedTile, gTile] : [speedTile]
-        tiles = filled + Array(repeating: nil, count: Self.slots - 2)
+        // The car's layout (FBBD-345): a tile that cannot have data here is left out (UI-126 B).
+        tiles = tileIds
+            .map { TrackTiles.shared.tile(id: $0, live: live, timing: timing, receiverHasG: receiverHasG) }
+            .filter { $0?.hasData != false }
+            .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: $0.value == Self.noValue) } }
+    }
+
+    /// The track screen as Settings › Track screen draws it (layoutTrackState, FBBD-345): no session, so
+    /// a dash for every value, and every tile drawn, one without data too, so each can be tapped.
+    init(layout tileIds: [String], receiverHasG: Bool, coachOn: Bool) {
+        status = []
+        coach = coachOn ? Coach(corner: nil, text: nil, praise: false, dim: false) : nil
+        recordingTime = Self.clock(micros: 0)
+        alert = nil
+        deltaSeconds = nil
+        lapNumber = nil
+        lapMillis = nil
+        lastMillis = nil
+        bestMillis = nil
+        tiles = tileIds
+            .map { TrackTiles.shared.tile(id: $0, live: nil, timing: nil, receiverHasG: receiverHasG) }
+            .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: true) } }
     }
 
     /// Recording time as m:ss, or h:mm:ss from one hour (formatClock).
