@@ -277,6 +277,49 @@ class BackupTest {
     }
 
     @Test
+    fun `an oversized coach or calibration file is refused before it is copied, one at the limit is not`() {
+        fun withEntry(path: String, size: Long): ByteArray {
+            val out = ByteArrayOutputStream()
+            BundleWriter(out, Backup.Magic).apply {
+                val m = "format=${Backup.Format}\nversion=1\ncreated=1\n".toByteArray()
+                file(Backup.ManifestEntry, m.size.toLong(), m.inputStream())
+                // One huge property value, as the audit's crafted settings file (BD-03).
+                val body = ByteArray(size.toInt()) { 'x'.code.toByte() }.also { "k=".toByteArray().copyInto(it) }
+                file(path, size, body.inputStream())
+                finish()
+            }
+            return out.toByteArray()
+        }
+        val tablet = device("tablet")
+        val before = files(tablet, "tracks", "setup.json", "coach", "imu-calibration")
+        val limits = listOf(
+            "coach/settings.properties" to Backup.MaxCoachPropertiesBytes,
+            "coach/references/a.coach.json" to Backup.MaxCoachFileBytes,
+            "imu-calibration/AABBCCDDEE01.txt" to Backup.MaxCalibrationBytes,
+        )
+        for ((path, max) in limits) {
+            val e = assertFailsWith<BundleFormatException> {
+                restorer(tablet).unpack(withEntry(path, max + 1).inputStream())
+            }
+            assertTrue(e.message!!.contains("too large"), e.message)
+            restorer(tablet).unpack(withEntry(path, max).inputStream()).dir.deleteRecursively()
+        }
+        assertEquals(before, files(tablet, "tracks", "setup.json", "coach", "imu-calibration"))
+        assertEquals(emptyList(), File(tablet, "backup-staging").listFiles()!!.toList())
+    }
+
+    @Test
+    fun `a coach file over the limit stays out of the backup, so the backup still restores`() {
+        val phone = device("phone")
+        File(phone, "coach/references/huge.coach.json").writeBytes(ByteArray(Backup.MaxCoachFileBytes.toInt() + 1))
+        val bytes = backup(phone)
+        val tablet = File(tmp, "tablet").apply { mkdirs() }
+        val (result, _) = restore(tablet, bytes, RestoreMode.REPLACE)
+        assertTrue(File(tablet, "coach/settings.properties").isFile, "$result")
+        assertFalse(File(tablet, "coach/references/huge.coach.json").exists())
+    }
+
+    @Test
     fun `session metadata that is huge or claims absurd channels is refused`() {
         val phone = device("phone")
         val id = session(phone)

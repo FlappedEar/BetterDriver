@@ -63,6 +63,13 @@ final class SessionsModel {
             Self.started = true
             ReviewBridge.clearStaging()
             ReviewBridge.prepareForUITests()
+            // A session cut off by a kill or crash gets its recovery record and duration (audit BD-05).
+            DispatchQueue.global(qos: .utility).async {
+                let lines = ReviewBridge.recoverInterrupted()
+                for line in lines { AppLog.i("Recovery", line) }
+                guard !lines.isEmpty else { return }
+                DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
+            }
             #if DEBUG
             // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
             if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),

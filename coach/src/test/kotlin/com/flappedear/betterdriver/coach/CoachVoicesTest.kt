@@ -91,4 +91,11 @@ class CoachVoicesTest {
         file.writeText("speechRate=NaN\n")
         assertEquals(Speech(), CoachSettingsStore(file).read().speech)
     }
+
+    @Test
+    fun `a settings file too large to read whole gives the defaults`() {
+        val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
+        file.writeText("speechRate=1.2\nttsVoice=" + "x".repeat(CoachSettingsStore.MaxBytes.toInt()) + "\n")
+        assertEquals(CoachSettings(), CoachSettingsStore(file).read())
+    }
 }

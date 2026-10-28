@@ -3,7 +3,8 @@ name: iOS
 # The iPhone/iPad app (FBBD-328) on a macOS runner: the Kotlin core modules' common
 # tests on the iOS simulator (ci.yml runs their JVM tests), the XCFramework, and the
 # SwiftUI app's unit and UI tests on an iPad and an iPhone simulator. Runs when the app, a core
-# module with iOS targets or the build changes.
+# module with iOS targets or the build changes: every module core-ios exports is listed in both
+# path filters below, which ci.yml's Changes job checks.
 on:
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - "coach/**"
       - "analysis/**"
       - "videosync/**"
+      - "transfer/**"
       - "core-ios/**"
       # The track screen's fonts, bundled into the app.
       - "core-ui/src/main/res/font/**"
@@ -39,6 +41,7 @@ on:
       - "coach/**"
       - "analysis/**"
       - "videosync/**"
+      - "transfer/**"
       - "core-ios/**"
       # The track screen's fonts, bundled into the app.
       - "core-ui/src/main/res/font/**"

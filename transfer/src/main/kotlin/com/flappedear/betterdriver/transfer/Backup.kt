@@ -74,6 +74,7 @@ object Backup {
     internal const val Tracks = "tracks"
     internal const val SetupFile = "setup.json"
     internal const val Coach = "coach"
+    private const val CoachSettingsFile = "settings.properties"
     internal const val Calibrations = "imu-calibration"
     internal const val Sessions = "sessions"
 
@@ -88,12 +89,22 @@ object Backup {
     internal const val MaxSetupBytes = 4L shl 20
     internal const val MaxMetaBytes = SessionLimits.MaxMetaBytes
 
+    /** Coach settings and cue counts (properties), read whole at every start (audit BD-03). */
+    internal const val MaxCoachPropertiesBytes = 1L shl 20
+
+    /** The coach's other files (references, picks, line and day plans, history), each read whole. */
+    internal const val MaxCoachFileBytes = 8L shl 20
+
+    /** A RaceBox motion-sensor calibration: a few numbers. */
+    internal const val MaxCalibrationBytes = 64L shl 10
+
     /** The files a backup of [root] (the app's files folder) holds, by entry path. */
     fun contents(root: File, includeSessions: Boolean): List<Pair<String, File>> = buildList {
         addAll(filesUnder(root, Tracks).filter { it.first.endsWith(TrackSuffix) })
         File(root, SetupFile).takeIf { it.isFile }?.let { add(SetupFile to it) }
-        addAll(filesUnder(root, Coach))
-        addAll(filesUnder(root, Calibrations))
+        // A file over its limit would make the whole backup refused on restore, so it stays out.
+        addAll(filesUnder(root, Coach).filter(::fits))
+        addAll(filesUnder(root, Calibrations).filter(::fits))
         if (includeSessions) {
             for (s in finishedSessions(root)) addAll(sessionFiles(s.dir))
         }
@@ -174,6 +185,7 @@ object Backup {
                 }
             }
             val m = manifest ?: throw BundleFormatException("empty backup")
+            checkCoachSettings(dir)
             return UnpackedBackup(verify(dir, m, prefs != null), dir, prefs)
         } catch (e: IOException) {
             dir.deleteRecursively()
@@ -185,17 +197,37 @@ object Backup {
     }
 
     /**
-     * Tracks, the setup and session files read whole (metadata, chunks, indexes; [SessionLimits])
-     * are bounded, checked from the declared size before the entry is copied.
+     * Tracks, the setup, the coach's files, calibrations and session files read whole (metadata,
+     * chunks, indexes; [SessionLimits]) are bounded, checked from the declared size before the entry
+     * is copied.
      */
     private fun checkSize(path: String, size: Long) {
-        val max = when {
-            path == SetupFile -> MaxSetupBytes
-            path.startsWith("$Tracks/") -> MaxTrackBytes
-            path.startsWith("$Sessions/") -> SessionLimits.maxBytes(path.substringAfter('/').substringAfter('/'))
-            else -> null
-        } ?: return
+        val max = maxBytes(path) ?: return
         if (size > max) throw BundleFormatException("$path is too large ($size bytes)")
+    }
+
+    /** The most an entry at [path] may hold; null for one the app streams (session video is never in). */
+    internal fun maxBytes(path: String): Long? = when {
+        path == SetupFile -> MaxSetupBytes
+        path.startsWith("$Tracks/") -> MaxTrackBytes
+        path.startsWith("$Coach/") && path.endsWith(".properties") -> MaxCoachPropertiesBytes
+        path.startsWith("$Coach/") -> MaxCoachFileBytes
+        path.startsWith("$Calibrations/") -> MaxCalibrationBytes
+        path.startsWith("$Sessions/") -> SessionLimits.maxBytes(path.substringAfter('/').substringAfter('/'))
+        else -> null
+    }
+
+    private fun fits(entry: Pair<String, File>): Boolean =
+        entry.second.length() <= (maxBytes(entry.first) ?: Long.MAX_VALUE)
+
+    /** The coach settings the app reads first after a restore are a readable properties file. */
+    private fun checkCoachSettings(dir: File) {
+        val file = File(dir, "$Coach/$CoachSettingsFile").takeIf { it.isFile } ?: return
+        try {
+            file.inputStream().use { Properties().load(it) }
+        } catch (e: IllegalArgumentException) {
+            throw BundleFormatException("bad coach settings: ${e.message}", e)
+        }
     }
 
     @Suppress("ThrowsCount") // One reason per way a manifest can be bad.

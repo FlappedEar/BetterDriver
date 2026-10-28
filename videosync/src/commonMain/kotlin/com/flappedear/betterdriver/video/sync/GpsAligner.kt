@@ -31,6 +31,11 @@ data class AlignmentResult(
  * A match is accepted only with at least [minOverlapUs] of overlap, enough speed variation and a
  * small RMS error; otherwise the UTC guess (or the prior) is returned as it is.
  *
+ * Times come from files, so they are bounded before any work depends on them (audit BD-02): a point
+ * further than [MaxAbsTimeUs] from zero is dropped, the session speed grid covers only the part the
+ * camera can overlap and never more than [MaxGridPoints] steps, and a search of more than
+ * [MaxSearchSteps] offsets is not made. Past a bound there is no match and the guess is returned.
+ *
  * Expected error with a good match: about one 10 ms step plus GPS timing jitter; GoPro's internal
  * GPS latency is unknown and is checked in the real-camera test (FBBD-22).
  */
@@ -52,9 +57,11 @@ class GpsAligner(
         session: List<SpeedPoint>,
         prior: AlignmentResult? = null,
     ): AlignmentResult? {
-        if (camera.isEmpty() || session.isEmpty()) return prior
-        val guess = utcGuess(camera, session) ?: prior
-        val match = match(camera.sortedBy { it.timeUs }, session.sortedBy { it.timeUs }, guess)
+        val cam = camera.filter { inRange(it.timeUs) }
+        val ses = session.filter { inRange(it.timeUs) }
+        if (cam.isEmpty() || ses.isEmpty()) return prior
+        val guess = utcGuess(cam, ses) ?: prior
+        val match = match(cam.sortedBy { it.timeUs }, ses.sortedBy { it.timeUs }, guess)
         val accepted = match != null &&
             match.overlapUs >= minOverlapUs && match.rms <= maxRmsMps && match.std >= minSpeedStdMps
         return if (accepted) {
@@ -66,18 +73,31 @@ class GpsAligner(
     }
 
     /** Coarse search around the guess (or across everything without one), then a fine search. */
+    @Suppress("ReturnCount") // One reason per bound.
     private fun match(cam: List<SpeedPoint>, session: List<SpeedPoint>, guess: AlignmentResult?): Candidate? {
         val window = guess?.let { maxOf(searchWindowUs, it.alignment.uncertaintyUs) } ?: wholeRange(cam, session)
         val center = guess?.sessionOffsetUs ?: 0L
-        val grid = SpeedGrid(session)
+        // A guess from a file or a caller can be anything; within these bounds no sum below overflows.
+        if (window !in 0..MaxSearchSpanUs || !inRange(center)) return null
+        if (window / CoarseStepUs > MaxSearchSteps) return null
+        val from = center - window - CoarseStepUs
+        val to = center + window + CoarseStepUs
+        // Only the session time the camera can overlap at some searched offset.
+        val gridFrom = maxOf(session.first().timeUs, cam.first().timeUs + from)
+        val gridTo = minOf(session.last().timeUs, cam.last().timeUs + to)
+        if (gridTo < gridFrom || (gridTo - gridFrom) / FineStepUs >= MaxGridPoints) return null
+        val grid = SpeedGrid(session, gridFrom, gridTo)
         val coarse = search(cam, grid, center - window, center + window, CoarseStepUs) ?: return null
         return search(cam, grid, coarse.offsetUs - CoarseStepUs, coarse.offsetUs + CoarseStepUs, FineStepUs)
     }
 
     /** Offset from GPS UTC: each side's median of (time − UTC), differenced. */
     private fun utcGuess(camera: List<SpeedPoint>, session: List<SpeedPoint>): AlignmentResult? {
-        val cam = camera.mapNotNull { p -> p.utcMillis?.let { p.timeUs - it * MicrosPerMilli } }
-        val ses = session.mapNotNull { p -> p.utcMillis?.let { p.timeUs - it * MicrosPerMilli } }
+        val clockMinusUtc = { p: SpeedPoint ->
+            p.utcMillis?.takeIf { it in 0..MaxUtcMillis }?.let { p.timeUs - it * MicrosPerMilli }
+        }
+        val cam = camera.mapNotNull(clockMinusUtc)
+        val ses = session.mapNotNull(clockMinusUtc)
         if (cam.isEmpty() || ses.isEmpty()) return null
         return AlignmentResult(median(ses) - median(cam), Alignment(AlignmentMethod.GPS_UTC, UtcUncertaintyUs))
     }
@@ -134,21 +154,23 @@ class GpsAligner(
         return Candidate(offsetUs, sqrt(sumSq / n), sqrt(variance), last - first)
     }
 
-    /** Session speed resampled every 10 ms by linear interpolation; gaps over 1 s have no value. */
-    private class SpeedGrid(points: List<SpeedPoint>) {
-        val startUs = points.first().timeUs
-        val endUs = points.last().timeUs
+    /**
+     * Session speed from [startUs] to [endUs] resampled every 10 ms by linear interpolation; gaps over
+     * 1 s have no value. The caller keeps the span under [MaxGridPoints] steps.
+     */
+    private class SpeedGrid(points: List<SpeedPoint>, val startUs: Long, val endUs: Long) {
         private val values: DoubleArray
 
         init {
-            val n = ((points.last().timeUs - startUs) / FineStepUs + 1).toInt()
+            val n = ((endUs - startUs) / FineStepUs + 1).toInt()
             values = DoubleArray(n) { Double.NaN }
             for (i in 0 until points.size - 1) {
                 val a = points[i]
                 val b = points[i + 1]
-                if (b.timeUs - a.timeUs > MaxGapUs || b.timeUs <= a.timeUs) continue
-                val from = ((a.timeUs - startUs + FineStepUs - 1) / FineStepUs).toInt()
-                val to = ((b.timeUs - startUs) / FineStepUs).toInt()
+                val usable = b.timeUs > a.timeUs && b.timeUs - a.timeUs <= MaxGapUs
+                if (!usable || b.timeUs < startUs || a.timeUs > endUs) continue
+                val from = ((maxOf(a.timeUs, startUs) - startUs + FineStepUs - 1) / FineStepUs).toInt()
+                val to = ((minOf(b.timeUs, endUs) - startUs) / FineStepUs).toInt()
                 for (k in from..to) {
                     val t = startUs + k * FineStepUs
                     val f = (t - a.timeUs).toDouble() / (b.timeUs - a.timeUs)
@@ -158,7 +180,7 @@ class GpsAligner(
         }
 
         fun at(t: Long): Double? {
-            if (t < startUs) return null
+            if (t < startUs || t > endUs) return null
             val k = ((t - startUs) / FineStepUs).toInt()
             return values.getOrNull(k)?.takeUnless { it.isNaN() }
         }
@@ -166,14 +188,29 @@ class GpsAligner(
 
     private fun median(values: List<Long>): Long = values.sorted()[values.size / 2]
 
-    private companion object {
-        const val CoarseStepUs = 100_000L
-        const val FineStepUs = 10_000L
-        const val MaxGapUs = 1_000_000L
-        const val MinPoints = 50
-        const val MicrosPerMilli = 1000L
-        const val MatchUncertaintyUs = 50_000L
-        const val UtcUncertaintyUs = 1_000_000L
+    private fun inRange(t: Long) = t in -MaxAbsTimeUs..MaxAbsTimeUs
+
+    companion object {
+        /** About three years: no session or video is longer, and sums of such times cannot overflow. */
+        const val MaxAbsTimeUs = 100_000_000_000_000L
+
+        /** 6 h of 10 ms steps: 17 MB of session speed at most. */
+        const val MaxGridPoints = 2_160_000L
+
+        /** Coarse offsets tried at most: ±12 h at 100 ms. */
+        const val MaxSearchSteps = 432_000L
+        private const val MaxSearchSpanUs = 4 * MaxAbsTimeUs
+
+        /** Year 2286: a later GPS time is damage, and its microseconds would overflow sums. */
+        private const val MaxUtcMillis = 10_000_000_000_000L
+
+        private const val CoarseStepUs = 100_000L
+        private const val FineStepUs = 10_000L
+        private const val MaxGapUs = 1_000_000L
+        private const val MinPoints = 50
+        private const val MicrosPerMilli = 1000L
+        private const val MatchUncertaintyUs = 50_000L
+        private const val UtcUncertaintyUs = 1_000_000L
     }
 }
 

@@ -281,6 +281,10 @@ extension ReviewBridge {
 
     static func clearStaging() { _ = library.clearStaging() }
 
+    /// Sessions the app was killed in the middle of get their recovery record, as on Android (FBBD-71,
+    /// audit BD-05); one log line per session. Reads every chunk of those, so not on the main thread.
+    static func recoverInterrupted() -> [String] { library.recoverInterrupted() }
+
     /// Deletes session [id] with its video; nil when done, else why not, as Android's card says it.
     static func delete(_ id: String) -> String? {
         switch library.delete(id: id) {

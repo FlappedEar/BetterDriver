@@ -107,6 +107,36 @@ class GoProDownloaderTest {
     }
 
     @Test
+    fun `a downloaded file that is no MP4 is fetched again and its recording stays to do`() = runTest {
+        val sessionDir = File(dir, "session4").apply { mkdirs() }
+        val videoDir = File(sessionDir, "video")
+        GoProRecordings(videoDir).put(GoProRecording("gopro-x", startAckSessionUs = 4_000_000,
+            startAckUtcMillis = TestSession.StartUtcMillis + 4_000, stopAckSessionUs = 200_000_000,
+            stopAckUtcMillis = TestSession.StartUtcMillis + 200_000, cameraUtcOffsetMinutes = 0))
+        val good = hero11Chapter(4_600_000, 100)
+        // The right length, so a length check alone would keep it (audit BD-06).
+        val files = mutableMapOf("GX010009.MP4" to ByteArray(good.size))
+        val base = serve(files, TestSession.StartUtcMillis / 1000 + 5)
+        val wifi = object : WifiJoiner {
+            override suspend fun join(ssid: String, password: String): GoProHttp = GoProHttp(base)
+            override suspend fun leave() = Unit
+        }
+
+        val first = GoProDownloader(FakeGoPro(), backgroundScope, wifi).download(sessionDir, TestSession.data(300))
+        assertTrue(first.problems.isNotEmpty())
+        assertTrue(!GoProRecordings(videoDir).all().single().downloaded)
+        assertTrue(!File(videoDir, "gopro-x-GX010009.MP4").exists(), "the damaged file is dropped")
+        assertEquals(emptyList(), VideoIndex(sessionDir).clips())
+
+        files["GX010009.MP4"] = good
+        val second = GoProDownloader(FakeGoPro(), backgroundScope, wifi).download(sessionDir, TestSession.data(300))
+        assertEquals(emptyList(), second.problems)
+        assertEquals(listOf("GX010009.MP4"), second.downloaded)
+        assertTrue(GoProRecordings(videoDir).all().single().downloaded)
+        assertEquals(1, VideoIndex(sessionDir).clips().size)
+    }
+
+    @Test
     fun `downloads only the chosen camera's recordings`() = runTest {
         val sessionDir = File(dir, "session3").apply { mkdirs() }
         val store = GoProRecordings(File(sessionDir, "video"))

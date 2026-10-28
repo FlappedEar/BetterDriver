@@ -8,13 +8,13 @@ import java.util.Properties
 /**
  * Coach settings in one small file (FBBD-98). The app writes it; the recorder and coach processes
  * read it at each session start, so a change applies from the next session. A missing or damaged
- * file gives the defaults.
+ * file gives the defaults, as does one over [MaxBytes] (audit BD-03: it is read whole).
  */
 class CoachSettingsStore(private val file: File) {
     fun read(): CoachSettings {
         val p = Properties()
         try {
-            if (file.isFile) file.inputStream().use(p::load)
+            if (file.isFile && file.length() <= MaxBytes) file.inputStream().use(p::load)
         } catch (_: IOException) {
             p.clear()
         } catch (_: IllegalArgumentException) {
@@ -36,5 +36,10 @@ class CoachSettingsStore(private val file: File) {
             file.delete()
             tmp.renameTo(file)
         }
+    }
+
+    companion object {
+        /** Far above the few lines the app writes. */
+        const val MaxBytes = 1L shl 20
     }
 }
