@@ -212,7 +212,10 @@ final class RecordingController: ObservableObject {
     }
 
     /// Settings items of [model] that iOS reaches by their Bluetooth identifier.
-    private static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
+    /// The session's OBD-II connection as the car data page shows it (FBBD-261), nil while none records.
+    func obdStatus() -> ObdStatus? { obd?.status() }
+
+    static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
         items.compactMap { item in
             guard item.modelName == model, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
             return (id, item.name)

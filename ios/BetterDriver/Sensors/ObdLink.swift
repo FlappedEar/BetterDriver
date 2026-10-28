@@ -39,12 +39,17 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// [sink] is the recording; [listed] the Bluetooth LE adapters in Settings. With [setup], the
     /// session's car's own parameters and switched-on PIDs are read (FBBD-344), and [tiles] are its
     /// track screen. (The setup, not the car: setup's and obd's CarProfile share a name in Swift.)
-    init(sink: SampleSink, listed: [(id: UUID, name: String)] = [], setup: Setup? = nil, tiles: [String] = []) {
+    /// With [page] it is the car data page's own connection outside a session (FBBD-261, FBBD-344):
+    /// every channel the car has, nothing recorded, and Scan car.
+    init(
+        sink: SampleSink, listed: [(id: UUID, name: String)] = [], setup: Setup? = nil, tiles: [String] = [],
+        page: Bool = false
+    ) {
         self.listed = listed
         super.init()
         feed = ObdFeed(
             sink: sink, targets: { [weak self] in self?.targets() ?? [] }, listener: self,
-            car: setup?.active().car, tiles: tiles
+            car: setup?.active().car, tiles: tiles, page: page
         )
     }
 
@@ -72,6 +77,14 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
 
     /// The connection as the track screen shows it (Android: RecorderState.obd).
     func status() -> ObdStatus { feed.status() }
+
+    /// Scan car (UI-303 B), on the page's own connection.
+    func scanCar() { feed.scanCar() }
+    var scanning: Bool { feed.scanning }
+    var scanNote: String? { feed.scanNote }
+
+    /// A scan just finished, once, as it is stored with the car.
+    func takeScan() -> CarScanRecord? { feed.takeScan(wallMs: Int64(Date().timeIntervalSince1970 * 1000)) }
 
     func log(text: String) { AppLog.i("Obd", text) }
 

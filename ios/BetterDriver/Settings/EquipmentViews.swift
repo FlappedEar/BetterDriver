@@ -112,7 +112,7 @@ struct EquipmentItemPage: View {
                         .buttonStyle(.plain)
                     }
                     if item.kindName == KindName.carData {
-                        NavigationLink { NotImplementedPage(title: "OBD-II") } label: {
+                        NavigationLink { ObdPage() } label: {
                             ListRow("Connection and live values", chevron: true)
                         }
                         .buttonStyle(.plain)

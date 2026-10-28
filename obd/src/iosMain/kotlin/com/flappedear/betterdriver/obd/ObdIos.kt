@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.obd
 
 import com.flappedear.betterdriver.recorder.SampleSink
+import com.flappedear.betterdriver.setup.CarScanRecord
 import com.flappedear.betterdriver.setup.TileIds
 import kotlin.concurrent.Volatile
 import kotlinx.cinterop.BetaInteropApi
@@ -100,7 +101,9 @@ private const val MsPerSecond = 1_000.0
  * FR-S its CAN broadcasts, told by its name or VIN), with [car]'s own parameters ([ownProfile],
  * FBBD-344), and records them into [sink] through an [ObdSession]. A lost adapter is retried with
  * the Android delays; nothing it throws reaches the recording. [status] is the connection as the
- * track screen shows it.
+ * track screen shows it. With [page] it is the car data page's own connection outside a session
+ * (FBBD-261, FBBD-344): it reads every channel the car has ([PollSet.All]) into [NoSamples] and can
+ * scan what the car offers ([scanCar]).
  */
 class ObdFeed(
     sink: SampleSink,
@@ -108,9 +111,11 @@ class ObdFeed(
     private val listener: ObdFeedListener,
     car: SetupCar? = null,
     tiles: List<String> = emptyList(),
+    private val page: Boolean = false,
 ) {
     private val profile = ownProfile(car)
-    private val pollSet = sessionPollSet(car, tiles)
+    private val pollSet = if (page) PollSet.All else sessionPollSet(car, tiles)
+    private val scanRun = ObdScanRun()
     private val clock = object : ObdClock {
         override fun nowMs() = monoNanos() / NanosPerMs
 
@@ -129,11 +134,14 @@ class ObdFeed(
         if (running) return
         running = true
         listener.log(
-            "session car ${profile.channels.size + profile.signals.size} own parameters, " +
+            (if (page) "page" else "session") +
+                " car ${profile.channels.size + profile.signals.size} own parameters, " +
                 "pids=${pollSet.pids?.sorted()?.joinToString(",") { it.toString(Hex) } ?: "default"} " +
                 "broadcast=${pollSet.broadcastCar}",
         )
-        val c = ObdConnector(targets, Relay(), tracker, clock, profile = { profile }, pollSet = { pollSet })
+        val c = ObdConnector(
+            targets, Relay(), tracker, clock, profile = { profile }, pollSet = { pollSet }, scan = { scanRun.asked },
+        )
         connector = c
         val thread = NSThread {
             read(c)
@@ -152,6 +160,25 @@ class ObdFeed(
     fun retryNow() {
         connector?.retryNow()
     }
+
+    /** Scans what the car offers (UI-303 B): the connection starts again and scans first. */
+    fun scanCar() {
+        scanRun.start(clock.nowMs())
+        connector?.restart()
+    }
+
+    /** Whether a scan asked for is running. */
+    val scanning: Boolean get() = scanRun.since != null
+
+    /** Why the last scan did not finish, or null. */
+    val scanNote: String? get() = scanRun.note
+
+    /**
+     * Checks the scan against the connection, as the page does every half second: a new scan comes
+     * back once, as it is stored with the car, taken at wall-clock [wallMs]; one running too long
+     * gives up with [scanNote].
+     */
+    fun takeScan(wallMs: Long): CarScanRecord? = scanRun.check(status(), clock.nowMs())?.toRecord(wallMs)
 
     @Suppress("TooGenericExceptionCaught") // Whatever goes wrong, car data ends and the recording goes on.
     private fun read(c: ObdConnector) {
