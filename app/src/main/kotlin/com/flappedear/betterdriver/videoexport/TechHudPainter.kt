@@ -16,8 +16,10 @@ import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
 import com.flappedear.betterdriver.timing.overlay.HudWidget
+import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
+import com.flappedear.betterdriver.timing.overlay.OverlayLap
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
@@ -202,7 +204,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
             lap != null -> lapTime(lap.lapMicros)
             else -> NoTime
         }
-        setText(bold, min(h * 0.3f, (b.width - 2 * p) / 4.6f), Text)
+        setText(bold, min(h * 0.3f, (b.width - 2 * p) / 4.6f), timeColor(lap, optimal))
         textMiddle(c, time, b.left + p, b.centerY + h * 0.03f, bold)
 
         val bottom = b.bottom - p * 0.9f
@@ -215,6 +217,10 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         val delta = if (optimal != null) optimal.deltaSeconds else lap?.deltaMicros?.let { it / MicrosPerSecond }
         if (delta != null) delta(c, delta, b.right - p * 1.4f, bottom, h)
     }
+
+    /** A single-lap export (FBBD-346) shows 0:00.000 before the line and holds the final time in green after it. */
+    private fun timeColor(lap: OverlayLap?, optimal: OptimalOverlayText?): Int =
+        if (optimal == null && lap?.phase == LapPhase.Finished) Green else Text
 
     /** "LAP" or "RUN"; for a composite lap the part's caption, as much of it as fits [width]. */
     private fun lapCaption(optimal: OptimalOverlayText?, width: Float): String {

@@ -120,7 +120,8 @@ class VideoExports private constructor(private val context: Context) {
                 if (cuts.isEmpty()) {
                     null
                 } else {
-                    WatchSource(cuts, p.video, OverlayData(p.sets, p.laps, measuredG(p.data), p.data.channels.values))
+                    val data = OverlayData(p.sets, p.laps, measuredG(p.data), channels = p.data.channels.values)
+                    WatchSource(cuts, p.video, data)
                 }
             }
         } catch (e: Exception) {
@@ -135,21 +136,22 @@ class VideoExports private constructor(private val context: Context) {
     }
 
     /**
-     * Renders [part] of session [id] into [uri]. Refused while a session records ([recording], or a
+     * Renders [part] of session [id] into [uri]; a lap with [handleSeconds] of video before and after
+     * it, as FlappedEar Overlays exports one. Refused while a session records ([recording], or a
      * session the store still holds open) or while another export runs.
      */
-    fun start(id: String, part: VideoPart, uri: Uri, recording: Boolean) {
+    fun start(id: String, part: VideoPart, uri: Uri, recording: Boolean, handleSeconds: Int = DefaultLapHandleSeconds) {
         if (running != null) return
         if (recording) {
             states[id] = endState(VideoExportEnd.Recording)
             discard(uri)
             return
         }
-        DebugLog.i(Tag, "video export of $id, part $part")
+        DebugLog.i(Tag, "video export of $id, part $part, handles $handleSeconds s")
         keepAccess(uri)
         running = id
         states[id] = renderingState(null)
-        val j = Job(id, part, uri)
+        val j = Job(id, part, uri, handleSeconds * MicrosPerSecond)
         job = j
         VideoExportService.start(context)
         io.execute(j::plan)
@@ -222,17 +224,22 @@ class VideoExports private constructor(private val context: Context) {
         /** The plan of composite lap [part]; null for the whole video or a lap. */
         fun optimalPlan(part: VideoPart): OptimalClipPlan? = optimalKindOf(part)?.let { optimal.of(it).plan }
 
-        fun cuts(part: VideoPart): List<VideoCut> = if (optimalKindOf(part) != null) {
+        /**
+         * The cuts of [part]; a lap from [handleMicros] before its start to as long after its end, as
+         * far as there is video.
+         */
+        fun cuts(part: VideoPart, handleMicros: Long = 0L): List<VideoCut> = if (optimalKindOf(part) != null) {
             optimalPlan(part)?.cuts?.map { it.cut }.orEmpty()
         } else {
-            recordedCuts(part)
+            recordedCuts(part, handleMicros)
         }
 
-        private fun recordedCuts(part: VideoPart): List<VideoCut> {
+        private fun recordedCuts(part: VideoPart, handleMicros: Long): List<VideoCut> {
             val range = if (part == WholeVideo) {
                 Long.MIN_VALUE to Long.MAX_VALUE
             } else {
-                laps?.laps?.firstOrNull { it.lap.number == part }?.lap?.let { it.startMicros to it.endMicros }
+                laps?.laps?.firstOrNull { it.lap.number == part }?.lap
+                    ?.let { it.startMicros - handleMicros to it.endMicros + handleMicros }
             } ?: return emptyList()
             return videoCuts(video.clips, ::durationOf, range.first, range.second)
         }
@@ -251,7 +258,7 @@ class VideoExports private constructor(private val context: Context) {
     }
 
     /** One export, from planning to the saved file. */
-    private inner class Job(val id: String, val part: VideoPart, val uri: Uri) {
+    private inner class Job(val id: String, val part: VideoPart, val uri: Uri, val handleMicros: Long) {
         private val done = AtomicBoolean()
         private val thread = HandlerThread("video-export").apply { start() }
         private val handler = Handler(thread.looper)
@@ -265,7 +272,7 @@ class VideoExports private constructor(private val context: Context) {
         fun plan() {
             try {
                 val prepared = prepare(id)
-                val cuts = prepared?.cuts(part).orEmpty()
+                val cuts = prepared?.cuts(part, handleMicros).orEmpty()
                 when {
                     store.list().any { it.state == SessionState.RECORDING } -> finish(VideoExportEnd.Recording)
                     prepared == null || cuts.isEmpty() -> finish(VideoExportEnd.NoVideo)
@@ -285,11 +292,14 @@ class VideoExports private constructor(private val context: Context) {
         }
 
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
+            // One lap: it alone, 0:00 before its line and its final time after (FlappedEar Overlays' hotlap).
+            val hotlap = part.takeIf(::isSingleLap)
             val data = OverlayData(
                 prepared.sets,
                 prepared.laps,
                 measuredG(prepared.data),
-                prepared.data.channels.values,
+                hotlap = hotlap,
+                channels = prepared.data.channels.values,
             )
             val painter = TechHudPainter(HudFonts.load(context), data)
             // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).

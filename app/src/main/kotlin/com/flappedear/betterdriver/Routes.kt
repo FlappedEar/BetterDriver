@@ -47,6 +47,35 @@ object Routes {
 
     fun carPage(id: String) = "car/$id"
 
+    /** The PIDs a car reported, with a switch each (FBBD-344, UI-301 B). */
+    const val CarPidsPattern = "car/{id}/pids"
+
+    fun carPids(id: String) = "car/$id/pids"
+
+    /** The CAN ids heard at a car's OBD port (FBBD-344). */
+    const val CarCanPattern = "car/{id}/can"
+
+    fun carCan(id: String) = "car/$id/can"
+
+    /**
+     * Adding or changing one of a car's own parameters, in steps (FBBD-344, UI-302 B): [NewParameter]
+     * adds one, optionally on CAN id [CarCanArg] or mode 01 PID [CarPidArg] (hex).
+     */
+    const val CarParameterPattern = "car/{id}/parameter/{key}?can={can}&pid={pid}"
+    const val CarParameterKeyArg = "key"
+    const val CarCanArg = "can"
+    const val CarPidArg = "pid"
+    const val NewParameter = "new"
+    private const val HexRadix = 16
+
+    fun carParameter(id: String, key: String = NewParameter, can: Int? = null, pid: Int? = null): String {
+        val query = listOfNotNull(
+            can?.let { "can=${it.toString(HexRadix)}" },
+            pid?.let { "pid=${it.toString(HexRadix)}" },
+        )
+        return "car/$id/parameter/$key" + if (query.isEmpty()) "" else query.joinToString("&", prefix = "?")
+    }
+
     /** Editing a car's name and notes (UI-35 B); [NewCar] adds one. */
     const val CarPattern = "cars/{id}"
     const val CarIdArg = "id"

@@ -17,8 +17,16 @@ enum class ObdLinkState {
 /** The newest value of one channel and how often it arrives. */
 data class ObdReading(val id: String, val name: String, val unit: String, val value: Double, val hz: Double)
 
-/** One look at an OBD-II connection: its state, a line about it, and every value the car sends. */
-data class ObdStatus(val state: ObdLinkState, val detail: String, val readings: List<ObdReading> = emptyList())
+/**
+ * One look at an OBD-II connection: its state, a line about it, and every value the car sends; [scan]
+ * is what the last scan found the car offers (FBBD-344), kept across reconnects.
+ */
+data class ObdStatus(
+    val state: ObdLinkState,
+    val detail: String,
+    val readings: List<ObdReading> = emptyList(),
+    val scan: CarScan? = null,
+)
 
 /**
  * Builds [ObdStatus] from what a connection reports (FBBD-261). Fed from the reader's threads and
@@ -33,6 +41,7 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
     private var since = 0L
     private val latest = HashMap<String, Double>()
     private val arrivals = HashMap<String, ArrayDeque<Long>>()
+    private var scan: CarScan? = null
 
     /** No adapter yet, with why: no Wi-Fi network, or none answered. */
     fun searching(text: String) = lock.locked {
@@ -72,6 +81,11 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
         }
     }
 
+    /** The car was scanned (FBBD-344). */
+    fun scanned(scan: CarScan) = lock.locked {
+        this.scan = scan
+    }
+
     /** The connection ended with [reason]; the next attempt follows. */
     fun ended(reason: String) = lock.locked {
         state = ObdLinkState.Searching
@@ -87,7 +101,7 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
             times.evict(nowMs)
             ObdReading(c.id, c.name, c.unit, v, times.size * MsPerSecond / span.toDouble())
         }
-        ObdStatus(state, detail, readings)
+        ObdStatus(state, detail, readings, scan)
     }
 
     private fun ArrayDeque<Long>.evict(nowMs: Long) {

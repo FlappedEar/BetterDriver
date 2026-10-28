@@ -26,6 +26,9 @@ interface ObdConnectorListener {
 
     /** A line for the app log. */
     fun log(text: String) {}
+
+    /** What the car at [target] offers (FBBD-344), when the connector scans it. */
+    fun scanned(target: ObdTarget, scan: CarScan) {}
 }
 
 /**
@@ -39,7 +42,9 @@ interface ObdConnectorListener {
  * [run] blocks until [running] turns false; [stop] closes the open connection so it returns. No
  * exception ends the loop while [running] holds: a round that fails in an unexpected way is logged
  * and retried, and an interrupted one ends quietly (FBBD-269). The [tracker] follows every step for
- * the OBD page. [pollSet] is what each connection reads (FBBD-283). Common Kotlin, so Android and
+ * the OBD page. [pollSet] is what each connection reads (FBBD-283). [profile] is the car's, asked at
+ * each connection, with the driver's own parameters (FBBD-344); while [scan] holds, a connection
+ * first scans what the car offers ([ObdConnectorListener.scanned]). Common Kotlin, so Android and
  * iOS run the same loop; it is tested on the JVM against simulated adapters.
  */
 @Suppress("LongParameterList") // Collaborators, each replaced in the tests.
@@ -48,10 +53,11 @@ class ObdConnector(
     private val listener: ObdConnectorListener,
     private val tracker: ObdStatusTracker,
     private val clock: ObdClock,
-    private val profile: CarProfile = CarProfile.Generic,
+    private val profile: () -> CarProfile = { CarProfile.Generic },
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val retryMs: List<Long> = RETRY_MS,
     private val pollSet: () -> PollSet = { PollSet.All },
+    private val scan: () -> Boolean = { false },
 ) {
     @Volatile
     private var running: () -> Boolean = { false }
@@ -108,6 +114,15 @@ class ObdConnector(
         retrySoon = true
     }
 
+    /**
+     * Ends the open connection and connects again at once (FBBD-344): the next connection reads
+     * [profile] and [scan] afresh, so a scan asked for or a parameter being tried takes effect.
+     */
+    fun restart() {
+        retrySoon = true
+        open?.close()
+    }
+
     /** Waits [ms] in short steps, ending early on [retryNow] or when [running] turns false. */
     private fun await(ms: Long) {
         val end = clock.nowMs() + ms
@@ -140,7 +155,7 @@ class ObdConnector(
         listener.log("connected to ${target.where}$at over ${target.transport.label}")
         tracker.connecting(target.name)
         val reason = try {
-            ElmPoller(line, profile, Poll(target), running, clock, pollSet = pollSet).run()
+            ElmPoller(line, profile(), Poll(target), running, clock, pollSet = pollSet, scan = scan()).run()
         } catch (e: IOException) {
             // The link dropped or a write failed: the usual way a connection ends.
             "connection lost: ${e.message}"
@@ -230,6 +245,16 @@ class ObdConnector(
         }
 
         override fun log(text: String) = listener.log(text)
+
+        override fun scanned(scan: CarScan) {
+            val ids = scan.canIds.joinToString(" ") { "${hex(it.id, CanIdDigits)}:${it.frames}" }
+            listener.log(
+                "car scan: protocol ${scan.protocol}, PIDs ${scan.supported.size}, " +
+                    "can ${if (scan.canHeard) "${scan.canIds.size} ids $ids".trimEnd() else "not heard"}",
+            )
+            tracker.scanned(scan)
+            listener.scanned(target, scan)
+        }
     }
 
     companion object {
@@ -242,6 +267,7 @@ class ObdConnector(
         /** How often an unchanged "no adapter" is logged again. */
         const val STILL_LOG_MS = 60_000L
         private const val MS_PER_S = 1_000L
+        private const val CanIdDigits = 3
     }
 }
 
