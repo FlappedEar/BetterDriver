@@ -93,6 +93,22 @@ final class ReviewScreensTests: XCTestCase {
         }
     }
 
+    func testTheTrackDayOfTwoSessionsAtOneTrackOpens() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoTrackDay"]
+        app.launch()
+        openSessions()
+        let link = app.buttons["trackDayLink"].firstMatch
+        XCTAssertTrue(link.waitForExistence(timeout: 120), "no Track day link")
+        link.tap()
+        // The day is read off the main thread; its numbers come up when it is.
+        XCTAssertTrue(app.staticTexts["PERFECT"].waitForExistence(timeout: 180), "no track day")
+        keep("Track day")
+        app.swipeUp()
+        keep("Track day, corners")
+        XCTAssertEqual(app.state, .runningForeground)
+        app.buttons["Done"].firstMatch.tap()
+    }
+
     func testTheDemoSessionsOpenOnEveryTab() {
         // Newest first: Silesia Ring (27 Sep, 18 laps), then Jastrząb (29 Aug, 23 laps), as DemoParityTest.
         for (index, (name, laps)) in [("silesia-ring", "18"), ("jastrzab", "23")].enumerated() {

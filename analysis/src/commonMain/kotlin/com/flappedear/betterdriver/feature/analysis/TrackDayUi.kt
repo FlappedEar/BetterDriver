@@ -9,10 +9,10 @@ import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.ProofVerdict
 import com.flappedear.betterdriver.analysis.line.PushLapShare
 import com.flappedear.betterdriver.analysis.line.LineThresholds
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
 import kotlin.math.roundToInt
 
-// Pure Kotlin (no Android): the track day page (FBBD-315, UI round 48: UI-211 A numbers and the
+// Common Kotlin (Android and iOS, FBBD-331): the track day page (FBBD-315, UI round 48: UI-211 A numbers and the
 // sessions chart, UI-212 A corners in words with their kind, UI-213 A a small line per corner,
 // UI-214 B next time here and what came of the last day), made from the day's analysis and tested
 // on the JVM.
@@ -131,10 +131,10 @@ private fun cornerUi(c: DayCorner): TrackDayCornerUi {
 }
 
 /** A corner where the day's best lap already matches the target. */
-internal const val RepeatText = "Your best lap does it: repeat it"
+const val RepeatText = "Your best lap does it: repeat it"
 
 /** A corner with time per lap but no difference in the line, the brakes or the speed beyond GPS accuracy. */
-internal const val NoAdviceText = "Nothing measurably different from your target: drive it as on your best pass."
+const val NoAdviceText = "Nothing measurably different from your target: drive it as on your best pass."
 
 private fun CornerAdvice.plan() =
     PlanAdvice(brakeMeters, apexMeters, tighterMeters, minimumSpeedKmh, pickupMeters, steering)
@@ -143,7 +143,7 @@ private fun CornerAdvice.plan() =
  * The chart in words: how much the typical lap came down from the day's first session to its
  * quickest, and how much it went back up in the last one when it did.
  */
-internal fun overDay(day: DayAnalysis): String? {
+fun overDay(day: DayAnalysis): String? {
     val typical = day.sessions.filter { it.typicalLapSeconds != null }
     if (typical.size < 2) return null
     val first = typical.first()
@@ -194,10 +194,10 @@ private fun proofUi(proof: DayProof, previous: String): TrackDayProofUi {
     )
 }
 
-private fun s(value: Double) = String.format(Locale.ROOT, "%.2f", value)
+private fun s(value: Double) = fixed(value, 2)
 
 private fun roundSeconds(value: Double): String =
-    if (value >= WholeSecondsFrom) value.roundToInt().toString() else String.format(Locale.ROOT, "%.1f", value)
+    if (value >= WholeSecondsFrom) value.roundToInt().toString() else fixed(value, 1)
 
 private fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word}s"
 
@@ -205,4 +205,4 @@ private fun plural(n: Int, word: String) = if (n == 1) "1 $word" else "$n ${word
 private const val WholeSecondsFrom = 10.0
 
 /** For the page's own explanation of the typical lap. */
-internal val PaceSharePercent: Int = ((PushLapShare - 1.0) * 100).roundToInt()
+val PaceSharePercent: Int = ((PushLapShare - 1.0) * 100).roundToInt()
