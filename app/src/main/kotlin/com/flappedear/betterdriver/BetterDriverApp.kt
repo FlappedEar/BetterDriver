@@ -45,7 +45,6 @@ import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.obdAdapterLabel
 import com.flappedear.betterdriver.recording.Sessions
-import com.flappedear.betterdriver.recording.liveTileChoices
 import com.flappedear.betterdriver.recording.liveTrackState
 import com.flappedear.betterdriver.recording.rememberNextCorners
 import com.flappedear.betterdriver.recording.rememberSessionExport
@@ -55,13 +54,13 @@ import com.flappedear.betterdriver.sessionanalysis.progressionDestination
 import com.flappedear.betterdriver.sessionanalysis.trackDayDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TrackChannel
-import com.flappedear.betterdriver.setup.TrackPage
 import com.flappedear.betterdriver.setup.channelsFor
 import com.flappedear.betterdriver.shell.AboutScreen
 import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.AppPrefs
 import com.flappedear.betterdriver.shell.GoProCardState
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.SettingsTrackLayout
 import com.flappedear.betterdriver.shell.TrackScreenPrefs
 import com.flappedear.betterdriver.shell.legacyGoProName
 import com.flappedear.betterdriver.shell.listedGoPros
@@ -317,11 +316,6 @@ private fun Track(nav: NavHostController, prefs: AppPrefs, repo: SetupRepo, reco
                 recorder.stop()
                 nav.popBackStack()
             },
-            tileChoices = { liveTileChoices(recorder.state, hasG, gnss?.name) },
-            onChooseTile = { page, slot, id ->
-                repo.chooseTile(if (page == 0) TrackPage.MAIN else TrackPage.SECOND, slot, id)
-                DebugLog.i("TrackScreen", "tile page=$page slot=$slot id=${id ?: "empty"}")
-            },
         )
     } else {
         LaunchedEffect(Unit) {
@@ -479,5 +473,6 @@ private fun Settings(
         obdRow = obdRowValue(RecorderClient.get(context).state.obd, obdAdapter),
         onOpenObd = { nav.navigate(Routes.Obd) },
         reach = if (topic == SettingsTopic.Equipment) rememberEquipmentReach(prefs, repo) else emptyMap(),
+        trackLayout = { SettingsTrackLayout(repo, coach.settings.verbosity != Verbosity.Off) },
     )
 }

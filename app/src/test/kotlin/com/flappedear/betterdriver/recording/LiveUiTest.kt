@@ -53,6 +53,35 @@ class LiveUiTest {
     }
 
     @Test
+    fun settingsDrawsEveryTileOfTheNextSessionWithoutValues() {
+        val screens = TrackScreens(main = listOf("speed", null, "obd_coolant_temp"), second = listOf("heart_rate"))
+        val s = layoutTrackState(screens, receiverHasG = true, coachOn = false)
+        assertTrue("every tile drawn, so each can be tapped", s.editable)
+        assertTrue(s.radarOn)
+        assertFalse(s.coachOn)
+        assertEquals(MaxMainTiles, s.tiles.size)
+        assertEquals(listOf("speed", null, "obd_coolant_temp"), s.tiles.take(3).map { it?.id })
+        assertNull(s.tiles[1])
+        assertEquals("heart_rate", s.secondTiles[0]?.id)
+        assertTrue(s.tiles.filterNotNull().all { it.value == "–" })
+        assertNull(s.recordingTime)
+        assertNull(s.alert)
+        assertFalse(layoutTrackState(screens, receiverHasG = false, coachOn = true).radarOn)
+    }
+
+    @Test
+    fun settingsListsTheCarsCanChannelsWithNoValueAndNoneDimmed() {
+        val groups = settingsTileChoices(receiverHasG = true, receiver = "RaceBox Micro")
+        val all = groups.flatMap { it.choices }
+        assertTrue(all.all { it.hasData && it.value.isEmpty() })
+        val car = groups.single { it.title == "Car · OBD-II" }.choices
+        assertTrue(car.any { it.id == "obd_steering_angle" && it.label == "Steering angle" })
+        assertTrue(car.any { it.id == "obd_brake_pressure" })
+        assertEquals("one RPM, not the CAN one again", 1, car.count { it.id == "obd_rpm" })
+        assertEquals("GPS · RaceBox Micro", groups[1].title)
+    }
+
+    @Test
     fun theRadarShowsWithAReceiverThatGivesGAndFollowsItsDot() {
         val withG = live.copy(g = GPoint(-0.63, -0.53), gTrail = listOf(GPoint(-0.58, -0.19)))
         val s = liveTrackState(RecorderState(connected = true, live = withG), tiles, true)
@@ -139,7 +168,7 @@ class LiveUiTest {
         val screens = TrackScreens(main = listOf("delta", "lap_time", "last_lap", "best_lap", "predicted_lap"))
         val s = liveTrackState(state, screens, true)
         assertEquals(listOf("−0.34", "0:47.30", "1:52.90", "1:52.41", "1:52.07"), s.tiles.take(5).map { it?.value })
-        val groups = liveTileChoices(state, receiverHasG = false, receiver = "RaceBox Micro")
+        val groups = tileChoices(TileSources(state.live, state.timing, receiverHasG = false), receiver = "RaceBox Micro")
         assertEquals(
             listOf("Timing", "GPS · RaceBox Micro", "Car · OBD-II", "You · heart rate"),
             groups.map { it.title },
@@ -149,14 +178,6 @@ class LiveUiTest {
         assertEquals(false, car.single { it.id == "obd_oil_temp" }.hasData)
         assertEquals(false, groups[1].choices.single { it.id == "g" }.hasData)
         assertEquals("142 km/h", groups[1].choices.single { it.id == "speed" }.value)
-    }
-
-    @Test
-    fun aTileCanBeChangedOnlyWithTheCarStopped() {
-        assertEquals(true, stopped(null))
-        assertEquals(false, stopped(live))
-        assertEquals(true, stopped(live.copy(speedKmh = 3.0)))
-        assertEquals("no fix: nothing says the car moves", true, stopped(live.copy(lastFixAgeMicros = 5_000_000)))
     }
 
     @Test

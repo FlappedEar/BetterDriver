@@ -18,11 +18,8 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -88,7 +85,10 @@ data class TrackScreenState(
     val coachDim: Boolean = false,
     /** The second screen's tiles (UI-121 B), slot by slot: three rows of [SecondColumns]. */
     val secondTiles: List<TrackTile?> = emptyList(),
-    /** The car is stopped: a 1 s hold on a tile opens its list (UI-123 B). */
+    /**
+     * Every tile is drawn, also one with no data, so each can be tapped: the layout in Settings ›
+     * Track screen (FBBD-345). While driving it is false and a tile without data is left out (UI-126 B).
+     */
     val editable: Boolean = false,
     /**
      * The coach speaks in this session (UI-142 B). Off, the coach line is left out and the tiles
@@ -152,8 +152,6 @@ fun TrackScreen(
     state: TrackScreenState = ExampleTrackState,
     brightness: TrackBrightness = TrackBrightness.Max,
     onReport: (String) -> Unit = {},
-    tileChoices: () -> List<TileChoiceGroup> = { emptyList() },
-    onChooseTile: (page: Int, slot: Int, id: String?) -> Unit = { _, _, _ -> },
 ) {
     val view = LocalView.current
     val activity = LocalContext.current.findActivity()
@@ -166,9 +164,7 @@ fun TrackScreen(
     HideSystemBars(activity, view)
     // The screen stays until a swipe back; the next session opens on the main one (UI-122).
     var page by rememberSaveable { mutableIntStateOf(0) }
-    var editing by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    // Moving off closes a tile's list: nothing covers the screen while the car moves.
-    LaunchedEffect(state.editable) { if (!state.editable) editing = null }
+    // The tiles are set in Settings › Track screen before driving (FBBD-345, UI-305 B): no gesture here but stop.
     BetterDriverTheme(track = true) {
         HoldToStop(
             onStop,
@@ -179,20 +175,6 @@ fun TrackScreen(
                 state = state,
                 modifier = Modifier.windowInsetsPadding(WindowInsets.safeDrawing),
                 page = page,
-                onHoldTile = if (state.editable) { p, slot -> editing = p to slot } else null,
-            )
-        }
-        editing?.let { (p, slot) ->
-            val tiles = if (p == 0) state.tiles else state.secondTiles
-            TilePicker(
-                title = "Tile ${slot + 1}" + if (p == 0) "" else " · screen 2",
-                current = tiles.getOrNull(slot)?.id,
-                groups = tileChoices(),
-                onChoose = { id ->
-                    onChooseTile(p, slot, id)
-                    editing = null
-                },
-                onDismiss = { editing = null },
             )
         }
     }
@@ -203,14 +185,15 @@ fun TrackScreen(
  * times right, coach line, then one row of six tiles (UI-120 A). [page] 1 is the second screen: the
  * status strip, three rows of tiles and the coach line (UI-121 B). Designed on a phone in landscape
  * (914 x 411 dp, a Pixel 6); every slot has a fixed size so values never move.
- * [onHoldTile], when set, is called with the page and slot of a tile held for 1 s (UI-123 B).
+ * [onTapTile], when set, is called with the page and slot of a tapped tile (the layout in
+ * Settings, FBBD-345).
  */
 @Composable
 fun TrackScreenContent(
     state: TrackScreenState,
     modifier: Modifier = Modifier,
     page: Int = 0,
-    onHoldTile: ((page: Int, slot: Int) -> Unit)? = null,
+    onTapTile: ((page: Int, slot: Int) -> Unit)? = null,
 ) {
     val c = TrackTheme.colors
     BoxWithConstraints(modifier.fillMaxSize().background(c.background).padding(Gap)) {
@@ -225,9 +208,9 @@ fun TrackScreenContent(
             }
             val coach = Modifier.fillMaxWidth().height(CoachHeight).testTag(TrackSlots.Coach)
             when {
-                page == 0 -> MainPage(state, coach, onHoldTile?.let { hold -> { slot: Int -> hold(0, slot) } })
+                page == 0 -> MainPage(state, coach, onTapTile?.let { tap -> { slot: Int -> tap(0, slot) } })
                 page == MapPage && state.mapOn -> MapScreen(state, coach)
-                else -> SecondPage(state, window, coach, onHoldTile?.let { hold -> { slot: Int -> hold(1, slot) } })
+                else -> SecondPage(state, window, coach, onTapTile?.let { tap -> { slot: Int -> tap(1, slot) } })
             }
         }
     }
@@ -235,7 +218,7 @@ fun TrackScreenContent(
 
 /** Delta and lap times, the coach line, then one row of six tiles (UI-120 A). */
 @Composable
-private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
+private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onTapTile: ((Int) -> Unit)?) {
     Row(Modifier.fillMaxWidth().weight(1f), horizontalArrangement = Arrangement.spacedBy(Gap)) {
         DeltaDisplay(state.deltaSeconds, Modifier.weight(0.62f).fillMaxHeight().testTag(TrackSlots.Delta))
         LapTimes(
@@ -260,7 +243,7 @@ private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHol
         TrackSlots::tile,
         Modifier.fillMaxWidth().height(height).testTag(TrackSlots.Panel),
         state.editable,
-        onHoldTile,
+        onTapTile,
     )
 }
 
@@ -270,7 +253,7 @@ private fun ColumnScope.MainPage(state: TrackScreenState, coach: Modifier, onHol
  * left and the first nine tiles fill the rest, three rows of three.
  */
 @Composable
-private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: Modifier, onHoldTile: ((Int) -> Unit)?) {
+private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: Modifier, onTapTile: ((Int) -> Unit)?) {
     val coachSpace = if (state.coachOn) CoachHeight + Gap else 0.dp
     val tiles = if (state.radarOn) state.secondTiles.take(RadarTiles) else state.secondTiles
     val columns = if (state.radarOn) RadarColumns else SecondColumns
@@ -291,7 +274,7 @@ private fun ColumnScope.SecondPage(state: TrackScreenState, window: Dp, coach: M
                 TrackSlots::secondTile,
                 Modifier.weight(1f).fillMaxHeight().testTag(TrackSlots.Second),
                 state.editable,
-                onHoldTile,
+                onTapTile,
             )
         }
     }

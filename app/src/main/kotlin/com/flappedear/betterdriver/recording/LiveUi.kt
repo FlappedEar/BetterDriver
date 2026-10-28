@@ -7,7 +7,6 @@ import com.flappedear.betterdriver.feature.track.GRadar
 import com.flappedear.betterdriver.feature.track.RadarPoint
 import com.flappedear.betterdriver.feature.track.TrackAlert
 import com.flappedear.betterdriver.feature.track.TrackScreenState
-import com.flappedear.betterdriver.feature.track.TileChoiceGroup
 import com.flappedear.betterdriver.feature.track.withTiming
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.recorder.live.GPoint
@@ -78,7 +77,6 @@ fun liveTrackState(state: RecorderState, screens: TrackScreens, receiverHasG: Bo
         coachPraise = state.coach?.praise == true,
         coachDim = state.coach?.dim == true,
         secondTiles = screens.tiles(TrackPage.SECOND).map { trackTile(it, sources) },
-        editable = stopped(live),
         // The radar shows with a receiver that gives G, as the G tile does (UI-126 B).
         radarOn = receiverHasG,
         radar = live?.let(::radarOf),
@@ -92,20 +90,6 @@ internal fun radarOf(live: LiveSnapshot): GRadar? {
     val point = { p: GPoint -> RadarPoint(p.forward.toFloat(), p.left.toFloat()) }
     return GRadar(point(now), live.gTrail.map(point))
 }
-
-/**
- * The car is not moving, so a tile can be changed (UI-123 B): no recording, no fix to tell, or
- * under [EditMaxKmh].
- */
-internal fun stopped(live: LiveSnapshot?): Boolean =
-    live == null || live.gnss != GnssState.Ok || (live.speedKmh ?: 0.0) < EditMaxKmh
-
-/** Walking pace: a car in the pit lane queue still counts as stopped. */
-private const val EditMaxKmh = 5.0
-
-/** A tile's list on the track screen (UI-124 A), its values from [state]. */
-fun liveTileChoices(state: RecorderState, receiverHasG: Boolean, receiver: String?): List<TileChoiceGroup> =
-    tileChoices(TileSources(state.live, state.timing, receiverHasG), receiver)
 
 /** The one interruption on the track screen (UI-08): only when recording is not as it should be. */
 private fun trackAlert(state: RecorderState): TrackAlert? {
