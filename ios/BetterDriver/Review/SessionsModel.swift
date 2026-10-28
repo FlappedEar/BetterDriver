@@ -131,15 +131,15 @@ final class SessionsModel {
         let root = ReviewBridge.library.sessionsRoot
         // Reading a long session takes a while in a debug build: off the main thread, as the import itself.
         Task {
-            let written = await Task.detached(priority: .userInitiated) {
+            let failure = await Task.detached(priority: .userInitiated) {
                 DemoGoPro.shared.write(
                     sessionsRoot: root, id: sessionId, path: url.path, fromMicros: 30_000_000, seconds: 60, utcShiftMillis: 0
                 )
             }.value
-            if written {
-                addCameraFiles(sessionId: sessionId, camera: camera, urls: [url])
+            if let failure {
+                goProProblems[sessionId] = ["The test GoPro file could not be written: \(failure)"]
             } else {
-                goProProblems[sessionId] = ["The test GoPro file could not be written"]
+                addCameraFiles(sessionId: sessionId, camera: camera, urls: [url])
             }
         }
         return true

@@ -22,6 +22,7 @@ import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Adding a GoPro's files to a session on the iPhone (FBBD-343), lined up by the GoPro's GPS as on Android. */
@@ -52,8 +53,7 @@ class GoProImportTest {
     private fun goProFile(id: String, name: String, utcShiftMillis: Long = 0): String {
         files.createDirectoryAtPath("$base/picked", true, null, null)
         val path = "$base/picked/$name"
-        val written = DemoGoPro.write(sessions, id, path, 30_000_000, seconds = 60, utcShiftMillis = utcShiftMillis)
-        assertTrue(written)
+        assertNull(DemoGoPro.write(sessions, id, path, 30_000_000, seconds = 60, utcShiftMillis = utcShiftMillis))
         return path
     }
 
@@ -140,15 +140,20 @@ class GoProImportTest {
         assertEquals(emptyList(), videoFiles(id), "the unindexed copy and the staging folder are left")
     }
 
-    /** As the app's UI test does it (-demoSessions -demoGoPro): a built-in demo with a made-up GoPro file. */
+    /** As the app's UI test does it (-demoSessions -demoGoPro): the built-in demos with a made-up GoPro file. */
     @Test
-    fun aGoProFileIsLinedUpInABuiltInDemo() {
+    fun aGoProFileIsLinedUpInTheJastrzabDemo() = linedUpInDemo("jastrzab", 1_787_990_409_000L)
+
+    @Test
+    fun aGoProFileIsLinedUpInTheSilesiaDemo() = linedUpInDemo("silesia-ring", 1_790_506_830_000L)
+
+    private fun linedUpInDemo(name: String, startUtcMillis: Long) {
         val id = ReviewLibrary(base).addDemo(
-            "$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", 1_790_000_000_000L,
+            "$DemoAssetsDir/$name.replay", "$DemoAssetsDir/$name.track.json", startUtcMillis,
         )
         files.createDirectoryAtPath("$base/picked", true, null, null)
         val path = "$base/picked/GX010042.MP4"
-        assertTrue(DemoGoPro.write(sessions, id, path, 30_000_000, seconds = 60))
+        assertNull(DemoGoPro.write(sessions, id, path, 30_000_000, seconds = 60))
         val problems = GoProImport(sessions).run(
             id, camera, VideoSourceKind.GOPRO_FILES, listOf(PickedCameraFile(path, "GX010042.MP4")),
         ) {}

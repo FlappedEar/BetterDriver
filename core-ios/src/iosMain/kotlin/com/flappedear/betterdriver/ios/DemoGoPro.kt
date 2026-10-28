@@ -23,10 +23,10 @@ object DemoGoPro {
 
     /**
      * Writes [seconds] of telemetry from session time [fromMicros] of session [id] to [path], its GPS
-     * clock [utcShiftMillis] off the session's (a file from another day when large). False when the
-     * session has no GNSS speed to copy or the file cannot be written.
+     * clock [utcShiftMillis] off the session's (a file from another day when large). Returns null, or
+     * why there is no file: the session has no GNSS speed to copy, or it cannot be read or written.
      */
-    @Suppress("LongParameterList", "TooGenericExceptionCaught") // A test helper: it reports any failure as false.
+    @Suppress("LongParameterList", "TooGenericExceptionCaught") // A test helper: it reports any failure.
     fun write(
         sessionsRoot: String,
         id: String,
@@ -34,7 +34,7 @@ object DemoGoPro {
         fromMicros: Long,
         seconds: Int,
         utcShiftMillis: Long = 0,
-    ): Boolean = try {
+    ): String? = try {
         val data = SessionStore(sessionsRoot).read(id)
         val points = data.sampleSets.mapNotNull { set ->
             val speed = set.values.firstOrNull { it.channelId == GnssChannels.SPEED_KMH.id }?.value
@@ -42,7 +42,7 @@ object DemoGoPro {
             speed?.let { Triple(set.tMicros, it, utc ?: (data.info.startUtcMillis + set.tMicros / 1000.0)) }
         }.sortedBy { it.first }
         if (points.size < 2) {
-            false
+            "the session has ${points.size} GNSS speeds in ${data.sampleSets.size} samples"
         } else {
             val payloads = List(seconds) { s ->
                 val samples = List(SamplesPerSecond) { k ->
@@ -54,11 +54,11 @@ object DemoGoPro {
             }
             val created = (data.info.startUtcMillis + fromMicros / 1000) / 1000 + SecondsFrom1904To1970
             writeBytesAtomically(path, mp4(payloads, created))
-            true
+            null
         }
     } catch (e: Exception) {
-        logInfo(GoProTag, "demo GoPro file for $id not written: ${e.message}")
-        false
+        logInfo(GoProTag, "demo GoPro file for $id not written: $e")
+        e.toString()
     }
 
     /** Speed and UTC at session time [t], interpolated between the samples around it. */
