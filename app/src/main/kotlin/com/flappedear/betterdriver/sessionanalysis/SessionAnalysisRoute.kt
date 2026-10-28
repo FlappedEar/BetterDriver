@@ -28,7 +28,9 @@ import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
+import com.flappedear.betterdriver.analysis.map.DriveMap
 import com.flappedear.betterdriver.analysis.map.GgTrace
+import com.flappedear.betterdriver.analysis.map.driveMap
 import com.flappedear.betterdriver.analysis.map.sessionGg
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
@@ -87,7 +89,12 @@ import kotlinx.coroutines.withContext
  * The cards of a session that need no laps: its acceleration runs (FBBD-154), its G-forces and its
  * car values and heart rate over the whole drive (FBBD-176), each null when it has none.
  */
-private class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?, val car: CarUi? = null)
+private class WholeSession(
+    val acceleration: AccelerationUi?,
+    val gForces: GgTrace?,
+    val car: CarUi? = null,
+    val drive: DriveMap? = null,
+)
 
 /** A session read and analysed once; comparing another lap reuses it. */
 @Suppress("LongParameterList") // What one read of the session gives.
@@ -344,6 +351,7 @@ private fun readyState(loaded: Loaded, compared: Int?, progress: SessionProgress
             acceleration = loaded.whole.acceleration,
             gForces = loaded.whole.gForces,
             car = loaded.whole.car,
+            drive = loaded.whole.drive,
         )
     // The map and G-G diagram read every sample of two laps; this runs on Dispatchers.Default.
     val map = mapUi(analysis, loaded.session, comparison)
@@ -423,9 +431,13 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         ?.text?.substringAfter("name=", "")?.ifEmpty { null }
     // And the car's values and the heart rate over the whole drive (UI-162 A).
     val car = wholeDriveCar(session, strap)
+    // And the driven route with its speed (FBBD-342): a road drive is seen on the map, laps or not.
+    val drive = driveMap(session)
     if (track == null) {
         val failed = noTrack(data, saved, circuits)
-        return failed.copy(state = failed.state.copy(acceleration = acceleration, gForces = gForces, car = car))
+        return failed.copy(
+            state = failed.state.copy(acceleration = acceleration, gForces = gForces, car = car, drive = drive),
+        )
     }
     // Analysed through the track's corners and straights (FBBD-172); the first analysis there makes them.
     val analysis = analyzeAtTrack(tracks, track, session, data.info.startUtcMillis)
@@ -435,7 +447,9 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         } else {
             "No complete lap at ${track.displayName}: the car has to cross the start/finish line at least twice."
         }
-        return Load.Failed(AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces, car = car))
+        return Load.Failed(
+            AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces, car = car, drive = drive),
+        )
     }
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
     // A coach that worked on the line plan's corners logs them too (UI-174 A, FBBD-313).
@@ -444,7 +458,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         CoachEvents.cuesByCorner(data.events),
         CoachEvents.planCorners(data.events),
     )
-    val whole = WholeSession(acceleration, gForces, car)
+    val whole = WholeSession(acceleration, gForces, car, drive)
     val loaded = Loaded(
         session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info), strap,
     )
