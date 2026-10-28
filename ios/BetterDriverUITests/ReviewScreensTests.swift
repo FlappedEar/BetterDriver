@@ -3,7 +3,7 @@ import XCTest
 /// The review on the iPad and iPhone simulators (FBBD-331): a fresh install with no sessions, then
 /// the Android app's built-in demo sessions on every tab. Nothing may crash; a screenshot of each
 /// screen stays in the test results, which CI uploads as the ios-review-screenshots artifact.
-/// Runs in name order: the fresh install first.
+/// Each test that needs it starts from -freshInstall.
 final class ReviewScreensTests: XCTestCase {
     private let app = XCUIApplication()
     private var device: String { UIDevice.current.userInterfaceIdiom == .phone ? "iPhone" : "iPad" }
@@ -34,6 +34,25 @@ final class ReviewScreensTests: XCTestCase {
         let empty = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'No sessions yet'")).firstMatch
         XCTAssertTrue(empty.waitForExistence(timeout: 30), "no empty session list")
         keep("Sessions, fresh install")
+    }
+
+    func testDeletingASessionAsksThenRemovesIt() {
+        app.launchArguments = ["-freshInstall", "-demoSessions"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).press(forDuration: 1.2)
+        app.buttons["Delete"].firstMatch.tap()
+        // The alert nests its button in a second element with the same id: take the first.
+        let confirm = app.alerts.buttons["confirmDelete"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 10), "no delete question")
+        keep("Delete session?")
+        confirm.tap()
+        let gone = NSPredicate(format: "count == 1")
+        expectation(for: gone, evaluatedWith: rows)
+        waitForExpectations(timeout: 30)
+        XCTAssertEqual(app.state, .runningForeground)
     }
 
     func testTheDemoSessionsOpenOnEveryTab() {

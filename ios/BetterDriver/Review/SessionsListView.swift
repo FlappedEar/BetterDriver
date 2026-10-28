@@ -9,6 +9,7 @@ struct SessionsListView: View {
     @State private var picking = false
     @State private var showingTracks = false
     @State private var notYet: String?
+    @State private var deleting: SessionRow?
 
     var body: some View {
         List(selection: $selection) {
@@ -30,7 +31,7 @@ struct SessionsListView: View {
                             .contextMenu {
                                 Button("Coach review") { notYet = "Coach review" }
                                 Button("Share") { notYet = "Sharing a session" }
-                                Button("Delete", role: .destructive) { notYet = "Deleting a session" }
+                                Button("Delete", role: .destructive) { deleting = session }
                             }
                             .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)
                     }
@@ -66,8 +67,43 @@ struct SessionsListView: View {
         }
         .sheet(isPresented: $showingTracks) { TracksView() }
         .notImplementedAlert($notYet)
+        .alert(
+            "Delete session?",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            presenting: deleting
+        ) { session in
+            Button("Delete", role: .destructive) {
+                if selection == session.id { selection = nil }
+                model.delete(session)
+            }
+            .accessibilityIdentifier("confirmDelete")
+            Button("Cancel", role: .cancel) {}
+        } message: { session in
+            Text(deleteText(session))
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { model.importFiles(urls) }
+        }
+    }
+
+    /// Android's delete question (UI-48 A): the session, what goes and how much space it frees.
+    private func deleteText(_ session: SessionRow) -> String {
+        let title = [session.start.formatted(date: .abbreviated, time: .shortened), session.track]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+        let (bytes, video) = ReviewBridge.footprint(session.id)
+        let what = video ? "its data and video" : "its data"
+        let size = bytes.map { " (\(sizeText($0)))" } ?? ""
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        return "\(title): \(what)\(size) will be removed from this \(device). " +
+            "Files still on a GoPro stay there. This can't be undone."
+    }
+
+    /// "820 KB", "350 MB", "2.4 GB", as Android.
+    private func sizeText(_ bytes: Int64) -> String {
+        switch bytes {
+        case 1_000_000_000...: return String(format: "%.1f GB", Double(bytes) / 1e9)
+        case 1_000_000...: return "\(bytes / 1_000_000) MB"
+        default: return "\(max(1, bytes / 1_000)) KB"
         }
     }
 

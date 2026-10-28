@@ -60,6 +60,17 @@ final class SessionsModel {
 
     func row(_ id: String) -> SessionRow? { sessions.first { $0.id == id } }
 
+    /// Deletes [session] and its video (FBBD-90); a failure is said in [message].
+    func delete(_ session: SessionRow) {
+        let id = session.id
+        Task {
+            let failure = await Task.detached { ReviewBridge.delete(id) }.value
+            if let failure { message = failure }
+            revision += 1
+            reload()
+        }
+    }
+
     /// The sessions of one day.
     struct Day: Identifiable {
         let day: Date

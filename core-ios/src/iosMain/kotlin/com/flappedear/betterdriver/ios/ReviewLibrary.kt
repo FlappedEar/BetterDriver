@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.StoredSession
@@ -53,6 +54,9 @@ class ReviewLibrary(base: String) {
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
     fun sessions(): List<StoredSession> = store.list().filter { it.state != SessionState.RECORDING }
+
+    /** Deletes session [id] with everything in its folder, its video included, as Android (FBBD-90). */
+    fun delete(id: String): DeleteResult = store.delete(id)
 
     /**
      * Laps, best, theoretical best and where to find time of session [id], as Android works them
