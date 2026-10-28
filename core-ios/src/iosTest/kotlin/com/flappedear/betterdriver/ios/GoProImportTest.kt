@@ -140,6 +140,37 @@ class GoProImportTest {
         assertEquals(emptyList(), videoFiles(id), "the unindexed copy and the staging folder are left")
     }
 
+    /** As the app's UI test does it (-demoSessions -demoGoPro): a built-in demo with a made-up GoPro file. */
+    @Test
+    fun aGoProFileIsLinedUpInABuiltInDemo() {
+        val id = ReviewLibrary(base).addDemo(
+            "$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", 1_790_000_000_000L,
+        )
+        files.createDirectoryAtPath("$base/picked", true, null, null)
+        val path = "$base/picked/GX010042.MP4"
+        assertTrue(DemoGoPro.write(sessions, id, path, 30_000_000, seconds = 60))
+        val problems = GoProImport(sessions).run(
+            id, camera, VideoSourceKind.GOPRO_FILES, listOf(PickedCameraFile(path, "GX010042.MP4")),
+        ) {}
+        assertEquals(emptyList(), problems)
+        val clip = ClipIndex("$sessions/$id/video").clips().single()
+        assertTrue(kotlin.math.abs(clip.sessionOffsetUs - 30_000_000) <= 50_000, clip.toString())
+        val line = GoProCore.lines(setup, sessions, id).single()
+        assertEquals("GoPro HERO8 Black · 1 clip lined up", line.text)
+        assertTrue(line.byGps, line.how)
+    }
+
+    /** An index this build cannot read (the UI tests' made-up phone video once) is left as it is by reading it. */
+    @Test
+    fun readingAnIndexNeverMovesIt() {
+        val id = record()
+        val videoDir = "$sessions/$id/video"
+        files.createDirectoryAtPath(videoDir, true, null, null)
+        writeBytesAtomically("$videoDir/clips.json", """{"version":1,"clips":[{"fileName":"a.mp4"}]}""".encodeToByteArray())
+        assertEquals(emptyList(), GoProCore.lines(setup, sessions, id))
+        assertEquals(listOf("clips.json"), videoFiles(id))
+    }
+
     @Test
     fun alignmentTextIsAndroids() {
         val gps = Alignment(AlignmentMethod.GPS_MATCH, 50_000)

@@ -294,26 +294,31 @@ internal fun readText(path: String): String? =
     NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
 /**
- * A session's clip index, `<session>/video/clips.json`, in the Android app's format (VideoIndex). An
- * index that cannot be read is moved aside rather than overwritten.
+ * A session's clip index, `<session>/video/clips.json`, in the Android app's format (VideoIndex).
+ * Reading never changes it: an index that cannot be read has no clips here, and is moved aside only
+ * when [putAll] writes a new one, rather than overwritten.
  */
 internal class ClipIndex(private val videoDir: String) {
     private val path = "$videoDir/$IndexFileName"
 
-    fun clips(): List<VideoClip> {
+    fun clips(): List<VideoClip> = read().orEmpty()
+
+    /** Adds [added], each replacing any clip with the same file name. */
+    fun putAll(added: List<VideoClip>) = lock.withLock {
+        val existing = read()
+        if (existing == null) platform.posix.rename(path, "$path.unreadable-${nowMillis()}")
+        val merged = ClipIndexJson.merge(existing.orEmpty(), added)
+        writeBytesAtomically(path, ClipIndexJson.encode(merged).encodeToByteArray())
+    }
+
+    /** The clips; none when there is no index, null when there is one this build cannot read. */
+    private fun read(): List<VideoClip>? {
         val text = readText(path) ?: return emptyList()
         return try {
             ClipIndexJson.decode(text)
         } catch (_: IllegalArgumentException) {
-            val aside = "$path.unreadable-${nowMillis()}"
-            platform.posix.rename(path, aside)
-            emptyList()
+            null
         }
-    }
-
-    /** Adds [added], each replacing any clip with the same file name. */
-    fun putAll(added: List<VideoClip>) = lock.withLock {
-        writeBytesAtomically(path, ClipIndexJson.encode(ClipIndexJson.merge(clips(), added)).encodeToByteArray())
     }
 
     companion object {

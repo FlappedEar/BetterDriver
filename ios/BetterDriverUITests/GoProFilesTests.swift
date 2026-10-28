@@ -30,8 +30,12 @@ final class GoProFilesTests: XCTestCase {
         add.tap()
 
         let line = app.descendants(matching: .any).matching(identifier: "cameraLine").firstMatch
-        XCTAssertTrue(line.waitForExistence(timeout: 120), "the GoPro file was not lined up")
         let problem = app.descendants(matching: .any).matching(identifier: "cameraProblem").firstMatch
+        if !line.waitForExistence(timeout: 120) {
+            keep("GoPro not lined up")
+            XCTFail("the GoPro file was not lined up (app \(app.state.rawValue)): \(problem.exists ? problem.label : "no problem shown")")
+            return
+        }
         XCTAssertFalse(problem.exists, problem.exists ? problem.label : "")
         XCTAssertTrue(line.label.contains("1 clip lined up"), line.label)
         XCTAssertTrue(line.label.contains("by GPS"), line.label)
