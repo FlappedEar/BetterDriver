@@ -9,6 +9,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,9 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -95,7 +99,10 @@ sealed interface WatchLoad {
 fun WatchVideoScreen(title: String, load: WatchLoad, onBack: () -> Unit, modifier: Modifier = Modifier) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar("Watch video", onBack = onBack)
-        Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(
+            Modifier.weight(1f).padding(horizontal = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             if (title.isNotEmpty()) DimText(title)
             when (load) {
                 WatchLoad.Loading -> {
@@ -109,11 +116,19 @@ fun WatchVideoScreen(title: String, load: WatchLoad, onBack: () -> Unit, modifie
     }
 }
 
+/** The picture takes the height left after the controls, so they stay on screen in landscape too. */
 @Composable
-private fun Watch(source: WatchSource) {
+private fun ColumnScope.Watch(source: WatchSource) {
     val context = LocalContext.current
     val w = remember(source) { WatchPlayer(context, source) }
     DisposableEffect(w) { onDispose { w.release() } }
+    // Home, the lock button or another app: the video stops, as the lap review's does.
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner, w) {
+        val observer = LifecycleEventObserver { _, e -> if (e == Lifecycle.Event.ON_PAUSE) w.pause() }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
+    }
     // Follows the player every display frame only while it plays (FBBD-169: no frame loop when still).
     LaunchedEffect(w, w.playing) {
         while (w.playing) {
@@ -129,16 +144,17 @@ private fun Watch(source: WatchSource) {
     val fonts = remember(context) { OverlayFonts.load(context) }
     val painter = remember(source) { OverlayPainter(fonts, source.data.outline, source.data.pointToPoint) }
     val frame = source.cuts.sessionMicrosAt(w.at)?.let(source.data::at)
-    Picture(w, painter, frame)
+    Picture(w, painter, frame, Modifier.weight(1f, fill = false))
     Transport(w, source.totalMicros)
 }
 
 /** The video, letterboxed, with the data band along the picture's bottom edge as in the export. */
 @Composable
-private fun Picture(w: WatchPlayer, painter: OverlayPainter, frame: OverlayFrame?) {
+private fun Picture(w: WatchPlayer, painter: OverlayPainter, frame: OverlayFrame?, modifier: Modifier) {
     val layouts = remember(painter) { Layouts() }
-    Box(Modifier.fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
-        Box(Modifier.fillMaxWidth().aspectRatio(w.aspect)) {
+    Box(modifier.fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
+        // As wide as it can be, else as tall as the space it has.
+        Box(Modifier.aspectRatio(w.aspect)) {
             AndroidView(
                 factory = { SurfaceView(it).also { v -> w.player.setVideoSurfaceView(v) } },
                 onRelease = { v -> w.player.clearVideoSurfaceView(v) },
@@ -243,6 +259,10 @@ private class WatchPlayer(context: Context, private val source: WatchSource) : P
         player.setSeekParameters(if (exact) SeekParameters.EXACT else SeekParameters.CLOSEST_SYNC)
         player.seekTo(p.index, p.intoMicros / MicrosPerMilli)
         at = p
+    }
+
+    fun pause() {
+        player.playWhenReady = false
     }
 
     fun release() {
