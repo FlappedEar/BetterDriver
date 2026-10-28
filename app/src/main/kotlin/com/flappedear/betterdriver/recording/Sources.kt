@@ -163,9 +163,15 @@ internal object Sources {
         val obd = if (carData.isEmpty()) {
             emptyList()
         } else {
-            // Only what is used: the pedals, rpm, temperatures and the tiles' channels (FBBD-283).
+            // Only what is used: the pedals, rpm, temperatures and the tiles' channels (FBBD-283), or the
+            // PIDs switched on for the car, and the car's own parameters (FBBD-344).
             listOf(
-                ObdSource({ obdTargets(app, carData) }, watch = { obdWatch(app, it) }, pollSet = sessionPollSet(app)),
+                ObdSource(
+                    { obdTargets(app, carData) },
+                    profile = sessionCarProfile(app),
+                    watch = { obdWatch(app, it) },
+                    pollSet = sessionPollSet(app),
+                ),
             )
         }
         return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }

@@ -66,9 +66,6 @@ the car is.
 
 ## Choosing what a tile shows
 
-!!! note "Not released yet"
-    Merged after 1.15.0. It ships in the next release.
-
 Set the tiles before you drive, in **Settings › Track screen**. Each car has its own layout: pick
 the car under **Layout for** (a car without its own starts from the tiles you had). Both screens
 are drawn as they look in the car; tap a tile and pick what it shows from a list grouped by source,

@@ -128,6 +128,11 @@ private class CanHeard : ObdListener {
     val values = ArrayList<Pair<String, Double>>()
     val stamps = ArrayList<Long>()
     val logs = ArrayList<String>()
+    val scans = ArrayList<CarScan>()
+
+    override fun scanned(scan: CarScan) {
+        scans += scan
+    }
 
     override fun ready(
         adapter: String,
@@ -162,11 +167,17 @@ class CanListenTest {
         0x7E8 to "03410C1AF8000000",
     )
 
-    private fun run(elm: BusElm, stopAfterMs: Long = 3_000, pollSet: PollSet = PollSet.All): CanHeard {
+    private fun run(
+        elm: BusElm,
+        stopAfterMs: Long = 3_000,
+        pollSet: PollSet = PollSet.All,
+        profile: CarProfile = CarProfile.Generic,
+        scan: Boolean = false,
+    ): CanHeard {
         val got = CanHeard()
         ElmPoller(
             line = ElmLine(elm::write).also { elm.line = it },
-            profile = CarProfile.Generic,
+            profile = profile,
             listener = got,
             running = { elm.now < stopAfterMs },
             clock = elm,
@@ -175,6 +186,8 @@ class CanListenTest {
             listenWindowMs = 5,
             maxListenMs = 5,
             pollSet = { pollSet },
+            scan = scan,
+            scanMs = 5,
         ).run()
         return got
     }
@@ -419,5 +432,103 @@ class CanListenTest {
         // Another make's 0x025 alone is not a Toyota steering angle.
         assertEquals(emptyList(), CanBroadcasts.matching(mapOf(0x025 to 9)))
         assertEquals(emptyList(), CanBroadcasts.matching(toyota + (0x025 to 2)))
+    }
+
+    /** FBBD-344: the Corolla's bus with an id no built-in signal knows. */
+    private val corolla = mapOf(
+        0x025 to "0FEC000030000000",
+        0x0AA to "1A6F1A6F1A6F1A6F",
+        0x0B4 to "0000000000000000",
+        0x3B7 to "00000000005A0000",
+        0x7E8 to "03410C1AF8000000",
+    )
+    private val corollaVin = "JTDBCMFE0PJ000000"
+
+    @Test
+    fun `the driver's own broadcast is listened to on any car`() {
+        // FBBD-344: a parameter the driver added is read whatever the VIN; the Toyota steering the
+        // app knows stays off on the Corolla (FBBD-284).
+        val own = OwnChannels.can("gear", "Gear", 0x3B7, "F / 10.0", "")!!
+        val got = run(
+            BusElm(corolla, vin = corollaVin),
+            profile = CarProfile.Generic.copy(signals = listOf(own)),
+            pollSet = PollSet.Driver,
+        )
+        assertTrue("can_listen on: vin JTDBCMFE own=1" in got.logs, got.logs.toString())
+        assertTrue(got.logs.any { it.endsWith("listen custom_gear=3B7") }, got.logs.toString())
+        val gear = got.values.filter { it.first == "custom_gear" }.map { it.second }
+        assertTrue(gear.size >= 5 && gear.all { kotlin.math.abs(it - 9.0) < 1e-9 }, gear.toString())
+        assertTrue(got.values.none { it.first == "steering_angle" }, got.logs.toString())
+        assertTrue(got.values.any { it.first == "rpm" })
+    }
+
+    @Test
+    fun `a slow own broadcast is listened to from one frame`() {
+        // A frame sent once a second shows once per monitor: enough for the driver's own (FBBD-344).
+        val own = OwnChannels.can("gear", "Gear", 0x3B7, "F / 10.0", "")!!
+        val elm = BusElm(corolla, vin = corollaVin, repeats = 1)
+        val got = run(elm, profile = CarProfile.Generic.copy(signals = listOf(own)))
+        assertTrue(got.logs.any { it.endsWith("listen custom_gear=3B7") }, got.logs.toString())
+        assertTrue(got.values.any { it.first == "custom_gear" }, got.logs.toString())
+        assertTrue("ATCRA3B7" in elm.sent, elm.sent.toString())
+    }
+
+    @Test
+    fun `an own broadcast the bus does not carry is not listened to`() {
+        val own = OwnChannels.can("missing", "Missing", 0x123, "A", "")!!
+        val got = run(BusElm(corolla, vin = corollaVin), profile = CarProfile.Generic.copy(signals = listOf(own)))
+        assertTrue(got.logs.any { it.startsWith("can_ids 123:0 listen none") }, got.logs.toString())
+        assertTrue(got.values.none { it.first == "custom_missing" })
+        assertTrue(got.values.any { it.first == "rpm" })
+    }
+
+    @Test
+    fun `own parameters on the FR-S come with its profile`() {
+        // An own request on the FR-S is polled next to the FR-S profile's ATF, and an own broadcast on
+        // an id the app already reads shares its frames.
+        val pid = OwnChannels.pid("iat", "Intake", null, 0x01, 0x0F, "A-40", "°C", fast = false)!!
+        val can = OwnChannels.can("pedal_raw", "Pedal raw", 0x140, "A", "")!!
+        val got = run(
+            BusElm(frs),
+            profile = CarProfile.Generic.copy(channels = listOf(pid), signals = listOf(can)),
+            pollSet = PollSet.Driver,
+        )
+        val ids = got.channels.map { it.id }
+        assertTrue("atf_temp" in ids && "custom_iat" in ids && "custom_pedal_raw" in ids, ids.toString())
+        assertTrue(got.values.any { it.first == "custom_iat" && it.second == 25.0 }, got.values.toString())
+        assertTrue(got.values.any { it.first == "custom_pedal_raw" && it.second == 51.0 })
+        assertTrue(got.values.any { it.first == "steering_angle" })
+    }
+
+    @Test
+    fun `a scan reports what the car offers without listening on the Corolla`() {
+        val elm = BusElm(corolla, vin = corollaVin)
+        val got = run(elm, scan = true)
+        val scan = got.scans.single()
+        assertEquals("A6", scan.protocol)
+        assertEquals(setOf(0x0C), scan.supported)
+        assertEquals("JTDBCMFE", scan.vinPrefix)
+        assertTrue(scan.canHeard)
+        assertEquals(setOf(0x025, 0x0AA, 0x0B4, 0x3B7, 0x7E8), scan.canIds.map { it.id }.toSet())
+        assertEquals(5, scan.canIds.first { it.id == 0x3B7 }.frames)
+        assertEquals("00000000005A0000", scan.canIds.first { it.id == 0x3B7 }.last)
+        // Scanned, but the built-in Toyota steering stays off: nothing is listened to after the probe.
+        assertTrue(got.values.none { it.first == "steering_angle" }, got.logs.toString())
+        assertTrue(elm.sent.none { it.startsWith("ATCRA") && it != "ATCRA" }, elm.sent.toString())
+        assertTrue(got.values.any { it.first == "rpm" })
+    }
+
+    @Test
+    fun `a scan with an adapter that cannot monitor still reports the PIDs`() {
+        val got = run(BusElm(frs, monitor = false), scan = true)
+        val scan = got.scans.single()
+        assertEquals(setOf(0x0C), scan.supported)
+        assertTrue(!scan.canHeard && scan.canIds.isEmpty())
+        assertTrue(got.values.any { it.first == "rpm" })
+    }
+
+    @Test
+    fun `without a scan nothing is reported`() {
+        assertTrue(run(BusElm(frs)).scans.isEmpty())
     }
 }

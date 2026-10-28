@@ -4,11 +4,14 @@ package com.flappedear.betterdriver.obd
  * A car's OBD-II channels (FBBD-16): the generic [StandardPids] plus the car's own [channels], usually
  * manufacturer requests (mode 21/22) to a specific ECU header. A profile channel replaces the generic
  * channel with the same [PidChannel.id], so a car whose ECU reports a PID differently can redefine it.
+ * [signals] are CAN broadcasts the driver's own parameters read (FBBD-344, [OwnChannels]): listened
+ * for on 11-bit CAN whatever the car's VIN, next to the ones the app knows ([CanBroadcasts]).
  */
 data class CarProfile(
     val id: String,
     val name: String,
     val channels: List<PidChannel>,
+    val signals: List<CanSignal> = emptyList(),
 ) {
     /**
      * The channels to poll on this car: the generic ones the car reports in its bitmasks
@@ -20,6 +23,12 @@ data class CarProfile(
         val base = generic.filter { it.id !in own && (!it.isStandard || it.pid in supported) }
         return base + channels
     }
+
+    /**
+     * This profile with the driver's own [channels] and [signals] of [own] added (FBBD-344); its own
+     * replace none of these, their ids being [OwnChannels] ones.
+     */
+    fun plusOwn(own: CarProfile): CarProfile = copy(channels = channels + own.channels, signals = signals + own.signals)
 
     companion object {
         /** A car with no profile: the generic channels only. */

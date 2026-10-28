@@ -20,9 +20,9 @@ import androidx.navigation.compose.rememberNavController
 import com.flappedear.betterdriver.core.ui.testing.AppScreen
 import com.flappedear.betterdriver.core.ui.testing.Devices
 import com.flappedear.betterdriver.core.ui.testing.RegisterComponentActivity
-import com.flappedear.betterdriver.core.ui.testing.edgeToEdge
 import com.flappedear.betterdriver.core.ui.testing.assertLayoutClean
 import com.flappedear.betterdriver.core.ui.testing.deviceLayout
+import com.flappedear.betterdriver.core.ui.testing.edgeToEdge
 import com.flappedear.betterdriver.core.ui.testing.saveScreenshot
 import com.flappedear.betterdriver.obd.ObdLinkState
 import com.flappedear.betterdriver.obd.ObdReading
@@ -33,7 +33,11 @@ import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.layoutTrackState
+import com.flappedear.betterdriver.setup.CanIdRecord
+import com.flappedear.betterdriver.setup.CarParameter
+import com.flappedear.betterdriver.setup.CarParameterSource
 import com.flappedear.betterdriver.setup.CarProfile
+import com.flappedear.betterdriver.setup.CarScanRecord
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
@@ -41,14 +45,19 @@ import com.flappedear.betterdriver.setup.TrackScreens
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.CarPage
+import com.flappedear.betterdriver.shell.CarPidsPage
+import com.flappedear.betterdriver.shell.CarScanState
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.ObdAdapterLabel
+import com.flappedear.betterdriver.shell.ObdScreen
+import com.flappedear.betterdriver.shell.ObdView
+import com.flappedear.betterdriver.shell.ParameterDraft
+import com.flappedear.betterdriver.shell.ParameterStep
+import com.flappedear.betterdriver.shell.ParameterSteps
 import com.flappedear.betterdriver.shell.SessionCardActions
 import com.flappedear.betterdriver.shell.SessionFacts
 import com.flappedear.betterdriver.shell.SessionTransferState
 import com.flappedear.betterdriver.shell.SessionsScreen
-import com.flappedear.betterdriver.shell.ObdAdapterLabel
-import com.flappedear.betterdriver.shell.ObdScreen
-import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTopic
 import com.flappedear.betterdriver.shell.SetupScreen
@@ -131,9 +140,62 @@ abstract class MainScreensLayoutTest(private val device: String) {
             car = CarProfile("c", "Track car", "2013 Scion FR-S"),
             chosen = true,
             obd = ObdView(recording = false, status = null, adapter = null),
-            onEdit = {},
-            onChoose = {},
-            onBack = null,
+        )
+    }
+
+    @Test
+    fun carPageWithParameters() = checkScreen("car_parameters", Routes.Car) {
+        // FBBD-344, UI-300 A: own parameters and a scan, on a phone.
+        CarPage(
+            car = CarProfile(
+                "c", "Track car", "2013 Scion FR-S",
+                parameters = listOf(
+                    CarParameter(
+                        "wheel", "Wheel speed RL", CarParameterSource.CAN,
+                        "bytesToUIntLe(raw, 4, 2) * 0.015694", "km/h", canId = 0x0D4,
+                    ),
+                    CarParameter(
+                        "trim", "Fuel trim", CarParameterSource.OBD, "(A-128)*100.0/128", "%",
+                        header = 0x7E0, pid = 0x06,
+                    ),
+                ),
+                scan = CarScanRecord(
+                    0, "A6", listOf(0x00, 0x05, 0x0C, 0x0F, 0x11, 0x20, 0x42, 0x5A), "JF1ZNAA1", canHeard = true,
+                    canIds = listOf(CanIdRecord(0x0D0, 52.0, 8, listOf(0, 1), "2C01000000000000")),
+                ),
+            ),
+            chosen = true,
+            obd = ObdView(recording = false, status = null, adapter = null),
+            scan = CarScanState(start = {}),
+        )
+    }
+
+    @Test
+    fun carPids() = checkScreen("car_pids", Routes.Car) {
+        CarPidsPage(
+            car = CarProfile("c", "Track car", scan = CarScanRecord(0, "A6", listOf(0x05, 0x0C, 0x1F, 0x42, 0x5A))),
+            recorded = setOf(0x05, 0x0C),
+            readings = listOf(ObdReading("rpm", "RPM", "rpm", 2850.0, 9.1)),
+            onSwitch = { _, _ -> },
+            onAdd = {},
+            onBack = {},
+        )
+    }
+
+    @Test
+    fun parameterSteps() = checkScreen("car_parameter_steps", Routes.Car) {
+        ParameterSteps(
+            draft = ParameterDraft.can(0x0D4).copy(equation = "bytesToUIntLe(raw, 4, 2) * 0.015694", unit = "km/h"),
+            step = ParameterStep.Formula,
+            frame = CanIdRecord(0x0D4, 50.0, 8, listOf(4, 5), "1A003C00E80F007B"),
+            live = ObdReading("custom_draft", "Draft", "km/h", 62.4, 20.0),
+            trying = true,
+            onChange = {},
+            onStep = {},
+            onTry = {},
+            onSave = {},
+            onRemove = null,
+            onBack = {},
         )
     }
 

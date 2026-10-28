@@ -11,6 +11,9 @@
 		<!-- The coach keeps saying its cues with the phone locked (FBBD-333). -->
 		<string>audio</string>
 	</array>
+	<!-- A Wi-Fi OBD-II adapter on its own network, at 192.168.0.10 (FBBD-333): iOS asks once. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>BetterDriver reads a Wi-Fi OBD-II adapter on its own Wi-Fi network while it records.</string>
 	<!-- Sessions open from Files, AirDrop and other apps' Share sheet (FBBD-331, UI-292 A). -->
 	<key>CFBundleDocumentTypes</key>
 	<array>

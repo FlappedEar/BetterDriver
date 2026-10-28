@@ -23,6 +23,26 @@ value the car sends with how many times a second it arrives. With no session rec
 connects to the adapter itself, so you can check it before driving: switch the ignition on and
 open the page. It lets go as soon as a session starts.
 
+## What the car offers and your own parameters
+
+!!! note "Not released yet"
+    This is on `main` and comes with the next release.
+
+The Car tab lists **Your parameters** and **What the car offers**. With the adapter listed and the
+ignition on, tap **Scan car**: in about 15 seconds the app reads which OBD-II values the car
+reports and which CAN ids it hears at the OBD port, with how often each comes and which bytes
+change. The result is kept with the car; **Scan again** refreshes it.
+
+- **OBD-II** lists the values the car reported, each with a switch: on means every session with
+  this car records it. Until you turn a switch, the app records what it always does (see above).
+- **CAN bus** lists the ids heard, how many times a second, and what reads them.
+- **Add parameter** adds a value the app does not know, in three steps: where it comes from (a CAN
+  id, or an OBD request such as `01 06` or `22 F190` with an optional ECU header), a formula in
+  RaceChrono's syntax (`A`, `B`, `raw`, `bytesToUIntLe(raw, 4, 2)` and so on), then a name and unit.
+  The formula is checked on the frame the scan heard, or tried live with **Try on the car**.
+
+Your parameters are recorded in every session with that car.
+
 ## FR-S, GT86 and BRZ (gen 1)
 
 On a first-generation FR-S/86/BRZ, the app listens to the car's own CAN bus through the adapter

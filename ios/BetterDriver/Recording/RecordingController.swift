@@ -79,6 +79,8 @@ final class RecordingController: ObservableObject {
     private var lastGnss: GnssState?
     /// The main screen's tiles of the session's car (FBBD-345), as Settings had them at the start.
     private var tileIds = TrackScreenModel.defaultTiles
+    /// The Open GoPro cameras turned on for the session (FBBD-343).
+    private var goPros: OpenGoPros?
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
@@ -179,14 +181,11 @@ final class RecordingController: ObservableObject {
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
         let active = SettingsModel.shared.setup.active()
-        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338). Settings › Equipment is
-        // the one list, as on Android: with none listed there is no OBD link, so a removed adapter stays off.
-        let adapters = Self.listed(active.carData, ModelName.obdBluetooth)
-        if !adapters.isEmpty {
-            let car = ObdLink(sink: live, listed: adapters)
-            obd = car
-            car.start()
-        }
+        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338), with none listed one
+        // nearby, and the Wi-Fi adapter.
+        let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
+        obd = car
+        car.start()
         // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a
         // listed one.
         if let listed = Self.listed(active.sensors, ModelName.heartRate).first {
@@ -200,6 +199,7 @@ final class RecordingController: ObservableObject {
             camera = cam
             cam.start()
         }
+        startGoPros(live)
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
         refresh()
@@ -240,6 +240,19 @@ final class RecordingController: ObservableObject {
         )
     }
 
+    /// Starts recording on every Open GoPro camera turned on for this session, as Android's GoPros;
+    /// one that is not there fails on its own and the session records on.
+    private func startGoPros(_ live: LiveSession) {
+        let on = OpenGoPros.companion.listed(setup: SettingsModel.shared.setup).filter(\.on)
+        guard !on.isEmpty else { return }
+        let cameras = OpenGoPros()
+        goPros = cameras
+        for goPro in on {
+            AppLog.i("GoPro", "start \(goPro.sourceId) mode=\(goPro.video?.label ?? "camera's own")")
+            cameras.start(session: live, goPro: goPro, link: GoProBleLink(address: goPro.address))
+        }
+    }
+
     /// The hold on the track screen (UI-16): ends the session cleanly and closes the screen.
     func stop() {
         guard let live = session else { return }
@@ -271,6 +284,9 @@ final class RecordingController: ObservableObject {
         // activates the audio session too.
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
         cameraStatus = nil
+        // The cameras answer in their own time; the stop is noted in the ended session's events.
+        goPros?.stop()
+        goPros = nil
         obd = nil
         heartRate = nil
         session = nil

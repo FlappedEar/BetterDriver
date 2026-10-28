@@ -1,15 +1,18 @@
 import BetterDriverCore
 import CoreBluetooth
 import Foundation
+import Network
 
 /// How long an adapter gets to connect and turn its notifications on, as on Android (BleObdTarget).
 private let setupTimeoutSeconds = 15.0
 
 /// OBD-II in a recording on iOS (FBBD-333): the shared ObdFeed reads the car on a thread of its own,
 /// exactly as on Android, over a Bluetooth LE ELM327 (the Vgate vLinker MC+) reached through
-/// CoreBluetooth. iOS has no Bluetooth Classic serial profile for apps, so only LE adapters are used.
-/// The adapter is found by its name (ObdAdapterNames, as Android lists them) and remembered, so the
-/// one used last is tried first. All CoreBluetooth work runs on one serial queue.
+/// CoreBluetooth, or over Wi-Fi to a Wi-Fi ELM327 at 192.168.0.10 port 35000 (the phone joined to its
+/// network), tried after the Bluetooth ones as on Android. iOS has no Bluetooth Classic serial profile
+/// for apps, so only LE Bluetooth adapters are used. A Bluetooth adapter is found by its name
+/// (ObdAdapterNames, as Android lists them) and remembered, so the one used last is tried first. All
+/// CoreBluetooth work runs on one serial queue.
 final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// Every CoreBluetooth call of this link and its ports runs here.
     fileprivate let queue = DispatchQueue(label: "obd.link", qos: .userInitiated)
@@ -22,6 +25,9 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// found, the log shows whether the adapter was off, busy with another phone, or named otherwise.
     private var others: Set<String> = []
     private var port: ObdBlePortLink?
+    /// The Wi-Fi network as iOS reports it: logged, and a network coming back is tried at once.
+    private var wifi: NWPathMonitor?
+    private var onWifi: Bool?
 
     private static let lastIdKey = "lastObdAdapterId"
     private static let lastNameKey = "lastObdAdapterName"
@@ -42,6 +48,7 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
             guard !self.running else { return }
             self.running = true
             self.central = CBCentralManager(delegate: self, queue: self.queue)
+            self.watchWifi()
             self.feed.start()
         }
     }
@@ -51,6 +58,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         queue.async {
             self.running = false
             if self.central?.isScanning == true { self.central?.stopScan() }
+            self.wifi?.cancel()
+            self.wifi = nil
             self.port?.cancel()
             self.port = nil
         }
@@ -61,31 +70,54 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
 
     func log(text: String) { AppLog.i("Obd", text) }
 
-    /// The adapters to try now, on the OBD thread: the one used last, then any other seen nearby.
+    /// The adapters to try now, on the OBD thread: the Bluetooth ones, then the Wi-Fi one.
     private func targets() -> [ObdTarget] {
         queue.sync {
-            guard running, central?.state == .poweredOn else { return [] }
-            var list: [CBPeripheral] = []
-            if !listed.isEmpty {
-                for item in listed {
-                    if let known = seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
-                        list.append(known)
-                    }
-                }
-            } else {
-                if let text = UserDefaults.standard.string(forKey: Self.lastIdKey), let id = UUID(uuidString: text),
-                   let known = seen[id] ?? central.retrievePeripherals(withIdentifiers: [id]).first {
+            guard running else { return [] }
+            let wifi: ObdTarget = IosWifiObdTarget(host: "192.168.0.10", port: 35000, name: "Wi-Fi adapter")
+            return bluetoothTargets() + [wifi]
+        }
+    }
+
+    /// Queue only. Logs the Wi-Fi network changes (FBBD-271 on Android) and tries at once when one is back.
+    private func watchWifi() {
+        let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self else { return }
+            let on = path.status == .satisfied
+            guard on != self.onWifi else { return }
+            self.onWifi = on
+            self.log(text: on ? "Wi-Fi network available" : "Wi-Fi network lost")
+            if on { self.feed.retryNow() }
+        }
+        wifi = monitor
+        monitor.start(queue: queue)
+    }
+
+    /// Queue only. The Bluetooth adapters: those listed in Settings (FBBD-338); with none listed, the one
+    /// used last, then any other seen nearby.
+    private func bluetoothTargets() -> [ObdTarget] {
+        guard central?.state == .poweredOn else { return [] }
+        var list: [CBPeripheral] = []
+        if !listed.isEmpty {
+            for item in listed {
+                if let known = seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
                     list.append(known)
                 }
-                list += seen.values.filter { p in !list.contains { $0.identifier == p.identifier } }
             }
-            // Keep looking while no adapter is open: the remembered one may be out of range and another near.
-            scan()
-            return list.map { p in
-                let name = listed.first { $0.id == p.identifier }?.name
-                    ?? p.name ?? UserDefaults.standard.string(forKey: Self.lastNameKey) ?? "OBD adapter"
-                return IosBleObdTarget(name: name, identifier: p.identifier.uuidString, port: ObdBlePortLink(link: self, peripheral: p))
+        } else {
+            if let text = UserDefaults.standard.string(forKey: Self.lastIdKey), let id = UUID(uuidString: text),
+               let known = seen[id] ?? central.retrievePeripherals(withIdentifiers: [id]).first {
+                list.append(known)
             }
+            list += seen.values.filter { p in !list.contains { $0.identifier == p.identifier } }
+        }
+        // Keep looking while no adapter is open: the remembered one may be out of range and another near.
+        scan()
+        return list.map { p in
+            let name = listed.first { $0.id == p.identifier }?.name
+                ?? p.name ?? UserDefaults.standard.string(forKey: Self.lastNameKey) ?? "OBD adapter"
+            return IosBleObdTarget(name: name, identifier: p.identifier.uuidString, port: ObdBlePortLink(link: self, peripheral: p))
         }
     }
 
