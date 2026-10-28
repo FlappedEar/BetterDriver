@@ -51,6 +51,25 @@ class DemoSessionsTest {
     }
 
     @Test
+    fun aSessionWithNoSavedTrackShowsItsDriveOnTheMap() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        NSFileManager.defaultManager.removeItemAtPath("$base/tracks", null)
+        val reviewed = library.review(id)
+        assertEquals(emptyList(), reviewed.review.laps)
+        val drive = checkNotNull(reviewed.drive) { "no drive without a track" }
+        assertTrue(drive.map.runs.isNotEmpty() && drive.speed.isNotEmpty())
+        // 23 laps of Jastrząb, about 1.5 km each.
+        assertTrue(drive.distanceMeters > 30_000.0, "${drive.distanceMeters} m")
+        assertTrue(checkNotNull(drive.topSpeedKmh) > 100.0, "${drive.topSpeedKmh} km/h")
+    }
+
+    @Test
+    fun aSessionWithLapsHasNoDriveCard() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        assertEquals(null, library.review(id).drive)
+    }
+
+    @Test
     fun aDeletedSessionLeavesTheList() {
         val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
         assertEquals(DeleteResult.DELETED, library.delete(id))

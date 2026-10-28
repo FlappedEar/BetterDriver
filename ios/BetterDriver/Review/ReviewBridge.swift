@@ -45,6 +45,30 @@ struct SessionSummary {
     let compare: LapCompare?
     /// Android's analysis screen model for Corners and Car, the same lap compared.
     let screen: AnalysisUi?
+    /// The whole drive on the map when the session has no laps (FBBD-342); nil with laps.
+    let drive: DriveSummary?
+}
+
+/// A session with no laps as Android's DriveCards show it (FBBD-342): its figures, its route
+/// coloured by speed on the Map tab's scale, and its speed along the drive.
+struct DriveSummary {
+    let figures: DriveFigures
+    let runs: [[DriveDot]]
+    let speed: [[ChartDot]]
+    let distanceMeters: Double
+    /// The speed scale the route is coloured with, as the legend labels it; nil without speed.
+    let scale: (low: Double, high: Double)?
+    /// Width over height of the route, as Android sizes the map.
+    let aspect: CGFloat
+}
+
+/// A point of the drive's route: metres east and north, metres into the drive, speed and its colour.
+struct DriveDot {
+    let east: Double
+    let north: Double
+    let meters: Double
+    let speed: Double?
+    let color: Color
 }
 
 /// A point of a chart: metres from the start/finish line and a value.
@@ -159,7 +183,30 @@ enum ReviewBridge {
             theoreticalBest: review.theoreticalBestSeconds.map { CoreBridge.lapTime(millis: millis($0.doubleValue)) },
             line: review.line.map(whereToFindTime),
             compare: reviewed.defaultCompare().map(lapCompare),
-            screen: reviewed.defaultScreen()
+            screen: reviewed.defaultScreen(),
+            drive: reviewed.drive.map(driveSummary)
+        )
+    }
+
+    /// [drive] with each point coloured as Android's LapMapView colours speed.
+    private static func driveSummary(_ drive: DriveMap) -> DriveSummary {
+        let speeds = drive.map.runs.joined().compactMap { $0.speed }
+        let range = MapUiKt.speedRange(speeds: speeds)
+        let runs = drive.map.runs.map { run in
+            run.map { p in
+                let color = range.flatMap { r in
+                    p.speed.map { Color(argb: MapUiKt.scaleColor(fraction: r.fraction(value: $0.doubleValue), stops: MapUiKt.SpeedScaleColors)) }
+                } ?? Palette.onSurfaceVariant
+                return DriveDot(east: p.eastMeters, north: p.northMeters, meters: p.distanceMeters, speed: p.speed?.doubleValue, color: color)
+            }
+        }
+        return DriveSummary(
+            figures: DriveUiKt.driveFigures(drive: drive),
+            runs: runs,
+            speed: drive.speed.map { $0.map { ChartDot(meters: $0.distanceMeters, value: $0.value) } },
+            distanceMeters: drive.distanceMeters,
+            scale: range.map { (low: $0.low, high: $0.high) },
+            aspect: CGFloat(MapUiKt.mapAspect(map: drive.map))
         )
     }
 
@@ -339,6 +386,8 @@ extension ReviewBridge {
                 startUtcMillis: start
             )
         }
+        // The demos with no saved track, as a road drive reads: no laps, the drive on the map (FBBD-342).
+        if arguments.contains("-demoNoTrack") { try? FileManager.default.removeItem(at: base.appendingPathComponent("tracks")) }
         // Phone video in the demo sessions, for Video with data (FBBD-152).
         if arguments.contains("-demoVideo") { DataVideoDemo.add(sessionsRoot: library.sessionsRoot) }
         #endif

@@ -158,6 +158,8 @@ private struct SummaryTab: View {
                              : "No timed laps in this session.")
                             .foregroundStyle(Palette.onSurfaceVariant)
                     }
+                    // Where the car went all the same, as Android's no-laps analysis (FBBD-342).
+                    if let drive = summary.drive { DriveCards(drive: drive) }
                 } else {
                     Card {
                         HStack(alignment: .top) {
