@@ -137,7 +137,14 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
     // MARK: CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
-        if central.state == .poweredOn { connect() }
+        AppLog.i("HeartRate", "Bluetooth state \(central.state.rawValue) (5 = on, 3 = not allowed, 4 = off)")
+        if central.state == .poweredOn {
+            connect()
+        } else if flowing {
+            // iOS drops its connections without a didDisconnect when Bluetooth goes off: the strap is
+            // gone for the session's log too, and is asked for again once Bluetooth is back on.
+            dropped(central.state == .unauthorized ? "Bluetooth not allowed" : "Bluetooth off")
+        }
     }
 
     func centralManager(
