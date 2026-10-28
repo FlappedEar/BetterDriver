@@ -55,6 +55,29 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testCsvAndGpxExportsAreWrittenWithoutAFailure() {
+        // One launch per format: Files' Save sheet runs out of the app, so the test leaves it open
+        // and starts again. Kotlin's DemoSessionsTest checks what the files hold.
+        for (index, format) in ["CSV", "GPX"].enumerated() {
+            app.launchArguments = index == 0 ? ["-freshInstall", "-demoSessions"] : ["-demoSessions"]
+            app.launch()
+            openSessions()
+            let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+            XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+            rows.element(boundBy: 0).tap()
+            XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+            let menu = app.buttons["exportMenu"].firstMatch
+            XCTAssertTrue(menu.waitForExistence(timeout: 10), "no export menu")
+            menu.tap()
+            app.buttons[format].firstMatch.tap()
+            // A failed export says so in an alert; a written one goes on to Files.
+            let failed = app.alerts.firstMatch.waitForExistence(timeout: 15)
+            XCTAssertFalse(failed, "\(format): \(app.alerts.firstMatch.label)")
+            keep("Export \(format)")
+            XCTAssertEqual(app.state, .runningForeground, "\(format): the app stopped")
+        }
+    }
+
     func testTheDemoSessionsOpenOnEveryTab() {
         // Newest first: Silesia Ring (27 Sep, 18 laps), then Jastrząb (29 Aug, 23 laps), as DemoParityTest.
         for (index, (name, laps)) in [("silesia-ring", "18"), ("jastrzab", "23")].enumerated() {

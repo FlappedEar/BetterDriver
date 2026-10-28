@@ -3,8 +3,8 @@ import SwiftUI
 import UIKit
 
 /// Export from a session (FBBD-333), as the export menu of Android's session card: VBO + video for
-/// Circuit Tools into a new folder (FBBD-25), when the session has video, and the VBO alone. The
-/// files are written in the background, then Files asks where to save them.
+/// Circuit Tools into a new folder (FBBD-25), when the session has video, the VBO alone, CSV and
+/// GPX. The files are written in the background, then Files asks where to save them.
 struct ExportButton: View {
     let sessionId: String
 
@@ -17,16 +17,16 @@ struct ExportButton: View {
     var body: some View {
         Menu {
             if hasVideo {
-                Button { export(withVideo: true) } label: {
+                Button { export(.vboWithVideo) } label: {
                     Label("VBO + video", systemImage: "film")
                 }
             }
-            Button { export(withVideo: false) } label: {
+            Button { export(.vbo) } label: {
                 Label("VBO", systemImage: "doc")
             }
             // The rest of Android's export menu.
-            Button { notYet = "CSV export" } label: { Label("CSV", systemImage: "tablecells") }
-            Button { notYet = "GPX export" } label: { Label("GPX", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+            Button { export(.csv) } label: { Label("CSV", systemImage: "tablecells") }
+            Button { export(.gpx) } label: { Label("GPX", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
             Button { notYet = "Video with data" } label: { Label("Video with data", systemImage: "film.stack") }
         } label: {
             if running {
@@ -50,14 +50,22 @@ struct ExportButton: View {
         }
     }
 
-    private func export(withVideo: Bool) {
+    private enum Format { case vboWithVideo, vbo, csv, gpx }
+
+    private func export(_ format: Format) {
         let id = sessionId
         running = true
         Task {
             let result: Result<URL, Error> = await Task.detached {
                 Result {
                     let exports = Exports.make()
-                    let path = withVideo ? try exports.vboWithVideo(id: id) : try exports.vbo(id: id)
+                    let path: String
+                    switch format {
+                    case .vboWithVideo: path = try exports.vboWithVideo(id: id)
+                    case .vbo: path = try exports.vbo(id: id)
+                    case .csv: path = try exports.csv(id: id)
+                    case .gpx: path = try exports.gpx(id: id)
+                    }
                     return URL(fileURLWithPath: path)
                 }
             }.value
@@ -80,7 +88,7 @@ struct ExportedFile: Identifiable {
 enum Exports {
     static func make() -> SessionExport {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("export", isDirectory: true)
-        return SessionExport(sessionsRoot: AppFolders.sessions.path, outRoot: out.path)
+        return SessionExport(sessionsRoot: AppFolders.sessions.path, tracksRoot: AppFolders.tracks.path, outRoot: out.path)
     }
 }
 
