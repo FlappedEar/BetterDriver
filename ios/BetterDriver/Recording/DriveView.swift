@@ -98,8 +98,9 @@ private struct Chip: View {
 }
 
 /// The sheet at START (UI-285 B): RaceBoxes in range as they advertise, the one used last on top,
-/// and the phone's own GPS.
+/// and the phone's own GPS; then the cameras, each with its switch as on Android's "This session".
 struct ReceiverSheet: View {
+    @EnvironmentObject private var settings: SettingsModel
     let lastUsed: String
     @Binding var camera: Bool
     @Binding var videoMode: PhoneVideoMode
@@ -160,6 +161,17 @@ struct ReceiverSheet: View {
                 }
                 .padding(.vertical, 6)
                 .accessibilityIdentifier("phoneVideoMode")
+            }
+            // Each Open GoPro camera starts and stops with the session while on (FBBD-343).
+            ForEach(OpenGoPros.companion.listed(setup: settings.setup), id: \.id) { goPro in
+                Toggle(goPro.name, isOn: Binding(
+                    get: { goPro.on },
+                    set: { on in settings.update { SettingsCore.shared.useCamera(setup: $0, id: goPro.id, on: on) } }
+                ))
+                .tint(Palette.accent)
+                .padding(.vertical, 12)
+                .overlay(alignment: .top) { Rectangle().fill(Palette.outline).frame(height: 1) }
+                .accessibilityIdentifier("goProToggle")
             }
             Spacer(minLength: 0)
         }

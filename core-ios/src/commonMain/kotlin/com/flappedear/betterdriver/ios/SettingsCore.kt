@@ -76,6 +76,17 @@ object SettingsCore {
         return setup.addEquipment(EquipmentModel.GOPRO_FILES, name, null, newId = { id }, goPro = goPro)
     }
 
+    /**
+     * Adds an Open GoPro camera paired over Bluetooth at [address] (the iPhone's identifier for it),
+     * as Android's pairing does: [goPro] is the model its hardware info named, and it is used in
+     * the next session.
+     */
+    fun addOpenGoPro(setup: Setup, name: String, address: String, goPro: GoProModel, id: String): Setup =
+        setup.addEquipment(EquipmentModel.GOPRO, name, address, newId = { id }, goPro = goPro)
+
+    /** Turns camera [id] on or off for the next session, as Android's home toggles (UI-36). */
+    fun useCamera(setup: Setup, id: String, on: Boolean): Setup = setup.useCamera(id, on)
+
     /** Adds a car; a blank name changes nothing (Kotlin's require would end the app). */
     fun addCar(setup: Setup, name: String, notes: String, id: String): Setup =
         if (name.isBlank()) setup else setup.addCar(name, notes) { id }
