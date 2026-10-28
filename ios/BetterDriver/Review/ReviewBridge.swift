@@ -339,6 +339,8 @@ extension ReviewBridge {
                 startUtcMillis: start
             )
         }
+        // Phone video in the demo sessions, for Video with data (FBBD-152).
+        if arguments.contains("-demoVideo") { DataVideoDemo.add(sessionsRoot: library.sessionsRoot) }
         #endif
     }
 }
