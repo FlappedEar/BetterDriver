@@ -68,11 +68,13 @@ class ReviewLibrary(base: String) {
     fun share(id: String, outRoot: String, onProgress: (written: Long, total: Long) -> Unit): String =
         SessionOutbox(sessionsRoot, outRoot).write(id, timedTrack(id), onProgress)
 
-    /** The saved track session [id] was timed with, as Android's share finds it; none if unreadable. */
+    /**
+     * The saved track session [id] is timed with, as its review finds it: the one it recorded at
+     * start (Android's share sends that one), else the saved track it was driven at. None if unreadable.
+     */
     @Suppress("TooGenericExceptionCaught")
     private fun timedTrack(id: String): Track? = try {
-        savedTrackId(store.read(id, samples = false).events)
-            ?.let { trackId -> tracks().firstOrNull { it.id == trackId } }
+        trackFor(store.read(id), tracks())
     } catch (_: Exception) {
         null
     }
