@@ -55,6 +55,21 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testSharingASessionWritesItWithoutAFailure() {
+        app.launchArguments = ["-freshInstall", "-demoSessions"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).press(forDuration: 1.2)
+        app.buttons["Share"].firstMatch.tap()
+        // The share sheet runs out of the app; a failed bundle says so in an alert instead.
+        let failed = app.alerts.firstMatch.waitForExistence(timeout: 30)
+        XCTAssertFalse(failed, app.alerts.firstMatch.label)
+        keep("Share session")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testCsvAndGpxExportsAreWrittenWithoutAFailure() {
         // One launch per format: Files' Save sheet runs out of the app, so the test leaves it open
         // and starts again. Kotlin's DemoSessionsTest checks what the files hold.

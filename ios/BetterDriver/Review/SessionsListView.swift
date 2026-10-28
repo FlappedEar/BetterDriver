@@ -30,7 +30,7 @@ struct SessionsListView: View {
                             // Android's session card buttons: Delete, Share, and the coach's review.
                             .contextMenu {
                                 Button("Coach review") { notYet = "Coach review" }
-                                Button("Share") { notYet = "Sharing a session" }
+                                Button("Share") { model.share(session) }
                                 Button("Delete", role: .destructive) { deleting = session }
                             }
                             .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)

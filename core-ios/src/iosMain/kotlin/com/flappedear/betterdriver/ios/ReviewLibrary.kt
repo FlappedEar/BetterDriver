@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.transfer.ReceivedBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
+import com.flappedear.betterdriver.transfer.SessionOutbox
 import com.flappedear.betterdriver.transfer.foreign.ForeignInbox
 import com.flappedear.betterdriver.transfer.foreign.ImportedSession
 import platform.Foundation.NSBundle
@@ -57,6 +58,26 @@ class ReviewLibrary(base: String) {
 
     /** Deletes session [id] with everything in its folder, its video included, as Android (FBBD-90). */
     fun delete(id: String): DeleteResult = store.delete(id)
+
+    /**
+     * Writes session [id] as a .bdsession under [outRoot] to share, as Android's Share: its files,
+     * video included, and the saved track it was timed with, so it opens with its laps on Android
+     * or another iPhone. Returns the file's path; [onProgress] gets bytes written and their total.
+     */
+    @Throws(Exception::class)
+    fun share(id: String, outRoot: String, onProgress: (written: Long, total: Long) -> Unit): String =
+        SessionOutbox(sessionsRoot, outRoot).write(id, timedTrack(id), onProgress)
+
+    /**
+     * The saved track session [id] is timed with, as its review finds it: the one it recorded at
+     * start (Android's share sends that one), else the saved track it was driven at. None if unreadable.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun timedTrack(id: String): Track? = try {
+        trackFor(store.read(id), tracks())
+    } catch (_: Exception) {
+        null
+    }
 
     /**
      * Laps, best, theoretical best and where to find time of session [id], as Android works them

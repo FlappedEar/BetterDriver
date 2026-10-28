@@ -290,6 +290,12 @@ extension ReviewBridge {
         }
     }
 
+    /// Session [id] as a .bdsession to share, as Android's Share: its files, video included, and its track.
+    static func share(_ id: String) throws -> URL {
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
+        return URL(fileURLWithPath: try library.share(id: id, outRoot: out.path) { _, _ in })
+    }
+
     /// What session [id] takes on this device, in bytes, and whether it has video.
     static func footprint(_ id: String) -> (bytes: Int64?, video: Bool) {
         let dir = AppFolders.sessions.appendingPathComponent(id, isDirectory: true)
