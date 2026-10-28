@@ -123,8 +123,22 @@ fun driveMap(session: TelemetrySession, maxPoints: Int = MaxDrivePoints): DriveM
         previousAt = at
     }
     if (run.isNotEmpty()) runs += run
-    val speed = runs.map { r -> r.mapNotNull { p -> p.speed?.let { ChartPoint(p.distanceMeters, it) } } }
-        .filter { it.isNotEmpty() }
+    // A point with no speed ends a run of the chart, so it never draws across a speed dropout.
+    val speed = runs.flatMap { r ->
+        val parts = mutableListOf<List<ChartPoint>>()
+        var part = mutableListOf<ChartPoint>()
+        for (p in r) {
+            val v = p.speed
+            if (v != null) {
+                part += ChartPoint(p.distanceMeters, v)
+            } else if (part.isNotEmpty()) {
+                parts += part
+                part = mutableListOf()
+            }
+        }
+        if (part.isNotEmpty()) parts += part
+        parts
+    }
     return DriveMap(
         map = LapMap(
             lapIndex = -1,

@@ -31,14 +31,16 @@ class DriveMapTest {
     private val metersPerDegreeLon = metersPerDegreeLat * cos(lat0 * PI / 180.0)
     private val hz = 10
 
-    private fun drive(withSpeed: Boolean = true): SessionData {
+    private fun drive(withSpeed: Boolean = true, speedDropout: ClosedFloatingPointRange<Double>? = null): SessionData {
         val sets = mutableListOf<SampleSet>()
         fun at(seconds: Double, north: Double, east: Double, kmh: Double) {
             val values = mutableListOf(
                 ChannelValue(GnssChannels.LAT.id, lat0 + north / metersPerDegreeLat),
                 ChannelValue(GnssChannels.LON.id, lon0 + east / metersPerDegreeLon),
             )
-            if (withSpeed) values += ChannelValue(GnssChannels.SPEED_KMH.id, kmh)
+            if (withSpeed && speedDropout?.contains(seconds) != true) {
+                values += ChannelValue(GnssChannels.SPEED_KMH.id, kmh)
+            }
             sets += SampleSet((seconds * 1_000_000).roundToLong(), values)
         }
         // Standing: the fix wanders a metre either way.
@@ -93,6 +95,17 @@ class DriveMapTest {
         // to drive 5 m at 3 km/h of moving time.
         assertTrue(drive.movingSeconds in 179.0..186.5, "moving ${drive.movingSeconds}")
         assertTrue(assertNotNull(drive.averageMovingKmh) in 57.5..61.0, "average ${drive.averageMovingKmh}")
+    }
+
+    @Test
+    fun `the speed chart breaks where the speed drops out though positions go on`() {
+        val drive = assertNotNull(driveMap(telemetrySessionOf(drive(speedDropout = 60.0..80.0), null)))
+        // One map run before the GPS gap, but the speed chart breaks at the dropout: three runs.
+        assertEquals(2, drive.map.runs.size)
+        assertEquals(3, drive.speed.size)
+        val first = drive.speed[0].last().distanceMeters
+        val second = drive.speed[1].first().distanceMeters
+        assertTrue(second - first > 300.0, "gap ${second - first}")
     }
 
     @Test
