@@ -53,16 +53,24 @@ final class SessionsModel {
     /// What the last adding of camera files to a session could not add, per session.
     private(set) var goProProblems: [String: [String]] = [:]
 
+    /// The app's start work is done: done once a run. SwiftUI may make a SessionsModel more than once
+    /// (RootView's @State runs its initial value each time the view is made again), and a second
+    /// start would clear staging in use, or with -freshInstall the sessions the list shows.
+    private static var started = false
+
     init() {
-        ReviewBridge.clearStaging()
-        ReviewBridge.prepareForUITests()
-        #if DEBUG
-        // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
-        if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),
-           !SettingsModel.shared.setup.equipment.contains(where: { $0.modelName == ModelName.goProFiles }) {
-            SettingsModel.shared.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: .hero8Black, id: "demo-gopro") }
+        if !Self.started {
+            Self.started = true
+            ReviewBridge.clearStaging()
+            ReviewBridge.prepareForUITests()
+            #if DEBUG
+            // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
+            if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),
+               !SettingsModel.shared.setup.equipment.contains(where: { $0.modelName == ModelName.goProFiles }) {
+                SettingsModel.shared.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: .hero8Black, id: "demo-gopro") }
+            }
+            #endif
         }
-        #endif
         reload()
         // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
         NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in
