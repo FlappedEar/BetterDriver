@@ -25,9 +25,6 @@ open the page. It lets go as soon as a session starts.
 
 ## What the car offers and your own parameters
 
-!!! note "Not released yet"
-    This is on `main` and comes with the next release.
-
 The Car tab lists **Your parameters** and **What the car offers**. With the adapter listed and the
 ignition on, tap **Scan car**: in about 15 seconds the app reads which OBD-II values the car
 reports and which CAN ids it hears at the OBD port, with how often each comes and which bytes
