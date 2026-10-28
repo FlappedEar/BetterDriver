@@ -183,7 +183,10 @@ final class RecordingController: ObservableObject {
         let active = SettingsModel.shared.setup.active()
         // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338), with none listed one
         // nearby, and the Wi-Fi adapter.
-        let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
+        let car = ObdLink(
+            sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth),
+            setup: SettingsModel.shared.setup, tiles: tileIds
+        )
         obd = car
         car.start()
         // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a

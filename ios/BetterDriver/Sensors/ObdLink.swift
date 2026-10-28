@@ -36,11 +36,16 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// none listed, the one used last and any other found nearby.
     private let listed: [(id: UUID, name: String)]
 
-    /// [sink] is the recording; [listed] the Bluetooth LE adapters in Settings.
-    init(sink: SampleSink, listed: [(id: UUID, name: String)] = []) {
+    /// [sink] is the recording; [listed] the Bluetooth LE adapters in Settings. With [setup], the
+    /// session's car's own parameters and switched-on PIDs are read (FBBD-344), and [tiles] are its
+    /// track screen. (The setup, not the car: setup's and obd's CarProfile share a name in Swift.)
+    init(sink: SampleSink, listed: [(id: UUID, name: String)] = [], setup: Setup? = nil, tiles: [String] = []) {
         self.listed = listed
         super.init()
-        feed = ObdFeed(sink: sink, targets: { [weak self] in self?.targets() ?? [] }, listener: self)
+        feed = ObdFeed(
+            sink: sink, targets: { [weak self] in self?.targets() ?? [] }, listener: self,
+            car: setup?.active().car, tiles: tiles
+        )
     }
 
     func start() {
