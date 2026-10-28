@@ -141,6 +141,24 @@ class TechHudTest {
     }
 
     @Test
+    fun `a temperature polled every 5 s is shown between readings, the engine speed is not held that long`() {
+        val drive = circuit.drive(listOf(1.0))
+        val channels = listOf(
+            ChannelDef(320, "obd_oil_temp", "°C", "obd", 0),
+            ChannelDef(321, "obd_rpm", "rpm", "obd", 0),
+        )
+        val first = drive.fixes.first().tMicros
+        val sets = session(drive) { t ->
+            val polled = (t - first) % 5_000_000L <= 40_000L
+            if (polled) listOf(ChannelValue(320, 100.0), ChannelValue(321, 4000.0)) else emptyList()
+        }
+        val data = OverlayData(sets, null, channels = channels)
+        val between = data.at(first + 2_500_000).car
+        assertEquals(100.0, between.oilC)
+        assertNull(between.rpm, "an engine speed 5 s apart is a gap")
+    }
+
+    @Test
     fun `the pedal tile reads the accelerator pedal before the throttle plate`() {
         val drive = circuit.drive(listOf(1.0))
         val channels = listOf(

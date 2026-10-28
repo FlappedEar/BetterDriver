@@ -257,5 +257,5 @@ private fun carSeries(sorted: List<SampleSet>, ids: Map<CarValue, Int>): Map<Car
             }
         }
     }
-    return ids.mapNotNull { (value, id) -> samples[id]?.let { value to TimeSeries.of(it) } }.toMap()
+    return ids.mapNotNull { (value, id) -> samples[id]?.let { value to TimeSeries.of(it, value.maxGapMicros) } }.toMap()
 }

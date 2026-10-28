@@ -7,8 +7,12 @@ import com.flappedear.betterdriver.recorder.ChannelDef
  * as the app records it ("obd_rpm", the FR-S's "obd_steering_angle", "heart_rate") or as RaceChrono
  * exports it ("rpm-obd", "engine_oil_temp-obd", "gearbox_temp-obd"), with the names the lap
  * analysis and the coach use for the same values.
+ *
+ * [maxGapMicros] is the longest wait between two readings that still counts as one stretch of
+ * values: the recorder polls temperatures far more slowly than the engine and pedals (0.5 Hz, 0.2 Hz
+ * while it listens to the FR-S's CAN broadcasts), so a temperature is held across its own interval.
  */
-enum class CarValue(pattern: String) {
+enum class CarValue(pattern: String, val maxGapMicros: Long = FastGapMicros) {
     Rpm("^(?:obd_)?(?:engine_)?rpm(?:-obd|-canbus)?$"),
 
     /** The accelerator pedal in %, preferred over the throttle plate as the driver's input. */
@@ -22,20 +26,20 @@ enum class CarValue(pattern: String) {
 
     /** The steering wheel in degrees, positive left (FBBD-263). */
     SteeringAngle("^(?:obd_)?steering(?:_wheel)?_angle(?:-obd|-canbus)?$"),
-    HeartRate("^heart_?rate$"),
-    OilTemp("^(?:obd_)?(?:engine_)?oil_temp(?:-obd|-canbus)?$"),
-    GearboxTemp("^(?:obd_)?(?:atf|gearbox|transmission)_temp(?:-obd|-canbus)?$"),
-    CoolantTemp("^(?:obd_)?(?:engine_)?coolant_temp(?:-obd|-canbus)?$"),
+    HeartRate("^heart_?rate$", HeartRateGapMicros),
+    OilTemp("^(?:obd_)?(?:engine_)?oil_temp(?:-obd|-canbus)?$", SlowGapMicros),
+    GearboxTemp("^(?:obd_)?(?:atf|gearbox|transmission)_temp(?:-obd|-canbus)?$", SlowGapMicros),
+    CoolantTemp("^(?:obd_)?(?:engine_)?coolant_temp(?:-obd|-canbus)?$", SlowGapMicros),
 
     /** Tyre temperatures in °C and pressures in bar, front left to rear right (2.0 names). */
-    TyreTempFl("^tyre_temp_fl$"),
-    TyreTempFr("^tyre_temp_fr$"),
-    TyreTempRl("^tyre_temp_rl$"),
-    TyreTempRr("^tyre_temp_rr$"),
-    TyrePressureFl("^tyre_pressure_fl$"),
-    TyrePressureFr("^tyre_pressure_fr$"),
-    TyrePressureRl("^tyre_pressure_rl$"),
-    TyrePressureRr("^tyre_pressure_rr$"),
+    TyreTempFl("^tyre_temp_fl$", SlowGapMicros),
+    TyreTempFr("^tyre_temp_fr$", SlowGapMicros),
+    TyreTempRl("^tyre_temp_rl$", SlowGapMicros),
+    TyreTempRr("^tyre_temp_rr$", SlowGapMicros),
+    TyrePressureFl("^tyre_pressure_fl$", SlowGapMicros),
+    TyrePressureFr("^tyre_pressure_fr$", SlowGapMicros),
+    TyrePressureRl("^tyre_pressure_rl$", SlowGapMicros),
+    TyrePressureRr("^tyre_pressure_rr$", SlowGapMicros),
     ;
 
     private val regex = Regex(pattern, RegexOption.IGNORE_CASE)
@@ -74,5 +78,14 @@ data class CarFrame(
     val tyreTemps: List<Double?> = NoTyres,
     val tyrePressures: List<Double?> = NoTyres,
 )
+
+/** Engine, pedals and wheel come at 7 Hz or more: a reading 2 s late is a gap, as for the GNSS. */
+private const val FastGapMicros = TimeSeries.DefaultMaxGapMicros
+
+/** A heart-rate strap sends about once a second. */
+private const val HeartRateGapMicros = 5_000_000L
+
+/** Three intervals of the slowest temperature polling (0.2 Hz). */
+private const val SlowGapMicros = 15_000_000L
 
 private val NoTyres = listOf<Double?>(null, null, null, null)
