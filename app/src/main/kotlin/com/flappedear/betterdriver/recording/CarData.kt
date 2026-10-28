@@ -5,9 +5,11 @@ import android.net.ConnectivityManager
 import com.flappedear.betterdriver.core.ble.obd.WifiObdTarget
 import com.flappedear.betterdriver.core.ble.obd.bluetoothObdTarget
 import com.flappedear.betterdriver.core.ble.obd.bluetoothObdTransport
+import com.flappedear.betterdriver.obd.CarProfile
 import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.ObdTransport
 import com.flappedear.betterdriver.obd.PollSet
+import com.flappedear.betterdriver.obd.ownProfile
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
@@ -33,7 +35,8 @@ internal fun sessionCarData(context: Context): List<Equipment> = sessionSetup(co
  * What the running session reads from the car (FBBD-283): [PollSet.Driver] plus every OBD-II channel
  * the track screen's tiles show, on the main screen or the second one, from the setup saved at START
  * and updated when a tile is chosen during the session. The file is read again only when it changed.
- * [PollSet.broadcastCar] follows the session's car (FBBD-284).
+ * [PollSet.broadcastCar] follows the session's car (FBBD-284), and [PollSet.pids] the PIDs switched
+ * on for it (FBBD-344, UI-301 B).
  */
 internal fun sessionPollSet(context: Context): () -> PollSet {
     val file = File(context.filesDir, SetupRepo.SessionSetupFile)
@@ -46,11 +49,15 @@ internal fun sessionPollSet(context: Context): () -> PollSet {
             val setup = sessionSetup(context)
             val tiles = setup?.trackScreens?.let(::obdTileChannels).orEmpty()
             val ft86 = setup?.active()?.car?.name?.let(::isBroadcastCar) == true
-            set = PollSet.Driver.plus(tiles).copy(broadcastCar = ft86)
+            val pids = setup?.active()?.car?.recordedPids?.toSet()
+            set = PollSet.Driver.plus(tiles).copy(broadcastCar = ft86, pids = pids)
         }
         set
     }
 }
+
+/** The session's car's OBD profile: its own parameters (FBBD-344), from the setup saved at START. */
+internal fun sessionCarProfile(context: Context): CarProfile = ownProfile(sessionSetup(context)?.active()?.car)
 
 /**
  * Whether a car named [name] is an FR-S / 86 / BRZ of the first generation, whose CAN broadcasts the

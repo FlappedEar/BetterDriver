@@ -303,12 +303,105 @@ fun raceBoxModel(advertisedName: String?): String? = when {
     else -> null
 }
 
-/** One of Arek's cars. The PID set for car data attaches here in Phase 5 (FBBD-16). */
+/**
+ * One of Arek's cars. [parameters] are the driver's own car-data parameters, recorded in every
+ * session with the car (FBBD-344); [scan] is what the car offered at its OBD port the last time it
+ * was scanned, or null before the first scan. [recordedPids] are the standard mode 01 PIDs the
+ * driver switched on (UI-301 B); null until a switch is first turned, when the app's own choice
+ * (pedals, RPM, temperatures, tile channels) applies.
+ */
 @Serializable
 data class CarProfile(
     val id: String,
     val name: String,
     val notes: String = "",
+    val parameters: List<CarParameter> = emptyList(),
+    val scan: CarScanRecord? = null,
+    val recordedPids: List<Int>? = null,
+) {
+    /**
+     * This car with PID [pid] switched [on]; the first switch starts from [current], the PIDs
+     * recorded until then.
+     */
+    fun recordPid(pid: Int, on: Boolean, current: Set<Int>): CarProfile {
+        val now = recordedPids?.toSet() ?: current
+        return copy(recordedPids = (if (on) now + pid else now - pid).sorted())
+    }
+
+    /** This car with [parameter] added, or replacing the one with its [CarParameter.key]. */
+    fun withParameter(parameter: CarParameter): CarProfile {
+        val i = parameters.indexOfFirst { it.key == parameter.key }
+        val list = if (i < 0) parameters + parameter else parameters.toMutableList().also { it[i] = parameter }
+        return copy(parameters = list)
+    }
+
+    fun withoutParameter(key: String): CarProfile = copy(parameters = parameters.filterNot { it.key == key })
+
+    /** A [CarParameter.key] for a parameter named [name] no other parameter of this car has. */
+    fun newParameterKey(name: String): String {
+        val base = name.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_').ifEmpty { "parameter" }
+        val taken = parameters.mapTo(HashSet()) { it.key }
+        return generateSequence(1) { it + 1 }.map { if (it == 1) base else "${base}_$it" }.first { it !in taken }
+    }
+}
+
+/** Where a [CarParameter] comes from (FBBD-344). */
+@Serializable
+enum class CarParameterSource {
+    /** A request to the car (mode, PID, optional ECU header), answered by an ECU. */
+    OBD,
+
+    /** A frame the car sends by itself on 11-bit CAN, read whenever it comes. */
+    CAN,
+}
+
+/**
+ * One of the driver's own car-data parameters (FBBD-344), for a value the app does not know. [key]
+ * names it in recorded data (channel `obd_custom_<key>`) and stays when it is renamed. [equation] is
+ * in RaceChrono's syntax over the answer's data bytes (OBD) or the frame's 8 bytes (CAN).
+ * OBD: [mode], [pid] ([pidLength] bytes, 2 for mode 22) to [header] (null: every ECU); [fast] reads
+ * it as often as the pedals. CAN: [canId], an 11-bit id.
+ */
+@Serializable
+data class CarParameter(
+    val key: String,
+    val name: String,
+    val source: CarParameterSource,
+    val equation: String,
+    val unit: String = "",
+    val header: Int? = null,
+    val mode: Int = 0x01,
+    val pid: Int = 0,
+    val pidLength: Int = 1,
+    val fast: Boolean = false,
+    val canId: Int = 0,
+)
+
+/**
+ * What the car offered at its OBD port when last scanned (FBBD-344): [protocol] (the adapter's ATDPN
+ * answer), the mode 01 PIDs it reports, the first characters of its VIN (maker and model only), and
+ * the CAN ids heard ([canHeard] false when the car is not on 11-bit CAN or the adapter could not
+ * listen). [atMs] is wall-clock time.
+ */
+@Serializable
+data class CarScanRecord(
+    val atMs: Long,
+    val protocol: String,
+    val supported: List<Int>,
+    val vinPrefix: String? = null,
+    val canHeard: Boolean = false,
+    val canIds: List<CanIdRecord> = emptyList(),
+    val bufferFull: Boolean = false,
+)
+
+/** One CAN id of a [CarScanRecord]: frames a second, frame length, the bytes that changed, the last frame in hex. */
+@Serializable
+data class CanIdRecord(
+    val id: Int,
+    val perSecond: Double,
+    val length: Int,
+    val changing: List<Int>,
+    val last: String,
 )
 
 /** Values a track-screen tile can show, and what the session needs for each. */

@@ -41,17 +41,20 @@ private const val Tag = "Obd"
  * While started, [watch] tells it when the phone's Wi-Fi or Bluetooth comes back ([obdWatch]), and
  * the next try starts at once (FBBD-271). Nothing the connection throws reaches the process: an
  * uncaught exception on this thread killed the recorder at Stop (FBBD-269). [pollSet] is which
- * channels it reads (FBBD-283).
+ * channels it reads (FBBD-283). [profile] is the car's, with the driver's own parameters, and
+ * [scan] whether the next connection scans what the car offers; both are read at each connection,
+ * and [restart] starts a new one (FBBD-344).
  */
 @Suppress("LongParameterList") // Collaborators, each with a default.
 class ObdLink(
     private val targets: () -> List<ObdTarget>,
     private val listener: ObdLinkListener = object : ObdLinkListener {},
-    private val profile: CarProfile = CarProfile.Generic,
+    private val profile: () -> CarProfile = { CarProfile.Generic },
     private val owner: String = "recorder",
     private val fallback: () -> List<ObdTarget> = { emptyList() },
     private val watch: (onChange: (String) -> Unit) -> AutoCloseable = { AutoCloseable {} },
     private val pollSet: () -> PollSet = { PollSet.All },
+    private val scan: () -> Boolean = { false },
 ) {
     private val tracker = ObdStatusTracker()
 
@@ -65,7 +68,7 @@ class ObdLink(
 
     fun start() {
         running = true
-        val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback, pollSet = pollSet)
+        val c = ObdConnector(targets, Relay(), tracker, clock, profile, fallback, pollSet = pollSet, scan = scan)
         connector = c
         thread = Thread({ read(c) }, "obd-$owner").apply {
             isDaemon = true
@@ -75,6 +78,11 @@ class ObdLink(
             DebugLog.i(Tag, "$owner: $what")
             c.retryNow()
         }
+    }
+
+    /** A new connection now, with [profile] and [scan] read again (FBBD-344). */
+    fun restart() {
+        connector?.restart()
     }
 
     fun stop() {

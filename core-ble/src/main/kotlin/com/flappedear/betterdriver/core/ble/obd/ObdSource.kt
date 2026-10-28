@@ -49,7 +49,7 @@ class ObdSource(
     fun status(): ObdStatus? = link?.status()
 
     override fun start(sink: SampleSink) {
-        val l = ObdLink(targets, Listener(sink), profile, fallback = fallback, watch = watch, pollSet = pollSet)
+        val l = ObdLink(targets, Listener(sink), { profile }, fallback = fallback, watch = watch, pollSet = pollSet)
         link = l
         current = this
         l.start()

@@ -125,11 +125,11 @@ object CanBroadcasts {
     private const val YEAR_AT = 9
 
     /**
-     * The signals to listen for on a car whose OBD port showed [seen] (id to frames in the probe), one
+     * The [signals] to listen for on a car whose OBD port showed [seen] (id to frames in the probe), one
      * per channel id: a signal counts when every id it requires came at least [minFrames] times.
      */
-    fun matching(seen: Map<Int, Int>, minFrames: Int = MIN_FRAMES): List<CanSignal> =
-        all.filter { s -> s.requires.all { (seen[it] ?: 0) >= minFrames } }.distinctBy { it.id }
+    fun matching(seen: Map<Int, Int>, minFrames: Int = MIN_FRAMES, signals: List<CanSignal> = all): List<CanSignal> =
+        signals.filter { s -> s.requires.all { (seen[it] ?: 0) >= minFrames } }.distinctBy { it.id }
 
     /** Frames of each required id a probe must have caught: a frame sent once a second can be missed. */
     const val MIN_FRAMES = 3
