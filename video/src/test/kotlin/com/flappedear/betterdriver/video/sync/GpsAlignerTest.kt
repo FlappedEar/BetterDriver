@@ -104,4 +104,48 @@ class GpsAlignerTest {
         assertEquals(AlignmentMethod.GPS_MATCH, result.alignment.method)
         assertTrue(abs(result.sessionOffsetUs - trueOffset) <= 10_000)
     }
+
+    // Times from damaged or crafted files (audit BD-02): bounded work, never a huge grid or an overflow.
+
+    /** Camera speeds over two minutes, with no UTC. */
+    private fun bareCamera() = camera(0, 120).map { SpeedPoint(it.videoTimeUs, it.speedMps) }
+
+    @Test
+    fun `two session points ten million seconds apart make no grid of a billion steps`() {
+        // Before the bound: DoubleArray(1_000_000_001), 8 GB, ahead of any check.
+        val session = listOf(SpeedPoint(0, 20.0), SpeedPoint(10_000_000_000_000L, 20.0))
+        assertNull(GpsAligner().alignSpeeds(bareCamera(), session))
+    }
+
+    @Test
+    fun `extreme and negative times end in no match, not a crash`() {
+        val extremes = listOf(Long.MIN_VALUE, -1L, 0L, Long.MAX_VALUE)
+        // As GPS UTC too: none of them is a usable time (0 is left out, it would be one).
+        val points = extremes.map { SpeedPoint(it, 20.0, it.takeIf { t -> t != 0L }) }
+        val session = points
+        val prior = AlignmentResult(0, Alignment(AlignmentMethod.CAMERA_CLOCK, 2_000_000))
+        val cam = points + bareCamera()
+        assertEquals(prior, GpsAligner().alignSpeeds(cam, session, prior))
+        assertNull(GpsAligner().alignSpeeds(cam, session))
+        val farPrior = AlignmentResult(Long.MAX_VALUE, Alignment(AlignmentMethod.CAMERA_CLOCK, Long.MAX_VALUE))
+        assertEquals(farPrior, GpsAligner().alignSpeeds(bareCamera(), session(300, withUtc = false), farPrior))
+    }
+
+    @Test
+    fun `a stray session point days later does not stop the match`() {
+        val trueOffset = 20_000_000L
+        val days = 3L * 24 * 3600 * 1_000_000
+        val stray = session(300) + SpeedPoint(days, 25.0, (sessionStartUtcUs + days) / 1000)
+        val result = assertNotNull(GpsAligner().align(camera(trueOffset, 120), stray))
+        assertEquals(AlignmentMethod.GPS_MATCH, result.alignment.method)
+        assertTrue(abs(result.sessionOffsetUs - trueOffset) <= 10_000, "offset ${result.sessionOffsetUs}")
+    }
+
+    @Test
+    fun `a two-hour session still synchronises`() {
+        val trueOffset = 5_400_000_000L
+        val result = assertNotNull(GpsAligner().align(camera(trueOffset, 600), session(7200)))
+        assertEquals(AlignmentMethod.GPS_MATCH, result.alignment.method)
+        assertTrue(abs(result.sessionOffsetUs - trueOffset) <= 10_000, "offset ${result.sessionOffsetUs}")
+    }
 }

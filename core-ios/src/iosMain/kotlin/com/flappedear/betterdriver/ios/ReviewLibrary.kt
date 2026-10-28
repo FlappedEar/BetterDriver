@@ -182,6 +182,25 @@ class ReviewLibrary(base: String) {
     fun clearStaging(): Boolean = inbox.clearStaging()
 
     /**
+     * At app start, off the main thread: a session the app was killed in the middle of (no clean
+     * stop) gets its recovery record and duration, as Android's start does (FBBD-71, audit BD-05).
+     * Its samples are only read. Returns one line per session for the app's log, never throws:
+     * a session that cannot be recovered is listed with why and left as it is.
+     */
+    @Suppress("TooGenericExceptionCaught") // Swift cannot catch a Kotlin exception; it must not cross.
+    fun recoverInterrupted(): List<String> {
+        val lines = mutableListOf<String>()
+        try {
+            store.recoverInterrupted { id, e -> lines += "$id not recovered: ${e.message}" }.forEach { r ->
+                lines += "${r.id} recovered: ${r.sampleSets} sample sets to ${r.lastSampleMicros} us"
+            }
+        } catch (e: Exception) {
+            lines += "recovery stopped: ${e.message}"
+        }
+        return lines
+    }
+
+    /**
      * Imports the VBO or RaceChrono CSV file at [path] as a new session (FBBD-164), as Android's
      * import does: the track is detected among the saved tracks and the built-in circuit list.
      * [onProgress] gets the bytes read so far and the file's size. Throws ImportFormatException,

@@ -34,7 +34,7 @@ class CoachPicksStore(private val dir: File) {
     }
 
     private fun read(f: File): CoachPicks? {
-        if (!f.isFile) return null
+        if (!f.isFile || f.length() > MaxCoachFileBytes) return null
         return try {
             json.decodeFromString(CoachPicks.serializer(), f.readText())
                 .takeIf { it.format == CoachPicks.Format && it.version == CoachPicks.Version }

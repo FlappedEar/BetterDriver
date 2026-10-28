@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.gopro
 
 import com.flappedear.betterdriver.recorder.store.SessionData
+import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import com.flappedear.betterdriver.video.VideoSourceKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -85,7 +86,12 @@ class GoProDownloader(
                     importer.import(sessionDir, session, local, source, recording)
                 }
                 problems += result.problems
-                store.put(recording.copy(downloaded = true))
+                // Done only when every file is in the session (audit BD-06): otherwise a later run
+                // tries again, downloading anew a file that is not a readable MP4, whatever its length.
+                val placed = result.clips.map { it.fileName }.toSet()
+                val missing = local.filter { it.name !in placed }
+                withContext(Dispatchers.IO) { missing.filterNot(::readable).forEach { it.delete() } }
+                if (missing.isEmpty()) store.put(recording.copy(downloaded = true))
             }
         } catch (e: IOException) {
             problems += "GoPro download stopped: ${e.message}"
@@ -93,6 +99,14 @@ class GoProDownloader(
             cleanUp(client)
         }
         return Result(downloaded, problems)
+    }
+
+    /** [file]'s MP4 index reads: it was downloaded whole, though it may still fall outside the session. */
+    private fun readable(file: File): Boolean = try {
+        Mp4Reader.read(file)
+        true
+    } catch (_: IOException) {
+        false
     }
 
     @Suppress("TooGenericExceptionCaught", "SwallowedException") // Best effort: the files are already safe.

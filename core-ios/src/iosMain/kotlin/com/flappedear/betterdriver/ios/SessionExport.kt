@@ -17,6 +17,8 @@ import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.replay.replayLaps
+import com.flappedear.betterdriver.video.IoProblem
+import com.flappedear.betterdriver.video.mp4.Mp4Parser
 import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
@@ -33,11 +35,8 @@ import platform.Foundation.localTimeZone
 import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.timeZoneForSecondsFromGMT
 import platform.posix.FILE
-import platform.posix.SEEK_SET
 import platform.posix.fclose
 import platform.posix.fopen
-import platform.posix.fread
-import platform.posix.fseeko
 import platform.posix.fwrite
 
 /** An export that could not be written; the message says why. */
@@ -232,12 +231,12 @@ private class TextFile(private val path: String) : Appendable, AutoCloseable {
         if (written.toLong() != bytes.size.toLong()) throw ExportException("cannot write $path")
     }
 
+    /** Writes the rest; fclose writes C's own buffer, so its failure (a full disk) fails the export too. */
     override fun close() {
-        try {
-            flush()
-        } finally {
-            fclose(file)
-        }
+        val flushed = runCatching { flush() }
+        val closed = fclose(file) == 0
+        flushed.getOrThrow()
+        if (!closed) throw ExportException("cannot write $path")
     }
 
     private companion object {
@@ -246,54 +245,15 @@ private class TextFile(private val path: String) : Appendable, AutoCloseable {
 }
 
 /** MP4 files as the recorder leaves them. */
-@Suppress("MagicNumber") // The MP4 box header: 4-byte size, 4-byte type, 8-byte size when the first is 1.
 internal object Mp4Files {
-    private const val HeaderBytes = 16
-    private const val ShortHeaderBytes = 8
-    private const val Moov = "moov"
-
     /**
-     * The file at [path] has its index (a top-level moov box), so it plays: a file whose camera was
-     * cut off before it finished has none, as Mp4Reader.isComplete checks on Android.
+     * The file at [path] has its index (a top-level moov box that fits in the file), so it plays: a
+     * file whose camera was cut off before it finished has none. The shared [Mp4Parser.isComplete],
+     * as Mp4Reader.isComplete on Android (audit BD-07: a moov header alone is not enough).
      */
-    fun isComplete(path: String): Boolean {
-        val file = fopen(path, "rb") ?: return false
-        try {
-            var offset: Long? = 0L
-            var found = false
-            while (offset != null && !found) {
-                val at: Long = offset
-                val box = boxAt(file, at)
-                found = box?.first == Moov
-                offset = box?.second?.let { at + it }
-            }
-            return found
-        } finally {
-            fclose(file)
-        }
+    fun isComplete(path: String): Boolean = try {
+        PosixMp4Source(path).use { Mp4Parser.isComplete(it) }
+    } catch (_: IoProblem) {
+        false
     }
-
-    /**
-     * Type and size of the box at [offset]; null past the end or when unreadable. The size is null
-     * when the box runs to the end of the file, so no box follows it.
-     */
-    private fun boxAt(file: CPointer<FILE>, offset: Long): Pair<String, Long?>? {
-        val header = ByteArray(HeaderBytes)
-        val read = if (fseeko(file, offset, SEEK_SET) == 0) {
-            header.usePinned { fread(it.addressOf(0), 1u, HeaderBytes.convert(), file) }.toInt()
-        } else {
-            0
-        }
-        if (read < ShortHeaderBytes) return null
-        val size = when (val size32 = uint(header, 0)) {
-            0L -> null
-            1L -> if (read < HeaderBytes) null else (uint(header, 8) shl 32) or uint(header, 12)
-            else -> size32
-        }
-        return header.decodeToString(4, 8) to size?.takeIf { it >= ShortHeaderBytes }
-    }
-
-    private fun uint(b: ByteArray, at: Int): Long =
-        ((b[at].toLong() and 0xff) shl 24) or ((b[at + 1].toLong() and 0xff) shl 16) or
-            ((b[at + 2].toLong() and 0xff) shl 8) or (b[at + 3].toLong() and 0xff)
 }

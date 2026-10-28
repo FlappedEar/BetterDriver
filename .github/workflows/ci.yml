@@ -53,6 +53,20 @@ jobs:
             fi
           fi
           echo "app=$app" >> "$GITHUB_OUTPUT"
+      # A module the iOS app exports that ios.yml does not watch would let a change to its iOS code
+      # through untested (audit BD-08): each one must be in both of ios.yml's path filters.
+      - name: iOS workflow watches every exported module
+        run: |
+          mods=$(sed -n 's/^val exported = listOf(\(.*\))$/\1/p' core-ios/build.gradle.kts | tr -d '": ' | tr , '\n' | sed 's/^://')
+          [ -n "$mods" ] || { echo "::error::no exported modules found in core-ios/build.gradle.kts"; exit 1; }
+          missing=0
+          for m in $mods core-ios; do
+            if [ "$(grep -cFx "      - \"$m/**\"" .github/workflows/ios.yml)" -ne 2 ]; then
+              echo "::error file=.github/workflows/ios.yml::$m/** is not in both iOS path filters"
+              missing=1
+            fi
+          done
+          exit $missing
 
   check:
     name: ${{ matrix.name }}

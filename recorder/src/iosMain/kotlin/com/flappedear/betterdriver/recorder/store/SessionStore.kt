@@ -111,16 +111,26 @@ class SessionStore(val root: String) {
     /**
      * Run at app start. Finds sessions that were not stopped cleanly and nobody is recording,
      * checks their chunks and marks them recovered. Chunk files are only read, never changed (FBBD-71).
+     * Each session is on its own: one that cannot be recovered is left as it is and the rest still
+     * are; [onError] hears about it. A session whose recording took its lock meanwhile is left alone.
      */
-    fun recoverInterrupted(): List<RecoveryReport> = list().filter { it.state == SessionState.INTERRUPTED }.map { s ->
-        val report = recoveryReportOf(s.id, chunkPaths(s.dir).map { path -> { PosixFiles.readBytes(path) } })
-        val now = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
-        PosixFiles.writeAtomically(
-            PosixFiles.join(s.dir, SessionFileNames.RECOVERY),
-            writeProperties(recoveryEntries(report, now)),
-        )
-        report
-    }
+    @Suppress("TooGenericExceptionCaught") // Any failure of one session must not stop the others.
+    fun recoverInterrupted(onError: (id: String, e: Exception) -> Unit = { _, _ -> }): List<RecoveryReport> =
+        list().filter { it.state == SessionState.INTERRUPTED }.mapNotNull { s ->
+            try {
+                val report = recoveryReportOf(s.id, chunkPaths(s.dir).map { path -> { PosixFiles.readBytes(path) } })
+                val now = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
+                if (state(s.dir) != SessionState.INTERRUPTED) return@mapNotNull null
+                PosixFiles.writeAtomically(
+                    PosixFiles.join(s.dir, SessionFileNames.RECOVERY),
+                    writeProperties(recoveryEntries(report, now)),
+                )
+                report
+            } catch (e: Exception) {
+                onError(s.id, e)
+                null
+            }
+        }
 
     /**
      * Reads session [id], in any state, including one being recorded (up to its last write).

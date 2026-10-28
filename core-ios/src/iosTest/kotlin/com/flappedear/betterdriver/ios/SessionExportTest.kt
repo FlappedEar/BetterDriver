@@ -128,4 +128,23 @@ class SessionExportTest {
         session.stop()
         assertFalse(SessionExport("$base/sessions", "$base/tracks", "$base/out").hasVideo(session.id))
     }
+
+    /** iOS asks the shared parser (audit BD-07): a moov header alone, or one cut short, is no whole file. */
+    @Test
+    fun aVideoIsWholeOnlyWithItsWholeIndex() {
+        NSFileManager.defaultManager.createDirectoryAtPath(base, true, null, null)
+        val cases = listOf(
+            "whole" to (box("ftyp", 12) + box("mdat", 100) + box("moov", 20)),
+            // 00 00 10 00 'moov': 4096 bytes declared, 8 written.
+            "moov-header" to byteArrayOf(0, 0, 0x10, 0, 0x6d, 0x6f, 0x6f, 0x76),
+            "cut-extended" to (box("ftyp", 12) + byteArrayOf(0, 0, 0, 1) + "moov".encodeToByteArray()),
+            "tiny-box" to (byteArrayOf(0, 0, 0, 4) + "free".encodeToByteArray() + box("moov", 20)),
+            "no-moov" to (box("ftyp", 12) + box("mdat", 100)),
+        )
+        for ((name, bytes) in cases) write("$base/$name.mp4", bytes)
+        assertTrue(Mp4Files.isComplete("$base/whole.mp4"))
+        for (name in cases.drop(1).map { it.first } + "missing") {
+            assertFalse(Mp4Files.isComplete("$base/$name.mp4"), name)
+        }
+    }
 }
