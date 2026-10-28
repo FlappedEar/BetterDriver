@@ -48,7 +48,7 @@ struct SessionView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) }
+            ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id, title: title) }
             // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {

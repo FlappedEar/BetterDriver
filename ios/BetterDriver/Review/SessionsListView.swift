@@ -11,6 +11,7 @@ struct SessionsListView: View {
     @State private var notYet: String?
     @State private var deleting: SessionRow?
     @State private var trackDay: TrackDayLink?
+    @State private var watching: SessionRow?
 
     var body: some View {
         List(selection: $selection) {
@@ -28,8 +29,9 @@ struct SessionsListView: View {
                     ForEach(day.sessions) { session in
                         SessionRowView(session: session)
                             .tag(session.id)
-                            // Android's session card buttons: Delete, Share, and the coach's review.
+                            // Android's session card buttons: Watch video (FBBD-341), Delete, Share, and the coach's review.
                             .contextMenu {
+                                Button("Watch video") { watching = session }
                                 Button("Coach review") { notYet = "Coach review" }
                                 Button("Share") { model.share(session) }
                                 Button("Delete", role: .destructive) { deleting = session }
@@ -73,6 +75,9 @@ struct SessionsListView: View {
         }
         .sheet(isPresented: $showingTracks) { TracksView() }
         .sheet(item: $trackDay) { TrackDayView(link: $0) }
+        .fullScreenCover(item: $watching) { session in
+            DataVideoWatchPage(sessionId: session.id) { watching = nil }
+        }
         .notImplementedAlert($notYet)
         .alert(
             "Delete session?",

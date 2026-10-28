@@ -4,15 +4,17 @@ import UIKit
 
 /// Export from a session (FBBD-333), as the export menu of Android's session card: VBO + video for
 /// Circuit Tools into a new folder (FBBD-25), when the session has video, the VBO alone, CSV and
-/// GPX. The files are written in the background, then Files asks where to save them.
+/// GPX, and Video with data (FBBD-152) when it has video. The files are written in the background, then Files asks where to save them.
 struct ExportButton: View {
     let sessionId: String
+    /// The session's name, for the Video with data sheet.
+    var title = ""
 
     @State private var hasVideo = false
     @State private var running = false
     @State private var ready: ExportedFile?
     @State private var failure: String?
-    @State private var notYet: String?
+    @State private var dataVideo = false
 
     var body: some View {
         Menu {
@@ -27,7 +29,9 @@ struct ExportButton: View {
             // The rest of Android's export menu.
             Button { export(.csv) } label: { Label("CSV", systemImage: "tablecells") }
             Button { export(.gpx) } label: { Label("GPX", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
-            Button { notYet = "Video with data" } label: { Label("Video with data", systemImage: "film.stack") }
+            if hasVideo {
+                Button { dataVideo = true } label: { Label("Video with data", systemImage: "film.stack") }
+            }
         } label: {
             if running {
                 ProgressView().tint(Palette.accent)
@@ -44,7 +48,10 @@ struct ExportButton: View {
         .sheet(item: $ready) { file in
             SaveToFiles(url: file.url) { ready = nil }
         }
-        .notImplementedAlert($notYet)
+        .sheet(isPresented: $dataVideo) {
+            DataVideoSheet(sessionId: sessionId, title: title.isEmpty ? "This session" : title) { dataVideo = false }
+                .presentationDetents([.medium, .large])
+        }
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
         }
