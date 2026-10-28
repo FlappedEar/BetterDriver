@@ -86,13 +86,19 @@ class SetupRepo private constructor(context: Context) {
     }
 
     /**
-     * Sets a track screen tile from the track screen (UI-123 B): in the setup, so every next session
-     * shows it, and in the running session's copy, so it shows now. Main thread only.
+     * Sets a tile of car [carId]'s track screen from Settings (FBBD-345): in the setup, so every next
+     * session with the car shows it, and in a running session's copy, so it shows now. Main thread only.
      */
-    fun chooseTile(page: TrackPage, slot: Int, id: String?) {
-        update { it.chooseTile(page, slot, id) }
+    fun chooseTile(page: TrackPage, slot: Int, id: String?, carId: String?) =
+        changeTiles { it.chooseTile(page, slot, id, carId) }
+
+    /** Puts the default tiles back on car [carId]'s track screen, as [chooseTile] sets one. */
+    fun resetTiles(carId: String?) = changeTiles { it.resetTiles(carId) }
+
+    private fun changeTiles(change: (Setup) -> Setup) {
+        update(change)
         val r = running ?: return
-        val next = r.chooseTile(page, slot, id)
+        val next = change(r)
         if (next == r) return
         running = next
         save(runningStore, next)

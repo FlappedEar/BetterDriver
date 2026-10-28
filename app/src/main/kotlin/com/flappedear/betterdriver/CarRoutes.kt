@@ -157,7 +157,7 @@ private fun CarPidsRoute(nav: NavHostController, e: NavBackStackEntry, repo: Set
 internal fun recordedPids(setup: Setup, car: CarProfile): Set<Int> {
     car.recordedPids?.let { return it.toSet() }
     val supported = car.scan?.supported?.toSet().orEmpty()
-    return PollSet.Driver.plus(obdTileChannels(setup.trackScreens)).standardPids(supported)
+    return PollSet.Driver.plus(obdTileChannels(setup.trackScreensFor(car.id))).standardPids(supported)
 }
 
 @Composable

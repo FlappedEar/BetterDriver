@@ -1,8 +1,6 @@
 package com.flappedear.betterdriver.video
 
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
@@ -33,10 +31,7 @@ class VideoIndex(private val sessionDir: File) {
     /** Adds [clip], replacing any clip with the same file name. */
     fun put(clip: VideoClip) = update { clips -> clips.filterNot { it.fileName == clip.fileName } + clip }
 
-    fun putAll(newClips: List<VideoClip>) = update { clips ->
-        val names = newClips.map { it.fileName }.toSet()
-        clips.filterNot { it.fileName in names } + newClips
-    }
+    fun putAll(newClips: List<VideoClip>) = update { clips -> ClipIndexJson.merge(clips, newClips) }
 
     fun remove(fileName: String) = update { clips -> clips.filterNot { it.fileName == fileName } }
 
@@ -57,8 +52,7 @@ class VideoIndex(private val sessionDir: File) {
         videoDir.mkdir()
         RandomAccessFile(File(videoDir, IndexFileName + LockSuffix), "rw").channel.use { channel ->
             channel.lock().use {
-                val updated = change(read()).sortedWith(compareBy({ it.kind }, { it.sessionOffsetUs }, { it.fileName }))
-                writeAtomically(json.encodeToString(IndexFile.serializer(), IndexFile(FormatVersion, updated)))
+                writeAtomically(ClipIndexJson.encode(change(read())))
             }
         }
     }
@@ -66,9 +60,7 @@ class VideoIndex(private val sessionDir: File) {
     private fun read(): List<VideoClip> {
         if (!file.isFile) return emptyList()
         return try {
-            val index = json.decodeFromString(IndexFile.serializer(), file.readText())
-            if (index.version > FormatVersion) throw SerializationException("newer index version ${index.version}")
-            index.clips
+            ClipIndexJson.decode(file.readText())
         } catch (_: SerializationException) {
             setAside()
         } catch (_: IllegalArgumentException) {
@@ -96,20 +88,11 @@ class VideoIndex(private val sessionDir: File) {
         }
     }
 
-    @Serializable
-    private data class IndexFile(val version: Int, val clips: List<VideoClip>)
-
     companion object {
         const val VideoDirName = "video"
         const val IndexFileName = "clips.json"
-        private const val FormatVersion = 1
         private const val UnreadableMarker = ".unreadable-"
         private const val LockSuffix = ".lock"
         private val lock = Any()
-        private val json = Json {
-            prettyPrint = true
-            ignoreUnknownKeys = true
-            encodeDefaults = true
-        }
     }
 }

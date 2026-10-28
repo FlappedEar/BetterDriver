@@ -50,9 +50,6 @@ When you drove the same track in two or more sessions on one day, the day's head
 session plays one after the other. Nothing is rendered or saved: to keep an MP4, use
 [Video with data](export.md#video-with-data).
 
-!!! note "Not released yet"
-    Merged after 1.14.0. It ships in the next release.
-
 ## Import a session
 
 **Import session** at the top of Sessions takes files from other apps and devices:

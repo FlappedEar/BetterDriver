@@ -12,7 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -58,7 +58,8 @@ internal fun TilePicker(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Column(
             Modifier
-                .width(PickerWidth)
+                .fillMaxWidth(PickerWidthFraction)
+                .widthIn(max = PickerWidth)
                 .fillMaxHeight(PickerHeightFraction)
                 .background(c.surface, RoundedCornerShape(12.dp))
                 .padding(horizontal = 16.dp, vertical = 12.dp)
@@ -112,6 +113,9 @@ private fun ChoiceRow(label: String, value: String, selected: Boolean, hasData: 
 }
 
 private val PickerWidth = 440.dp
+
+/** On a phone in portrait (Settings, FBBD-345) the list is narrower than [PickerWidth]. */
+private const val PickerWidthFraction = 0.92f
 private const val PickerHeightFraction = 0.92f
 
 /** As the review's mock dims a channel the car does not answer. */

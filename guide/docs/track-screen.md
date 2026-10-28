@@ -53,9 +53,6 @@ any way in its mount: the app levels it while the car stands still, then works o
 forward from the GPS over about the first minute of driving. Until then the dot shows the G from
 GPS, which is right but later.
 
-!!! note "Not released yet"
-    Merged after 1.14.0. It ships in the next release.
-
 ## Screen 3: the next corner
 
 Swipe left again for a map of the next corner: the road your laps used there, the line plan's
@@ -69,8 +66,15 @@ the car is.
 
 ## Choosing what a tile shows
 
-With the car stopped, **hold a tile for 1 second**. A list grouped by source opens, showing each
-channel's value now. Pick one; the choice is kept for every session.
+!!! note "Not released yet"
+    Merged after 1.15.0. It ships in the next release.
+
+Set the tiles before you drive, in **Settings › Track screen**. Each car has its own layout: pick
+the car under **Layout for** (a car without its own starts from the tiles you had). Both screens
+are drawn as they look in the car; tap a tile and pick what it shows from a list grouped by source,
+or **Reset tiles to default**. The FR-S CAN channels (steering angle, brake pressure) are in the
+list too. The track screen itself has no gesture for tiles: holding 3 s anywhere only stops the
+session.
 
 A tile can show speed, G, satellites, delta, lap time, last, best or predicted lap, lap number,
 any OBD-II value the car sends (coolant, oil, intake air, RPM, throttle, battery voltage and the

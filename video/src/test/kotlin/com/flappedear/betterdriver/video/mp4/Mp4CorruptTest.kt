@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.video.mp4
 
 import com.flappedear.betterdriver.video.gpmf.FakeGoProFile
 import com.flappedear.betterdriver.video.gpmf.GpmfGps
+import com.flappedear.betterdriver.video.gpmf.read
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.io.File
