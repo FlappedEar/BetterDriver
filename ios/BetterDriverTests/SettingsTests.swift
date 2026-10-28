@@ -35,6 +35,23 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(TrackTiles.shared.ids(setup: again.setup, carId: "frs", second: false), TrackScreenModel.defaultTiles)
     }
 
+    func testACarsOwnParameterIsSavedAndReadBack() {
+        let model = SettingsModel(base: base)
+        model.update { SettingsCore.shared.addCar(setup: $0, name: "Scion FR-S", notes: "", id: "frs") }
+        let draft = ParameterDraft(
+            source: .can, canId: "0D4", header: "", request: "", equation: "A*256+B", unit: "rpm", fast: false,
+            name: "Wheel speed"
+        )
+        model.update { CarPageCore.shared.saveParameter(setup: $0, carId: "frs", key: nil, draft: draft) }
+        let again = SettingsModel(base: base)
+        let saved = again.setup.car(id: "frs")?.parameters.first
+        XCTAssertEqual(saved?.name, "Wheel speed")
+        XCTAssertEqual(saved?.canId, 0x0D4)
+        XCTAssertEqual(saved.map { CarPageCore.shared.parameterSource(p: $0) }, "CAN 0D4 · A*256+B")
+        again.update { CarPageCore.shared.removeParameter(setup: $0, carId: "frs", key: saved?.key ?? "") }
+        XCTAssertEqual(again.setup.car(id: "frs")?.parameters.count, 0)
+    }
+
     func testEquipmentAndCarsAreSavedAndReadBack() {
         let model = SettingsModel(base: base)
         let raceBox = SettingsCore.shared.model(name: ModelName.raceBox)!
