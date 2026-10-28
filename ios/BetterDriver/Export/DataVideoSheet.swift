@@ -208,3 +208,53 @@ struct DataVideoPlayerPage: View {
         .onDisappear { player.pause() }
     }
 }
+
+/// Watch video (FBBD-341), as Android's on the session sheet: all of the session's video with the data
+/// overlay, also for a drive without a track or laps.
+struct DataVideoWatchPage: View {
+    let sessionId: String
+    let onClose: () -> Void
+
+    @State private var playback: DataVideoPlayback?
+    @State private var failure: String?
+
+    var body: some View {
+        Group {
+            if let playback {
+                DataVideoPlayerPage(playback: playback, onClose: onClose)
+            } else {
+                ZStack(alignment: .topLeading) {
+                    Palette.background.ignoresSafeArea()
+                    VStack(spacing: 12) {
+                        if let failure {
+                            DimText(failure)
+                        } else {
+                            ProgressView().tint(Palette.accent)
+                            DimText("Reading the video…")
+                        }
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    Button("Close", action: onClose)
+                        .padding(16)
+                        .accessibilityIdentifier("dataVideoClose")
+                }
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        do {
+            guard let opened = try await DataVideoMaker.open(sessionId) else {
+                failure = "This session has no video."
+                return
+            }
+            let (session, durations) = opened
+            let whole: Int32 = 0
+            let (asset, overlay) = try await DataVideoMaker.make(session, part: whole, durations: durations)
+            playback = DataVideoPlayback(asset: asset, overlay: overlay, session: session, part: whole, durations: durations)
+        } catch {
+            failure = "This session's video could not be read: \(error.localizedDescription)"
+        }
+    }
+}

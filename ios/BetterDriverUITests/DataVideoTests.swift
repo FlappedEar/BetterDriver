@@ -63,6 +63,21 @@ final class DataVideoTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
     }
 
+    func testWatchVideoFromTheSessionList() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).press(forDuration: 1.2)
+        app.buttons["Watch video"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 60), "no player")
+        sleep(4)
+        XCTAssertEqual(app.state, .runningForeground, "the app stopped while playing")
+        keep("Watch video")
+        app.buttons["dataVideoClose"].firstMatch.tap()
+    }
+
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
     private func openSessions() {
         let bottom = app.tabBars.buttons["Sessions"]
