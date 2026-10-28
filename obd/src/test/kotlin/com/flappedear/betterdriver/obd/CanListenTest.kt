@@ -230,6 +230,32 @@ class CanListenTest {
     }
 
     @Test
+    fun `frames from Arek's FR-S decode to the values the reader saw`() {
+        // FBBD-319 reader log of 2026-10-23 (standing): full lock, the hardest brake press (0xD1 is 4
+        // bytes on the car), a throttle blip and the warmest temperatures.
+        val car = mapOf(
+            0x0D0 to "001100000000FF02",
+            0x0D1 to "00003100",
+            0x140 to "3608720425352E20",
+            0x360 to "2201596B3E000000",
+            0x144 to "C0004C8A1CA42000",
+            0x7E8 to "03410C1AF8000000",
+        )
+        val got = run(BusElm(car, vin = "JF1ZNAA18D2000000", stn = true))
+        val logs = got.logs.toString()
+        assertTrue("can_listen on: vin JF1ZNAA1" in got.logs, logs)
+        fun value(id: String) = got.values.filter { it.first == id }.map { it.second }.distinct().single()
+        assertEquals(-435.2, value("steering_angle"), 1e-9)
+        assertEquals(62.72, value("brake_pressure"), 1e-9)
+        assertEquals(70.0, value("brake"), 1e-9)
+        assertEquals(54 / 2.55, value("accelerator"), 1e-9)
+        assertEquals(46 / 2.55, value("throttle"), 1e-9)
+        assertEquals(1138.0, value("rpm"))
+        assertEquals(49.0, value("oil_temp"))
+        assertEquals(67.0, value("coolant_temp"))
+    }
+
+    @Test
     fun `an STN adapter hears every FR-S id in one monitor`() {
         val elm = BusElm(frs, stn = true)
         val got = run(elm)

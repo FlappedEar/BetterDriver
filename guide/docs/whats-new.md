@@ -4,6 +4,17 @@ The full notes of every release are on
 [GitHub Releases](https://github.com/FlappedEar/BetterDriver/releases) and in
 [docs/release-notes](https://github.com/FlappedEar/BetterDriver/tree/main/docs/release-notes).
 
+## 1.15.0
+
+- **Watch video**: a session's sheet plays its video with the data band over it (speed, G, the
+  map with the car, lap and delta where there are laps), also for a drive away from any track.
+  See [Watch a session's video](sessions.md#watch-a-sessions-video).
+- **G with Phone GPS**: the G radar and G tile now work with the phone's own accelerometer, in
+  any mount position. See [The track screen](track-screen.md).
+- **Drive without laps**: a session with no laps shows its route coloured by speed, the speed
+  along the drive, distance, time, and average and top speed.
+  See [Lap analysis](analysis.md#a-session-without-laps).
+
 ## 1.14.0
 
 - **Beyond your best**: where your best lap already matches its target, *Where to find time* lists
