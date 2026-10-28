@@ -39,6 +39,7 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.posix.memcpy
 import platform.Foundation.NSCalendar
+import platform.Foundation.NSCalendarIdentifierGregorian
 import platform.Foundation.NSCalendarUnitDay
 import platform.Foundation.NSCalendarUnitHour
 import platform.Foundation.NSCalendarUnitMinute
@@ -158,7 +159,10 @@ object IosPhoneClock : PhoneClock {
     override fun local(utcMillis: Long): CameraDateTime {
         val units = NSCalendarUnitYear or NSCalendarUnitMonth or NSCalendarUnitDay or
             NSCalendarUnitHour or NSCalendarUnitMinute or NSCalendarUnitSecond
-        val c = NSCalendar.currentCalendar.components(units, fromDate = date(utcMillis))
+        // Gregorian whatever calendar the iPhone shows (a Buddhist year would set the wrong date).
+        val calendar = NSCalendar(calendarIdentifier = NSCalendarIdentifierGregorian)
+        calendar.timeZone = NSTimeZone.localTimeZone
+        val c = calendar.components(units, fromDate = date(utcMillis))
         return CameraDateTime(
             c.year.toInt(), c.month.toInt(), c.day.toInt(), c.hour.toInt(), c.minute.toInt(), c.second.toInt(),
         )
