@@ -114,7 +114,7 @@ class DemoSessionsTest {
         val first = library.trackDay(day1)
         assertTrue(first is TrackDayState.Ready, "$first")
         val ui = first.ui
-        assertTrue(ui.title.startsWith("Jastrząb"), ui.title)
+        assertTrue(ui.title.startsWith("Autodrom Jastrząb · "), ui.title)
         assertTrue(ui.subtitle.startsWith("2 sessions · "), ui.subtitle)
         assertEquals("1:49.91", ui.best)
         assertEquals(2, ui.sessions.size)
