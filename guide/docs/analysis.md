@@ -15,6 +15,13 @@ your tab, compared laps, map view, corner and scroll position.
 - A lap with a GPS gap still shows its time but is never the best lap, the delta reference or a
   coach target.
 
+## A session without laps
+
+A session with no laps (driven away from any saved track, a commute for example) says so at the
+top, and under that shows the drive: distance, time, average speed while moving and top speed,
+the route on the map coloured by speed (touch it to read a point), and the speed along the drive.
+Map and chart share one cursor.
+
 ## Summary
 
 The Summary opens with what to do next and what came of last time:
