@@ -1,10 +1,11 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
+import com.flappedear.betterdriver.timing.track.TrackJson
 import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileModificationDate
@@ -12,8 +13,10 @@ import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
+import platform.Foundation.create
 import platform.Foundation.dateWithTimeIntervalSinceNow
 import platform.Foundation.stringWithContentsOfFile
+import platform.Foundation.writeToFile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -123,6 +126,22 @@ class DemoSessionsTest {
         assertTrue(second is TrackDayState.Ready, "$second")
         assertTrue(checkNotNull(second.ui.proof).title.startsWith("Last day here"), "${second.ui.proof}")
         assertTrue(library.trackDay(day1.take(1)) is TrackDayState.Unavailable)
+    }
+
+    @Test
+    fun aTrackDayKeepsTheCornerIdentityItMadeWithTheTrack() {
+        val demo = "$DemoAssetsDir/jastrzab.replay" to "$DemoAssetsDir/jastrzab.track.json"
+        val day = listOf(StartUtcMillis, StartUtcMillis + HourMillis)
+            .map { library.addDemo(demo.first, demo.second, it) }
+        // A track made on the iPhone has no corner identity until an analysis makes one.
+        val tracks = TrackLibrary("$base/tracks", "$base/sessions")
+        val saved = checkNotNull(tracks.get("jastrzab"))
+        NSString.create(string = TrackJson.encode(saved.copy(identity = null)))
+            .writeToFile("$base/tracks/jastrzab.json", atomically = true, encoding = NSUTF8StringEncoding, error = null)
+        assertTrue(library.trackDay(day) is TrackDayState.Ready)
+        val kept = checkNotNull(tracks.get("jastrzab")?.identity) { "no corner identity kept" }
+        assertTrue(library.trackDay(day) is TrackDayState.Ready)
+        assertEquals(kept, tracks.get("jastrzab")?.identity, "the next day made another identity")
     }
 
     private fun read(path: String) = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)

@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.ios
 
-import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeDay
@@ -26,7 +26,7 @@ private class DaySessionRead(val line: LineSession, val startUtcMillis: Long, va
  * it: sessions [ids] at one track, read together on the day's fastest lap's corners, kept in [plans]
  * as the track's day plan for the next day there (its coach and its proof), and measured against the
  * plan of the day before at the track. Corners are named with the track's corner identity, as the
- * review names them.
+ * review names them, and an identity the day's analysis makes is kept with the track.
  */
 // A session that cannot be read is left out of the day, whatever the reason.
 @Suppress("TooGenericExceptionCaught", "ReturnCount")
@@ -34,6 +34,7 @@ internal fun trackDayState(
     store: SessionStore,
     saved: List<Track>,
     plans: IosDayPlanStore,
+    tracks: TrackLibrary,
     ids: List<String>,
 ): TrackDayState {
     val read = ids.mapNotNull { id ->
@@ -51,7 +52,14 @@ internal fun trackDayState(
     val track = read.groupBy { it.track.id }.maxByOrNull { it.value.size }?.value?.first()?.track
         ?: return TrackDayState.Unavailable(NoDayText)
     val day = read.filter { it.track.id == track.id }
-    val analyze = { s: LineSession -> analyzeSession(s.session, s.laps, identity = track.identity) }
+    val starts = day.associate { it.line.id to it.startUtcMillis }
+    // With the track's corner identity (FBBD-172), kept with the track as Android's analyzeAtTrack
+    // keeps it, so the day plan names corners as the next day's analysis and the coach do.
+    val analyze = { s: LineSession ->
+        analyzeKeepingIdentity(s.session, track.identity, starts.getValue(s.id)) { expected, made ->
+            tracks.updateIdentity(track.id, expected, made)?.identity
+        }
+    }
     val analysis = analyzeDay(day.map { it.line }, analyze) ?: return TrackDayState.Unavailable(NoDayText)
     val first = day.first().startUtcMillis
     val date = format(first, "yyyy-MM-dd", posix = true)

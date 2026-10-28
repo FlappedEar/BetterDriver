@@ -14,6 +14,7 @@ import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackRevision
 import com.flappedear.betterdriver.timing.track.detectTrack
 import com.flappedear.betterdriver.timing.track.newTrackAt
 import com.flappedear.betterdriver.timing.track.newTrackFrom
@@ -96,6 +97,21 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
             if (!ok) throw TrackSaveException("cannot write track ${track.id}")
             stored
         }
+    }
+
+    /**
+     * Stores [identity] as the corner identity of track [id] (FBBD-172) when the stored one is still
+     * [expected], as TrackStore.updateIdentity on Android, so two analyses never replace each other's;
+     * the lines, the revision and the update time stay. Returns the track as stored afterwards, null
+     * if there is none or it cannot be written.
+     */
+    fun updateIdentity(id: String, expected: TrackRevision?, identity: TrackRevision): Track? = locked {
+        val current = read(id)
+        if (current == null || current.identity != expected || current.identity == identity) return@locked current
+        val updated = current.copy(identity = identity)
+        val ok = NSString.create(string = TrackJson.encode(updated))
+            .writeToFile(path(id), atomically = true, encoding = NSUTF8StringEncoding, error = null)
+        if (ok) updated else null
     }
 
     /** A new track named after the circuit [circuit], saved with no lines yet (Create track). */

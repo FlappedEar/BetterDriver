@@ -53,6 +53,7 @@ class ReviewLibrary(base: String) {
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
     private val plans = IosLinePlanStore(linePlansDir(base))
     private val days = IosDayPlanStore(dayPlansDir(base))
+    private val trackFiles = TrackLibrary(tracksRoot, sessionsRoot)
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
@@ -125,7 +126,7 @@ class ReviewLibrary(base: String) {
      * The track day of sessions [ids] (FBBD-315), as Android's track day page reads it; kept as the
      * track's day plan, so the next day there starts on its focus and measures it.
      */
-    fun trackDay(ids: List<String>): TrackDayState = trackDayState(store, tracks(), days, ids)
+    fun trackDay(ids: List<String>): TrackDayState = trackDayState(store, tracks(), days, trackFiles, ids)
 
     /**
      * The fastest lap of [reviewed] (session [id]) against timed lap [otherIndex] on video, as
