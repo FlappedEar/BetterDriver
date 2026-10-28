@@ -57,7 +57,7 @@ class DriveMapTest {
     }
 
     @Test
-    fun `a drive with no track is drawn whole, with its distance, speed and gap`() {
+    fun `a drive with no track is drawn whole with its distance and speed and gap`() {
         val drive = assertNotNull(driveMap(telemetrySessionOf(drive(), null)))
         // Standing adds nothing; the gap adds its straight line.
         assertEquals(3200.0, drive.distanceMeters, 5.0)
@@ -116,7 +116,7 @@ class DriveMapTest {
     }
 
     @Test
-    fun `no positions, no drive`() {
+    fun `no positions means no drive`() {
         val data = drive()
         val empty = data.copy(sampleSets = data.sampleSets.take(1))
         assertNull(driveMap(telemetrySessionOf(empty, null)))
