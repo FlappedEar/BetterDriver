@@ -24,7 +24,7 @@ final class DataVideoTests: XCTestCase {
     }
 
     func testTheVideoPlaysWithItsDataAndSaves() {
-        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo", "-noFilesSheet"]
         app.launch()
         openSessions()
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
@@ -58,19 +58,18 @@ final class DataVideoTests: XCTestCase {
         let save = app.buttons["dataVideoSave"].firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 30), "no Save video")
         save.tap()
-        // Making the video ends in Files' Save sheet (out of the app), or in a reason in the sheet.
-        let making = app.staticTexts["Making the video…"]
-        _ = making.waitForExistence(timeout: 5)
-        let finished = NSPredicate(format: "exists == false")
-        expectation(for: finished, evaluatedWith: making)
-        waitForExpectations(timeout: 180)
+        // Making the video ends in "Saved <file>" (Files' Save sheet in the app; left out in the tests), or
+        // in a reason in the sheet.
+        let saved = app.descendants(matching: .any)["dataVideoSaved"].firstMatch
         let failed = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'The video was not saved'")).firstMatch
+        let ended = NSPredicate(format: "exists == true")
+        let done = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: ended, object: saved)], timeout: 240
+        )
         XCTAssertFalse(failed.exists, failed.exists ? failed.label : "")
+        XCTAssertEqual(done, .completed, "the video was not saved")
         keep("Video with data saved")
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
-        // Files' Save sheet is closed again, so the next test can end this run of the app.
-        let cancel = app.buttons["Cancel"].firstMatch
-        if cancel.waitForExistence(timeout: 10) { cancel.tap() }
     }
 
     func testWatchVideoFromTheSessionList() {

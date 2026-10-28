@@ -25,9 +25,6 @@ private const val PreviousSuffix = ".previous"
 /** A staging folder untouched for this long belongs to an import that was killed ([FileImport.recoverStaging]). */
 private const val StaleStagingMillis = 60L * 60 * 1000
 
-/** A GoPro file name, after the camera prefix the import adds ([plainName]): chapter, then recording number. */
-private val GoProName = Regex("(?:.*-)?G[HXL](\\d{2})(\\d{4})\\.MP4", RegexOption.IGNORE_CASE)
-private val PlainName = Regex("[A-Za-z0-9._-]+")
 
 /** A file the user picked: its name as the picker gave it, if any, and a way to read it. */
 class PickedFile(val name: String?, val open: () -> InputStream)
@@ -257,27 +254,5 @@ private fun copyStream(src: InputStream, out: OutputStream, onBytes: (Long) -> U
     }
 }
 
-/**
- * A safe file name for the [index]th file picked for camera [sourceId]: its own name after the
- * camera's id if it is a plain .MP4 name, else a numbered name.
- */
-fun plainName(sourceId: String, name: String?, index: Int): String {
-    val clean = name?.substringAfterLast('/')?.trim().orEmpty()
-    val ok = clean.matches(PlainName) && clean.endsWith(".mp4", ignoreCase = true)
-    return if (ok) "$sourceId-$clean" else VideoFiles.liveName(sourceId, index + 1, "MP4")
-}
-
-/**
- * Groups GoPro files by recording, chapters in order: GH010031.MP4 and GH020031.MP4 (with or
- * without the camera prefix) are chapters 1 and 2 of recording 0031. Files with other names are
- * each their own recording.
- */
-fun byRecording(files: List<File>): List<List<File>> {
-    fun part(f: File, group: Int) = GoProName.matchEntire(f.name)?.groupValues?.get(group).orEmpty()
-    val (named, other) = files.partition { GoProName.matches(it.name) }
-    val groups = named.groupBy { part(it, 2) }
-        .toSortedMap()
-        .values
-        .map { group -> group.sortedBy { part(it, 1).toIntOrNull() ?: 0 } }
-    return groups + other.map { listOf(it) }
-}
+/** [files] grouped by recording, chapters in order (see the common [byRecording]). */
+fun byRecording(files: List<File>): List<List<File>> = byRecording(files) { it.name }

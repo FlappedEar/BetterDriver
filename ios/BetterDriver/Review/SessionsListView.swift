@@ -1,3 +1,4 @@
+import BetterDriverCore
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -12,11 +13,18 @@ struct SessionsListView: View {
     @State private var deleting: SessionRow?
     @State private var trackDay: TrackDayLink?
     @State private var watching: SessionRow?
+    /// The camera whose files Files is picking, and for which session (UI-32).
+    @State private var addingTo: (sessionId: String, camera: ListedCamera)?
+    @State private var pickingCameraFiles = false
 
     var body: some View {
         List(selection: $selection) {
             if let progress = model.importing {
                 ImportCard(progress: progress)
+                    .listRowBackground(Palette.surface)
+            }
+            if let work = model.goProWork {
+                CameraFilesCard(work: work)
                     .listRowBackground(Palette.surface)
             }
             if model.sessions.isEmpty && model.importing == nil {
@@ -27,11 +35,19 @@ struct SessionsListView: View {
             ForEach(model.days) { day in
                 Section {
                     ForEach(day.sessions) { session in
-                        SessionRowView(session: session)
+                        SessionRowView(
+                            session: session,
+                            cameras: model.cameraLines[session.id] ?? [],
+                            problems: model.goProProblems[session.id] ?? []
+                        )
                             .tag(session.id)
-                            // Android's session card buttons: Watch video (FBBD-341), Delete, Share, and the coach's review.
+                            // Android's session card buttons: Watch video (FBBD-341), Add for each camera started
+                            // by hand without video here yet (UI-32), Delete, Share, and the coach's review.
                             .contextMenu {
                                 Button("Watch video") { watching = session }
+                                ForEach(model.addableCameras(session), id: \.sourceId) { camera in
+                                    Button("Add \(camera.name) video") { addFiles(session, camera) }
+                                }
                                 Button("Coach review") { notYet = "Coach review" }
                                 Button("Share") { model.share(session) }
                                 Button("Delete", role: .destructive) { deleting = session }
@@ -68,7 +84,10 @@ struct SessionsListView: View {
                 }
             }
             ToolbarItem(placement: .primaryAction) {
-                Button { picking = true } label: { Image(systemName: "plus") }
+                Button {
+                    addingTo = nil
+                    picking = true
+                } label: { Image(systemName: "plus") }
                     .accessibilityLabel("Import sessions")
                     .accessibilityIdentifier("importSessions")
             }
@@ -93,9 +112,30 @@ struct SessionsListView: View {
         } message: { session in
             Text(deleteText(session))
         }
-        .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
-            if case .success(let urls) = result { model.importFiles(urls) }
+        // One file picker for both: sessions to import, or a camera's MP4 files for a session (UI-32).
+        .fileImporter(
+            isPresented: Binding(
+                get: { picking || pickingCameraFiles },
+                set: { if !$0 { picking = false; pickingCameraFiles = false } }
+            ),
+            allowedContentTypes: addingTo != nil ? [.mpeg4Movie] : [.bdsession, .vbo, .commaSeparatedText],
+            allowsMultipleSelection: true
+        ) { result in
+            let camera = addingTo
+            addingTo = nil
+            guard case .success(let urls) = result else { return }
+            if let camera {
+                model.addCameraFiles(sessionId: camera.sessionId, camera: camera.camera, urls: urls)
+            } else {
+                model.importFiles(urls)
+            }
         }
+    }
+
+    private func addFiles(_ session: SessionRow, _ camera: ListedCamera) {
+        if model.addDemoCameraFile(sessionId: session.id, camera: camera) { return }
+        addingTo = (session.id, camera)
+        pickingCameraFiles = true
     }
 
     private func trackDayButton(_ text: String, _ link: TrackDayLink) -> some View {
@@ -135,8 +175,39 @@ struct SessionsListView: View {
 
 private struct SessionRowView: View {
     let session: SessionRow
+    let cameras: [SessionCameraLine]
+    let problems: [String]
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            times
+            // Android's GoPro lines (UI-31, UI-32): green when lined up by GPS, amber otherwise.
+            ForEach(cameras, id: \.sourceId) { line in
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(line.byGps ? Palette.gain : Palette.warning)
+                        .frame(width: 8, height: 8)
+                    Text(line.text)
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.onBackground)
+                    Spacer()
+                    Text(line.how)
+                        .font(.caption)
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("cameraLine")
+            }
+            ForEach(problems.prefix(3), id: \.self) { problem in
+                Text(problem)
+                    .font(.caption)
+                    .foregroundStyle(TrackColors.loss)
+                    .accessibilityIdentifier("cameraProblem")
+            }
+        }
+    }
+
+    private var times: some View {
         HStack {
             Text(session.start.formatted(date: .omitted, time: .shortened))
                 .font(.body.weight(.semibold).monospacedDigit())
@@ -187,5 +258,32 @@ private struct ImportCard: View {
             text += left < 60 ? " · under 1 min left" : " · about \(Int((left / 60).rounded())) min left"
         }
         return text
+    }
+}
+
+/// A camera's files being copied into a session and lined up, as Android's GoPro line shows it (UI-32).
+private struct CameraFilesCard: View {
+    let work: SessionsModel.GoProWork
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle().fill(Palette.warning).frame(width: 8, height: 8)
+                Text("\(work.name) · copying and lining up \(work.files == 1 ? "1 file" : "\(work.files) files")")
+                    .font(.subheadline.weight(.semibold))
+                    .lineLimit(1)
+            }
+            if work.total > 0 {
+                ProgressView(value: min(1, Double(work.copied) / Double(work.total)))
+                    .tint(Palette.accent)
+                Text(String(format: "%.1f / %.1f GB", Double(work.copied) / 1e9, Double(work.total) / 1e9))
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(Palette.onSurfaceVariant)
+            } else {
+                ProgressView().tint(Palette.accent)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityIdentifier("cameraFilesProgress")
     }
 }

@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.VoiceMode
 import com.flappedear.betterdriver.setup.EquipmentKind
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupFormatException
 import com.flappedear.betterdriver.setup.SetupJson
@@ -44,8 +45,16 @@ object SettingsCore {
 
     // Equipment and cars.
 
-    /** Models the iPhone can record from, in the order Add equipment lists the ones needing no scan. */
-    val withoutBluetooth: List<EquipmentModel> = listOf(EquipmentModel.PHONE_GPS, EquipmentModel.PHONE_CAMERA)
+    /**
+     * What Add equipment offers without a scan, in Android's order: the phone camera and the phone's
+     * GPS once, cameras run by hand (their files added after the session, FBBD-343) any number of times.
+     */
+    fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
+        if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
+        add(EquipmentModel.GOPRO_FILES)
+        add(EquipmentModel.CAMERA_FILES)
+        if (setup.equipment.none { it.model == EquipmentModel.PHONE_GPS }) add(EquipmentModel.PHONE_GPS)
+    }
 
     /** The model named [name] (its Kotlin name, "RACEBOX"), or null. */
     fun model(name: String): EquipmentModel? = EquipmentModel.entries.firstOrNull { it.name == name }
@@ -57,6 +66,15 @@ object SettingsCore {
         } else {
             setup.addEquipment(model, name, address, newId = { id })
         }
+
+    /** Adds a GoPro started by hand, named after its generation as on Android ("GoPro HERO8 Black"). */
+    fun addGoProFiles(setup: Setup, goPro: GoProModel, id: String): Setup {
+        val name = when (goPro) {
+            GoProModel.OTHER, GoProModel.OTHER_OPEN_GOPRO -> "GoPro"
+            else -> "GoPro ${goPro.label}"
+        }
+        return setup.addEquipment(EquipmentModel.GOPRO_FILES, name, null, newId = { id }, goPro = goPro)
+    }
 
     /** Adds a car; a blank name changes nothing (Kotlin's require would end the app). */
     fun addCar(setup: Setup, name: String, notes: String, id: String): Setup =

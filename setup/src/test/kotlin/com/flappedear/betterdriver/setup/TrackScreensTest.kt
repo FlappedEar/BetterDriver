@@ -35,6 +35,31 @@ class TrackScreensTest {
     }
 
     @Test
+    fun `each car keeps its own tiles, starting from the shared ones`() {
+        val shared = Setup.fresh(ids).chooseTile(TrackPage.MAIN, 2, "heart_rate")
+            .addCar("FR-S", newId = ids).addCar("Corolla", newId = ids)
+        val (frs, corolla) = shared.cars.map { it.id }
+        assertEquals("heart_rate", shared.trackScreensFor(corolla).tiles(TrackPage.MAIN)[2], "no own layout yet")
+        val s = shared.chooseTile(TrackPage.MAIN, 3, "obd_steering_angle", frs)
+        assertEquals("obd_steering_angle", s.trackScreensFor(frs).tiles(TrackPage.MAIN)[3])
+        assertEquals("heart_rate", s.trackScreensFor(frs).tiles(TrackPage.MAIN)[2], "the shared tiles carried over")
+        assertNull(s.trackScreensFor(corolla).tiles(TrackPage.MAIN)[3])
+        assertEquals(shared.session.screens, s.session.screens, "the shared tiles stay as they were")
+        assertEquals(s.trackScreensFor(frs), s.trackScreens, "the next session uses its car's tiles")
+        assertEquals(s.trackScreensFor(corolla), s.chooseCar(corolla).trackScreens)
+        assertEquals(TrackScreens(), s.resetTiles(frs).trackScreensFor(frs))
+        assertEquals(s.trackScreensFor(corolla), s.resetTiles(frs).trackScreensFor(corolla))
+    }
+
+    @Test
+    fun `reset puts the default tiles back on both screens`() {
+        val s = Setup.fresh(ids).chooseTile(TrackPage.MAIN, 0, "obd_rpm").chooseTile(TrackPage.SECOND, 3, "heart_rate")
+        val reset = s.resetTiles()
+        assertEquals(TrackScreens(), reset.trackScreens)
+        assertEquals(s.equipment, reset.equipment, "only the tiles change")
+    }
+
+    @Test
     fun `tiles past the six shown, saved by 1_4_0's ten, are kept when a slot changes`() {
         val ten = TrackScreens(main = List(10) { "c$it" })
         assertEquals(List(MaxMainTiles) { "c$it" }, ten.tiles(TrackPage.MAIN))

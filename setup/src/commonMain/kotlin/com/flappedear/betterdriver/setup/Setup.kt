@@ -309,6 +309,11 @@ data class CarProfile(
     val id: String,
     val name: String,
     val notes: String = "",
+    /**
+     * This car's track screen tiles (FBBD-345, UI-306): null until a tile is set for it, and then
+     * [Setup.trackScreensFor] uses the tiles shared before, so a layout already set is kept.
+     */
+    val screens: TrackScreens? = null,
 )
 
 /** Values a track-screen tile can show, and what the session needs for each. */
@@ -523,14 +528,32 @@ data class Setup(
         copy(session = session.copy(tiles = tiles.distinct().take(MaxTiles)))
 
     /**
-     * The track screen's tiles: as chosen, or for a setup saved before FBBD-262 built from its
-     * [SessionChoice.tiles].
+     * The track screen's tiles of the next session: those of its car ([trackScreensFor]).
      */
-    val trackScreens: TrackScreens get() = session.screens ?: TrackScreens.from(session.tiles)
+    val trackScreens: TrackScreens get() = trackScreensFor(session.carId)
 
-    /** Sets one track-screen tile (FBBD-262); null empties it. */
-    fun chooseTile(page: TrackPage, slot: Int, id: String?): Setup =
-        copy(session = session.copy(screens = trackScreens.choose(page, slot, id)))
+    /**
+     * The track screen's tiles with car [carId] (FBBD-345, UI-306): its own, or until it has its own
+     * the shared ones, which a setup without cars uses too; for a setup saved before FBBD-262 they are
+     * built from its [SessionChoice.tiles].
+     */
+    fun trackScreensFor(carId: String?): TrackScreens =
+        car(carId)?.screens ?: session.screens ?: TrackScreens.from(session.tiles)
+
+    /** Sets one track-screen tile (FBBD-262) of car [carId]'s layout (FBBD-345); null empties it. */
+    fun chooseTile(page: TrackPage, slot: Int, id: String?, carId: String? = session.carId): Setup =
+        withScreens(carId, trackScreensFor(carId).choose(page, slot, id))
+
+    /** Puts the default tiles back on both screens of car [carId] (Settings › Track screen, FBBD-345). */
+    fun resetTiles(carId: String? = session.carId): Setup = withScreens(carId, TrackScreens())
+
+    /** [screens] as car [carId]'s, or as the shared ones when there is no such car. */
+    private fun withScreens(carId: String?, screens: TrackScreens): Setup =
+        if (car(carId) == null) {
+            copy(session = session.copy(screens = screens))
+        } else {
+            copy(cars = cars.map { if (it.id == carId) it.copy(screens = screens) else it })
+        }
 
     private fun replace(item: Equipment): Setup = copy(equipment = equipment.map { if (it.id == item.id) item else it })
 

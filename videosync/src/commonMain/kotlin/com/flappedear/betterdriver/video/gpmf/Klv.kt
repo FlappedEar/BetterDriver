@@ -3,7 +3,8 @@
 package com.flappedear.betterdriver.video.gpmf
 
 import com.flappedear.betterdriver.video.mp4.Mp4FormatException
-import java.nio.ByteBuffer
+import com.flappedear.betterdriver.video.mp4.ByteReader
+import com.flappedear.betterdriver.video.mp4.ascii
 
 /** One GPMF item: FourCC key, type char, structure size, repeat count and its raw (unpadded) bytes. */
 internal class Klv(val key: String, val type: Char, val structSize: Int, val repeat: Int, val bytes: ByteArray)
@@ -18,22 +19,22 @@ internal object Gpmf {
      * Calls [onStream] with the items of every STRM, at any depth under DEVC. GoPro nests two levels
      * (DEVC, STRM); deeper than [MaxDepth] is damage, refused before the stack runs out (audit A07).
      */
-    fun forEachStream(buf: ByteBuffer, onStream: (List<Klv>) -> Unit) = forEachStream(buf, 0, onStream)
+    fun forEachStream(buf: ByteReader, onStream: (List<Klv>) -> Unit) = forEachStream(buf, 0, onStream)
 
-    private fun forEachStream(buf: ByteBuffer, depth: Int, onStream: (List<Klv>) -> Unit) {
+    private fun forEachStream(buf: ByteReader, depth: Int, onStream: (List<Klv>) -> Unit) {
         if (depth >= MaxDepth) throw Mp4FormatException("GPMF nested deeper than $MaxDepth levels")
         for (item in items(buf)) {
             when {
-                item.key == "STRM" && item.type == NestedType -> onStream(items(ByteBuffer.wrap(item.bytes)))
-                item.type == NestedType -> forEachStream(ByteBuffer.wrap(item.bytes), depth + 1, onStream)
+                item.key == "STRM" && item.type == NestedType -> onStream(items(ByteReader(item.bytes)))
+                item.type == NestedType -> forEachStream(ByteReader(item.bytes), depth + 1, onStream)
             }
         }
     }
 
-    private fun items(buf: ByteBuffer): List<Klv> {
+    private fun items(buf: ByteReader): List<Klv> {
         val out = mutableListOf<Klv>()
         while (buf.remaining() >= KlvHeaderBytes) {
-            val key = ByteArray(4).also { buf.get(it) }.toString(Charsets.US_ASCII)
+            val key = ByteArray(4).also { buf.get(it) }.ascii()
             val type = (buf.get().toInt() and 0xFF).toChar()
             val structSize = buf.get().toInt() and 0xFF
             val repeat = buf.short.toInt() and 0xFFFF
@@ -71,7 +72,7 @@ internal object Gpmf {
                 "GPMF ${item.key} TYPE \"$fieldTypes\" is $structBytes bytes, structure ${item.structSize}",
             )
         }
-        val b = ByteBuffer.wrap(item.bytes)
+        val b = ByteReader(item.bytes)
         val out = ArrayList<Double>(item.bytes.size / structBytes * fieldTypes.length)
         while (b.remaining() >= structBytes) {
             for (t in fieldTypes) out += readNumber(b, t)
@@ -88,7 +89,7 @@ internal object Gpmf {
     }
 
     @Suppress("CyclomaticComplexMethod")
-    private fun readNumber(b: ByteBuffer, t: Char): Double = when (t) {
+    private fun readNumber(b: ByteReader, t: Char): Double = when (t) {
         'b' -> b.get().toDouble()
         'B', 'c' -> (b.get().toInt() and 0xFF).toDouble()
         's' -> b.short.toDouble()
