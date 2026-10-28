@@ -44,7 +44,8 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 0).press(forDuration: 1.2)
         app.buttons["Delete"].firstMatch.tap()
-        let confirm = app.alerts.buttons["Delete"]
+        // The alert nests its button in a second element with the same id: take the first.
+        let confirm = app.alerts.buttons["confirmDelete"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "no delete question")
         keep("Delete session?")
         confirm.tap()
