@@ -4,15 +4,19 @@ package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
+import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileModificationDate
 import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
+import platform.Foundation.dateWithTimeIntervalSinceNow
 import platform.Foundation.stringWithContentsOfFile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -80,6 +84,22 @@ class DemoSessionsTest {
         val review = other.review(id).review
         assertEquals(23, review.laps.size)
         assertEquals("109.906", fixed(checkNotNull(review.bestLapSeconds), 3))
+    }
+
+    @Test
+    fun aBundlePreparedOverSixHoursAgoIsRemovedWhenTheNextIsShared() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        val fm = NSFileManager.defaultManager
+        fm.createDirectoryAtPath("$base/out", true, null, null)
+        val old = "$base/out/BetterDriver-old.bdsession"
+        val recent = "$base/out/BetterDriver-recent.bdsession"
+        fm.createFileAtPath(old, null, null)
+        fm.createFileAtPath(recent, null, null)
+        val sevenHoursAgo = NSDate.dateWithTimeIntervalSinceNow(-7 * 60 * 60.0)
+        fm.setAttributes(mapOf<Any?, Any?>(NSFileModificationDate to sevenHoursAgo), old, null)
+        library.share(id, "$base/out") { _, _ -> }
+        assertFalse(fm.fileExistsAtPath(old), "a bundle prepared 7 h ago stayed")
+        assertTrue(fm.fileExistsAtPath(recent), "a recent bundle was removed")
     }
 
     private fun read(path: String) = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
