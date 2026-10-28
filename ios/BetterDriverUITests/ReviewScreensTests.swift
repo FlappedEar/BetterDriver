@@ -93,6 +93,26 @@ final class ReviewScreensTests: XCTestCase {
         waitForExpectations(timeout: 15)
     }
 
+    func testASessionWithNoTrackShowsItsDriveOnTheMap() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoNoTrack"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        // As Android (FBBD-342): the no-laps message, then the drive's figures, route and speed.
+        XCTAssertTrue(app.staticTexts["DRIVE · WHOLE SESSION"].waitForExistence(timeout: 120), "no drive card")
+        XCTAssertTrue(app.staticTexts["DISTANCE"].exists, "no distance")
+        let map = app.descendants(matching: .any).matching(identifier: "driveMap").firstMatch
+        XCTAssertTrue(map.exists, "no route")
+        map.tap()
+        keep("Drive, no laps")
+        app.swipeUp()
+        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "driveSpeedChart").firstMatch.waitForExistence(timeout: 10), "no speed chart")
+        keep("Drive speed, no laps")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     func testCsvAndGpxExportsAreWrittenWithoutAFailure() {
         // One launch per format: Files' Save sheet runs out of the app, so the test leaves it open
         // and starts again. Kotlin's DemoSessionsTest checks what the files hold.

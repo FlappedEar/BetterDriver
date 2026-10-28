@@ -29,4 +29,9 @@ extension Color {
             blue: Double(hex & 0xFF) / 255
         )
     }
+
+    /// A colour the shared core works out as ARGB (Android's Color(Int)); its alpha is left out.
+    init(argb: Int32) {
+        self.init(hex: UInt32(bitPattern: argb) & 0xFFFFFF)
+    }
 }

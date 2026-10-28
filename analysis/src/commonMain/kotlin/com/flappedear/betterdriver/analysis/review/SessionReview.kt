@@ -12,6 +12,8 @@ import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.linePlan
+import com.flappedear.betterdriver.analysis.map.DriveMap
+import com.flappedear.betterdriver.analysis.map.driveMap
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
@@ -110,7 +112,9 @@ data class ReviewCompare(
 /**
  * A reviewed session: its [review], and its analysis kept so another lap can be compared without
  * analysing the session again. [linePlan] is the track's line plan made from it (FBBD-306), which
- * the app keeps for the next session's coach as Android does; null without one.
+ * the app keeps for the next session's coach as Android does; null without one. [drive] is the whole
+ * drive on the map with its speed and figures when the session has no timed lap (FBBD-342), as
+ * Android's no-laps analysis shows it; null with laps or without positions.
  */
 class ReviewedSession internal constructor(
     val review: SessionReview,
@@ -118,6 +122,7 @@ class ReviewedSession internal constructor(
     private val session: TelemetrySession?,
     private val data: SessionData? = null,
     val linePlan: LinePlan? = null,
+    val drive: DriveMap? = null,
 ) {
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)
@@ -217,7 +222,10 @@ fun reviewSession(
     others: (Track) -> Sequence<LineSession> = { emptySequence() },
 ): ReviewedSession {
     val track = trackFor(data, tracks)
-        ?: return ReviewedSession(SessionReview(null, emptyList(), null, null), null, null)
+        ?: return ReviewedSession(
+            SessionReview(null, emptyList(), null, null), null, null,
+            drive = driveMap(telemetrySessionOf(data, null)),
+        )
     val session = telemetrySessionOf(data, track)
     val analysis = analyzeSession(session, identity = track.identity)
     val fastest = analysis.laps.fastestLapIndex
@@ -237,5 +245,7 @@ fun reviewSession(
         analysis.theoreticalBest?.totalSeconds,
         line,
     )
-    return ReviewedSession(review, analysis, session, data, plan)
+    // A session at the track with no complete lap is still seen on the map (FBBD-342).
+    val drive = if (laps.isEmpty()) driveMap(session) else null
+    return ReviewedSession(review, analysis, session, data, plan, drive)
 }
