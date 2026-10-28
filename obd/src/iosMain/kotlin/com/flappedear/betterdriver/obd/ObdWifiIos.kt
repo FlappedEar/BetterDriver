@@ -82,9 +82,12 @@ private fun networkOrder(port: Int): UShort = (((port and 0xFF) shl 8) or ((port
 /** [host] as dotted IPv4 in network byte order, or null when it is not one. */
 @Suppress("MagicNumber")
 internal fun ipv4(host: String): UInt? {
-    val parts = host.split('.').map { it.toIntOrNull()?.takeIf { n -> n in 0..255 } ?: return null }
-    if (parts.size != 4) return null
-    return parts.foldIndexed(0u) { i, acc, b -> acc or (b.toUInt() shl (8 * i)) }
+    val parts = host.split('.').mapNotNull { it.toIntOrNull()?.takeIf { n -> n in 0..255 } }
+    return if (parts.size != 4 || host.count { it == '.' } != 3) {
+        null
+    } else {
+        parts.foldIndexed(0u) { i, acc, b -> acc or (b.toUInt() shl (8 * i)) }
+    }
 }
 
 private fun option(fd: Int, level: Int, name: Int) = memScoped {
