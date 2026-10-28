@@ -73,6 +73,8 @@ final class RecordingController: ObservableObject {
     private var simulated: SimulatedGpsLink?
     private var imu: PhoneImuLink?
     private var camera: PhoneCamera?
+    /// The Open GoPro cameras turned on for the session (FBBD-343).
+    private var goPros: OpenGoPros?
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
@@ -184,6 +186,7 @@ final class RecordingController: ObservableObject {
             camera = cam
             cam.start()
         }
+        startGoPros(live)
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
         refresh()
@@ -207,6 +210,19 @@ final class RecordingController: ObservableObject {
             audioDelayFromPhone: true,
             speaker: voice
         )
+    }
+
+    /// Starts recording on every Open GoPro camera turned on for this session, as Android's GoPros;
+    /// one that is not there fails on its own and the session records on.
+    private func startGoPros(_ live: LiveSession) {
+        let on = OpenGoPros.companion.listed(setup: SettingsModel.shared.setup).filter(\.on)
+        guard !on.isEmpty else { return }
+        let cameras = OpenGoPros()
+        goPros = cameras
+        for goPro in on {
+            AppLog.i("GoPro", "start \(goPro.sourceId) mode=\(goPro.video?.label ?? "camera's own")")
+            cameras.start(session: live, goPro: goPro, link: GoProBleLink(address: goPro.address))
+        }
     }
 
     /// The hold on the track screen (UI-16): ends the session cleanly and closes the screen.
@@ -237,6 +253,9 @@ final class RecordingController: ObservableObject {
         camera?.stop()
         camera = nil
         cameraStatus = nil
+        // The cameras answer in their own time; the stop is noted in the ended session's events.
+        goPros?.stop()
+        goPros = nil
         obd = nil
         heartRate = nil
         session = nil

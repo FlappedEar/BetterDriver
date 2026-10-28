@@ -2,14 +2,15 @@ import XCTest
 import UIKit
 
 /// The gate before every TestFlight upload (ios-release.yml): a fresh install records a session with
-/// the phone camera, OBD, heart rate and the coach on, stops it and opens it, without crashing. The
-/// simulator has no camera or Bluetooth, so those links run against nothing, as with nothing paired.
+/// the phone camera, an Open GoPro, OBD, heart rate and the coach on, stops it and opens it, without
+/// crashing. The simulator has no camera or Bluetooth, so those links run against nothing, as with
+/// nothing paired.
 final class SmokeTests: XCTestCase {
     private let app = XCUIApplication()
 
     override func setUp() {
         continueAfterFailure = false
-        app.launchArguments = ["-uiTest", "-uiTestReset"]
+        app.launchArguments = ["-uiTest", "-uiTestReset", "-openGoPro"]
         // Camera, microphone and Bluetooth prompts: allow, as a first-time user would.
         addUIInterruptionMonitor(withDescription: "Permission") { alert in
             for label in ["Allow", "OK", "Allow While Using App"] where alert.buttons[label].exists {
@@ -44,6 +45,10 @@ final class SmokeTests: XCTestCase {
         // The camera starts off: the smoke test records with it on.
         let camera = app.switches["phoneCameraToggle"]
         if camera.waitForExistence(timeout: 5), (camera.value as? String) != "1" { camera.tap() }
+        // A GoPro that is not there: it fails on its own while the session records (FBBD-343).
+        let goPro = app.switches["goProToggle"]
+        XCTAssertTrue(goPro.waitForExistence(timeout: 5), "the GoPro's switch on the START sheet")
+        XCTAssertEqual(goPro.value as? String, "1", "a GoPro just added starts with the next session")
         // By id, or by its label if a parent's id ever covers the row's own.
         let byId = app.buttons["receiver.simulated"]
         let simulated = byId.exists

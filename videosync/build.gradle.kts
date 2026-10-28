@@ -1,6 +1,7 @@
 // Reading GoPro files and lining them up with a session, shared by Android and iOS (FBBD-22,
 // FBBD-343): the MP4 index and GPMF GPS readers, GPS speed matching, the clip index format and
-// where a camera's files fall in a session. Common Kotlin over an abstract file ([Mp4Source]), so
+// where a camera's files fall in a session; and the Open GoPro BLE protocol that starts and stops
+// a camera with the session, over an abstract link. Common Kotlin over an abstract file ([Mp4Source]), so
 // :video and :gopro keep their java.io wrappers and the iOS app reads files through Foundation.
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -22,10 +23,12 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":recorder"))
+            api(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+            implementation(libs.kotlinx.coroutines.test)
         }
         jvmTest.dependencies {
             implementation(project.dependencies.platform(libs.junit5.bom))

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.gopro
 
+import com.flappedear.betterdriver.video.IoProblem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.TimeoutCancellationException
@@ -11,11 +12,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
-import java.io.IOException
 
 /**
- * A BLE connection to one camera. The Android implementation wraps BluetoothGatt; tests use a
- * fake. Calls throw [IOException] on failure.
+ * A BLE connection to one camera. The Android implementation wraps BluetoothGatt, the iPhone's
+ * CoreBluetooth; tests use a fake. Calls throw [IoProblem] (IOException on Android) on failure.
  */
 interface GoProLink {
     /** Connects, discovers services and subscribes to the three response characteristics. */
@@ -33,7 +33,7 @@ interface GoProLink {
 }
 
 /** Thrown when the camera answers with a non-zero status or not at all. */
-class GoProException(message: String) : IOException(message)
+class GoProException(message: String) : IoProblem(message, null)
 
 /**
  * Request/response over a [GoProLink]: one request at a time, packets reassembled per response
@@ -69,8 +69,8 @@ class GoProClient(
                 answer.await()
             }
         } catch (_: TimeoutCancellationException) {
-            throw GoProException("no answer to 0x%02x".format(request.id))
-        }.also { if (!it.ok) throw GoProException("0x%02x failed with status ${it.status}".format(request.id)) }
+            throw GoProException("no answer to ${request.hexId}")
+        }.also { if (!it.ok) throw GoProException("${request.hexId} failed with status ${it.status}") }
     }
 
     suspend fun read(characteristic: String): ByteArray = mutex.withLock { link.read(characteristic) }
