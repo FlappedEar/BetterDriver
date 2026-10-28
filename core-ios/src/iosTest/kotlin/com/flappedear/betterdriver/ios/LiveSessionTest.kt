@@ -5,6 +5,8 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.GnssChannels
+import com.flappedear.betterdriver.recorder.PhoneImuChannels
+import com.flappedear.betterdriver.recorder.phoneAccelSet
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
@@ -23,6 +25,8 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.Foundation.writeToFile
+import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -30,6 +34,8 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+
+private const val StandardGravity = 9.80665
 
 /** A recording on the iPhone shows and logs the same laps as the Android recorder (FBBD-332). */
 class LiveSessionTest {
@@ -96,6 +102,25 @@ class LiveSessionTest {
         assertFalse(screen.placeSaved)
         assertNull(screen.timing)
         assertEquals(GnssState.Ok, screen.gnss)
+        session.stop()
+    }
+
+    /**
+     * Phone GPS only (FBBD-337): the phone lies flat, its top to the front, on the ring's left-hand
+     * circle (0.50 g to the left), reading at 25 Hz with gravity; a fix a second. The G tile shows it.
+     */
+    @Test
+    fun withPhoneGpsTheGComesFromThePhonesAccelerometer() {
+        val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL + PhoneImuChannels.ALL)
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+        val v = 2 * PI * gnss.radiusM / gnss.lapSeconds
+        val left = v * v / gnss.radiusM / StandardGravity
+        for (n in 0L..(25 * 100)) {
+            session.submit(phoneAccelSet(n * 40_000, -left, 0.0, 1.0))
+            if (n % 25 == 0L) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
+        }
+        val g = assertNotNull(session.screen().live.gCombined)
+        assertTrue(abs(g - left) < 0.1, "G $g, expected $left")
         session.stop()
     }
 

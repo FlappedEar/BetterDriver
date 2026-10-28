@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,7 +34,8 @@ import java.util.Locale
 
 /**
  * Everything a session offers, in the sheet its ⋮ opens (UI-139 C): its GoPro video, the coach's
- * review, export, share and delete, with their progress. The title opens lap analysis, as the row does.
+ * review, watching its video (FBBD-341), export, share and delete, with their progress. The title
+ * opens lap analysis, as the row does.
  */
 @Suppress("LongParameterList")
 @Composable
@@ -76,6 +78,7 @@ internal fun SessionActions(
         TransferLine(sending)
         if (free) SaveInstead(sending) { transfer.onSave(s) }
         VideoExportLine(videoExport.states[s.id], rendering) { videoExport.onCancel(s) }
+        WatchButton(s, video, delete) { videoExport.onWatch(s) }
         CardButtons(
             video = video,
             idle = free,
@@ -98,6 +101,20 @@ internal fun SessionActions(
             onDismiss = { asking = false },
         )
     }
+}
+
+/**
+ * Watch video (FBBD-341), for any session with video, with or without laps: a commute's video can be
+ * watched too. Not while it records; off while it is being deleted.
+ */
+@Composable
+private fun WatchButton(s: SessionSummary, video: Boolean, delete: DeleteState?, onWatch: () -> Unit) {
+    if (!video || s.state == SessionState.RECORDING) return
+    FilledTonalButton(
+        onClick = onWatch,
+        enabled = delete != DeleteState.Running,
+        modifier = Modifier.fillMaxWidth(),
+    ) { Text("Watch video") }
 }
 
 /** Lap analysis opens for a session, except while it records or is being deleted (UI-61 B). */

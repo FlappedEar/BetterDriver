@@ -37,17 +37,11 @@ final class SettingsModel: ObservableObject {
         if !hadCoach { updateCoach { SettingsModel.earlierLanguage($0, defaults) } }
     }
 
-    /// The phone camera switch and video mode of the START sheet and the OBD-II adapter and heart-rate
-    /// strap the iPhone found by itself before it had Settings (FBBD-333), as Settings items.
+    /// The OBD-II adapter and heart-rate strap the iPhone found by itself before it had Settings
+    /// (FBBD-333), as Settings items.
     private static func earlierChoices(_ setup: Setup, _ defaults: UserDefaults) -> Setup {
         let core = SettingsCore.shared
         var next = setup
-        if defaults.object(forKey: "phoneCamera") as? Bool == false {
-            next = core.withPhoneCamera(setup: next, on: false)
-        }
-        if let label = defaults.string(forKey: "phoneVideoMode") {
-            next = core.withPhoneVideo(setup: next, label: label)
-        }
         let found = [
             (ModelName.obdBluetooth, "lastObdAdapterId", "lastObdAdapterName", "OBD adapter"),
             (ModelName.heartRate, "heartRateStrapId", "heartRateStrapName", "Heart rate"),
@@ -114,7 +108,7 @@ final class SettingsModel: ObservableObject {
             // Written to a temporary file and moved over the old one, so a crash leaves one or the other.
             try Data(text.utf8).write(to: url, options: .atomic)
         } catch {
-            NSLog("BetterDriver: settings not saved: \(error.localizedDescription)")
+            AppLog.w("Settings", "settings not saved: \(error.localizedDescription)")
         }
     }
 

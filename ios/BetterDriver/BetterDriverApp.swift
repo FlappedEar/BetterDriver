@@ -6,6 +6,10 @@ import SwiftUI
 struct BetterDriverApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
+    init() {
+        UITestMode.resetIfAsked()
+    }
+
     var body: some Scene {
         WindowGroup {
             AppShell()

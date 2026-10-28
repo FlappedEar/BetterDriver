@@ -17,6 +17,14 @@ object BundleFormat {
     const val EndTag = 0
     const val MaxPathChars = 512
 
+    /**
+     * Whether a file named [name] in a session folder goes into a bundle: lock, temporary and
+     * partial files, and files set aside as unreadable, stay behind.
+     */
+    fun travels(name: String) =
+        name != SessionFileNames.LOCK && !name.endsWith(".tmp") && !name.endsWith(".part") &&
+            !name.endsWith(".lock") && !name.contains(".unreadable-")
+
     /** Relative paths of letters, digits, '.', '-' and '_', split by '/', with no empty, '.' or '..' part. */
     fun validPath(path: String) = path.isNotEmpty() && path.length <= MaxPathChars &&
         path.split('/').all { part ->

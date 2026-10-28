@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.coach.steeringChannelId
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.PhoneImuChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.RecorderStatus
@@ -30,9 +31,9 @@ import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
-import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.detectTrack
+import kotlin.concurrent.Volatile
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
@@ -58,6 +59,13 @@ class LiveSession private constructor(
 ) : SampleSink {
     private val lock = NSRecursiveLock()
     private var liveFailed = false
+
+    // The recorder's low-space warning, for the next look. The recorder calls in with its own lock
+    // held, and lap and track events take the recorder's lock inside this session's, so the warning
+    // must not take this lock: the links feed the session from several queues (RaceBox or GPS, the
+    // phone's accelerometer) and the two orders would deadlock.
+    @Volatile
+    private var storageLowBytes: Long? = null
 
     /** The live coach (FBBD-333), once [startCoach] started it; under the lock. */
     private var coach: LiveCoach? = null
@@ -115,18 +123,22 @@ class LiveSession private constructor(
     /**
      * Starts the live coach (FBBD-333), as the Android recorder binds its coach when the coach is on:
      * it coaches at a saved track with laps, from the sessions in [sessionsDir] and the references it
-     * keeps in [referencesDir], and says its cues with [speaker]. Its events go into this recording at
-     * their own times. [audioDelayFromPhone]: [settings]' delay is the output latency iOS reported.
+     * keeps in [referencesDir], aimed at the line plans the review keeps in [linePlansDir], and says its
+     * cues with [speaker]. Its events go into this recording at their own times.
+     * [audioDelayFromPhone]: [settings]' delay is the output latency iOS reported.
      */
+    @Suppress("LongParameterList") // Where the coach's files are, and how it speaks.
     fun startCoach(
         sessionsDir: String,
         referencesDir: String,
+        linePlansDir: String,
         settings: CoachSettings,
         audioDelayFromPhone: Boolean,
         speaker: CoachSpeaker,
     ) {
         val c = LiveCoach(
-            recording.id, sessionsDir, referencesDir, settings, audioDelayFromPhone, speaker, recording::nowMicros,
+            recording.id, sessionsDir, referencesDir, linePlansDir, settings, audioDelayFromPhone, speaker,
+            recording::nowMicros,
         ) { t, kind, text -> recording.eventAt(t, kind, text) }
         guarded { if (coach == null) coach = c }
     }
@@ -144,6 +156,7 @@ class LiveSession private constructor(
         // Read before taking the lock: the recorder calls in with its own lock held (storage low).
         val ended = recording.endReason
         return guarded {
+            storageLowBytes?.let { tracker.onStatus(RecorderStatus.StorageLow(it)) }
             val live = tracker.snapshot()
             val detection = timing.detection
             LiveScreen(
@@ -158,7 +171,9 @@ class LiveSession private constructor(
     }
 
     /** The recorder's warning that free space is low, for the track screen's alert. */
-    private fun storageLow(bytes: Long) = live { tracker.onStatus(RecorderStatus.StorageLow(bytes)) }
+    private fun storageLow(bytes: Long) {
+        storageLowBytes = bytes
+    }
 
     /** Ends the recording cleanly; false if it had already ended. */
     fun stop(): Boolean = recording.stop().also { stopped ->
@@ -191,7 +206,8 @@ class LiveSession private constructor(
         /**
          * Starts a recording in [sessionsDir], timed against the tracks in [tracksDir] and named from
          * [circuits] when the car is at a track not saved yet. [receiverHasG]: the receiver is a RaceBox,
-         * whose accelerometer gives the G tile. Throws when the session cannot be created.
+         * whose accelerometer gives the G tile; otherwise it is the phone's GPS, and the G comes from
+         * the phone's own accelerometer (FBBD-337). Throws when the session cannot be created.
          */
         @Throws(Exception::class)
         fun start(
@@ -217,7 +233,12 @@ class LiveSession private constructor(
                 recording.id,
                 info.startUtcMillis,
                 recording::nowMicros,
-                accelIds = if (receiverHasG) RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id else null,
+                accelIds = if (receiverHasG) {
+                    RaceBoxChannels.ACCEL_X.id to RaceBoxChannels.ACCEL_Y.id
+                } else {
+                    PhoneImuChannels.ACCEL_X.id to PhoneImuChannels.ACCEL_Y.id
+                },
+                accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { !receiverHasG },
             )
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12); each lap is logged
             // with the predicted lap time shown before its line (FBBD-183), as on Android.
@@ -259,13 +280,14 @@ object TrackFiles {
 
     /** Every readable track in [dir]; a file that cannot be read is skipped and left as it is. */
     @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+    @Suppress("TooGenericExceptionCaught") // Any damaged file is skipped, never a crash in Swift.
     fun read(dir: String): List<Track> {
         val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null).orEmpty()
         return names.filterIsInstance<String>().filter { it.endsWith(Suffix) }.mapNotNull { name ->
             val text = NSString.stringWithContentsOfFile("$dir/$name", NSUTF8StringEncoding, null)
             try {
                 text?.let(TrackJson::decode)
-            } catch (_: TrackFormatException) {
+            } catch (_: Exception) {
                 null
             }
         }.sortedBy { it.displayName.lowercase() }

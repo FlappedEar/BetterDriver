@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.coach.CoachReferenceJson
 import com.flappedear.betterdriver.coach.CoachSession
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachStatus
+import com.flappedear.betterdriver.coach.PlannedTargets
 import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.buildReference
@@ -65,7 +66,8 @@ fun coachSettings(polish: Boolean, audioDelayMillis: Int): CoachSettings = Coach
 /**
  * The live coach of one recording on the iPhone (FBBD-333), as the Android app's coach process runs it
  * (CoachService): at the first fix, once the recording knows its place, a saved track with laps gets its
- * reference from earlier sessions there and a [CoachSession]; every fix after that goes to it, and its
+ * reference from earlier sessions there and a [CoachSession], aimed at the corners of the track's line
+ * plan (FBBD-306, kept in [linePlansDir] by the review); every fix after that goes to it, and its
  * cues are said by [speaker]. Cues, results and their sounds are logged with [log] as Android's
  * recorder logs them, so the cue review reads them the same.
  *
@@ -79,6 +81,7 @@ class LiveCoach internal constructor(
     private val sessionId: String,
     private val sessionsDir: String,
     private val referencesDir: String,
+    private val linePlansDir: String,
     private val settings: CoachSettings,
     private val audioDelayFromPhone: Boolean,
     private val speaker: CoachSpeaker,
@@ -125,17 +128,35 @@ class LiveCoach internal constructor(
         }
     }
 
-    /** Loads [track]'s reference and starts the coach there, as CoachService.track. */
+    /**
+     * Loads [track]'s reference and starts the coach there, as CoachService.track: it works on the
+     * corners with the most time to find in the track's line plan (FBBD-306, UI-174 A).
+     */
     private fun start(track: Track) {
         val focus = coaches(track) && settings.verbosity >= Verbosity.Focus
+        val line = if (focus) IosLinePlanStore(linePlansDir).get(track.id) else null
         val library = IosCoachLibrary(sessionsDir, referencesDir)
-        val reference = if (focus) library.reference(track, exclude = sessionId) else null
+        val reference = if (focus) library.reference(track, exclude = sessionId, line?.let(::plannedTargets)) else null
         // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
         val nowUtc = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
         val sameDay = reference != null && library.drivenSameDay(reference, nowUtc)
-        val c = CoachSession(settings, track, reference, sameDay = sameDay)
+        // The first session of a new day there works on the last track day's focus (FBBD-315, UI-214 B),
+        // while no session since that day made a newer line plan, as CoachService.planFocusOf.
+        val days = IosDayPlanStore(dayPlansBeside(linePlansDir))
+        val day = if (focus && !sameDay) days.days(track.id).lastOrNull() else null
+        val fresh = day?.plan?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
+        val plan = fresh?.let { planFocus(it, sessionId) } ?: line?.let { planFocus(it, sessionId) }
+        val c = CoachSession(
+            settings, track, reference, sameDay = sameDay, focus = plan?.picks.orEmpty(),
+            focusSeconds = plan?.seconds.orEmpty(),
+        )
         coach = c
         status = c.status
+        // Which recommendation this session works on, for the coaching history (FBBD-180).
+        if (plan != null) {
+            val text = CoachEvents.planText(plan.sessionId, plan.cornerIds, plan.seconds.values.sum())
+            report(now(), CoachEvents.PLAN, text)
+        }
     }
 
     private fun fix(fix: CoachFix) {
@@ -203,17 +224,20 @@ class LiveCoach internal constructor(
 internal class IosCoachLibrary(sessionsDir: String, private val referencesDir: String) {
     private val sessions = SessionStore(sessionsDir)
 
-    /** The reference for [track], rebuilt first if needed; sessions still recording, and [exclude], are left out. */
-    fun reference(track: Track, exclude: String): CoachReference? {
+    /**
+     * The reference for [track], aimed at [plan] (FBBD-307), rebuilt first if needed; sessions still
+     * recording, and [exclude], are left out.
+     */
+    fun reference(track: Track, exclude: String, plan: PlannedTargets? = null): CoachReference? {
         val here = sessions.list()
             .filter { it.state != SessionState.RECORDING && it.id != exclude && recordedAt(it) == track.id }
             .map { it.id }
         val current = read(track.id)
         val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
-            current.planKey == null
+            current.planKey == plan?.key
         if (upToDate) return current
         val laps = here.mapNotNull { id -> readOrNull(id)?.let { SessionLaps(id, tracedLaps(track, it.coachFixes())) } }
-        val built = buildReference(track, laps)
+        val built = buildReference(track, laps, plan)
         if (built == null) {
             NSFileManager.defaultManager.removeItemAtPath(fileFor(track.id), null)
         } else {

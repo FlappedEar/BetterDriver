@@ -323,8 +323,17 @@ private struct HoldRing: View {
     }
 }
 
-/// Hands iOS the orientations the app allows now (OrientationLock).
+/// Starts the app's log first thing (FBBD-339) and hands iOS the orientations the app allows now
+/// (OrientationLock).
 final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(
+        _ application: UIApplication,
+        didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
+    ) -> Bool {
+        AppLog.install()
+        return true
+    }
+
     func application(
         _ application: UIApplication,
         supportedInterfaceOrientationsFor window: UIWindow?

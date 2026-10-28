@@ -404,6 +404,13 @@ object SmokeData {
         Tracks.get(app).refresh()
     }
 
+    /** [SmokeFixtures.seedCommute], then the app reads the sessions again. */
+    fun seedCommute() {
+        val assets = InstrumentationRegistry.getInstrumentation().context.assets
+        SmokeFixtures.seedCommute(app.filesDir) { assets.open("smoke/${SmokeFixtures.VideoFile}") }
+        Sessions.get(app).refresh()
+    }
+
     /** [ReviewFixtures.seed], then the app reads the sessions and tracks again. */
     fun seedReview() {
         val assets = InstrumentationRegistry.getInstrumentation().context.assets

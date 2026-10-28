@@ -2,7 +2,7 @@ name: iOS
 
 # The iPhone/iPad app (FBBD-328) on a macOS runner: the Kotlin core modules' common
 # tests on the iOS simulator (ci.yml runs their JVM tests), the XCFramework, and the
-# SwiftUI app's unit tests on an iPad and an iPhone simulator. Runs when the app, a core
+# SwiftUI app's unit and UI tests on an iPad and an iPhone simulator. Runs when the app, a core
 # module with iOS targets or the build changes.
 on:
   pull_request:
@@ -113,7 +113,24 @@ jobs:
             -resultBundlePath build/ios-tests.xcresult \
             CODE_SIGNING_ALLOWED=NO > build/xcodebuild.log 2>&1 && status=0 || status=$?
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
+          # With two destinations xcodebuild prints no per-test lines: the result bundle names the failures.
+          xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/summary.json || true
+          sed -n '/SMOKE app:/,/Test Case .*failed/p' build/xcodebuild.log | head -n 300 || true
+          python3 -c 'import json; d=json.load(open("build/summary.json")); print("RESULT", d.get("result"), d.get("passedTests"), "passed", d.get("failedTests"), "failed"); [print("FAILED", json.dumps(f)) for f in d.get("testFailures", [])]' || head -c 3000 build/summary.json
           exit $status
+      # The UI tests' screenshots of the demo sessions' review (FBBD-331), one PNG per tab and device.
+      - name: Review screenshots
+        if: always()
+        run: |
+          mkdir -p build/screenshots
+          xcrun xcresulttool export attachments --path build/ios-tests.xcresult --output-path build/screenshots || true
+      - name: Upload review screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-review-screenshots
+          path: build/screenshots
+          if-no-files-found: ignore
       - name: Test results
         if: always()
         uses: actions/upload-artifact@v4

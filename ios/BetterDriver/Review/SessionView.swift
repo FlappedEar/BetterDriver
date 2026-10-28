@@ -35,6 +35,7 @@ struct SessionView: View {
     @State private var compare: LapCompare?
     @State private var screen: AnalysisUi?
     @State private var failure: String?
+    @State private var notYet: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,7 +47,20 @@ struct SessionView: View {
         .background(Palette.background)
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) } }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id, title: title) }
+            // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button("Progression at this track") { notYet = "Progression at a track" }
+                    Button("Coach review") { notYet = "Coach review" }
+                } label: {
+                    Label("More", systemImage: "ellipsis.circle")
+                }
+                .accessibilityIdentifier("sessionMore")
+            }
+        }
+        .notImplementedAlert($notYet)
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
 

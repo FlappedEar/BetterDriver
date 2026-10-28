@@ -100,6 +100,19 @@ struct EquipmentItemPage: View {
                     if let mode = item.videoMode {
                         ListRow("Video", value: mode.label) { choosingVideo = true }
                     }
+                    // Android's RaceBox diagnostics (FBBD-89) and OBD page (FBBD-261).
+                    if item.modelName == ModelName.raceBox {
+                        NavigationLink { NotImplementedPage(title: "Diagnostics") } label: {
+                            ListRow("Diagnostics", value: "Live", chevron: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if item.kindName == KindName.carData {
+                        NavigationLink { NotImplementedPage(title: "OBD-II") } label: {
+                            ListRow("Connection and live values", chevron: true)
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
                 DimText(modelNote(item.modelName))
                 RemoveButton(text: "Remove") {

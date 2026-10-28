@@ -59,43 +59,20 @@ final class SettingsTests: XCTestCase {
     /// What the iPhone remembered before Settings moves in on the first start (FBBD-338).
     func testAFirstStartTakesTheEarlierChoices() {
         let defaults = UserDefaults(suiteName: "settings-\(UUID().uuidString)")!
-        defaults.set(false, forKey: "phoneCamera")
-        defaults.set("4K · 30", forKey: "phoneVideoMode")
         defaults.set("6F1A2B3C-0000-4000-8000-000000000001", forKey: "heartRateStrapId")
         defaults.set("Polar H10 1234", forKey: "heartRateStrapName")
         defaults.set("6F1A2B3C-0000-4000-8000-000000000002", forKey: "lastObdAdapterId")
         defaults.set("en", forKey: "coachLanguage")
         let model = SettingsModel(base: base, defaults: defaults)
-        XCTAssertFalse(SettingsCore.shared.phoneCameraOn(setup: model.setup))
-        XCTAssertEqual(SettingsCore.shared.phoneVideoLabel(setup: model.setup), "4K · 30")
         let strap = model.setup.equipment.first { $0.modelName == ModelName.heartRate }
         XCTAssertEqual(strap?.name, "Polar H10 1234")
         XCTAssertEqual(strap?.address, "6F1A2B3C-0000-4000-8000-000000000001")
         XCTAssertEqual(model.setup.equipment.first { $0.modelName == ModelName.obdBluetooth }?.name, "OBD adapter")
         XCTAssertEqual(model.coach.language.name, "English")
         // Read once: a second start keeps what Settings has.
-        defaults.set(true, forKey: "phoneCamera")
-        XCTAssertFalse(SettingsCore.shared.phoneCameraOn(setup: SettingsModel(base: base, defaults: defaults).setup))
-    }
-
-    /// START records from the receiver chosen in Settings: a RaceBox by its identifier, or the phone's GPS.
-    func testStartUsesTheReceiverInSettings() {
-        let model = SettingsModel(base: base, defaults: UserDefaults(suiteName: "settings-\(UUID().uuidString)")!)
-        XCTAssertEqual(RecordingController.receiver(model.setup), .failure(.noReceiver))
-        let raceBox = SettingsCore.shared.model(name: ModelName.raceBox)!
-        let id = UUID()
-        model.update {
-            SettingsCore.shared.addEquipment(setup: $0, model: raceBox, name: "RaceBox Mini S", address: id.uuidString, id: "rb")
-        }
-        guard case .success(.raceBox(let device)) = RecordingController.receiver(model.setup) else {
-            return XCTFail("no RaceBox")
-        }
-        XCTAssertEqual(device.id, id)
-        XCTAssertEqual(device.name, "RaceBox Mini S")
-        let gps = SettingsCore.shared.model(name: ModelName.phoneGps)!
-        model.update { SettingsCore.shared.addEquipment(setup: $0, model: gps, name: "Phone GPS", address: nil, id: "gps") }
-        model.update { $0.chooseGnss(id: "gps") }
-        XCTAssertEqual(RecordingController.receiver(model.setup), .success(.phone))
+        defaults.set("Other strap", forKey: "heartRateStrapName")
+        let again = SettingsModel(base: base, defaults: defaults).setup
+        XCTAssertEqual(again.equipment.first { $0.modelName == ModelName.heartRate }?.name, "Polar H10 1234")
     }
 
     /// An empty setup.json (a crash while writing on an old build) reads as a fresh install.
@@ -105,13 +82,4 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(model.setup.equipment.map(\.modelName), [ModelName.phoneCamera])
     }
 
-    /// A RaceBox copied from an Android setup has a MAC address, not an iPhone identifier: START says so.
-    func testAnAndroidRaceBoxDoesNotStart() {
-        let model = SettingsModel(base: base, defaults: UserDefaults(suiteName: "settings-\(UUID().uuidString)")!)
-        let raceBox = SettingsCore.shared.model(name: ModelName.raceBox)!
-        model.update {
-            SettingsCore.shared.addEquipment(setup: $0, model: raceBox, name: "RB", address: "AA:BB:CC:DD:EE:FF", id: "rb")
-        }
-        XCTAssertEqual(RecordingController.receiver(model.setup), .failure(.notOnIphone("RB")))
-    }
 }

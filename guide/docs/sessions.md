@@ -31,12 +31,27 @@ When you drove the same track in two or more sessions on one day, the day's head
 - **Video**: for a GoPro that starts with the session, **Download** its clips (keep the camera on
   and close to the phone). For a camera started by hand, **Add** its video files. Each camera
   shows how many clips were lined up and how, for example "by GPS ±0.05 s".
+- **Watch video**: plays the session's whole video on the phone with the data band of
+  [Video with data](export.md#video-with-data) over it: speed, G, the map with the car, and the
+  lap and delta when the session has laps. A drive away from any saved track (a commute) plays
+  too: the band then shows speed, G and the road you drove. See
+  [Watch a session's video](#watch-a-sessions-video).
 - **Coach review**: every cue of the session and what came of it; see
   [the spoken coach](coach.md#after-a-cue-did-it-work).
 - **Delete**: asks first and says what is removed. Files still on a GoPro stay there.
 - **Share**: sends the session as one file, with its video and its track. See
   [Export and sharing](export.md#share-a-session-to-the-tablet).
 - **Export ▾**: VBO, CSV, GPX and a video with data. See [Export and sharing](export.md).
+
+## Watch a session's video
+
+**Watch video** in the session's sheet opens its video from the start, paused. **Play** and
+**Pause** start and stop it; drag the bar under it to go anywhere in the video. Every clip of the
+session plays one after the other. Nothing is rendered or saved: to keep an MP4, use
+[Video with data](export.md#video-with-data).
+
+!!! note "Not released yet"
+    Merged after 1.14.0. It ships in the next release.
 
 ## Import a session
 

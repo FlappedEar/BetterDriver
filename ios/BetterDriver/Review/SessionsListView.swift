@@ -8,6 +8,10 @@ struct SessionsListView: View {
     @Binding var selection: String?
     @State private var picking = false
     @State private var showingTracks = false
+    @State private var notYet: String?
+    @State private var deleting: SessionRow?
+    @State private var trackDay: TrackDayLink?
+    @State private var watching: SessionRow?
 
     var body: some View {
         List(selection: $selection) {
@@ -25,12 +29,30 @@ struct SessionsListView: View {
                     ForEach(day.sessions) { session in
                         SessionRowView(session: session)
                             .tag(session.id)
+                            // Android's session card buttons: Watch video (FBBD-341), Delete, Share, and the coach's review.
+                            .contextMenu {
+                                Button("Watch video") { watching = session }
+                                Button("Coach review") { notYet = "Coach review" }
+                                Button("Share") { model.share(session) }
+                                Button("Delete", role: .destructive) { deleting = session }
+                            }
                             .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)
                     }
                 } header: {
-                    Text(dayTitle(day.day, day.sessions))
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(Palette.onSurfaceVariant)
+                    // Android's day heading: a "Track day ›" link for each track driven twice that day (FBBD-315).
+                    let links = TrackDayLink.of(day.sessions)
+                    VStack(alignment: .leading, spacing: 0) {
+                        HStack {
+                            Text(dayTitle(day.day, day.sessions))
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(Palette.onSurfaceVariant)
+                            Spacer()
+                            if links.count == 1 { trackDayButton("Track day ›", links[0]) }
+                        }
+                        if links.count > 1 {
+                            ForEach(links) { trackDayButton("Track day at \($0.track) ›", $0) }
+                        }
+                    }
                 }
             }
         }
@@ -52,8 +74,55 @@ struct SessionsListView: View {
             }
         }
         .sheet(isPresented: $showingTracks) { TracksView() }
+        .sheet(item: $trackDay) { TrackDayView(link: $0) }
+        .fullScreenCover(item: $watching) { session in
+            DataVideoWatchPage(sessionId: session.id) { watching = nil }
+        }
+        .notImplementedAlert($notYet)
+        .alert(
+            "Delete session?",
+            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+            presenting: deleting
+        ) { session in
+            Button("Delete", role: .destructive) {
+                if selection == session.id { selection = nil }
+                model.delete(session)
+            }
+            .accessibilityIdentifier("confirmDelete")
+            Button("Cancel", role: .cancel) {}
+        } message: { session in
+            Text(deleteText(session))
+        }
         .fileImporter(isPresented: $picking, allowedContentTypes: [.bdsession, .vbo, .commaSeparatedText], allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { model.importFiles(urls) }
+        }
+    }
+
+    private func trackDayButton(_ text: String, _ link: TrackDayLink) -> some View {
+        Button(text) { trackDay = link }
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(Palette.accent)
+            .accessibilityIdentifier("trackDayLink")
+    }
+
+    /// Android's delete question (UI-48 A): the session, what goes and how much space it frees.
+    private func deleteText(_ session: SessionRow) -> String {
+        let title = [session.start.formatted(date: .abbreviated, time: .shortened), session.track]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+        let (bytes, video) = ReviewBridge.footprint(session.id)
+        let what = video ? "its data and video" : "its data"
+        let size = bytes.map { " (\(sizeText($0)))" } ?? ""
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "iPad" : "iPhone"
+        return "\(title): \(what)\(size) will be removed from this \(device). " +
+            "Files still on a GoPro stay there. This can't be undone."
+    }
+
+    /// "820 KB", "350 MB", "2.4 GB", as Android.
+    private func sizeText(_ bytes: Int64) -> String {
+        switch bytes {
+        case 1_000_000_000...: return String(format: "%.1f GB", Double(bytes) / 1e9)
+        case 1_000_000...: return "\(bytes / 1_000_000) MB"
+        default: return "\(max(1, bytes / 1_000)) KB"
         }
     }
 
@@ -80,6 +149,8 @@ private struct SessionRowView: View {
             }
         }
         .padding(.vertical, 4)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("sessionRow")
     }
 }
 

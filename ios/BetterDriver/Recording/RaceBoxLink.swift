@@ -92,7 +92,7 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             sink: sink,
             isMicro: deviceName.hasPrefix(RaceBoxIds.shared.MICRO_PREFIX),
             calibration: nil,
-            log: { line in NSLog("RaceBox %@", line) },
+            log: { line in AppLog.i("RaceBox", line) },
             // iOS chooses the connection interval itself; there is no faster link to ask for.
             onSlowLink: { _ in }
         )

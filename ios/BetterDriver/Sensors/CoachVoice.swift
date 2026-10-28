@@ -58,7 +58,15 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     /// Stops speaking and gives the other apps' audio back; at the end of a recording.
     func shutdown() {
         synthesizer.stopSpeaking(at: .immediate)
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        // Off the main queue: deactivating blocks while audio (the camera's microphone too) is still
+        // running, which held the screen when the recording ended. Tried again while the camera stops,
+        // so other apps' sound is not left ducked.
+        DispatchQueue.global(qos: .utility).async {
+            for _ in 0 ..< 10 {
+                if (try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)) != nil { return }
+                Thread.sleep(forTimeInterval: 0.3)
+            }
+        }
     }
 
     /// Where the sound goes: "headset" for Bluetooth, wired or the car's audio, else "speaker"; and the port type.

@@ -19,12 +19,13 @@ import com.flappedear.betterdriver.shell.VideoExportSheet
  * Video with data from a session card (FBBD-152): the picker sheet (whole session or a lap), then
  * where to save the MP4, then [VideoExports] renders it in the background. [content] is the Sessions
  * screen, given the card state and actions. [recording]: a session is recording or starting, so no
- * video can be made.
+ * video can be made. [onWatch] opens a session's video in the app instead (FBBD-341).
  */
 @Composable
 fun VideoExportFlow(
     sessions: List<SessionSummary>,
     recording: Boolean,
+    onWatch: (SessionSummary) -> Unit,
     content: @Composable (SessionVideoExport) -> Unit,
 ) {
     val context = LocalContext.current
@@ -45,6 +46,7 @@ fun VideoExportFlow(
             recording = recording,
             onExport = { s -> picking = s.id },
             onCancel = { s -> exports.cancel(s.id) },
+            onWatch = onWatch,
         ),
     )
     val id = picking ?: return

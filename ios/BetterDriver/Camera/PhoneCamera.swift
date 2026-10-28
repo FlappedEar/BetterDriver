@@ -72,6 +72,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
 
     /// Ends the file now, logged before the session ends. Call before the session stops; safe to call twice.
     func stop() {
+        // A second call (the recording's end calls it again) returns at once: it would otherwise wait
+        // on the main queue for the camera to stop running, which made leaving the recording slow.
+        guard !stopped else { return }
         stopped = true
         queue.sync {
             running = false
@@ -180,7 +183,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             if let writer, writer.status == .failed || writer.status == .cancelled {
                 failedFile()
             }
-            if writer == nil, running { open(at: pts) }
+            if writer == nil, running { open(at: pts, frame: sample) }
             guard let writer, writer.status == .writing, let videoIn else { return }
             if videoIn.isReadyForMoreMediaData, !videoIn.append(sample) {
                 failedFile()
@@ -193,28 +196,27 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         }
     }
 
-    /// Starts the next file at the frame captured at [pts].
-    private func open(at pts: CMTime) {
+    /// Starts the next file at the frame captured at [pts]; [frame] gives its size.
+    private func open(at pts: CMTime, frame: CMSampleBuffer) {
         let dir = URL(fileURLWithPath: log.videoDir, isDirectory: true)
         fileIndex += 1
         let name = log.fileName(index: fileIndex)
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let w = try AVAssetWriter(outputURL: dir.appendingPathComponent(name), fileType: .mp4)
-            let video = AVAssetWriterInput(
-                mediaType: .video,
-                outputSettings: videoOut.recommendedVideoSettings(forVideoCodecType: .h264, assetWriterOutputFileType: .mp4)
-            )
+            // Settings the writer refuses would also throw in the input: no video then, never a crash.
+            let settings = videoSettings(for: frame)
+            guard w.canApply(outputSettings: settings, forMediaType: .video) else { throw CameraError.notSupported }
+            let video = AVAssetWriterInput(mediaType: .video, outputSettings: settings)
             video.expectsMediaDataInRealTime = true
             video.transform = CGAffineTransform(rotationAngle: rotation * .pi / 180)
             guard w.canAdd(video) else { throw CameraError.notSupported }
             w.add(video)
             var audio: AVAssetWriterInput?
-            if hasAudio {
-                let a = AVAssetWriterInput(
-                    mediaType: .audio,
-                    outputSettings: audioOut.recommendedAudioSettingsForAssetWriter(writingTo: .mp4)
-                )
+            // Silent rather than a crash when the writer would refuse the microphone's settings.
+            if hasAudio, let sound = audioOut.recommendedAudioSettingsForAssetWriter(writingTo: .mp4),
+               w.canApply(outputSettings: sound, forMediaType: .audio) {
+                let a = AVAssetWriterInput(mediaType: .audio, outputSettings: sound)
                 a.expectsMediaDataInRealTime = true
                 if w.canAdd(a) {
                     w.add(a)
@@ -238,6 +240,40 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             running = false
             status("Camera error", ok: false)
         }
+    }
+
+    /// The file's video settings, made from the frame's size and the mode's rate: H.264, or HEVC when
+    /// the phone records this mode only in HEVC (a 4K or 10-bit format). Not the output's recommended
+    /// settings: those throw an Objective-C exception, which Swift cannot catch, for a codec the output
+    /// does not offer (the app crashed on the first frame, TestFlight of 2026-10-27).
+    private func videoSettings(for frame: CMSampleBuffer) -> [String: Any] {
+        let size = CMSampleBufferGetFormatDescription(frame).map(CMVideoFormatDescriptionGetDimensions)
+        let offered = videoOut.availableVideoCodecTypesForAssetWriter(writingTo: .mp4)
+        return Self.videoSettings(
+            codec: !offered.contains(.h264) && offered.contains(.hevc) ? .hevc : .h264,
+            width: size?.width ?? recording.size.width,
+            height: size?.height ?? recording.size.height,
+            fps: recording.fps
+        )
+    }
+
+    /// [codec] at [width]×[height] and [fps], about 0.15 bit per pixel for H.264 (1080p · 60 ≈ 19 Mbit/s),
+    /// two thirds of that for HEVC; a key frame every second.
+    static func videoSettings(codec: AVVideoCodecType, width: Int32, height: Int32, fps: Int32) -> [String: Any] {
+        let perPixel = codec == .hevc ? 0.1 : 0.15
+        let bits = max(Int(Double(width) * Double(height) * Double(fps) * perPixel), 1_000_000)
+        var compression: [String: Any] = [
+            AVVideoAverageBitRateKey: bits,
+            AVVideoExpectedSourceFrameRateKey: Int(fps),
+            AVVideoMaxKeyFrameIntervalKey: Int(fps),
+        ]
+        if codec == .h264 { compression[AVVideoProfileLevelKey] = AVVideoProfileLevelH264HighAutoLevel }
+        return [
+            AVVideoCodecKey: codec,
+            AVVideoWidthKey: Int(width),
+            AVVideoHeightKey: Int(height),
+            AVVideoCompressionPropertiesKey: compression,
+        ]
     }
 
     /// About once a second: the media recorded so far and the session time of its newest frame.

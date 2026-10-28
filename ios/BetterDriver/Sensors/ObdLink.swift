@@ -18,6 +18,9 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     private var running = false
     /// Adapters seen in this session, by identifier, and the port of the one connecting or open.
     private var seen: [UUID: CBPeripheral] = [:]
+    /// Named Bluetooth devices nearby that are not OBD adapters, logged once each: when no adapter is
+    /// found, the log shows whether the adapter was off, busy with another phone, or named otherwise.
+    private var others: Set<String> = []
     private var port: ObdBlePortLink?
 
     private static let lastIdKey = "lastObdAdapterId"
@@ -56,7 +59,7 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// The connection as the track screen shows it (Android: RecorderState.obd).
     func status() -> ObdStatus { feed.status() }
 
-    func log(text: String) { NSLog("Obd %@", text) }
+    func log(text: String) { AppLog.i("Obd", text) }
 
     /// The adapters to try now, on the OBD thread: the one used last, then any other seen nearby.
     private func targets() -> [ObdTarget] {
@@ -119,6 +122,7 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     // MARK: CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        log(text: "Bluetooth state \(central.state.rawValue) (5 = on, 3 = not allowed, 4 = off)")
         if central.state == .poweredOn {
             scan()
             feed.retryNow()
@@ -134,7 +138,12 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         rssi RSSI: NSNumber
     ) {
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name
-        guard ObdAdapterNames.shared.isCandidate(name: name) else { return }
+        guard ObdAdapterNames.shared.isCandidate(name: name) else {
+            if let name, others.count < 30, others.insert(name).inserted {
+                log(text: "nearby, not an OBD adapter: \(name)")
+            }
+            return
+        }
         guard seen[peripheral.identifier] == nil else {
             // Known already: nothing new to try, so the scan can stop until the next round asks again.
             central.stopScan()

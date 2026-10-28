@@ -106,6 +106,34 @@ class VideoExports private constructor(private val context: Context) {
     }
 
     /**
+     * What watching session [id]'s video in the app needs (FBBD-341), read off the main thread: the
+     * whole video's cuts and the overlay's data, as Video with data's "Whole session" has them. Null
+     * when it has no video or it cannot be read. Read on the export's io thread, after any reading
+     * already queued there.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    fun watch(id: String, onReady: (WatchSource?) -> Unit) = io.execute {
+        val source = try {
+            prepare(id)?.let { p ->
+                val cuts = p.cuts(WholeVideo)
+                if (cuts.isEmpty()) {
+                    null
+                } else {
+                    WatchSource(cuts, p.video, OverlayData(p.sets, p.laps, measuredG(p.data)))
+                }
+            }
+        } catch (e: Exception) {
+            DebugLog.w(Tag, "reading $id to watch its video failed", e)
+            null
+        } catch (_: OutOfMemoryError) {
+            // No stack trace: formatting one needs memory (FBBD-232).
+            DebugLog.w(Tag, "reading $id to watch its video failed: out of memory")
+            null
+        }
+        main.post { onReady(source) }
+    }
+
+    /**
      * Renders [part] of session [id] into [uri]. Refused while a session records ([recording], or a
      * session the store still holds open) or while another export runs.
      */

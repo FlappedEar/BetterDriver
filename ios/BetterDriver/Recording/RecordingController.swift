@@ -9,12 +9,21 @@ import UIKit
 enum Receiver: Equatable {
     case raceBox(FoundRaceBoxDevice)
     case phone
+    /// The UI smoke test's receiver (UITestMode).
+    case simulated
 
     var name: String {
         switch self {
         case .raceBox(let device): device.name
         case .phone: "Phone GPS"
+        case .simulated: "Simulated GPS"
         }
+    }
+
+    /// A RaceBox measures G itself; otherwise the phone's accelerometer gives it (FBBD-337).
+    var hasG: Bool {
+        if case .raceBox = self { return true }
+        return false
     }
 }
 
@@ -29,6 +38,8 @@ enum AppFolders {
     static var tracks: URL { folder("tracks") }
     /// The coach's references from earlier sessions, as coach/references on Android (FBBD-333).
     static var coachReferences: URL { folder("coach/references") }
+    /// The line plans the review keeps for the coach, as coach/lines on Android (FBBD-333).
+    static var coachLines: URL { folder("coach/lines") }
 
     private static func folder(_ name: String) -> URL {
         let url = base.appendingPathComponent(name, isDirectory: true)
@@ -61,60 +72,55 @@ final class RecordingController: ObservableObject {
     private var receiver: Receiver?
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
+    private var simulated: SimulatedGpsLink?
+    private var imu: PhoneImuLink?
     private var camera: PhoneCamera?
+    /// The GNSS state at the last refresh, for the lost and back sounds.
+    private var lastGnss: GnssState?
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
     private var timer: Timer?
-    /// The GNSS state at the last refresh, for the lost and back sounds.
-    private var lastGnss: GnssState?
     private let activity = RecordingActivity()
 
     var isRecording: Bool { session != nil }
 
-    /// The receiver of the next session as chosen in Settings (FBBD-338), or why it cannot record:
-    /// the iPhone records from a RaceBox or its own GPS.
-    static func receiver(_ setup: Setup) -> Result<Receiver, StartError> {
-        guard let gnss = setup.active().gnss else { return .failure(.noReceiver) }
-        switch gnss.modelName {
-        case ModelName.phoneGps:
-            return .success(.phone)
-        case ModelName.raceBox:
-            guard let id = gnss.address.flatMap(UUID.init(uuidString:)) else { return .failure(.notOnIphone(gnss.name)) }
-            return .success(.raceBox(FoundRaceBoxDevice(id: id, name: gnss.name, rssi: 0)))
-        default:
-            return .failure(.notOnIphone(gnss.name))
+    init() {
+        // A Live Activity left by a session the app died in would count on the lock screen.
+        RecordingActivity.endLeftOver()
+        // Swiped away while recording: close the session's files and its Live Activity as a stop does.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.stop() }
         }
     }
 
-    enum StartError: Error, Equatable {
-        case noReceiver
-        case notOnIphone(String)
-
-        var text: String {
-            switch self {
-            case .noReceiver: "Add a GNSS receiver to start"
-            case .notOnIphone(let name): "\(name) can't record on the iPhone. Choose a RaceBox or Phone GPS."
-            }
-        }
+    /// The RaceBox used last, so the sheet can mark it (UI-285 B).
+    var lastReceiverName: String {
+        get { UserDefaults.standard.string(forKey: "lastReceiverName") ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: "lastReceiverName") }
     }
 
-    /// Starts the next session as Settings has it: its receiver, car, cameras, sensors and coach.
-    func start(settings: SettingsModel) {
-        switch Self.receiver(settings.setup) {
-        case .success(let receiver): start(receiver, settings: settings)
-        case .failure(let problem): error = problem.text
-        }
+    /// Phone video with each session (FBBD-21), turned on on the START sheet. Off until the iPhone
+    /// camera has a device test: a new key, so a camera left on by an earlier build starts off too.
+    var phoneCamera: Bool {
+        get { UserDefaults.standard.object(forKey: "phoneCameraOn") as? Bool ?? false }
+        set { UserDefaults.standard.set(newValue, forKey: "phoneCameraOn") }
     }
 
-    private func start(_ receiver: Receiver, settings: SettingsModel) {
+    /// The phone video mode (FBBD-88), as on Android: 1080p · 60 until another is chosen.
+    var phoneVideoMode: PhoneVideoMode {
+        get { PhoneVideoMode.named(UserDefaults.standard.string(forKey: "phoneVideoMode")) }
+        set { UserDefaults.standard.set(newValue.label, forKey: "phoneVideoMode") }
+    }
+
+    func start(_ receiver: Receiver) {
         guard session == nil else { return }
         error = nil
-        let setup = settings.setup
-        let active = setup.active()
         let info = SessionInfo(
             startUtcMillis: Int64(Date().timeIntervalSince1970 * 1_000),
-            car: active.car?.name ?? "",
+            car: SettingsModel.shared.setup.active().car?.name ?? "",
             track: "",
             devices: [receiver.name],
             startFinish: nil,
@@ -128,7 +134,7 @@ final class RecordingController: ObservableObject {
                 tracksDir: AppFolders.tracks.path,
                 circuits: BundledCircuits.list,
                 info: info,
-                receiverHasG: receiver != .phone
+                receiverHasG: receiver.hasG
             )
         } catch {
             self.error = "Could not start recording: \(error.localizedDescription)"
@@ -136,8 +142,15 @@ final class RecordingController: ObservableObject {
         }
         self.receiver = receiver
         session = live
+        AppLog.session = live.id
+        AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
+        // The phone's accelerometer records in every session, as on Android; with phone GPS it gives the G.
+        let imu = PhoneImuLink(sink: live)
+        self.imu = imu
+        imu.start()
         switch receiver {
         case .raceBox(let device):
+            lastReceiverName = device.name
             let link = RaceBoxLink(deviceId: device.id, deviceName: device.name, sink: live) { [weak self] state in
                 self?.raceBoxState = state
             }
@@ -154,9 +167,14 @@ final class RecordingController: ObservableObject {
             }
             phone = link
             link.start()
+        case .simulated:
+            let link = SimulatedGpsLink(sink: live)
+            simulated = link
+            link.start()
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
+        let active = SettingsModel.shared.setup.active()
         // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338); with none listed, one nearby.
         let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
         obd = car
@@ -165,10 +183,9 @@ final class RecordingController: ObservableObject {
         let strap = HeartRateStrapLink(sink: live, listed: Self.listed(active.sensors, ModelName.heartRate).first)
         heartRate = strap
         strap.start()
-        startCoach(live, settings.coach)
-        if SettingsCore.shared.phoneCameraOn(setup: setup) {
-            let mode = PhoneVideoMode.named(SettingsCore.shared.phoneVideoLabel(setup: setup))
-            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: mode) { [weak self] in self?.cameraStatus = $0 }
+        startCoach(live, SettingsModel.shared.coach)
+        if phoneCamera {
+            let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
             camera = cam
             cam.start()
         }
@@ -199,6 +216,7 @@ final class RecordingController: ObservableObject {
         live.startCoach(
             sessionsDir: AppFolders.sessions.path,
             referencesDir: AppFolders.coachReferences.path,
+            linePlansDir: AppFolders.coachLines.path,
             settings: settings,
             audioDelayFromPhone: phoneDelay > 0,
             speaker: voice
@@ -210,10 +228,13 @@ final class RecordingController: ObservableObject {
         guard let live = session else { return }
         raceBox?.stop()
         phone?.stop()
+        simulated?.stop()
+        imu?.stop()
         camera?.stop()
         obd?.stop()
         heartRate?.stop()
         _ = live.stop()
+        AppLog.i("Recording", "stop")
         end()
     }
 
@@ -225,6 +246,8 @@ final class RecordingController: ObservableObject {
         voice = nil
         raceBox = nil
         phone = nil
+        simulated = nil
+        imu = nil
         camera?.stop()
         camera = nil
         // Gives the other apps' audio back also when no coach spoke: the phone camera's microphone
@@ -235,11 +258,14 @@ final class RecordingController: ObservableObject {
         heartRate = nil
         session = nil
         lastGnss = nil
+        AppLog.session = nil
         screen = nil
         receiver = nil
         raceBoxState = .off
         phoneState = .off
         UIApplication.shared.isIdleTimerDisabled = false
+        // The session is on disk: the Sessions list reads it again.
+        NotificationCenter.default.post(name: .sessionsChanged, object: nil)
     }
 
     /// A short sound when GNSS goes from OK to lost and another when it is back (FBBD-64), when
@@ -255,12 +281,14 @@ final class RecordingController: ObservableObject {
     }
 
     private func refresh() {
-        guard let live = session, let receiver else { return }
+        guard let live = session else { return }
         let now = live.screen()
         if let reason = now.stoppedReason, reason != "user" {
             // Ended by the recorder itself (storage full, write error): the files stay for recovery.
             raceBox?.stop()
             phone?.stop()
+            simulated?.stop()
+            imu?.stop()
             obd?.stop()
             heartRate?.stop()
             end()
@@ -269,8 +297,9 @@ final class RecordingController: ObservableObject {
         }
         gnssSound(now.gnss)
         let obdOn = obd?.status().state == ObdLinkState.connected
+        // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
-            now, receiverHasG: receiver != .phone, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus
+            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus
         )
         screen = model
         activity.update(model)

@@ -164,7 +164,5 @@ object SessionBundle {
     }
 
     /** Whether a file in a session directory goes into the bundle. */
-    internal fun travels(name: String) =
-        name != SessionFiles.LOCK && !name.endsWith(".tmp") && !name.endsWith(".part") &&
-            !name.endsWith(".lock") && !name.contains(".unreadable-")
+    internal fun travels(name: String) = BundleFormat.travels(name)
 }

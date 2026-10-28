@@ -1,4 +1,4 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
 
 package com.flappedear.betterdriver.ios
 
@@ -9,12 +9,18 @@ import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.circuits.Circuit
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
+import com.flappedear.betterdriver.timing.track.TrackJson
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSString
+import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.create
+import platform.Foundation.writeToFile
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -139,5 +145,85 @@ class TrackLibraryTest {
         editor.setPointToPoint(true)
         assertEquals(listOf("Start", "Sector line 1", "Finish"), editor.lines().map { it.label })
         assertNotNull(editor.kindNote)
+    }
+
+    @Test
+    fun aFreshInstallHasNoTracksAndNothingFails() {
+        // Neither folder exists yet: first start, no location, no sessions.
+        assertTrue(library.list().isEmpty())
+        assertTrue(TrackFiles.read(tracks).isEmpty())
+        assertNull(library.get("nope"))
+        assertTrue(library.delete("nope")) // nothing there: already gone
+        assertNull(library.here(gnss.centerLat, gnss.centerLon, CircuitList.Empty).track)
+        val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        assertTrue(library.editorSessions(track).isEmpty())
+    }
+
+    @Test
+    fun badIdsAndNamesAreRefusedWithoutACrash() {
+        assertNull(library.get("../escape"))
+        assertNull(library.get(""))
+        assertFalse(library.delete("../escape"))
+        assertFalse(library.delete(""))
+        // Swift checks validName first; a name it let through still only fails the save.
+        assertFalse(library.validName("   "))
+        assertFailsWith<TrackSaveException> { library.createAt(gnss.centerLat, gnss.centerLon, "   ") }
+        assertFailsWith<TrackSaveException> { library.createAt(gnss.centerLat, gnss.centerLon, "x".repeat(500)) }
+        assertTrue(library.list().isEmpty())
+    }
+
+    @Test
+    fun damagedTrackFilesAreSkipped() {
+        val good = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        write("garbage", "{not json")
+        write("empty", "")
+        write("other", """{"format":"something else","version":1}""")
+        // A track file whose track breaks the rules (a blank name): decoding throws, the list skips it.
+        val text = TrackJson.encode(good.copy(id = "bad"))
+        val blank = text.replace("\"name\": \"Moto ring\"", "\"name\": \"\"")
+        assertTrue(blank != text)
+        write("bad", blank)
+        assertEquals(listOf(good.id), library.list().map { it.id })
+        assertEquals(listOf(good.id), TrackFiles.read(tracks).map { it.id })
+        assertNull(library.get("garbage"))
+        assertNull(library.get("bad"))
+        // A damaged file under a track's name is replaced by the next save.
+        write(good.id, "{not json")
+        assertNull(library.get(good.id))
+        library.save(good)
+        assertEquals(good.id, library.get(good.id)?.id)
+    }
+
+    @Test
+    fun oddTapsNeverEndTheEditor() {
+        record()
+        val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        val editor = TrackEditor(track, library.editorSessions(track))
+        editor.select(99)
+        editor.flip()
+        editor.remove()
+        editor.moveEnd(true, 0.0, 0.0)
+        editor.select(0)
+        editor.pick(PlaceMethod.TwoTaps)
+        // Both taps on one spot, then one end dragged onto the other: a line with no length.
+        editor.onTap(gnss.centerLat, gnss.centerLon)
+        editor.onTap(gnss.centerLat, gnss.centerLon)
+        val line = assertNotNull(editor.selectedLine)
+        editor.moveEnd(false, line.left.lat, line.left.lon)
+        editor.flip()
+        editor.done()
+        editor.retimeNote()
+        library.save(editor.track)
+        assertNotNull(library.get(track.id))
+        // From your lap tapped far off the lap places nothing.
+        editor.select(0)
+        editor.pick(PlaceMethod.FromLap)
+        editor.onTap(0.0, 0.0)
+        editor.cancel()
+    }
+
+    private fun write(id: String, text: String) {
+        NSString.create(string = text)
+            .writeToFile("$tracks/$id.json", atomically = true, encoding = NSUTF8StringEncoding, error = null)
     }
 }

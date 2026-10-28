@@ -280,4 +280,67 @@ extension ReviewBridge {
     }
 
     static func clearStaging() { _ = library.clearStaging() }
+
+    /// Deletes session [id] with its video; nil when done, else why not, as Android's card says it.
+    static func delete(_ id: String) -> String? {
+        switch library.delete(id: id) {
+        case .deleted, .notFound: return nil
+        case .recording: return "Recording, not deleted"
+        default: return "Delete failed"
+        }
+    }
+
+    /// The track day of sessions [ids] (FBBD-315), read and worded by the shared core as on Android.
+    static func trackDay(_ ids: [String]) -> TrackDayState { library.trackDay(ids: ids) }
+
+    /// Session [id] as a .bdsession to share, as Android's Share: its files, video included, and its track.
+    static func share(_ id: String) throws -> URL {
+        let out = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
+        return URL(fileURLWithPath: try library.share(id: id, outRoot: out.path) { _, _ in })
+    }
+
+    /// What session [id] takes on this device, in bytes, and whether it has video.
+    static func footprint(_ id: String) -> (bytes: Int64?, video: Bool) {
+        let dir = AppFolders.sessions.appendingPathComponent(id, isDirectory: true)
+        var bytes: Int64 = 0
+        var video = false
+        guard let files = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: [.fileSizeKey]) else {
+            return (nil, false)
+        }
+        for case let url as URL in files {
+            bytes += Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+            if url.pathExtension.lowercased() == "mp4" { video = true }
+        }
+        return (bytes, video)
+    }
+
+    /// The UI tests' launch arguments (FBBD-331), in debug builds only: -freshInstall starts with no
+    /// sessions or tracks, as a new install; -demoSessions adds the Android app's built-in demo
+    /// sessions (Jastrząb, Silesia Ring) when they are not here yet.
+    static func prepareForUITests() {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        let base = URL(fileURLWithPath: library.sessionsRoot).deletingLastPathComponent()
+        if arguments.contains("-freshInstall") {
+            for dir in ["sessions", "tracks", "transfer", "coach"] {
+                try? FileManager.default.removeItem(at: base.appendingPathComponent(dir))
+            }
+        }
+        guard arguments.contains("-demoSessions"), library.sessions().isEmpty,
+              let demo = Bundle.main.resourceURL?.appendingPathComponent("demo") else { return }
+        // When Arek drove them, as Android names them (DemoReplay).
+        var demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
+        // A second Jastrząb session an hour later the same day, for the track day (FBBD-315).
+        if arguments.contains("-demoTrackDay") { demos.append(("jastrzab", 1_787_994_009_000)) }
+        for (name, start) in demos {
+            _ = try? library.addDemo(
+                replayPath: demo.appendingPathComponent("\(name).replay").path,
+                trackPath: demo.appendingPathComponent("\(name).track.json").path,
+                startUtcMillis: start
+            )
+        }
+        // Phone video in the demo sessions, for Video with data (FBBD-152).
+        if arguments.contains("-demoVideo") { DataVideoDemo.add(sessionsRoot: library.sessionsRoot) }
+        #endif
+    }
 }

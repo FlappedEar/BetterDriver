@@ -11,7 +11,9 @@ import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
+import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.StoredSession
@@ -23,6 +25,7 @@ import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.transfer.ReceivedBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
+import com.flappedear.betterdriver.transfer.SessionOutbox
 import com.flappedear.betterdriver.transfer.foreign.ForeignInbox
 import com.flappedear.betterdriver.transfer.foreign.ImportedSession
 import platform.Foundation.NSBundle
@@ -48,20 +51,50 @@ class ReviewLibrary(base: String) {
     private val tracksRoot = "$base/tracks"
     private val store = SessionStore(sessionsRoot)
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
+    private val plans = IosLinePlanStore(linePlansDir(base))
+    private val days = IosDayPlanStore(dayPlansDir(base))
+    private val trackFiles = TrackLibrary(tracksRoot, sessionsRoot)
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
     fun sessions(): List<StoredSession> = store.list().filter { it.state != SessionState.RECORDING }
 
+    /** Deletes session [id] with everything in its folder, its video included, as Android (FBBD-90). */
+    fun delete(id: String): DeleteResult = store.delete(id)
+
+    /**
+     * Writes session [id] as a .bdsession under [outRoot] to share, as Android's Share: its files,
+     * video included, and the saved track it was timed with, so it opens with its laps on Android
+     * or another iPhone. Returns the file's path; [onProgress] gets bytes written and their total.
+     */
+    @Throws(Exception::class)
+    fun share(id: String, outRoot: String, onProgress: (written: Long, total: Long) -> Unit): String =
+        SessionOutbox(sessionsRoot, outRoot).write(id, timedTrack(id), onProgress)
+
+    /**
+     * The saved track session [id] is timed with, as its review finds it: the one it recorded at
+     * start (Android's share sends that one), else the saved track it was driven at. None if unreadable.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun timedTrack(id: String): Track? = try {
+        trackFor(store.read(id), tracks())
+    } catch (_: Exception) {
+        null
+    }
+
     /**
      * Laps, best, theoretical best and where to find time of session [id], as Android works them
      * out: the targets come from the other sessions at its track (LineSessions on Android). The
      * result keeps the analysis, so Compare can pick another lap without reading the session again.
+     * The session's line plan is kept for the track's next coached session, as Android keeps it
+     * (FBBD-333); a plan that cannot be saved only leaves the coach without one.
      */
     @Throws(Exception::class)
     fun review(id: String): ReviewedSession {
         val saved = tracks()
-        return reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        val reviewed = reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        reviewed.linePlan?.let(plans::save)
+        return reviewed
     }
 
     /**
@@ -88,6 +121,12 @@ class ReviewLibrary(base: String) {
                 }
             }
             .take(MaxLineSessions)
+
+    /**
+     * The track day of sessions [ids] (FBBD-315), as Android's track day page reads it; kept as the
+     * track's day plan, so the next day there starts on its focus and measures it.
+     */
+    fun trackDay(ids: List<String>): TrackDayState = trackDayState(store, tracks(), days, trackFiles, ids)
 
     /**
      * The fastest lap of [reviewed] (session [id]) against timed lap [otherIndex] on video, as
@@ -151,6 +190,22 @@ class ReviewLibrary(base: String) {
     @Throws(Exception::class)
     fun importForeign(path: String, onProgress: (read: Long, total: Long) -> Unit): ImportedSession =
         foreign.importFile(path, path.substringAfterLast('/'), tracks(), circuits, onProgress)
+
+    /**
+     * Adds the demo replay at [replayPath] at the track in [trackPath] (the Android app's built-in
+     * demos) as a finished session starting at [startUtcMillis], for the app's UI tests; see
+     * DemoSessions. Returns the session's id.
+     */
+    @Throws(Exception::class)
+    fun addDemo(replayPath: String, trackPath: String, startUtcMillis: Long): String {
+        val replay = checkNotNull(NSString.stringWithContentsOfFile(replayPath, NSUTF8StringEncoding, null)) {
+            "cannot read $replayPath"
+        }
+        val track = checkNotNull(NSString.stringWithContentsOfFile(trackPath, NSUTF8StringEncoding, null)) {
+            "cannot read $trackPath"
+        }
+        return DemoSessions.add(store, tracksRoot, replay, TrackJson.decode(track), startUtcMillis)
+    }
 
     /** The circuit list bundled with the app (circuits.json, as Android's), or none. */
     private val circuits: CircuitList by lazy {

@@ -47,19 +47,6 @@ class SettingsCoreTest {
     }
 
     @Test
-    fun thePhoneCameraIsTurnedOffAndItsModeSet() {
-        val setup = SettingsCore.freshSetup("cam")
-        assertEquals(true, SettingsCore.phoneCameraOn(setup))
-        assertEquals("1080p · 60", SettingsCore.phoneVideoLabel(setup))
-        assertEquals("Phone camera on", SettingsCore.camerasLine(setup))
-        val off = SettingsCore.withPhoneCamera(setup, false)
-        assertEquals(false, SettingsCore.phoneCameraOn(off))
-        assertEquals("Phone camera off", SettingsCore.camerasLine(off))
-        assertEquals("4K · 30", SettingsCore.phoneVideoLabel(SettingsCore.withPhoneVideo(setup, "4K · 30")))
-        assertSame(setup, SettingsCore.withPhoneVideo(setup, "8K · 120"))
-    }
-
-    @Test
     fun theDelayIosReportsReplacesTheSetOne() {
         val set = SettingsCore.withDelay(SettingsCore.coachSettings(null), 300)
         assertEquals(180, SettingsCore.sessionCoach(set, 180).audioDelayMillis)
@@ -93,6 +80,6 @@ class SettingsCoreTest {
         """.trimIndent()
         val setup = SettingsCore.decodeSetup(v1)
         assertEquals("a", setup?.active()?.gnss?.id)
-        assertEquals(true, setup?.let { SettingsCore.phoneCameraOn(it) })
+        assertEquals(listOf("d"), setup?.session?.cameraIds)
     }
 }

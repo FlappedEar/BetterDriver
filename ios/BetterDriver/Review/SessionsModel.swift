@@ -39,6 +39,7 @@ final class SessionsModel {
 
     init() {
         ReviewBridge.clearStaging()
+        ReviewBridge.prepareForUITests()
         reload()
         // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
         NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in
@@ -47,6 +48,10 @@ final class SessionsModel {
                 self?.reload()
             }
         }
+        // A recording ended: it is the newest session.
+        NotificationCenter.default.addObserver(forName: .sessionsChanged, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.reload() }
+        }
     }
 
     func reload() {
@@ -54,6 +59,36 @@ final class SessionsModel {
     }
 
     func row(_ id: String) -> SessionRow? { sessions.first { $0.id == id } }
+
+    /// The session being written to share, while it is.
+    private(set) var sharing: String?
+
+    /// Writes [session] as a .bdsession, then opens the share sheet (AirDrop, Files, Quick Share to
+    /// Android), as Android's Share; a failure is said in [message].
+    func share(_ session: SessionRow) {
+        guard sharing == nil else { return }
+        let id = session.id
+        sharing = id
+        Task {
+            let result: Result<URL, Error> = await Task.detached { Result { try ReviewBridge.share(id) } }.value
+            sharing = nil
+            switch result {
+            case .success(let url): LogShare.share(url)
+            case .failure(let error): message = "Could not share the session: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Deletes [session] and its video (FBBD-90); a failure is said in [message].
+    func delete(_ session: SessionRow) {
+        let id = session.id
+        Task {
+            let failure = await Task.detached { ReviewBridge.delete(id) }.value
+            if let failure { message = failure }
+            revision += 1
+            reload()
+        }
+    }
 
     /// The sessions of one day.
     struct Day: Identifiable {

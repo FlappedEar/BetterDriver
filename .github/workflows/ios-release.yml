@@ -2,6 +2,10 @@ name: iOS release
 
 # Builds the iPhone/iPad app for the App Store and uploads it to TestFlight (FBBD-334).
 #
+# Gate: nothing is archived or uploaded unless the UI smoke test passes first on an iPhone
+# simulator (BetterDriverUITests: fresh install, START with camera, OBD, heart rate and coach on,
+# stop, open the saved session).
+#
 # Runs after each successful Release (the Android release, same version and commit) and
 # from the Actions tab. Signing is automatic from the App Store Connect API key in the
 # secrets ASC_ISSUER_ID, ASC_KEY_ID and ASC_KEY_P8; the team id comes from the bundle id,
@@ -37,7 +41,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # The released commit; its commit count is the build number, as on Android.
+          # The released commit; its commit count (plus 1000, below) is the build number.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
       - uses: actions/setup-java@v4
@@ -70,7 +74,10 @@ jobs:
         id: version
         run: |
           echo "version=$(sed -n 's/^betterdriver.version=//p' gradle.properties)" >> "$GITHUB_OUTPUT"
-          echo "build=$(git rev-list --count HEAD)" >> "$GITHUB_OUTPUT"
+          # Build 403 went up from a branch whose unsquashed history counted more commits than
+          # main, so main's builds (386 on 2026-10-28) sorted below it in TestFlight. The 1000
+          # puts main's builds above every earlier upload; dispatch from main only.
+          echo "build=$(( $(git rev-list --count HEAD) + 1000 ))" >> "$GITHUB_OUTPUT"
       # App Store Connect takes only builds made with the iOS 26 SDK or later (Xcode 26+).
       - name: Xcode 26
         run: |
@@ -86,6 +93,40 @@ jobs:
         env:
           BETTERDRIVER_CORE_BUILD: release
         run: ios/generate.sh
+      - name: Smoke test on the iPhone simulator (gate)
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p build
+          sim=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in runtimes if "iOS" in k), key=lambda k: [int(p) for p in k.rsplit("iOS-", 1)[1].split("-")])
+          print(next(d["udid"] for d in runtimes[ios[-1]] if d["name"].startswith("iPhone")))
+          ')
+          xcodebuild test \
+            -project ios/BetterDriver.xcodeproj -scheme BetterDriver \
+            -destination "platform=iOS Simulator,id=$sim" \
+            -only-testing:BetterDriverUITests \
+            -resultBundlePath build/smoke.xcresult \
+            CODE_SIGNING_ALLOWED=NO > build/smoke.log 2>&1 && status=0 || status=$?
+          grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/smoke.log || true
+          if [ $status -ne 0 ]; then
+            # The test prints what was on screen when it failed.
+            sed -n '/SMOKE app:/,/Test Case .*failed/p' build/smoke.log | head -n 400
+            echo "::error::Smoke test failed: nothing goes to TestFlight"
+          fi
+          exit $status
+      - name: Smoke test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: |
+            build/smoke.xcresult
+            build/smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
       - name: App Store Connect key and team
         id: team
         if: steps.signing.outputs.ready == 'true'
@@ -102,6 +143,8 @@ jobs:
           # The Live Activity's widget extension (UI-284 A) signs with its own App ID.
           ASC_KEY_PATH="$key" python3 ios/ci/asc.py team "$BUNDLE_ID.LiveActivity" "BetterDriver Live Activity" > /dev/null
           echo "id=$team" >> "$GITHUB_OUTPUT"
+          # Development certificates earlier runners made (their keys are gone) fill the account's limit.
+          ASC_KEY_PATH="$key" python3 ios/ci/asc.py ci-certs
       - name: Archive (signed)
         if: steps.signing.outputs.ready == 'true'
         shell: bash
@@ -126,6 +169,20 @@ jobs:
             -destination generic/platform=iOS -archivePath build/BetterDriver.xcarchive \
             CODE_SIGNING_ALLOWED=NO \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" 2>&1 | tail -n 60
+      # App Store Connect warns when an extension's version or build differs from the app's (ITMS-90473).
+      - name: Bundle versions match
+        shell: bash
+        run: |
+          app=build/BetterDriver.xcarchive/Products/Applications/BetterDriver.app
+          want="${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }})"
+          status=0
+          shopt -s nullglob
+          for plist in "$app/Info.plist" "$app"/PlugIns/*.appex/Info.plist; do
+            got="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$plist") ($(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist"))"
+            echo "$plist: $got"
+            [ "$got" = "$want" ] || { echo "::error::$plist is $got, not $want"; status=1; }
+          done
+          exit $status
       - name: Upload to TestFlight
         if: steps.signing.outputs.ready == 'true'
         shell: bash
@@ -155,6 +212,13 @@ jobs:
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" 2>&1 | tail -n 60
           echo "### TestFlight: ${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }}) uploaded" >> "$GITHUB_STEP_SUMMARY"
+      # The archive made a development certificate this runner takes with it.
+      - name: Revoke this run's development certificate
+        if: always() && steps.team.outputs.key != ''
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: ASC_KEY_PATH="${{ steps.team.outputs.key }}" python3 ios/ci/asc.py ci-certs
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"

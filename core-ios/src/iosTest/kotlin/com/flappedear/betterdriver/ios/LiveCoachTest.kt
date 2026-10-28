@@ -2,6 +2,11 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.PlanAdvice
+import com.flappedear.betterdriver.analysis.line.PlanCorner
+import com.flappedear.betterdriver.analysis.line.PlanPass
+import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.Verbosity
@@ -34,7 +39,8 @@ class LiveCoachTest {
     private val base = NSTemporaryDirectory() + "live-coach-test-" + NSUUID().UUIDString
     private val sessions = "$base/sessions"
     private val tracks = "$base/tracks"
-    private val references = "$base/coach"
+    private val references = "$base/coach/references"
+    private val lines = "$base/coach/lines"
     private val gnss = FakeGnss()
     private val gate = gnss.startFinish
     private val ring = Track(
@@ -70,7 +76,7 @@ class LiveCoachTest {
     private fun coachedSession(settings: CoachSettings, speaker: Speaker): LiveSession {
         val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
         val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
-        session.startCoach(sessions, references, settings, audioDelayFromPhone = true, speaker = speaker)
+        session.startCoach(sessions, references, lines, settings, audioDelayFromPhone = true, speaker = speaker)
         for (n in 0L..(25 * 140)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
         session.awaitCoach()
         session.awaitCoach()
@@ -104,6 +110,40 @@ class LiveCoachTest {
         val reference = IosCoachLibrary(sessions, references).reference(ring, exclude = second.id)
         assertNotNull(reference, "built from the first session's laps")
         assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$references/ring.coach.json"))
+    }
+
+    @Test
+    fun theCoachWorksOnTheLinePlansCorners() {
+        val point = PlanPoint(100.0, gnss.centerLat, gnss.centerLon)
+        val line = listOf(point, point.copy(progressMeters = 110.0))
+        val pass = PlanPass("earlier", "Earlier", 2, 40.0, 6.0, line = line)
+        val corner = PlanCorner(
+            "c1", "Turn 1", turnsLeft = true, startMeters = 90.0, endMeters = 130.0, gainSeconds = 0.42,
+            reference = pass, target = pass, advice = PlanAdvice(brakeMeters = 5.0),
+        )
+        val plan = LinePlan(
+            trackId = "ring", sessionId = "earlier", sessionStartUtcMillis = 1L, identityRevision = 1,
+            referenceLapNumber = 2, referenceLapSeconds = 40.0, laps = 3, sessions = 1, corners = listOf(corner),
+        )
+        assertTrue(IosLinePlanStore(lines).save(plan))
+        assertEquals(plan, IosLinePlanStore(lines).get("ring"))
+
+        val session = coachedSession(coachSettings(polish = false, audioDelayMillis = 0), Speaker())
+        session.stop()
+        val events = SessionStore(sessions).read(session.id).events
+        val planned = events.filter { it.kind == CoachEvents.PLAN }
+        assertEquals(listOf("source=earlier corners=c1 gain_s=0.42"), planned.map { it.text })
+    }
+
+    @Test
+    fun aReviewedSessionKeepsItsLinePlanForTheCoach() {
+        coachedSession(coachSettings(polish = false, audioDelayMillis = 0), Speaker()).stop()
+        val second = coachedSession(coachSettings(polish = false, audioDelayMillis = 0), Speaker())
+        second.stop()
+        // The fake ring's laps are all alike, so whether it makes a plan is the line analysis's call
+        // (the demo session's is checked in SessionReviewTest); whatever it made is what is kept.
+        val reviewed = ReviewLibrary(base).review(second.id)
+        assertEquals(reviewed.linePlan, IosLinePlanStore(lines).get("ring"))
     }
 
     @Test
