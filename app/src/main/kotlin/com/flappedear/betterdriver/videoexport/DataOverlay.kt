@@ -27,6 +27,7 @@ import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.DefaultMaxG
+import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.MapFit
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
@@ -185,7 +186,8 @@ internal class OverlayPainter(
             lap.kind == LapKind.In -> " · IN"
             else -> ""
         }
-        ink(if (lap.isBest) best else dim, text)
+        // A single-lap export's lap after its line keeps its final time, in the gain colour (Overlays' hotlap).
+        ink(if (lap.isBest) best else dim, if (lap.phase == LapPhase.Finished) gain else text)
         slot(canvas, box, "$word ${lap.number}$kind", formatRunningTime(lap.lapMicros / MicrosPerMilli))
     }
 

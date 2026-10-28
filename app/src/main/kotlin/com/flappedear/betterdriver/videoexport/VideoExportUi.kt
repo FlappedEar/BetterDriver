@@ -12,6 +12,15 @@ typealias VideoPart = Int
 /** The part that is all of the session's video. Lap numbers start at 1. */
 const val WholeVideo: VideoPart = 0
 
+/** A lap's export starts this many seconds before its line and ends as long after (FlappedEar Overlays' "Handle"). */
+val LapHandleSecondsChoices = listOf(5, 6, 7, 8)
+
+/** Overlays' default handle. */
+const val DefaultLapHandleSeconds = 6
+
+/** Whether [part] is one lap (or run), the only part with handles. */
+fun isSingleLap(part: VideoPart): Boolean = part != WholeVideo && optimalKindOf(part) == null
+
 /** The video part that films [kind]. */
 fun videoPartOf(kind: OptimalKind): VideoPart = when (kind) {
     OptimalKind.RealisticOptimal -> RealisticOptimalLap

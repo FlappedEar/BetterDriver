@@ -10,6 +10,7 @@ import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
+import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.MapFit
 import com.flappedear.betterdriver.timing.overlay.MeasuredG
 import com.flappedear.betterdriver.timing.overlay.OverlayData
@@ -124,6 +125,43 @@ class OverlayTest {
         assertEquals(5, after.number)
         assertNull(after.kind)
         assertEquals(2_000_000L, after.lapMicros)
+    }
+
+    @Test
+    fun `a single-lap export shows its lap only - ready before the line, held after it`() {
+        val drive = circuit.drive(listOf(1.0, 1.05, 0.95))
+        val sets = session(drive)
+        val laps = replayLaps("s", sets, track)
+        val best = assertNotNull(laps.best)
+        val slow = laps.laps.single { it.lap.number == 4 }
+        val data = OverlayData(sets, laps, hotlap = 4)
+
+        // Before its start line the previous lap is being driven, but the export shows lap 4 at 0:00.
+        val before = assertNotNull(data.at(slow.lap.startMicros - 3_000_000).lap)
+        assertEquals(4, before.number)
+        assertEquals(LapPhase.Ready, before.phase)
+        assertEquals(0L, before.lapMicros)
+        assertNull(before.deltaMicros)
+
+        val during = assertNotNull(data.at(slow.lap.startMicros + 10_000_000).lap)
+        assertEquals(LapPhase.Running, during.phase)
+        assertEquals(10_000_000L, during.lapMicros)
+
+        // After its line: its final time and the gap to the best lap, held.
+        for (after in listOf(slow.lap.endMicros, slow.lap.endMicros + 5_000_000)) {
+            val held = assertNotNull(data.at(after).lap)
+            assertEquals(4, held.number)
+            assertEquals(LapPhase.Finished, held.phase)
+            assertEquals(slow.lap.timeMicros, held.lapMicros)
+            assertEquals(slow.lap.timeMicros - best.lap.timeMicros, held.deltaMicros)
+        }
+
+        // Without a hotlap, or with a lap the session does not have, laps follow the clock as before.
+        for (plain in listOf(OverlayData(sets, laps), OverlayData(sets, laps, hotlap = 99))) {
+            val f = assertNotNull(plain.at(slow.lap.startMicros - 3_000_000).lap)
+            assertEquals(3, f.number)
+            assertEquals(LapPhase.Running, f.phase)
+        }
     }
 
     @Test

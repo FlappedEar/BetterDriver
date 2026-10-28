@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -32,9 +33,12 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.TransferState
+import com.flappedear.betterdriver.videoexport.DefaultLapHandleSeconds
+import com.flappedear.betterdriver.videoexport.LapHandleSecondsChoices
 import com.flappedear.betterdriver.videoexport.VideoExportOptions
 import com.flappedear.betterdriver.videoexport.VideoPart
 import com.flappedear.betterdriver.videoexport.WholeVideo
+import com.flappedear.betterdriver.videoexport.isSingleLap
 import com.flappedear.betterdriver.videoexport.lapOptionText
 import com.flappedear.betterdriver.videoexport.optimalOptionText
 import com.flappedear.betterdriver.videoexport.videoPartOf
@@ -70,7 +74,9 @@ internal fun VideoExportLine(state: TransferState?, rendering: Boolean, onCancel
 /**
  * What Video with data exports (FBBD-152): the whole session, a composite lap (FBBD-163, FBBD-178) or one lap,
  * each lap with its time and the best lap chosen to start with; laps the cameras missed cannot be
- * chosen. A bottom sheet, so a long session's laps scroll. [loading] while the session is read;
+ * chosen. A lap starts a few seconds before its line and ends as long after (the handle, as FlappedEar
+ * Overlays' single-lap export: 5 to 8 s, 6 to start with), passed to [onExport] with the part.
+ * A bottom sheet, so a long session's laps scroll. [loading] while the session is read;
  * [options] is then null if its video could not be read.
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -79,10 +85,11 @@ internal fun VideoExportSheet(
     title: String,
     loading: Boolean,
     options: VideoExportOptions?,
-    onExport: (VideoPart) -> Unit,
+    onExport: (VideoPart, Int) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var picked by rememberSaveable(options) { mutableStateOf(options?.preselected) }
+    var handle by rememberSaveable { mutableStateOf(DefaultLapHandleSeconds) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp).navigationBarsPadding(),
@@ -104,12 +111,26 @@ internal fun VideoExportSheet(
                 options == null -> DimText("This session's video could not be read.", color = TrackTheme.colors.loss)
                 else -> PartList(options, picked) { picked = it }
             }
+            if (options != null && picked?.let(::isSingleLap) == true) HandleRow(handle) { handle = it }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Cancel") }
                 FilledTonalButton(
-                    onClick = { picked?.let(onExport) },
+                    onClick = { picked?.let { onExport(it, handle) } },
                     enabled = options != null && picked != null,
                 ) { Text("Export") }
+            }
+        }
+    }
+}
+
+/** Seconds of video before and after the lap: FilterChips 5 to 8 s, as Overlays' "Handle". */
+@Composable
+private fun HandleRow(seconds: Int, onPick: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        DimText("Seconds before and after the lap")
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for (s in LapHandleSecondsChoices) {
+                FilterChip(selected = s == seconds, onClick = { onPick(s) }, label = { Text("$s s") })
             }
         }
     }

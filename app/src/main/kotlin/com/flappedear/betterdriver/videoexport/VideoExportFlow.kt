@@ -32,12 +32,13 @@ fun VideoExportFlow(
     val exports = remember(context) { VideoExports.get(context) }
     // Saveable: the activity can be re-created while the sheet or the file picker is open.
     var picking by rememberSaveable { mutableStateOf<String?>(null) }
-    var saving by rememberSaveable { mutableStateOf<String?>(null) } // "<id>:<part>" until a file is picked
+    // "<id>:<part>:<handle seconds>" until a file is picked
+    var saving by rememberSaveable { mutableStateOf<String?>(null) }
     var options by remember { mutableStateOf<Pair<String, VideoExportOptions?>?>(null) }
     val pickFile = rememberLauncherForActivityResult(CreateDocument(Mp4MimeType)) { uri ->
         val target = saving?.let(::decodeTarget)
         saving = null
-        if (uri != null && target != null) exports.start(target.first, target.second, uri, recording)
+        if (uri != null && target != null) exports.start(target.id, target.part, uri, recording, target.handleSeconds)
     }
     content(
         SessionVideoExport(
@@ -65,20 +66,25 @@ fun VideoExportFlow(
         title = sessionTitle(session),
         loading = loaded == null,
         options = loaded?.second,
-        onExport = { part ->
+        onExport = { part, handleSeconds ->
             picking = null
-            saving = "$id:$part"
+            saving = "$id:$part:$handleSeconds"
             pickFile.launch(videoExportFileName(session.id, part, loaded?.second?.pointToPoint == true))
         },
         onDismiss = { picking = null },
     )
 }
 
-/** "<id>:<part>" back to the session id and part. */
-private fun decodeTarget(text: String): Pair<String, VideoPart>? {
-    val i = text.lastIndexOf(':')
-    val part = text.substring(i + 1).toIntOrNull()
-    return if (i <= 0 || part == null) null else text.substring(0, i) to part
+/** What to export once the file is picked: session [id], its [part], a lap with [handleSeconds] before and after. */
+internal data class VideoExportTarget(val id: String, val part: VideoPart, val handleSeconds: Int)
+
+/** "<id>:<part>:<handle seconds>" back to the target. */
+internal fun decodeTarget(text: String): VideoExportTarget? {
+    val j = text.lastIndexOf(':')
+    val i = if (j > 0) text.lastIndexOf(':', j - 1) else -1
+    val part = if (i > 0) text.substring(i + 1, j).toIntOrNull() else null
+    val handle = text.substring(j + 1).toIntOrNull()
+    return if (part == null || handle == null) null else VideoExportTarget(text.substring(0, i), part, handle)
 }
 
 private const val Mp4MimeType = "video/mp4"
