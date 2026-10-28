@@ -65,6 +65,23 @@ class DemoSessionsTest {
         assertTrue("<!-- Lap 23 -->" in gpx)
     }
 
+    @Test
+    fun aSharedSessionImportsElsewhereWithItsTrackAndLaps() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        var last = 0L to 0L
+        val bundle = library.share(id, "$base/out") { written, total -> last = written to total }
+        assertTrue(bundle.endsWith("/BetterDriver-$id.bdsession"), bundle)
+        assertTrue(last.second > 0 && last.first == last.second, "progress $last")
+        val other = ReviewLibrary("$base/other")
+        val received = other.receive(bundle) { _, _ -> }
+        assertEquals("jastrzab", received.session.track?.id)
+        other.accept(received, replace = false, replaceTrack = false)
+        assertEquals(listOf(id), other.sessions().map { it.id })
+        val review = other.review(id).review
+        assertEquals(23, review.laps.size)
+        assertEquals("109.906", fixed(checkNotNull(review.bestLapSeconds), 3))
+    }
+
     private fun read(path: String) = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
     private companion object {

@@ -201,7 +201,7 @@ class SessionInbox(
     }
 }
 
-private fun mkdirs(path: String) {
+internal fun mkdirs(path: String) {
     NSFileManager.defaultManager.createDirectoryAtPath(
         path,
         withIntermediateDirectories = true,
@@ -210,7 +210,7 @@ private fun mkdirs(path: String) {
     )
 }
 
-private fun sizeOf(path: String): Long =
+internal fun sizeOf(path: String): Long =
     (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)?.longLongValue
         ?: throw ImportFileException("cannot read $path")
 
@@ -256,7 +256,7 @@ private fun readSmall(path: String): ByteArray? {
 }
 
 /** Reads the file at [path] in pieces, handing each to [block] with its length. */
-private fun pump(path: String, block: (ByteArray, Int) -> Unit) {
+internal fun pump(path: String, block: (ByteArray, Int) -> Unit) {
     val input = NSFileHandle.fileHandleForReadingAtPath(path) ?: throw ImportFileException("cannot open $path")
     try {
         while (true) {
@@ -270,14 +270,14 @@ private fun pump(path: String, block: (ByteArray, Int) -> Unit) {
     }
 }
 
-private fun NSData.toByteArray(): ByteArray {
+internal fun NSData.toByteArray(): ByteArray {
     val n = length.toInt()
     val out = ByteArray(n)
     if (n > 0) out.usePinned { memcpy(it.addressOf(0), bytes, length) }
     return out
 }
 
-private fun ByteArray.toNSData(from: Int, to: Int): NSData =
+internal fun ByteArray.toNSData(from: Int, to: Int): NSData =
     if (to == from) {
         NSData()
     } else {
