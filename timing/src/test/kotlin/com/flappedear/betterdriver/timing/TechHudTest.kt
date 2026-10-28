@@ -49,10 +49,17 @@ class TechHudTest {
         val map = assertNotNull(l.boxes[HudWidget.TrackMap])
         assertEquals(0.012f * 1920, map.left, 0.01f)
         assertEquals(0.015f * 1080, map.top, 0.01f)
-        // Nothing overlaps; the heart rate is top right, the radar above the G readout.
+        // Nothing overlaps (the temperature rows touch, as in the template: allow a float's rounding);
+        // the heart rate is top right, the radar above the G readout.
         val boxes = l.boxes.values.toList()
         for (i in boxes.indices) {
-            for (j in i + 1 until boxes.size) assertTrue(!boxes[i].overlaps(boxes[j]), "$i and $j overlap")
+            for (j in i + 1 until boxes.size) {
+                val a = boxes[i]
+                val b = boxes[j]
+                val across = minOf(a.right, b.right) - maxOf(a.left, b.left)
+                val down = minOf(a.bottom, b.bottom) - maxOf(a.top, b.top)
+                assertTrue(across <= 0.01f || down <= 0.01f, "$i and $j overlap: $a $b")
+            }
         }
         assertTrue(l.boxes.getValue(HudWidget.GRadar).bottom <= l.boxes.getValue(HudWidget.GReadout).top)
         assertEquals(StackPosition.Top, l.stack[HudWidget.Oil])
