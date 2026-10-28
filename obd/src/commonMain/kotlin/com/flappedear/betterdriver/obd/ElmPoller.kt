@@ -21,6 +21,9 @@ interface ObdListener {
 
     /** A line for the app log: init answers, rates, why polling stopped. */
     fun log(text: String)
+
+    /** What the car offers at its OBD port (FBBD-344), when the poller was asked to scan it. */
+    fun scanned(scan: CarScan) {}
 }
 
 /** The poller's monotonic clock in ms, and how it waits; passed in for tests. */
@@ -102,6 +105,8 @@ class ElmPoller(
     private val listenIntervalMs: Long = DEFAULT_LISTEN_INTERVAL_MS,
     private val listenWindowMs: Long = DEFAULT_LISTEN_WINDOW_MS,
     private val maxListenMs: Long = DEFAULT_MAX_LISTEN_MS,
+    private val scan: Boolean = false,
+    private val scanMs: Long = DEFAULT_SCAN_MS,
 ) {
     /** What each group's request got without a count, by its lead request. */
     private class Learned(private val resampleEvery: Int) {
@@ -184,7 +189,7 @@ class ElmPoller(
         val (adapter, voltage) = setUp() ?: return "adapter not answering"
         val supported = discover() ?: return "car not answering"
         val protocol = line.command("ATDPN", AT_TIMEOUT_MS)?.trim().orEmpty()
-        setListens(broadcastsOn(protocol))
+        setListens(broadcastsOn(protocol, supported))
         val available = availableOn(protocol, supported)
         val can = isCan(protocol)
         resetTimeout(can)
@@ -224,8 +229,8 @@ class ElmPoller(
      * its own needs 11-bit CAN.
      */
     private fun availableOn(protocol: String, supported: Set<Int>): List<PidChannel> {
-        val frs = profile == CarProfile.Generic && listens.any { it in CanBroadcasts.Frs }
-        val car = if (frs) CarProfiles.ScionFrs2013 else profile
+        val frs = profile.id == CarProfile.Generic.id && listens.any { it in CanBroadcasts.Frs }
+        val car = if (frs) CarProfiles.ScionFrs2013.plusOwn(profile) else profile
         val can11 = isCan11(protocol)
         return car.channelsToPoll(supported).filter { (it.header == null || can11) && it.compiled != null }
     }
@@ -356,17 +361,39 @@ class ElmPoller(
         listener.log("identity $text")
     }
 
-    /** The broadcasts to listen for: probed on 11-bit CAN when [canListen], else none (FBBD-263). */
-    @Suppress("ReturnCount") // Each early return is one reason not to listen.
-    private fun broadcastsOn(protocol: String): List<CanSignal> {
-        if (!canListen || !isCan11(protocol)) return emptyList()
-        if (!pollSet().broadcastCar) {
-            val vin = readVin()
-            val wanted = vin != null && CanBroadcasts.wantedFor(vin)
-            listener.log("can_listen ${if (wanted) "on" else "off"}: vin ${vin?.take(VIN_LOGGED) ?: "not read"}")
-            if (!wanted) return emptyList()
-        }
-        return probe()
+    /**
+     * The broadcasts to listen for, probed on 11-bit CAN when [canListen], else none (FBBD-263): the
+     * ones the app knows on a car whose VIN (or the session's car, [PollSet.broadcastCar]) says it
+     * sends them, and the driver's own [CarProfile.signals] on any car (FBBD-344). With [scan] the
+     * car is probed whatever its VIN, and what it offers goes to [ObdListener.scanned].
+     */
+    private fun broadcastsOn(protocol: String, supported: Set<Int>): List<CanSignal> {
+        val can11 = canListen && isCan11(protocol)
+        if (!can11 && !scan) return emptyList()
+        val knownCar = pollSet().broadcastCar
+        val vin = if (scan || !knownCar) readVin() else null
+        val builtIn = knownCar || wantedFor(vin)
+        if (!knownCar && can11) logListen(vin, builtIn)
+        val signals = if (builtIn) CanBroadcasts.all + profile.signals else profile.signals
+        val probed = if (can11 && (signals.isNotEmpty() || scan)) probe(signals) else null
+        if (scan) reportScan(protocol, supported, vin, probed?.second)
+        return probed?.first.orEmpty()
+    }
+
+    /** What the car offers, to [ObdListener.scanned]: [ids] heard and whether the buffer filled, null unheard. */
+    private fun reportScan(protocol: String, supported: Set<Int>, vin: String?, ids: Pair<List<CanIdSeen>, Boolean>?) {
+        val vinShown = vin?.take(CarScan.VinShown)
+        listener.scanned(CarScan(protocol, supported, vinShown, ids?.first.orEmpty(), ids != null, ids?.second == true))
+    }
+
+    private fun wantedFor(vin: String?) = vin != null && CanBroadcasts.wantedFor(vin)
+
+    /** Whether the car's broadcasts are listened for, by its [vin] and the driver's own (FBBD-284, FBBD-344). */
+    private fun logListen(vin: String?, builtIn: Boolean) {
+        val own = profile.signals.size
+        val on = builtIn || own > 0
+        val ownText = if (own == 0) "" else " own=$own"
+        listener.log("can_listen ${if (on) "on" else "off"}: vin ${vin?.take(VIN_LOGGED) ?: "not read"}$ownText")
     }
 
     /** The car's VIN from `09 02`, or null when no ECU gives one (FBBD-284). */
@@ -384,41 +411,54 @@ class ElmPoller(
         if (listens.isEmpty()) requestMs else minOf(requestMs, nextListenMs)
 
     /**
-     * Which CAN ids the OBD port shows (FBBD-263), for the log, and the [CanBroadcasts] signals whose
-     * required ids came. Headers on and CAN formatting off for the monitor; both back afterwards.
+     * Which CAN ids the OBD port shows (FBBD-263), for the log, and those of [signals] whose required
+     * ids came, with the ids heard in the open monitor and whether its buffer filled (FBBD-344); null
+     * ids when the adapter cannot monitor. Headers on and CAN formatting off for the monitor; both
+     * back afterwards. A scan monitors for [scanMs], else [probeMs].
      */
     @Suppress("ReturnCount") // Each early return is one way the adapter cannot monitor.
-    private fun probe(): List<CanSignal> {
+    private fun probe(signals: List<CanSignal>): Pair<List<CanSignal>, Pair<List<CanIdSeen>, Boolean>?> {
         if (line.command("ATCAF0", AT_TIMEOUT_MS)?.contains("OK") != true) {
             listener.log("can_probe off: ATCAF0 not taken")
-            return emptyList()
+            return emptyList<CanSignal>() to null
         }
         if (!setHeaders(true)) {
             line.command("ATCAF1", AT_TIMEOUT_MS)
             listener.log("can_probe off: ATH1 not taken")
-            return emptyList()
+            return emptyList<CanSignal>() to null
         }
-        val text = line.monitor("ATMA", probeMs, MONITOR_STOP_MS)
-        val seen = CanMonitor.count(text)
-        val full = if (text?.contains("BUFFER FULL") == true) " buffer_full" else ""
+        val ms = if (scan) maxOf(probeMs, scanMs) else probeMs
+        val text = line.monitor("ATMA", ms, MONITOR_STOP_MS)
+        val frames = CanMonitor.frames(text)
+        val seen = frames.groupingBy { it.first }.eachCount()
+        val bufferFull = text?.contains("BUFFER FULL") == true
+        val full = if (bufferFull) " buffer_full" else ""
         val top = seen.entries.sortedByDescending { it.value }.take(PROBE_LOG_IDS)
             .joinToString(" ") { (id, n) -> "${hex(id, CAN_ID_DIGITS)}:$n" }
-        listener.log("can_probe ms=$probeMs frames=${seen.values.sum()} ids=${seen.size}$full $top".trimEnd())
+        listener.log("can_probe ms=$ms frames=${seen.values.sum()} ids=${seen.size}$full $top".trimEnd())
         // The open monitor can fill the adapter's buffer on a busy bus and miss ids: count the needed
-        // ones again, each behind its own filter.
-        val needed = CanBroadcasts.all.flatMap { it.requires }.distinct()
+        // ones again, each behind its own filter. The driver's own may be slow ones: they get a longer
+        // window, and one frame in either monitor is enough (FBBD-344).
+        val (own, builtIn) = signals.partition { OwnChannels.isOwn(it.id) }
+        val needed = signals.flatMap { it.requires }.distinct()
+        val ownOnly = own.flatMap { it.requires }.toSet() - builtIn.flatMap { it.requires }.toSet()
         val filtered = LinkedHashMap<Int, Int>()
         for (id in needed) {
-            filtered[id] = listenFor(id, PROBE_FILTER_MS).size
+            filtered[id] = listenFor(id, if (id in ownOnly) OWN_FILTER_MS else PROBE_FILTER_MS).size
             if (filterStuck) break
         }
         line.command("ATCAF1", AT_TIMEOUT_MS)
         setHeaders(false)
-        val matched = if (filterStuck) emptyList() else CanBroadcasts.matching(filtered)
+        val anywhere = filtered.mapValues { (id, n) -> maxOf(n, seen[id] ?: 0) }
+        val matched = if (filterStuck) {
+            emptyList()
+        } else {
+            CanBroadcasts.matching(filtered, signals = builtIn) + CanBroadcasts.matching(anywhere, 1, own)
+        }
         val counts = filtered.entries.joinToString(" ") { (id, n) -> "${hex(id, CAN_ID_DIGITS)}:$n" }
         val listening = matched.joinToString(" ") { "${it.id}=${hex(it.canId, CAN_ID_DIGITS)}" }.ifEmpty { "none" }
-        listener.log("can_ids $counts listen $listening")
-        return matched
+        if (needed.isNotEmpty()) listener.log("can_ids $counts listen $listening")
+        return matched to (CarScan.canIds(frames, ms) to bufferFull)
     }
 
     /**
@@ -888,7 +928,13 @@ class ElmPoller(
 
         /** FBBD-263: the open probe at connect, and each filtered count after it. */
         const val DEFAULT_PROBE_MS = 2_000L
+
+        /** FBBD-344: a scan's open monitor, long enough for ids sent once a second to come a few times. */
+        const val DEFAULT_SCAN_MS = 5_000L
         private const val PROBE_FILTER_MS = 300L
+
+        /** A filtered listen for an id only the driver's own parameters read: long enough for 1 frame/s. */
+        private const val OWN_FILTER_MS = 1_500L
         private const val PROBE_LOG_IDS = 60
 
         /** FBBD-263: a listen every 400 ms, 100 ms of frames each (5 steering frames at 50 Hz). */

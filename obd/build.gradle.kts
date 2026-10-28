@@ -22,6 +22,8 @@ kotlin {
         commonMain.dependencies {
             api(project(":recorder"))
             implementation(project(":shared"))
+            // The driver's own parameters and the last scan are stored with the car (FBBD-344).
+            implementation(project(":setup"))
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
