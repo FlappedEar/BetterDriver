@@ -58,7 +58,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * "Video with data" (FBBD-152): a lap, or all of a session's video, rendered on the phone with the
- * data overlay ([DataOverlay]) and saved where the user picked, as RaceChrono and Catalyst do.
+ * data overlay ([dataOverlays], FlappedEar Overlays' Tech HUD layout, FBBD-347) and saved where the
+ * user picked, as RaceChrono and Catalyst do.
  *
  * One export at a time, in the UI process: the session is read and the cuts planned on a background
  * thread; Media3 Transformer then decodes, draws the overlay on every frame and encodes on a thread
@@ -119,7 +120,8 @@ class VideoExports private constructor(private val context: Context) {
                 if (cuts.isEmpty()) {
                     null
                 } else {
-                    WatchSource(cuts, p.video, OverlayData(p.sets, p.laps, measuredG(p.data)))
+                    val data = OverlayData(p.sets, p.laps, measuredG(p.data), channels = p.data.channels.values)
+                    WatchSource(cuts, p.video, data)
                 }
             }
         } catch (e: Exception) {
@@ -292,8 +294,14 @@ class VideoExports private constructor(private val context: Context) {
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
             // One lap: it alone, 0:00 before its line and its final time after (FlappedEar Overlays' hotlap).
             val hotlap = part.takeIf(::isSingleLap)
-            val data = OverlayData(prepared.sets, prepared.laps, measuredG(prepared.data), hotlap)
-            val painter = OverlayPainter(OverlayFonts.load(context), data.outline, data.pointToPoint)
+            val data = OverlayData(
+                prepared.sets,
+                prepared.laps,
+                measuredG(prepared.data),
+                hotlap = hotlap,
+                channels = prepared.data.channels.values,
+            )
+            val painter = TechHudPainter(HudFonts.load(context), data)
             // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
             val optimal = prepared.optimalPlan(part)
             val items = cuts.mapIndexed { i, cut ->
@@ -305,9 +313,9 @@ class VideoExports private constructor(private val context: Context) {
                     .setUri(Uri.fromFile(prepared.video.file(cut.clip)))
                     .setClippingConfiguration(clipping)
                     .build()
-                val drawn = optimal?.let { OptimalOverlay(data, it, it.cuts[i], painter) }
-                    ?: DataOverlay(data, cut, painter)
-                val overlay = OverlayEffect(listOf(drawn))
+                val drawn = optimal?.let { optimalOverlays(data, it, it.cuts[i], painter) }
+                    ?: dataOverlays(data, cut, painter)
+                val overlay = OverlayEffect(drawn)
                 EditedMediaItem.Builder(media).setEffects(Effects(emptyList(), listOf(overlay))).build()
             }
             // Silence where a clip has no sound, so clips with and without it can follow each other.

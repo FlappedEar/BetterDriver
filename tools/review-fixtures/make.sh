@@ -4,9 +4,11 @@
 # shows (PixelCopy) or which source frame an exported video holds.
 #
 # The number is a 12-bit Gray code (one bit changes from frame to frame, which keeps the files
-# small) in two rows of twelve 16 x 24 px cells at the top: the top row has the bits (white = 1),
-# the row under it their complement, so a frame read half way through a change is detected and
-# read again. Media time of frame n is n / 30 s exactly (H.264 Constrained Baseline, no B-frames,
+# small) in two rows of twelve 16 x 12 px cells, y 40-52 and 52-64: the top row has the bits
+# (white = 1), the row under it their complement, so a frame read half way through a change is
+# detected and read again. The rows sit in the band the video overlay leaves clear (FlappedEar
+# Overlays' Tech HUD, FBBD-347: track map and heart rate above, G radar below), so a rendered
+# video's frames read too. Media time of frame n is n / 30 s exactly (H.264 Constrained Baseline, no B-frames,
 # a key frame every 30 frames so an exact seek decodes at most 29 small frames). 12 bits cover
 # 136 s. No figures for people: changing text doubles the files.
 #
@@ -22,7 +24,7 @@ bit='mod(floor(N/pow(2,11-floor(X/16)))+floor(N/pow(2,12-floor(X/16))),2)'
 # render <file> <length s>
 render() {
   ffmpeg -hide_banner -loglevel error -y -f lavfi -i "color=c=black:s=192x112:r=30:d=$2" \
-    -vf "format=gray,geq=lum='if(lt(Y,48),if(lt(Y,24),16+219*$bit,235-219*$bit),16)',format=yuv420p" \
+    -vf "format=gray,geq=lum='if(gte(Y,40)*lt(Y,64),if(lt(Y,52),16+219*$bit,235-219*$bit),16)',format=yuv420p" \
     -c:v libx264 -profile:v baseline -preset veryslow -g 30 -bf 0 -crf 30 -threads 1 \
     -movflags +faststart -map_metadata -1 -fflags +bitexact -flags:v +bitexact "$1"
 }
