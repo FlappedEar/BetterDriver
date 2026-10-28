@@ -91,6 +91,8 @@ final class TracksModel: NSObject, ObservableObject, CLLocationManagerDelegate {
 extension Notification.Name {
     /// A track was saved or deleted here: an open session review is timed again with its lines.
     static let tracksChanged = Notification.Name("BetterDriver.tracksChanged")
+    /// A recording ended and its session was saved.
+    static let sessionsChanged = Notification.Name("BetterDriver.sessionsChanged")
 }
 
 extension Track {

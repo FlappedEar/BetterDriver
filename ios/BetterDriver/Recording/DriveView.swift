@@ -40,7 +40,10 @@ struct DriveView: View {
                 picking = false
                 recorder.start(receiver)
             }
-            .presentationDetents([.medium, .large])
+            // Full height in the UI test, so every row and the camera toggle are on screen.
+            .presentationDetents(UITestMode.on ? [.large] : [.medium, .large])
+            // On the iPad a tap beside the sheet closes it; a UI test's taps must not.
+            .interactiveDismissDisabled(UITestMode.on)
             .presentationBackground(Palette.surface)
         }
         .fullScreenCover(isPresented: Binding(get: { recorder.isRecording }, set: { _ in })) {
@@ -49,7 +52,8 @@ struct DriveView: View {
         .onAppear {
             camera = recorder.phoneCamera
             videoMode = recorder.phoneVideoMode
-            place.find()
+            // The UI test runs without location access and its prompt.
+            if !UITestMode.on { place.find() }
         }
     }
 }
@@ -117,6 +121,13 @@ struct ReceiverSheet: View {
             Text("GPS receiver for this session")
                 .font(.title3.weight(.semibold))
                 .padding(.bottom, 6)
+                // On the title only: on the whole sheet it would replace every row's own id.
+                .accessibilityIdentifier("receiverSheet")
+            // The UI test's receiver, on top where the sheet's first height shows it.
+            if UITestMode.on {
+                row("Simulated GPS", "UI test", ok: true) { onPick(.simulated) }
+                    .accessibilityIdentifier("receiver.simulated")
+            }
             ForEach(devices) { device in
                 row(device.name, device.name == lastUsed ? "Nearby · last used" : "Nearby", ok: true) {
                     onPick(.raceBox(device))
@@ -163,7 +174,6 @@ struct ReceiverSheet: View {
             s.start()
         }
         .onDisappear { scanner?.stop() }
-        .accessibilityIdentifier("receiverSheet")
     }
 
     private func row(_ name: String, _ detail: String, ok: Bool, pick: @escaping () -> Void) -> some View {

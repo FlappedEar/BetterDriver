@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.debug.StartupLog
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.PhoneGnssChannels
+import com.flappedear.betterdriver.recorder.PhoneImuChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.RecordingEnd

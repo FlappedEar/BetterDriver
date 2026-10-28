@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.recording
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.PhoneFix
 import com.flappedear.betterdriver.recorder.PhoneGnssChannels
+import com.flappedear.betterdriver.recorder.PhoneImuChannels
 import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.phoneFixMicros
 import com.flappedear.betterdriver.recorder.phoneFixSet

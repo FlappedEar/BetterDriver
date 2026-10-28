@@ -31,8 +31,8 @@ targets:
     dependencies:
       - framework: ../core-ios/build/XCFrameworks/${BETTERDRIVER_CORE_BUILD}/BetterDriverCore.xcframework
         embed: false
-      # The recording's Live Activity on the lock screen (UI-284 A).
-      - target: BetterDriverLiveActivity
+      # The recording's Live Activity (UI-284 A, target BetterDriverLiveActivity below) is out of the
+      # build until the app is stable: a card left by a crash or a kill stays even after a reboot.
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver
@@ -66,27 +66,30 @@ targets:
         # Load every Objective-C class of the static Kotlin framework, so the hosted unit tests
         # find the core's classes in the app even when the app itself does not use them yet.
         OTHER_LDFLAGS: $(inherited) -ObjC
-  BetterDriverLiveActivity:
-    type: app-extension
-    platform: iOS
-    sources:
-      - LiveActivity
-      # The activity's data, shared with the app.
-      - BetterDriver/Recording/RecordingAttributes.swift
-    info:
-      path: LiveActivity/Info.plist
-      properties:
-        CFBundleDisplayName: BetterDriver
-        NSExtension:
-          NSExtensionPointIdentifier: com.apple.widgetkit-extension
-    settings:
-      base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.LiveActivity
-        PRODUCT_NAME: BetterDriverLiveActivity
-        TARGETED_DEVICE_FAMILY: "1,2"
-        CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: ${BETTERDRIVER_TEAM}
-        SKIP_INSTALL: YES
+  # BetterDriverLiveActivity:
+  #   type: app-extension
+  #   platform: iOS
+  #   sources:
+  #     - LiveActivity
+  #     # The activity's data, shared with the app.
+  #     - BetterDriver/Recording/RecordingAttributes.swift
+  #   info:
+  #     path: LiveActivity/Info.plist
+  #     properties:
+  #       CFBundleDisplayName: BetterDriver
+  #       # The app's version and build number: App Store Connect wants them equal (ITMS-90473).
+  #       CFBundleShortVersionString: $(MARKETING_VERSION)
+  #       CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+  #       NSExtension:
+  #         NSExtensionPointIdentifier: com.apple.widgetkit-extension
+  #   settings:
+  #     base:
+  #       PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.LiveActivity
+  #       PRODUCT_NAME: BetterDriverLiveActivity
+  #       TARGETED_DEVICE_FAMILY: "1,2"
+  #       CODE_SIGN_STYLE: Automatic
+  #       DEVELOPMENT_TEAM: ${BETTERDRIVER_TEAM}
+  #       SKIP_INSTALL: YES
   BetterDriverTests:
     type: bundle.unit-test
     platform: iOS
@@ -102,6 +105,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.flappedear.betterdriver.tests
         GENERATE_INFOPLIST_FILE: YES
+  # The smoke test that gates TestFlight (ios-release.yml): record, stop, open, on the simulator.
   BetterDriverUITests:
     type: bundle.ui-testing
     platform: iOS

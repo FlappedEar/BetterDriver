@@ -1,5 +1,6 @@
 import XCTest
 import BetterDriverCore
+import CoreMotion
 import UIKit
 @testable import BetterDriver
 
@@ -144,6 +145,20 @@ final class RecordingTests: XCTestCase {
         XCTAssertNotNil(state.lap)
         XCTAssertEqual(state.best, "0:40.00")
         XCTAssertTrue(session.stop())
+    }
+
+    /// iOS reads a phone lying face up as Z -1 g, Android as +1: the session stores Android's sign,
+    /// stamped when the reading was measured (FBBD-337).
+    func testThePhonesAccelerometerIsStoredOnAndroidsAxes() {
+        let a = CMAcceleration(x: 0.25, y: -0.5, z: -1.0)
+        let set = PhoneImuLink.sampleSet(a, measuredAt: 99.96, uptime: 100.0, nowMicros: 5_000_000)
+        XCTAssertEqual(set.tMicros, 4_960_000)
+        let values = Dictionary(uniqueKeysWithValues: set.values.map { ($0.channelId, $0.value) })
+        XCTAssertEqual(values[PhoneImuChannels.shared.ACCEL_X.id], -0.25)
+        XCTAssertEqual(values[PhoneImuChannels.shared.ACCEL_Y.id], 0.5)
+        XCTAssertEqual(values[PhoneImuChannels.shared.ACCEL_Z.id], 1.0)
+        // A stamp from another clock: delivery time.
+        XCTAssertEqual(PhoneImuLink.sampleSet(a, measuredAt: 0, uptime: 100.0, nowMicros: 5_000_000).tMicros, 5_000_000)
     }
 
     func testRecordingClock() {

@@ -12,6 +12,7 @@ struct ExportButton: View {
     @State private var running = false
     @State private var ready: ExportedFile?
     @State private var failure: String?
+    @State private var notYet: String?
 
     var body: some View {
         Menu {
@@ -23,6 +24,10 @@ struct ExportButton: View {
             Button { export(withVideo: false) } label: {
                 Label("VBO", systemImage: "doc")
             }
+            // The rest of Android's export menu.
+            Button { notYet = "CSV export" } label: { Label("CSV", systemImage: "tablecells") }
+            Button { notYet = "GPX export" } label: { Label("GPX", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
+            Button { notYet = "Video with data" } label: { Label("Video with data", systemImage: "film.stack") }
         } label: {
             if running {
                 ProgressView().tint(Palette.accent)
@@ -39,6 +44,7 @@ struct ExportButton: View {
         .sheet(item: $ready) { file in
             SaveToFiles(url: file.url) { ready = nil }
         }
+        .notImplementedAlert($notYet)
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}
         }

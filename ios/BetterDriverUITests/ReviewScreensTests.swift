@@ -59,10 +59,12 @@ final class ReviewScreensTests: XCTestCase {
         }
     }
 
-    /// The Sessions tab, where the app has a tab bar (the iPhone, and the iPad with four tabs).
+    /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
     private func openSessions() {
-        let sessions = app.tabBars.buttons["Sessions"]
-        if sessions.waitForExistence(timeout: 5) { sessions.tap() }
+        let bottom = app.tabBars.buttons["Sessions"]
+        if bottom.waitForExistence(timeout: 5) { bottom.tap(); return }
+        let top = app.buttons["Sessions"].firstMatch
+        if top.waitForExistence(timeout: 5) { top.tap() }
     }
 
     private func keep(_ name: String) {
