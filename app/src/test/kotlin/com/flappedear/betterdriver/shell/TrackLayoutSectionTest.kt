@@ -30,7 +30,8 @@ import org.robolectric.annotation.Config
 
 /**
  * Settings › Track screen's layout (FBBD-345): every car is listed to pick whose layout is drawn,
- * a tap on a tile of either screen opens its list, and a pick goes to the setup with its page and slot. A tablet window: see NewTrackRotationTest for why
+ * a tap on a tile of either screen opens its list, and a pick goes to the setup with its page and
+ * slot. A tablet window: see NewTrackRotationTest for why
  * a dialog test runs in one.
  */
 @RunWith(RobolectricTestRunner::class)

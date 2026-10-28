@@ -168,7 +168,8 @@ class LiveUiTest {
         val screens = TrackScreens(main = listOf("delta", "lap_time", "last_lap", "best_lap", "predicted_lap"))
         val s = liveTrackState(state, screens, true)
         assertEquals(listOf("−0.34", "0:47.30", "1:52.90", "1:52.41", "1:52.07"), s.tiles.take(5).map { it?.value })
-        val groups = tileChoices(TileSources(state.live, state.timing, receiverHasG = false), receiver = "RaceBox Micro")
+        val sources = TileSources(state.live, state.timing, receiverHasG = false)
+        val groups = tileChoices(sources, receiver = "RaceBox Micro")
         assertEquals(
             listOf("Timing", "GPS · RaceBox Micro", "Car · OBD-II", "You · heart rate"),
             groups.map { it.title },
