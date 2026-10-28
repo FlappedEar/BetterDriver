@@ -32,7 +32,6 @@ import platform.posix.SO_ERROR
 import platform.posix.errno
 import platform.posix.fcntl
 import platform.posix.getsockopt
-import platform.posix.inet_pton
 import platform.posix.poll
 import platform.posix.pollfd
 import platform.posix.recv
@@ -80,6 +79,14 @@ private fun lastError(): String = strerror(errno)?.toKString() ?: "error $errno"
 @Suppress("MagicNumber")
 private fun networkOrder(port: Int): UShort = (((port and 0xFF) shl 8) or ((port shr 8) and 0xFF)).toUShort()
 
+/** [host] as dotted IPv4 in network byte order, or null when it is not one. */
+@Suppress("MagicNumber")
+internal fun ipv4(host: String): UInt? {
+    val parts = host.split('.').map { it.toIntOrNull()?.takeIf { n -> n in 0..255 } ?: return null }
+    if (parts.size != 4) return null
+    return parts.foldIndexed(0u) { i, acc, b -> acc or (b.toUInt() shl (8 * i)) }
+}
+
 private fun option(fd: Int, level: Int, name: Int) = memScoped {
     val on = alloc<IntVar>()
     on.value = 1
@@ -93,7 +100,7 @@ internal fun connectTcp(host: String, port: Int, timeoutMs: Int = WifiConnectTim
     addr.sin_len = sizeOf<sockaddr_in>().convert()
     addr.sin_family = AF_INET.convert()
     addr.sin_port = networkOrder(port)
-    if (inet_pton(AF_INET, host, addr.sin_addr.ptr) != 1) throw IOException("not an IPv4 address: $host")
+    addr.sin_addr.s_addr = ipv4(host) ?: throw IOException("not an IPv4 address: $host")
     val fd = socket(AF_INET, SOCK_STREAM, 0)
     if (fd < 0) throw IOException("socket: ${lastError()}")
     try {

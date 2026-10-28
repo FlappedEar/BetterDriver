@@ -313,6 +313,13 @@ class ObdFeedTest {
     }
 
     @Test
+    fun wifiAddressesAreReadAsIpv4() {
+        assertEquals(0x0A00A8C0u, ipv4("192.168.0.10"))
+        assertEquals(null, ipv4("192.168.0"))
+        assertEquals(null, ipv4("192.168.0.256"))
+    }
+
+    @Test
     fun nsDataRoundTrips() {
         val bytes = byteArrayOf(0, 1, 0x7F, -1, 0x3E)
         assertTrue(bytes.contentEquals(bytes.toNSData().toByteArray()))
@@ -352,7 +359,7 @@ private class SimWifiAdapter(private val answers: Map<String, String>) {
             addr.sin_len = sizeOf<platform.posix.sockaddr_in>().convert()
             addr.sin_family = platform.posix.AF_INET.convert()
             addr.sin_port = 0u
-            platform.posix.inet_pton(platform.posix.AF_INET, "127.0.0.1", addr.sin_addr.ptr)
+            addr.sin_addr.s_addr = ipv4("127.0.0.1")!!
             val size = sizeOf<platform.posix.sockaddr_in>()
             check(platform.posix.bind(listenFd, addr.ptr.reinterpret(), size.convert()) == 0)
             check(platform.posix.listen(listenFd, 4) == 0)
