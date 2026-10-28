@@ -2,9 +2,6 @@
 
 package com.flappedear.betterdriver.gopro
 
-import java.io.ByteArrayOutputStream
-import java.time.LocalDateTime
-
 /**
  * Open GoPro BLE UUIDs. GP-XXXX expands to b5f9XXXX-aa8d-11e3-9046-0002a5d5c51b.
  * Source: https://gopro.github.io/OpenGoPro/ble/protocol/ble_setup.html
@@ -30,7 +27,7 @@ object GoProUuids {
         else -> throw IllegalArgumentException("not a request characteristic: $request")
     }
 
-    private fun gp(id: Int) = "b5f9%04x-aa8d-11e3-9046-0002a5d5c51b".format(id)
+    private fun gp(id: Int) = "b5f9${id.toString(16).padStart(4, '0')}-aa8d-11e3-9046-0002a5d5c51b"
 }
 
 /**
@@ -73,7 +70,7 @@ object OpenGoPro {
 
     /** Joins packets from one response characteristic back into messages. Not thread-safe. */
     class Assembler {
-        private val buffer = ByteArrayOutputStream()
+        private var buffer = ByteArray(0)
         private var remaining = 0
 
         /** Adds [packet]; returns the message once it is complete, else null. */
@@ -86,7 +83,7 @@ object OpenGoPro {
                 if (remaining <= 0) return null // A stray continuation: nothing to continue.
                 body = packet.copyOfRange(1, packet.size)
             } else {
-                buffer.reset()
+                buffer = ByteArray(0)
                 when ((first shr 5) and 0x03) {
                     0 -> {
                         remaining = first and 0x1F
@@ -106,9 +103,9 @@ object OpenGoPro {
                 }
             }
             val take = minOf(body.size, remaining)
-            buffer.write(body, 0, take)
+            buffer += body.copyOfRange(0, take)
             remaining -= take
-            return if (remaining == 0) buffer.toByteArray().also { buffer.reset() } else null
+            return if (remaining == 0) buffer.also { buffer = ByteArray(0) } else null
         }
     }
 
@@ -130,10 +127,10 @@ object OpenGoPro {
      * Set Date Time, command 0x0D: year (2 bytes), month, day, hour, minute, second, without time
      * zone. The HERO9 and HERO10 take only this one (Open GoPro references.json).
      */
-    fun setDateTime(local: LocalDateTime): Request {
+    fun setDateTime(local: CameraDateTime): Request {
         val b = byteArrayOf(
             (local.year shr 8).toByte(), local.year.toByte(),
-            local.monthValue.toByte(), local.dayOfMonth.toByte(),
+            local.month.toByte(), local.day.toByte(),
             local.hour.toByte(), local.minute.toByte(), local.second.toByte(),
         )
         return Request(GoProUuids.COMMAND, byteArrayOf(0x0D, b.size.toByte()) + b)
@@ -143,10 +140,10 @@ object OpenGoPro {
      * Set Local Date Time, command 0x0F (HERO11 and later): year (2 bytes), month, day, hour,
      * minute, second, UTC offset in minutes (signed, 2 bytes) and a DST flag.
      */
-    fun setLocalDateTime(local: LocalDateTime, utcOffsetMinutes: Int, dst: Boolean): Request {
+    fun setLocalDateTime(local: CameraDateTime, utcOffsetMinutes: Int, dst: Boolean): Request {
         val b = byteArrayOf(
             (local.year shr 8).toByte(), local.year.toByte(),
-            local.monthValue.toByte(), local.dayOfMonth.toByte(),
+            local.month.toByte(), local.day.toByte(),
             local.hour.toByte(), local.minute.toByte(), local.second.toByte(),
             (utcOffsetMinutes shr 8).toByte(), utcOffsetMinutes.toByte(),
             if (dst) 1 else 0,
@@ -197,6 +194,9 @@ object OpenGoPro {
     }
 
     class Request(val characteristic: String, val message: ByteArray) {
+        /** The request id as the camera's errors name it, such as "0x01". */
+        val hexId: String get() = "0x" + id.toString(16).padStart(2, '0')
+
         val id: Int get() = message[0].toInt() and 0xFF
     }
 
@@ -256,7 +256,7 @@ object OpenGoPro {
                 }
                 if (fields.size < Fields) return null
                 val model = fields[0].fold(0) { acc, b -> (acc shl 8) or (b.toInt() and 0xFF) }
-                val text = { f: ByteArray -> String(f, Charsets.UTF_8) }
+                val text = { f: ByteArray -> f.decodeToString() }
                 return HardwareInfo(
                     modelNumber = model,
                     modelName = text(fields[1]),
@@ -269,3 +269,6 @@ object OpenGoPro {
         }
     }
 }
+
+/** A local date and time as the camera's clock takes it (month and day from 1). */
+data class CameraDateTime(val year: Int, val month: Int, val day: Int, val hour: Int, val minute: Int, val second: Int)

@@ -1,7 +1,6 @@
 package com.flappedear.betterdriver.gopro
 
 import org.junit.jupiter.api.Test
-import java.time.LocalDateTime
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -23,7 +22,7 @@ class OpenGoProTest {
     @Test
     fun `set local date time matches the documented example`() {
         // 2023-01-31 03:04:05, UTC-02:00, DST on → 07:E7:01:1F:03:04:05:FF:88:01
-        val r = OpenGoPro.setLocalDateTime(LocalDateTime.of(2023, 1, 31, 3, 4, 5), -120, true)
+        val r = OpenGoPro.setLocalDateTime(CameraDateTime(2023, 1, 31, 3, 4, 5), -120, true)
         assertContentEquals(hex(0x0F, 10, 0x07, 0xE7, 0x01, 0x1F, 0x03, 0x04, 0x05, 0xFF, 0x88, 0x01), r.message)
     }
 

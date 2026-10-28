@@ -27,6 +27,18 @@ final class SettingsModel: ObservableObject {
         coach = SettingsCore.shared.coachSettings(text: coachText)
         fullBrightness = UserDefaults.standard.object(forKey: Keys.brightness) as? Bool ?? true
         gnssSound = UserDefaults.standard.bool(forKey: Keys.gnssSound)
+        #if DEBUG
+        // An Open GoPro camera that is never there, for the smoke test's start and stop (FBBD-343).
+        if ProcessInfo.processInfo.arguments.contains("-openGoPro"),
+           !setup.equipment.contains(where: { $0.modelName == ModelName.goPro }) {
+            update {
+                SettingsCore.shared.addOpenGoPro(
+                    setup: $0, name: "GoPro 0000", address: "00000000-0000-0000-0000-000000000043",
+                    goPro: .hero11Black, id: "test-open-gopro"
+                )
+            }
+        }
+        #endif
     }
 
     /// Applies a change to the setup and saves it.
@@ -98,6 +110,7 @@ enum ModelName {
     static let heartRate = "HEART_RATE"
     static let obdBluetooth = "OBD_BLUETOOTH"
     static let obdWifi = "OBD_WIFI"
+    static let goPro = "GOPRO"
     static let goProFiles = "GOPRO_FILES"
     static let cameraFiles = "CAMERA_FILES"
 }

@@ -67,6 +67,7 @@ private func modelNote(_ model: String) -> String {
     case ModelName.obdBluetooth, ModelName.obdWifi:
         "Reads the car in every session while it is listed. The Car page shows its values."
     case ModelName.phoneCamera: "Records video with each session it is turned on for."
+    case ModelName.goPro: "Starts and stops with each session it is turned on for."
     case ModelName.goProFiles: "Start it by hand. Add its videos to the session afterwards."
     case ModelName.cameraFiles:
         "Start it by hand. Add its MP4 videos to the session afterwards; they are lined up by the camera's clock."
@@ -170,13 +171,18 @@ struct VideoModeSheet: View {
     }
 }
 
-/// Add equipment (UI-34 B): a Bluetooth search first, listing the RaceBoxes, heart-rate monitors and
-/// Bluetooth LE OBD-II adapters heard nearby that are not listed yet, then the phone's own GPS and
-/// camera when they are not listed.
+/// Add equipment (UI-34 B): a Bluetooth search first, listing the RaceBoxes, Open GoPro cameras
+/// (HERO9 and later), heart-rate monitors and Bluetooth LE OBD-II adapters heard nearby that are not
+/// listed yet, then the phone's own GPS and camera when they are not listed. A GoPro is paired first,
+/// which needs it in pairing mode, and tells the app which camera it is (FBBD-343), as on Android.
 struct AddEquipmentPage: View {
     @EnvironmentObject private var settings: SettingsModel
     @Environment(\.dismiss) private var dismiss
     @StateObject private var scanner = NearbyScanner()
+    /// The GoPro being paired, which takes a moment, and why the last pairing failed.
+    @State private var pairing: String?
+    @State private var pairingError: String?
+    @State private var pairingLink: GoProBleLink?
     // A GoPro started by hand is added by generation, picked in a dialog (FBBD-105), as on Android.
     @State private var pickingGoPro = false
 
@@ -200,18 +206,26 @@ struct AddEquipmentPage: View {
                         supporting: d.note,
                         trailing: {
                             SignalBars(bars: d.bars)
-                            Button("Add") { add(d.model, name: d.name, address: d.address) }
+                            Button(pairing == d.address ? "Pairing…" : "Add") { addNearby(d) }
                                 .buttonStyle(.bordered)
                                 .tint(Palette.onBackground)
+                                .disabled(pairing != nil)
                         }
                     )
                 }
             }
             DimText(
                 scanner.searching
-                    ? "Searching for RaceBox, heart-rate monitors and Bluetooth LE OBD-II adapters."
-                    : "Allow Bluetooth for BetterDriver in the iPhone's Settings to search for a RaceBox."
+                    ? "Searching for RaceBox, GoPro HERO9 or later, heart-rate monitors and Bluetooth LE OBD-II " +
+                        "adapters. Put a GoPro in pairing mode first."
+                    : "Allow Bluetooth for BetterDriver in the iPhone's Settings to search for a RaceBox or GoPro."
             )
+            if let pairingError {
+                Text(pairingError)
+                    .font(.footnote)
+                    .foregroundStyle(TrackColors.loss)
+                    .accessibilityIdentifier("pairingError")
+            }
             let without = SettingsCore.shared.withoutBluetooth(setup: settings.setup)
             if !without.isEmpty {
                 ShellLabel("Add without Bluetooth")
@@ -248,6 +262,31 @@ struct AddEquipmentPage: View {
         case ModelName.goProFiles: "HERO8 or older, MAX"
         case ModelName.cameraFiles: "DJI Action, Insta360, Garmin and others"
         default: "Built in"
+        }
+    }
+
+    private func addNearby(_ d: NearbyDevice) {
+        guard d.model == ModelName.goPro else {
+            add(d.model, name: d.name, address: d.address)
+            return
+        }
+        pairing = d.address
+        pairingError = nil
+        let link = GoProBleLink(address: d.address)
+        pairingLink = link
+        OpenGoPros.companion.pair(link: link) { paired, error in
+            pairing = nil
+            pairingLink = nil
+            guard let paired else {
+                pairingError = error ?? "Pairing failed"
+                return
+            }
+            let id = SettingsModel.newId()
+            settings.update {
+                SettingsCore.shared.addOpenGoPro(setup: $0, name: d.name, address: d.address, goPro: paired.model, id: id)
+            }
+            AppLog.i("GoPro", "paired \(paired.modelName) as \(paired.model.name)")
+            dismiss()
         }
     }
 
@@ -295,8 +334,9 @@ struct NearbyDevice {
     }
 }
 
-/// Listens for RaceBoxes, heart-rate monitors (service 0x180D) and OBD-II adapters (by name, as
-/// Android's ObdAdapterNames) while Add equipment is open.
+/// Listens for RaceBoxes, Open GoPro cameras (service 0xFEA6, as Android's GoProScanner), heart-rate
+/// monitors (service 0x180D) and OBD-II adapters (by name, as Android's ObdAdapterNames) while Add
+/// equipment is open.
 @MainActor
 final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
     @Published private(set) var found: [String: NearbyDevice] = [:]
@@ -306,6 +346,7 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
     private var wanted = false
 
     private static let heartRate = CBUUID(string: "180D")
+    private static let goPro = CBUUID(string: GoProUuids.shared.CONTROL_SERVICE)
     private static let obdParts = [
         "obd", "elm327", "vlink", "v-link", "vgate", "icar", "konnwei", "viecar", "veepeak", "carista",
         "kiwi", "unicarscan", "tonwon",
@@ -345,6 +386,8 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
         let model: String
         if FoundRaceBox.companion.isRaceBox(name: name) {
             model = ModelName.raceBox
+        } else if services.contains(NearbyScanner.goPro) {
+            model = ModelName.goPro
         } else if services.contains(NearbyScanner.heartRate) {
             model = ModelName.heartRate
         } else if NearbyScanner.obdParts.contains(where: { name.lowercased().contains($0) }) {
@@ -353,7 +396,7 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
             return
         }
         let device = NearbyDevice(
-            model: model, name: name.isEmpty ? "Heart-rate monitor" : name,
+            model: model, name: name.isEmpty ? (model == ModelName.goPro ? "GoPro" : "Heart-rate monitor") : name,
             address: peripheral.identifier.uuidString, rssi: RSSI.intValue
         )
         MainActor.assumeIsolated { found[device.address] = device }
