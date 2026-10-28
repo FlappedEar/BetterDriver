@@ -36,6 +36,20 @@ class VideoExportUiTest {
     }
 
     @Test
+    fun onlyALapHasHandlesAndTheTargetKeepsThem() {
+        assertTrue(isSingleLap(7))
+        assertFalse(isSingleLap(WholeVideo))
+        assertFalse(isSingleLap(RealisticOptimalLap))
+        assertFalse(isSingleLap(RawTheoreticalLap))
+        assertEquals(listOf(5, 6, 7, 8), LapHandleSecondsChoices)
+        assertEquals(6, DefaultLapHandleSeconds)
+        assertEquals(VideoExportTarget("a:b", 7, 6), decodeTarget("a:b:7:6"))
+        assertEquals(VideoExportTarget("abc", RealisticOptimalLap, 8), decodeTarget("abc:-1:8"))
+        assertEquals(null, decodeTarget("abc:7"))
+        assertEquals(null, decodeTarget("abc"))
+    }
+
+    @Test
     fun wholeVideoLengthInMinutesOrSeconds() {
         assertEquals("18 min of video", wholeVideoText(1_090_000_000))
         assertEquals("45 s of video", wholeVideoText(45_200_000))

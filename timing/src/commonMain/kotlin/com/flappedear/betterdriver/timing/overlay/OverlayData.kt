@@ -19,6 +19,7 @@ import com.flappedear.betterdriver.timing.replay.trackFrame
  * driven when the session stopped.
  * [deltaMicros] is the live delta to the session's best lap, matched by track position as on the
  * track screen; null on out and in laps, and without a best lap.
+ * [phase] is [LapPhase.Running] except in a single-lap export ([OverlayData]'s hotlap).
  */
 data class OverlayLap(
     val number: Int,
@@ -26,7 +27,15 @@ data class OverlayLap(
     val lapMicros: Long,
     val deltaMicros: Long?,
     val isBest: Boolean,
+    val phase: LapPhase = LapPhase.Running,
 )
+
+/**
+ * Where a single-lap export is in its lap, as FlappedEar Overlays' hotlap lap time shows it: [Ready]
+ * in the seconds before the start line (0:00), [Running] during the lap, [Finished] after the line
+ * (the lap's final time and delta, held).
+ */
+enum class LapPhase { Ready, Running, Finished }
 
 /** What the data overlay shows at one moment of the session; a null field is shown as a dash or left out. */
 data class OverlayFrame(
@@ -53,9 +62,18 @@ class MeasuredG(val forward: List<Pair<Long, Double>>?, val right: List<Pair<Lon
  * G comes from [measured], the accelerometers as the analysis corrects them, so the video shows the
  * G-G diagram's numbers; a direction without one comes from the GNSS path.
  *
+ * With [hotlap], a lap's number, every moment shows that lap only (a single-lap export with a few
+ * seconds before and after it, as Overlays exports one): before its start it is [LapPhase.Ready],
+ * after its end [LapPhase.Finished].
+ *
  * Not thread-safe: the exporter draws frames one at a time.
  */
-class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG? = null) {
+class OverlayData(
+    sets: List<SampleSet>,
+    laps: SessionLaps?,
+    measured: MeasuredG? = null,
+    hotlap: Int? = null,
+) {
     private val x: TimeSeries
     private val y: TimeSeries
     private val speed: TimeSeries
@@ -65,6 +83,7 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
     private val best: LapTrace? = laps?.best
     private val starts = LongArray(traces.size) { traces[it].lap.startMicros }
     private val alignments = HashMap<Int, LapAlignment>()
+    private val hotlap: LapTrace? = hotlap?.let { n -> traces.firstOrNull { it.lap.number == n } }
 
     /** The laps are runs of a point-to-point track (FBBD-155): the overlay says "Run", and between runs shows none. */
     val pointToPoint: Boolean = laps?.track?.pointToPoint == true
@@ -110,7 +129,7 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
         val gt = gLat.at(sessionMicros)
         return OverlayFrame(
             speedKmh = speed.at(sessionMicros),
-            lap = lapAt(sessionMicros),
+            lap = hotlap?.let { hotlapAt(it, sessionMicros) } ?: lapAt(sessionMicros),
             position = if (px != null && py != null) Xy(px, py) else null,
             g = if (gl != null && gt != null) GForce(gl, gt) else null,
         )
@@ -134,6 +153,23 @@ class OverlayData(sets: List<SampleSet>, laps: SessionLaps?, measured: MeasuredG
                 val lapMicros = t - trace.lap.startMicros
                 val isBest = trace.lap.number == best?.lap?.number
                 OverlayLap(trace.lap.number, trace.lap.kind, lapMicros, deltaAt(trace, lapMicros, isBest), isBest)
+            }
+        }
+    }
+
+    /** Lap [trace] only, whatever the time: 0:00 before its start, its final time and delta after its end. */
+    private fun hotlapAt(trace: LapTrace, t: Long): OverlayLap {
+        val lap = trace.lap
+        val isBest = lap.number == best?.lap?.number
+        return when {
+            t < lap.startMicros -> OverlayLap(lap.number, lap.kind, 0L, null, isBest, LapPhase.Ready)
+            t >= lap.endMicros -> {
+                val delta = best?.takeIf { lap.kind == LapKind.Timed }?.let { lap.timeMicros - it.lap.timeMicros }
+                OverlayLap(lap.number, lap.kind, lap.timeMicros, delta, isBest, LapPhase.Finished)
+            }
+            else -> {
+                val lapMicros = t - lap.startMicros
+                OverlayLap(lap.number, lap.kind, lapMicros, deltaAt(trace, lapMicros, isBest), isBest)
             }
         }
     }
