@@ -1,34 +1,7 @@
 package com.flappedear.betterdriver.video
 
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.serialization.Serializable
 import java.io.File
-
-/** Where a video comes from. */
-@Serializable
-enum class VideoSourceKind {
-    /** The phone's own camera, the default source (FBBD-21). */
-    PHONE,
-
-    /** A GoPro started and stopped with the session through Open GoPro, HERO9 and later (FBBD-22, FBBD-105). */
-    GOPRO,
-
-    /** A GoPro started by hand whose files were added after the session (FBBD-22, FBBD-105). */
-    GOPRO_FILES,
-
-    /** Written by builds before FBBD-105 for a HERO11; read as [GOPRO]. Kept so older clip indexes still read. */
-    GOPRO_HERO11,
-
-    /** Written by builds before FBBD-105 for a HERO8; read as [GOPRO_FILES]. */
-    GOPRO_HERO8,
-
-    /** Another action camera started by hand whose files were added after the session (FBBD-120). */
-    CAMERA_FILES,
-    ;
-
-    /** True for any camera other than the phone's (a GoPro or another action camera), older kinds included. */
-    val isGoPro: Boolean get() = this != PHONE
-}
 
 /**
  * What a live source needs to know about the session it records with.

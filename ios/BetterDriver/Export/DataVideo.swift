@@ -267,8 +267,9 @@ enum DataVideoDemo {
             guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
                   write(dir.appendingPathComponent("phone_demo.mp4"), seconds: 10) else { continue }
             let index = """
-            {"version":1,"clips":[{"fileName":"phone_demo.mp4","sourceId":"phone",\
-            "sessionOffsetUs":60000000,"durationUs":10000000,"status":"LOCAL"}]}
+            {"version":1,"clips":[{"fileName":"phone_demo.mp4","kind":"PHONE","sourceId":"phone",\
+            "sessionOffsetUs":60000000,"alignment":{"method":"CAPTURE_CLOCK","uncertaintyUs":0},\
+            "durationUs":10000000,"status":"LOCAL"}]}
             """
             try? index.write(to: dir.appendingPathComponent("clips.json"), atomically: true, encoding: .utf8)
         }

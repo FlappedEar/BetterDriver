@@ -14,6 +14,8 @@ kotlin {
 }
 
 dependencies {
+    // The readers and the alignment, common Kotlin shared with the iOS app (FBBD-343).
+    api(project(":videosync"))
     api(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
     testImplementation(kotlin("test"))

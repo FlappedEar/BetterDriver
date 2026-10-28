@@ -32,10 +32,12 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.ExportState
+import com.flappedear.betterdriver.recording.layoutTrackState
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
+import com.flappedear.betterdriver.setup.TrackScreens
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.CarPage
@@ -50,6 +52,7 @@ import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SettingsScreen
 import com.flappedear.betterdriver.shell.SettingsTopic
 import com.flappedear.betterdriver.shell.SetupScreen
+import com.flappedear.betterdriver.shell.TrackLayoutSection
 import com.flappedear.betterdriver.shell.TracksScreen
 import com.flappedear.betterdriver.shell.appNavigation
 import com.flappedear.betterdriver.timing.circuits.Circuit
@@ -182,6 +185,9 @@ abstract class MainScreensLayoutTest(private val device: String) {
     fun settingsApp() = settings(SettingsTopic.App)
 
     @Test
+    fun settingsTrackScreen() = settings(SettingsTopic.TrackScreen)
+
+    @Test
     fun tracks() = checkScreen("tracks", null) { TracksNearKielce() }
 
     @Test
@@ -284,6 +290,21 @@ private fun SettingsAt(topic: SettingsTopic?) {
         onAddCar = {},
         onRunSetup = {},
         trackCount = 2,
+        trackLayout = {
+            val screens = TrackScreens(
+                main = listOf("speed", "g", "obd_coolant_temp", "obd_oil_temp", "heart_rate", null),
+                second = listOf("obd_rpm", "obd_throttle", "last_lap", "best_lap"),
+            )
+            TrackLayoutSection(
+                layoutTrackState(screens, true, true),
+                choices = { emptyList() },
+                onChoose = { _, _, _ -> },
+                onReset = {},
+                cars = listOf(CarProfile("frs", "FR-S"), CarProfile("corolla", "Corolla")),
+                carId = "frs",
+                nextCarId = "frs",
+            )
+        },
     )
 }
 
