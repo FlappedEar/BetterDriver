@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.recorder.store.DeleteResult
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
@@ -35,6 +36,14 @@ class DemoSessionsTest {
         assertEquals("109.906", fixed(checkNotNull(review.bestLapSeconds), 3))
         assertEquals("108.201", fixed(checkNotNull(review.theoreticalBestSeconds), 3))
         assertNotNull(review.line)
+    }
+
+    @Test
+    fun aDeletedSessionLeavesTheList() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        assertEquals(DeleteResult.DELETED, library.delete(id))
+        assertEquals(emptyList(), library.sessions())
+        assertEquals(DeleteResult.NOT_FOUND, library.delete(id))
     }
 
     private companion object {
