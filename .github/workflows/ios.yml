@@ -113,6 +113,9 @@ jobs:
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.ipad }}" \
             -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.iphone }}" \
             -resultBundlePath build/ios-tests.xcresult \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 480 \
+            -maximum-test-execution-time-allowance 600 \
             CODE_SIGNING_ALLOWED=NO > build/xcodebuild.log 2>&1 && status=0 || status=$?
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
           # With two destinations xcodebuild prints no per-test lines: the result bundle names the failures.

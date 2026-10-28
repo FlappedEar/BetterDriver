@@ -19,6 +19,8 @@ struct DataVideoSheet: View {
     @State private var playing: DataVideoPlayback?
     @State private var progress: Double?
     @State private var saved: ExportedFile?
+    /// The saved file's name, said in the sheet in place of Files' Save sheet in the UI tests.
+    @State private var savedName: String?
     @State private var job: Task<Void, Never>?
 
     var body: some View {
@@ -43,6 +45,10 @@ struct DataVideoSheet: View {
                         Button("Stop") { job?.cancel() }
                     }
                     DimText("Making the video…")
+                }
+                if let savedName {
+                    DimText("Saved \(savedName)")
+                        .accessibilityIdentifier("dataVideoSaved")
                 }
                 HStack {
                     Spacer()
@@ -146,6 +152,16 @@ struct DataVideoSheet: View {
         }
     }
 
+    /// The UI tests (-noFilesSheet) stop at the saved file: Files' Save sheet runs out of the app, and
+    /// a test cannot close it steadily.
+    private static var skipFilesSheet: Bool {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("-noFilesSheet")
+        #else
+        false
+        #endif
+    }
+
     private func save() {
         guard let session, let picked else { return }
         let durations = self.durations
@@ -156,7 +172,11 @@ struct DataVideoSheet: View {
                 let url = try await DataVideoSaver.save(asset, overlay, name: session.fileName(part: picked)) { p in
                     Task { @MainActor in if progress != nil { progress = p } }
                 }
-                saved = ExportedFile(url: url)
+                if Self.skipFilesSheet {
+                    savedName = url.lastPathComponent
+                } else {
+                    saved = ExportedFile(url: url)
+                }
             } catch is CancellationError {
             } catch {
                 failure = "The video was not saved: \(error.localizedDescription)"
