@@ -4,6 +4,11 @@ package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.recorded.vboAccelerations
 import com.flappedear.betterdriver.analysis.review.indexedClips
+import com.flappedear.betterdriver.analysis.review.trackFor
+import com.flappedear.betterdriver.recorder.export.CsvWriter
+import com.flappedear.betterdriver.recorder.export.ExportLap
+import com.flappedear.betterdriver.recorder.export.GpxWriter
+import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.vbo.VboExport
 import com.flappedear.betterdriver.recorder.vbo.VboVideo
@@ -11,13 +16,22 @@ import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
+import com.flappedear.betterdriver.timing.replay.replayLaps
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.convert
 import kotlinx.cinterop.usePinned
+import platform.Foundation.NSDate
+import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLocale
 import platform.Foundation.NSString
+import platform.Foundation.NSTimeZone
 import platform.Foundation.NSUTF8StringEncoding
+import platform.Foundation.dateWithTimeIntervalSince1970
+import platform.Foundation.localTimeZone
 import platform.Foundation.stringWithContentsOfFile
+import platform.Foundation.timeZoneForSecondsFromGMT
 import platform.posix.FILE
 import platform.posix.SEEK_SET
 import platform.posix.fclose
@@ -25,7 +39,6 @@ import platform.posix.fopen
 import platform.posix.fread
 import platform.posix.fseeko
 import platform.posix.fwrite
-import kotlinx.cinterop.CPointer
 
 /** An export that could not be written; the message says why. */
 class ExportException(message: String) : Exception(message)
@@ -34,10 +47,15 @@ class ExportException(message: String) : Exception(message)
  * The iPhone's session exports (FBBD-333), the files Android's session card writes: the VBO, and VBO
  * with video for Circuit Tools (FBBD-25), a folder BetterDriver-<id> holding BetterDriver-<id>.vbo and
  * its video files BetterDriver-<id>_0001.MP4 and on. The same exporter writes the VBO on both (VboExport),
- * with the G columns FlappedEar Overlays reads (FBBD-216). Files are made under [outRoot], from where the
+ * with the G columns FlappedEar Overlays reads (FBBD-216). CSV and GPX are written as Android writes
+ * them, with the laps at the session's saved track in [tracksRoot]. Files are made under [outRoot], from where the
  * app hands them to Files, AirDrop or another app.
  */
-class SessionExport(sessionsRoot: String, private val outRoot: String) {
+class SessionExport(
+    private val sessionsRoot: String,
+    private val tracksRoot: String,
+    private val outRoot: String,
+) {
     private val store = SessionStore(sessionsRoot)
 
     /** Session [id] has a whole video file to export with. */
@@ -55,6 +73,38 @@ class SessionExport(sessionsRoot: String, private val outRoot: String) {
         val data = store.read(id)
         TextFile(path).use { VboExport.export(data, it, derived = vboAccelerations(data)) }
         return path
+    }
+
+    /** Writes session [id] as CSV, with lap columns at a saved track, as Android does; returns its path. */
+    @Throws(Exception::class)
+    fun csv(id: String): String {
+        val path = "${freshDir(id)}/${baseName(id)}.csv"
+        val data = store.read(id)
+        val time = IsoTimes()
+        TextFile(path).use { CsvWriter.write(data, it, laps(data), time::local) }
+        return path
+    }
+
+    /** Writes session [id] as GPX 1.1, one segment per lap at a saved track, as Android does; returns its path. */
+    @Throws(Exception::class)
+    fun gpx(id: String): String {
+        val path = "${freshDir(id)}/${baseName(id)}.gpx"
+        val data = store.read(id)
+        val time = IsoTimes()
+        TextFile(path).use { GpxWriter.write(data, it, laps(data), time::utc) }
+        return path
+    }
+
+    /**
+     * The laps of [data] at its saved track, as Android's export finds them; none away from a saved
+     * track, and a damaged track only costs the lap columns, not the export.
+     */
+    @Suppress("TooGenericExceptionCaught")
+    private fun laps(data: SessionData): List<ExportLap> = try {
+        val track = trackFor(data, TrackLibrary(tracksRoot, sessionsRoot).list())
+        track?.let { replayLaps(data.id, data.sampleSets.sortedBy { s -> s.tMicros }, it).exportLaps() }.orEmpty()
+    } catch (_: Exception) {
+        emptyList()
     }
 
     /**
@@ -113,6 +163,40 @@ class SessionExport(sessionsRoot: String, private val outRoot: String) {
     private companion object {
         /** The session's clip index in its video folder (Android's VideoIndex). */
         const val ClipIndexFile = "clips.json"
+    }
+}
+
+/**
+ * ISO-8601 times with milliseconds, as Android's exports write them: [local] in this device's time
+ * zone with its offset (2026-10-13T09:11:14.495+02:00), [utc] in UTC (2026-10-13T07:11:14.495Z).
+ * The milliseconds are written from the integer time, so they are never a millisecond off.
+ */
+private class IsoTimes {
+    private val localSeconds = formatter("yyyy-MM-dd'T'HH:mm:ss", NSTimeZone.localTimeZone)
+    private val localOffset = formatter("xxx", NSTimeZone.localTimeZone)
+    private val utcSeconds = formatter("yyyy-MM-dd'T'HH:mm:ss", checkNotNull(NSTimeZone.timeZoneForSecondsFromGMT(0)))
+
+    fun local(utcMillis: Long): String {
+        val date = date(utcMillis)
+        return "${localSeconds.stringFromDate(date)}.${millis(utcMillis)}${localOffset.stringFromDate(date)}"
+    }
+
+    fun utc(utcMillis: Long): String = "${utcSeconds.stringFromDate(date(utcMillis))}.${millis(utcMillis)}Z"
+
+    private fun date(utcMillis: Long) =
+        NSDate.dateWithTimeIntervalSince1970(utcMillis.floorDiv(MillisPerSecond).toDouble())
+
+    private fun millis(utcMillis: Long) = utcMillis.mod(MillisPerSecond).toString().padStart(MillisDigits, '0')
+
+    private fun formatter(format: String, zone: NSTimeZone) = NSDateFormatter().apply {
+        locale = NSLocale(localeIdentifier = "en_US_POSIX")
+        timeZone = zone
+        dateFormat = format
+    }
+
+    private companion object {
+        const val MillisPerSecond = 1_000L
+        const val MillisDigits = 3
     }
 }
 

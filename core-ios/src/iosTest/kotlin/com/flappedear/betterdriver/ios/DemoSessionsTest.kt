@@ -5,12 +5,16 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
+import platform.Foundation.stringWithContentsOfFile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * A built-in demo added to the iOS store reviews with the laps DemoParityTest checks on every
@@ -45,6 +49,23 @@ class DemoSessionsTest {
         assertEquals(emptyList(), library.sessions())
         assertEquals(DeleteResult.NOT_FOUND, library.delete(id))
     }
+
+    @Test
+    fun csvAndGpxHaveTheLapsAndTheTimesAsOnAndroid() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        val export = SessionExport("$base/sessions", "$base/tracks", "$base/out")
+        val csv = checkNotNull(read(export.csv(id))).split("\r\n")
+        assertTrue(csv[0].startsWith("time,elapsed (s),lap,lap time (s),"), csv[0])
+        val time = Regex("""\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}[+-]\d\d:\d\d""")
+        assertTrue(time.matches(csv[1].substringBefore(',')), csv[1])
+        val lapNumbers = csv.drop(1).mapNotNull { it.split(',').getOrNull(2)?.toIntOrNull() }.toSet()
+        assertTrue(23 in lapNumbers, "laps $lapNumbers")
+        val gpx = checkNotNull(read(export.gpx(id)))
+        assertTrue("<time>2026-09-21T14:13:20.000Z</time>" in gpx, gpx.take(800))
+        assertTrue("<!-- Lap 23 -->" in gpx)
+    }
+
+    private fun read(path: String) = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
     private companion object {
         const val StartUtcMillis = 1_790_000_000_000L

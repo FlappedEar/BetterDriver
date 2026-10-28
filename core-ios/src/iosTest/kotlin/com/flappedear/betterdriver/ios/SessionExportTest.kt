@@ -68,7 +68,7 @@ class SessionExportTest {
     @Test
     fun vboWithVideoIsAFolderForCircuitTools() {
         val id = record()
-        val export = SessionExport("$base/sessions", "$base/out")
+        val export = SessionExport("$base/sessions", "$base/tracks", "$base/out")
         assertTrue(export.hasVideo(id))
         val folder = export.vboWithVideo(id)
         assertTrue(folder.endsWith("/BetterDriver-$id"))
@@ -87,7 +87,7 @@ class SessionExportTest {
     @Test
     fun plainVboHasEveryRow() {
         val id = record()
-        val path = SessionExport("$base/sessions", "$base/out").vbo(id)
+        val path = SessionExport("$base/sessions", "$base/tracks", "$base/out").vbo(id)
         val vbo = read(path)!!
         assertFalse("[avi]" in vbo)
         assertEquals(501, vbo.substringAfter("[data]\r\n").trim().lines().size)
@@ -108,7 +108,7 @@ class SessionExportTest {
         write("$videoDir/clips.json", index.encodeToByteArray())
         for (n in 0L..500) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
         session.stop()
-        val export = SessionExport("$base/sessions", "$base/out")
+        val export = SessionExport("$base/sessions", "$base/tracks", "$base/out")
         assertTrue(export.hasVideo(session.id))
         val folder = export.vboWithVideo(session.id)
         val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(folder, null).orEmpty().map { it.toString() }
@@ -126,6 +126,6 @@ class SessionExportTest {
         )
         session.submit(SampleSet(0, gnss.fix(0)))
         session.stop()
-        assertFalse(SessionExport("$base/sessions", "$base/out").hasVideo(session.id))
+        assertFalse(SessionExport("$base/sessions", "$base/tracks", "$base/out").hasVideo(session.id))
     }
 }

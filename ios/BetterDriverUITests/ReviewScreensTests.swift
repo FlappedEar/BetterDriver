@@ -55,6 +55,29 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testCsvAndGpxExportsAreWrittenThenOfferedToFiles() {
+        app.launchArguments = ["-freshInstall", "-demoSessions"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+        for format in ["CSV", "GPX"] {
+            let menu = app.buttons["exportMenu"].firstMatch
+            XCTAssertTrue(menu.waitForExistence(timeout: 10), "no export menu")
+            menu.tap()
+            app.buttons[format].firstMatch.tap()
+            // Files' Save sheet comes up once the file is written; a failure shows an alert instead.
+            let cancel = app.buttons["Cancel"].firstMatch
+            XCTAssertTrue(cancel.waitForExistence(timeout: 60), "\(format): no Save to Files")
+            XCTAssertFalse(app.alerts.firstMatch.exists, "\(format): \(app.alerts.firstMatch.label)")
+            keep("Export \(format)")
+            cancel.tap()
+            XCTAssertEqual(app.state, .runningForeground, "\(format): the app stopped")
+        }
+    }
+
     func testTheDemoSessionsOpenOnEveryTab() {
         // Newest first: Silesia Ring (27 Sep, 18 laps), then Jastrząb (29 Aug, 23 laps), as DemoParityTest.
         for (index, (name, laps)) in [("silesia-ring", "18"), ("jastrzab", "23")].enumerated() {
