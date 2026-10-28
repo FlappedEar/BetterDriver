@@ -19,14 +19,31 @@ private class SimPort(private val answers: Map<String, String>) : ObdBlePort {
     private var events: ObdBleEvents? = null
     val commands = ArrayList<String>()
 
+    /** Why the next opens fail, as the Swift link says it ("Bluetooth not allowed"); null opens. */
+    var refuse: String? = null
+    var opens = 0
+
+    /** False: CoreBluetooth takes no more writes. */
+    var writable = true
+
     override val payload = 20
 
     override fun open(events: ObdBleEvents): String? {
+        lock.lock()
+        opens++
+        lock.unlock()
+        refuse?.let { return it }
         this.events = events
         return null
     }
 
+    /** The adapter goes out of range or is switched off, as CoreBluetooth's didDisconnect reports it. */
+    fun drop() {
+        events?.lost("disconnected")
+    }
+
     override fun writeChunk(data: NSData): Boolean {
+        if (!writable) return false
         val bytes = data.toByteArray()
         check(bytes.size <= payload) { "chunk of ${bytes.size} bytes" }
         val out = ArrayList<String>()
@@ -76,6 +93,7 @@ private class Sink : SampleSink {
     val channelNames get() = read { defs.map { it.name } }
     val setCount get() = read { sets.size }
     val eventKinds get() = read { events.map { it.first } }
+    val eventCount get() = read { events.size }
 
     override fun defineChannel(def: ChannelDef) = read { defs += def; Unit }
 
@@ -111,6 +129,25 @@ private val Car = mapOf(
  * over a Bluetooth LE pair.
  */
 class ObdFeedTest {
+    private val logs = ArrayList<String>()
+    private val listener = object : ObdFeedListener {
+        override fun log(text: String) {
+            synchronizedLogs { logs += text }
+        }
+    }
+    private val logLock = NSRecursiveLock()
+
+    private fun <T> synchronizedLogs(body: () -> T): T {
+        logLock.lock()
+        try {
+            return body()
+        } finally {
+            logLock.unlock()
+        }
+    }
+
+    private fun stopped() = synchronizedLogs { logs.any { it.startsWith("reader stopped") } }
+
     private fun waitFor(timeoutS: Double, done: () -> Boolean): Boolean {
         var waited = 0.0
         while (!done() && waited < timeoutS) {
@@ -138,6 +175,66 @@ class ObdFeedTest {
         assertTrue("obd_rpm" in sink.channelNames, "channels ${sink.channelNames}")
         assertEquals(ObdSessionEvents.CONNECTED, sink.eventKinds.first())
         assertEquals(ObdLinkState.Connected, status.state)
+    }
+
+    @Test
+    fun withNoAdapterNearbyNothingIsRecordedAndTheFeedStops() {
+        val sink = Sink()
+        val feed = ObdFeed(sink, { emptyList() }, listener)
+        feed.start()
+        NSThread.sleepForTimeInterval(1.0)
+        val status = feed.status()
+        feed.stop()
+        assertEquals(ObdLinkState.Searching, status.state)
+        assertEquals(0, sink.eventCount, "events ${sink.eventKinds}")
+        assertTrue(waitFor(10.0) { stopped() }, "the OBD thread ends; log ${synchronizedLogs { logs.toList() }}")
+    }
+
+    @Test
+    fun bluetoothNotAllowedOnlyKeepsTheFeedSearching() {
+        val port = SimPort(Car).apply { refuse = "Bluetooth not allowed" }
+        val sink = Sink()
+        val feed = ObdFeed(sink, { listOf(IosBleObdTarget("vLinker MC+", "uuid-1", port)) }, listener)
+        feed.start()
+        assertTrue(waitFor(10.0) { port.opens >= 1 })
+        feed.retryNow()
+        NSThread.sleepForTimeInterval(0.5)
+        val status = feed.status()
+        feed.stop()
+        assertEquals(ObdLinkState.Searching, status.state)
+        assertTrue(ObdSessionEvents.CONNECTED !in sink.eventKinds, "events ${sink.eventKinds}")
+        assertTrue(waitFor(10.0) { stopped() }, "the OBD thread ends")
+    }
+
+    @Test
+    fun aLostAdapterIsLoggedAndConnectedAgain() {
+        val port = SimPort(Car)
+        val sink = Sink()
+        val feed = ObdFeed(sink, { listOf(IosBleObdTarget("vLinker MC+", "uuid-1", port)) }, listener)
+        feed.start()
+        assertTrue(waitFor(20.0) { sink.setCount >= 3 }, "first connection records")
+        port.drop()
+        assertTrue(waitFor(10.0) { ObdSessionEvents.DISCONNECTED in sink.eventKinds }, "events ${sink.eventKinds}")
+        feed.retryNow()
+        assertTrue(
+            waitFor(20.0) { sink.eventKinds.count { it == ObdSessionEvents.CONNECTED } >= 2 },
+            "connected again; events ${sink.eventKinds}",
+        )
+        feed.stop()
+        assertTrue(waitFor(10.0) { stopped() }, "the OBD thread ends")
+    }
+
+    @Test
+    fun refusedWritesEndTheConnectionWithoutStoppingTheRecording() {
+        val port = SimPort(Car)
+        val sink = Sink()
+        val feed = ObdFeed(sink, { listOf(IosBleObdTarget("vLinker MC+", "uuid-1", port)) }, listener)
+        feed.start()
+        assertTrue(waitFor(20.0) { sink.setCount >= 3 }, "first connection records")
+        port.writable = false
+        assertTrue(waitFor(15.0) { ObdSessionEvents.DISCONNECTED in sink.eventKinds }, "events ${sink.eventKinds}")
+        feed.stop()
+        assertTrue(waitFor(10.0) { stopped() }, "the OBD thread ends")
     }
 
     @Test
