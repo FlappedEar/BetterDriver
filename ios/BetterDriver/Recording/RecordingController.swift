@@ -77,6 +77,8 @@ final class RecordingController: ObservableObject {
     private var camera: PhoneCamera?
     /// The GNSS state at the last refresh, for the lost and back sounds.
     private var lastGnss: GnssState?
+    /// The main screen's tiles of the session's car (FBBD-345), as Settings had them at the start.
+    private var tileIds = TrackScreenModel.defaultTiles
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
@@ -141,6 +143,8 @@ final class RecordingController: ObservableObject {
             return
         }
         self.receiver = receiver
+        let setup = SettingsModel.shared.setup
+        tileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: false)
         session = live
         AppLog.session = live.id
         AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
@@ -299,7 +303,8 @@ final class RecordingController: ObservableObject {
         let obdOn = obd?.status().state == ObdLinkState.connected
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
-            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus
+            now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus,
+            tileIds: tileIds
         )
         screen = model
         activity.update(model)
@@ -352,18 +357,22 @@ struct TrackScreenModel: Equatable {
     let lapMillis: Int64?
     let lastMillis: Int64?
     let bestMillis: Int64?
-    /// The row of six slots (UI-120 A) with the Android defaults, speed and G; nil is an empty slot,
-    /// drawn as an outline (UI-125 B). A tile that cannot have data here is left out (UI-126 B).
+    /// The row of six slots (UI-120 A) of the car's layout (FBBD-345), by default speed and G; nil is an
+    /// empty slot, drawn as an outline (UI-125 B). A tile that cannot have data here is left out (UI-126 B).
     let tiles: [Tile?]
 
-    static let noValue = "–"
-    static let slots = 6
+    static let noValue = TrackTiles.shared.NO_VALUE
+    /// A fresh install's main screen: speed, G and four empty slots.
+    static let defaultTiles = TrackTiles.shared.ids(setup: SettingsCore.shared.freshSetup(id: "default"), carId: nil, second: false)
 
     /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
     /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
-    init(_ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil, camera: CameraStatus? = nil) {
+    /// [tileIds]: the main screen of the session's car (TrackTiles.ids), "" for an empty slot.
+    init(
+        _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
+        camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles
+    ) {
         let live = s.live
-        let ok = s.gnss == GnssState.ok
         let gnss: Status = switch s.gnss {
         case GnssState.waiting: Status(label: "GNSS", value: "Waiting", ok: false)
         case GnssState.lost: Status(label: "GNSS", value: "Lost", ok: false)
@@ -396,13 +405,28 @@ struct TrackScreenModel: Equatable {
         lapMillis = timing?.lapMillis?.int64Value
         lastMillis = timing?.lastMillis?.int64Value
         bestMillis = timing?.bestMillis?.int64Value
-        // The receiver's last speed stays known after the fix is lost; it is not the car's speed now.
-        let speed = ok ? live.speedKmh.map { "\(Int($0.doubleValue.rounded()))" } : nil
-        let g = live.gCombined.map { String(format: "%.2f", $0.doubleValue) }
-        let speedTile = Tile(label: "Speed", value: speed ?? Self.noValue, unit: "km/h", dim: speed == nil)
-        let gTile = Tile(label: "G", value: g ?? Self.noValue, unit: "g", dim: g == nil)
-        let filled: [Tile?] = receiverHasG ? [speedTile, gTile] : [speedTile]
-        tiles = filled + Array(repeating: nil, count: Self.slots - 2)
+        // The car's layout (FBBD-345): a tile that cannot have data here is left out (UI-126 B).
+        tiles = tileIds
+            .map { TrackTiles.shared.tile(id: $0, live: live, timing: timing, receiverHasG: receiverHasG) }
+            .filter { $0?.hasData != false }
+            .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: $0.value == Self.noValue) } }
+    }
+
+    /// The track screen as Settings › Track screen draws it (layoutTrackState, FBBD-345): no session, so
+    /// a dash for every value, and every tile drawn, one without data too, so each can be tapped.
+    init(layout tileIds: [String], receiverHasG: Bool, coachOn: Bool) {
+        status = []
+        coach = coachOn ? Coach(corner: nil, text: nil, praise: false, dim: false) : nil
+        recordingTime = Self.clock(micros: 0)
+        alert = nil
+        deltaSeconds = nil
+        lapNumber = nil
+        lapMillis = nil
+        lastMillis = nil
+        bestMillis = nil
+        tiles = tileIds
+            .map { TrackTiles.shared.tile(id: $0, live: nil, timing: nil, receiverHasG: receiverHasG) }
+            .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: true) } }
     }
 
     /// Recording time as m:ss, or h:mm:ss from one hour (formatClock).

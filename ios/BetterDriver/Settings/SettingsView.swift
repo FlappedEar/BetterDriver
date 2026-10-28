@@ -67,8 +67,10 @@ struct SettingsView: View {
             let count = TrackFiles.shared.read(dir: AppFolders.tracks.path).count
             return count == 1 ? "1 track and its lines" : "\(count) tracks and their lines"
         case .trackScreen:
+            // The tiles first (FBBD-345); the iPhone has no second screen yet.
+            let tiles = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: false).filter { !$0.isEmpty }
             let light = settings.fullBrightness ? "Full brightness" : "Phone's brightness"
-            return "\(light) · GNSS sound \(settings.gnssSound ? "on" : "off")"
+            return "\(tiles.count) tiles · \(light) · GNSS sound \(settings.gnssSound ? "on" : "off")"
         case .video:
             let free = Storage.freeLabel
             if let cam = setup.equipment.first(where: { $0.videoMode != nil }), let mode = cam.videoMode {
@@ -85,12 +87,14 @@ struct SettingsView: View {
     }
 }
 
-/// Settings › Track screen: full brightness and the GNSS sound, as on Android.
+/// Settings › Track screen: the layout of each car's tiles (FBBD-345), then full brightness and the
+/// GNSS sound, as on Android.
 struct TrackScreenPage: View {
     @EnvironmentObject private var settings: SettingsModel
 
     var body: some View {
         ShellPage(title: "Track screen") {
+            TrackLayoutSection()
             ShellCard {
                 ListRow(
                     label: "Track screen brightness",

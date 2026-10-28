@@ -11,36 +11,13 @@ struct TrackScreenView: View {
 
     @State private var holdStart: Date?
 
-    private static let gap: CGFloat = 6
-    private static let topHeight: CGFloat = 30
-    /// UI-120 A: one row of tiles; the coach line above it (UI-09 A).
-    private static let panelHeight: CGFloat = 80
-    private static let coachHeight: CGFloat = 44
     static let holdSeconds = 3.0
 
     var body: some View {
         ZStack {
             TrackColors.background
             if let model {
-                VStack(spacing: Self.gap) {
-                    TopStrip(model: model).frame(height: Self.topHeight)
-                    GeometryReader { geo in
-                        HStack(spacing: Self.gap) {
-                            DeltaView(seconds: model.deltaSeconds)
-                                .frame(width: (geo.size.width - Self.gap) * 0.62)
-                            LapTimesView(model: model)
-                        }
-                    }
-                    if let coach = model.coach {
-                        CoachLineView(coach: coach).frame(height: Self.coachHeight)
-                        TileRow(tiles: model.tiles, valueSize: 34).frame(height: Self.panelHeight)
-                    } else {
-                        // Without the coach line the tiles grow into its place (UI-142 B).
-                        TileRow(tiles: model.tiles, valueSize: 50)
-                            .frame(height: Self.panelHeight + Self.coachHeight + Self.gap)
-                    }
-                }
-                .padding(Self.gap)
+                TrackScreenContent(model: model)
             } else {
                 Text("Starting recording")
                     .font(TrackFonts.text(18))
@@ -71,6 +48,41 @@ struct TrackScreenView: View {
             OrientationLock.set(.portrait)
             ScreenLight.restore()
         }
+    }
+}
+
+/// What the track screen draws (UI-10 A): status strip, delta and lap times, the coach line, the tiles.
+/// Settings › Track screen draws it too, scaled, with [onTapTile] for a tile's list (FBBD-345).
+struct TrackScreenContent: View {
+    let model: TrackScreenModel
+    var onTapTile: ((Int) -> Void)?
+
+    private static let gap: CGFloat = 6
+    private static let topHeight: CGFloat = 30
+    /// UI-120 A: one row of tiles; the coach line above it (UI-09 A).
+    private static let panelHeight: CGFloat = 80
+    private static let coachHeight: CGFloat = 44
+
+    var body: some View {
+        VStack(spacing: Self.gap) {
+            TopStrip(model: model).frame(height: Self.topHeight)
+            GeometryReader { geo in
+                HStack(spacing: Self.gap) {
+                    DeltaView(seconds: model.deltaSeconds)
+                        .frame(width: (geo.size.width - Self.gap) * 0.62)
+                    LapTimesView(model: model)
+                }
+            }
+            if let coach = model.coach {
+                CoachLineView(coach: coach).frame(height: Self.coachHeight)
+                TileRow(tiles: model.tiles, valueSize: 34, onTap: onTapTile).frame(height: Self.panelHeight)
+            } else {
+                // Without the coach line the tiles grow into its place (UI-142 B).
+                TileRow(tiles: model.tiles, valueSize: 50, onTap: onTapTile)
+                    .frame(height: Self.panelHeight + Self.coachHeight + Self.gap)
+            }
+        }
+        .padding(Self.gap)
     }
 }
 
@@ -252,15 +264,24 @@ private struct CoachLineView: View {
 private struct TileRow: View {
     let tiles: [TrackScreenModel.Tile?]
     let valueSize: CGFloat
+    /// A tap on a slot, in Settings › Track screen only (FBBD-345).
+    var onTap: ((Int) -> Void)?
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(Array(tiles.enumerated()), id: \.offset) { _, tile in
-                if let tile {
-                    TileView(tile: tile, valueSize: valueSize)
+            ForEach(Array(tiles.enumerated()), id: \.offset) { i, tile in
+                let slot = Group {
+                    if let tile {
+                        TileView(tile: tile, valueSize: valueSize)
+                    } else {
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(TrackColors.line, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                    }
+                }
+                if let onTap {
+                    slot.contentShape(Rectangle()).onTapGesture { onTap(i) }.accessibilityIdentifier("layoutTile\(i)")
                 } else {
-                    RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(TrackColors.line, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+                    slot
                 }
             }
         }

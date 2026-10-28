@@ -133,6 +133,22 @@ final class RecordingTests: XCTestCase {
         XCTAssertTrue(session.stop())
     }
 
+    /// The car's layout from Settings (FBBD-345): a tile without data in the session is left out, an
+    /// empty slot stays; Settings draws every tile so each can be tapped.
+    func testTheTrackScreenShowsTheCarsLayout() throws {
+        let session = try start(receiverHasG: false)
+        let ids = ["speed", "obd_coolant_temp", "", "g", "heart_rate", ""]
+        let model = TrackScreenModel(session.screen(), receiverHasG: false, tileIds: ids)
+        XCTAssertEqual(model.tiles.count, 3)
+        XCTAssertEqual(model.tiles.first??.label, "Speed")
+        XCTAssertNil(model.tiles[1])
+        XCTAssertTrue(session.stop())
+        let layout = TrackScreenModel(layout: ids, receiverHasG: false, coachOn: true)
+        XCTAssertEqual(layout.tiles.map { $0?.label }, ["Speed", "Coolant temp", nil, "G", "Heart rate", nil])
+        XCTAssertNotNil(layout.coach)
+        XCTAssertNil(TrackScreenModel(layout: ids, receiverHasG: true, coachOn: false).coach)
+    }
+
     func testTheLiveActivityShowsLapDeltaAndBest() throws {
         try saveRing()
         let session = try start(receiverHasG: false)

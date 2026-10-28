@@ -22,6 +22,19 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(coachLabel(model.coach), "3 focus corners")
     }
 
+    /// Each car keeps its own tiles (FBBD-345), saved in setup.json as on Android.
+    func testEachCarsTilesAreSavedAndReadBack() {
+        let model = SettingsModel(base: base)
+        model.update { SettingsCore.shared.addCar(setup: $0, name: "Scion FR-S", notes: "", id: "frs") }
+        model.update { SettingsCore.shared.addCar(setup: $0, name: "Corolla", notes: "", id: "corolla") }
+        model.update { TrackTiles.shared.choose(setup: $0, carId: "frs", second: false, slot: 2, id: "obd_coolant_temp") }
+        let again = SettingsModel(base: base)
+        XCTAssertEqual(TrackTiles.shared.ids(setup: again.setup, carId: "frs", second: false)[2], "obd_coolant_temp")
+        XCTAssertEqual(TrackTiles.shared.ids(setup: again.setup, carId: "corolla", second: false)[2], "")
+        again.update { TrackTiles.shared.reset(setup: $0, carId: "frs") }
+        XCTAssertEqual(TrackTiles.shared.ids(setup: again.setup, carId: "frs", second: false), TrackScreenModel.defaultTiles)
+    }
+
     func testEquipmentAndCarsAreSavedAndReadBack() {
         let model = SettingsModel(base: base)
         let raceBox = SettingsCore.shared.model(name: ModelName.raceBox)!
