@@ -1,4 +1,5 @@
 import XCTest
+import UIKit
 
 /// The gate before every TestFlight upload (ios-release.yml): a fresh install records a session with
 /// the phone camera, OBD, heart rate and the coach on, stops it and opens it, without crashing. The
