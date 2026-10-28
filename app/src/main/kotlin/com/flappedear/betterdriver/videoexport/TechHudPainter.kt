@@ -59,6 +59,9 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
     private val path = Path()
     private val oval = RectF()
 
+    /** The scene scale of the frame being drawn ([TechHudLayout.scale]). */
+    private var scale = 1f
+
     /** The layout of the last picture size, kept while the size stays. */
     private var last: TechHudLayout? = null
 
@@ -78,14 +81,15 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         optimal: OptimalOverlayText? = null,
     ) {
         val s = l.scale
+        scale = s
         for ((w, b) in l.boxes) {
             when (w) {
                 HudWidget.Tachometer -> tachometer(canvas, b, f)
                 HudWidget.Lap -> lap(canvas, b, s, f, optimal)
                 HudWidget.Pedals -> pedals(canvas, b, s, f)
-                HudWidget.Oil -> row(canvas, b, s, l.stack[w], Oil, f.car.oilC)
-                HudWidget.Gearbox -> row(canvas, b, s, l.stack[w], Atf, f.car.gearboxC)
-                HudWidget.Coolant -> row(canvas, b, s, l.stack[w], Coolant, f.car.coolantC)
+                HudWidget.Oil -> row(canvas, b, l.stack[w], Oil, f.car.oilC)
+                HudWidget.Gearbox -> row(canvas, b, l.stack[w], Atf, f.car.gearboxC)
+                HudWidget.Coolant -> row(canvas, b, l.stack[w], Coolant, f.car.coolantC)
                 HudWidget.Tyres -> tyres(canvas, b, s, f)
                 HudWidget.HeartRate -> heartRate(canvas, b, s, f)
                 HudWidget.GRadar -> radar(canvas, b, sessionMicros, f)
@@ -183,13 +187,9 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         panel(c, b, s)
         val p = pad(s)
         val h = b.height
-        val word = if (data.pointToPoint) "RUN" else "LAP"
         val lap = f.lap
-        val caption = optimal?.let { o ->
-            setText(semibold, h * 0.1f, Dim, h * 0.012f)
-            o.captions.firstOrNull { semibold.measureText(it) <= b.width - 2 * p } ?: o.captions.lastOrNull().orEmpty()
-        } ?: word
         setText(semibold, h * 0.1f, Dim, h * 0.012f)
+        val caption = lapCaption(optimal, b.width - 2 * p)
         textTop(c, caption.uppercase(Locale.ROOT), b.left + p, b.top + p * 1.2f, semibold)
         if (optimal == null) {
             val number = lap?.number?.toString() ?: Dash
@@ -213,11 +213,21 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
         textBottom(c, best, x, bottom, semibold)
 
         val delta = if (optimal != null) optimal.deltaSeconds else lap?.deltaMicros?.let { it / MicrosPerSecond }
-        if (delta != null) {
-            val text = lapDelta(delta)
-            setText(bold, h * 0.13f, if (delta <= 0) Green else Orange)
-            textBottom(c, text, b.right - p * 1.4f - bold.measureText(text), bottom, bold)
-        }
+        if (delta != null) delta(c, delta, b.right - p * 1.4f, bottom, h)
+    }
+
+    /** "LAP" or "RUN"; for a composite lap the part's caption, as much of it as fits [width]. */
+    private fun lapCaption(optimal: OptimalOverlayText?, width: Float): String {
+        if (optimal == null) return if (data.pointToPoint) "RUN" else "LAP"
+        val captions = optimal.captions
+        return captions.firstOrNull { semibold.measureText(it) <= width } ?: captions.lastOrNull().orEmpty()
+    }
+
+    /** The delta to the best lap, ending at [right]: green ahead, orange behind. */
+    private fun delta(c: Canvas, seconds: Double, right: Float, bottom: Float, h: Float) {
+        val text = lapDelta(seconds)
+        setText(bold, h * 0.13f, if (seconds <= 0) Green else Orange)
+        textBottom(c, text, right - bold.measureText(text), bottom, bold)
     }
 
     // TechPedals.qml: throttle and brake, each a label, its % and a slanted bar.
@@ -264,7 +274,8 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
     }
 
     // TechCustomValue.qml: label, range bar with the normal band, value turning red at the warning.
-    private fun row(c: Canvas, b: Box, s: Float, stack: StackPosition?, spec: RowSpec, value: Double?) {
+    private fun row(c: Canvas, b: Box, stack: StackPosition?, spec: RowSpec, value: Double?) {
+        val s = scale
         val position = stack ?: StackPosition.Single
         panel(c, b, s, position)
         val p = pad(s)

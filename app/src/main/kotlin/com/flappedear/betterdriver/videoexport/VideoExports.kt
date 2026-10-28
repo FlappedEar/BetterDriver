@@ -285,7 +285,12 @@ class VideoExports private constructor(private val context: Context) {
         }
 
         private fun composition(prepared: Prepared, cuts: List<VideoCut>): Composition {
-            val data = OverlayData(prepared.sets, prepared.laps, measuredG(prepared.data), prepared.data.channels.values)
+            val data = OverlayData(
+                prepared.sets,
+                prepared.laps,
+                measuredG(prepared.data),
+                prepared.data.channels.values,
+            )
             val painter = TechHudPainter(HudFonts.load(context), data)
             // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
             val optimal = prepared.optimalPlan(part)

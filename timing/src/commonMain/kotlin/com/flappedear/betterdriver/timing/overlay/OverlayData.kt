@@ -129,9 +129,9 @@ class OverlayData(
 
     /** The G at [sessionMicros], as [at] has it; the radar's trail reads it back in time. */
     fun gAt(sessionMicros: Long): GForce? {
-        val gl = gLong.at(sessionMicros) ?: return null
-        val gt = gLat.at(sessionMicros) ?: return null
-        return GForce(gl, gt)
+        val gl = gLong.at(sessionMicros)
+        val gt = gLat.at(sessionMicros)
+        return if (gl != null && gt != null) GForce(gl, gt) else null
     }
 
     /**
