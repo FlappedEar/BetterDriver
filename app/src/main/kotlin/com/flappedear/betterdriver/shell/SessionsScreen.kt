@@ -185,7 +185,14 @@ private fun ActionsSheet(
                     onClose()
                     onAnalyse(s)
                 },
-                coach, videoExport,
+                coach,
+                // The video opens on its own screen; the sheet is not there to come back to.
+                videoExport.copy(
+                    onWatch = { s ->
+                        onClose()
+                        videoExport.onWatch(s)
+                    },
+                ),
             )
         }
     }
