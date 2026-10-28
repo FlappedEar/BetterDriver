@@ -21,11 +21,10 @@ Pick **Whole session** or a lap from the list; the app renders the MP4 on the ph
 Sessions says "Rendering video with data…" while it runs, and the session cannot be changed
 meanwhile; **Cancel video** stops it.
 
-!!! note "Not released yet"
-    A lap's video starts a few seconds before the start/finish line and ends as long after
-    (5 to 8 s, 6 to start with; pick under **Seconds before and after the lap**), as FlappedEar
-    Overlays exports one lap. Its lap time shows 0:00 until the line, runs during the lap, and
-    keeps the final time and the gap to your best lap after it.
+A lap's video starts a few seconds before the start/finish line and ends as long after
+(5 to 8 s, 6 to start with; pick under **Seconds before and after the lap**), as FlappedEar
+Overlays exports one lap. Its lap time shows 0:00 until the line, runs during the lap, and
+keeps the final time and the gap to your best lap after it.
 
 When the session has video, the lap analysis also plays the realistic optimal lap as one video,
 stitched from the laps it is made of (the raw theoretical best is there too). The plan's perfect
