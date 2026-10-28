@@ -129,10 +129,19 @@ final class SessionsModel {
         guard ProcessInfo.processInfo.arguments.contains("-demoGoPro") else { return false }
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("GX010042.MP4")
         let root = ReviewBridge.library.sessionsRoot
-        guard DemoGoPro.shared.write(
-            sessionsRoot: root, id: sessionId, path: url.path, fromMicros: 30_000_000, seconds: 60, utcShiftMillis: 0
-        ) else { return false }
-        addCameraFiles(sessionId: sessionId, camera: camera, urls: [url])
+        // Reading a long session takes a while in a debug build: off the main thread, as the import itself.
+        Task {
+            let written = await Task.detached(priority: .userInitiated) {
+                DemoGoPro.shared.write(
+                    sessionsRoot: root, id: sessionId, path: url.path, fromMicros: 30_000_000, seconds: 60, utcShiftMillis: 0
+                )
+            }.value
+            if written {
+                addCameraFiles(sessionId: sessionId, camera: camera, urls: [url])
+            } else {
+                goProProblems[sessionId] = ["The test GoPro file could not be written"]
+            }
+        }
         return true
         #else
         return false
