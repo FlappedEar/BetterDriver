@@ -140,6 +140,8 @@ jobs:
           # The Live Activity's widget extension (UI-284 A) signs with its own App ID.
           ASC_KEY_PATH="$key" python3 ios/ci/asc.py team "$BUNDLE_ID.LiveActivity" "BetterDriver Live Activity" > /dev/null
           echo "id=$team" >> "$GITHUB_OUTPUT"
+          # Development certificates earlier runners made (their keys are gone) fill the account's limit.
+          ASC_KEY_PATH="$key" python3 ios/ci/asc.py ci-certs
       - name: Archive (signed)
         if: steps.signing.outputs.ready == 'true'
         shell: bash
@@ -207,6 +209,13 @@ jobs:
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" 2>&1 | tail -n 60
           echo "### TestFlight: ${{ steps.version.outputs.version }} (${{ steps.version.outputs.build }}) uploaded" >> "$GITHUB_STEP_SUMMARY"
+      # The archive made a development certificate this runner takes with it.
+      - name: Revoke this run's development certificate
+        if: always() && steps.team.outputs.key != ''
+        env:
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+        run: ASC_KEY_PATH="${{ steps.team.outputs.key }}" python3 ios/ci/asc.py ci-certs
       - name: Remove the key
         if: always()
         run: rm -f "$RUNNER_TEMP/AuthKey.p8"
