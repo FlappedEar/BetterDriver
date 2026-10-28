@@ -53,9 +53,6 @@ any way in its mount: the app levels it while the car stands still, then works o
 forward from the GPS over about the first minute of driving. Until then the dot shows the G from
 GPS, which is right but later.
 
-!!! note "Not released yet"
-    Merged after 1.14.0. It ships in the next release.
-
 ## Screen 3: the next corner
 
 Swipe left again for a map of the next corner: the road your laps used there, the line plan's
