@@ -130,6 +130,7 @@ class GattLink(
     private val connection = CurrentConnection<BluetoothGatt>()
     private val gattProbe = probe?.let(::GattProbe)
     private var lastFastLinkAt = 0L
+    private val fastLinkGate = FastLinkGate()
 
     fun start() {
         // Counted as connecting at once, before the post: a Bluetooth LE OBD adapter started right
@@ -184,6 +185,11 @@ class GattLink(
             val g = gatt ?: return@post
             val now = SystemClock.elapsedRealtime()
             if (!subscribed || now - lastFastLinkAt < FastLinkEveryMs) return@post
+            if (!fastLinkGate.worthAsking()) {
+                lastFastLinkAt = now
+                DebugLog.i(Tag, "$address fast link not asked again ($reason): already ${fastLinkGate.describe()}")
+                return@post
+            }
             fastLink(g, now, reason)
         }
     }
@@ -225,6 +231,7 @@ class GattLink(
         setupDeadlineAt = setupStartedAt + plan.setupTimeoutMs
         recheck.newConnection()
         lateMtu.newConnection(plan.askMtu)
+        fastLinkGate.newConnection()
         setups.started(address)
         if (ladder.failures > 0) DebugLog.i(Tag, "$address ${ladder.failures} setup(s) without data: $plan")
         val failure = try {
@@ -579,6 +586,11 @@ class GattLink(
 
         override fun onPhyUpdate(g: BluetoothGatt, txPhy: Int, rxPhy: Int, status: Int) {
             DebugLog.i(Tag, "$address PHY tx $txPhy rx $rxPhy (2 = 2M), status $status")
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                val tx2m = txPhy == BluetoothDevice.PHY_LE_2M
+                val rx2m = rxPhy == BluetoothDevice.PHY_LE_2M
+                handler.post { if (g === gatt) fastLinkGate.phy(tx2m, rx2m) }
+            }
         }
 
         /**
@@ -590,6 +602,7 @@ class GattLink(
         fun onConnectionUpdated(g: BluetoothGatt, interval: Int, latency: Int, timeout: Int, status: Int) {
             val ms = interval * IntervalUnitMs
             if (g === gatt) linkTiming = "interval ${"%.2f".format(Locale.ROOT, ms)} ms, latency $latency"
+            if (status == BluetoothGatt.GATT_SUCCESS) handler.post { if (g === gatt) fastLinkGate.interval(ms) }
             DebugLog.i(
                 Tag,
                 "$address connection interval ${"%.2f".format(Locale.ROOT, ms)} ms, " +

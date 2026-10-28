@@ -26,6 +26,7 @@ import com.flappedear.betterdriver.obd.ObdTarget
 import com.flappedear.betterdriver.obd.ObdTransport
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.io.IOException
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -36,6 +37,8 @@ private const val AttHeaderBytes = 3
 private const val NanosPerMs = 1_000_000L
 private const val Tag = "Link"
 private const val SetupTimeoutS = 15L
+private const val IntervalUnitMs = 1.25
+private const val TimeoutUnitMs = 10
 
 /** How long the adapter lets another Bluetooth LE link (the RaceBox) finish connecting first (FBBD-282). */
 private const val QuietWaitMs = 5_000L
@@ -66,7 +69,7 @@ class BleObdTarget(context: Context, name: String, override val address: String)
         } else if (waited > 0) {
             DebugLog.i(Tag, "$address waited $waited ms for another Bluetooth LE link to connect first")
         }
-        val setup = Setup(bytes)
+        val setup = Setup(bytes, address)
         val gatt = remote(adapter, address).connectGatt(appContext, false, setup, BluetoothDevice.TRANSPORT_LE)
             ?: throw IOException("connectGatt returned null")
         val ok = try {
@@ -82,7 +85,7 @@ class BleObdTarget(context: Context, name: String, override val address: String)
         return connection
     }
 
-    private class Setup(private val bytes: ObdBytes) : BluetoothGattCallback() {
+    private class Setup(private val bytes: ObdBytes, private val address: String) : BluetoothGattCallback() {
         val done = CountDownLatch(1)
 
         @Volatile
@@ -114,6 +117,7 @@ class BleObdTarget(context: Context, name: String, override val address: String)
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) this.mtu = mtu
+            DebugLog.i(Tag, "$address MTU $mtu, status $status")
             if (!g.discoverServices()) fail("discoverServices failed")
         }
 
@@ -151,6 +155,20 @@ class BleObdTarget(context: Context, name: String, override val address: String)
             }
             connection = BleSerialConnection(Port(g, ch, p.withResponse), bytes, mtu - AttHeaderBytes)
             done.countDown()
+        }
+
+        /**
+         * Hidden callback (see GattLink): the adapter link's interval, never asked for by the app. On
+         * 28 Oct 2026 the FR-S CAN stream ran at 85 % of the 18:40 rate with twice the request latency
+         * in the 20:04 drive; the log could not show whether the interval differed (FBBD-320).
+         */
+        @Suppress("unused", "UNUSED_PARAMETER")
+        fun onConnectionUpdated(g: BluetoothGatt, interval: Int, latency: Int, timeout: Int, status: Int) {
+            DebugLog.i(
+                Tag,
+                "$address connection interval ${"%.2f".format(Locale.ROOT, interval * IntervalUnitMs)} ms, " +
+                    "latency $latency, timeout ${timeout * TimeoutUnitMs} ms, status $status",
+            )
         }
 
         override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
