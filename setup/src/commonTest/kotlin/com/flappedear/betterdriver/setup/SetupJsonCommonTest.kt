@@ -65,6 +65,8 @@ class SetupJsonCommonTest {
         assertEquals("gear_2", two.newParameterKey("Gear!"))
         assertEquals("wheel_speed_rl", two.newParameterKey("Wheel speed RL"))
         assertEquals("parameter", two.newParameterKey("°"))
+        assertEquals("new_2", two.newParameterKey("New"), "\"new\" is the page that adds one")
+        assertEquals("draft_2", two.newParameterKey("Draft"))
         assertEquals(emptyList(), two.withoutParameter("gear").parameters)
     }
 }

@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -184,9 +185,11 @@ private fun ParameterRoute(nav: NavHostController, e: NavBackStackEntry, repo: S
     var step by rememberSaveable { mutableStateOf(ParameterStep.Source) }
     // The draft as last sent to the car; a new one connects again.
     var tried by rememberSaveable(stateSaver = OptionalDraftSaver) { mutableStateOf<ParameterDraft?>(null) }
+    // Each try connects again, the same draft too.
+    var attempt by rememberSaveable { mutableIntStateOf(0) }
     val recorder = RecorderClient.get(LocalContext.current)
     val trial = tried?.let { it.copy(name = it.name.ifBlank { "Draft" }) }?.toParameter(DraftKey)
-    val link = if (car.id == repo.setup.session.carId) rememberCarLink(recorder, car, trial) else null
+    val link = if (car.id == repo.setup.session.carId) rememberCarLink(recorder, car, trial, attempt) else null
     val canId = draft.canIdValue.takeIf { draft.source == CarParameterSource.CAN }
     val trying = tried != null && tried == draft
     val back: () -> Unit = {
@@ -205,7 +208,12 @@ private fun ParameterRoute(nav: NavHostController, e: NavBackStackEntry, repo: S
         trying = trying,
         onChange = { draft = it },
         onStep = { step = it },
-        onTry = link?.scan?.let { { tried = draft } },
+        onTry = link?.scan?.let {
+            {
+                tried = draft
+                attempt++
+            }
+        },
         onSave = {
             draft.toParameter(existing?.key ?: car.newParameterKey(draft.name))?.let { saved ->
                 changeCar(repo, car.id) { it.withParameter(saved) }

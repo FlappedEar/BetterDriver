@@ -437,6 +437,17 @@ class CanListenTest {
     }
 
     @Test
+    fun `a slow own broadcast is listened to from one frame`() {
+        // A frame sent once a second shows once per monitor: enough for the driver's own (FBBD-344).
+        val own = OwnChannels.can("gear", "Gear", 0x3B7, "F / 10.0", "")!!
+        val elm = BusElm(corolla, vin = corollaVin, repeats = 1)
+        val got = run(elm, profile = CarProfile.Generic.copy(signals = listOf(own)))
+        assertTrue(got.logs.any { it.endsWith("listen custom_gear=3B7") }, got.logs.toString())
+        assertTrue(got.values.any { it.first == "custom_gear" }, got.logs.toString())
+        assertTrue("ATCRA3B7" in elm.sent, elm.sent.toString())
+    }
+
+    @Test
     fun `an own broadcast the bus does not carry is not listened to`() {
         val own = OwnChannels.can("missing", "Missing", 0x123, "A", "")!!
         val got = run(BusElm(corolla, vin = corollaVin), profile = CarProfile.Generic.copy(signals = listOf(own)))

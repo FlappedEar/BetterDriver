@@ -437,16 +437,24 @@ class ElmPoller(
             .joinToString(" ") { (id, n) -> "${hex(id, CAN_ID_DIGITS)}:$n" }
         listener.log("can_probe ms=$ms frames=${seen.values.sum()} ids=${seen.size}$full $top".trimEnd())
         // The open monitor can fill the adapter's buffer on a busy bus and miss ids: count the needed
-        // ones again, each behind its own filter.
+        // ones again, each behind its own filter. The driver's own may be slow ones: they get a longer
+        // window, and one frame in either monitor is enough (FBBD-344).
+        val (own, builtIn) = signals.partition { OwnChannels.isOwn(it.id) }
         val needed = signals.flatMap { it.requires }.distinct()
+        val ownOnly = own.flatMap { it.requires }.toSet() - builtIn.flatMap { it.requires }.toSet()
         val filtered = LinkedHashMap<Int, Int>()
         for (id in needed) {
-            filtered[id] = listenFor(id, PROBE_FILTER_MS).size
+            filtered[id] = listenFor(id, if (id in ownOnly) OWN_FILTER_MS else PROBE_FILTER_MS).size
             if (filterStuck) break
         }
         line.command("ATCAF1", AT_TIMEOUT_MS)
         setHeaders(false)
-        val matched = if (filterStuck) emptyList() else CanBroadcasts.matching(filtered, signals = signals)
+        val anywhere = filtered.mapValues { (id, n) -> maxOf(n, seen[id] ?: 0) }
+        val matched = if (filterStuck) {
+            emptyList()
+        } else {
+            CanBroadcasts.matching(filtered, signals = builtIn) + CanBroadcasts.matching(anywhere, 1, own)
+        }
         val counts = filtered.entries.joinToString(" ") { (id, n) -> "${hex(id, CAN_ID_DIGITS)}:$n" }
         val listening = matched.joinToString(" ") { "${it.id}=${hex(it.canId, CAN_ID_DIGITS)}" }.ifEmpty { "none" }
         if (needed.isNotEmpty()) listener.log("can_ids $counts listen $listening")
@@ -924,6 +932,9 @@ class ElmPoller(
         /** FBBD-344: a scan's open monitor, long enough for ids sent once a second to come a few times. */
         const val DEFAULT_SCAN_MS = 5_000L
         private const val PROBE_FILTER_MS = 300L
+
+        /** A filtered listen for an id only the driver's own parameters read: long enough for 1 frame/s. */
+        private const val OWN_FILTER_MS = 1_500L
         private const val PROBE_LOG_IDS = 60
 
         /** FBBD-263: a listen every 400 ms, 100 ms of frames each (5 steering frames at 50 Hz). */

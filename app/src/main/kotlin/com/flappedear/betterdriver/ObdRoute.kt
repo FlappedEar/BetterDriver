@@ -56,11 +56,16 @@ internal fun rememberObdView(recorder: RecorderClient): ObdView = rememberCarLin
 /**
  * The page's connection to [car], the next session's car (FBBD-344): what [rememberObdView] shows,
  * reading the car's own parameters too, and with [draft], a parameter being added, as one more
- * ([DraftKey]); a new draft connects again so it is read. [CarLink.scan] scans what the car offers
- * (UI-303 B), and the result is stored with the car.
+ * ([DraftKey]); a new draft, or a new [attempt] at the same one, connects again so it is read.
+ * [CarLink.scan] scans what the car offers (UI-303 B), and the result is stored with the car.
  */
 @Composable
-internal fun rememberCarLink(recorder: RecorderClient, car: CarProfile?, draft: CarParameter? = null): CarLink {
+internal fun rememberCarLink(
+    recorder: RecorderClient,
+    car: CarProfile?,
+    draft: CarParameter? = null,
+    attempt: Int = 0,
+): CarLink {
     val context = LocalContext.current
     val recording = recorder.state.recording || recorder.state.starting
     val repo = SetupRepo.get(context)
@@ -69,7 +74,7 @@ internal fun rememberCarLink(recorder: RecorderClient, car: CarProfile?, draft: 
     val profile by rememberUpdatedState(ownProfile(car?.let { c -> draft?.let { c.withParameter(it) } ?: c }))
     val run = remember { ScanRun() }
     val link = rememberPageLink(recording, carData, { profile }, run.asked::get)
-    LaunchedEffect(link, draft) {
+    LaunchedEffect(link, draft, attempt) {
         if (draft != null) link?.restart()
     }
     var view by remember { mutableStateOf(ObdView(recording, link?.status(), adapter)) }

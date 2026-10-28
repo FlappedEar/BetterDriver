@@ -340,7 +340,8 @@ data class CarProfile(
     /** A [CarParameter.key] for a parameter named [name] no other parameter of this car has. */
     fun newParameterKey(name: String): String {
         val base = name.lowercase().replace(Regex("[^a-z0-9]+"), "_").trim('_').ifEmpty { "parameter" }
-        val taken = parameters.mapTo(HashSet()) { it.key }
+        // "new" names the page that adds one, "draft" the one being tried (the app's routes).
+        val taken = parameters.mapTo(hashSetOf("new", "draft")) { it.key }
         return generateSequence(1) { it + 1 }.map { if (it == 1) base else "${base}_$it" }.first { it !in taken }
     }
 }
