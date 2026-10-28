@@ -20,20 +20,24 @@ final class SettingsModel: ObservableObject {
 
     private let base: URL
 
-    /// [defaults] holds what the iPhone remembered before it had Settings; a first start moves it in.
+    /// [defaults] holds what the iPhone remembered before it had Settings; the first start moves it in.
     init(
         base: URL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0],
         defaults: UserDefaults = .standard
     ) {
         self.base = base
-        let hadSetup = FileManager.default.fileExists(atPath: SettingsModel.setupFile(base).path)
         let hadCoach = FileManager.default.fileExists(atPath: SettingsModel.coachFile(base).path)
         setup = SettingsModel.loadSetup(base: base)
         let coachText = try? String(contentsOf: SettingsModel.coachFile(base), encoding: .utf8)
         coach = SettingsCore.shared.coachSettings(text: coachText)
         fullBrightness = defaults.object(forKey: Keys.brightness) as? Bool ?? true
         gnssSound = defaults.bool(forKey: Keys.gnssSound)
-        if !hadSetup { update { SettingsModel.earlierChoices($0, defaults) } }
+        // Once, also over a setup.json from a build before this move (TestFlight 1.15.0): after it,
+        // Settings › Equipment is the one list, so an item removed there stays removed.
+        if !defaults.bool(forKey: Keys.earlierChoicesMoved) {
+            update { SettingsModel.earlierChoices($0, defaults) }
+            defaults.set(true, forKey: Keys.earlierChoicesMoved)
+        }
         if !hadCoach { updateCoach { SettingsModel.earlierLanguage($0, defaults) } }
     }
 
@@ -47,7 +51,8 @@ final class SettingsModel: ObservableObject {
             (ModelName.heartRate, "heartRateStrapId", "heartRateStrapName", "Heart rate"),
         ]
         for (model, idKey, nameKey, fallback) in found {
-            guard let id = defaults.string(forKey: idKey), let m = core.model(name: model) else { continue }
+            guard let id = defaults.string(forKey: idKey), let m = core.model(name: model),
+                  !next.equipment.contains(where: { $0.address == id }) else { continue }
             let name = defaults.string(forKey: nameKey).flatMap { $0.isEmpty ? nil : $0 } ?? fallback
             next = core.addEquipment(setup: next, model: m, name: name, address: id, id: newId())
         }
@@ -115,6 +120,7 @@ final class SettingsModel: ObservableObject {
     private enum Keys {
         static let brightness = "trackFullBrightness"
         static let gnssSound = "trackGnssSound"
+        static let earlierChoicesMoved = "earlierChoicesMoved"
     }
 }
 

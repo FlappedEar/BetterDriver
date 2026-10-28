@@ -179,14 +179,21 @@ final class RecordingController: ObservableObject {
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
         let active = SettingsModel.shared.setup.active()
-        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338); with none listed, one nearby.
-        let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
-        obd = car
-        car.start()
-        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333).
-        let strap = HeartRateStrapLink(sink: live, listed: Self.listed(active.sensors, ModelName.heartRate).first)
-        heartRate = strap
-        strap.start()
+        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338). Settings › Equipment is
+        // the one list, as on Android: with none listed there is no OBD link, so a removed adapter stays off.
+        let adapters = Self.listed(active.carData, ModelName.obdBluetooth)
+        if !adapters.isEmpty {
+            let car = ObdLink(sink: live, listed: adapters)
+            obd = car
+            car.start()
+        }
+        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a
+        // listed one.
+        if let listed = Self.listed(active.sensors, ModelName.heartRate).first {
+            let strap = HeartRateStrapLink(sink: live, listed: listed)
+            heartRate = strap
+            strap.start()
+        }
         startCoach(live, SettingsModel.shared.coach)
         if phoneCamera {
             let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
@@ -211,10 +218,16 @@ final class RecordingController: ObservableObject {
 
     /// The live coach (FBBD-333) as Settings › Spoken coach has it (FBBD-338), unless it is off; its cues
     /// are timed for the output delay iOS reports now, else for the delay set there.
+    /// What the session's coach runs with: Settings › Spoken coach with the delay iOS reports, or nil
+    /// when the coach is off, so nothing speaks.
+    static func sessionCoach(_ coach: CoachSettings, phoneDelayMillis: Int) -> CoachSettings? {
+        guard SettingsCore.shared.coachOn(s: coach) else { return nil }
+        return SettingsCore.shared.sessionCoach(s: coach, phoneDelayMillis: Int32(phoneDelayMillis))
+    }
+
     private func startCoach(_ live: LiveSession, _ coach: CoachSettings) {
-        guard SettingsCore.shared.coachOn(s: coach) else { return }
         let phoneDelay = CoachVoice.outputDelayMillis
-        let settings = SettingsCore.shared.sessionCoach(s: coach, phoneDelayMillis: Int32(phoneDelay))
+        guard let settings = Self.sessionCoach(coach, phoneDelayMillis: phoneDelay) else { return }
         let voice = CoachVoice(settings: settings)
         self.voice = voice
         live.startCoach(

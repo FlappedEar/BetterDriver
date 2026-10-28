@@ -88,6 +88,20 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(again.equipment.first { $0.modelName == ModelName.heartRate }?.name, "Polar H10 1234")
     }
 
+    /// A setup.json from TestFlight 1.15.0 still takes the earlier adapter once; removed in Settings it
+    /// stays removed, so Equipment is the one list the session uses (audit BD-10).
+    func testTheEarlierAdapterMovesInOnceAndStaysRemoved() throws {
+        let earlier = SettingsModel(base: base, defaults: UserDefaults(suiteName: "settings-\(UUID().uuidString)")!)
+        XCTAssertEqual(earlier.setup.equipment.count, 1)
+        let defaults = UserDefaults(suiteName: "settings-\(UUID().uuidString)")!
+        defaults.set("6F1A2B3C-0000-4000-8000-000000000002", forKey: "lastObdAdapterId")
+        let model = SettingsModel(base: base, defaults: defaults)
+        let adapter = try XCTUnwrap(model.setup.equipment.first { $0.modelName == ModelName.obdBluetooth })
+        model.update { $0.removeEquipment(id: adapter.id) }
+        let again = SettingsModel(base: base, defaults: defaults)
+        XCTAssertNil(again.setup.equipment.first { $0.modelName == ModelName.obdBluetooth })
+    }
+
     /// An empty setup.json (a crash while writing on an old build) reads as a fresh install.
     func testAnEmptySetupFileIsAFreshInstall() throws {
         try Data().write(to: base.appendingPathComponent("setup.json"))
