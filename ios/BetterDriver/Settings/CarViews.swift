@@ -65,8 +65,10 @@ struct CarHome: View {
     }
 }
 
-/// A car's page (UI-133 B), titled with its name; Edit opens its name and notes. The next session's
-/// car lists the OBD-II adapters that read it; another car offers to become the next session's.
+/// A car's page (UI-133 B, FBBD-344 UI-300 A), titled with its name; Edit opens its name and notes. On
+/// one page: the next session's car lists the OBD-II adapters that read it; then the driver's own
+/// parameters, then what the car offers at its OBD port from the last scan. Another car offers to
+/// become the next session's. Live values and Scan car come with the iPhone's car link.
 struct CarPage: View {
     let id: String
     let showsBack: Bool
@@ -95,6 +97,30 @@ struct CarPage: View {
                     DimText("Live values show on the next session's car: the adapter reads the car it is plugged into.")
                     ShellTonalButton(text: "Use for the next session") { settings.update { $0.chooseCar(id: car.id) } }
                 }
+                ShellLabel("Your parameters")
+                ShellCard {
+                    ForEach(Array(car.parameters.enumerated()), id: \.element.key) { i, p in
+                        NavigationLink { ParameterSteps(carId: car.id, key: p.key, start: ParameterDraft.companion.of(p: p)) } label: {
+                            ListRow(
+                                p.name, value: p.unit.isEmpty ? "–" : p.unit, divider: i > 0,
+                                supporting: CarPageCore.shared.parameterSource(p: p), chevron: true
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    NavigationLink { ParameterSteps(carId: car.id, key: nil, start: ParameterDraft.companion.empty()) } label: {
+                        AddRowLabel(text: "Add parameter", divider: !car.parameters.isEmpty)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("addParameter")
+                }
+                if car.parameters.isEmpty {
+                    DimText(
+                        "A value the app does not read: a CAN id or an OBD request with a formula. Recorded in every "
+                            + "session with this car and in its VBO export."
+                    )
+                }
+                CarOffers(carId: car.id, chosen: chosen)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -104,6 +130,72 @@ struct CarPage: View {
             .sheet(isPresented: $editing) { CarEditSheet(carId: car.id) }
         }
     }
+}
+
+/// What the car offers at its OBD port (FBBD-344): the PIDs and CAN ids of the last scan, and Scan car
+/// (UI-303 B), which runs one only when tapped.
+private struct CarOffers: View {
+    let carId: String
+    let chosen: Bool
+    @EnvironmentObject private var settings: SettingsModel
+
+    var body: some View {
+        ShellLabel("What the car offers")
+        let last = settings.setup.car(id: carId)?.scan
+        ShellCard {
+            if let last {
+                let core = CarPageCore.shared
+                NavigationLink { CarPidsPage(carId: carId) } label: {
+                    ListRow(
+                        "OBD-II", divider: false,
+                        supporting: "\(core.reportedPids(scan: last).count) PIDs reported · scanned \(scanTime(last.atMs))",
+                        chevron: true
+                    )
+                }
+                .buttonStyle(.plain)
+                NavigationLink { CarCanPage(carId: carId) } label: {
+                    ListRow(
+                        "CAN bus",
+                        supporting: last.canHeard ? "\(last.canIds.count) ids heard" : "Not heard: \(core.noCanReason(scan: last))",
+                        chevron: true
+                    )
+                }
+                .buttonStyle(.plain)
+            } else {
+                ListRow(
+                    "Not scanned yet", divider: false,
+                    supporting: "Scan car lists the OBD-II PIDs it reports and the CAN ids at its port."
+                )
+            }
+        }
+        if chosen {
+            NavigationLink { NotImplementedPage(title: "Scan car") } label: {
+                Text(last == nil ? "Scan car" : "Scan again")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(Palette.onBackground)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Palette.surfaceVariant, in: Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("scanCar")
+            DimText("Takes about 15 s with the engine on.")
+        } else {
+            DimText("Only the next session's car can be scanned: the adapter reads the car it is plugged into.")
+        }
+    }
+}
+
+/// When a scan ran, short: "today 14:02" or "28 Oct 14:02".
+func scanTime(_ atMs: Int64, now: Date = Date()) -> String {
+    let at = Date(timeIntervalSince1970: Double(atMs) / 1_000)
+    let f = DateFormatter()
+    f.locale = Locale(identifier: "en_GB")
+    f.dateFormat = "HH:mm"
+    let time = f.string(from: at)
+    if Calendar.current.isDate(at, inSameDayAs: now) { return "today \(time)" }
+    f.dateFormat = "d MMM"
+    return "\(f.string(from: at)) \(time)"
 }
 
 /// Adding or editing a car (UI-35): name and notes. [carId] is nil when adding. (An id, not the
