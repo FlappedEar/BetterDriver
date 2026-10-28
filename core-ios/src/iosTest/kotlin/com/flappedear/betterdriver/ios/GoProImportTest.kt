@@ -8,9 +8,15 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.video.Alignment
 import com.flappedear.betterdriver.video.AlignmentMethod
+import com.flappedear.betterdriver.video.ClipIndexJson
+import com.flappedear.betterdriver.video.VideoClip
 import com.flappedear.betterdriver.video.VideoSourceKind
+import platform.Foundation.NSDate
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSFileModificationDate
+import platform.Foundation.dateWithTimeIntervalSinceNow
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
@@ -113,10 +119,32 @@ class GoProImportTest {
     }
 
     @Test
+    fun anImportKilledBeforeItsIndexIsUndoneByTheNext() {
+        val id = record()
+        val videoDir = "$sessions/$id/video"
+        val staging = "$videoDir/.import-killed"
+        files.createDirectoryAtPath(staging, true, null, null)
+        // Killed after moving a new file in and before writing the index: the journal lists it.
+        val clip = VideoClip(
+            "gopro-cam1-GH010042.MP4", VideoSourceKind.GOPRO_FILES, camera, 30_000_000,
+            Alignment(AlignmentMethod.GPS_UTC, 1_000_000), 60_000_000,
+        )
+        writeBytesAtomically("$staging/commit.json", ClipIndexJson.encode(listOf(clip)).encodeToByteArray())
+        writeBytesAtomically("$videoDir/${clip.fileName}", "moved".encodeToByteArray())
+        val twoHoursAgo = NSDate.dateWithTimeIntervalSinceNow(-2.0 * 3600)
+        for (path in listOf(staging, "$staging/commit.json")) {
+            files.setAttributes(mapOf<Any?, Any?>(NSFileModificationDate to twoHoursAgo), path, null)
+        }
+
+        GoProImport(sessions).run(id, camera, VideoSourceKind.GOPRO_FILES, emptyList()) {}
+        assertEquals(emptyList(), videoFiles(id), "the unindexed copy and the staging folder are left")
+    }
+
+    @Test
     fun alignmentTextIsAndroids() {
-        val gps = com.flappedear.betterdriver.video.Alignment(AlignmentMethod.GPS_MATCH, 50_000)
+        val gps = Alignment(AlignmentMethod.GPS_MATCH, 50_000)
         assertEquals("by GPS ±0.05 s", alignmentText(gps))
-        val clock = com.flappedear.betterdriver.video.Alignment(AlignmentMethod.CAMERA_CLOCK, 30L * 60 * 1_000_000)
+        val clock = Alignment(AlignmentMethod.CAMERA_CLOCK, 30L * 60 * 1_000_000)
         assertEquals("by camera clock ±1800 s", alignmentText(clock))
     }
 }

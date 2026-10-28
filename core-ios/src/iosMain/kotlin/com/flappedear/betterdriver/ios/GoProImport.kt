@@ -228,11 +228,19 @@ class GoProImport(private val sessionsRoot: String) {
         }
     }
 
-    /** Puts each file the import of [clips] replaced back from [staging]. */
+    /**
+     * Undoes the import of [clips]: each file it replaced is put back from [staging], and each file it
+     * moved into the session without replacing one (no longer in [staging], no earlier copy) is removed,
+     * so no unindexed copy is left taking space. Files it never moved are still in [staging].
+     */
     private fun putBack(staging: String, videoDir: String, clips: List<VideoClip>) {
         for (clip in clips) {
+            val target = "$videoDir/${clip.fileName}"
             val previous = "$staging/${clip.fileName}$PreviousSuffix"
-            if (exists(previous)) platform.posix.rename(previous, "$videoDir/${clip.fileName}")
+            when {
+                exists(previous) -> platform.posix.rename(previous, target)
+                !exists("$staging/${clip.fileName}") -> files.removeItemAtPath(target, null)
+            }
         }
     }
 
