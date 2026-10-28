@@ -109,6 +109,9 @@ jobs:
             -destination "platform=iOS Simulator,id=$sim" \
             -only-testing:BetterDriverUITests \
             -resultBundlePath build/smoke.xcresult \
+            -test-timeouts-enabled YES \
+            -default-test-execution-time-allowance 480 \
+            -maximum-test-execution-time-allowance 600 \
             CODE_SIGNING_ALLOWED=NO > build/smoke.log 2>&1 && status=0 || status=$?
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/smoke.log || true
           if [ $status -ne 0 ]; then

@@ -98,6 +98,8 @@ enum ModelName {
     static let heartRate = "HEART_RATE"
     static let obdBluetooth = "OBD_BLUETOOTH"
     static let obdWifi = "OBD_WIFI"
+    static let goProFiles = "GOPRO_FILES"
+    static let cameraFiles = "CAMERA_FILES"
 }
 
 enum KindName {
