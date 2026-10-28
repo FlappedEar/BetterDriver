@@ -123,8 +123,15 @@ final class ReviewScreensTests: XCTestCase {
         let link = app.buttons["trackDayLink"].firstMatch
         XCTAssertTrue(link.waitForExistence(timeout: 120), "no Track day link")
         link.tap()
-        // The day is read off the main thread; its numbers come up when it is.
-        XCTAssertTrue(app.staticTexts["PERFECT"].waitForExistence(timeout: 180), "no track day")
+        // The day is read off the main thread for a while. On a busy CI simulator a query made while it
+        // reads can time out, so ask every 5 s instead of every second, for up to 3 minutes.
+        let perfect = app.staticTexts["PERFECT"].firstMatch
+        var shown = false
+        for _ in 0..<36 where !shown {
+            sleep(5)
+            shown = perfect.exists
+        }
+        XCTAssertTrue(shown, "no track day")
         keep("Track day")
         app.swipeUp()
         keep("Track day, corners")
