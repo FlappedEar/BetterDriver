@@ -95,6 +95,7 @@ fun AnalysisScreen(
                 state.quality,
                 state.gForces,
                 state.car,
+                state.drive,
             ) {
                 Card {
                     Text(state.message, style = MaterialTheme.typography.bodyLarge)

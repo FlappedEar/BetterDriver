@@ -12,6 +12,7 @@ import com.flappedear.betterdriver.analysis.focus.FocusRole
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.laps.LapReferenceIssue
+import com.flappedear.betterdriver.analysis.map.DriveMap
 import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
@@ -28,6 +29,8 @@ sealed interface AnalysisState {
      * [quality] is the session's data quality (FBBD-183), null while it is worked out.
      * [gForces] is the whole session's G-G diagram, which needs no laps either; null without movement.
      * [car] is the car's values and the heart rate of the whole drive, which need no laps either.
+     * [drive] is the whole drive on the map with its speed and figures (FBBD-342), which need no laps
+     * either; null without positions.
      */
     data class Unavailable(
         val message: String,
@@ -37,6 +40,7 @@ sealed interface AnalysisState {
         val gForces: GgTrace? = null,
         /** The car's values and the heart rate over the whole drive (UI-162 A); null without any. */
         val car: CarUi? = null,
+        val drive: DriveMap? = null,
     ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
