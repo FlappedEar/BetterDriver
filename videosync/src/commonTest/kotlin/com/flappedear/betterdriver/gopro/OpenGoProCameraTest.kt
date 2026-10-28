@@ -73,7 +73,8 @@ class OpenGoProCameraTest {
         runCurrent()
         assertTrue(link.recording)
         assertEquals(listOf(0x0F, 0x0D, 0x13, 0x01), link.ids)
-        assertEquals(listOf(0x0D, 7, 0x07, 0xE9, 10, 9, 10, 53, 20), link.requests[1].second.map { it.toInt() and 0xFF })
+        val setDateTime = link.requests[1].second.map { it.toInt() and 0xFF }
+        assertEquals(listOf(0x0D, 7, 0x07, 0xE9, 10, 9, 10, 53, 20), setDateTime)
         camera.stop()
         assertEquals(120, saved.last().cameraUtcOffsetMinutes)
     }
@@ -110,7 +111,8 @@ class OpenGoProCameraTest {
     @Test
     fun setsResolutionThenFrameRateBeforeTheShutter() = runTest {
         val link = FakeGoPro()
-        val camera = camera(link, GoProVideo(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60", "1080p"))
+        val video = GoProVideo(OpenGoPro.Setting.RES_1080, OpenGoPro.Setting.FPS_60, "1080p · 60", "1080p")
+        val camera = camera(link, video)
         camera.startNow()
         runCurrent()
         assertEquals(listOf(0x0F, 0x13, 0x02, 0x03, 0x13, 0x01), link.ids)
