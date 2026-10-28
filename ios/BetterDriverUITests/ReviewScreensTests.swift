@@ -70,6 +70,29 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    func testASessionHasOneBackThatReturnsToTheList() {
+        app.launchArguments = ["-freshInstall", "-demoSessions"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+        keep("Session, back")
+        let ownBack = app.buttons["showSessions"].firstMatch
+        if UIDevice.current.userInterfaceIdiom == .phone {
+            // The iPhone's list and session take the screen in turn: only the system back button.
+            XCTAssertFalse(ownBack.exists, "a second back button on the iPhone")
+            app.navigationBars.buttons.element(boundBy: 0).tap()
+        } else {
+            XCTAssertTrue(ownBack.waitForExistence(timeout: 10), "no ‹ Sessions on the iPad")
+            ownBack.tap()
+        }
+        let back = NSPredicate(format: "isHittable == true")
+        expectation(for: back, evaluatedWith: rows.element(boundBy: 0))
+        waitForExpectations(timeout: 15)
+    }
+
     func testCsvAndGpxExportsAreWrittenWithoutAFailure() {
         // One launch per format: Files' Save sheet runs out of the app, so the test leaves it open
         // and starts again. Kotlin's DemoSessionsTest checks what the files hold.
