@@ -43,8 +43,8 @@ data class TrackScreenPrefs(
 /**
  * Settings (UI-137 B): with no [topic], one short page of topics, each saying what is set; a topic
  * opens its own page ([onOpenTopic]), shown here with [topic] and a back button. The rows inside
- * each page are the ones the tabs had. The track screen's tiles are changed on the track screen
- * itself (UI-123 B).
+ * each page are the ones the tabs had. The track screen's tiles are set on Settings › Track screen
+ * ([trackLayout], FBBD-345) and on the track screen itself (UI-123 B).
  */
 @Suppress("LongParameterList") // One callback per place Settings links to.
 @Composable
@@ -73,6 +73,7 @@ fun SettingsScreen(
     obdRow: String = obdRowValue(null, null),
     onOpenObd: () -> Unit = {},
     reach: Map<String, Reach> = emptyMap(),
+    trackLayout: @Composable () -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar(topic?.title ?: "Settings", onBack = onBack)
@@ -96,7 +97,10 @@ fun SettingsScreen(
                     CarList(setup.cars, setup.session.carId, onOpenCar, onAddCar)
                     ShellCard { ListRow("Units", "km/h, °C", divider = false) }
                 }
-                SettingsTopic.TrackScreen -> TrackScreenCard(trackScreen, onTrackScreen)
+                SettingsTopic.TrackScreen -> {
+                    trackLayout()
+                    TrackScreenCard(trackScreen, onTrackScreen)
+                }
                 SettingsTopic.Video -> VideoPage(setup, onChooseVideo)
                 SettingsTopic.App ->
                     AppPage(version, onRunSetup, updateRow, backupRows, coach, onOpenCoach, onOpenAbout)

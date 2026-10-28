@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.feature.track.NoTileValue
 import com.flappedear.betterdriver.feature.track.TileChoice
 import com.flappedear.betterdriver.feature.track.TileChoiceGroup
 import com.flappedear.betterdriver.feature.track.TrackTile
+import com.flappedear.betterdriver.obd.CanBroadcasts
 import com.flappedear.betterdriver.obd.StandardPids
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
@@ -38,10 +39,18 @@ private val GnssChannels = listOf(
 
 private val ObdChannels = StandardPids.all.map { TileChannel(TileIds.obd(it.id), it.name, it.unit) }
 
+/**
+ * What the car broadcasts on CAN (FBBD-320) that no generic PID has, such as the FR-S steering angle,
+ * so Settings can offer it before the car has sent it (FBBD-345). Degrees show as "°".
+ */
+private val CanChannels = CanBroadcasts.all.map { it.channel }.distinctBy { it.id }
+    .filter { c -> StandardPids.all.none { it.id == c.id } }
+    .map { TileChannel(TileIds.obd(it.id), it.name, if (it.unit == "deg") "°" else it.unit) }
+
 private val HeartRate = TileChannel(TileIds.HEART_RATE, "Heart rate", "bpm")
 
 private val Known: Map<String, TileChannel> =
-    (TimingChannels + GnssChannels + ObdChannels + HeartRate).associateBy { it.id }
+    (TimingChannels + GnssChannels + ObdChannels + CanChannels + HeartRate).associateBy { it.id }
 
 private fun channel(id: String): TileChannel = Known[id] ?: TileChannel(
     id,
@@ -132,7 +141,7 @@ internal fun tileChoices(s: TileSources, receiver: String?): List<TileChoiceGrou
     return listOf(
         TileChoiceGroup("Timing", choices(TimingChannels)),
         TileChoiceGroup(listOfNotNull("GPS", receiver).joinToString(" · "), choices(GnssChannels)),
-        TileChoiceGroup("Car · OBD-II", choices(ObdChannels + otherObd)),
+        TileChoiceGroup("Car · OBD-II", choices(ObdChannels + CanChannels + otherObd)),
         TileChoiceGroup("You · heart rate", choices(listOf(HeartRate))),
     )
 }
