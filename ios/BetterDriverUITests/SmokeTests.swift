@@ -19,7 +19,9 @@ final class SmokeTests: XCTestCase {
         }
     }
 
-    func testRecordStopAndOpenTheSession() {
+    func testRecordStopAndOpenTheSession() throws {
+        // Recording is on the iPhone: the iPad shows the review shell, with no Drive tab.
+        try XCTSkipIf(UIDevice.current.userInterfaceIdiom == .pad, "the iPad has no Drive tab")
         app.launch()
         tab("Drive").tap()
 
