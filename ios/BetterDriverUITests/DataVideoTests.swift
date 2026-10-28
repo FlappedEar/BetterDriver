@@ -16,6 +16,13 @@ final class DataVideoTests: XCTestCase {
         }
     }
 
+    /// Each test ends its run of the app itself: one left in Files' Save sheet or a player could not
+    /// be stopped in time by the next test's launch (ios-release.yml runs them one after the other).
+    override func tearDown() {
+        app.terminate()
+        super.tearDown()
+    }
+
     func testTheVideoPlaysWithItsDataAndSaves() {
         app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
         app.launch()
@@ -61,6 +68,9 @@ final class DataVideoTests: XCTestCase {
         XCTAssertFalse(failed.exists, failed.exists ? failed.label : "")
         keep("Video with data saved")
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
+        // Files' Save sheet is closed again, so the next test can end this run of the app.
+        let cancel = app.buttons["Cancel"].firstMatch
+        if cancel.waitForExistence(timeout: 10) { cancel.tap() }
     }
 
     func testWatchVideoFromTheSessionList() {
