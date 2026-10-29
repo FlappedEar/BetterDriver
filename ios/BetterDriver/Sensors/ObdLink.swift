@@ -193,9 +193,11 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         rssi RSSI: NSNumber
     ) {
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name
-        guard ObdAdapterNames.shared.isCandidate(name: name) else {
+        // By name, or by an ELM327 serial service it advertises, so an adapter of another make is tried.
+        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []).map(\.uuidString)
+        guard ObdAdapterNames.shared.isCandidate(name: name, services: services) else {
             if let name, others.count < 30, others.insert(name).inserted {
-                log(text: "nearby, not an OBD adapter: \(name)")
+                log(text: "nearby, not an OBD adapter: \(name)\(advertised(services))")
             }
             return
         }
@@ -211,9 +213,14 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
             return
         }
         seen[peripheral.identifier] = peripheral
-        log(text: "found \(name ?? "?") \(peripheral.identifier.uuidString)")
+        log(text: "found \(name ?? "?") \(peripheral.identifier.uuidString)\(advertised(services))")
         central.stopScan()
         feed.retryNow()
+    }
+
+    /// The services a device advertised, for its log line; nothing when it named none.
+    private func advertised(_ services: [String]) -> String {
+        services.isEmpty ? "" : " (services \(services.joined(separator: ",")))"
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
