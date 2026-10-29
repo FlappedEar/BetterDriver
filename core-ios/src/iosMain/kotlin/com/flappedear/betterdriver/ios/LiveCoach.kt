@@ -195,7 +195,7 @@ class LiveCoach internal constructor(
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
         val out = c.onFix(fix, now(), voiceFree = !speaker.speaking) { text ->
-            val ask = Asked(now()).also { asked = it }
+            val ask = Asked(now(), delayMillis, source()).also { asked = it }
             speaker.say(text, Speech(ask))
         }
         for (e in out.events) report(e.tMicros, e.kind, e.text)
@@ -205,8 +205,11 @@ class LiveCoach internal constructor(
         status = out.status
     }
 
-    /** A cue asked of the voice at session time [askedMicros]; [seq] is set once the coach has logged it. */
-    private class Asked(val askedMicros: Long) {
+    /**
+     * A cue asked of the voice at session time [askedMicros], timed for [timedMillis] from [timedSource];
+     * [seq] is set once the coach has logged it.
+     */
+    private class Asked(val askedMicros: Long, val timedMillis: Int, val timedSource: String) {
         @Volatile
         var seq: Int? = null
     }
@@ -217,17 +220,20 @@ class LiveCoach internal constructor(
             val at = now()
             queued {
                 val seq = ask.seq ?: return@queued
+                // The output's delay now, and what the cue was timed for when it was asked: an output that
+                // changed in between does not make the cue's timing "measured".
                 val source = source()
                 val text = CoachEvents.voiceText(
                     seq, Path, ask.askedMicros, route, device = device, outDelayMillis = delayMillis,
-                    outDelaySource = source, timedSource = source,
+                    outDelaySource = source, timedSource = ask.timedSource,
                 )
                 report(at, CoachEvents.VOICE, text)
                 val ttsMillis = (at - ask.askedMicros) / MicrosPerMilli
                 logInfo(
                     Tag,
                     "cue $seq sound started $ttsMillis ms after asked, route=$route device=$device " +
-                        "out_delay_ms=$delayMillis out_delay_src=$source",
+                        "out_delay_ms=$delayMillis out_delay_src=$source " +
+                        "timed_ms=${ask.timedMillis} timed_src=${ask.timedSource}",
                 )
             }
         }

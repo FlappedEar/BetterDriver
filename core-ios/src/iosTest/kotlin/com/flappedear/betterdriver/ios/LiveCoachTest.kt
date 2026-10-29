@@ -124,7 +124,8 @@ class LiveCoachTest {
             val voice = SessionStore(sessions).read(session.id).events.filter { it.kind == CoachEvents.VOICE }
             assertTrue(voice.size >= 2, voice.joinToString { it.text })
             assertTrue("out_delay_ms=120 out_delay_src=measured" in voice.first().text, voice.first().text)
-            assertTrue("out_delay_ms=300 out_delay_src=set" in voice.last().text, voice.last().text)
+            assertTrue("out_delay_ms=300 out_delay_src=set timed_src=set" in voice.last().text, voice.last().text)
+            assertTrue("timed_src=measured" in voice.first().text, voice.first().text)
             assertTrue(logged.any { it.startsWith("coaching at Fake ring") }, logged.joinToString("\n"))
             assertTrue("cues now timed for an audio delay of 300 ms (set)" in logged, logged.joinToString("\n"))
             val started = logged.filter { it.startsWith("cue ") && "sound started" in it }
