@@ -73,6 +73,15 @@ final class SmokeTests: XCTestCase {
         }
         XCTAssertTrue(screen.exists, "still recording after 15 s")
 
+        // A swipe goes to the second screen with the G radar and back (FBBD-262, FBBD-318).
+        screen.swipeLeft()
+        // By its label: the track screen's id reaches its children and can stand in for theirs.
+        let radar = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "G radar")).firstMatch
+        XCTAssertTrue(radar.waitForExistence(timeout: 10), "the G radar on the second screen")
+        screen.swipeRight()
+        XCTAssertTrue(radar.waitForNonExistence(timeout: 10), "back on the main screen")
+        XCTAssertEqual(app.state, .runningForeground)
+
         // The 3 s hold stops the session (UI-16).
         screen.press(forDuration: 4)
         XCTAssertTrue(start.waitForExistence(timeout: 20), "back on Drive after the stop")

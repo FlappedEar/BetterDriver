@@ -189,6 +189,61 @@ final class RecordingTests: XCTestCase {
         XCTAssertNil(TrackScreenModel(layout: ids, receiverHasG: true, coachOn: false).coach)
     }
 
+    /// The second screen (FBBD-262, FBBD-318): with G, the radar beside the first nine tiles, three rows
+    /// of three; a tile without data is left out of its row and a row with none goes; Settings draws all.
+    func testTheSecondScreenShowsTheRadarAndItsTiles() throws {
+        let session = try start(receiverHasG: true)
+        let second = [
+            "speed", "obd_rpm", "", // row 1: the RPM has no data in this session
+            "obd_coolant_temp", "obd_oil_temp", "heart_rate", // row 2: none with data
+            "g", "satellites", "", // row 3
+            "best_lap", "last_lap", "", // past the radar's nine
+        ]
+        let model = TrackScreenModel(session.screen(), receiverHasG: true, secondTileIds: second)
+        XCTAssertTrue(model.radarOn)
+        XCTAssertNil(model.radar, "no G before the first reading")
+        XCTAssertEqual(model.secondShown.count, 9)
+        XCTAssertEqual(model.secondShownColumns, 3)
+        XCTAssertEqual(
+            TrackScreenModel.shownRows(model.secondShown, columns: 3, rows: 3, editing: false), [[0, 2], [6, 7, 8]]
+        )
+        XCTAssertTrue(session.stop())
+
+        let noG = TrackScreenModel(session.screen(), receiverHasG: false, secondTileIds: second)
+        XCTAssertFalse(noG.radarOn)
+        XCTAssertEqual(noG.secondShown.count, 12)
+        XCTAssertEqual(noG.secondShownColumns, 4)
+
+        let layout = TrackScreenModel(layout: [], secondIds: second, receiverHasG: true, coachOn: true)
+        XCTAssertTrue(layout.editable)
+        XCTAssertEqual(
+            TrackScreenModel.shownRows(layout.secondShown, columns: 3, rows: 3, editing: true),
+            [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
+        )
+        XCTAssertEqual(layout.secondShown[1]??.label, "RPM")
+    }
+
+    /// The radar's dot moves the way the driver is pushed (UI-243 A): braking up, a right turn left, and
+    /// beyond 1.2 g it stays on the edge.
+    func testTheRadarDotMovesTheWayTheDriverIsPushed() {
+        let radar = TrackScreenModel.radar(
+            now: GPoint(forward: -0.63, left: -0.53),
+            trail: [GPoint(forward: -0.58, left: -0.19), GPoint(forward: -0.63, left: -0.28)]
+        )
+        XCTAssertEqual(radar?.now, TrackScreenModel.RadarPoint(forward: -0.63, left: -0.53))
+        XCTAssertEqual(radar?.trail.count, 2)
+        XCTAssertNil(TrackScreenModel.radar(now: nil, trail: []))
+
+        let centre = CGPoint(x: 100, y: 100)
+        let braking = GRadarView.position(.init(forward: -0.5, left: 0), centre: centre, g: 50)
+        XCTAssertEqual(braking.y, 75, accuracy: 0.001)
+        XCTAssertEqual(braking.x, 100, accuracy: 0.001)
+        let rightTurn = GRadarView.position(.init(forward: 0, left: -1), centre: centre, g: 50)
+        XCTAssertEqual(rightTurn.x, 50, accuracy: 0.001)
+        let hard = GRadarView.position(.init(forward: -3, left: 0), centre: centre, g: 50)
+        XCTAssertEqual(hard.y, 100 - 1.2 * 50, accuracy: 0.001)
+    }
+
     func testTheLiveActivityShowsLapDeltaAndBest() throws {
         try saveRing()
         let session = try start(receiverHasG: false)
