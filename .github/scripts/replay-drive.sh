@@ -10,6 +10,8 @@ app=com.flappedear.betterdriver
 runner=$app.test/androidx.test.runner.AndroidJUnitRunner
 test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-10}
+# When the one-minute trace starts, in s after the drive phase starts (FBBD-266).
+TRACE_AFTER_S=${TRACE_AFTER_S:-360}
 language=${LANGUAGE:-Polish}
 out=build/replay-drive
 mkdir -p "$out"
@@ -35,6 +37,9 @@ finish() {
   fi
   if [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
+  fi
+  if [ -s "$out/track-trace.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    cat "$out/track-trace.md" >> "$GITHUB_STEP_SUMMARY"
   fi
   sleep 2
   kill "$logcat" 2>/dev/null || true
@@ -79,7 +84,19 @@ sleep 3
 # on Arek's phone. The test runner waits for the app's main thread to go idle before a test, which it
 # never does while the track screen draws every frame: a stop phase of its own waited 8 min there.
 echo "Replaying for $minutes min."
+# One minute of the drive traced (FBBD-266): where the track screen's frame time goes, from the UI
+# thread's state and slices and who held the CPUs (track-trace.py). Starts midway, with the coach and
+# its voice running.
+adb push .github/scripts/track-trace.cfg /data/misc/perfetto-configs/track.cfg >/dev/null || true
+( sleep "$TRACE_AFTER_S" && adb shell perfetto --background --txt -c /data/misc/perfetto-configs/track.cfg \
+  -o /data/misc/perfetto-traces/track.pftrace < /dev/null >/dev/null 2>&1 ) &
+tracer=$!
 phase drive --no-restart $(( minutes * 60 + 300 ))
+kill "$tracer" 2>/dev/null || true
+timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
+  && python3 -m pip install -q perfetto >/dev/null 2>&1 \
+  && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
+  || echo "No track screen trace (FBBD-266)."
 # Home, as a phone put away, stops any drawing before the check.
 adb shell input keyevent KEYCODE_HOME || true
 sleep 5
