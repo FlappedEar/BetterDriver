@@ -224,13 +224,13 @@ struct SummaryTimeGoesCard: View {
         Card {
             SectionTitle("Where time goes")
             if !ui.gains.isEmpty {
-                Dim(SummaryTextKt.timeGoesHeading(ui: ui))
+                Dim(TimeGoesTextKt.timeGoesHeading(ui: ui))
                 ForEach(Array(ui.gains.enumerated()), id: \.offset) { _, gain in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
                             Text(gain.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
-                            Dim(SummaryTextKt.setOnText(gain: gain)).frame(width: 80, alignment: .leading)
-                            SummaryLoss(text: SummaryTextKt.gainLossText(gain: gain), confidence: gain.confidence)
+                            Dim(TimeGoesTextKt.setOnText(gain: gain)).frame(width: 80, alignment: .leading)
+                            SummaryLoss(text: TimeGoesTextKt.gainLossText(gain: gain), confidence: gain.confidence)
                         }
                         SummaryConfidence(confidence: gain.confidence)
                     }
@@ -244,7 +244,7 @@ struct SummaryTimeGoesCard: View {
                             HStack {
                                 Dim("Lap \(loss.lapNumber)").frame(width: 56, alignment: .leading)
                                 Text(loss.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
-                                SummaryLoss(text: SummaryTextKt.lossLossText(loss: loss), confidence: loss.confidence)
+                                SummaryLoss(text: TimeGoesTextKt.lossLossText(loss: loss), confidence: loss.confidence)
                             }
                             SummaryConfidence(confidence: loss.confidence)
                         }
@@ -288,8 +288,8 @@ struct SummaryGForcesCard: View {
                 .accessibilityElement()
                 .accessibilityLabel("G-G diagram")
                 .accessibilityIdentifier("ggChart")
-            Dim(SummaryTextKt.ggPeaksText(trace: trace))
-            Dim(SummaryTextKt.ggSourceNote(source: trace.source))
+            Dim(TimeGoesTextKt.ggPeaksText(trace: trace))
+            Dim(TimeGoesTextKt.ggSourceNote(source: trace.source))
         }
         .accessibilityIdentifier("gForces")
     }
@@ -318,7 +318,7 @@ private struct SummaryGgChart: View {
                 )
                 let along = r * 0.70710677
                 ctx.draw(
-                    Text(SummaryTextKt.ggRingText(ring: ring)).font(.system(size: 10)).foregroundStyle(Palette.onSurfaceVariant),
+                    Text(TimeGoesTextKt.ggRingText(ring: ring)).font(.system(size: 10)).foregroundStyle(Palette.onSurfaceVariant),
                     at: CGPoint(x: center.x + along, y: center.y - along)
                 )
             }
