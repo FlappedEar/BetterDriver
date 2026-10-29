@@ -1,8 +1,13 @@
 package com.flappedear.betterdriver.feature.analysis
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -11,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 
@@ -19,7 +25,7 @@ import androidx.compose.ui.unit.dp
  * of a session with laps: Summary has the message, then the drive's route and speed (FBBD-342), the
  * session's G-forces, its acceleration runs and its data quality (FBBD-183), which need no laps; Car
  * has its pedals, temperatures and heart rate over the whole drive (FBBD-176, UI-162 A). The tabs that
- * need laps say so. A session that could not be read at all, with nothing to show, is just the message.
+ * need laps say so. A session that could not be read at all, with nothing to show, is just the message and its data quality.
  */
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
 @Composable
@@ -32,7 +38,15 @@ internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit) {
     }
     val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
     if (state.drive == null && state.gForces == null && state.acceleration == null && state.car == null) {
-        message(width.padding(16.dp))
+        // The data quality still shows: it says why the recording has nothing else (FBBD-183).
+        Column(
+            Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            message(width)
+            state.quality?.let { QualityCard(it, width) }
+        }
         return
     }
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }

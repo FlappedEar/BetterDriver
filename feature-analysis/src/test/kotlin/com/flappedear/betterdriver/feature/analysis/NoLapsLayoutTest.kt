@@ -30,7 +30,7 @@ import org.robolectric.annotation.GraphicsMode
 /**
  * A session with no laps (a road drive) keeps the six tabs, as in the iOS app: the message and the
  * drive on Summary, the car on Car, every tab laid out cleanly on a phone and a tablet, upright and
- * sideways. A session that could not be read shows only its message. Pictures go to
+ * sideways. A session that could not be read shows only its message and data quality. Pictures go to
  * build/outputs/roborazzi/layout/.
  */
 @RunWith(RobolectricTestRunner::class)
@@ -87,9 +87,10 @@ abstract class NoLapsLayoutTest(private val device: String) {
     }
 
     @Test
-    fun unreadableSessionIsOnlyItsMessage() {
-        show(AnalysisState.Unavailable("This session could not be read."))
+    fun unreadableSessionIsOnlyItsMessageAndDataQuality() {
+        show(AnalysisState.Unavailable("This session could not be read.", quality = PreviewQuality))
         compose.onNode(hasText("This session could not be read.")).assertIsDisplayed()
+        compose.onAllNodes(hasText("Data quality", ignoreCase = true))[0].performScrollTo().assertIsDisplayed()
         compose.onAllNodes(IsTab).assertCountEquals(0)
     }
 

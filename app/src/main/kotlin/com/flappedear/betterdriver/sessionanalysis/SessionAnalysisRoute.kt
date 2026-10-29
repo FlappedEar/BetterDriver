@@ -131,8 +131,15 @@ private sealed interface Load {
         val epoch: Long = 0L,
     ) : Load
 
-    /** No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151). */
-    data class Failed(val state: AnalysisState.Unavailable, val proposal: Proposal? = null) : Load
+    /**
+     * No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151);
+     * [trackId], the saved track the session was at when it has no complete lap there.
+     */
+    data class Failed(
+        val state: AnalysisState.Unavailable,
+        val proposal: Proposal? = null,
+        val trackId: String? = null,
+    ) : Load
 }
 
 /** What the screen read and worked out for one session: kept while the tablet turns (FBBD-323). */
@@ -320,7 +327,9 @@ internal fun SessionAnalysisRoute(
                     AnalysisTopBar(
                         analysisTitle(listed?.info?.startUtcMillis, done?.loaded?.title ?: listed?.info?.track),
                         onBack = onBack,
-                        onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
+                        // Also for a session at a track with no complete lap there.
+                        onProgression = (trackId ?: (load as? Load.Failed)?.trackId)
+                            ?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
                         onCoachReview = { nav.navigate(Routes.cueReview(id)) },
                     )
                 },
@@ -459,6 +468,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         }
         return Load.Failed(
             AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces, car = car, drive = drive),
+            trackId = track.id,
         )
     }
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).
