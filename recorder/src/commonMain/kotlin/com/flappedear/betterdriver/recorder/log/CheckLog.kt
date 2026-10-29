@@ -29,7 +29,7 @@ object CheckLog {
 
     /** Logs an event of recording [session], at session time [tMicros]. */
     fun event(session: String, tMicros: Long, kind: String, text: String) =
-        DebugLog.forSession(session, EVENT, eventText(tMicros, kind, text))
+        CoreLog.forSession(session, EVENT, eventText(tMicros, kind, text))
 
     /** The event an [EVENT] line's message holds, or null. */
     fun parseEvent(message: String): RecorderEvent? {

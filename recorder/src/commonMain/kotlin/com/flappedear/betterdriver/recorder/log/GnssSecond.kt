@@ -5,7 +5,7 @@ import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.SampleSet
-import java.util.Locale
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToLong
 
@@ -67,12 +67,12 @@ data class GnssSecond(
         "long_pre" to preFixLongGaps.takeIf { it > 0 }, "max_rx_pre_ms" to maxRxPreGapMillis,
     ).filter { it.second != null }.joinToString(" ") { (k, v) -> "$k=$v" }
 
-    private fun decimal(value: Double?, format: String) = value?.let { String.format(Locale.ROOT, format, it) }
+    private fun decimal(value: Double?, digits: Int) = value?.let { fixedDecimals(it, digits) }
 
     companion object {
-        private const val Degrees = "%.7f"
-        private const val Variance = "%.4f"
-        private const val Speed = "%.2f"
+        private const val Degrees = 7
+        private const val Variance = 4
+        private const val Speed = 2
 
         /** A [CheckLog.GNSS] line's message read back; null when it is not one. */
         fun parse(message: String): GnssSecond? {
@@ -121,7 +121,7 @@ class GnssSecondLog(
     private val sessionId: String,
     private val startUtcMillis: Long,
     private val skipsWithoutFix: Boolean = false,
-    private val write: (String) -> Unit = { DebugLog.forSession(sessionId, CheckLog.GNSS, it) },
+    private val write: (String) -> Unit = { CoreLog.forSession(sessionId, CheckLog.GNSS, it) },
 ) : RecorderListener {
     private var current: Builder? = null
     private var lastFixT: Long? = null
@@ -221,7 +221,7 @@ class GnssSecondLog(
     }
 
     private fun onWholeSecond(utc: Long, step: Long): Boolean {
-        val ms = Math.floorMod(utc, MillisPerSecond)
+        val ms = utc.mod(MillisPerSecond)
         return ms < step / 2 || ms > MillisPerSecond - step / 2
     }
 
@@ -246,7 +246,7 @@ class GnssSecondLog(
             val lat = fixes.map { it.first }.average().takeIf { fixes.isNotEmpty() }
             val lon = fixes.map { it.second }.average().takeIf { fixes.isNotEmpty() }
             val variance = if (lat != null && lon != null) {
-                val kx = MetersPerDegree * cos(Math.toRadians(lat))
+                val kx = MetersPerDegree * cos(lat * RadiansPerDegree)
                 fixes.sumOf { (a, o, _) ->
                     val dx = (o - lon) * kx
                     val dy = (a - lat) * MetersPerDegree
@@ -272,6 +272,9 @@ class GnssSecondLog(
         const val StepRoundMillis = 10L
         const val LongGapMicros = 200_000L
         const val MetersPerDegree = 111_195.0
+
+        // As the JVM's Math.toRadians multiplies, so both apps give the same metres.
+        const val RadiansPerDegree = PI / 180.0
 
         /** Link drops of the GNSS sources end so (core-ble's `*_disconnected`); heart rate is no GNSS source. */
         const val DisconnectedSuffix = "_disconnected"
