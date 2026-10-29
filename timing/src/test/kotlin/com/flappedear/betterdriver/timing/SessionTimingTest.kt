@@ -71,19 +71,28 @@ class SessionTimingTest {
     }
 
     @Test
-    fun `a saved track without lines is named but not timed`() {
+    fun `a saved track without lines is named, and timed once the ring gets a provisional line`() {
         val timing = SessionTiming({ listOf(lined.copy(startFinish = null)) }, circuits)
         drive(timing)
         assertIs<TrackDetection.Saved>(timing.detection)
-        assertNull(timing.state)
+        // The ring is a loop driven 3.5 times (FBBD-335): the line goes on it, and the saved track keeps its id.
+        assertEquals("ring", timing.provisional?.id)
+        val state = assertNotNull(timing.state)
+        assertTrue(abs(40_000L - assertNotNull(state.bestMillis)) <= 50, state.toString())
     }
 
     @Test
     fun `with no saved track the directory names the place`() {
         val timing = SessionTiming({ emptyList() }, circuits)
-        drive(timing)
+        // One lap: not yet a loop driven again, so no line and no timing.
+        for (n in 0L..(25 * 40)) timing.onSamples(SampleSet(n * 40_000, gnss.fix(n)))
         assertEquals("Ring circuit", timing.detection?.placeName)
+        assertNull(timing.provisional)
         assertNull(timing.state)
+        // Laps after it get a provisional line named after the circuit (FBBD-335).
+        for (n in (25L * 40 + 1)..(25 * 140)) timing.onSamples(SampleSet(n * 40_000, gnss.fix(n)))
+        assertEquals("Ring circuit", timing.provisional?.name)
+        assertNotNull(timing.state)
     }
 
     @Test

@@ -80,8 +80,9 @@ class TrackLibraryTest {
 
     @Test
     fun aLineFromTheLapGivesLiveLapsInTheNextSession() {
-        // Session 1 at an unknown place: no laps.
-        assertNull(record().timing)
+        // Session 1 at an unknown place: laps from a provisional line (FBBD-335), and no track saved.
+        assertNotNull(record().timing)
+        assertTrue(library.list().isEmpty())
         val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
         val found = library.editorSessions(track)
         assertEquals(1, found.size)
