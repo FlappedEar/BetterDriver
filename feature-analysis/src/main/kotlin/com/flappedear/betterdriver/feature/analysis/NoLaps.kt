@@ -25,7 +25,8 @@ import androidx.compose.ui.unit.dp
  * of a session with laps: Summary has the message, then the drive's route and speed (FBBD-342), the
  * session's G-forces, its acceleration runs and its data quality (FBBD-183), which need no laps; Car
  * has its pedals, temperatures and heart rate over the whole drive (FBBD-176, UI-162 A). The tabs that
- * need laps say so. A session that could not be read at all, with nothing to show, is just the message and its data quality.
+ * need laps say so. A session that could not be read at all, with nothing to show, is just the message
+ * and its data quality.
  */
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
 @Composable
@@ -37,7 +38,7 @@ internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit) {
         }
     }
     val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-    if (state.drive == null && state.gForces == null && state.acceleration == null && state.car == null) {
+    if (listOf(state.drive, state.gForces, state.acceleration, state.car).all { it == null }) {
         // The data quality still shows: it says why the recording has nothing else (FBBD-183).
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
