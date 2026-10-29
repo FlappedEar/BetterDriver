@@ -25,6 +25,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// found, the log shows whether the adapter was off, busy with another phone, or named otherwise.
     private var others: Set<String> = []
     private var port: ObdBlePortLink?
+    /// When an adapter seen before, advertising again, last ended a retry delay early.
+    private var seenRetryAt = Date.distantPast
     /// The Wi-Fi network as iOS reports it: logged, and a network coming back is tried at once.
     private var wifi: NWPathMonitor?
     private var onWifi: Bool?
@@ -154,6 +156,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         if central.isScanning { central.stopScan() }
         self.port = port
         port.peripheral.delegate = port
+        log(text: "connecting \(port.peripheral.name ?? "?") \(port.peripheral.identifier.uuidString)")
+        port.connectStarted = Date()
         central.connect(port.peripheral)
     }
 
@@ -165,6 +169,7 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     }
 
     fileprivate func ready(_ port: ObdBlePortLink) {
+        log(text: "serial line ready: \(port.setupText)")
         UserDefaults.standard.set(port.peripheral.identifier.uuidString, forKey: Self.lastIdKey)
         if let name = port.peripheral.name { UserDefaults.standard.set(name, forKey: Self.lastNameKey) }
     }
@@ -195,8 +200,14 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
             return
         }
         guard seen[peripheral.identifier] == nil else {
-            // Known already: nothing new to try, so the scan can stop until the next round asks again.
+            // Known already: the scan can stop until the next round asks again. Advertising again while
+            // no connection is open means it may be back in range or free (FBBD-271): try it at once,
+            // at most once in 20 s, so one that keeps failing its setup keeps the retry delays.
             central.stopScan()
+            if port == nil, Date().timeIntervalSince(seenRetryAt) >= 20 {
+                seenRetryAt = Date()
+                feed.retryNow()
+            }
             return
         }
         seen[peripheral.identifier] = peripheral
@@ -241,6 +252,9 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
     private var withResponse = true
     private var writePending = false
     private(set) var payload: Int32 = 20
+    /// When the connect was asked for, and what setup found, for the log (as Android's MTU line, FBBD-333).
+    fileprivate var connectStarted = Date()
+    fileprivate var setupText = ""
 
     init(link: ObdLink, peripheral: CBPeripheral) {
         self.link = link
@@ -303,6 +317,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
     // MARK: Driven by ObdLink and CoreBluetooth, on the queue
 
     fileprivate func connected() {
+        link?.log(text: String(format: "connected in %.1f s, discovering services", Date().timeIntervalSince(connectStarted)))
         peripheral.discoverServices(nil)
     }
 
@@ -339,6 +354,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
                 GattCharacteristic(service: s.uuid.uuidString, uuid: $0.uuid.uuidString, properties: Int32($0.properties.rawValue))
             }
         }
+        link?.log(text: "services \(peripheral.services?.map(\.uuid.uuidString) ?? []), \(all.count) characteristics")
         guard let pair = BleSerial.shared.choose(characteristics: all) else {
             return giveUp("no serial characteristic in \(peripheral.services?.map(\.uuid.uuidString) ?? [])")
         }
@@ -355,7 +371,12 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
     func peripheral(_ peripheral: CBPeripheral, didUpdateNotificationStateFor characteristic: CBCharacteristic, error: Error?) {
         guard characteristic === notifyCh, !setUp else { return }
         guard error == nil, characteristic.isNotifying else { return giveUp("enable notifications failed") }
-        payload = Int32(max(1, peripheral.maximumWriteValueLength(for: withResponse ? .withResponse : .withoutResponse)))
+        // The MTU's payload either way: iOS offers 512 bytes with response by long writes (prepare and
+        // execute), which ELM327 adapters need not take; Android cuts to the MTU too.
+        payload = Int32(max(1, peripheral.maximumWriteValueLength(for: .withoutResponse)))
+        setupText = "notify \(characteristic.uuid.uuidString), write \(writeCh?.uuid.uuidString ?? "?") " +
+            "\(withResponse ? "with" : "without") response, payload \(payload) bytes, " +
+            String(format: "%.1f s after connect asked", Date().timeIntervalSince(connectStarted))
         isOpen = true
         setUp = true
         link?.ready(self)
@@ -378,6 +399,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
     }
 
     private func giveUp(_ reason: String) {
+        link?.log(text: "setup failed: \(reason)")
         failed(reason)
         link?.disconnect(self)
     }
