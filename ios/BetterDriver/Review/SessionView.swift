@@ -75,9 +75,10 @@ struct SessionView: View {
             Message(text: failure)
         } else if let summary {
             switch tab {
-            case .summary: SummaryTab(summary: summary)
+            case .summary:
+                SummaryTab(summary: summary, screen: screen, compare: { pick(index: $0, summary) }, openLine: { tab = .map })
             case .compare: CompareTab(compare: compare, summary: summary)
-            case .laps: LapsTab(summary: summary) { lap in pick(lap, summary) }
+            case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line)
             case .corners: CornersTab(screen: screen)
             case .car: CarTab(car: screen?.car)
@@ -87,10 +88,10 @@ struct SessionView: View {
         }
     }
 
-    /// Picking a lap compares it with the fastest, on Compare, Corners and Car; Compare opens, as on Android.
-    private func pick(_ lap: LapRow, _ summary: SessionSummary) {
+    /// Picking a lap (timed lap [index]) compares it with the fastest, on Compare, Corners and Car;
+    /// Compare opens, as on Android.
+    private func pick(index: Int, _ summary: SessionSummary) {
         Task {
-            let index = lap.index
             let picked = await Task.detached(priority: .userInitiated) {
                 (ReviewBridge.compare(summary, lapIndex: index), ReviewBridge.screen(summary, lapIndex: index))
             }.value
@@ -145,35 +146,44 @@ private struct TabRow: View {
     }
 }
 
+/// Android's Summary (AnalysisScreen.kt): what to work on next first (FBBD-20), the three lap
+/// times (FBBD-178), heart rate, where time goes, then the whole session's G-forces and acceleration
+/// runs. A session with no laps shows its drive, G-forces and runs, which need no laps (FBBD-342).
 private struct SummaryTab: View {
     let summary: SessionSummary
+    let screen: AnalysisUi?
+    let compare: (Int) -> Void
+    let openLine: () -> Void
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 12) {
-                if summary.laps.isEmpty {
-                    Card {
-                        Text(summary.trackName == nil
-                             ? "No saved track with a start/finish line here, so no laps."
-                             : "No timed laps in this session.")
-                            .foregroundStyle(Palette.onSurfaceVariant)
-                    }
-                    // Where the car went all the same, as Android's no-laps analysis (FBBD-342).
-                    if let drive = summary.drive { DriveCards(drive: drive) }
-                } else {
-                    Card {
-                        HStack(alignment: .top) {
-                            Figure(label: "Best lap", value: summary.bestLap ?? "–", best: true)
-                            Figure(label: "Theoretical best", value: summary.theoreticalBest ?? "–")
-                            Figure(label: "Laps", value: "\(summary.laps.count)")
-                        }
+        CardColumn {
+            if let ui = screen, !summary.laps.isEmpty {
+                SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
+                SummaryTimesCard(ui: ui)
+                if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
+                if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, compare: compare) }
+            } else if summary.laps.isEmpty {
+                Card {
+                    Text(summary.trackName == nil
+                         ? "No saved track with a start/finish line here, so no laps."
+                         : "No timed laps in this session.")
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                }
+                // Where the car went all the same, as Android's no-laps analysis (FBBD-342).
+                if let drive = summary.drive { DriveCards(drive: drive) }
+            } else {
+                // Laps, but none counts (out laps, cuts): their times all the same.
+                Card {
+                    HStack(alignment: .top) {
+                        Figure(label: "Best lap", value: summary.bestLap ?? "–", best: true)
+                        Figure(label: "Laps", value: "\(summary.laps.count)")
                     }
                 }
             }
-            .padding(20)
-            .frame(maxWidth: 900)
-            .frame(maxWidth: .infinity)
+            if let g = summary.whole.gForces { SummaryGForcesCard(trace: g) }
+            if let runs = summary.whole.acceleration { SummaryAccelerationCard(ui: runs) }
         }
+        .accessibilityIdentifier("summaryTab")
     }
 }
 

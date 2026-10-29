@@ -240,31 +240,6 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composab
     }
 }
 
-/**
- * Under the realistic optimal: the time to gain to it and the laps it combines, named as the
- * realistic optimal video names them ([lapsText]). Without one, why: the laps join compatibly
- * through no chain of corners, or a corner has no timed pass (the raw theoretical best says so too).
- */
-internal fun realisticDetail(ui: AnalysisUi): String {
-    if (ui.realisticMillis == null) {
-        return if (ui.theoreticalMillis == null) "Needs every corner timed" else "No compatible combination of laps"
-    }
-    val laps = ui.realisticLaps
-    val from = when {
-        laps.isEmpty() -> "compatible joints only"
-        laps == listOf(ui.bestLapNumber) -> "no better combination"
-        else -> "from ${lapsText(laps)}"
-    }
-    return if (ui.realisticGainSeconds == null) from else "${realisticGainText(ui, ::formatDelta)} s · $from"
-}
-
-/** "lap 4", "laps 2 and 4", "laps 2, 4 and 7": the laps a composite lap is made of, wherever it is named. */
-fun lapsText(laps: List<Int>): String = when (laps.size) {
-    0 -> "no lap"
-    1 -> "lap ${laps[0]}"
-    else -> "laps ${laps.dropLast(1).joinToString(", ")} and ${laps.last()}"
-}
-
 @Composable
 private fun Figure(
     label: String,

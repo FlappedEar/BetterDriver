@@ -77,7 +77,7 @@ final class ReviewScreensTests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 0).tap()
-        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         keep("Session, back")
         let ownBack = app.buttons["showSessions"].firstMatch
         if UIDevice.current.userInterfaceIdiom == .phone {
@@ -128,7 +128,7 @@ final class ReviewScreensTests: XCTestCase {
             let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
             XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
             rows.element(boundBy: 0).tap()
-            XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+            XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
             let menu = app.buttons["exportMenu"].firstMatch
             XCTAssertTrue(menu.waitForExistence(timeout: 10), "no export menu")
             menu.tap()
@@ -174,17 +174,53 @@ final class ReviewScreensTests: XCTestCase {
             let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
             XCTAssertTrue(rows.element(boundBy: index).waitForExistence(timeout: 120), "no session row \(index)")
             rows.element(boundBy: index).tap()
-            // Figure writes its label in capitals.
-            XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "\(name): no summary")
-            XCTAssertTrue(app.staticTexts[laps].exists, "\(name): not \(laps) laps")
+            // SectionTitle writes its label in capitals.
+            XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "\(name): no summary")
             for tab in ["Summary", "Compare", "Map", "Laps", "Corners", "Car"] {
                 app.buttons["tab\(tab)"].tap()
                 // The tab's numbers come off the main thread.
                 sleep(3)
                 XCTAssertEqual(app.state, .runningForeground, "\(name) \(tab): the app stopped")
                 keep("\(name) \(tab)")
+                if tab == "Laps" {
+                    XCTAssertTrue(app.descendants(matching: .any)["lapList"].exists, "\(name): no list of its \(laps) laps")
+                }
             }
         }
+    }
+
+    func testTheSummaryShowsWhatToWorkOnNextAndWhereTimeGoes() {
+        // Android's Summary (FBBD-20, FBBD-178, FBBD-103): next session first, the three lap times,
+        // where time goes, then the whole session's G-forces and acceleration runs.
+        app.launchArguments = ["-freshInstall", "-demoSessions"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 1).tap()
+        XCTAssertTrue(app.staticTexts["NEXT SESSION · WORK ON"].waitForExistence(timeout: 120), "no next session card")
+        for label in ["BEST ACTUAL LAP", "REALISTIC OPTIMAL", "RAW THEORETICAL BEST", "WHERE TIME GOES", "G-FORCES · WHOLE SESSION"] {
+            XCTAssertTrue(app.staticTexts[label].exists, "no \(label)")
+        }
+        keep("Summary, next session")
+        app.swipeUp()
+        keep("Summary, where time goes")
+        app.swipeUp()
+        keep("Summary, G-forces")
+        app.swipeUp()
+        keep("Summary, acceleration")
+        XCTAssertEqual(app.state, .runningForeground)
+        // The primary focus compares its lap with the fastest, as on Android: Compare opens.
+        app.swipeDown()
+        app.swipeDown()
+        app.swipeDown()
+        let primary = app.buttons["nextSessionPrimary"].firstMatch
+        if primary.waitForExistence(timeout: 10), primary.isEnabled {
+            primary.tap()
+            sleep(3)
+            keep("Summary focus, compared")
+        }
+        XCTAssertEqual(app.state, .runningForeground)
     }
 
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.

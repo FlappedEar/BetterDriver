@@ -48,6 +48,8 @@ struct SessionSummary {
     let screen: AnalysisUi?
     /// The whole drive on the map when the session has no laps (FBBD-342); nil with laps.
     let drive: DriveSummary?
+    /// The whole session's acceleration runs and G-forces, laps or not, as Android's summary shows them.
+    let whole: WholeSession
 }
 
 /// A session with no laps as Android's DriveCards show it (FBBD-342): its figures, its route
@@ -131,6 +133,8 @@ struct WhereToFindTime {
     let bestLap: String
     let bestLapNumber: Int
     let total: String
+    /// [total] in seconds, for the link on the next-session card (UI-190 B).
+    let totalSeconds: Double
     let laps: Int
     let sessions: Int
     /// In track order.
@@ -185,7 +189,8 @@ enum ReviewBridge {
             line: review.line.map(whereToFindTime),
             compare: reviewed.defaultCompare().map(lapCompare),
             screen: reviewed.defaultScreen(),
-            drive: reviewed.drive.map(driveSummary)
+            drive: reviewed.drive.map(driveSummary),
+            whole: reviewed.whole
         )
     }
 
@@ -245,6 +250,7 @@ enum ReviewBridge {
             bestLap: CoreBridge.lapTime(millis: millis(ui.bestLapSeconds)),
             bestLapNumber: Int(ui.bestLapNumber),
             total: twoDecimals(ui.totalGainSeconds),
+            totalSeconds: ui.totalGainSeconds,
             laps: Int(ui.laps),
             sessions: Int(ui.sessions),
             corners: ui.corners.map(corner),

@@ -30,7 +30,7 @@ final class DataVideoTests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 0).tap()
-        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         let menu = app.buttons["exportMenu"].firstMatch
         XCTAssertTrue(menu.waitForExistence(timeout: 30), "no export menu")
         // The menu offers Video with data once it has read that the session has video.
