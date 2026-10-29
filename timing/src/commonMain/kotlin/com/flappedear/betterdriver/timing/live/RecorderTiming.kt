@@ -137,7 +137,8 @@ private class LoopSearch(private val saved: List<Track>, private val directory: 
 const val ProvisionalName = "New track"
 const val ProvisionalId = "provisional"
 
-private const val KeepEveryMicros = 100_000L
+// Just under 0.1 s, so a 10 Hz receiver whose fixes come a little early keeps every one.
+private const val KeepEveryMicros = 90_000L
 private const val SearchEveryMicros = 10_000_000L
 private const val SearchWindowMicros = 20L * 60 * 1_000_000
 
