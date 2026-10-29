@@ -276,7 +276,7 @@ struct SummaryTimeGoesCard: View {
             }
             if flags?.any(ui: ui) == true { Dim(AnalysisUiKt.CoachFlagNote) }
         }
-        .accessibilityIdentifier("timeGoes")
+        // No identifier on the card: its flags carry their own.
         .task(id: summary?.id) { await loadFlags() }
     }
 
