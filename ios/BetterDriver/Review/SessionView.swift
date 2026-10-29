@@ -38,12 +38,14 @@ struct SessionView: View {
     @State private var notYet: String?
     @State private var coachReview: CoachReviewLink?
     @State private var progression = false
+    @State private var everyPass: EveryPassLink?
 
     var body: some View {
         VStack(spacing: 0) {
             TabRow(selected: $tab)
             Divider().overlay(Palette.outline)
             content
+                .environment(\.everyPass, openEveryPass)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(Palette.background)
@@ -70,6 +72,8 @@ struct SessionView: View {
         }
         .notImplementedAlert($notYet)
         .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
+        // Every pass through a corner (FBBD-153), from the focus and the Corners tab, as on Android.
+        .fullScreenCover(item: $everyPass) { EveryPassScreen(link: $0) }
         .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
@@ -96,6 +100,12 @@ struct SessionView: View {
         } else {
             ProgressView().tint(Palette.accent).padding(.top, 60)
         }
+    }
+
+    /// Every pass through a corner, once the session is read.
+    private var openEveryPass: ((String) -> Void)? {
+        guard let summary else { return nil }
+        return { everyPass = EveryPassLink(summary: summary, cornerId: $0) }
     }
 
     /// Picking a lap (timed lap [index]) compares it with the fastest, on Compare, Corners and Car;

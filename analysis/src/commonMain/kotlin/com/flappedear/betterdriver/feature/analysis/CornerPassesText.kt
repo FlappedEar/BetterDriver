@@ -6,6 +6,15 @@ import com.flappedear.betterdriver.format.fixed
 // The words and numbers of the Corner laps screen (FBBD-93): no number below High confidence
 // (FBBD-177), none for a value in no known unit, and ≈ on what is not measured (FBBD-174).
 
+/**
+ * The way from a focus, coaching or Corners-tab corner to every pass through it (FBBD-93): one
+ * name wherever it is offered, and the title of the screen it opens ([EveryPassTitle]).
+ */
+const val EveryPassText = "Every pass ›"
+
+/** The title of the screen [EveryPassText] opens. */
+const val EveryPassTitle = "Every pass"
+
 /** The time through the corner of [row] as the list shows it: "4.21 s", or "–" without a precise one. */
 fun passSecondsText(row: CornerLapRow): String =
     if (row.confidence.doubtful) Missing else row.seconds?.let { "${seconds(it)} s" } ?: Missing

@@ -208,8 +208,12 @@ struct LapVideoView: View {
     @Environment(\.horizontalSizeClass) private var size
     @Environment(\.scenePhase) private var phase
 
-    init(review: LapVideoReview) {
+    /// Where the cursor starts, as a share of lap A; nil for the start line.
+    private let startFraction: Double?
+
+    init(review: LapVideoReview, startFraction: Double? = nil) {
         _st = StateObject(wrappedValue: ReviewTransport(review: review))
+        self.startFraction = startFraction
     }
 
     var body: some View {
@@ -252,7 +256,11 @@ struct LapVideoView: View {
         .background(Palette.background)
         .navigationTitle("Lap review")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { st.wake() }
+        .onAppear {
+            // Opened on a corner (FBBD-153): the cursor a little before it, as Android's review route.
+            if let startFraction, st.cursor == 0 { st.scrub(to: startFraction, ended: true) }
+            st.wake()
+        }
         .onDisappear { st.stop() }
         // Never plays unseen.
         .onChange(of: phase) { _, p in if p != .active { st.stop() } }

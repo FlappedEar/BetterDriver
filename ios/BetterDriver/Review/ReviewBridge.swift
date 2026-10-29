@@ -227,6 +227,22 @@ enum ReviewBridge {
     }
 
     /// Android's analysis screen with lap [index] compared, for Corners and Car.
+    /// Every counted pass through corner [cornerId] with its traces and video, as Android's Corner
+    /// laps screen (FBBD-93, FBBD-153). Reads the session's laps again: never on the main thread.
+    static func everyPass(_ summary: SessionSummary, cornerId: String) -> CornerLapsUi? {
+        library.everyPass(reviewed: summary.reviewed, id: summary.id, cornerId: cornerId)
+    }
+
+    /// Timed laps [a] and [b] side by side on video, as Android opens two passes of a corner.
+    static func lapsOnVideo(_ summary: SessionSummary, a: Int, b: Int) -> LapVideoReview? {
+        library.lapsOnVideo(reviewed: summary.reviewed, id: summary.id, aIndex: Int32(a), bIndex: Int32(b))
+    }
+
+    /// Where the lap review of a corner's passes starts: a little before its entry, as a share of the lap.
+    static func reviewStart(_ summary: SessionSummary, cornerId: String) -> Double? {
+        summary.reviewed.reviewStart(cornerId: cornerId)?.doubleValue
+    }
+
     static func screen(_ summary: SessionSummary, lapIndex index: Int) -> AnalysisUi? {
         summary.reviewed.screen(otherIndex: Int32(index))
     }

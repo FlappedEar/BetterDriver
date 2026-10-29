@@ -4,8 +4,6 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
-import com.flappedear.betterdriver.analysis.corners.sameLap
-import com.flappedear.betterdriver.analysis.corners.sessionMicros
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.line.LineSession
@@ -25,6 +23,7 @@ import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
+import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
@@ -40,8 +39,6 @@ import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
-import com.flappedear.betterdriver.timing.replay.LapTrace
-import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 
 import com.flappedear.betterdriver.timing.track.trackAlong
@@ -195,24 +192,43 @@ class ReviewedSession internal constructor(
         indexed: List<VideoClip>,
         dir: String,
         present: (String) -> Boolean,
+    ): LapVideoReview? = analysis?.laps?.fastestLapIndex?.let { lapsOnVideo(it, otherIndex, indexed, dir, present) }
+
+    /**
+     * Timed laps [aIndex] against [bIndex] on video, as Android's lap review opens two passes of a
+     * corner side by side (FBBD-153); otherwise as [videoReview].
+     */
+    fun lapsOnVideo(
+        aIndex: Int,
+        bIndex: Int,
+        indexed: List<VideoClip>,
+        dir: String,
+        present: (String) -> Boolean,
     ): LapVideoReview? {
-        val data = data
-        val track = review.track
-        val fastest = analysis?.laps?.fastestLapIndex
-        if (data == null || track == null || fastest == null) return null
-        val laps = checkNotNull(analysis).laps.timedLaps
-        // As telemetrySessionOf: telemetry time 0 is the first sample.
-        val origin = data.sampleSets.minOfOrNull { it.tMicros } ?: 0L
-        val traces = replayLaps(data.id, data.sampleSets, track).laps
-        val starts = traces.associate { it.lap.number to it.lap.startMicros }
-        fun trace(index: Int): LapTrace? = laps.getOrNull(index)
-            ?.let { sameLap(sessionMicros(origin, it.startTelemetryTime), starts) }
-            ?.let { n -> traces.firstOrNull { it.lap.number == n } }
-        val a = trace(fastest)
-        val b = trace(otherIndex)
-        val source = LapVideoSource.of(VideoTimeline.from(data.events, indexed), dir, present)
+        val analysis = analysis
+        val laps = reviewLapsOf(data, review.track)
+        val a = analysis?.let { laps?.of(it, aIndex) }
+        val b = analysis?.let { laps?.of(it, bIndex) }
+        val source = videoOf(data, indexed, dir, present)
         return if (a != null && b != null) LapVideoReview(VideoLap(a, source), VideoLap(b, source)) else null
     }
+
+    /**
+     * Every counted pass through corner [cornerId] (FBBD-93, FBBD-153), with its traces and its
+     * clip of the session's video (as [videoReview] reads it), as Android's Corner laps screen; null
+     * without a counted lap.
+     */
+    fun everyPass(
+        cornerId: String,
+        indexed: List<VideoClip>,
+        dir: String,
+        present: (String) -> Boolean,
+    ): CornerLapsUi? = analysis?.let {
+        everyPassOf(it, session, cornerId, reviewLapsOf(data, review.track), videoOf(data, indexed, dir, present))
+    }
+
+    /** Where the lap review of two passes through corner [cornerId] starts, as a share of the lap. */
+    fun reviewStart(cornerId: String): Double? = analysis?.let { cornerReviewStart(it, cornerId) }
 
     /**
      * This session against the [earlier] sessions at its track (newest first), as Android's summary

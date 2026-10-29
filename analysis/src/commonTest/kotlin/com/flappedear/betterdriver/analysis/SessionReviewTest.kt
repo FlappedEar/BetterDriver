@@ -142,6 +142,30 @@ class SessionReviewTest {
     }
 
     @Test
+    fun `every pass through a corner has its traces and clip and opens two laps on video as on Android`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val clips = indexedClips(
+            """{"version":1,"clips":[{"fileName":"p.mp4","kind":"PHONE","sourceId":"phone","sessionOffsetUs":0}]}""",
+        )
+        val corner = checkNotNull(reviewed.defaultScreen()).corners.first().id
+        val ui = checkNotNull(reviewed.everyPass(corner, clips, "v") { it == "v/p.mp4" })
+        assertEquals(corner, ui.cornerId)
+        assertTrue(ui.rows.size > 1)
+        assertTrue(ui.rows.all { it.reviewable })
+        assertTrue(ui.rows.first().best)
+        assertEquals("v/p.mp4", ui.rows.first().video?.path)
+        assertTrue(checkNotNull(ui.traces).passes.isNotEmpty())
+        // Without the file the passes are still listed, with no video.
+        assertTrue(checkNotNull(reviewed.everyPass(corner, clips, "v") { false }).rows.none { it.video != null })
+        // Two ticked passes open in the lap review, the faster through the corner first, cued before it.
+        val (a, b) = ui.rows.take(2).map { it.lapIndex }
+        val video = checkNotNull(reviewed.lapsOnVideo(a, b, clips, "v") { it == "v/p.mp4" })
+        assertEquals(reviewed.review.laps[a].seconds, video.a.timeMillis / 1000.0, 0.01)
+        assertEquals(reviewed.review.laps[b].seconds, video.b.timeMillis / 1000.0, 0.01)
+        assertTrue(checkNotNull(reviewed.reviewStart(corner)) in 0.0..1.0)
+    }
+
+    @Test
     fun `a session away from every saved track has no laps`() {
         val review = reviewOf(demo(), emptyList())
         assertNull(review.track)

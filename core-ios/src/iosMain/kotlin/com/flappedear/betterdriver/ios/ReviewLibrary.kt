@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.coach.card
 import com.flappedear.betterdriver.coach.notSaid
 import com.flappedear.betterdriver.coach.rememberCueCounts
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
@@ -161,10 +162,32 @@ class ReviewLibrary(base: String) {
      * still compare.
      */
     fun videoReview(reviewed: ReviewedSession, id: String, otherIndex: Int): LapVideoReview? {
-        val dir = "${store.dir(id)}/${VideoFiles.DIR}"
-        val index = readSmall("$dir/$ClipIndexFile")?.let(::indexedClips).orEmpty()
-        return reviewed.videoReview(otherIndex, index, dir) { NSFileManager.defaultManager.fileExistsAtPath(it) }
+        val dir = videoDir(id)
+        return reviewed.videoReview(otherIndex, clipIndex(dir), dir, ::fileExists)
     }
+
+    /**
+     * Every counted pass through corner [cornerId] of [reviewed] (session [id]) with its traces and
+     * its clip of the session's video, as Android's Corner laps screen (FBBD-93, FBBD-153); null
+     * without a counted lap. Off the main thread.
+     */
+    fun everyPass(reviewed: ReviewedSession, id: String, cornerId: String): CornerLapsUi? {
+        val dir = videoDir(id)
+        return reviewed.everyPass(cornerId, clipIndex(dir), dir, ::fileExists)
+    }
+
+    /**
+     * Timed laps [aIndex] against [bIndex] of [reviewed] (session [id]) on video, as Android opens two
+     * passes of a corner in the lap review; null when the review does not have both laps.
+     */
+    fun lapsOnVideo(reviewed: ReviewedSession, id: String, aIndex: Int, bIndex: Int): LapVideoReview? {
+        val dir = videoDir(id)
+        return reviewed.lapsOnVideo(aIndex, bIndex, clipIndex(dir), dir, ::fileExists)
+    }
+
+    private fun videoDir(id: String) = "${store.dir(id)}/${VideoFiles.DIR}"
+
+    private fun clipIndex(dir: String) = readSmall("$dir/$ClipIndexFile")?.let(::indexedClips).orEmpty()
 
     /** [value] with two decimals, as Android's screens write seconds. */
     fun twoDecimals(value: Double): String = fixed(value, 2)
@@ -330,6 +353,8 @@ private const val MillisPerSecond = 1000.0
 
 /** The session's clip index in its video folder (Android's VideoIndex). */
 private const val ClipIndexFile = "clips.json"
+
+private fun fileExists(path: String): Boolean = NSFileManager.defaultManager.fileExistsAtPath(path)
 
 private fun readSmall(path: String): String? = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 

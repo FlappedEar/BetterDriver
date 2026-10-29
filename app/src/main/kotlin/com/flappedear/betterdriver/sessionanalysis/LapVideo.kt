@@ -6,6 +6,7 @@ import com.flappedear.betterdriver.analysis.corners.cornerClip
 import com.flappedear.betterdriver.analysis.corners.cornerTraces
 import com.flappedear.betterdriver.analysis.corners.sameLap
 import com.flappedear.betterdriver.analysis.corners.sessionMicros
+import com.flappedear.betterdriver.analysis.review.cornerReviewStart
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.CornerVideoUi
@@ -109,15 +110,6 @@ internal fun cornerReviewRoute(
     val ra = reviewLap(analysis, lapVideo, a)
     val rb = reviewLap(analysis, lapVideo, b)
     if (ra == null || rb == null) return null
-    val length = analysis.axis?.lengthMeters
-    val entry = analysis.segments?.segments?.firstOrNull { it.id == cornerId }?.startProgressMeters
-    val at = if (length != null && length > 0.0 && entry != null) {
-        (entry - ReviewApproachMeters).coerceIn(0.0, length) / length
-    } else {
-        null
-    }
+    val at = cornerReviewStart(analysis, cornerId)
     return Routes.review(LapKey(sessionId, ra).encode(), LapKey(sessionId, rb).encode(), at)
 }
-
-/** The review starts this far before the corner entry. */
-private const val ReviewApproachMeters = 150.0

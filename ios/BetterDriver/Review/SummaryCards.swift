@@ -69,6 +69,10 @@ private struct SummaryFocusPrimary: View {
     let compare: (Int) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) { focus }
+    }
+
+    @ViewBuilder private var focus: some View {
         Button { row.compareIndex.map { compare($0.intValue) } } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .bottom) {
@@ -98,6 +102,8 @@ private struct SummaryFocusPrimary: View {
         .buttonStyle(.plain)
         .disabled(row.compareIndex == nil)
         .accessibilityIdentifier("nextSessionPrimary")
+        // A focus corner offers every pass through it (FBBD-93), as Android's focus; a straight does not.
+        EveryPassButton(cornerId: row.cornerId).frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
@@ -107,6 +113,10 @@ private struct SummaryFocusSecondary: View {
     let compare: (Int) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) { focus }
+    }
+
+    @ViewBuilder private var focus: some View {
         Button { row.compareIndex.map { compare($0.intValue) } } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
@@ -126,6 +136,7 @@ private struct SummaryFocusSecondary: View {
         }
         .buttonStyle(.plain)
         .disabled(row.compareIndex == nil)
+        EveryPassButton(cornerId: row.cornerId).frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
