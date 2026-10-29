@@ -34,6 +34,27 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    /// Starts correction [edit] of the corners (FBBD-366) and stores it; nothing when it does not apply.
+    func correct(_ edit: SegmentEdit?) {
+        guard let edit else { return }
+        var started: SegmentEdit?
+        act { started = $0.corners.startCorrection(edit: edit) }
+        store(started)
+    }
+
+    /// Stores correction [edit], already started, made to the corners shown; then shows them as stored.
+    func store(_ edit: SegmentEdit?) {
+        guard let edit, let expected = editor.corners.identity else { return }
+        let id = editor.track.id
+        Task.detached {
+            let result = TracksModel.library.correct(id: id, expected: expected, edit: edit)
+            await MainActor.run {
+                self.act { $0.corners.correctionStored(stored: result.track?.identity, applied: result.applied) }
+                NotificationCenter.default.post(name: .tracksChanged, object: nil)
+            }
+        }
+    }
+
     /// Stores the track; [done] gets false when it could not be written.
     func save(done: @escaping (Bool) -> Void) {
         let sent = editor.track
@@ -164,6 +185,8 @@ struct TrackEditorView: View {
     private func back() {
         if editor.selected != nil {
             model.act { $0.cancel() }
+        } else if editor.corners.segmentId != nil {
+            model.act { $0.corners.select(id: nil) }
         } else if editor.changed {
             leaving = true
         } else {
@@ -201,6 +224,11 @@ struct TrackEditorView: View {
                 Button("Done") { model.act { $0.done() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(editor.selectedLine == nil)
+            } else if editor.corners.segmentId != nil {
+                Button("Done") { model.act { $0.corners.select(id: nil) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(editor.corners.correcting)
+                    .accessibilityIdentifier("segmentDone")
             } else {
                 if editor.isStored {
                     Button("Delete") { deleting = true }.foregroundStyle(TrackColors.loss)
@@ -265,8 +293,11 @@ struct TrackEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             if editor.selected != nil {
                 placingControls
+            } else if editor.corners.segmentId != nil && editor.corners.correctable {
+                SegmentControls(model: model)
             } else {
                 lineList
+                CornerList(model: model)
             }
         }
     }
@@ -355,7 +386,7 @@ struct TrackEditorView: View {
 }
 
 /// A filter chip, as Material's FilterChip on Android.
-private struct Chip: View {
+struct Chip: View {
     let label: String
     let on: Bool
     var enabled = true

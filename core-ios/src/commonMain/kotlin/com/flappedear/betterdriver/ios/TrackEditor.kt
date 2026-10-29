@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.timing.edit.withLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.timeSession
+import com.flappedear.betterdriver.timing.track.CornerCorrector
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackKind
 import com.flappedear.betterdriver.timing.track.TrackLine
@@ -38,7 +39,9 @@ data class EditorLine(
  * drag its ends ([moveEnd]), then [done]. Nothing is stored until the caller saves [track]; [changed]
  * says whether there is anything to save. The views read it again after each call.
  *
- * Not here yet: the corrections of the track's corners (FBBD-179), which the Android editor offers.
+ * The track's corners and straights are corrected in [corners] (FBBD-179, FBBD-366): a tap on the
+ * map while no line is placed picks the one there. A correction is not part of [track]: the views
+ * store each one as it is made, so it never waits for Save.
  */
 @Suppress("TooManyFunctions") // One function per editor action.
 class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Track? = initial) {
@@ -55,6 +58,9 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
         private set
 
     private var saved: Track? = stored
+
+    /** The track's corners and straights as stored, to correct once the track is saved. */
+    val corners = CornerCorrector(stored?.identity ?: initial.identity, correctable = stored != null)
 
     /** A saved track: one never saved has nothing to delete. */
     val isStored: Boolean get() = saved != null
@@ -79,8 +85,8 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
     /** The selected line's current position, or null if it is not placed yet. */
     val selectedLine: TrackLine? get() = selected?.let { track.line(it) }
 
-    /** What the bar says: the line being placed, else the track's name. */
-    val title: String get() = selected?.label(pointToPoint) ?: track.displayName
+    /** What the bar says: the line being placed, the corner being corrected, else the track's name. */
+    val title: String get() = selected?.label(pointToPoint) ?: corners.selectedSegment?.name ?: track.displayName
 
     /** Every line of the track's kind, in the editor's order. */
     fun lines(): List<EditorLine> = track.lineRefs().mapIndexed { i, ref ->
@@ -103,6 +109,7 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
         beforePlacing = track
         selected = ref
         firstTap = null
+        corners.select(null)
     }
 
     /** Starts placing a new sector line, after the existing ones. */
@@ -113,8 +120,8 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
     val canAddSector: Boolean get() = track.sectorLines.size < Track.MaxSectorLines
 
     fun onTap(lat: Double, lon: Double) {
-        val ref = selected ?: return
         val at = GeoPoint(lat, lon)
+        val ref = selected ?: return corners.selectAt(at)
         when (method) {
             PlaceMethod.FromLap -> path?.lineAt(at)?.let { track = track.withLine(ref, it) }
             PlaceMethod.TwoTaps -> {
@@ -194,6 +201,7 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
     fun saved(sent: Track, stored: Track) {
         if (track == sent) track = stored
         saved = stored
+        corners.saved(stored.identity)
     }
 
     /** The hint over the map while a line is placed (as Android's PlacingHint); null otherwise. */
