@@ -408,3 +408,11 @@ extension ReviewBridge {
         #endif
     }
 }
+
+extension ReviewBridge {
+    /// [summary]'s session against the earlier sessions at its track, as Android's summary card
+    /// (FBBD-122, FBBD-175); nil when it is at no track. Reads up to 60 sessions: never on the main thread.
+    static func progress(_ summary: SessionSummary) -> SessionProgress? {
+        library.progress(reviewed: summary.reviewed, id: summary.id)
+    }
+}

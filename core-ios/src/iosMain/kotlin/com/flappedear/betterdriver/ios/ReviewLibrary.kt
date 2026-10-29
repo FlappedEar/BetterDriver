@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.coach.CueReview
 import com.flappedear.betterdriver.coach.card
 import com.flappedear.betterdriver.coach.notSaid
 import com.flappedear.betterdriver.coach.rememberCueCounts
+import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
@@ -65,6 +66,9 @@ class ReviewLibrary(base: String) {
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
     private val cueCountsFile = "$base/coach/cues.txt"
     private val cueCountLock = NSLock()
+
+    /** The progression at each track (FBBD-181), its sessions' records kept while the app runs. */
+    val progressions = TrackProgressions(store, trackFiles)
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
     fun sessions(): List<StoredSession> = store.list().filter { it.state != SessionState.RECORDING }
@@ -131,6 +135,19 @@ class ReviewLibrary(base: String) {
                 }
             }
             .take(MaxLineSessions)
+
+    /**
+     * Session [id], reviewed as [reviewed], against the earlier sessions at its track, as Android's
+     * summary card shows it (FBBD-122, FBBD-175); null when it is at no track or cannot be read.
+     * Reads up to 60 sessions, so never on the main thread.
+     */
+    @Suppress("TooGenericExceptionCaught") // Swift cannot catch a Kotlin exception; it must not cross.
+    fun progress(reviewed: ReviewedSession, id: String): SessionProgress? = try {
+        val start = store.read(id, samples = false).info.startUtcMillis
+        sessionProgress(store, reviewed, id, start, tracks(), ::sessionLabel)
+    } catch (_: Exception) {
+        null
+    }
 
     /**
      * The track day of sessions [ids] (FBBD-315), as Android's track day page reads it; kept as the
