@@ -12,9 +12,10 @@ test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-10}
 # When the one-minute trace starts, in s after the drive phase starts (FBBD-266); none when unset:
 # tracing slows the frames it watches.
-TRACE_AFTER_S=${TRACE_AFTER_S:-}
-# EXPERIMENT (FBBD-266): the app compiled ahead of time before the drive, against JIT warm-up.
-COMPILE=${COMPILE:-speed}
+TRACE_AFTER_S=${TRACE_AFTER_S:-3}
+# The app compiled ahead of time before the drive (cmd package compile -m), when set. A debuggable
+# build stays at verify, so the debug APK runs JIT-only either way (FBBD-266).
+COMPILE=${COMPILE:-}
 language=${LANGUAGE:-Polish}
 out=build/replay-drive
 mkdir -p "$out"

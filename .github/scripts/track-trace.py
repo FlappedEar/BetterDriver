@@ -135,7 +135,8 @@ def report(tp):
         out.append(f"| {name} | {r.rel} | {r.n} | {r.total / len(picked) / MS:.2f} ms | {r.worst / MS:.2f} ms |")
     out.append("")
 
-    # Who had the CPUs while the UI thread waited for one in those frames.
+    # Who had the CPUs while the UI thread waited for one in those frames (the 40 slowest: the join is slow).
+    ids = ",".join(str(i) for i in sorted(picked, key=lambda i: -next(f.dur for f in all_frames if f.id == i))[:40])
     waits = rows(tp, f"""
         with f as (select id, ts, dur from slice where id in ({ids})),
         w as (select max(st.ts, f.ts) a, min(st.ts + st.dur, f.ts + f.dur) b from f
