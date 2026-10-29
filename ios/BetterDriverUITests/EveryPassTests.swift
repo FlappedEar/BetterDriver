@@ -37,7 +37,8 @@ final class EveryPassTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "cornerTraces").firstMatch.exists, "no traces")
         keep("Every pass")
         // Tick the two fastest passes and compare them in the lap review.
-        let passes = app.buttons.matching(identifier: "passRow")
+        // Each pass is a button: by its identifier, or by its "Lap N" label should a container's win.
+        let passes = app.buttons.matching(NSPredicate(format: "identifier == 'passRow' OR label BEGINSWITH 'Lap '"))
         XCTAssertTrue(passes.element(boundBy: 1).waitForExistence(timeout: 10), "fewer than two passes")
         passes.element(boundBy: 0).tap()
         passes.element(boundBy: 1).tap()

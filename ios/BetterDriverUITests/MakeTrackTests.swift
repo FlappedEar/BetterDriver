@@ -41,7 +41,7 @@ final class MakeTrackTests: XCTestCase {
         let saved = NSPredicate(format: "isEnabled == false")
         expectation(for: saved, evaluatedWith: save)
         waitForExpectations(timeout: 30)
-        app.buttons["Back"].firstMatch.tap()
+        app.buttons["editorBack"].firstMatch.tap()
         // Timed with the new track: the summary's lap times.
         let best = app.staticTexts["BEST ACTUAL LAP"].firstMatch
         var timed = false

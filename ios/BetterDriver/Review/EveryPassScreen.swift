@@ -157,7 +157,6 @@ struct EveryPassScreen: View {
                 }
                 Dim("Tick two laps to compare them in the lap review.")
             }
-            .accessibilityIdentifier("everyPassLaps")
         }
     }
 

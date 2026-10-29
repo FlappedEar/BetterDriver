@@ -220,6 +220,7 @@ struct TrackEditorView: View {
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Back")
+            .accessibilityIdentifier("editorBack")
             Text(editor.title)
                 .font(.title3.weight(.semibold))
                 .lineLimit(1)

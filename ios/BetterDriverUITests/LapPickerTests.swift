@@ -30,7 +30,7 @@ final class LapPickerTests: XCTestCase {
         // Every session is replayed into laps off the main thread: a busy CI simulator takes a while.
         XCTAssertTrue(laps.firstMatch.waitForExistence(timeout: 180), "no laps to pick")
         // Silesia Ring was driven last, so it shows first; Jastrząb has the two sessions.
-        let jastrzab = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Jastrz'")).firstMatch
+        let jastrzab = app.buttons.matching(NSPredicate(format: "label CONTAINS 'Jastrz'")).firstMatch
         XCTAssertTrue(jastrzab.waitForExistence(timeout: 10), "no track chips")
         jastrzab.tap()
         XCTAssertTrue(laps.element(boundBy: 2).waitForExistence(timeout: 10), "no Jastrząb laps")
