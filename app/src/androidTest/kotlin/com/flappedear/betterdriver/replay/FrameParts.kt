@@ -52,7 +52,14 @@ class FrameParts {
     fun text(): String {
         val sorted = ui.sorted()
         val p95 = if (sorted.isEmpty()) 0.0 else sorted[((sorted.size - 1) * P95).toInt()] / NanosPerMs
-        return String.format(Locale.ROOT, "frames=%d ui_p95_ms=%.1f | all: %s | ui>=16ms: %s", sorted.size, p95, all, slow)
+        return String.format(
+            Locale.ROOT,
+            "frames=%d ui_p95_ms=%.1f | all: %s | ui>=16ms: %s",
+            sorted.size,
+            p95,
+            all,
+            slow,
+        )
     }
 
     private class Sums {
@@ -65,7 +72,8 @@ class FrameParts {
         }
 
         override fun toString(): String = "n=$frames " + Parts.indices.joinToString(" ") { i ->
-            String.format(Locale.ROOT, "%s=%.2f", Parts[i].first, if (frames == 0) 0.0 else nanos[i] / frames / NanosPerMs)
+            val mean = if (frames == 0) 0.0 else nanos[i] / frames / NanosPerMs
+            String.format(Locale.ROOT, "%s=%.2f", Parts[i].first, mean)
         }
     }
 
