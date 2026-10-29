@@ -29,7 +29,6 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.flappedear.betterdriver.analysis.map.GgSource
 import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -249,14 +248,6 @@ private fun GgCard(ui: MapUi, cursor: MapPoint?, modifier: Modifier) {
         )
         Dim(ggSourceNote(gg.source))
     }
-}
-
-/** Where a G-G diagram's readings come from, and how to read it. */
-internal fun ggSourceNote(source: GgSource) = when (source) {
-    GgSource.Accelerometer -> "From the RaceBox's accelerometer, or the phone's when the RaceBox's did not match " +
-        "the GPS, its mounting and tilt corrected against GPS. Left turns on the left; rings every 0.5 g."
-    GgSource.Gps -> "Worked out from GPS speed and heading, smoothed: neither the RaceBox's nor the phone's " +
-        "accelerometer matched the GPS. Left turns on the left; rings every 0.5 g."
 }
 
 @Composable

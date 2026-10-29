@@ -14,14 +14,21 @@ import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.linePlan
 import com.flappedear.betterdriver.analysis.map.DriveMap
 import com.flappedear.betterdriver.analysis.map.driveMap
+import com.flappedear.betterdriver.analysis.map.GgTrace
+import com.flappedear.betterdriver.analysis.map.sessionGg
+import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
+import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.lineUi
 import com.flappedear.betterdriver.feature.analysis.withCar
+import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
@@ -61,6 +68,21 @@ fun sessionPositions(data: SessionData): Sequence<GeoPoint> = sessionFixes(data)
 /** The session's fixes in time order. */
 fun sessionFixes(data: SessionData): List<Fix> =
     data.sampleSets.sortedBy { it.tMicros }.mapNotNull { it.toFix() }
+
+/**
+ * What the summary shows of the whole session, laps or not, as Android's analysis loads it: the
+ * quickest acceleration runs (FBBD-154) and the G-G diagram of the whole session, each null without.
+ * [drive] is the whole drive on the map with its speed and figures when the session has no timed lap
+ * (FBBD-342); null with laps or without positions.
+ */
+data class WholeSession(val acceleration: AccelerationUi?, val gForces: GgTrace?, val drive: DriveMap? = null)
+
+/** The heart rate strap a session names ("address=<address> name=<name>"), or null. */
+fun heartRateStrap(events: List<RecorderEvent>): String? =
+    events.firstOrNull { it.kind == HeartRateLogIds.DEVICE }?.text?.substringAfter("name=", "")?.ifEmpty { null }
+
+private fun wholeSession(session: TelemetrySession, drive: DriveMap?) =
+    WholeSession(accelerationUi(findAccelerationRuns(session)), sessionGg(session), drive)
 
 /** One timed lap as the review lists it. */
 data class ReviewLap(
@@ -122,8 +144,12 @@ class ReviewedSession internal constructor(
     private val session: TelemetrySession?,
     private val data: SessionData? = null,
     val linePlan: LinePlan? = null,
-    val drive: DriveMap? = null,
+    /** The whole session's acceleration runs, G-forces and, without laps, its drive. */
+    val whole: WholeSession = WholeSession(null, null),
 ) {
+    /** The whole drive on the map when the session has no timed lap (FBBD-342); null with laps. */
+    val drive: DriveMap? get() = whole.drive
+
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)
 
@@ -145,7 +171,12 @@ class ReviewedSession internal constructor(
         } else {
             null
         }
-        return analysisUi("", analysis, comparison)?.let { withCar(it, analysis, session, null) }
+        // As Android's analysis screen: the strap's heart rate, then the whole session's runs and G-forces.
+        val strap = data?.let { heartRateStrap(it.events) }
+        return analysisUi("", analysis, comparison)
+            ?.let { withHeartRate(it, analysis, session, strap) }
+            ?.let { withCar(it, analysis, session, strap) }
+            ?.copy(acceleration = whole.acceleration, gForces = whole.gForces)
     }
 
     /**
@@ -222,10 +253,13 @@ fun reviewSession(
     others: (Track) -> Sequence<LineSession> = { emptySequence() },
 ): ReviewedSession {
     val track = trackFor(data, tracks)
-        ?: return ReviewedSession(
+    if (track == null) {
+        val untimed = telemetrySessionOf(data, null)
+        return ReviewedSession(
             SessionReview(null, emptyList(), null, null), null, null,
-            drive = driveMap(telemetrySessionOf(data, null)),
+            whole = wholeSession(untimed, driveMap(untimed)),
         )
+    }
     val session = telemetrySessionOf(data, track)
     val analysis = analyzeSession(session, identity = track.identity)
     val fastest = analysis.laps.fastestLapIndex
@@ -247,5 +281,5 @@ fun reviewSession(
     )
     // A session at the track with no complete lap is still seen on the map (FBBD-342).
     val drive = if (laps.isEmpty()) driveMap(session) else null
-    return ReviewedSession(review, analysis, session, data, plan, drive)
+    return ReviewedSession(review, analysis, session, data, plan, wholeSession(session, drive))
 }

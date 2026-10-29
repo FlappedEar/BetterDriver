@@ -23,7 +23,6 @@ import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.NumberText
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
-import java.util.Locale
 
 /** The next-session card, for tests. */
 const val NextSessionTag = "next-session"
@@ -89,13 +88,8 @@ internal fun Focus(
 /** "Where to find time ≈ 0.41 s ›": the line analysis's total, one tap from the Map tab view (UI-190 B). */
 @Composable
 private fun WhereToFindTimeLink(totalSeconds: Double, onClick: () -> Unit) {
-    val text = if (totalSeconds > 0.0) {
-        "Where to find time ≈ ${focusSeconds(totalSeconds)} ›"
-    } else {
-        "Where to find time ›"
-    }
     Text(
-        text,
+        whereToFindTimeLink(totalSeconds),
         Modifier
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)
@@ -195,6 +189,3 @@ private fun Secondary(row: FocusRow, onCompare: (Int) -> Unit) {
         if (row.confidence.doubtful) ConfidenceNote(row.confidence)
     }
 }
-
-/** "0.18 s". */
-private fun focusSeconds(value: Double) = String.format(Locale.ROOT, "%.2f s", value)

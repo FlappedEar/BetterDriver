@@ -3,7 +3,13 @@ package com.flappedear.betterdriver.analysis
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewOf
 import com.flappedear.betterdriver.analysis.review.reviewSession
+import com.flappedear.betterdriver.analysis.map.GgSource
+import com.flappedear.betterdriver.feature.analysis.focusSeconds
+import com.flappedear.betterdriver.feature.analysis.ggRingText
+import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.feature.analysis.lineUi
+import com.flappedear.betterdriver.feature.analysis.timeGoesHeading
+import com.flappedear.betterdriver.feature.analysis.whereToFindTimeLink
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -106,6 +112,33 @@ class SessionReviewTest {
         assertNull(none.a.videoAt(0))
         assertEquals(video.traces.lengthMicros, none.traces.lengthMicros)
         assertEquals(emptyList(), indexedClips("not json"))
+    }
+
+    @Test
+    fun `the summary has what to work on next and where time goes and the whole session's G-forces as on Android`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val screen = checkNotNull(reviewed.defaultScreen())
+        // What to work on next (FBBD-20): one primary corner first, at most two more.
+        assertTrue(screen.focus.isNotEmpty() && screen.focus.size <= 3)
+        assertTrue(screen.focus.first().primary)
+        assertTrue(screen.gains.isNotEmpty())
+        assertEquals("Best actual lap 18 against the best of each corner", timeGoesHeading(screen))
+        // The whole session's G-forces, here from GPS speed and heading: the demo has no accelerometer.
+        val g = checkNotNull(reviewed.whole.gForces)
+        assertEquals(g, screen.gForces)
+        assertEquals(GgSource.Gps, g.source)
+        assertEquals(reviewed.whole.acceleration, screen.acceleration)
+        // A session away from every saved track still has its G-forces.
+        assertEquals(g.points.size, checkNotNull(reviewSession(demo(), emptyList()).whole.gForces).points.size)
+    }
+
+    @Test
+    fun `the summary's words are Android's`() {
+        assertEquals("laps 2, 4 and 7", lapsText(listOf(2, 4, 7)))
+        assertEquals("0.18 s", focusSeconds(0.181))
+        assertEquals("Where to find time ≈ 0.41 s ›", whereToFindTimeLink(0.41))
+        assertEquals("Where to find time ›", whereToFindTimeLink(0.0))
+        assertEquals("1.5 g", ggRingText(1.5))
     }
 
     @Test
