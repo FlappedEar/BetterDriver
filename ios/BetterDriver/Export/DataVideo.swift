@@ -25,10 +25,11 @@ enum DataVideoMaker {
     }
 
     /// The video of [part] (0: all of it) with the overlay: an asset to play or save, and its video composition.
+    /// A lap starts [handleSeconds] before its line and ends as long after (FBBD-346, as FlappedEar Overlays).
     static func make(
-        _ session: DataVideoSession, part: Int32, durations: [String: KotlinLong]
+        _ session: DataVideoSession, part: Int32, durations: [String: KotlinLong], handleSeconds: Int32 = 0
     ) async throws -> (AVComposition, AVVideoComposition) {
-        let cuts = session.cuts(part: part, durations: durations)
+        let cuts = session.cuts(part: part, durations: durations, handleSeconds: handleSeconds)
         let composition = AVMutableComposition()
         guard !cuts.isEmpty,
               let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
@@ -52,7 +53,7 @@ enum DataVideoMaker {
             }
         }
         if audio.segments.isEmpty { composition.removeTrack(audio) }
-        let painter = DataOverlayPainter(session: session, cuts: cuts)
+        let painter = DataOverlayPainter(session: session, cuts: cuts, part: part)
         let overlay = AVMutableVideoComposition(asset: composition) { request in
             let source = request.sourceImage
             let at = DataVideoMaker.micros(request.compositionTime)
@@ -128,12 +129,14 @@ enum DataVideoSaver {
 final class DataOverlayPainter: @unchecked Sendable {
     private let session: DataVideoSession
     private let cuts: [DataVideoCut]
+    private let part: Int32
     private let lock = NSLock()
     private var shaped: (size: CGSize, band: OverlayBand, track: CGPath)?
 
-    init(session: DataVideoSession, cuts: [DataVideoCut]) {
+    init(session: DataVideoSession, cuts: [DataVideoCut], part: Int32) {
         self.session = session
         self.cuts = cuts
+        self.part = part
         _ = TrackFonts.register
     }
 
@@ -142,7 +145,7 @@ final class DataOverlayPainter: @unchecked Sendable {
         guard size.width >= 1, size.height >= 1,
               let cut = cuts.last(where: { $0.outputStartMicros <= outputMicros }) ?? cuts.first else { return nil }
         let sessionMicros = cut.sessionStartMicros + (outputMicros - cut.outputStartMicros)
-        let text = session.text(sessionMicros: sessionMicros)
+        let text = session.text(sessionMicros: sessionMicros, part: part)
         let (band, track) = layout(size)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
