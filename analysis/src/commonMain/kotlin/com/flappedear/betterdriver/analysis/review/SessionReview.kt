@@ -4,7 +4,9 @@ import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
+import com.flappedear.betterdriver.analysis.segments.FlaggableCorner
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
+import com.flappedear.betterdriver.analysis.segments.flaggableCorners as cornersToFlag
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
@@ -41,6 +43,7 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackRevision
 
 import com.flappedear.betterdriver.timing.track.trackAlong
 
@@ -152,6 +155,12 @@ class ReviewedSession internal constructor(
 ) {
     /** The whole drive on the map when the session has no timed lap (FBBD-342); null with laps. */
     val drive: DriveMap? get() = whole.drive
+
+    /** The corners the driver can flag for the spoken coach (FBBD-148, FBBD-363); none without laps. */
+    val flaggableCorners: List<FlaggableCorner> get() = analysis?.let(::cornersToFlag).orEmpty()
+
+    /** The track's corner identity when the analysis's corners are the track's (FBBD-172); else null. */
+    val identity: TrackRevision? get() = analysis?.let { a -> a.identity?.takeIf { a.identified } }
 
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)

@@ -21,6 +21,7 @@ import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.analysis.review.trackProposal as proposeFromSession
+import com.flappedear.betterdriver.coach.CoachPicksStore
 import com.flappedear.betterdriver.coach.CueCountsText
 import com.flappedear.betterdriver.coach.CueReview
 import com.flappedear.betterdriver.coach.card
@@ -76,6 +77,8 @@ class ReviewLibrary(base: String) {
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
     private val cueCountsFile = "$base/coach/cues.txt"
     private val cueCountLock = NSLock()
+    private val coachPicks = CoachPicksStore(coachPicksDir(base))
+    private val coachPickLock = NSLock()
 
     /** The progression at each track (FBBD-181), its sessions' records kept while the app runs. */
     val progressions = TrackProgressions(store, trackFiles)
@@ -201,6 +204,35 @@ class ReviewLibrary(base: String) {
     fun videoReview(reviewed: ReviewedSession, id: String, otherIndex: Int): LapVideoReview? {
         val dir = videoDir(id)
         return reviewed.videoReview(otherIndex, clipIndex(dir), dir, ::fileExists)
+    }
+
+    /**
+     * The corners of [reviewed] (session [id]) that carry Where time goes' coach flag and those flagged
+     * at its track (FBBD-363, Android's FBBD-148); none when the picks cannot be read. Off the main thread.
+     */
+    // Unreadable picks only leave the flags off.
+    @Suppress("TooGenericExceptionCaught")
+    fun coachFlags(reviewed: ReviewedSession, id: String): CoachFlags = try {
+        SessionCoachFlags(coachPicks, reviewed, id).flags()
+    } catch (_: Exception) {
+        CoachFlags.None
+    }
+
+    /**
+     * Flags or unflags corner [cornerId] of [reviewed] (session [id]) for the spoken coach's next
+     * session at its track, as Android's flag; the flags as stored after. Off the main thread.
+     */
+    // A pick that cannot be stored leaves the flags as they were.
+    @Suppress("TooGenericExceptionCaught")
+    fun toggleCoachFlag(reviewed: ReviewedSession, id: String, cornerId: String): CoachFlags {
+        coachPickLock.lock()
+        try {
+            return SessionCoachFlags(coachPicks, reviewed, id).toggle(cornerId)
+        } catch (_: Exception) {
+            return coachFlags(reviewed, id)
+        } finally {
+            coachPickLock.unlock()
+        }
     }
 
     /**
