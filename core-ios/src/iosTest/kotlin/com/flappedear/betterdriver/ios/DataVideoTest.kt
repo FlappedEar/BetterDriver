@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
 import kotlinx.cinterop.addressOf
@@ -75,13 +76,13 @@ class DataVideoTest {
         assertEquals("Whole session", parts[0].name)
         assertEquals("8 s of video", parts[0].note)
         assertTrue(parts[0].enabled)
-        val cuts = session.cuts(DataVideoSession.WholeVideo, durations)
+        val cuts = session.cuts(DataVideoSession.WholeVideo, durations, 6)
         assertEquals(1, cuts.size)
         assertEquals(session.paths[0], cuts[0].path)
         assertEquals(0L, cuts[0].fromMicros)
         assertEquals(8_000_000L, cuts[0].toMicros)
         assertEquals(4_000_000L, cuts[0].sessionStartMicros)
-        val text = session.text(6_000_000)
+        val text = session.text(6_000_000, DataVideoSession.WholeVideo)
         assertTrue(text.speed.all { it.isDigit() }, text.speed)
         assertEquals("LAP", text.lapCaption)
         assertEquals("—", text.lapValue)
@@ -114,6 +115,10 @@ class DataVideoTest {
         assertEquals(OverlayInk.Best, best.lapCaptionInk)
         assertEquals("LAP 3 · BEST", best.lapCaption)
         assertEquals("RUN 3", overlayText(OverlayFrame(null, lap, null, null), pointToPoint = true).lapCaption)
+        // A single-lap video after the line keeps the final time in the gain colour (FBBD-346).
+        val held = overlayText(OverlayFrame(null, lap.copy(phase = LapPhase.Finished), null, null), pointToPoint = false)
+        assertEquals(OverlayInk.Gain, held.lapValueInk)
+        assertEquals(OverlayInk.Text, text.lapValueInk)
         assertEquals("18 min of video", wholeVideoText(18 * 60_000_000L))
     }
 }

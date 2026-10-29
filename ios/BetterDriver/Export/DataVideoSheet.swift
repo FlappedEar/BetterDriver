@@ -4,7 +4,9 @@ import SwiftUI
 
 /// What Video with data shows (FBBD-152), as Android's sheet: the whole session or one lap, each lap
 /// with its time and the best lap chosen to start with; laps the camera missed cannot be chosen.
-/// Watch plays it here with the overlay; Save video writes the MP4 and hands it to Files.
+/// A lap starts a few seconds before its line and ends as long after (FBBD-346, FlappedEar Overlays'
+/// Handle: 5 to 8 s, 6 to start with). Watch plays it here with the overlay; Save video writes the MP4
+/// and hands it to Files.
 struct DataVideoSheet: View {
     let sessionId: String
     let title: String
@@ -15,6 +17,7 @@ struct DataVideoSheet: View {
     @State private var durations: [String: KotlinLong] = [:]
     @State private var parts: [DataVideoPart] = []
     @State private var picked: Int32?
+    @State private var handle: Int32 = 6
     @State private var failure: String?
     @State private var playing: DataVideoPlayback?
     @State private var progress: Double?
@@ -37,6 +40,7 @@ struct DataVideoSheet: View {
                     DimText(failure, color: TrackColors.loss)
                 } else {
                     list
+                    if let picked, picked != 0 { handleRow }
                 }
                 Spacer(minLength: 0)
                 if let progress {
@@ -119,6 +123,22 @@ struct DataVideoSheet: View {
         }
     }
 
+    /// Seconds of video before and after the lap, as Android's chips.
+    private var handleRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            DimText("Seconds before and after the lap")
+            HStack(spacing: 8) {
+                ForEach([Int32(5), 6, 7, 8], id: \.self) { s in
+                    Button("\(s) s") { handle = s }
+                        .buttonStyle(.bordered)
+                        .tint(handle == s ? Palette.accent : Palette.onSurfaceVariant)
+                        .accessibilityIdentifier("dataVideoHandle\(s)")
+                        .accessibilityAddTraits(handle == s ? .isSelected : [])
+                }
+            }
+        }
+    }
+
     private func load() async {
         do {
             guard let opened = try await DataVideoMaker.open(sessionId) else {
@@ -142,9 +162,12 @@ struct DataVideoSheet: View {
     private func watch() {
         guard let session, let picked else { return }
         let durations = self.durations
+        let handle = self.handle
         Task {
             do {
-                let (asset, overlay) = try await DataVideoMaker.make(session, part: picked, durations: durations)
+                let (asset, overlay) = try await DataVideoMaker.make(
+                    session, part: picked, durations: durations, handleSeconds: handle
+                )
                 playing = DataVideoPlayback(asset: asset, overlay: overlay, session: session, part: picked, durations: durations)
             } catch {
                 failure = "The video could not be opened: \(error.localizedDescription)"
@@ -165,10 +188,13 @@ struct DataVideoSheet: View {
     private func save() {
         guard let session, let picked else { return }
         let durations = self.durations
+        let handle = self.handle
         progress = 0
         job = Task {
             do {
-                let (asset, overlay) = try await DataVideoMaker.make(session, part: picked, durations: durations)
+                let (asset, overlay) = try await DataVideoMaker.make(
+                    session, part: picked, durations: durations, handleSeconds: handle
+                )
                 let url = try await DataVideoSaver.save(asset, overlay, name: session.fileName(part: picked)) { p in
                     Task { @MainActor in if progress != nil { progress = p } }
                 }

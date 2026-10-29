@@ -19,6 +19,7 @@ import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.OverlayData
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
+import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.MapFit
 import com.flappedear.betterdriver.timing.overlay.OverlayLayout
 import com.flappedear.betterdriver.timing.overlay.Px
@@ -62,7 +63,10 @@ class DataVideo(private val sessionsRoot: String, private val tracksRoot: String
         val laps = runCatching {
             trackFor(data, TrackLibrary(tracksRoot, sessionsRoot).list())?.let { replayLaps(id, sets, it) }
         }.getOrNull()
-        return DataVideoSession(id, OverlayData(sets, laps, measuredG(data)), laps, clips, dir)
+        val measured = measuredG(data)
+        // One lap's video shows that lap only (FBBD-346): its overlay data is made when the lap is picked.
+        val hotlap = { lap: Int -> OverlayData(sets, laps, measured, hotlap = lap) }
+        return DataVideoSession(id, OverlayData(sets, laps, measured), hotlap, laps, clips, dir)
     }
 
     private companion object {
@@ -107,11 +111,13 @@ class OverlayText(
 class DataVideoSession internal constructor(
     val sessionId: String,
     private val data: OverlayData,
+    private val hotlapData: (Int) -> OverlayData,
     private val laps: SessionLaps?,
     private val clips: List<VideoClip>,
     private val dir: String,
 ) {
     private val lock = NSLock()
+    private val hotlaps = HashMap<Int, OverlayData>()
 
     /** The laps are runs of a point-to-point track (FBBD-155). */
     val pointToPoint: Boolean = data.pointToPoint
@@ -127,12 +133,12 @@ class DataVideoSession internal constructor(
      * 1:42.37" over "Best lap", "Out lap", "No video"…). [durations]: microseconds by path.
      */
     fun parts(durations: Map<String, Long>): List<DataVideoPart> {
-        val whole = cuts(WholeVideo, durations).sumOf { it.toMicros - it.fromMicros }
+        val whole = cuts(WholeVideo, durations, 0).sumOf { it.toMicros - it.fromMicros }
         val best = laps?.best?.lap?.number
         val word = if (pointToPoint) "Run" else "Lap"
         val lapParts = laps?.laps.orEmpty().map { t ->
             val n = t.lap.number
-            val onVideo = cuts(n, durations).isNotEmpty()
+            val onVideo = cuts(n, durations, 0).isNotEmpty()
             val note = listOfNotNull(
                 when {
                     n == best -> "Best ${word.lowercase()}"
@@ -147,12 +153,17 @@ class DataVideoSession internal constructor(
         return listOf(DataVideoPart(WholeVideo, "Whole session", wholeVideoText(whole), whole > 0, false)) + lapParts
     }
 
-    /** The pieces that show [part] (0: all of the video), back to back. */
-    fun cuts(part: Int, durations: Map<String, Long>): List<DataVideoCut> {
+    /**
+     * The pieces that show [part] (0: all of the video), back to back; a lap from [handleSeconds] before
+     * its start to as long after its end, as far as there is video (FBBD-346, as FlappedEar Overlays).
+     */
+    fun cuts(part: Int, durations: Map<String, Long>, handleSeconds: Int): List<DataVideoCut> {
+        val handle = handleSeconds * MicrosPerSecondLong
         val range = if (part == WholeVideo) {
             Long.MIN_VALUE to Long.MAX_VALUE
         } else {
-            laps?.laps?.firstOrNull { it.lap.number == part }?.lap?.let { it.startMicros to it.endMicros }
+            laps?.laps?.firstOrNull { it.lap.number == part }?.lap
+                ?.let { it.startMicros - handle to it.endMicros + handle }
         } ?: return emptyList()
         val cuts: List<VideoCut> = videoCuts(clips, { durations[path(it)] }, range.first, range.second)
         return cuts.map {
@@ -160,11 +171,15 @@ class DataVideoSession internal constructor(
         }
     }
 
-    /** The overlay at session time [sessionMicros]. Any thread: the player draws frames on its own. */
-    fun text(sessionMicros: Long): OverlayText {
+    /**
+     * The overlay of [part] at session time [sessionMicros]: a lap shows that lap only, 0:00 before its
+     * line and its final time after it (FBBD-346). Any thread: the player draws frames on its own.
+     */
+    fun text(sessionMicros: Long, part: Int): OverlayText {
         lock.lock()
         val f = try {
-            data.at(sessionMicros)
+            val source = if (part == WholeVideo) data else hotlaps.getOrPut(part) { hotlapData(part) }
+            source.at(sessionMicros)
         } finally {
             lock.unlock()
         }
@@ -230,7 +245,12 @@ internal fun overlayText(f: OverlayFrame, pointToPoint: Boolean): OverlayText {
         lapCaption = lapCaption(lap, pointToPoint),
         lapCaptionInk = if (lap?.isBest == true) OverlayInk.Best else OverlayInk.Dim,
         lapValue = lap?.let { formatRunningTime(it.lapMicros / MicrosPerMilli) } ?: Dash,
-        lapValueInk = if (lap == null) OverlayInk.Dim else OverlayInk.Text,
+        // A single-lap video's lap after its line keeps its final time, in the gain colour (Overlays' hotlap).
+        lapValueInk = when {
+            lap == null -> OverlayInk.Dim
+            lap.phase == LapPhase.Finished -> OverlayInk.Gain
+            else -> OverlayInk.Text
+        },
         // Without laps (no saved track) the slot stays empty; on out and in laps it shows a dash.
         deltaValue = if (lap == null) null else seconds?.let(::formatDelta) ?: Dash,
         deltaInk = deltaInk(seconds),
