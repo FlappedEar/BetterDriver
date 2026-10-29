@@ -93,14 +93,15 @@ adb push .github/scripts/track-trace.cfg /data/misc/perfetto-configs/track.cfg >
 tracer=$!
 phase drive --no-restart $(( minutes * 60 + 300 ))
 kill "$tracer" 2>/dev/null || true
+# Home, as a phone put away, stops any drawing before the check.
+adb shell input keyevent KEYCODE_HOME || true
+sleep 5
+phase check --no-restart
+# The trace is read after the check, so its work on this machine does not slow the emulator's.
 timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
   && python3 -m pip install -q perfetto >/dev/null 2>&1 \
   && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
   || echo "No track screen trace (FBBD-266)."
 # The app window's frames split into their parts over the whole drive (ReplayDriveTest, FrameParts).
 grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
-# Home, as a phone put away, stops any drawing before the check.
-adb shell input keyevent KEYCODE_HOME || true
-sleep 5
-phase check --no-restart
 finish 0

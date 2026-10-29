@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.view.FrameMetrics
 import android.view.Window
+import com.flappedear.betterdriver.recorder.FrameBuckets
 import java.util.Locale
 
 /**
@@ -52,11 +53,18 @@ class FrameParts {
     fun text(): String {
         val sorted = ui.sorted()
         val p95 = if (sorted.isEmpty()) 0.0 else sorted[((sorted.size - 1) * P95).toInt()] / NanosPerMs
+        // As the drive check counts them: frames per bucket of FrameBuckets ms, then over the last.
+        val hist = IntArray(FrameBuckets.size + 1)
+        sorted.forEach { n ->
+            val b = FrameBuckets.indexOfFirst { n <= it * NanosPerMs }
+            hist[if (b < 0) FrameBuckets.size else b]++
+        }
         return String.format(
             Locale.ROOT,
-            "frames=%d ui_p95_ms=%.1f | all: %s | ui>=16ms: %s",
+            "frames=%d ui_p95_ms=%.1f hist=%s | all: %s | ui>=16ms: %s",
             sorted.size,
             p95,
+            hist.joinToString(","),
             all,
             slow,
         )
