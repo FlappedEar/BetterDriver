@@ -84,6 +84,22 @@ sleep 3
 # The drive, started, driven and stopped in one test: the app stays in front on the track screen, as
 # on Arek's phone. The test runner waits for the app's main thread to go idle before a test, which it
 # never does while the track screen draws every frame: a stop phase of its own waited 8 min there.
+# The emulator settles first (FBBD-266): restored from its snapshot, Play services, the keyboard and the
+# system server keep its CPUs busy for a minute or two, and the start-up's frames measured then were the
+# emulator's, not the app's. Up to 3 min, until the CPUs are under 25 % busy for 10 s.
+busy() {
+  adb shell 'head -1 /proc/stat; sleep 5; head -1 /proc/stat' < /dev/null 2>/dev/null | awk '
+    { idle = $5 + $6; total = 0; for (i = 2; i <= NF; i++) total += $i }
+    NR == 1 { i0 = idle; t0 = total }
+    NR == 2 { if (total > t0) printf "%d", 100 * (1 - (idle - i0) / (total - t0)); else print 100 }'
+}
+settled=0
+for _ in $(seq 18); do
+  b=$(busy)
+  if [ "${b:-100}" -lt 25 ]; then settled=$((settled + 1)); else settled=0; fi
+  [ "$settled" -ge 2 ] && break
+done
+echo "Emulator CPUs ${b:-?} % busy before the drive."
 echo "Replaying for $minutes min."
 # One minute of the drive traced (FBBD-266): where the track screen's frame time goes, from the UI
 # thread's state and slices and who held the CPUs (track-trace.py).

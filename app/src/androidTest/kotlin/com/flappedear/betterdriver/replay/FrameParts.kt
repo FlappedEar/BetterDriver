@@ -12,8 +12,8 @@ import java.util.Locale
  * The app window's frames split into their parts (FBBD-266), as Android measures them: the UI time
  * JankStats logs for the drive check (delay before the frame started, input, animation, layout,
  * draw, sync with the render thread) and the render thread's own. The line says which part makes a
- * slow frame slow, for every frame and for those of 16 ms or more. Follows the resumed activity:
- * the track screen turning to landscape makes a new one.
+ * slow frame slow, for every frame and for those of 16 ms or more. Follows the resumed activity,
+ * should Android make a new one.
  */
 class FrameParts {
     private val thread = HandlerThread("FrameParts").apply { start() }
