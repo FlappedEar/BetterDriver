@@ -26,10 +26,11 @@ enum DataVideoMaker {
     }
 
     /// The video of [part] (0: all of it) with the overlay: an asset to play or save, and its video composition.
+    /// A lap starts [handleSeconds] before its line and ends as long after (FBBD-346, as FlappedEar Overlays).
     static func make(
-        _ session: DataVideoSession, part: Int32, durations: [String: KotlinLong]
+        _ session: DataVideoSession, part: Int32, durations: [String: KotlinLong], handleSeconds: Int32 = 0
     ) async throws -> (AVComposition, AVVideoComposition) {
-        let cuts = session.cuts(part: part, durations: durations)
+        let cuts = session.cuts(part: part, durations: durations, handleSeconds: handleSeconds)
         let composition = AVMutableComposition()
         guard !cuts.isEmpty,
               let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
@@ -53,7 +54,7 @@ enum DataVideoMaker {
             }
         }
         if audio.segments.isEmpty { composition.removeTrack(audio) }
-        let painter = TechHudPainter(session: session, cuts: cuts)
+        let painter = TechHudPainter(session: session, cuts: cuts, part: part)
         let overlay = AVMutableVideoComposition(asset: composition) { request in
             let source = request.sourceImage
             let at = DataVideoMaker.micros(request.compositionTime)

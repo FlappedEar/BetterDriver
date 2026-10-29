@@ -9,13 +9,16 @@ import UIKit
 final class TechHudPainter: @unchecked Sendable {
     private let session: DataVideoSession
     private let cuts: [DataVideoCut]
+    private let part: Int32
     private let outline: [Xy]
     private let lock = NSLock()
     private var shaped: (size: CGSize, hud: HudGeometry)?
 
-    init(session: DataVideoSession, cuts: [DataVideoCut]) {
+    /// [part]: 0 for the whole video, else the lap whose video this is (FBBD-346).
+    init(session: DataVideoSession, cuts: [DataVideoCut], part: Int32) {
         self.session = session
         self.cuts = cuts
+        self.part = part
         outline = session.outline
         _ = TrackFonts.register
     }
@@ -26,7 +29,7 @@ final class TechHudPainter: @unchecked Sendable {
         guard size.width >= 1, size.height >= 1,
               let cut = cuts.last(where: { $0.outputStartMicros <= outputMicros }) ?? cuts.first else { return nil }
         let sessionMicros = cut.sessionStartMicros + (outputMicros - cut.outputStartMicros)
-        let moment = session.moment(sessionMicros: sessionMicros)
+        let moment = session.moment(sessionMicros: sessionMicros, part: part)
         let hud = geometry(size)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
