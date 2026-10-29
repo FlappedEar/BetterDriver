@@ -12,6 +12,9 @@ import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.OverlayData
+import com.flappedear.betterdriver.timing.overlay.lapDelta
+import com.flappedear.betterdriver.timing.overlay.lapTime
+import com.flappedear.betterdriver.timing.overlay.steeringText
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackLine

@@ -22,6 +22,8 @@ enum TrackFonts {
     private static let files = [
         "saira_semi_condensed_medium", "saira_semi_condensed_semibold", "saira_semi_condensed_bold",
         "barlow_regular", "barlow_medium", "barlow_semibold",
+        // FlappedEar Overlays' Tech HUD on the video with data (FBBD-347).
+        "chakra_petch_semibold", "chakra_petch_bold",
     ]
 
     /// Registers the bundled fonts once; a font that fails falls back to the system font.

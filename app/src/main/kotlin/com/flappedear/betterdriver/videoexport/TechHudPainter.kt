@@ -15,6 +15,7 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.overlay.Box
 import com.flappedear.betterdriver.timing.overlay.GForce
+import com.flappedear.betterdriver.timing.overlay.HudRowSpec
 import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayData
@@ -23,6 +24,9 @@ import com.flappedear.betterdriver.timing.overlay.OverlayLap
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
+import com.flappedear.betterdriver.timing.overlay.lapDelta
+import com.flappedear.betterdriver.timing.overlay.lapTime
+import com.flappedear.betterdriver.timing.overlay.steeringText
 import com.flappedear.betterdriver.timing.overlay.thin
 import java.util.Locale
 import kotlin.math.abs
@@ -31,7 +35,6 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
-import kotlin.math.roundToLong
 import kotlin.math.sin
 
 /**
@@ -89,9 +92,9 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
                 HudWidget.Tachometer -> tachometer(canvas, b, f)
                 HudWidget.Lap -> lap(canvas, b, s, f, optimal)
                 HudWidget.Pedals -> pedals(canvas, b, s, f)
-                HudWidget.Oil -> row(canvas, b, l.stack[w], Oil, f.car.oilC)
-                HudWidget.Gearbox -> row(canvas, b, l.stack[w], Atf, f.car.gearboxC)
-                HudWidget.Coolant -> row(canvas, b, l.stack[w], Coolant, f.car.coolantC)
+                HudWidget.Oil -> row(canvas, b, l.stack[w], HudRowSpec.Oil, f.car.oilC)
+                HudWidget.Gearbox -> row(canvas, b, l.stack[w], HudRowSpec.Atf, f.car.gearboxC)
+                HudWidget.Coolant -> row(canvas, b, l.stack[w], HudRowSpec.Coolant, f.car.coolantC)
                 HudWidget.Tyres -> tyres(canvas, b, s, f)
                 HudWidget.HeartRate -> heartRate(canvas, b, s, f)
                 HudWidget.GRadar -> radar(canvas, b, sessionMicros, f)
@@ -280,7 +283,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
     }
 
     // TechCustomValue.qml: label, range bar with the normal band, value turning red at the warning.
-    private fun row(c: Canvas, b: Box, stack: StackPosition?, spec: RowSpec, value: Double?) {
+    private fun row(c: Canvas, b: Box, stack: StackPosition?, spec: HudRowSpec, value: Double?) {
         val s = scale
         val position = stack ?: StackPosition.Single
         panel(c, b, s, position)
@@ -317,7 +320,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
             val barH = max(2f, h * 0.13f)
             val barTop = b.centerY - barH / 2
             val w = barRight - barLeft
-            fun at(v: Double) = ((v - spec.min) / (spec.max - spec.min)).coerceIn(0.0, 1.0).toFloat()
+            fun at(v: Double) = spec.fraction(v).toFloat()
             fill.color = withAlpha(White, 0.13f)
             c.drawRect(barLeft, barTop, barRight, barTop + barH, fill)
             fill.color = withAlpha(Green, 0.35f)
@@ -647,16 +650,6 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
     private fun centred(c: Canvas, text: String, cx: Float, cy: Float, paint: Paint) =
         textMiddle(c, text, cx - paint.measureText(text) / 2, cy, paint)
 
-    /** The OIL, ATF and COOLANT rows' ranges in the Tech HUD template, in °C. */
-    private class RowSpec(
-        val label: String,
-        val min: Double,
-        val max: Double,
-        val normalLow: Double,
-        val normalHigh: Double,
-        val warning: Double,
-    )
-
     private companion object {
         const val TabularDigits = "'tnum' 1"
         const val Dash = "—"
@@ -687,10 +680,6 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
 
         /** #0c0e11 at 86 %. */
         const val Plate = 0xDB0C0E11.toInt()
-
-        val Oil = RowSpec("OIL", 60.0, 150.0, 90.0, 125.0, 128.0)
-        val Atf = RowSpec("ATF", 40.0, 140.0, 70.0, 110.0, 118.0)
-        val Coolant = RowSpec("COOLANT", 60.0, 120.0, 85.0, 104.0, 105.0)
     }
 }
 
@@ -715,23 +704,6 @@ private class MapView(
             return MapView(area.centerX, area.centerY, (minX + maxX) / 2, (minY + maxY) / 2, k)
         }
     }
-}
-
-/** "1:23.456": a lap time to the thousandth, as Overlays' formatLapTime with 3 decimals. */
-internal fun lapTime(micros: Long): String {
-    val millis = (micros.coerceAtLeast(0) / 1000.0).roundToLong()
-    return String.format(Locale.ROOT, "%d:%02d.%03d", millis / 60_000, millis / 1000 % 60, millis % 1000)
-}
-
-/** "+0.123", "-0.456": a delta in seconds as Overlays' formatLapDelta with 3 decimals. */
-internal fun lapDelta(seconds: Double): String =
-    (if (seconds > 0) "+" else "") + String.format(Locale.ROOT, "%.3f", seconds)
-
-/** "90° L", "45° R", "0°": the wheel angle as Overlays writes it; never wrapped past a turn. */
-internal fun steeringText(degrees: Double?): String {
-    if (degrees == null) return "—"
-    val whole = abs(degrees).roundToInt()
-    return if (whole == 0) "0°" else "$whole° ${if (degrees > 0) "L" else "R"}"
 }
 
 private fun two(v: Double) = String.format(Locale.ROOT, "%.2f", v)

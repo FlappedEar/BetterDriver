@@ -5,10 +5,7 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.analysis.recorded.measuredG
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.trackFor
-import com.flappedear.betterdriver.format.formatDelta
 import com.flappedear.betterdriver.format.formatLapTime
-import com.flappedear.betterdriver.format.formatRunningTime
-import com.flappedear.betterdriver.format.isDeltaGain
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoClip
@@ -17,14 +14,8 @@ import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.overlay.OverlayData
-import com.flappedear.betterdriver.timing.overlay.Box
-import com.flappedear.betterdriver.timing.overlay.GForce
-import com.flappedear.betterdriver.timing.overlay.MapFit
-import com.flappedear.betterdriver.timing.overlay.OverlayLayout
-import com.flappedear.betterdriver.timing.overlay.Px
-import com.flappedear.betterdriver.timing.overlay.gDot
-import com.flappedear.betterdriver.timing.overlay.OverlayFrame
-import com.flappedear.betterdriver.timing.overlay.OverlayLap
+import com.flappedear.betterdriver.timing.overlay.TechHudLayout
+import com.flappedear.betterdriver.timing.overlay.hudWidgets
 import com.flappedear.betterdriver.timing.overlay.VideoCut
 import com.flappedear.betterdriver.timing.overlay.thin
 import com.flappedear.betterdriver.timing.overlay.videoCuts
@@ -34,13 +25,12 @@ import platform.Foundation.NSLock
 import platform.Foundation.NSString
 import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.stringWithContentsOfFile
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /**
  * "Video with data" on the iPhone and iPad (FBBD-152, FBBD-333), as Android's VideoExports: a session's
  * video with the data overlay drawn on it, to watch on the phone and to save as an MP4. Works without
- * laps too (a session away from a saved track): then the overlay shows speed, G and the map.
+ * laps too (a session away from a saved track): then the overlay shows speed, G and the map. The
+ * overlay is FlappedEar Overlays' Tech HUD (FBBD-347), as on Android: [HudGeometry] and [HudMoment].
  */
 class DataVideo(private val sessionsRoot: String, private val tracksRoot: String) {
     private val store = SessionStore(sessionsRoot)
@@ -62,7 +52,8 @@ class DataVideo(private val sessionsRoot: String, private val tracksRoot: String
         val laps = runCatching {
             trackFor(data, TrackLibrary(tracksRoot, sessionsRoot).list())?.let { replayLaps(id, sets, it) }
         }.getOrNull()
-        return DataVideoSession(id, OverlayData(sets, laps, measuredG(data)), laps, clips, dir)
+        val overlay = OverlayData(sets, laps, measuredG(data), channels = data.channels.values)
+        return DataVideoSession(id, overlay, laps, clips, dir)
     }
 
     private companion object {
@@ -80,27 +71,6 @@ class DataVideoCut(
     val toMicros: Long,
     val outputStartMicros: Long,
     val sessionStartMicros: Long,
-)
-
-/** How a value of the overlay is coloured, as Android's OverlayPainter colours it. */
-enum class OverlayInk { Text, Dim, Gain, Loss, Best }
-
-/**
- * What the overlay's band says at one moment, as Android's OverlayPainter writes it: speed, lap (or
- * run) and lap time, delta to the best lap; [g] and [position] for the G meter and the map. A slot
- * whose [deltaValue] is null stays empty (no laps).
- */
-@Suppress("LongParameterList") // One value per slot of the band, as the painter draws them.
-class OverlayText(
-    val speed: String,
-    val lapCaption: String,
-    val lapCaptionInk: OverlayInk,
-    val lapValue: String,
-    val lapValueInk: OverlayInk,
-    val deltaValue: String?,
-    val deltaInk: OverlayInk,
-    val g: GForce?,
-    val position: Xy?,
 )
 
 /** A session's video and data, read once; see [DataVideo]. */
@@ -160,20 +130,29 @@ class DataVideoSession internal constructor(
         }
     }
 
-    /** The overlay at session time [sessionMicros]. Any thread: the player draws frames on its own. */
-    fun text(sessionMicros: Long): OverlayText {
+    /** The start/finish line's ends, in the frame of [outline]; null without a saved track's line. */
+    val startLineFrom: Xy? = data.startLine?.first
+    val startLineTo: Xy? = data.startLine?.second
+
+    private val widgets = hudWidgets(data)
+    private val bestLapMicros = data.bestLapMicros
+
+    /** Where the Tech HUD's widgets go on a picture [videoWidth] by [videoHeight] pixels. */
+    fun hud(videoWidth: Int, videoHeight: Int): HudGeometry = HudGeometry(TechHudLayout(videoWidth, videoHeight, widgets))
+
+    /** What the Tech HUD shows at session time [sessionMicros]. Any thread: the player draws frames on its own. */
+    fun moment(sessionMicros: Long): HudMoment {
         lock.lock()
-        val f = try {
-            data.at(sessionMicros)
+        try {
+            val radar = (RadarDots downTo 1).mapNotNull { i ->
+                data.gAt(sessionMicros - RadarMicros * i / RadarDots)
+                    ?.let { HudRadarDot(it, 1 - i.toFloat() / (RadarDots + 1)) }
+            }
+            return HudMoment(data.at(sessionMicros), runs(data.trail(sessionMicros)), radar, bestLapMicros, pointToPoint)
         } finally {
             lock.unlock()
         }
-        return overlayText(f, pointToPoint)
     }
-
-    /** Where the band goes on a picture [videoWidth] by [videoHeight] pixels, with the map of this session. */
-    fun band(videoWidth: Int, videoHeight: Int): OverlayBand =
-        OverlayBand(OverlayLayout.of(videoWidth, videoHeight), outline)
 
     /** The name the saved file is offered with, as Android's: BetterDriver-<id>-video.mp4, -lap7.mp4, -run2.mp4. */
     fun fileName(part: Int): String {
@@ -190,74 +169,11 @@ class DataVideoSession internal constructor(
     companion object {
         /** The part that is all of the session's video; lap numbers start at 1. */
         const val WholeVideo = 0
+
+        /** The radar's trail, as Overlays' TechRadar: 14 dots over the last second. */
+        private const val RadarDots = 14
+        private const val RadarMicros = 1_000_000L
     }
-}
-
-/**
- * The band along the bottom of the picture, in its own pixels ([width] by [height], y down), as
- * Android's OverlayPainter lays it out: the slots, text sizes and line width of [OverlayLayout], the
- * track map's line ([track]) and where the car and the G dot go.
- */
-class OverlayBand internal constructor(layout: OverlayLayout, outline: List<Xy>) {
-    val width = layout.width
-    val height = layout.height
-    val speed: Box = layout.speed
-    val lap: Box = layout.lap
-    val delta: Box = layout.delta
-    val gMeter: Box = layout.gMeter
-    val numberSize = layout.numberSize
-    val labelSize = layout.labelSize
-    val stroke = layout.stroke
-    private val fit = MapFit(outline, layout.map, layout.stroke * MapInsetStrokes)
-    val track: List<Px> = outline.map(fit::project)
-
-    fun car(position: Xy): Px = fit.project(position)
-
-    fun dot(g: GForce): Px = gDot(g, gMeter)
-
-    private companion object {
-        /** As Android's painter: the map stays this many line widths inside its box. */
-        const val MapInsetStrokes = 4f
-    }
-}
-
-/** Android's OverlayPainter texts and colours for frame [f]. */
-internal fun overlayText(f: OverlayFrame, pointToPoint: Boolean): OverlayText {
-    val lap = f.lap
-    val seconds = lap?.deltaMicros?.let { it / MicrosPerSecond }
-    return OverlayText(
-        speed = f.speedKmh?.roundToInt()?.toString() ?: Dash,
-        lapCaption = lapCaption(lap, pointToPoint),
-        lapCaptionInk = if (lap?.isBest == true) OverlayInk.Best else OverlayInk.Dim,
-        lapValue = lap?.let { formatRunningTime(it.lapMicros / MicrosPerMilli) } ?: Dash,
-        lapValueInk = if (lap == null) OverlayInk.Dim else OverlayInk.Text,
-        // Without laps (no saved track) the slot stays empty; on out and in laps it shows a dash.
-        deltaValue = if (lap == null) null else seconds?.let(::formatDelta) ?: Dash,
-        deltaInk = deltaInk(seconds),
-        g = f.g,
-        position = f.position,
-    )
-}
-
-/** "LAP 7 · BEST", "LAP 1 · OUT", "RUN 2"; "LAP" alone without a lap. */
-private fun lapCaption(lap: OverlayLap?, pointToPoint: Boolean): String {
-    val word = if (pointToPoint) "RUN" else "LAP"
-    val kind = when {
-        lap == null -> return word
-        lap.isBest -> " · BEST"
-        lap.kind == LapKind.Out -> " · OUT"
-        lap.kind == LapKind.In -> " · IN"
-        else -> ""
-    }
-    return "$word ${lap.number}$kind"
-}
-
-/** The delta's colour: green ahead, red behind, white level, dim without one. */
-private fun deltaInk(seconds: Double?): OverlayInk = when {
-    seconds == null -> OverlayInk.Dim
-    isDeltaGain(seconds) -> OverlayInk.Gain
-    abs(seconds) < HalfHundredth -> OverlayInk.Text
-    else -> OverlayInk.Loss
 }
 
 /** "18 min of video", "45 s of video", as Android's picker. */
@@ -267,9 +183,5 @@ internal fun wholeVideoText(micros: Long): String {
     return if (seconds >= SecondsPerMinute) "$minutes min of video" else "$seconds s of video"
 }
 
-private const val Dash = "—"
-private const val MicrosPerSecond = 1_000_000.0
 private const val MicrosPerSecondLong = 1_000_000L
-private const val MicrosPerMilli = 1_000L
 private const val SecondsPerMinute = 60L
-private const val HalfHundredth = 0.005

@@ -4,9 +4,10 @@ import CoreImage
 import UIKit
 
 /// "Video with data" (FBBD-152), as Android's VideoExports: a session's video, a lap or all of it, with
-/// the data overlay drawn on every frame. The same video composition plays in the app and is saved as
-/// an MP4, so what is watched is what is saved. It works without laps too (a drive away from a saved
-/// track): the overlay then shows speed, G and the map.
+/// the data overlay drawn on every frame in FlappedEar Overlays' Tech HUD layout (FBBD-347,
+/// TechHudPainter). The same video composition plays in the app and is saved as an MP4, so what is
+/// watched is what is saved. It works without laps too (a drive away from a saved track): the overlay
+/// then leaves the lap's values empty.
 enum DataVideoMaker {
     /// Session [id] with its video and the length of each file, read off the main queue; nil without video.
     static func open(_ id: String) async throws -> (DataVideoSession, [String: KotlinLong])? {
@@ -52,16 +53,15 @@ enum DataVideoMaker {
             }
         }
         if audio.segments.isEmpty { composition.removeTrack(audio) }
-        let painter = DataOverlayPainter(session: session, cuts: cuts)
+        let painter = TechHudPainter(session: session, cuts: cuts)
         let overlay = AVMutableVideoComposition(asset: composition) { request in
             let source = request.sourceImage
             let at = DataVideoMaker.micros(request.compositionTime)
-            guard let band = painter.band(at: at, size: source.extent.size) else {
+            guard let hud = painter.overlay(at: at, size: source.extent.size) else {
                 request.finish(with: source, context: nil)
                 return
             }
-            // Core Image counts from the bottom left: the band's bottom edge on the picture's.
-            let placed = band.transformed(by: CGAffineTransform(translationX: source.extent.minX, y: source.extent.minY))
+            let placed = hud.transformed(by: CGAffineTransform(translationX: source.extent.minX, y: source.extent.minY))
             request.finish(with: placed.composited(over: source), context: nil)
         }
         return (composition, overlay)
@@ -120,139 +120,6 @@ enum DataVideoSaver {
         }
         return url
     }
-}
-
-/// Draws the band along the bottom of each frame, as Android's OverlayPainter (UI for FBBD-152): speed,
-/// lap and lap time, delta to the best lap; at the right the G meter and the track map with the car.
-/// Light text on a dark gradient in the app's number and label fonts. Called on AVFoundation's threads.
-final class DataOverlayPainter: @unchecked Sendable {
-    private let session: DataVideoSession
-    private let cuts: [DataVideoCut]
-    private let lock = NSLock()
-    private var shaped: (size: CGSize, band: OverlayBand, track: CGPath)?
-
-    init(session: DataVideoSession, cuts: [DataVideoCut]) {
-        self.session = session
-        self.cuts = cuts
-        _ = TrackFonts.register
-    }
-
-    /// The band for the frame at [outputMicros] of the video, on a picture of [size]; nil outside the cuts.
-    func band(at outputMicros: Int64, size: CGSize) -> CIImage? {
-        guard size.width >= 1, size.height >= 1,
-              let cut = cuts.last(where: { $0.outputStartMicros <= outputMicros }) ?? cuts.first else { return nil }
-        let sessionMicros = cut.sessionStartMicros + (outputMicros - cut.outputStartMicros)
-        let text = session.text(sessionMicros: sessionMicros)
-        let (band, track) = layout(size)
-        let format = UIGraphicsImageRendererFormat()
-        format.scale = 1
-        format.opaque = false
-        let image = UIGraphicsImageRenderer(size: CGSize(width: Int(band.width), height: Int(band.height)), format: format).image { ui in
-            draw(ui.cgContext, band, track, text)
-        }
-        return image.cgImage.map { CIImage(cgImage: $0) }
-    }
-
-    private func layout(_ size: CGSize) -> (OverlayBand, CGPath) {
-        lock.lock()
-        defer { lock.unlock() }
-        if let shaped, shaped.size == size { return (shaped.band, shaped.track) }
-        let band = session.band(videoWidth: Int32(size.width.rounded()), videoHeight: Int32(size.height.rounded()))
-        let path = CGMutablePath()
-        for (i, p) in band.track.enumerated() {
-            let q = CGPoint(x: CGFloat(p.x), y: CGFloat(p.y))
-            if i == 0 { path.move(to: q) } else { path.addLine(to: q) }
-        }
-        shaped = (size, band, path)
-        return (band, path)
-    }
-
-    private func draw(_ cg: CGContext, _ band: OverlayBand, _ track: CGPath, _ text: OverlayText) {
-        let w = CGFloat(band.width), h = CGFloat(band.height)
-        // The scrim: clear at the top, darker towards the bottom (Android's 0, 0.45 at 35 %, 0.75).
-        let colors = [shade.withAlphaComponent(0), shade.withAlphaComponent(0.45), shade.withAlphaComponent(0.75)]
-        if let gradient = CGGradient(
-            colorsSpace: CGColorSpaceCreateDeviceRGB(), colors: colors.map(\.cgColor) as CFArray, locations: [0, 0.35, 1]
-        ) {
-            cg.drawLinearGradient(gradient, start: .zero, end: CGPoint(x: 0, y: h), options: [])
-        }
-        let number = UIFont(name: "SairaSemiCondensed-Bold", size: CGFloat(band.numberSize)) ?? .boldSystemFont(ofSize: CGFloat(band.numberSize))
-        let label = UIFont(name: "Barlow-SemiBold", size: CGFloat(band.labelSize)) ?? .systemFont(ofSize: CGFloat(band.labelSize))
-        func slot(_ box: Box, _ caption: String, _ captionInk: OverlayInk, _ value: String, _ valueInk: OverlayInk) {
-            // As Android's drawText: the caption's baseline a label's height below the top, the number's
-            // baseline 2 % above the bottom.
-            let left = CGFloat(box.left)
-            put(caption, label, color(captionInk), x: left, baseline: CGFloat(box.top) + label.pointSize, kern: label.pointSize * 0.08)
-            put(value, number, color(valueInk), x: left, baseline: CGFloat(box.bottom) - CGFloat(box.height) * 0.02, kern: 0)
-        }
-        slot(band.speed, "KM/H", .dim, text.speed, .text)
-        slot(band.lap, text.lapCaption, text.lapCaptionInk, text.lapValue, text.lapValueInk)
-        if let delta = text.deltaValue { slot(band.delta, "VS BEST", .dim, delta, text.deltaInk) }
-        gMeter(cg, band, text)
-        map(cg, band, track, text)
-    }
-
-    private func gMeter(_ cg: CGContext, _ band: OverlayBand, _ text: OverlayText) {
-        let box = band.gMeter
-        let r = CGFloat(box.width) / 2
-        let cx = CGFloat(box.centerX), cy = CGFloat(box.centerY)
-        cg.setLineWidth(CGFloat(band.stroke))
-        cg.setStrokeColor(dim.withAlphaComponent(0.6).cgColor)
-        cg.strokeEllipse(in: CGRect(x: cx - r, y: cy - r, width: 2 * r, height: 2 * r))
-        // 1 g, of the 1.5 on the outer ring.
-        let one = r / 1.5
-        cg.strokeEllipse(in: CGRect(x: cx - one, y: cy - one, width: 2 * one, height: 2 * one))
-        cg.strokeLineSegments(between: [
-            CGPoint(x: CGFloat(box.left), y: cy), CGPoint(x: CGFloat(box.right), y: cy),
-            CGPoint(x: cx, y: CGFloat(box.top)), CGPoint(x: cx, y: CGFloat(box.bottom)),
-        ])
-        guard let g = text.g else { return }
-        let dot = band.dot(g: g)
-        let d = r * 0.14
-        cg.setFillColor(ink.cgColor)
-        cg.fillEllipse(in: CGRect(x: CGFloat(dot.x) - d, y: CGFloat(dot.y) - d, width: 2 * d, height: 2 * d))
-    }
-
-    private func map(_ cg: CGContext, _ band: OverlayBand, _ track: CGPath, _ text: OverlayText) {
-        cg.setLineWidth(CGFloat(band.stroke) * 1.6)
-        cg.setLineCap(.round)
-        cg.setLineJoin(.round)
-        cg.setStrokeColor(ink.withAlphaComponent(0.85).cgColor)
-        cg.addPath(track)
-        cg.strokePath()
-        guard let position = text.position else { return }
-        let car = band.car(position: position)
-        let r = CGFloat(band.height) * 0.045
-        let rim = r * 1.45
-        let x = CGFloat(car.x), y = CGFloat(car.y)
-        cg.setFillColor(shade.cgColor)
-        cg.fillEllipse(in: CGRect(x: x - rim, y: y - rim, width: 2 * rim, height: 2 * rim))
-        cg.setFillColor(best.cgColor)
-        cg.fillEllipse(in: CGRect(x: x - r, y: y - r, width: 2 * r, height: 2 * r))
-    }
-
-    private func put(_ s: String, _ font: UIFont, _ color: UIColor, x: CGFloat, baseline: CGFloat, kern: CGFloat) {
-        let attributes: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .kern: kern]
-        (s as NSString).draw(at: CGPoint(x: x, y: baseline - font.ascender), withAttributes: attributes)
-    }
-
-    private func color(_ i: OverlayInk) -> UIColor {
-        switch i {
-        case .gain: gain
-        case .loss: loss
-        case .best: best
-        case .dim: dim
-        default: ink
-        }
-    }
-
-    // Android's TrackColorsGreenRed (TrackColors).
-    private let ink = UIColor(TrackColors.text)
-    private let dim = UIColor(TrackColors.textDim)
-    private let gain = UIColor(TrackColors.gain)
-    private let loss = UIColor(TrackColors.loss)
-    private let best = UIColor(TrackColors.best)
-    private let shade = UIColor(TrackColors.background)
 }
 
 #if DEBUG
