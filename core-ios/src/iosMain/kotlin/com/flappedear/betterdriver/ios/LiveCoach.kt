@@ -236,8 +236,17 @@ internal class IosCoachLibrary(sessionsDir: String, referencesDir: String) {
         if (upToDate) return current
         val laps = here.mapNotNull { id -> readOrNull(id)?.let { SessionLaps(id, tracedLaps(track, it.coachFixes())) } }
         val built = buildReference(track, laps, plan)
-        if (built == null) references.delete(track.id) else references.save(built)
+        keep(track.id, built)
         return built
+    }
+
+    /** Keeps [built] as [trackId]'s reference; one that cannot be written still coaches this session. */
+    @Suppress("TooGenericExceptionCaught")
+    private fun keep(trackId: String, built: CoachReference?) {
+        try {
+            if (built == null) references.delete(trackId) else references.save(built)
+        } catch (_: Exception) {
+        }
     }
 
     /** Whether a session [reference] was built from ended within 12 hours before [nowUtcMillis] (FBBD-190). */
