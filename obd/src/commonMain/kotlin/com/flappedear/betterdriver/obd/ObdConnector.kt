@@ -38,6 +38,9 @@ interface ObdConnectorListener {
  * [fallback] asked (the app scans for a Bluetooth LE adapter there, which takes a few seconds).
  * An ended connection is retried soon; while no adapter answers the wait grows to [retryMs]'s last,
  * and [retryNow] cuts the wait short (the app calls it when Wi-Fi or Bluetooth comes back, FBBD-271).
+ * A connection the car answered on that is lost mid-drive (the link dropped or the adapter went
+ * silent, not the car switched off) is retried every [lostRetryMs] for [lostFastMs] instead, so car
+ * data comes back within seconds of the adapter, and the log says how long it was gone.
  *
  * [run] blocks until [running] turns false; [stop] closes the open connection so it returns. No
  * exception ends the loop while [running] holds: a round that fails in an unexpected way is logged
@@ -58,6 +61,8 @@ class ObdConnector(
     private val retryMs: List<Long> = RETRY_MS,
     private val pollSet: () -> PollSet = { PollSet.All },
     private val scan: () -> Boolean = { false },
+    private val lostRetryMs: Long = LOST_RETRY_MS,
+    private val lostFastMs: Long = LOST_FAST_MS,
 ) {
     @Volatile
     private var running: () -> Boolean = { false }
@@ -71,6 +76,13 @@ class ObdConnector(
     private var lastNote: String? = null
     private var lastNoteMs = 0L
     private var searchingSinceMs = 0L
+
+    /** When a live connection was last lost mid-drive (FBBD-271); null once car data is back. */
+    private var lostAtMs: Long? = null
+
+    /** Whether the car answered on the connection open now. */
+    @Volatile
+    private var answered = false
 
     @Suppress("TooGenericExceptionCaught") // Any failed round is retried, never a crash (FBBD-269).
     fun run(running: () -> Boolean) {
@@ -95,9 +107,12 @@ class ObdConnector(
                 "interrupted"
             }
             if (!running()) break
-            // A connection that opened and ended is retried soon; no adapter at all backs off.
+            // A connection that opened and ended is retried soon; no adapter at all backs off,
+            // except shortly after a live connection was lost, when the adapter is most likely back soon.
             failures = if (reason == null) failures + 1 else 0
-            await(retryMs[(failures - 1).coerceIn(0, retryMs.size - 1)])
+            val lost = lostAtMs
+            val fast = lost != null && clock.nowMs() - lost < lostFastMs
+            await(if (fast) lostRetryMs else retryMs[(failures - 1).coerceIn(0, retryMs.size - 1)])
         }
     }
 
@@ -154,6 +169,7 @@ class ObdConnector(
         val at = target.address?.let { " at $it" }.orEmpty()
         listener.log("connected to ${target.where}$at over ${target.transport.label}")
         tracker.connecting(target.name)
+        answered = false
         val reason = try {
             ElmPoller(line, profile(), Poll(target), running, clock, pollSet = pollSet, scan = scan()).run()
         } catch (e: IOException) {
@@ -163,6 +179,7 @@ class ObdConnector(
             open?.close()
             open = null
         }
+        if (answered && running() && isLinkLoss(reason)) lostAtMs = clock.nowMs()
         listener.log("connection to ${target.where} ended: $reason")
         tracker.ended(reason)
         listener.ended(target, reason)
@@ -229,6 +246,9 @@ class ObdConnector(
             val pids = supported.joinToString(",") { hex(it, 2) }
             val polled = channels.joinToString(",") { it.id }
             listener.log("car answered: protocol $protocol, PIDs $pids, polling $polled")
+            answered = true
+            lostAtMs?.let { listener.log("car data back ${(clock.nowMs() - it) / MS_PER_S} s after the drop") }
+            lostAtMs = null
             tracker.ready(clean, protocol, voltage, channels, clock.nowMs())
             listener.ready(target, clean, protocol, voltage, supported, channels)
         }
@@ -260,6 +280,21 @@ class ObdConnector(
     companion object {
         /** Retry after an ended connection: 5 s; while no adapter answers: 5 s, 10 s, then every 20 s. */
         val RETRY_MS = listOf(5_000L, 10_000L, 20_000L)
+
+        /** Retry after a live connection was lost mid-drive (FBBD-271)... */
+        const val LOST_RETRY_MS = 2_000L
+
+        /** ...for this long after the drop; then [RETRY_MS] again, as for an adapter that is gone. */
+        const val LOST_FAST_MS = 120_000L
+
+        /**
+         * Whether a connection the car answered on ended by the link, not the car: the link dropped or
+         * a write failed, or the adapter went silent. "car stopped answering" is the engine switched off
+         * (expected at a stop), and stopping or a restart is no loss.
+         */
+        internal fun isLinkLoss(reason: String) =
+            reason.startsWith("connection lost") && !reason.endsWith(": closed") && !reason.endsWith(": interrupted") ||
+                reason == "adapter stopped answering"
 
         /** How often a wait checks for [retryNow] and stopping. */
         const val WAIT_STEP_MS = 250L
