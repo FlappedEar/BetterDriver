@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.recorder.log
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.FrameBuckets
-import kotlin.jvm.Synchronized
 
 private const val NanosPerMilli = 1_000_000L
 private const val NanosPerSecond = 1_000_000_000L
@@ -33,7 +33,7 @@ class FrameStretch(private val periodNanos: Long = DefaultPeriodNanos) {
     private val counts = IntArray(FrameBuckets.size + 1)
 
     /** Counts one frame; returns the stretch it closed, if it started a new one. */
-    @Synchronized
+    @JvmSynchronized
     fun add(frameStartNanos: Long, durationNanos: Long, jank: Boolean): FrameSummary? {
         val closed = if (frames > 0 && frameStartNanos - startNanos >= periodNanos) take(frameStartNanos) else null
         if (frames == 0) startNanos = frameStartNanos
@@ -48,7 +48,7 @@ class FrameStretch(private val periodNanos: Long = DefaultPeriodNanos) {
     }
 
     /** Closes the stretch now (the recording ended); null when no frame came since the last one. */
-    @Synchronized
+    @JvmSynchronized
     fun flush(): FrameSummary? = if (frames == 0) null else take(endNanos)
 
     private fun take(untilNanos: Long): FrameSummary {
