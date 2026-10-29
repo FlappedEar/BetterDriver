@@ -85,8 +85,8 @@ final class SmokeTests: XCTestCase {
             print("SMOKE app:\n\(app.debugDescription)")
             XCTFail("the second screen")
         }
-        // The simulated receiver measures no G, so its second screen is all tiles, as on Android.
-        XCTAssertFalse(labelled("G radar").exists, "no G radar without G")
+        // The live screen always has G (a RaceBox's or the phone's accelerometer), so the radar is there.
+        XCTAssertTrue(labelled("G radar").exists, "the G radar on the second screen")
         app.swipeRight()
         XCTAssertTrue(labelled("Screen 1 of 2").waitForExistence(timeout: 10), "back on the main screen")
         XCTAssertEqual(app.state, .runningForeground)
