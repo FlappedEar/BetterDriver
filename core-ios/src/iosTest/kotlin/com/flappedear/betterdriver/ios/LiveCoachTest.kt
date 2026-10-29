@@ -106,7 +106,7 @@ class LiveCoachTest {
     @Test
     fun aNewOutputMidSessionRetimesTheCuesAndEachCueIsInTheDebugLog() {
         val logged = mutableListOf<String>()
-        IosLog.sink = { tag, message -> if (tag == "Coach") logged += message }
+        IosLog.sink = { tag, message -> logged += "$tag: $message" }
         try {
             val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
             val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
@@ -114,7 +114,7 @@ class LiveCoachTest {
             session.startCoach(sessions, references, lines, settings, audioDelayFromPhone = true, speaker = Speaker())
             // A headset connects 100 s in, after the first lap times, before the last (FBBD-354).
             for (n in 0L..(25 * 140)) {
-                if (n == 25L * 100) session.audioDelay(300, measured = false)
+                if (n == 25L * 100) session.audioDelay(300, measured = false, output = "bt_a2dp")
                 session.submit(SampleSet(n * 40_000, gnss.fix(n)))
             }
             session.awaitCoach()
@@ -126,12 +126,12 @@ class LiveCoachTest {
             assertTrue("out_delay_ms=120 out_delay_src=measured" in voice.first().text, voice.first().text)
             assertTrue("out_delay_ms=300 out_delay_src=set timed_src=set" in voice.last().text, voice.last().text)
             assertTrue("timed_src=measured" in voice.first().text, voice.first().text)
-            assertTrue(logged.any { it.startsWith("coaching at Fake ring") }, logged.joinToString("\n"))
-            assertTrue("cues now timed for an audio delay of 300 ms (set)" in logged, logged.joinToString("\n"))
-            val started = logged.filter { it.startsWith("cue ") && "sound started" in it }
+            // Android's lines, with Android's tags (FBBD-355).
+            assertTrue(logged.any { it.startsWith("CoachService: coaching at Fake ring") }, logged.joinToString("\n"))
+            val retimed = "CoachService: cues now timed for an audio delay of 300 ms (set) on bt_a2dp"
+            assertTrue(retimed in logged, logged.joinToString("\n"))
+            val started = logged.filter { Regex("""Voice: live voice start \d+ ms""").matches(it) }
             assertEquals(voice.size, started.size, logged.joinToString("\n"))
-            assertTrue("route=speaker device=builtInSpeaker out_delay_ms=120" in started.first(), started.first())
-            assertEquals(voice.size, logged.count { it.startsWith("cue ") && "sound ended (done)" in it })
         } finally {
             IosLog.sink = null
         }

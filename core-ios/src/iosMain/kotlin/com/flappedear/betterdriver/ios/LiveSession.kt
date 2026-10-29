@@ -144,11 +144,11 @@ class LiveSession private constructor(
     }
 
     /**
-     * The audio output changed mid-session (FBBD-354): the coach's cues from now on allow for [millis],
-     * which iOS reported for the new output when [measured]; nothing without a coach.
+     * The audio output changed mid-session to [output] (FBBD-354): the coach's cues from now on allow for
+     * [millis], which iOS reported for it when [measured]; nothing without a coach.
      */
-    fun audioDelay(millis: Int, measured: Boolean) {
-        guarded { coach }?.audioDelay(millis, measured)
+    fun audioDelay(millis: Int, measured: Boolean, output: String) {
+        guarded { coach }?.audioDelay(millis, measured, output)
     }
 
     /** Waits for the coach's queued work, for tests. */

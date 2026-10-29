@@ -76,8 +76,8 @@ fun coachSettings(polish: Boolean, audioDelayMillis: Int): CoachSettings = Coach
  * there, and their late cues are dropped, as on Android. A failure is logged as a coach problem and
  * never reaches the recording (FBBD-69). [audioDelayFromPhone]: the settings' delay is the output
  * latency iOS reports for the route at the start, so the cue's VOICE event says "measured"; [audioDelay]
- * changes it when the output changes mid-session (FBBD-354). Each cue's sound also goes to the debug
- * log, with how long the voice took to start and the delay the cue was timed for.
+ * changes it when the output changes mid-session (FBBD-354). The debug log gets Android's CoachService
+ * and Voice lines, with the same text, so the same checks read both apps' logs (FBBD-355).
  */
 @Suppress("LongParameterList") // What one coached recording needs, one parameter each.
 class LiveCoach internal constructor(
@@ -131,14 +131,15 @@ class LiveCoach internal constructor(
     }
 
     /**
-     * The audio output changed (FBBD-354), as CoachService's route watch on Android (FBBD-255): cues from
-     * now on allow for [millis], the delay iOS reports for the new output ([measured]) or else the one set.
+     * The audio output changed to [output] (FBBD-354), as CoachService's route watch on Android
+     * (FBBD-255): cues from now on allow for [millis], the delay iOS reports for it ([measured]) or else
+     * the one set.
      */
-    fun audioDelay(millis: Int, measured: Boolean) = queued {
+    fun audioDelay(millis: Int, measured: Boolean, output: String) = queued {
         delayMillis = millis.coerceIn(0, CoachSettings.MaxAudioDelayMillis)
         delayMeasured = measured
         coach?.audioDelay(delayMillis)
-        logInfo(Tag, "cues now timed for an audio delay of $delayMillis ms (${source()})")
+        logInfo(Tag, "cues now timed for an audio delay of $delayMillis ms (${source()}) on $output")
     }
 
     private fun source() = if (delayMeasured) AudioDelayUsed.Measured else AudioDelayUsed.Set
@@ -195,7 +196,7 @@ class LiveCoach internal constructor(
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
         val out = c.onFix(fix, now(), voiceFree = !speaker.speaking) { text ->
-            val ask = Asked(now(), delayMillis, source()).also { asked = it }
+            val ask = Asked(now(), source()).also { asked = it }
             speaker.say(text, Speech(ask))
         }
         for (e in out.events) report(e.tMicros, e.kind, e.text)
@@ -206,10 +207,10 @@ class LiveCoach internal constructor(
     }
 
     /**
-     * A cue asked of the voice at session time [askedMicros], timed for [timedMillis] from [timedSource];
+     * A cue asked of the voice at session time [askedMicros], timed for a delay from [timedSource];
      * [seq] is set once the coach has logged it.
      */
-    private class Asked(val askedMicros: Long, val timedMillis: Int, val timedSource: String) {
+    private class Asked(val askedMicros: Long, val timedSource: String) {
         @Volatile
         var seq: Int? = null
     }
@@ -228,23 +229,13 @@ class LiveCoach internal constructor(
                     outDelaySource = source, timedSource = ask.timedSource,
                 )
                 report(at, CoachEvents.VOICE, text)
-                val ttsMillis = (at - ask.askedMicros) / MicrosPerMilli
-                logInfo(
-                    Tag,
-                    "cue $seq sound started $ttsMillis ms after asked, route=$route device=$device " +
-                        "out_delay_ms=$delayMillis out_delay_src=$source " +
-                        "timed_ms=${ask.timedMillis} timed_src=${ask.timedSource}",
-                )
+                logInfo(VoiceTag, "$Path voice start ${(at - ask.askedMicros) / MicrosPerMilli} ms")
             }
         }
 
         override fun ended(end: String) {
             val at = now()
-            queued {
-                val seq = ask.seq ?: return@queued
-                report(at, CoachEvents.VOICE_END, CoachEvents.voiceEndText(seq, end))
-                logInfo(Tag, "cue $seq sound ended ($end) ${(at - ask.askedMicros) / MicrosPerMilli} ms after asked")
-            }
+            queued { ask.seq?.let { report(at, CoachEvents.VOICE_END, CoachEvents.voiceEndText(it, end)) } }
         }
     }
 
@@ -256,7 +247,9 @@ class LiveCoach internal constructor(
     private companion object {
         /** iOS says every cue with live text-to-speech. */
         const val Path = "live"
-        const val Tag = "Coach"
+        /** Android's tags for these lines (CoachService, Voice). */
+        const val Tag = "CoachService"
+        const val VoiceTag = "Voice"
         const val MicrosPerMilli = 1_000L
 
         /** The longest coach event text the Android recorder logs. */

@@ -234,23 +234,23 @@ final class RecordingController: ObservableObject {
     private func startCoach(_ live: LiveSession, _ coach: CoachSettings) {
         let phoneDelay = CoachVoice.outputDelayMillis
         guard let settings = Self.sessionCoach(coach, phoneDelayMillis: phoneDelay) else {
-            AppLog.i("Coach", "off")
+            AppLog.i("CoachService", "coach off")
             return
         }
         let voice = CoachVoice(settings: settings)
         self.voice = voice
-        // For the headset delay test (FBBD-49): the output and the delay the cues are timed for (FBBD-354).
-        let voiceName = CoachVoiceChoice.voice(settings)?.name ?? "none"
+        // For the headset delay test (FBBD-49), Android's lines (FBBD-354, FBBD-355): the output's delay
+        // and what the cues are timed for.
+        AppLog.i("OutputDelay", CoachVoice.delayLine)
         AppLog.i(
-            "Coach",
-            "on: \(settings.verbosity.name), \(settings.language.name), voice \(voiceName), " +
-                "audio delay \(settings.audioDelayMillis) ms (\(phoneDelay > 0 ? "measured" : "set")), \(CoachVoice.outputText)"
+            "CoachService",
+            "coaching session \(live.id): \(settings), audio delay \(phoneDelay > 0 ? "measured" : "set") on \(CoachVoice.output.type)"
         )
         // A headset that connects or drops mid-session: the cues are timed for the new output, or for the
         // delay set in Settings when iOS reports none.
         let setDelay = coach.audioDelayMillis
-        voice.onDelay = { [weak live] ms in
-            live?.audioDelay(millis: Int32(ms > 0 ? ms : Int(setDelay)), measured: ms > 0)
+        voice.onDelay = { [weak live] ms, output in
+            live?.audioDelay(millis: Int32(ms > 0 ? ms : Int(setDelay)), measured: ms > 0, output: output)
         }
         live.startCoach(
             sessionsDir: AppFolders.sessions.path,

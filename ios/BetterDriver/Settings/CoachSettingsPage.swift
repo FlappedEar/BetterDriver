@@ -220,7 +220,7 @@ final class VoiceTester {
     private let synthesizer = AVSpeechSynthesizer()
 
     func say(_ s: CoachSettings) {
-        AppLog.i("Coach", "test voice: \(CoachVoice.outputText)")
+        AppLog.i("OutputDelay", CoachVoice.delayLine)
         let utterance = AVSpeechUtterance(string: SettingsCore.shared.sampleCue(language: s.language))
         utterance.voice = CoachVoiceChoice.voice(s)
         utterance.rate = CoachVoiceChoice.rate(s)
