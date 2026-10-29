@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanPass
@@ -20,6 +21,12 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackLine
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
@@ -27,12 +34,6 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.Foundation.writeToFile
-import kotlin.test.AfterTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /** The live coach on the iPhone says and logs its cues as the Android coach does (FBBD-333). */
 class LiveCoachTest {
@@ -125,8 +126,8 @@ class LiveCoachTest {
             trackId = "ring", sessionId = "earlier", sessionStartUtcMillis = 1L, identityRevision = 1,
             referenceLapNumber = 2, referenceLapSeconds = 40.0, laps = 3, sessions = 1, corners = listOf(corner),
         )
-        assertTrue(IosLinePlanStore(lines).save(plan))
-        assertEquals(plan, IosLinePlanStore(lines).get("ring"))
+        assertTrue(LinePlanStore(lines).save(plan))
+        assertEquals(plan, LinePlanStore(lines).get("ring"))
 
         val session = coachedSession(coachSettings(polish = false, audioDelayMillis = 0), Speaker())
         session.stop()
@@ -143,7 +144,7 @@ class LiveCoachTest {
         // The fake ring's laps are all alike, so whether it makes a plan is the line analysis's call
         // (the demo session's is checked in SessionReviewTest); whatever it made is what is kept.
         val reviewed = ReviewLibrary(base).review(second.id)
-        assertEquals(reviewed.linePlan, IosLinePlanStore(lines).get("ring"))
+        assertEquals(reviewed.linePlan, LinePlanStore(lines).get("ring"))
     }
 
     @Test

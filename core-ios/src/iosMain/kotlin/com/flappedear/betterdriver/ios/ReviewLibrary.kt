@@ -3,6 +3,9 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
+import com.flappedear.betterdriver.analysis.line.DayPlanStore
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.LapVideoReview
@@ -51,8 +54,8 @@ class ReviewLibrary(base: String) {
     private val tracksRoot = "$base/tracks"
     private val store = SessionStore(sessionsRoot)
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
-    private val plans = IosLinePlanStore(linePlansDir(base))
-    private val days = IosDayPlanStore(dayPlansDir(base))
+    private val plans = LinePlanStore(linePlansDir(base))
+    private val days = DayPlanStore(dayPlansDir(base))
     private val trackFiles = TrackLibrary(tracksRoot, sessionsRoot)
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
 
@@ -93,8 +96,17 @@ class ReviewLibrary(base: String) {
     fun review(id: String): ReviewedSession {
         val saved = tracks()
         val reviewed = reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
-        reviewed.linePlan?.let(plans::save)
+        reviewed.linePlan?.let(::savePlan)
         return reviewed
+    }
+
+    // A plan that cannot be saved only leaves the next coached session without it.
+    @Suppress("TooGenericExceptionCaught")
+    private fun savePlan(plan: LinePlan) {
+        try {
+            plans.save(plan)
+        } catch (_: Exception) {
+        }
     }
 
     /**

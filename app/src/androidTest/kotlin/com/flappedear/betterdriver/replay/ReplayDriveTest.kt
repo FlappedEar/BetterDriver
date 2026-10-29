@@ -114,7 +114,7 @@ class ReplayDriveTest {
             SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
         }
         val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
-        CoachReferenceStore(File(d.app.filesDir, "coach/references")).save(reference.copy(sessions = emptyList()))
+        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
     }
 
     /**

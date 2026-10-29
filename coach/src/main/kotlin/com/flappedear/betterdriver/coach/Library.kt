@@ -69,7 +69,7 @@ class CoachLibrary(
     private val plans: (trackId: String) -> PlannedTargets? = { null },
     private val tracks: () -> List<Track>,
 ) {
-    val references = CoachReferenceStore(dir)
+    val references = CoachReferenceStore(dir.path)
     private val places = SessionPlaces(File(dir, PlacesFile))
 
     /**

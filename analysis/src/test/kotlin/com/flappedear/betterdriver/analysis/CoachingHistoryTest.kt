@@ -380,7 +380,7 @@ class CoachingHistoryTest {
     @Test
     fun `the store keeps the history, reads a damaged or misplaced file as none, and outlives the session`() {
         val dir = File(tmp, "coach/history")
-        val store = CoachingHistoryStore(dir)
+        val store = CoachingHistoryStore(dir.path)
         assertTrue(store.save(s0))
         assertFalse(store.save(s0))
         assertTrue(store.save(s1()))
@@ -416,7 +416,7 @@ class CoachingHistoryTest {
     @Test
     fun `the history comes back with a backup, and a record made before a restore is not written over it`() {
         val phone = File(tmp, "phone")
-        CoachingHistoryStore(File(phone, "coach/history")).apply {
+        CoachingHistoryStore(File(phone, "coach/history").path).apply {
             save(s0)
             save(s1())
         }
@@ -428,7 +428,7 @@ class CoachingHistoryTest {
         val tablet = File(tmp, "tablet").apply { mkdirs() }
         val restorer = BackupRestore(tablet, File(tablet, "backup-staging"))
         restorer.restore(restorer.unpack(bytes.inputStream()), RestoreMode.MERGE, emptyMap()) {}
-        val restored = CoachingHistoryStore(File(tablet, "coach/history"))
+        val restored = CoachingHistoryStore(File(tablet, "coach/history").path)
         assertEquals(listOf("s0", "s1"), restored.history(track).map { it.sessionId })
         assertEquals(FocusVerdict.Improved, coachingHistory("s1", restored.history(track)).c1().verdict)
 

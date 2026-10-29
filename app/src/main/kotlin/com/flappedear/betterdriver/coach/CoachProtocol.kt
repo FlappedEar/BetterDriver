@@ -68,7 +68,7 @@ internal fun coachSettings(context: Context) = CoachSettingsStore(File(coachDir(
 internal fun coachReferencesDir(context: Context) = File(coachDir(context), "references")
 
 /** The corners picked in the lap analysis for the coach, one file per track (FBBD-148). */
-internal fun coachPicks(context: Context) = CoachPicksStore(File(coachDir(context), "picks"))
+internal fun coachPicks(context: Context) = CoachPicksStore(File(coachDir(context), "picks").path)
 
 /** The next-session focus of each analysed session (FBBD-20), by track. */
 internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachDir(context), "focus"))
@@ -77,16 +77,16 @@ internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachD
  * The coaching history (FBBD-180): per track and analysed session, what was driven through each
  * corner and what it recommended next. With the coach's files, so a backup carries it.
  */
-internal fun coachingHistoryStore(context: Context) = CoachingHistoryStore(File(coachDir(context), "history"))
+internal fun coachingHistoryStore(context: Context) = CoachingHistoryStore(File(coachDir(context), "history").path)
 
 /**
  * The line plan of each track (FBBD-306): where the time is and the target through each corner, for
  * the Map tab, the coach and the 3D export. With the coach's files, so a backup carries it.
  */
-internal fun linePlanStore(context: Context) = LinePlanStore(File(coachDir(context), "lines"))
+internal fun linePlanStore(context: Context) = LinePlanStore(File(coachDir(context), "lines").path)
 
 /**
  * The plan of each track day (FBBD-315): the day's focus corners, for the coach's first session of
  * the next day there (UI-214 B) and that day's proof. With the coach's files, so a backup carries it.
  */
-internal fun dayPlanStore(context: Context) = DayPlanStore(File(coachDir(context), "days"))
+internal fun dayPlanStore(context: Context) = DayPlanStore(File(coachDir(context), "days").path)
