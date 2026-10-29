@@ -10,8 +10,9 @@ app=com.flappedear.betterdriver
 runner=$app.test/androidx.test.runner.AndroidJUnitRunner
 test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-10}
-# When the one-minute trace starts, in s after the drive phase starts (FBBD-266).
-TRACE_AFTER_S=${TRACE_AFTER_S:-360}
+# When the one-minute trace starts, in s after the drive phase starts (FBBD-266): the first minute
+# on the track screen, where its slow frames are.
+TRACE_AFTER_S=${TRACE_AFTER_S:-3}
 language=${LANGUAGE:-Polish}
 out=build/replay-drive
 mkdir -p "$out"
@@ -85,8 +86,7 @@ sleep 3
 # never does while the track screen draws every frame: a stop phase of its own waited 8 min there.
 echo "Replaying for $minutes min."
 # One minute of the drive traced (FBBD-266): where the track screen's frame time goes, from the UI
-# thread's state and slices and who held the CPUs (track-trace.py). Starts midway, with the coach and
-# its voice running.
+# thread's state and slices and who held the CPUs (track-trace.py).
 adb push .github/scripts/track-trace.cfg /data/misc/perfetto-configs/track.cfg >/dev/null || true
 ( sleep "$TRACE_AFTER_S" && adb shell perfetto --background --txt -c /data/misc/perfetto-configs/track.cfg \
   -o /data/misc/perfetto-traces/track.pftrace < /dev/null >/dev/null 2>&1 ) &
