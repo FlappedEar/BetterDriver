@@ -132,7 +132,12 @@ final class ReviewScreensTests: XCTestCase {
             let menu = app.buttons["exportMenu"].firstMatch
             XCTAssertTrue(menu.waitForExistence(timeout: 10), "no export menu")
             menu.tap()
-            app.buttons[format].firstMatch.tap()
+            // The menu closes when it gains Video with data on reading that the session has video
+            // (the demo has none, but the read can land while the menu opens): open it again then.
+            let item = app.buttons[format].firstMatch
+            if !item.waitForExistence(timeout: 5) { menu.tap() }
+            XCTAssertTrue(item.waitForExistence(timeout: 10), "no \(format) in the export menu")
+            item.tap()
             // A failed export says so in an alert; a written one goes on to Files.
             let failed = app.alerts.firstMatch.waitForExistence(timeout: 15)
             XCTAssertFalse(failed, "\(format): \(app.alerts.firstMatch.label)")
