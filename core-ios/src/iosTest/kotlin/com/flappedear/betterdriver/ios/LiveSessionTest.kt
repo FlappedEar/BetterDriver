@@ -19,6 +19,7 @@ import com.flappedear.betterdriver.timing.circuits.Circuit
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
+import com.flappedear.betterdriver.timing.track.TrackEvent
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackLine
 import platform.Foundation.NSFileManager
@@ -124,9 +125,13 @@ class LiveSessionTest {
         val screen = session.screen()
         assertEquals("Ring circuit", screen.place)
         assertFalse(screen.placeSaved)
-        assertNull(screen.timing)
+        // The ring driven 3.5 times gets a provisional line (FBBD-335): timed, and the line logged.
+        val timing = assertNotNull(screen.timing)
+        assertTrue(abs(40_000L - assertNotNull(timing.bestMillis)) <= 50, timing.toString())
         assertEquals(GnssState.Ok, screen.gnss)
         session.stop()
+        val events = SessionStore(sessions).read(session.id).events
+        assertTrue(events.single { it.kind == TrackEvent.PROVISIONAL_KIND }.text.endsWith("Ring circuit"))
     }
 
     /**

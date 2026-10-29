@@ -1,0 +1,6 @@
+# The app's own code, compiled ahead of time once Android has the profile (FBBD-266): the track screen,
+# recorder, coach and camera processes then start without warming up through the interpreter, which
+# made the first 30-90 s of a drive draw slower frames. Compose and the other AndroidX libraries ship
+# their own profiles, merged with this one.
+Lcom/flappedear/betterdriver/**;
+HSPLcom/flappedear/betterdriver/**->**(**)**

@@ -53,18 +53,18 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Video | Real-camera test HERO11 control/download, HERO8 import | ⚪ planned | ⚪ planned | — | FBBD-82, FBBD-22 |  |
 | Track screen | Track screen: delta, lap times, sectors, coach line, tiles, keep screen on | ✅ ≤0.3.1 | ✅ TF 1.14+ | Timing shared; UI per platform | FBBD-62, FBBD-12, FBBD-59, FBBD-63 | `route:Drive` `log-android:TrackScreen` `ios-screen:DriveView` `ios-screen:DeltaView` `ios-screen:LapTimesView` `ios-screen:CoachLineView` |
 | Track screen | Track detection and live laps at a saved track | ✅ ≤0.3.1 | ✅ | Shared timing | FBBD-55, FBBD-58 | `route:Track` |
-| Track screen | Provisional start/finish at a track with no line | 🔵 PR #407 | ❌ | Shared timing (once merged), iOS wiring needed | FBBD-335, FBBD-369 |  |
+| Track screen | Provisional start/finish at a track with no line | ✅ 1.20.0 | ❌ | Shared timing (once merged), iOS wiring needed | FBBD-335, FBBD-369 |  |
 | Track screen | Status strip: OBD and HR connected/connecting/lost; GNSS lost sound | ✅ 1.3.0 | ✅ | UI per platform | FBBD-268, FBBD-64 | `log-android:GnssSound` |
 | Track screen | Configurable tiles; layout editor per car in Settings | ✅ 1.4.0, 1.16.0 | ✅ TF 1405 | Twice: app TrackTiles vs core-ios TrackTiles | FBBD-262, FBBD-345 | `ios-screen:TileView` `ios-screen:TileListSheet` `ios-screen:TrackScreenPage` `ios-screen:TrackScreenView` |
-| Track screen | Second swipe screen and G radar | ✅ 1.12.0 | ❌ placeholder | UI per platform | FBBD-262, FBBD-318, FBBD-368 |  |
-| Track screen | Frame time p95 within budget | 🔵 PR #414 | 🟣 verify | — | FBBD-266 |  |
+| Track screen | Second swipe screen and G radar | ✅ 1.12.0 | ✅ #420 | Twice (Compose / SwiftUI) | FBBD-262, FBBD-318, FBBD-368 | `ios-screen:GRadarView` |
+| Track screen | Frame time p95 within budget | ✅ 1.20.0 | 🟣 verify | — | FBBD-266 |  |
 | Track screen | Demo track and built-in replay drives | ✅ 0.3.33+ | ❌ | Android only | FBBD-233, FBBD-254, FBBD-373 | `log-android:DemoReplay` |
 | Coach | Spoken corner cues, never in a braking zone; praise; cool-down laps | ✅ ≤0.3.1 … 0.3.41 | ✅ | Cue engine shared; run glue twice (CoachService / LiveCoach) | FBBD-97, FBBD-243, FBBD-244, FBBD-357 |  |
 | Coach | Coach uses the line plan, steering and gear | ✅ 1.10.0, 1.12.0, 1.14.0 | ✅ via shared core | Shared | FBBD-307, FBBD-321, FBBD-326 | `log-android:CoachReferences` |
-| Coach | Polish voice, voice picker, speech speed | ✅ 0.3.42, 0.3.43 | ✅ | Speech per platform | FBBD-240, FBBD-245 | `log-android:Voice` `route:CoachVoice` |
+| Coach | Polish voice, voice picker, speech speed | ✅ 0.3.42, 0.3.43 | ✅ | Speech per platform | FBBD-240, FBBD-245 | `log-android:Voice` `log-ios:Voice` `route:CoachVoice` |
 | Coach | Warm-up lap when the track was driven earlier the same day | ✅ 0.3.3 | ✅ | Shared | FBBD-190 |  |
 | Coach | Pre-rendered cue clips | ✅ ≤0.3.1 | ❌ live speech only | Android only | FBBD-48, FBBD-357 | `log-android:CueClips` |
-| Coach | Headset delay: measured, re-measured on route change, in the log | 🟡 open for 1.0 | 🟡 start only, not in the log | Twice; PR #417 adds iOS lines | FBBD-9, FBBD-49, FBBD-255, FBBD-354, FBBD-357 | `log-android:AudioOut` `log-android:AudioRoute` `log-android:OutputDelay` |
+| Coach | Headset delay: measured, re-measured on route change, in the log | 🟡 open for 1.0 | ✅ #417 retimes cues on a new output | Twice; PR #417 adds iOS lines | FBBD-9, FBBD-49, FBBD-255, FBBD-354, FBBD-357 | `log-android:AudioOut` `log-android:AudioRoute` `log-android:OutputDelay` `log-ios:AudioRoute` `log-ios:OutputDelay` |
 | Coach | Coach corner picks from the review | ✅ 0.3.x | ❌ | Store JVM-only | FBBD-148, FBBD-363 | `log-android:CoachPicks` |
 | Coach | Whole loop in CI on real sessions | 🟡 | ➖ n/a | CI | FBBD-311 |  |
 | Sessions | Sessions by day; delete; share a session (.bdsession) | ✅ | ✅ | UI per platform; bundle shared | FBBD-90, FBBD-95, FBBD-23 | `route:Sessions` `log-android:Sessions` `ios-screen:SessionsListView` `ios-screen:SessionRowView` |
@@ -93,7 +93,7 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Video export | Watch a session's video with the data overlay | ✅ 1.15.0 | ✅ TF 1.16+ | Overlay geometry shared | FBBD-341 | `route:WatchVideoPattern` `log-android:WatchVideo` `ios-screen:DataVideoWatchPage` `ios-screen:DataVideoPlayerPage` |
 | Video export | Video with data in Tech HUD layout; single-lap export | ✅ 1.17.0, 1.18.0 | ✅ TF 1413/1416 | HudGeometry shared; painter twice | FBBD-152, FBBD-346, FBBD-347 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
 | Video export | Optimal-lap composite video | ✅ ≤0.3.2 | ❌ | Android only | FBBD-163, FBBD-370 | `log-android:OptimalVideo` |
-| Video export | Play video in landscape | ✅ | 🔵 PR #415 | UI | — |  |
+| Video export | Play video in landscape | ✅ | ✅ #415 | UI | — | `log-ios:Orientation` |
 | Tracks | Tracks list, where you are, New track here | ✅ | ✅ TF 1.15+ | Twice: Android Tracks vs core-ios TrackLibrary | FBBD-336 | `route:Tracks` `log-android:Tracks` `ios-screen:TracksScreen` `ios-screen:TracksView` |
 | Tracks | Track editor: start/finish and sectors on the map; MapTiler or OSM | ✅ | ✅ | Twice: Android editor vs core-ios TrackEditor | FBBD-56, FBBD-230 | `route:TrackEditorPattern` `ios-screen:TrackEditorScreen` `ios-screen:TrackEditorView` |
 | Tracks | Circuit directory; point-to-point tracks; delete a track | ✅ | ✅ | Shared timing | FBBD-79, FBBD-155, FBBD-157 |  |
@@ -108,6 +108,6 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Settings | In-app updater from GitHub Releases | ✅ | ➖ n/a TestFlight | Platform | FBBD-73 |  |
 | Diagnostics | Continuous debug log, share as one zip; crash capture | ✅ ≤0.3.1 | ✅ TF 1.14+ | Writer per platform, same line format | FBBD-146, FBBD-339 | `log-android:App` `log-android:Crash` `log-android:DebugLogs` `log-android:Log` `log-ios:App` `log-ios:Crash` `log-ios:DebugLogs` |
 | Diagnostics | Log lines: session start/stop and events, GNSS seconds, equipment reach | ✅ | ✅ shared core | Shared (recorder commonMain, FBBD-356) | FBBD-356 |  |
-| Diagnostics | Log lines: coach cues, audio route, output delay | ✅ | 🔵 PR #417 in Swift | Twice until moved | FBBD-354, FBBD-357 | `log-android:CoachService` `log-android:CoachLink` |
+| Diagnostics | Log lines: coach cues, audio route, output delay | ✅ | ✅ #417 | Twice until moved | FBBD-354, FBBD-357 | `log-android:CoachService` `log-android:CoachLink` `log-ios:CoachService` |
 | Look | Pitwall look for the whole app | ⚪ planned parked by Arek | ⚪ planned parked | — | FBBD-317 |  |
 | Look | App shell: bottom bar Drive, Sessions, Car, Settings | ✅ | ✅ | Twice (Compose / SwiftUI) |  | `ios-screen:RootView` |

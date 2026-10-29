@@ -98,7 +98,7 @@ class PicksTest {
         assertFailsWith<IllegalArgumentException> { CornerPick("C", listOf(52.4), listOf(Double.POSITIVE_INFINITY)) }
         val dir = Files.createTempDirectory("picks").toFile()
         try {
-            val store = CoachPicksStore(dir)
+            val store = CoachPicksStore(dir.path)
             store.save("sim", listOf(sim.pick(1)))
             val f = File(dir, "sim.json")
             f.writeText(f.readText().replaceFirst(Regex("\"lats\":\\[[-0-9.]+"), "\"lats\":[95.0"))
@@ -114,7 +114,7 @@ class PicksTest {
     fun `picks are stored per track, read back, cleared, and a damaged file is no picks`() {
         val dir = Files.createTempDirectory("picks").toFile()
         try {
-            val store = CoachPicksStore(dir)
+            val store = CoachPicksStore(dir.path)
             assertTrue(store.get("sim").isEmpty())
             store.save("sim", listOf(sim.pick(1), sim.pick(3)))
             store.save("other-track", listOf(sim.pick(0)))

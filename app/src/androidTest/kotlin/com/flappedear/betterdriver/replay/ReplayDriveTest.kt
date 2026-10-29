@@ -87,13 +87,13 @@ class ReplayDriveTest {
         val setup = Setup()
             .addEquipment(EquipmentModel.DEMO_TRACK, newId = { "demo-${n++}" })
             .addCar(CarName, newId = { "car-${n++}" })
-        SetupStore(File(d.app.filesDir, "setup.json")).save(setup)
+        SetupStore(File(d.app.filesDir, "setup.json").path).save(setup)
         d.app.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).edit()
             .putBoolean("setup_done", true)
             .commit()
         DemoReplay.choose(d.app, DemoReplay.SilesiaRing)
         // The coach process reads its settings from this file at each session start (CoachProtocol).
-        CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties"))
+        CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties").path)
             .write(CoachSettings(Verbosity.Full, language = language, learningLaps = LearningLaps))
         earlierOuting()
         AppLog.clear(d.app)
@@ -114,7 +114,7 @@ class ReplayDriveTest {
             SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
         }
         val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
-        CoachReferenceStore(File(d.app.filesDir, "coach/references")).save(reference.copy(sessions = emptyList()))
+        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
     }
 
     /**
@@ -136,10 +136,18 @@ class ReplayDriveTest {
         val id = live.sessionId
         d.saveProps(marker, KeySession to id)
         val minutes = args.getString("minutes")?.toLongOrNull() ?: DefaultMinutes
+        // What makes the track screen's slow frames slow (FBBD-266), beside the drive check's frame time.
+        val parts = FrameParts()
         for (left in minutes downTo 1) {
             Log.i(Tag, "replaying; $left min left")
-            Thread.sleep(MillisPerMinute)
+            // Every second, so the window the track screen gets when it turns is measured from its start.
+            repeat((MillisPerMinute / MillisPerFollow).toInt()) {
+                d.instrumentation.runOnMainSync { d.resumedApp()?.let(parts::follow) }
+                Thread.sleep(MillisPerFollow)
+            }
         }
+        Log.i(Tag, "FrameParts ${parts.text()}")
+        d.instrumentation.runOnMainSync { parts.stop() }
         assertEquals("one recording all along", id, d.recorder().live?.sessionId)
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).stop() }
         d.waitFor(SaveTimeoutMs, "the session to be saved") {
@@ -172,14 +180,31 @@ class ReplayDriveTest {
         val silent = coach.single { it.id == "coach.silent_laps" }
         check(silent.verdict != Verdict.NOT_MEASURED) { "${silent.label}: ${silent.how}" }
         // The drive checks count too, except those that measure the emulator's own screen, start-up and
-        // speech engine rather than the app: a phone's values come from Arek's logs.
-        val drive = report.metrics.filterNot { m ->
-            m.id in EmulatorChecks || EmulatorPrefixes.any { m.id.startsWith(it) }
+        // speech engine rather than the app: a phone's values come from Arek's logs. The track screen's
+        // frame time after the first 90 s counts (FBBD-266): steady at 8 ms here, so a screen that does
+        // more work per update fails it before it reaches the phone.
+        val drive = report.metrics.filter { m ->
+            m.id == DrivingFrames || (m.id !in EmulatorChecks && EmulatorPrefixes.none { m.id.startsWith(it) })
         }
         val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
         check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
+        checkStartUpFrames(report.metrics)
         checkCpuBudget(report.metrics)
         d.checkNoAppErrors()
+    }
+
+    /**
+     * The track screen's frame time p95 in the first 90 s (FBBD-266) within [StartUpFramesMillis]. The
+     * debug build runs uncompiled code here, so the emulator's start-up varies from run to run (16, 25
+     * and 33 ms on the same code, with up to two frozen frames as the track screen is first drawn); the
+     * limit catches a start-up that does several times more, while the phone is judged against 16 ms
+     * from its logs.
+     */
+    private fun checkStartUpFrames(metrics: List<QualityMetric>) {
+        val p95 = metrics.firstOrNull { it.id == StartUpFrames }?.value
+        check(p95 != null && p95 <= StartUpFramesMillis) {
+            "Frame time p95, first 90 s (FBBD-266): $p95 ms > $StartUpFramesMillis ms on the emulator"
+        }
     }
 
     /**
@@ -247,6 +272,7 @@ class ReplayDriveTest {
         const val StartTimeoutMs = 90_000L
         const val SettleMs = 8_000L
         const val MillisPerMinute = 60_000L
+        const val MillisPerFollow = 1_000L
         const val MicrosPerSecond = 1_000_000L
 
         /** replay-drive.sh's REPLAY_MINUTES when it gives none. */
@@ -262,6 +288,13 @@ class ReplayDriveTest {
 
         /** Drive checks of the emulator's hardware: start-up time, speech engine delay, frame times. */
         val EmulatorChecks = setOf("app.cold_start", "coach.tts", "coach.headset", "soak.jank")
+
+        /** The track screen's frame time p95 after the start-up (FBBD-266), judged here too. */
+        const val DrivingFrames = "ui.frame_p95"
+
+        /** The track screen's frame time p95 in the first 90 s (FBBD-266), with its emulator limit. */
+        const val StartUpFrames = "ui.frame_p95_start"
+        const val StartUpFramesMillis = 50.0
 
         /** Frame times, and the cue delays per sound path (coach.delay_live, coach.total_live, ...). */
         val EmulatorPrefixes = listOf("ui.", "coach.delay", "coach.total")

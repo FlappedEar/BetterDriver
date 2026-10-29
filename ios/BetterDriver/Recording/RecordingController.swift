@@ -79,6 +79,8 @@ final class RecordingController: ObservableObject {
     private var lastGnss: GnssState?
     /// The main screen's tiles of the session's car (FBBD-345), as Settings had them at the start.
     private var tileIds = TrackScreenModel.defaultTiles
+    /// The second screen's tiles of the session's car (FBBD-262), as Settings had them at the start.
+    private var secondTileIds: [String] = []
     /// The Open GoPro cameras turned on for the session (FBBD-343).
     private var goPros: OpenGoPros?
     private var obd: ObdLink?
@@ -147,6 +149,7 @@ final class RecordingController: ObservableObject {
         self.receiver = receiver
         let setup = SettingsModel.shared.setup
         tileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: false)
+        secondTileIds = TrackTiles.shared.ids(setup: setup, carId: setup.session.carId, second: true)
         session = live
         AppLog.session = live.id
         AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
@@ -185,7 +188,7 @@ final class RecordingController: ObservableObject {
         // nearby, and the Wi-Fi adapter.
         let car = ObdLink(
             sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth),
-            setup: SettingsModel.shared.setup, tiles: tileIds
+            setup: SettingsModel.shared.setup, tiles: tileIds + secondTileIds
         )
         obd = car
         car.start()
@@ -233,9 +236,25 @@ final class RecordingController: ObservableObject {
 
     private func startCoach(_ live: LiveSession, _ coach: CoachSettings) {
         let phoneDelay = CoachVoice.outputDelayMillis
-        guard let settings = Self.sessionCoach(coach, phoneDelayMillis: phoneDelay) else { return }
+        guard let settings = Self.sessionCoach(coach, phoneDelayMillis: phoneDelay) else {
+            AppLog.i("CoachService", "coach off")
+            return
+        }
         let voice = CoachVoice(settings: settings)
         self.voice = voice
+        // For the headset delay test (FBBD-49), Android's lines (FBBD-354, FBBD-355): the output's delay
+        // and what the cues are timed for.
+        AppLog.i("OutputDelay", CoachVoice.delayLine)
+        AppLog.i(
+            "CoachService",
+            "coaching session \(live.id): \(settings), audio delay \(phoneDelay > 0 ? "measured" : "set") on \(CoachVoice.output.type)"
+        )
+        // A headset that connects or drops mid-session: the cues are timed for the new output, or for the
+        // delay set in Settings when iOS reports none.
+        let setDelay = coach.audioDelayMillis
+        voice.onDelay = { [weak live] ms, output in
+            live?.audioDelay(millis: Int32(ms > 0 ? ms : Int(setDelay)), measured: ms > 0, output: output)
+        }
         live.startCoach(
             sessionsDir: AppFolders.sessions.path,
             referencesDir: AppFolders.coachReferences.path,
@@ -339,7 +358,7 @@ final class RecordingController: ObservableObject {
         // A RaceBox's accelerometer or, with phone GPS, the phone's own (FBBD-337): G either way.
         let model = TrackScreenModel(
             now, receiverHasG: true, obdConnected: obdOn, heartRate: heartRate?.status, camera: cameraStatus,
-            tileIds: tileIds
+            tileIds: tileIds, secondTileIds: secondTileIds
         )
         screen = model
         activity.update(model)
@@ -365,6 +384,21 @@ struct TrackScreenModel: Equatable {
         let unit: String
         /// No value now: drawn dim, as the delta's dash.
         let dim: Bool
+        /// The channel can have data in this session; one that cannot is left out while driving (UI-126 B).
+        var hasData = true
+    }
+
+    /// The car's acceleration in g: [forward] positive speeding up, negative braking; [left] positive
+    /// in a left turn (RadarPoint).
+    struct RadarPoint: Equatable {
+        let forward: Double
+        let left: Double
+    }
+
+    /// The G radar's dot and its trail of the half second before it, oldest first (FBBD-318).
+    struct Radar: Equatable {
+        let now: RadarPoint
+        let trail: [RadarPoint]
     }
 
     /// The coach's last cue with its corner, or whether it is learning (CoachStatus).
@@ -395,6 +429,24 @@ struct TrackScreenModel: Equatable {
     /// The row of six slots (UI-120 A) of the car's layout (FBBD-345), by default speed and G; nil is an
     /// empty slot, drawn as an outline (UI-125 B). A tile that cannot have data here is left out (UI-126 B).
     let tiles: [Tile?]
+    /// The second screen's slots (UI-121 B), three rows of four, or with the G radar the first nine in
+    /// three rows of three (UI-240 A); each keeps whether it has data, so a row can drop it (shownRows).
+    let secondTiles: [Tile?]
+    /// The second screen shows the G radar (FBBD-318): the session's receiver, or the phone, gives G.
+    let radarOn: Bool
+    /// The radar's dot and trail; nil before the first reading.
+    let radar: Radar?
+    /// Every tile is drawn, one with no data too, so each can be tapped (Settings › Track screen).
+    let editable: Bool
+
+    /// How many screens a swipe goes through: the main one and the second (UI-121).
+    let pages = 2
+
+    /// UI-121 B: three rows of four on the second screen.
+    static let secondColumns = 4
+    static let secondRows = 3
+    /// UI-240 A: with the G radar, the second screen's first nine tiles, three rows of three.
+    static let radarColumns = 3
 
     static let noValue = TrackTiles.shared.NO_VALUE
     /// A fresh install's main screen: speed, G and four empty slots.
@@ -402,10 +454,11 @@ struct TrackScreenModel: Equatable {
 
     /// [obdConnected]: OBD data arrives, shown as the car icon (FBBD-268, UI-110 B). [heartRate] is the
     /// strap's, when one records (FBBD-333). [camera]: the phone camera's line, when it records video.
-    /// [tileIds]: the main screen of the session's car (TrackTiles.ids), "" for an empty slot.
+    /// [tileIds]: the main screen of the session's car (TrackTiles.ids), "" for an empty slot;
+    /// [secondTileIds] its second screen.
     init(
         _ s: LiveScreen, receiverHasG: Bool, obdConnected: Bool = false, heartRate: HeartRateStatus? = nil,
-        camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles
+        camera: CameraStatus? = nil, tileIds: [String] = TrackScreenModel.defaultTiles, secondTileIds: [String] = []
     ) {
         let live = s.live
         let gnss: Status = switch s.gnss {
@@ -445,11 +498,18 @@ struct TrackScreenModel: Equatable {
             .map { TrackTiles.shared.tile(id: $0, live: live, timing: timing, receiverHasG: receiverHasG) }
             .filter { $0?.hasData != false }
             .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: $0.value == Self.noValue) } }
+        secondTiles = secondTileIds
+            .map { TrackTiles.shared.tile(id: $0, live: live, timing: timing, receiverHasG: receiverHasG) }
+            .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: $0.value == Self.noValue, hasData: $0.hasData) } }
+        // The radar shows with a receiver that gives G, as the G tile does (UI-126 B).
+        radarOn = receiverHasG
+        radar = Self.radar(now: live.g, trail: live.gTrail)
+        editable = false
     }
 
     /// The track screen as Settings › Track screen draws it (layoutTrackState, FBBD-345): no session, so
     /// a dash for every value, and every tile drawn, one without data too, so each can be tapped.
-    init(layout tileIds: [String], receiverHasG: Bool, coachOn: Bool) {
+    init(layout tileIds: [String], secondIds: [String] = [], receiverHasG: Bool, coachOn: Bool) {
         status = []
         coach = coachOn ? Coach(corner: nil, text: nil, praise: false, dim: false) : nil
         recordingTime = Self.clock(micros: 0)
@@ -462,6 +522,36 @@ struct TrackScreenModel: Equatable {
         tiles = tileIds
             .map { TrackTiles.shared.tile(id: $0, live: nil, timing: nil, receiverHasG: receiverHasG) }
             .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: true) } }
+        secondTiles = secondIds
+            .map { TrackTiles.shared.tile(id: $0, live: nil, timing: nil, receiverHasG: receiverHasG) }
+            .map { $0.map { Tile(label: $0.label, value: $0.value, unit: $0.unit, dim: true) } }
+        radarOn = receiverHasG
+        radar = nil
+        editable = true
+    }
+
+    /// The G radar's dot and trail (radarOf), or nil before the first G.
+    static func radar(now: GPoint?, trail: [GPoint]) -> Radar? {
+        guard let now else { return nil }
+        let point = { (p: GPoint) in RadarPoint(forward: p.forward, left: p.left) }
+        return Radar(now: point(now), trail: trail.map(point))
+    }
+
+    /// The second screen's tiles: the first nine beside the radar, else all twelve.
+    var secondShown: [Tile?] { radarOn ? Array(secondTiles.prefix(Self.radarColumns * Self.secondRows)) : secondTiles }
+
+    /// The second screen's columns: three beside the radar, else four.
+    var secondShownColumns: Int { radarOn ? Self.radarColumns : Self.secondColumns }
+
+    /// The slots each row of [tiles] shows, rows with none left out (shownRows): while driving a tile
+    /// that cannot have data is left out and the row's others share its width; an empty slot stays.
+    static func shownRows(_ tiles: [Tile?], columns: Int, rows: Int, editing: Bool) -> [[Int]] {
+        (0..<rows).compactMap { r in
+            guard r * columns < tiles.count else { return nil }
+            let slots = (r * columns..<min((r + 1) * columns, tiles.count))
+                .filter { tiles[$0]?.hasData != false || editing }
+            return slots.isEmpty ? nil : slots
+        }
     }
 
     /// Recording time as m:ss, or h:mm:ss from one hour (formatClock).

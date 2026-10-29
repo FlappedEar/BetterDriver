@@ -40,9 +40,6 @@ import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.live.SessionTiming
-import com.flappedear.betterdriver.timing.live.lapLineText
-import com.flappedear.betterdriver.timing.track.TrackEvent
-import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -286,12 +283,7 @@ class RecorderService : Service() {
             // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
             // newer one the UI process fetched since the last session is used.
             val circuits = CircuitDirectory(circuitsDir(this)).load()
-            // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
-            // listener thread, so a timing failure is logged in the session and never stops it.
-            // Each lap is logged with the predicted lap time shown before its line (FBBD-183).
-            val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits, onLap = { lap, predicted ->
-                recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
-            }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
+            val timing = sessionTiming(tracksDir(this), recording, circuits)
             recording.listeners.add(timing)
             // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
             val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {

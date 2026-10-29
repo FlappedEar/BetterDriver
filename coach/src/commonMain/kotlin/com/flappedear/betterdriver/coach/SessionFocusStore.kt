@@ -1,12 +1,13 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.io.CoreFiles
+import com.flappedear.betterdriver.io.IOException
+import com.flappedear.betterdriver.io.filesEndingWith
 import com.flappedear.betterdriver.timing.geo.MaxLatitude
 import com.flappedear.betterdriver.timing.geo.MaxLongitude
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.io.IOException
 
 /**
  * One difference between the faster and the other passes through a focus corner (FBBD-20), as
@@ -115,9 +116,10 @@ data class SessionFocusRecord(
  * The next-session focus of each analysed session (FBBD-20), one `<track id>/<session id>.json` in
  * [dir]. The app writes it when a session's analysis is made; the coach reads the track's latest at
  * each session start ([latest]), so the next session works on it first. Writes are synced and
- * renamed into place; a file that cannot be read counts as none.
+ * renamed into place; a file that cannot be read counts as none. Shared by the Android app and the
+ * iOS app (FBBD-359).
  */
-class SessionFocusStore(private val dir: File) {
+class SessionFocusStore(private val dir: String) {
     // Defaults written too, so every file says its format and version and a newer one is never misread.
     private val json = Json {
         ignoreUnknownKeys = true
@@ -129,9 +131,11 @@ class SessionFocusStore(private val dir: File) {
 
     /** Every session's record at [trackId], oldest first. */
     fun history(trackId: String): List<SessionFocusRecord> =
-        File(dir, checkedTrackId(trackId)).listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
-            .mapNotNull { f -> read(f)?.takeIf { it.trackId == trackId && f.name == it.sessionId + Suffix } }
-            .sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))
+        CoreFiles.join(dir, checkedTrackId(trackId)).let { d ->
+            CoreFiles.filesEndingWith(d, Suffix).mapNotNull { name ->
+                read(CoreFiles.join(d, name))?.takeIf { it.trackId == trackId && name == it.sessionId + Suffix }
+            }
+        }.sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))
 
     /**
      * The focus the next session at [trackId] works on: that of the latest session with one, not
@@ -145,9 +149,9 @@ class SessionFocusStore(private val dir: File) {
     /** Deletes session [sessionId]'s record at every track, with the session; returns whether none is left. */
     fun deleteSession(sessionId: String): Boolean {
         val name = checkedSessionId(sessionId) + Suffix
-        val files = dir.listFiles { f -> f.isDirectory }.orEmpty().map { File(it, name) }
-        files.forEach { it.delete() }
-        return files.none { it.exists() }
+        val files = trackDirs().map { CoreFiles.join(it, name) }
+        files.forEach(CoreFiles::delete)
+        return files.none(CoreFiles::exists)
     }
 
     /**
@@ -158,31 +162,34 @@ class SessionFocusStore(private val dir: File) {
     fun save(record: SessionFocusRecord): Boolean {
         val f = fileFor(record.trackId, record.sessionId)
         // One record per session: analysed again at another track, it leaves the old track (FBBD-20).
-        val elsewhere = dir.listFiles { d -> d.isDirectory && d.name != record.trackId }.orEmpty()
-            .map { File(it, f.name) }.filter { it.exists() }
-        elsewhere.forEach { it.delete() }
+        val name = checkedSessionId(record.sessionId) + Suffix
+        val elsewhere = trackDirs().filter { it != CoreFiles.join(dir, record.trackId) }
+            .map { CoreFiles.join(it, name) }.filter(CoreFiles::exists)
+        elsewhere.forEach(CoreFiles::delete)
         val wrote = if (read(f) == record) {
             elsewhere.isNotEmpty()
         } else {
             writeAtomically(f, json.encodeToString(SessionFocusRecord.serializer(), record))
             true
         }
-        val left = elsewhere.filter { it.exists() }
-        if (left.isNotEmpty()) throw IOException("old focus records not deleted: ${left.joinToString { it.path }}")
+        val left = elsewhere.filter(CoreFiles::exists)
+        if (left.isNotEmpty()) throw IOException("old focus records not deleted: ${left.joinToString()}")
         return wrote
     }
 
     /** Deletes every record of [trackId], with its track (FBBD-157); returns whether none is left. */
     fun delete(trackId: String): Boolean {
-        val d = File(dir, checkedTrackId(trackId))
-        d.deleteRecursively()
-        return !d.exists()
+        return CoreFiles.deleteRecursively(CoreFiles.join(dir, checkedTrackId(trackId)))
     }
 
-    private fun read(f: File): SessionFocusRecord? {
-        if (!f.isFile) return null
+    /** The folders of the tracks with records. */
+    private fun trackDirs(): List<String> =
+        CoreFiles.list(dir).map { CoreFiles.join(dir, it) }.filter(CoreFiles::isDirectory)
+
+    private fun read(f: String): SessionFocusRecord? {
+        if (!CoreFiles.isFile(f)) return null
         return try {
-            json.decodeFromString(SessionFocusRecord.serializer(), f.readText())
+            json.decodeFromString(SessionFocusRecord.serializer(), CoreFiles.readText(f))
                 .takeIf { it.format == SessionFocusRecord.Format && it.version == SessionFocusRecord.Version }
         } catch (_: SerializationException) {
             null
@@ -194,7 +201,7 @@ class SessionFocusStore(private val dir: File) {
     }
 
     private fun fileFor(trackId: String, sessionId: String) =
-        File(File(dir, checkedTrackId(trackId)), checkedSessionId(sessionId) + Suffix)
+        CoreFiles.join(CoreFiles.join(dir, checkedTrackId(trackId)), checkedSessionId(sessionId) + Suffix)
 
     private companion object {
         const val Suffix = ".json"

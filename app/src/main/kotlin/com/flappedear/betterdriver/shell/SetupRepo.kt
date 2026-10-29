@@ -37,7 +37,7 @@ class SetupRepo private constructor(context: Context) {
     // The setup is read once at startup on the main thread: two small files every screen needs from
     // its first frame. StrictMode is told not to report these reads (FBBD-41); saves run on [saver].
     private val files = DebugGuards.allowDisk { context.filesDir }
-    private val store = SetupStore(File(files, FileName))
+    private val store = SetupStore(File(files, FileName).path)
     private val saver = Executors.newSingleThreadExecutor { r -> Thread(r, "setup-save").apply { isDaemon = true } }
 
     var setup by mutableStateOf(
@@ -53,7 +53,7 @@ class SetupRepo private constructor(context: Context) {
      * process restarted mid-session reconnects to the same cameras and tiles. Only read while a
      * session runs; the next START replaces it.
      */
-    private val runningStore = SetupStore(File(files, SessionSetupFile))
+    private val runningStore = SetupStore(File(files, SessionSetupFile).path)
     private var running by mutableStateOf(DebugGuards.allowDisk { runningStore.load() })
 
     /** What the running session uses. Falls back to [setup] if no session was ever started. */

@@ -359,7 +359,7 @@ class SetupTest {
     @Test
     fun storeRoundTripsAndSetsAsideUnreadableFiles(@TempDir dir: File) {
         val file = File(dir, "setup.json")
-        val store = SetupStore(file)
+        val store = SetupStore(file.path)
         assertNull(store.load())
         val s = Setup.fresh(ids)
             .addEquipment(EquipmentModel.RACEBOX, "RB", "AA", ids)

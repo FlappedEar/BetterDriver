@@ -3,6 +3,7 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import com.flappedear.betterdriver.analysis.line.PlanAdvice
 import com.flappedear.betterdriver.analysis.line.PlanCorner
 import com.flappedear.betterdriver.analysis.line.PlanPass
@@ -14,12 +15,19 @@ import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
+import com.flappedear.betterdriver.recorder.log.IosLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackLine
+import kotlin.test.AfterTest
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
@@ -27,12 +35,6 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.Foundation.writeToFile
-import kotlin.test.AfterTest
-import kotlin.test.Test
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
-import kotlin.test.assertNull
-import kotlin.test.assertTrue
 
 /** The live coach on the iPhone says and logs its cues as the Android coach does (FBBD-333). */
 class LiveCoachTest {
@@ -103,6 +105,40 @@ class LiveCoachTest {
     }
 
     @Test
+    fun aNewOutputMidSessionRetimesTheCuesAndEachCueIsInTheDebugLog() {
+        val logged = mutableListOf<String>()
+        IosLog.sink = { tag, message -> logged += "$tag: $message" }
+        try {
+            val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
+            val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
+            val settings = coachSettings(polish = false, audioDelayMillis = 120)
+            session.startCoach(sessions, references, lines, settings, audioDelayFromPhone = true, speaker = Speaker())
+            // A headset connects 100 s in, after the first lap times, before the last (FBBD-354).
+            for (n in 0L..(25 * 140)) {
+                if (n == 25L * 100) session.audioDelay(300, measured = false, output = "bt_a2dp")
+                session.submit(SampleSet(n * 40_000, gnss.fix(n)))
+            }
+            session.awaitCoach()
+            session.awaitCoach()
+            session.stop()
+
+            val voice = SessionStore(sessions).read(session.id).events.filter { it.kind == CoachEvents.VOICE }
+            assertTrue(voice.size >= 2, voice.joinToString { it.text })
+            assertTrue("out_delay_ms=120 out_delay_src=measured" in voice.first().text, voice.first().text)
+            assertTrue("out_delay_ms=300 out_delay_src=set timed_src=set" in voice.last().text, voice.last().text)
+            assertTrue("timed_src=measured" in voice.first().text, voice.first().text)
+            // Android's lines, with Android's tags (FBBD-355).
+            assertTrue(logged.any { it.startsWith("CoachService: coaching at Fake ring") }, logged.joinToString("\n"))
+            val retimed = "CoachService: cues now timed for an audio delay of 300 ms (set) on bt_a2dp"
+            assertTrue(retimed in logged, logged.joinToString("\n"))
+            val started = logged.filter { Regex("""Voice: live voice start \d+ ms""").matches(it) }
+            assertEquals(voice.size, started.size, logged.joinToString("\n"))
+        } finally {
+            IosLog.sink = null
+        }
+    }
+
+    @Test
     fun theNextSessionGetsAReferenceFromTheFirst() {
         coachedSession(coachSettings(polish = true, audioDelayMillis = 0), Speaker()).stop()
         val second = coachedSession(coachSettings(polish = true, audioDelayMillis = 0), Speaker())
@@ -125,8 +161,8 @@ class LiveCoachTest {
             trackId = "ring", sessionId = "earlier", sessionStartUtcMillis = 1L, identityRevision = 1,
             referenceLapNumber = 2, referenceLapSeconds = 40.0, laps = 3, sessions = 1, corners = listOf(corner),
         )
-        assertTrue(IosLinePlanStore(lines).save(plan))
-        assertEquals(plan, IosLinePlanStore(lines).get("ring"))
+        assertTrue(LinePlanStore(lines).save(plan))
+        assertEquals(plan, LinePlanStore(lines).get("ring"))
 
         val session = coachedSession(coachSettings(polish = false, audioDelayMillis = 0), Speaker())
         session.stop()
@@ -143,7 +179,7 @@ class LiveCoachTest {
         // The fake ring's laps are all alike, so whether it makes a plan is the line analysis's call
         // (the demo session's is checked in SessionReviewTest); whatever it made is what is kept.
         val reviewed = ReviewLibrary(base).review(second.id)
-        assertEquals(reviewed.linePlan, IosLinePlanStore(lines).get("ring"))
+        assertEquals(reviewed.linePlan, LinePlanStore(lines).get("ring"))
     }
 
     @Test

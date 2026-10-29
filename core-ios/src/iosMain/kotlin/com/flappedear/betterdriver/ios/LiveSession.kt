@@ -37,16 +37,11 @@ import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
-import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.detectTrack
+import com.flappedear.betterdriver.timing.track.iosTrackStore
 import kotlin.concurrent.Volatile
-import kotlinx.cinterop.BetaInteropApi
-import kotlinx.cinterop.ExperimentalForeignApi
-import platform.Foundation.NSFileManager
 import platform.Foundation.NSRecursiveLock
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.stringWithContentsOfFile
 
 private const val MaxErrorText = 500
 
@@ -152,6 +147,14 @@ class LiveSession private constructor(
             recording::nowMicros,
         ) { t, kind, text -> eventAt(t, kind, text) }
         guarded { if (coach == null) coach = c }
+    }
+
+    /**
+     * The audio output changed mid-session to [output] (FBBD-354): the coach's cues from now on allow for
+     * [millis], which iOS reported for it when [measured]; nothing without a coach.
+     */
+    fun audioDelay(millis: Int, measured: Boolean, output: String) {
+        guarded { coach }?.audioDelay(millis, measured, output)
     }
 
     /** Waits for the coach's queued work, for tests. */
@@ -265,7 +268,8 @@ class LiveSession private constructor(
                 accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { !receiverHasG },
             )
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12); each lap is logged
-            // with the predicted lap time shown before its line (FBBD-183), as on Android.
+            // at its crossing with the predicted lap time shown before its line (FBBD-183), and a
+            // provisional line placed where there is none is logged (FBBD-335), as on Android.
             // The log's lines of this recording, as Android's recorder service adds them (logTo).
             val receiver = info.devices.firstOrNull().orEmpty()
             val logs = listOf(
@@ -275,7 +279,9 @@ class LiveSession private constructor(
             )
             lateinit var session: LiveSession
             val timing = SessionTiming({ TrackFiles.read(tracksDir) }, circuits, onLap = { lap, predicted ->
-                session.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
+                session.eventAt(lap.endMicros, EventKinds.LAP_LINE, lapLineText(lap, predicted))
+            }, onProvisional = { made ->
+                session.event(TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
             }) { found -> session.event(TrackEvent.KIND, TrackEvent.text(found)) }
             info.channels.forEach(tracker::onChannel)
             session = LiveSession(recording, tracker, timing, logs)
@@ -288,7 +294,7 @@ class LiveSession private constructor(
 /** One look at a running recording for the track screen. */
 data class LiveScreen(
     val live: LiveSnapshot,
-    /** Null until the car is at a saved track with a start/finish line. */
+    /** Null until the car is at a saved track with a start/finish line, or a provisional line is placed (FBBD-335). */
     val timing: LiveTimingState?,
     /** The saved track or directory circuit the car is at, once the first fix has named it. */
     val place: String?,
@@ -306,23 +312,17 @@ data class LiveScreen(
     val shownRateHz: Int get() = if (live.receiverRateHz > 0) live.receiverRateHz else live.fixRateHz
 }
 
-/** The saved tracks, one JSON file each (base/tracks/<id>.json), as TrackStore keeps them on Android. */
+/** The saved tracks (base/tracks), kept by the TrackStore Android uses (FBBD-359). */
 object TrackFiles {
-    private const val Suffix = ".json"
+    /** Every readable track in [dir]; a file that cannot be read is set aside, as on Android. */
+    fun read(dir: String): List<Track> = read(iosTrackStore(dir))
 
-    /** Every readable track in [dir]; a file that cannot be read is skipped and left as it is. */
-    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-    @Suppress("TooGenericExceptionCaught") // Any damaged file is skipped, never a crash in Swift.
-    fun read(dir: String): List<Track> {
-        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null).orEmpty()
-        return names.filterIsInstance<String>().filter { it.endsWith(Suffix) }.mapNotNull { name ->
-            val text = NSString.stringWithContentsOfFile("$dir/$name", NSUTF8StringEncoding, null)
-            try {
-                text?.let(TrackJson::decode)
-            } catch (_: Exception) {
-                null
-            }
-        }.sortedBy { it.displayName.lowercase() }
+    /** Every readable track in [store]; none when the folder cannot be read, never a crash in Swift. */
+    @Suppress("TooGenericExceptionCaught")
+    internal fun read(store: TrackStore): List<Track> = try {
+        store.all()
+    } catch (_: Exception) {
+        emptyList()
     }
 
     /** The saved track or directory circuit at [lat], [lon], for the START button; null when none. */

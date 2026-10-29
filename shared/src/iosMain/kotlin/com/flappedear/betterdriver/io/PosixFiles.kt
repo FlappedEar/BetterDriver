@@ -1,6 +1,6 @@
 @file:OptIn(ExperimentalForeignApi::class)
 
-package com.flappedear.betterdriver.recorder.store
+package com.flappedear.betterdriver.io
 
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -39,19 +39,19 @@ import platform.posix.write
 private const val FileMode = 0x1A4 // 0644
 
 /** A file system call failed; the message names the call, the path and errno's text. */
-class FileError(message: String) : RuntimeException(message)
+class FileError(message: String) : IOException(message)
 
 private fun fail(what: String, path: String): Nothing =
     throw FileError("$what $path: ${strerror(errno)?.toKString() ?: "errno $errno"}")
 
 /**
- * The few file operations the iOS session store needs (FBBD-332), on POSIX calls so that
+ * The file operations of the iOS session store (FBBD-332) and the shared stores (FBBD-359), on POSIX calls so that
  * writes, fsync and renames behave as the Android store's: data handed to write() survives an
  * app crash, fsync makes it survive a power loss, and rename replaces a file atomically.
  */
 // One small wrapper per POSIX call the store uses; grouping them keeps the error handling in one place.
 @Suppress("TooManyFunctions")
-internal object PosixFiles {
+object PosixFiles {
     fun join(dir: String, name: String) = if (dir.endsWith("/")) dir + name else "$dir/$name"
 
     fun name(path: String) = path.trimEnd('/').substringAfterLast('/')
