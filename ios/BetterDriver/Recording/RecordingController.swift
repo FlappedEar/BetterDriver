@@ -86,6 +86,8 @@ final class RecordingController: ObservableObject {
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
     private var voice: CoachVoice?
+    /// The track screen's frames while recording (FBBD-376).
+    private var frames: FrameMeter?
     private var timer: Timer?
     private let activity = RecordingActivity()
 
@@ -206,6 +208,9 @@ final class RecordingController: ObservableObject {
             cam.start()
         }
         startGoPros(live)
+        let meter = FrameMeter(session: live)
+        frames = meter
+        meter.start()
         UIApplication.shared.isIdleTimerDisabled = true
         activity.start(at: Date())
         refresh()
@@ -288,6 +293,7 @@ final class RecordingController: ObservableObject {
         camera?.stop()
         obd?.stop()
         heartRate?.stop()
+        frames?.stop()
         _ = live.stop()
         AppLog.i("Recording", "stop")
         end()
@@ -295,6 +301,8 @@ final class RecordingController: ObservableObject {
 
     private func end() {
         activity.end()
+        frames?.stop()
+        frames = nil
         timer?.invalidate()
         timer = nil
         voice?.shutdown()

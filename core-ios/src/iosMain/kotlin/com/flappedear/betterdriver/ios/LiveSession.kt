@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.live.LiveTracker
+import com.flappedear.betterdriver.recorder.log.FrameStretch
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.circuits.CircuitListException
@@ -70,6 +71,9 @@ class LiveSession private constructor(
 
     /** Reads each fix with the last pedal, wheel and engine speed, as Android's CoachLink; under the lock. */
     private var coachReader = CoachFixReader(null)
+
+    /** The track screen's frames (FBBD-376), from the main thread only. */
+    private val frames = FrameStretch()
 
     val id: String get() = recording.id
 
@@ -150,6 +154,18 @@ class LiveSession private constructor(
     internal fun awaitCoach() = guarded { coach }?.awaitIdle()
 
     override fun event(kind: String, text: String) = recording.event(kind, text)
+
+    /**
+     * One frame of the track screen (FBBD-376), as Android's JankStats reports one: when it started and
+     * how long it took on a nanosecond clock, and whether it was janky. Every 30 s the stretch is logged
+     * as the session's [EventKinds.UI_FRAMES] event, as on Android, and its text is returned for the app
+     * log; null otherwise. Main thread.
+     */
+    fun frame(startNanos: Long, durationNanos: Long, jank: Boolean): String? =
+        frames.add(startNanos, durationNanos, jank)?.text?.also { recording.event(EventKinds.UI_FRAMES, it) }
+
+    /** Logs the frames since the last stretch, as [frame] does, when the screen stops counting; main thread. */
+    fun flushFrames(): String? = frames.flush()?.text?.also { recording.event(EventKinds.UI_FRAMES, it) }
 
     /** An event stamped by its source at [tMicros] on the session clock, such as a camera's (PhoneVideoLog). */
     internal fun eventAt(tMicros: Long, kind: String, text: String) = recording.eventAt(tMicros, kind, text)

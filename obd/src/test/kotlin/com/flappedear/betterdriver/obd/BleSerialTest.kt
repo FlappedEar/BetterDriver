@@ -156,4 +156,18 @@ class BleSerialTest {
         listOf("RaceBox Micro 3241", "Polar H10 7A3B21", "Garmin GLO", "Pixel Buds", null, "")
             .forEach { assertFalse(ObdAdapterNames.isCandidate(it), it.toString()) }
     }
+
+    @Test
+    fun `an adapter with another name counts by the serial service it advertises`() {
+        assertTrue(ObdAdapterNames.isCandidate("LELink-2", emptyList()))
+        assertTrue(ObdAdapterNames.isCandidate("KW902", emptyList()))
+        assertTrue(ObdAdapterNames.isCandidate("SCAN-77", listOf("FFF0")))
+        assertTrue(ObdAdapterNames.isCandidate(null, listOf("0000fff0-0000-1000-8000-00805f9b34fb")))
+        assertTrue(ObdAdapterNames.isCandidate("X", listOf("E7810A71-73AE-499D-8C15-FAA9AEF0C3F2")))
+        assertTrue(ObdAdapterNames.isCandidate("X", listOf("180F", "18F0")))
+        // HM-10's FFE0 is on many other gadgets; the standard services are on every device.
+        assertFalse(ObdAdapterNames.isCandidate("Fridge", listOf("FFE0")))
+        assertFalse(ObdAdapterNames.isCandidate("Polar H10 7A3B21", listOf("180D", "180F")))
+        assertFalse(ObdAdapterNames.isCandidate(null, emptyList()))
+    }
 }
