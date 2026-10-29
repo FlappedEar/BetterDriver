@@ -38,7 +38,7 @@ internal fun obdSection(events: List<RecorderEvent>, endMicros: Long): QualitySe
     val connects = events.ofKind(ObdConnectedKind).map { it.tMicros }.sorted()
     val first = connects.firstOrNull() ?: return null
     val ends = events.ofKind(ObdDisconnectedKind).sortedBy { it.tMicros }
-    val drops = ends.mapNotNull { e ->
+    val drops = liveEnds(events).mapNotNull { e ->
         val reason = e.text.substringAfter("reason=")
         if (!obdLinkLoss(reason)) return@mapNotNull null
         val back = connects.firstOrNull { it > e.tMicros }
@@ -68,6 +68,24 @@ internal fun obdSection(events: List<RecorderEvent>, endMicros: Long): QualitySe
         QualityNote(d.tMicros, text)
     }
     return QualitySection("OBD-II", metrics, notes)
+}
+
+/**
+ * The ends of connections the car answered on: an attempt that opened the adapter but failed in
+ * setup or discovery also logs an end, with no connect before it, and is no drop.
+ */
+private fun liveEnds(events: List<RecorderEvent>): List<RecorderEvent> {
+    var live = false
+    val out = mutableListOf<RecorderEvent>()
+    for (e in events.filter { it.kind == ObdConnectedKind || it.kind == ObdDisconnectedKind }.sortedBy { it.tMicros }) {
+        if (e.kind == ObdConnectedKind) {
+            live = true
+        } else if (live) {
+            live = false
+            out += e
+        }
+    }
+    return out
 }
 
 private fun longestGap(drops: List<ObdDrop>, endMicros: Long): QualityMetric {

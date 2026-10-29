@@ -76,4 +76,23 @@ class ObdQualityTest {
         assertEquals(0.0, s.metric("obd.drops").value)
         assertEquals("OBD link dropped (adapter stopped answering) as the recording ended", s.notes.single().text)
     }
+
+    @Test
+    fun `failed setup attempts after a stop are no drops`() {
+        // Engine off at 300 s; retries open the adapter but lose it in setup, then the car answers at 420 s.
+        val s = section(
+            listOf(
+                ended(5, "connection lost: read failed: before the car answered"),
+                connected(10),
+                ended(300, "car stopped answering"),
+                ended(320, "connection lost: read failed: Connection reset"),
+                ended(340, "adapter stopped answering"),
+                connected(420),
+            ),
+            900,
+        )
+        assertEquals(0.0, s.metric("obd.drops").value)
+        assertEquals(Verdict.NOT_MEASURED, s.metric("obd.not_back").verdict)
+        assertEquals(120.0, s.metric("obd.time_without").value)
+    }
 }
