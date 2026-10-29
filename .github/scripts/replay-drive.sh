@@ -12,10 +12,7 @@ test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-10}
 # When the one-minute trace starts, in s after the drive phase starts (FBBD-266); none when unset:
 # tracing slows the frames it watches.
-TRACE_AFTER_S=${TRACE_AFTER_S:-3}
-# The app compiled ahead of time before the drive (cmd package compile -m), when set. A debuggable
-# build stays at verify, so the debug APK runs JIT-only either way (FBBD-266).
-COMPILE=${COMPILE:-}
+TRACE_AFTER_S=${TRACE_AFTER_S:-}
 language=${LANGUAGE:-Polish}
 out=build/replay-drive
 mkdir -p "$out"
@@ -77,10 +74,6 @@ logcat=$!
 bash .github/scripts/wait-apk-build.sh || fail "the APKs did not build"
 adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk || fail "app not installed"
 adb install -r -t -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || fail "test APK not installed"
-if [ -n "$COMPILE" ]; then
-  echo "Compiling the app ($COMPILE): $(adb shell cmd package compile -m "$COMPILE" -f "$app" < /dev/null 2>&1)"
-  adb shell dumpsys package dexopt < /dev/null 2>/dev/null | grep -A3 "\[$app\]" | head -8
-fi
 
 # Which speech engines the emulator has: the coach needs one with a voice of $language.
 echo "Speech engines: $(adb shell cmd package query-services -a android.intent.action.TTS_SERVICE 2>/dev/null | grep -o 'packageName=[^ ]*' | sort -u | tr '\n' ' ')"
@@ -108,10 +101,12 @@ adb shell input keyevent KEYCODE_HOME || true
 sleep 5
 phase check --no-restart
 # The trace is read after the check, so its work on this machine does not slow the emulator's.
-[ -n "$TRACE_AFTER_S" ] && timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
-  && python3 -m pip install -q perfetto >/dev/null 2>&1 \
-  && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
-  || echo "No track screen trace (FBBD-266)."
+if [ -n "$TRACE_AFTER_S" ]; then
+  timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
+    && python3 -m pip install -q perfetto >/dev/null 2>&1 \
+    && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
+    || echo "No track screen trace (FBBD-266)."
+fi
 # The app window's frames split into their parts over the whole drive (ReplayDriveTest, FrameParts).
 grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
 # The drive check's own frame lines, one per 30 s (UiChecks), to see when the slow frames came.

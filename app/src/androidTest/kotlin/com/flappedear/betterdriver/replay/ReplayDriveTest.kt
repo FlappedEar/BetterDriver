@@ -180,9 +180,11 @@ class ReplayDriveTest {
         val silent = coach.single { it.id == "coach.silent_laps" }
         check(silent.verdict != Verdict.NOT_MEASURED) { "${silent.label}: ${silent.how}" }
         // The drive checks count too, except those that measure the emulator's own screen, start-up and
-        // speech engine rather than the app: a phone's values come from Arek's logs.
-        val drive = report.metrics.filterNot { m ->
-            m.id in EmulatorChecks || EmulatorPrefixes.any { m.id.startsWith(it) }
+        // speech engine rather than the app: a phone's values come from Arek's logs. The track screen's
+        // frame time after the first 90 s counts (FBBD-266): steady at 8-12 ms here, so a screen that
+        // does more work per update fails it before it reaches the phone.
+        val drive = report.metrics.filter { m ->
+            m.id == DrivingFrames || (m.id !in EmulatorChecks && EmulatorPrefixes.none { m.id.startsWith(it) })
         }
         val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
         check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
@@ -271,6 +273,9 @@ class ReplayDriveTest {
 
         /** Drive checks of the emulator's hardware: start-up time, speech engine delay, frame times. */
         val EmulatorChecks = setOf("app.cold_start", "coach.tts", "coach.headset", "soak.jank")
+
+        /** The track screen's frame time p95 after the start-up (FBBD-266), judged here too. */
+        const val DrivingFrames = "ui.frame_p95"
 
         /** Frame times, and the cue delays per sound path (coach.delay_live, coach.total_live, ...). */
         val EmulatorPrefixes = listOf("ui.", "coach.delay", "coach.total")
