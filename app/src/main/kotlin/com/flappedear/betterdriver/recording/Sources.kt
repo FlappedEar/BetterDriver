@@ -16,10 +16,17 @@ import com.flappedear.betterdriver.core.ble.nmea.TcpNmeaSource
 import com.flappedear.betterdriver.core.ble.obd.ObdSource
 import com.flappedear.betterdriver.core.ble.vbox.VboxSportSource
 import com.flappedear.betterdriver.recorder.DataSource
+import com.flappedear.betterdriver.recorder.EventKinds
+import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.TcpAddress
+import com.flappedear.betterdriver.timing.circuits.CircuitList
+import com.flappedear.betterdriver.timing.live.SessionTiming
+import com.flappedear.betterdriver.timing.live.lapLineText
+import com.flappedear.betterdriver.timing.track.TrackEvent
+import com.flappedear.betterdriver.timing.track.TrackStore
 import java.io.File
 import java.io.IOException
 import java.net.InetAddress
@@ -205,3 +212,16 @@ internal fun onNetwork(network: Network): TcpNetwork = object : TcpNetwork {
 
     override fun resolve(host: String): InetAddress = network.getByName(host)
 }
+
+/**
+ * Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
+ * listener thread, so a timing failure is logged in the session and never stops it. Each lap is
+ * logged with the predicted lap time shown before its line (FBBD-183); with no line here, a
+ * provisional one is placed once the car has driven a loop, and logged (FBBD-335).
+ */
+internal fun sessionTiming(tracks: File, recording: Recording, circuits: CircuitList) =
+    SessionTiming({ TrackStore(tracks).all() }, circuits, onLap = { lap, predicted ->
+        recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
+    }, onProvisional = { made ->
+        recording.event(TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
+    }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }

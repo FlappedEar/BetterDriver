@@ -42,7 +42,6 @@ class TimingListener(track: Track, private val onState: (LiveTimingState) -> Uni
  * Runs on the recorder's listener thread; [detection], [provisional] and [state] can be read from
  * any thread.
  */
-@Suppress("LongParameterList") // Where tracks come from, and what is told about laps and lines.
 class SessionTiming(
     private val tracks: () -> List<Track>,
     private val directory: CircuitList,
@@ -120,15 +119,17 @@ private class LoopSearch(private val saved: List<Track>, private val directory: 
     /** Takes [fix]; the track with a provisional line once the loop is found, else null. */
     fun offer(fix: Fix): Track? {
         val last = fixes.lastOrNull()
-        if (last != null && fix.tMicros - last.tMicros < KeepEveryMicros) return null
-        fixes.addLast(fix)
-        if (fixes.size > MaxKeptFixes) fixes.removeFirst()
-        if (nextSearchMicros == Long.MIN_VALUE) nextSearchMicros = fix.tMicros + SearchEveryMicros
-        if (fix.tMicros < nextSearchMicros) return null
+        val kept = last == null || fix.tMicros - last.tMicros >= KeepEveryMicros
+        if (kept) {
+            fixes.addLast(fix)
+            if (fixes.size > MaxKeptFixes) fixes.removeFirst()
+            if (nextSearchMicros == Long.MIN_VALUE) nextSearchMicros = fix.tMicros + SearchEveryMicros
+        }
+        if (!kept || fix.tMicros < nextSearchMicros) return null
         nextSearchMicros = fix.tMicros + SearchEveryMicros
         val from = fix.tMicros - SearchWindowMicros
-        val loop = findSessionLoop(fixes.filter { it.tMicros >= from }) ?: return null
-        return proposeTrack(loop, saved, directory, ProvisionalName, id = ProvisionalId)
+        return findSessionLoop(fixes.filter { it.tMicros >= from })
+            ?.let { proposeTrack(it, saved, directory, ProvisionalName, id = ProvisionalId) }
     }
 }
 
