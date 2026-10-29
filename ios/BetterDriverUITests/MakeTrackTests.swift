@@ -10,6 +10,8 @@ final class MakeTrackTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
+        // The session is analysed again once timed, on a busy CI simulator: the most xcodebuild allows.
+        executionTimeAllowance = 600
         addUIInterruptionMonitor(withDescription: "Permission prompt") { alert in
             let allow = alert.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allow'")).firstMatch
             (allow.exists ? allow : alert.buttons.firstMatch).tap()

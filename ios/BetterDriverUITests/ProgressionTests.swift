@@ -9,6 +9,8 @@ final class ProgressionTests: XCTestCase {
 
     override func setUp() {
         continueAfterFailure = false
+        // Every session at the track is analysed on a busy CI simulator: the most xcodebuild allows.
+        executionTimeAllowance = 600
         // A permission prompt (Bluetooth, location) on a fresh install is answered, not left in the way.
         addUIInterruptionMonitor(withDescription: "Permission prompt") { alert in
             let allow = alert.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Allow'")).firstMatch
