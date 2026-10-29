@@ -14,10 +14,9 @@ private const val MaxP95Millis = 16
 private const val P95 = 0.95
 
 /**
- * The track screen's first 90 s of a recording: the app's code is still warming up (run by the
- * interpreter until compiled) while the recorder, coach and voice start. On the replay drive its
- * frames are slow for that long and then steady (FBBD-266), so the frame time p95 is judged on the
- * frames after it and the start-up's own p95 is shown beside it.
+ * The track screen's first 90 s of a recording: the app's code is still warming up while the
+ * recorder, coach and voice start (FBBD-266). The frame time p95 is judged on the frames after it,
+ * and the start-up's own p95 on its own, against the same limit.
  */
 private const val StartUpMicros = 90_000_000L
 
@@ -96,6 +95,7 @@ private fun frameStretch(e: RecorderEvent): FrameStretch? {
 }
 
 private const val FrameCriterion = "frame time p95 <= 16 ms (FBBD-62, FBBD-41)"
+private const val StartUpFrameCriterion = "frame time p95 <= 16 ms in the first 90 s too (FBBD-266)"
 private const val JankCriterion = "jank < 5 % of frames (FBBD-62, FBBD-41, FBBD-46)"
 private const val FrozenCriterion = "0 frozen frames over 700 ms (FBBD-41)"
 
@@ -148,10 +148,11 @@ private fun frameMetrics(stretches: List<FrameStretch>): List<QualityMetric> {
             )
         },
         startUpP95?.let {
-            info(
-                "ui.frame_p95_start", "Frame time p95, first 90 s", it.toDouble(), "ms", Basis.MEASURED,
+            judged(
+                "ui.frame_p95_start", "Frame time p95, first 90 s", it.toDouble(), "ms", it <= MaxP95Millis,
+                Basis.MEASURED, StartUpFrameCriterion,
                 "JankStats over ${startUp.sumOf { s -> s.frames }} frames drawn in the first 90 s of the " +
-                    "recording, while the app warms up and the recorder, coach and voice start (FBBD-266); " +
+                    "recording, while the app warms up and the recorder, coach and voice start; " +
                     "the upper edge of the frame-time bucket that holds the 95th percentile",
             )
         },

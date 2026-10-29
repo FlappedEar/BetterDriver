@@ -140,7 +140,7 @@ class HardwareChecksTest {
     }
 
     @Test
-    fun `the frame time p95 is judged after the start-up, which is shown on its own`() {
+    fun `the frame time p95 is judged after the start-up, and the start-up's on its own`() {
         // The CI replay drive of 2026-10-29 08:35 (FBBD-266): the first 60 s slow while the app warms up,
         // then steady. Together the p95 is 33 ms; after the first 90 s it is 12 ms. The stretch reported at
         // 93.9 s holds frames from 63.8 s on, so it is the start-up's.
@@ -157,7 +157,7 @@ class HardwareChecksTest {
         assertEquals(Verdict.PASS, r.metric("ui.frame_p95").verdict)
         assertTrue("360 frames drawn after the first 90 s" in r.metric("ui.frame_p95").how)
         assertEquals(50.0, r.metric("ui.frame_p95_start").value)
-        assertEquals(Verdict.INFO, r.metric("ui.frame_p95_start").verdict)
+        assertEquals(Verdict.FAIL, r.metric("ui.frame_p95_start").verdict)
         // Jank counts every frame.
         assertEquals(21 * 100.0 / 719, r.metric("ui.jank").value!!, 1e-9)
     }
