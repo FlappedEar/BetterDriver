@@ -91,7 +91,7 @@ class SessionInbox(
      */
     fun trackDiffers(received: ReceivedBundle): Boolean {
         val track = received.session.track ?: return false
-        return tracks.saved(track.id)?.let { it != track } ?: false
+        return trackMatch(track, tracks.saved(track.id)) == TrackMatch.DIFFERENT
     }
 
     /**
@@ -231,7 +231,7 @@ private class TrackFiles(root: String) {
         val track = session.track ?: return
         if (!SessionEntryLimits.validSessionId(track.id)) return
         if (replace || store.get(track.id) == null) {
-            store.save(track, adoptIdentity = track.identity?.corrected == true)
+            store.save(track, adoptIdentity = carriesCorrectionsOf(track))
         }
     }
 }

@@ -75,7 +75,7 @@ class SessionInboxIosTest {
         assertTrue(inbox.accept(received, replace = false))
         assertTrue(fm.fileExistsAtPath("$root/sessions/$id/${SessionFileNames.META}"))
         assertTrue(fm.fileExistsAtPath("$root/sessions/$id/video/phone_0001.mp4"))
-        assertTrue(fm.fileExistsAtPath("$root/tracks/${track.id}.json"))
+        assertTrue(fm.fileExistsAtPath("$root/tracks/${track.id}.track.json"))
         assertEquals(emptyList(), fm.contentsOfDirectoryAtPath("$root/staging", null).orEmpty())
     }
 
