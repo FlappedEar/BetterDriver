@@ -222,16 +222,23 @@ struct DataVideoPlayback: Identifiable {
     let durations: [String: KotlinLong]
 }
 
-/// The video with data, full screen, with the system's player controls.
+/// The video with data, full screen in landscape (the video's shape), with the system's player controls.
 struct DataVideoPlayerPage: View {
     let playback: DataVideoPlayback
     let onClose: () -> Void
 
     @State private var player = AVPlayer()
+    /// Whether the page shows wider than tall, for the UI test.
+    @State private var wide = false
 
     var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
+                .background(GeometryReader { g in
+                    Color.clear
+                        .onAppear { wide = g.size.width > g.size.height }
+                        .onChange(of: g.size) { _, size in wide = size.width > size.height }
+                })
             VideoPlayer(player: player)
                 .ignoresSafeArea(edges: .bottom)
                 .accessibilityIdentifier("dataVideoPlayer")
@@ -243,6 +250,7 @@ struct DataVideoPlayerPage: View {
             }
             .padding(16)
             .accessibilityLabel("Close")
+            .accessibilityValue(wide ? "landscape" : "portrait")
             .accessibilityIdentifier("dataVideoClose")
         }
         .onAppear {
@@ -252,6 +260,7 @@ struct DataVideoPlayerPage: View {
             player.play()
         }
         .onDisappear { player.pause() }
+        .landscape()
     }
 }
 
@@ -287,6 +296,8 @@ struct DataVideoWatchPage: View {
             }
         }
         .task { await load() }
+        // Turned while the video is read, so the player opens the right way up.
+        .landscape()
     }
 
     private func load() async {

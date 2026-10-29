@@ -52,6 +52,7 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 30), "no player")
         sleep(4)
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while playing")
+        assertLandscape()
         keep("Video with data playing")
         app.buttons["dataVideoClose"].firstMatch.tap()
 
@@ -83,6 +84,7 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 60), "no player")
         sleep(4)
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while playing")
+        assertLandscape()
         keep("Watch video")
         app.buttons["dataVideoClose"].firstMatch.tap()
     }
@@ -93,6 +95,15 @@ final class DataVideoTests: XCTestCase {
         if bottom.waitForExistence(timeout: 5) { bottom.tap(); return }
         let top = app.buttons["Sessions"].firstMatch
         if top.waitForExistence(timeout: 5) { top.tap() }
+    }
+
+    /// Video plays in landscape on the iPhone, whichever way the phone is held. The iPad turns too,
+    /// unless it shares the screen with another app.
+    private func assertLandscape() {
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        let close = app.buttons["dataVideoClose"].firstMatch
+        let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'landscape'"), object: close)
+        XCTAssertEqual(XCTWaiter.wait(for: [turned], timeout: 15), .completed, "the player is not in landscape")
     }
 
     private func keep(_ name: String) {

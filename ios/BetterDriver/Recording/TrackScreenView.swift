@@ -87,7 +87,7 @@ struct TrackScreenContent: View {
 }
 
 /// Keeps the track screen in landscape while it shows, the phone's mount position, and returns to
-/// portrait after; the app delegate hands [mask] to iOS.
+/// portrait after; the app delegate hands [mask] to iOS. Video plays in landscape too ([landscape]).
 enum OrientationLock {
     /// What the app allows outside the track screen (project.yml's orientations).
     static let normal: UIInterfaceOrientationMask =
@@ -99,6 +99,14 @@ enum OrientationLock {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
         scene?.requestGeometryUpdate(.iOS(interfaceOrientations: wanted)) { _ in }
         scene?.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+    }
+}
+
+extension View {
+    /// Landscape while this shows, then back to what the app allows elsewhere ([OrientationLock]).
+    func landscape() -> some View {
+        onAppear { OrientationLock.set(.landscape) }
+            .onDisappear { OrientationLock.set(.portrait) }
     }
 }
 
