@@ -117,8 +117,13 @@ private fun frameMetrics(stretches: List<FrameStretch>): List<QualityMetric> {
         }
         return percentileBucket(buckets, P95)?.let { FrameBuckets.getOrElse(it) { FrozenMillis } }
     }
-    // The start-up's stretches are judged only when the recording has none after them (FBBD-266).
-    val (startUp, driving) = stretches.partition { it.endMicros <= StartUpMicros }
+    // The start-up's stretches are judged only when the recording has none after them (FBBD-266). A
+    // stretch holds the frames since the one before it, so the one that ends past 90 s is the start-up's too.
+    val sorted = stretches.sortedBy { it.endMicros }
+    val spanning = sorted.indexOfFirst { it.endMicros >= StartUpMicros }
+    val cut = if (spanning < 0) sorted.size else spanning + 1
+    val startUp = sorted.take(cut)
+    val driving = sorted.drop(cut)
     val judgedStretches = driving.ifEmpty { startUp }
     val p95 = p95Millis(judgedStretches)
     val janky = stretches.sumOf { it.janky }

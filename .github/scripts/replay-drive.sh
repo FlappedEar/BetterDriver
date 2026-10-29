@@ -94,8 +94,23 @@ if [ -n "$TRACE_AFTER_S" ]; then
     -o /data/misc/perfetto-traces/track.pftrace < /dev/null >/dev/null 2>&1 ) &
   tracer=$!
 fi
+# Who uses the CPUs in each stretch of the start-up and of the steady drive (FBBD-266): every process's
+# and the app's (and speech engine's) threads' CPU time at set times, read by cpu-windows.py.
+cpu="$out/cpu"
+mkdir -p "$cpu"
+(
+  start=$(date +%s)
+  for at in 0 15 30 45 60 90 120 180 300; do
+    sleep $(( start + at - $(date +%s) > 0 ? start + at - $(date +%s) : 0 ))
+    timeout 30 adb shell 'echo "== ps"; ps -A -o PID,NAME; echo "== stat"; cat /proc/[0-9]*/stat 2>/dev/null; echo;
+      echo "== task"; for p in $(pidof '"$app $app:recorder $app:coach $app:camera"' com.google.android.tts); do
+        for f in /proc/$p/task/*/stat; do read -r l < $f; echo "$p:$l"; done; done 2>/dev/null' < /dev/null > "$cpu/$at.txt" 2>/dev/null
+  done
+) &
+sampler=$!
 phase drive --no-restart $(( minutes * 60 + 300 ))
 [ -n "$tracer" ] && kill "$tracer" 2>/dev/null
+kill "$sampler" 2>/dev/null
 # Home, as a phone put away, stops any drawing before the check.
 adb shell input keyevent KEYCODE_HOME || true
 sleep 5
@@ -107,6 +122,9 @@ if [ -n "$TRACE_AFTER_S" ]; then
     && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
     || echo "No track screen trace (FBBD-266)."
 fi
+timeout 60 python3 .github/scripts/cpu-windows.py "$cpu" "$out/cpu-windows.md" > /dev/null \
+  && cat "$out/cpu-windows.md" >> "$out/track-trace.md" && cat "$out/cpu-windows.md" \
+  || echo "No CPU snapshots (FBBD-266)."
 # The app window's frames split into their parts over the whole drive (ReplayDriveTest, FrameParts).
 grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
 # The drive check's own frame lines, one per 30 s (UiChecks), to see when the slow frames came.
