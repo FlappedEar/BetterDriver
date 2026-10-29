@@ -77,7 +77,7 @@ data class HeartRateWindow(
  */
 class HeartRateLog(
     private val sessionId: String,
-    private val write: (String) -> Unit = { DebugLog.forSession(sessionId, CheckLog.HEART_RATE, it) },
+    private val write: (String) -> Unit = { CoreLog.forSession(sessionId, CheckLog.HEART_RATE, it) },
 ) : RecorderListener {
     private var current: Builder? = null
     private var lastT: Long? = null

@@ -30,7 +30,11 @@ enum AppLog {
     @MainActor
     static func install() {
         let log = shared
-        IosLog.shared.sink = { tag, message in log.write("I", tag, message) }
+        // The shared core's lines (FBBD-356): the recording's start, events, GNSS seconds, heart rate
+        // windows and stop, written as on Android, with their level and the recording they name.
+        IosLog.shared.lines = { level, tag, message, session in
+            log.write(level.first ?? "I", tag, message, session: session)
+        }
         log.write(
             "I", tag,
             "start main: BetterDriver \(AppInfo.version) on \(DeviceInfo.model), \(DeviceInfo.system), " +
@@ -89,10 +93,11 @@ final class LogWriter: @unchecked Sendable {
         set { lock.withLock { current = newValue } }
     }
 
-    func write(_ level: Character, _ tag: String, _ message: String) {
+    /// A line of [level]; [named] is the recording it belongs to when not the one being recorded.
+    func write(_ level: Character, _ tag: String, _ message: String, session named: String? = nil) {
         let line = LogLineFormat.line(
             date: Date(), uptimeMicros: LogLineFormat.uptimeMicros(), pid: pid, thread: LogLineFormat.threadName(),
-            level: level, tag: tag, session: session, message: message
+            level: level, tag: tag, session: named ?? session, message: message
         )
         if echo { Logger(subsystem: "com.flappedear.betterdriver", category: tag).log("\(message, privacy: .public)") }
         queue.async { self.append(line + "\n") }
