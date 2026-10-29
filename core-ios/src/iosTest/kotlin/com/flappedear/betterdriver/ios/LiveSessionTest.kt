@@ -154,6 +154,28 @@ class LiveSessionTest {
     }
 
     @Test
+    fun theTrackScreensFramesAreLoggedAsOnAndroid() {
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+        val ms = 1_000_000L
+        // 60 Hz for 30 s, one frame late by two refreshes; the frame after 30 s closes the stretch.
+        var closed: String? = null
+        for (n in 0L until 1_800) {
+            val late = n == 900L
+            closed = session.frame(n * 16_667_000, if (late) 50 * ms else 16_667_000, late)
+        }
+        assertNull(closed)
+        val text = assertNotNull(session.frame(30_000 * ms, 16_667_000, false))
+        assertEquals("frames=1800 janky=1 frozen=0 worst_ms=50 hist=0,0,0,1799,0,0,1,0,0,0,0", text)
+        assertEquals("frames=1 janky=0 frozen=0 worst_ms=16 hist=0,0,0,1,0,0,0,0,0,0,0", session.flushFrames())
+        assertNull(session.flushFrames())
+        session.stop()
+
+        val events = SessionStore(sessions).read(session.id).events.filter { it.kind == EventKinds.UI_FRAMES }
+        assertEquals(2, events.size)
+        assertEquals(text, events.first().text)
+    }
+
+    @Test
     fun lowStorageShowsOnTheTrackScreen() {
         // Any disk is below this warning level, and above the default stop level.
         val config = RecorderConfig(storageWarnBytes = Long.MAX_VALUE)

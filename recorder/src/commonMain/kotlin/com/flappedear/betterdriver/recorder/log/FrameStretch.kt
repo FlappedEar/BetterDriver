@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder.log
 
+import com.flappedear.betterdriver.core.JvmSynchronized
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.FrameBuckets
 
@@ -9,7 +10,7 @@ private const val NanosPerSecond = 1_000_000_000L
 /** Frames over 700 ms count as frozen, as Android vitals counts them. */
 private const val FrozenNanos = 700 * NanosPerMilli
 
-/** One closed stretch of frames: where it ended (System.nanoTime) and its [EventKinds.UI_FRAMES] text. */
+/** One closed stretch of frames: where it ended (the caller's nanosecond clock), its [EventKinds.UI_FRAMES] text. */
 data class FrameSummary(val endNanos: Long, val text: String)
 
 /**
@@ -18,7 +19,9 @@ data class FrameSummary(val endNanos: Long, val text: String)
  * of frame times by [FrameBuckets], from which the drive's check works out the 95th percentile.
  * A stretch ends with the first frame after it, so a screen that draws nothing logs nothing.
  *
- * Thread-safe: JankStats may report from its own thread.
+ * Common Kotlin, so the iPhone's track screen counts its frames the same way (FBBD-376).
+ *
+ * Thread-safe on the JVM: JankStats may report from its own thread. On iOS one thread calls it.
  */
 class FrameStretch(private val periodNanos: Long = DefaultPeriodNanos) {
     private var startNanos = 0L
@@ -30,7 +33,7 @@ class FrameStretch(private val periodNanos: Long = DefaultPeriodNanos) {
     private val counts = IntArray(FrameBuckets.size + 1)
 
     /** Counts one frame; returns the stretch it closed, if it started a new one. */
-    @Synchronized
+    @JvmSynchronized
     fun add(frameStartNanos: Long, durationNanos: Long, jank: Boolean): FrameSummary? {
         val closed = if (frames > 0 && frameStartNanos - startNanos >= periodNanos) take(frameStartNanos) else null
         if (frames == 0) startNanos = frameStartNanos
@@ -45,7 +48,7 @@ class FrameStretch(private val periodNanos: Long = DefaultPeriodNanos) {
     }
 
     /** Closes the stretch now (the recording ended); null when no frame came since the last one. */
-    @Synchronized
+    @JvmSynchronized
     fun flush(): FrameSummary? = if (frames == 0) null else take(endNanos)
 
     private fun take(untilNanos: Long): FrameSummary {

@@ -57,7 +57,7 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Track screen | Status strip: OBD and HR connected/connecting/lost; GNSS lost sound | ✅ 1.3.0 | ✅ | UI per platform | FBBD-268, FBBD-64 | `log-android:GnssSound` |
 | Track screen | Configurable tiles; layout editor per car in Settings | ✅ 1.4.0, 1.16.0 | ✅ TF 1405 | Twice: app TrackTiles vs core-ios TrackTiles | FBBD-262, FBBD-345 | `ios-screen:TileView` `ios-screen:TileListSheet` `ios-screen:TrackScreenPage` `ios-screen:TrackScreenView` |
 | Track screen | Second swipe screen and G radar | ✅ 1.12.0 | ✅ #420 | Twice (Compose / SwiftUI) | FBBD-262, FBBD-318, FBBD-368 | `ios-screen:GRadarView` |
-| Track screen | Frame time p95 within budget | ✅ 1.20.0 | 🟣 verify | — | FBBD-266 |  |
+| Track screen | Frame time p95 within budget | ✅ 1.20.0 | 🟡 logged (#430), budget not gated | FrameStretch shared (recorder commonMain) | FBBD-266, FBBD-376 | `log-ios:Frames` |
 | Track screen | Demo track and built-in replay drives | ✅ 0.3.33+ | ❌ | Android only | FBBD-233, FBBD-254, FBBD-373 | `log-android:DemoReplay` |
 | Coach | Spoken corner cues, never in a braking zone; praise; cool-down laps | ✅ ≤0.3.1 … 0.3.41 | ✅ | Cue engine shared; run glue twice (CoachService / LiveCoach) | FBBD-97, FBBD-243, FBBD-244, FBBD-357 |  |
 | Coach | Coach uses the line plan, steering and gear | ✅ 1.10.0, 1.12.0, 1.14.0 | ✅ via shared core | Shared | FBBD-307, FBBD-321, FBBD-326 | `log-android:CoachReferences` |

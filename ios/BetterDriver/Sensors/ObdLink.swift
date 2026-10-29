@@ -193,9 +193,11 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         rssi RSSI: NSNumber
     ) {
         let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name
-        guard ObdAdapterNames.shared.isCandidate(name: name) else {
+        // By name, or by an ELM327 serial service it advertises, so an adapter of another make is tried.
+        let services = (advertisementData[CBAdvertisementDataServiceUUIDsKey] as? [CBUUID] ?? []).map(\.uuidString)
+        guard ObdAdapterNames.shared.isCandidate(name: name, services: services) else {
             if let name, others.count < 30, others.insert(name).inserted {
-                log(text: "nearby, not an OBD adapter: \(name)")
+                log(text: "nearby, not an OBD adapter: \(name)\(advertised(services))")
             }
             return
         }
@@ -211,9 +213,14 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
             return
         }
         seen[peripheral.identifier] = peripheral
-        log(text: "found \(name ?? "?") \(peripheral.identifier.uuidString)")
+        log(text: "found \(name ?? "?") \(peripheral.identifier.uuidString)\(advertised(services))")
         central.stopScan()
         feed.retryNow()
+    }
+
+    /// The services a device advertised, for its log line; nothing when it named none.
+    private func advertised(_ services: [String]) -> String {
+        services.isEmpty ? "" : " (services \(services.joined(separator: ",")))"
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
@@ -354,7 +361,13 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
                 GattCharacteristic(service: s.uuid.uuidString, uuid: $0.uuid.uuidString, properties: Int32($0.properties.rawValue))
             }
         }
-        link?.log(text: "services \(peripheral.services?.map(\.uuid.uuidString) ?? []), \(all.count) characteristics")
+        // Each characteristic with its properties (0x10 notify, 0x08 write, 0x04 write without response),
+        // so an adapter whose serial pair is not found or is the wrong one can be read from the log.
+        let listed = (peripheral.services ?? []).map { svc in
+            let chars = (svc.characteristics ?? []).map { "\($0.uuid.uuidString):0x\(String($0.properties.rawValue, radix: 16))" }
+            return "\(svc.uuid.uuidString)[\(chars.joined(separator: " "))]"
+        }
+        link?.log(text: "services \(listed.joined(separator: " ")), \(all.count) characteristics")
         guard let pair = BleSerial.shared.choose(characteristics: all) else {
             return giveUp("no serial characteristic in \(peripheral.services?.map(\.uuid.uuidString) ?? [])")
         }
@@ -364,6 +377,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
         notifyCh = chars.first { BleSerial.shared.uuid(text: $0.uuid.uuidString) == pair.notify }
         writeCh = chars.first { BleSerial.shared.uuid(text: $0.uuid.uuidString) == pair.write }
         withResponse = pair.withResponse
+        link?.log(text: "serial pair: service \(pair.service), notify \(pair.notify), write \(pair.write)")
         guard let notifyCh, writeCh != nil else { return giveUp("characteristic \(pair.notify) gone") }
         peripheral.setNotifyValue(true, for: notifyCh)
     }
