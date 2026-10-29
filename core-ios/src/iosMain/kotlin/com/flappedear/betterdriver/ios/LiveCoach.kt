@@ -20,6 +20,7 @@ import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.tracedLaps
+import com.flappedear.betterdriver.recorder.log.logInfo
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.StoredSession
@@ -70,7 +71,9 @@ fun coachSettings(polish: Boolean, audioDelayMillis: Int): CoachSettings = Coach
  * Everything runs on one serial queue of its own: fixes that arrive while the reference loads wait
  * there, and their late cues are dropped, as on Android. A failure is logged as a coach problem and
  * never reaches the recording (FBBD-69). [audioDelayFromPhone]: the settings' delay is the output
- * latency iOS reports for the route at the start, so the cue's VOICE event says "measured".
+ * latency iOS reports for the route at the start, so the cue's VOICE event says "measured"; [audioDelay]
+ * changes it when the output changes mid-session (FBBD-354). The debug log gets Android's CoachService
+ * and Voice lines, with the same text, so the same checks read both apps' logs (FBBD-355).
  */
 @Suppress("LongParameterList") // What one coached recording needs, one parameter each.
 class LiveCoach internal constructor(
@@ -93,6 +96,10 @@ class LiveCoach internal constructor(
     /** Coach queue only. */
     private var coach: CoachSession? = null
 
+    /** The output delay cues are timed for now, and whether iOS reported it; coach queue only. */
+    private var delayMillis = settings.audioDelayMillis
+    private var delayMeasured = audioDelayFromPhone
+
     /** The coach line, for the track screen. */
     @Volatile
     var status: CoachStatus = CoachStatus.None
@@ -110,10 +117,28 @@ class LiveCoach internal constructor(
             placed = true
             val saved = (detection as? TrackDetection.Saved)?.track
             atSavedTrack = saved != null
-            if (saved != null) queued { start(saved) }
+            if (saved != null) {
+                queued { start(saved) }
+            } else if (on) {
+                logInfo(Tag, "not at a saved track: no cues this session")
+            }
         }
         if (fix != null && atSavedTrack) queued { fix(fix) }
     }
+
+    /**
+     * The audio output changed to [output] (FBBD-354), as CoachService's route watch on Android
+     * (FBBD-255): cues from now on allow for [millis], the delay iOS reports for it ([measured]) or else
+     * the one set.
+     */
+    fun audioDelay(millis: Int, measured: Boolean, output: String) = queued {
+        delayMillis = millis.coerceIn(0, CoachSettings.MaxAudioDelayMillis)
+        delayMeasured = measured
+        coach?.audioDelay(delayMillis)
+        logInfo(Tag, "cues now timed for an audio delay of $delayMillis ms (${source()}) on $output")
+    }
+
+    private fun source() = if (delayMeasured) AudioDelayUsed.Measured else AudioDelayUsed.Set
 
     @Suppress("TooGenericExceptionCaught") // A coach failure is logged in the session and never ends coaching.
     private fun queued(body: () -> Unit) = dispatch_async(queue) {
@@ -142,12 +167,14 @@ class LiveCoach internal constructor(
         val day = if (focus && !sameDay) days.days(track.id).lastOrNull() else null
         val fresh = day?.plan?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
         val plan = fresh?.let { planFocus(it, sessionId) } ?: line?.let { planFocus(it, sessionId) }
+        // Timed for the output the cues play on now: it may have changed since the start (FBBD-354).
         val c = CoachSession(
-            settings, track, reference, sameDay = sameDay, focus = plan?.picks.orEmpty(),
-            focusSeconds = plan?.seconds.orEmpty(),
+            settings.copy(audioDelayMillis = delayMillis), track, reference, sameDay = sameDay,
+            focus = plan?.picks.orEmpty(), focusSeconds = plan?.seconds.orEmpty(),
         )
         coach = c
         status = c.status
+        logStart(track, reference, plan?.picks?.size ?: 0)
         // Which recommendation this session works on, for the coaching history (FBBD-180).
         if (plan != null) {
             val text = CoachEvents.planText(plan.sessionId, plan.cornerIds, plan.seconds.values.sum())
@@ -155,12 +182,17 @@ class LiveCoach internal constructor(
         }
     }
 
+    private fun logStart(track: Track, reference: CoachReference?, corners: Int) {
+        val from = reference?.let { "a reference of ${it.sessions.size} sessions" } ?: "no reference yet"
+        logInfo(Tag, "coaching at ${track.name}: $from, $corners focus corners, delay $delayMillis ms (${source()})")
+    }
+
     private fun fix(fix: CoachFix) {
         val c = coach ?: return
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
         val out = c.onFix(fix, now(), voiceFree = !speaker.speaking) { text ->
-            val ask = Asked(now()).also { asked = it }
+            val ask = Asked(now(), source()).also { asked = it }
             speaker.say(text, Speech(ask))
         }
         for (e in out.events) report(e.tMicros, e.kind, e.text)
@@ -170,8 +202,11 @@ class LiveCoach internal constructor(
         status = out.status
     }
 
-    /** A cue asked of the voice at session time [askedMicros]; [seq] is set once the coach has logged it. */
-    private class Asked(val askedMicros: Long) {
+    /**
+     * A cue asked of the voice at session time [askedMicros], timed for a delay from [timedSource];
+     * [seq] is set once the coach has logged it.
+     */
+    private class Asked(val askedMicros: Long, val timedSource: String) {
         @Volatile
         var seq: Int? = null
     }
@@ -182,12 +217,15 @@ class LiveCoach internal constructor(
             val at = now()
             queued {
                 val seq = ask.seq ?: return@queued
-                val source = if (audioDelayFromPhone) AudioDelayUsed.Measured else AudioDelayUsed.Set
+                // The output's delay now, and what the cue was timed for when it was asked: an output that
+                // changed in between does not make the cue's timing "measured".
+                val source = source()
                 val text = CoachEvents.voiceText(
-                    seq, Path, ask.askedMicros, route, device = device, outDelayMillis = settings.audioDelayMillis,
-                    outDelaySource = source, timedSource = source,
+                    seq, Path, ask.askedMicros, route, device = device, outDelayMillis = delayMillis,
+                    outDelaySource = source, timedSource = ask.timedSource,
                 )
                 report(at, CoachEvents.VOICE, text)
+                logInfo(VoiceTag, "$Path voice start ${(at - ask.askedMicros) / MicrosPerMilli} ms")
             }
         }
 
@@ -205,6 +243,10 @@ class LiveCoach internal constructor(
     private companion object {
         /** iOS says every cue with live text-to-speech. */
         const val Path = "live"
+        /** Android's tags for these lines (CoachService, Voice). */
+        const val Tag = "CoachService"
+        const val VoiceTag = "Voice"
+        const val MicrosPerMilli = 1_000L
 
         /** The longest coach event text the Android recorder logs. */
         const val MaxEventChars = 1_000

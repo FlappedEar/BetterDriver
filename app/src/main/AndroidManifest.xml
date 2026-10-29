@@ -64,8 +64,11 @@
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/Theme.BetterDriver">
+        <!-- A turn keeps the activity (FBBD-266): the track screen locks landscape as it opens, and making
+             the whole app again then cost the drive's first frames. Compose redraws for the new size. -->
         <activity
             android:name=".MainActivity"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />

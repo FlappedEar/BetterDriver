@@ -140,6 +140,29 @@ class HardwareChecksTest {
     }
 
     @Test
+    fun `the frame time p95 is judged after the start-up, and the start-up's on its own`() {
+        // The CI replay drive of 2026-10-29 08:35 (FBBD-266): the first 60 s slow while the app warms up,
+        // then steady. Together the p95 is 33 ms; after the first 90 s it is 12 ms. The stretch reported at
+        // 93.9 s holds frames from 63.8 s on, so it is the start-up's.
+        val stretches = listOf(
+            33_569_640L to "frames=119 janky=18 frozen=0 worst_ms=280 hist=6,37,25,15,7,9,14,5,0,1,0",
+            63_802_972L to "frames=120 janky=3 frozen=0 worst_ms=37 hist=50,37,12,7,5,6,3,0,0,0,0",
+            93_919_637L to "frames=120 janky=0 frozen=0 worst_ms=18 hist=109,9,1,1,0,0,0,0,0,0,0",
+            124_052_969L to "frames=120 janky=0 frozen=0 worst_ms=19 hist=101,14,2,3,0,0,0,0,0,0,0",
+            154_152_968L to "frames=120 janky=0 frozen=0 worst_ms=13 hist=117,2,1,0,0,0,0,0,0,0,0",
+            184_252_967L to "frames=120 janky=0 frozen=0 worst_ms=13 hist=116,3,1,0,0,0,0,0,0,0,0",
+        ).map { (t, text) -> RecorderEvent(t, EventKinds.UI_FRAMES, text) }
+        val r = report(stream(0, 190_000_000), stretches)
+        assertEquals(12.0, r.metric("ui.frame_p95").value)
+        assertEquals(Verdict.PASS, r.metric("ui.frame_p95").verdict)
+        assertTrue("360 frames drawn after the first 90 s" in r.metric("ui.frame_p95").how)
+        assertEquals(50.0, r.metric("ui.frame_p95_start").value)
+        assertEquals(Verdict.FAIL, r.metric("ui.frame_p95_start").verdict)
+        // Jank counts every frame.
+        assertEquals(21 * 100.0 / 719, r.metric("ui.jank").value!!, 1e-9)
+    }
+
+    @Test
     fun `a banner that never shows for an outage, or never clears after it, fails`() {
         val frames = RecorderEvent(1_000_000, EventKinds.UI_FRAMES, "frames=100 janky=0 frozen=0 worst_ms=10 hist=100")
         // 5 s without fixes and the screen, drawing all along, never showed the banner.

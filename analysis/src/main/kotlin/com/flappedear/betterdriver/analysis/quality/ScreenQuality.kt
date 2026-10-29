@@ -13,6 +13,13 @@ private const val MaxJankPercent = 5.0
 private const val MaxP95Millis = 16
 private const val P95 = 0.95
 
+/**
+ * The track screen's first 90 s of a recording: the app's code is still warming up while the
+ * recorder, coach and voice start (FBBD-266). The frame time p95 is judged on the frames after it,
+ * and the start-up's own p95 on its own, against the same limit.
+ */
+private const val StartUpMicros = 90_000_000L
+
 /** A frame over this is frozen (FBBD-41). */
 private const val FrozenMillis = 700
 
@@ -68,17 +75,27 @@ internal fun screenSection(
     return QualitySection("Screen", metrics, notes.sortedBy { it.tMicros })
 }
 
-/** One [EventKinds.UI_FRAMES] report: frame counts by [FrameBuckets], janky and frozen ones. */
-private class FrameStretch(val frames: Long, val janky: Long, val frozen: Long, val histogram: List<Long>)
+/**
+ * One [EventKinds.UI_FRAMES] report: frame counts by [FrameBuckets], janky and frozen ones, logged at
+ * [endMicros] when its 30 s ended.
+ */
+private class FrameStretch(
+    val endMicros: Long,
+    val frames: Long,
+    val janky: Long,
+    val frozen: Long,
+    val histogram: List<Long>,
+)
 
 private fun frameStretch(e: RecorderEvent): FrameStretch? {
     val f = fields(e.text)
     val frames = f["frames"]?.toLongOrNull() ?: return null
     val hist = f["hist"]?.split(',')?.mapNotNull { it.toLongOrNull() }.orEmpty()
-    return FrameStretch(frames, f["janky"]?.toLongOrNull() ?: 0, f["frozen"]?.toLongOrNull() ?: 0, hist)
+    return FrameStretch(e.tMicros, frames, f["janky"]?.toLongOrNull() ?: 0, f["frozen"]?.toLongOrNull() ?: 0, hist)
 }
 
 private const val FrameCriterion = "frame time p95 <= 16 ms (FBBD-62, FBBD-41)"
+private const val StartUpFrameCriterion = "frame time p95 <= 16 ms in the first 90 s too (FBBD-266)"
 private const val JankCriterion = "jank < 5 % of frames (FBBD-62, FBBD-41, FBBD-46)"
 private const val FrozenCriterion = "0 frozen frames over 700 ms (FBBD-41)"
 
@@ -92,23 +109,51 @@ private fun frameMetrics(stretches: List<FrameStretch>): List<QualityMetric> {
             notMeasured("ui.frozen", "Frozen frames", FrozenCriterion, why),
         )
     }
-    val buckets = LongArray(FrameBuckets.size + 1)
-    stretches.filter { it.histogram.size == buckets.size }.forEach { s ->
-        s.histogram.forEachIndexed { i, n -> buckets[i] += n }
+    // The upper edge in ms of the bucket that holds the 95th percentile of the stretches' frames, or null.
+    fun p95Millis(of: List<FrameStretch>): Int? {
+        val buckets = LongArray(FrameBuckets.size + 1)
+        of.filter { it.histogram.size == buckets.size }.forEach { s ->
+            s.histogram.forEachIndexed { i, n -> buckets[i] += n }
+        }
+        return percentileBucket(buckets, P95)?.let { FrameBuckets.getOrElse(it) { FrozenMillis } }
     }
-    val p95 = percentileBucket(buckets, P95)?.let { FrameBuckets.getOrElse(it) { FrozenMillis } }
+    // The start-up's stretches are judged only when the recording has none after them (FBBD-266). A
+    // stretch holds the frames since the one before it, so the one that ends past 90 s is the start-up's too.
+    val sorted = stretches.sortedBy { it.endMicros }
+    val spanning = sorted.indexOfFirst { it.endMicros >= StartUpMicros }
+    val cut = if (spanning < 0) sorted.size else spanning + 1
+    val startUp = sorted.take(cut)
+    val driving = sorted.drop(cut)
+    val judgedStretches = driving.ifEmpty { startUp }
+    val p95 = p95Millis(judgedStretches)
     val janky = stretches.sumOf { it.janky }
     val frozen = stretches.sumOf { it.frozen }
     val jankPercent = janky * Percent / total
     val how = "JankStats over $total frames drawn while recording"
-    return listOf(
+    val p95How = if (driving.isEmpty()) {
+        how
+    } else {
+        "JankStats over ${driving.sumOf { it.frames }} frames drawn after the first 90 s of the recording " +
+            "(the start-up's are shown on their own)"
+    }
+    val startUpP95 = if (driving.isEmpty()) null else p95Millis(startUp)
+    return listOfNotNull(
         if (p95 == null) {
             notMeasured("ui.frame_p95", "Frame time p95", FrameCriterion, "no frame-time histogram was logged")
         } else {
             judged(
                 "ui.frame_p95", "Frame time p95", p95.toDouble(), "ms", p95 <= MaxP95Millis, Basis.MEASURED,
                 FrameCriterion,
-                "$how; the upper edge of the frame-time bucket that holds the 95th percentile",
+                "$p95How; the upper edge of the frame-time bucket that holds the 95th percentile",
+            )
+        },
+        startUpP95?.let {
+            judged(
+                "ui.frame_p95_start", "Frame time p95, first 90 s", it.toDouble(), "ms", it <= MaxP95Millis,
+                Basis.MEASURED, StartUpFrameCriterion,
+                "JankStats over ${startUp.sumOf { s -> s.frames }} frames drawn in the first 90 s of the " +
+                    "recording, while the app warms up and the recorder, coach and voice start; " +
+                    "the upper edge of the frame-time bucket that holds the 95th percentile",
             )
         },
         judged(

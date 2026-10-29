@@ -49,7 +49,10 @@ final class TracksTests: XCTestCase {
     }
 
     func testANewTrackHereGivesLapsFromTheNextSession() throws {
-        XCTAssertNil(try record())
+        // The first session is timed through a provisional line once the loop is driven (FBBD-335);
+        // the track is still made from it in the editor.
+        let first = try XCTUnwrap(try record())
+        XCTAssertEqual(Double(first), 40_000, accuracy: 50)
         let track = try library.createAt(lat: gnss.centerLat, lon: gnss.centerLon, name: "Moto ring")
         XCTAssertEqual(track.detail, "No lines yet")
         let sessions = library.editorSessions(track: track)
