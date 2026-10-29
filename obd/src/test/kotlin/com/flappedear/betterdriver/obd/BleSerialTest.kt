@@ -160,6 +160,7 @@ class BleSerialTest {
     @Test
     fun `an adapter with another name counts by the serial service it advertises`() {
         assertTrue(ObdAdapterNames.isCandidate("LELink-2", emptyList()))
+        assertTrue(ObdAdapterNames.isCandidate("KW902", emptyList()))
         assertTrue(ObdAdapterNames.isCandidate("SCAN-77", listOf("FFF0")))
         assertTrue(ObdAdapterNames.isCandidate(null, listOf("0000fff0-0000-1000-8000-00805f9b34fb")))
         assertTrue(ObdAdapterNames.isCandidate("X", listOf("E7810A71-73AE-499D-8C15-FAA9AEF0C3F2")))

@@ -309,13 +309,14 @@ class ObdConnector(
 /**
  * Bluetooth names of OBD-II adapters (FBBD-121), so a paired one is used without being chosen:
  * generic ELM327 clones ("OBDII", "OBD2", "ELM327"), Vgate ("vLinker MC+", "V-LINK", "iCar"),
- * OBDLink, Konnwei, Viecar, Veepeak, Carista, PLX Kiwi, UniCarScan, Tonwon and LELink. A Bluetooth LE
- * adapter with another name counts when it advertises an ELM327 serial service ([BleSerial.advertisesSerial]).
+ * OBDLink, Konnwei (also as KW902/KW903), Viecar, Veepeak, Carista, PLX Kiwi, UniCarScan, Tonwon and
+ * LELink. A Bluetooth LE adapter with another name counts when it advertises an ELM327 serial service
+ * ([BleSerial.advertisesSerial]).
  */
 object ObdAdapterNames {
     private val Parts = listOf(
         "obd", "elm327", "vlink", "v-link", "vgate", "icar", "konnwei", "viecar", "veepeak", "carista",
-        "kiwi", "unicarscan", "tonwon", "lelink",
+        "kiwi", "unicarscan", "tonwon", "lelink", "kw90",
     )
 
     fun isCandidate(name: String?): Boolean {

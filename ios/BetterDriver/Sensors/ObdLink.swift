@@ -361,7 +361,13 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
                 GattCharacteristic(service: s.uuid.uuidString, uuid: $0.uuid.uuidString, properties: Int32($0.properties.rawValue))
             }
         }
-        link?.log(text: "services \(peripheral.services?.map(\.uuid.uuidString) ?? []), \(all.count) characteristics")
+        // Each characteristic with its properties (0x10 notify, 0x08 write, 0x04 write without response),
+        // so an adapter whose serial pair is not found or is the wrong one can be read from the log.
+        let listed = (peripheral.services ?? []).map { svc in
+            let chars = (svc.characteristics ?? []).map { "\($0.uuid.uuidString):0x\(String($0.properties.rawValue, radix: 16))" }
+            return "\(svc.uuid.uuidString)[\(chars.joined(separator: " "))]"
+        }
+        link?.log(text: "services \(listed.joined(separator: " ")), \(all.count) characteristics")
         guard let pair = BleSerial.shared.choose(characteristics: all) else {
             return giveUp("no serial characteristic in \(peripheral.services?.map(\.uuid.uuidString) ?? [])")
         }
@@ -371,6 +377,7 @@ final class ObdBlePortLink: NSObject, ObdBlePort, CBPeripheralDelegate {
         notifyCh = chars.first { BleSerial.shared.uuid(text: $0.uuid.uuidString) == pair.notify }
         writeCh = chars.first { BleSerial.shared.uuid(text: $0.uuid.uuidString) == pair.write }
         withResponse = pair.withResponse
+        link?.log(text: "serial pair: service \(pair.service), notify \(pair.notify), write \(pair.write)")
         guard let notifyCh, writeCh != nil else { return giveUp("characteristic \(pair.notify) gone") }
         peripheral.setNotifyValue(true, for: notifyCh)
     }
