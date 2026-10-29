@@ -5,11 +5,13 @@ import SwiftUI
 /// What Video with data shows (FBBD-152), as Android's sheet: the whole session or one lap, each lap
 /// with its time and the best lap chosen to start with; laps the camera missed cannot be chosen.
 /// A lap starts a few seconds before its line and ends as long after (FBBD-346, FlappedEar Overlays'
-/// Handle: 5 to 8 s, 6 to start with). Watch plays it here with the overlay; Save video writes the MP4
-/// and hands it to Files.
+/// Handle: 5 to 8 s, 6 to start with). Watch hands it with the overlay to [onWatch], which closes the sheet
+/// and plays it full screen in landscape (a player over the sheet lost its way when the phone turned);
+/// Save video writes the MP4 and hands it to Files.
 struct DataVideoSheet: View {
     let sessionId: String
     let title: String
+    let onWatch: (DataVideoPlayback) -> Void
     let onClose: () -> Void
 
     @State private var loading = true
@@ -19,7 +21,6 @@ struct DataVideoSheet: View {
     @State private var picked: Int32?
     @State private var handle: Int32 = 6
     @State private var failure: String?
-    @State private var playing: DataVideoPlayback?
     @State private var progress: Double?
     @State private var saved: ExportedFile?
     /// The saved file's name, said in the sheet in place of Files' Save sheet in the UI tests.
@@ -84,9 +85,6 @@ struct DataVideoSheet: View {
         }
         .accessibilityIdentifier("dataVideoSheet")
         .task { await load() }
-        .fullScreenCover(item: $playing) { p in
-            DataVideoPlayerPage(playback: p) { playing = nil }
-        }
         .sheet(item: $saved) { file in
             SaveToFiles(url: file.url) { saved = nil }
         }
@@ -168,7 +166,7 @@ struct DataVideoSheet: View {
                 let (asset, overlay) = try await DataVideoMaker.make(
                     session, part: picked, durations: durations, handleSeconds: handle
                 )
-                playing = DataVideoPlayback(asset: asset, overlay: overlay, session: session, part: picked, durations: durations)
+                onWatch(DataVideoPlayback(asset: asset, overlay: overlay, session: session, part: picked, durations: durations))
             } catch {
                 failure = "The video could not be opened: \(error.localizedDescription)"
             }

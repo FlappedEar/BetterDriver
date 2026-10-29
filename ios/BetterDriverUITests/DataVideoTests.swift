@@ -56,8 +56,11 @@ final class DataVideoTests: XCTestCase {
         keep("Video with data playing")
         app.buttons["dataVideoClose"].firstMatch.tap()
 
+        // Closing the player comes back to the sheet, which reads the laps and the video again.
         let save = app.buttons["dataVideoSave"].firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 30), "no Save video")
+        expectation(for: enabled, evaluatedWith: save)
+        waitForExpectations(timeout: 120)
         save.tap()
         // Making the video ends in "Saved <file>" (Files' Save sheet in the app; left out in the tests), or
         // in a reason in the sheet.
