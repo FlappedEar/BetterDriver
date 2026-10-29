@@ -28,6 +28,15 @@ fail() {
 finish() {
   timeout 60 adb exec-out run-as "$app" cat files/replay-drive.md < /dev/null > "$out/replay-drive.md" 2>/dev/null || true
   timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null > "$out/betterdriver.log" 2>/dev/null || true
+  # Where the frame time went (FBBD-266), also when the check failed: CPU time by stretch, the frames
+  # split into their parts (FrameParts) and the drive check's own frame lines, one per 30 s (UiChecks).
+  if [ -d "${cpu:-}" ]; then
+    timeout 60 python3 .github/scripts/cpu-windows.py "$cpu" "$out/cpu-windows.md" > /dev/null \
+      && cat "$out/cpu-windows.md" >> "$out/track-trace.md" && cat "$out/cpu-windows.md" \
+      || echo "No CPU snapshots (FBBD-266)."
+    grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
+    grep -o "t_us=[0-9]* ui_frames .*" "$out/betterdriver.log" 2>/dev/null | tee -a "$out/track-trace.md"
+  fi
   # The report in the job's log too, where it can be read without the artifact.
   [ -s "$out/replay-drive.md" ] && cat "$out/replay-drive.md"
   # Each cue's trigger, sound start and end as the coach logged them (FBBD-253), and the voice's own
@@ -138,12 +147,4 @@ if [ -n "$TRACE_AFTER_S" ]; then
     && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
     || echo "No track screen trace (FBBD-266)."
 fi
-timeout 60 python3 .github/scripts/cpu-windows.py "$cpu" "$out/cpu-windows.md" > /dev/null \
-  && cat "$out/cpu-windows.md" >> "$out/track-trace.md" && cat "$out/cpu-windows.md" \
-  || echo "No CPU snapshots (FBBD-266)."
-# The app window's frames split into their parts over the whole drive (ReplayDriveTest, FrameParts).
-grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
-# The drive check's own frame lines, one per 30 s (UiChecks), to see when the slow frames came.
-timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null 2>/dev/null \
-  | grep -o "t_us=[0-9]* ui_frames .*" | tee -a "$out/track-trace.md"
 finish 0
