@@ -138,7 +138,8 @@ class DataVideoSession internal constructor(
     private val bestLapMicros = data.bestLapMicros
 
     /** Where the Tech HUD's widgets go on a picture [videoWidth] by [videoHeight] pixels. */
-    fun hud(videoWidth: Int, videoHeight: Int): HudGeometry = HudGeometry(TechHudLayout(videoWidth, videoHeight, widgets))
+    fun hud(videoWidth: Int, videoHeight: Int): HudGeometry =
+        HudGeometry(TechHudLayout(videoWidth, videoHeight, widgets))
 
     /** What the Tech HUD shows at session time [sessionMicros]. Any thread: the player draws frames on its own. */
     fun moment(sessionMicros: Long): HudMoment {
@@ -148,7 +149,8 @@ class DataVideoSession internal constructor(
                 data.gAt(sessionMicros - RadarMicros * i / RadarDots)
                     ?.let { HudRadarDot(it, 1 - i.toFloat() / (RadarDots + 1)) }
             }
-            return HudMoment(data.at(sessionMicros), runs(data.trail(sessionMicros)), radar, bestLapMicros, pointToPoint)
+            val trail = runs(data.trail(sessionMicros))
+            return HudMoment(data.at(sessionMicros), trail, radar, bestLapMicros, pointToPoint)
         } finally {
             lock.unlock()
         }

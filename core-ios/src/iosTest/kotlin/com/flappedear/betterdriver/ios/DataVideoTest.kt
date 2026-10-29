@@ -116,7 +116,8 @@ class DataVideoTest {
     fun theLapTileReadsAsOverlays() {
         val lap = OverlayLap(3, LapKind.Timed, 65_432_000, -120_000, isBest = false)
         val car = CarFrame(rpm = 6123.4, throttlePct = 87.6, oilC = 131.0, tyreTemps = listOf(80.0, null, null, null))
-        val m = HudMoment(OverlayFrame(123.6, lap, null, GForce(0.3, -1.2), car), emptyList(), emptyList(), 83_456_400, false)
+        val frame = OverlayFrame(123.6, lap, null, GForce(0.3, -1.2), car)
+        val m = HudMoment(frame, emptyList(), emptyList(), 83_456_400, false)
         assertEquals("124", m.speed)
         assertEquals("6123 RPM", m.rpmText)
         assertEquals("3", m.lapNumber)

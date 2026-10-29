@@ -109,8 +109,9 @@ class HudMoment internal constructor(
 
     /** Row [w] at or over its warning: red. */
     fun rowHot(w: HudWidget): Boolean {
-        val v = rowValue(w) ?: return false
-        return v >= (HudRowSpec.of(w)?.warning ?: return false)
+        val v = rowValue(w)
+        val warning = HudRowSpec.of(w)?.warning
+        return v != null && warning != null && v >= warning
     }
 
     /** Tyre [i] (front left, front right, rear left, rear right): its temperature in °C. */
