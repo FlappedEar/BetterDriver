@@ -101,8 +101,13 @@ final class ReviewScreensTests: XCTestCase {
         XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 0).tap()
         // As Android (FBBD-342): the no-laps message, then the drive's figures, route and speed.
-        XCTAssertTrue(app.staticTexts["DRIVE · WHOLE SESSION"].waitForExistence(timeout: 120), "no drive card")
-        XCTAssertTrue(app.staticTexts["DISTANCE"].exists, "no distance")
+        // Polled with cheap firstMatch queries: while the drive is worked out and drawn, a busy CI
+        // simulator times out a waitForExistence snapshot, as the track day test found.
+        let title = app.staticTexts["DRIVE · WHOLE SESSION"].firstMatch
+        var shown = false
+        for _ in 0..<36 where !shown { sleep(5); shown = title.exists }
+        XCTAssertTrue(shown, "no drive card")
+        XCTAssertTrue(app.staticTexts["DISTANCE"].firstMatch.exists, "no distance")
         let map = app.descendants(matching: .any).matching(identifier: "driveMap").firstMatch
         XCTAssertTrue(map.exists, "no route")
         map.tap()
