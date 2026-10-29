@@ -220,7 +220,7 @@ final class RecordingTests: XCTestCase {
             TrackScreenModel.shownRows(layout.secondShown, columns: 3, rows: 3, editing: true),
             [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
         )
-        XCTAssertEqual(layout.secondShown[1]??.label, "RPM")
+        XCTAssertEqual(layout.secondShown[1]?.label, "RPM")
     }
 
     /// The radar's dot moves the way the driver is pushed (UI-243 A): braking up, a right turn left, and
