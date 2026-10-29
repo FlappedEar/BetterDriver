@@ -60,17 +60,18 @@ final class TechHudPainter: @unchecked Sendable {
         let s = CGFloat(hud.scale)
         for place in places {
             let b = Rect(place.box)
-            switch place.widget {
-            case HudWidget.tachometer: tachometer(cg, b, m)
-            case HudWidget.lap: lap(cg, b, s, m)
-            case HudWidget.pedals: pedals(cg, b, s, m)
-            case HudWidget.oil, HudWidget.gearbox, HudWidget.coolant: row(cg, b, s, place.stack, place.widget, m)
-            case HudWidget.tyres: tyres(cg, b, s, m)
-            case HudWidget.heartRate: heartRate(cg, b, s, m)
-            case HudWidget.gRadar: radar(cg, b, m)
-            case HudWidget.gReadout: gReadout(cg, b, s, m)
-            case HudWidget.steering: steering(cg, b, s, m)
-            case HudWidget.trackMap: map(cg, b, s, m)
+            // By the Kotlin entry's name: Kotlin/Native renames multi-word entries for Swift.
+            switch place.widget.name {
+            case "Tachometer": tachometer(cg, b, m)
+            case "Lap": lap(cg, b, s, m)
+            case "Pedals": pedals(cg, b, s, m)
+            case "Oil", "Gearbox", "Coolant": row(cg, b, s, place.stack, place.widget, m)
+            case "Tyres": tyres(cg, b, s, m)
+            case "HeartRate": heartRate(cg, b, s, m)
+            case "GRadar": radar(cg, b, m)
+            case "GReadout": gReadout(cg, b, s, m)
+            case "Steering": steering(cg, b, s, m)
+            case "TrackMap": map(cg, b, s, m)
             default: break
             }
         }
