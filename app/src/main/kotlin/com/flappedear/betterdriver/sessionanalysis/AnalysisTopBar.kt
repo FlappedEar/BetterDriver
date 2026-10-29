@@ -36,7 +36,11 @@ internal fun AnalysisTopBar(
     ShellTopBar(title, onBack = onBack) {
         Box {
             IconButton(onClick = { open = true }) {
-                Icon(ShellIcons.More, contentDescription = SessionMenu, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(
+                    ShellIcons.More,
+                    contentDescription = SessionMenu,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
                 onProgression?.let { go ->
