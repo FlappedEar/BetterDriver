@@ -181,15 +181,29 @@ class ReplayDriveTest {
         check(silent.verdict != Verdict.NOT_MEASURED) { "${silent.label}: ${silent.how}" }
         // The drive checks count too, except those that measure the emulator's own screen, start-up and
         // speech engine rather than the app: a phone's values come from Arek's logs. The track screen's
-        // frame time counts (FBBD-266), after the first 90 s and in them, the emulator settled first
-        // (replay-drive.sh): a screen or start-up that does more work fails it before it reaches the phone.
+        // frame time after the first 90 s counts (FBBD-266): steady at 8 ms here, so a screen that does
+        // more work per update fails it before it reaches the phone.
         val drive = report.metrics.filter { m ->
-            m.id in DrivingFrames || (m.id !in EmulatorChecks && EmulatorPrefixes.none { m.id.startsWith(it) })
+            m.id == DrivingFrames || (m.id !in EmulatorChecks && EmulatorPrefixes.none { m.id.startsWith(it) })
         }
         val failed = (coach + drive).filter { it.verdict == Verdict.FAIL }
         check(failed.isEmpty()) { failed.joinToString("\n") { "${it.label}: ${it.how}" } }
+        checkStartUpFrames(report.metrics)
         checkCpuBudget(report.metrics)
         d.checkNoAppErrors()
+    }
+
+    /**
+     * The track screen's frame time p95 in the first 90 s (FBBD-266) within [StartUpFramesMillis]. The
+     * debug build runs uncompiled code here, so the emulator's start-up varies from run to run (16 and
+     * 25 ms on the same code); the limit catches a start-up that does much more, as the activity made
+     * again when the screen turned did (50 ms), while the phone is judged against 16 ms from its logs.
+     */
+    private fun checkStartUpFrames(metrics: List<QualityMetric>) {
+        val p95 = metrics.firstOrNull { it.id == StartUpFrames }?.value
+        check(p95 != null && p95 <= StartUpFramesMillis) {
+            "Frame time p95, first 90 s (FBBD-266): $p95 ms > $StartUpFramesMillis ms on the emulator"
+        }
     }
 
     /**
@@ -274,8 +288,12 @@ class ReplayDriveTest {
         /** Drive checks of the emulator's hardware: start-up time, speech engine delay, frame times. */
         val EmulatorChecks = setOf("app.cold_start", "coach.tts", "coach.headset", "soak.jank")
 
-        /** The track screen's frame time p95 after the start-up and in it (FBBD-266), judged here too. */
-        val DrivingFrames = setOf("ui.frame_p95", "ui.frame_p95_start")
+        /** The track screen's frame time p95 after the start-up (FBBD-266), judged here too. */
+        const val DrivingFrames = "ui.frame_p95"
+
+        /** The track screen's frame time p95 in the first 90 s (FBBD-266), with its emulator limit. */
+        const val StartUpFrames = "ui.frame_p95_start"
+        const val StartUpFramesMillis = 33.0
 
         /** Frame times, and the cue delays per sound path (coach.delay_live, coach.total_live, ...). */
         val EmulatorPrefixes = listOf("ui.", "coach.delay", "coach.total")
