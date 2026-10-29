@@ -241,10 +241,10 @@ class LiveSession private constructor(
                 accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { !receiverHasG },
             )
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12); each lap is logged
-            // with the predicted lap time shown before its line (FBBD-183), and a provisional line placed
-            // where there is none is logged (FBBD-335), as on Android.
+            // at its crossing with the predicted lap time shown before its line (FBBD-183), and a
+            // provisional line placed where there is none is logged (FBBD-335), as on Android.
             val timing = SessionTiming({ TrackFiles.read(tracksDir) }, circuits, onLap = { lap, predicted ->
-                recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
+                recording.eventAt(lap.endMicros, EventKinds.LAP_LINE, lapLineText(lap, predicted))
             }, onProvisional = { made ->
                 recording.event(TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
             }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }

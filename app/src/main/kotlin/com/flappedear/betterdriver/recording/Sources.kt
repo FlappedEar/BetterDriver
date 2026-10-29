@@ -216,12 +216,13 @@ internal fun onNetwork(network: Network): TcpNetwork = object : TcpNetwork {
 /**
  * Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
  * listener thread, so a timing failure is logged in the session and never stops it. Each lap is
- * logged with the predicted lap time shown before its line (FBBD-183); with no line here, a
+ * logged at its crossing with the predicted lap time shown before its line (FBBD-183), also a lap
+ * timed after the fact once a provisional line is placed; with no line here, a
  * provisional one is placed once the car has driven a loop, and logged (FBBD-335).
  */
 internal fun sessionTiming(tracks: File, recording: Recording, circuits: CircuitList) =
     SessionTiming({ TrackStore(tracks).all() }, circuits, onLap = { lap, predicted ->
-        recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
+        recording.eventAt(lap.endMicros, EventKinds.LAP_LINE, lapLineText(lap, predicted))
     }, onProvisional = { made ->
         recording.event(TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
     }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
