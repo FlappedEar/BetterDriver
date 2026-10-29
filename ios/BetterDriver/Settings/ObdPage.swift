@@ -91,6 +91,8 @@ struct ObdPage: View {
 struct ObdContent: View {
     @EnvironmentObject private var settings: SettingsModel
     @ObservedObject var model: ObdPageModel
+    /// False on the car's page, which has Scan car under what the car offers (UI-300 A).
+    var showsScan = true
 
     var body: some View {
         // iOS also tries the Wi-Fi adapter when none is listed (FBBD-333), so the page always connects.
@@ -122,11 +124,11 @@ struct ObdContent: View {
         } else {
             header(ready: false, title: "Not recorded", detail: "This session does not record OBD-II.")
         }
-        if model.canScan {
+        if showsScan, model.canScan {
             ShellTonalButton(text: model.scanning ? "Scanning…" : "Scan car", enabled: !model.scanning) { model.scan() }
                 .accessibilityIdentifier("scanCar")
         }
-        if let note = model.scanNote { DimText(note) }
+        if showsScan, let note = model.scanNote { DimText(note) }
     }
 
     private func header(ready: Bool, title: String, detail: String) -> some View {
