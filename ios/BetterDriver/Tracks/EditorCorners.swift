@@ -78,7 +78,7 @@ struct SegmentControls: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 ForEach(corners.typeChips(), id: \.label) { chip in
-                    Chip(label: chip.label, on: chip.selected, enabled: chip.enabled) {
+                    EditorChip(label: chip.label, on: chip.selected, enabled: chip.enabled) {
                         if !chip.selected { model.correct(chip.edit) }
                     }
                 }

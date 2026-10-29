@@ -309,10 +309,10 @@ struct TrackEditorView: View {
     private var placingControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Chip(label: "From your lap", on: editor.placingFromLap, enabled: editor.path != nil) {
+                EditorChip(label: "From your lap", on: editor.placingFromLap, enabled: editor.path != nil) {
                     model.act { $0.pickFromLap(fromLap: true) }
                 }
-                Chip(label: "Two taps", on: !editor.placingFromLap) { model.act { $0.pickFromLap(fromLap: false) } }
+                EditorChip(label: "Two taps", on: !editor.placingFromLap) { model.act { $0.pickFromLap(fromLap: false) } }
             }
             if editor.path == nil {
                 DimLine("No session here yet, so lines are placed with two taps.")
@@ -349,8 +349,8 @@ struct TrackEditorView: View {
             Divider().overlay(Palette.outline)
             HStack(spacing: 8) {
                 Text("Kind").frame(maxWidth: .infinity, alignment: .leading)
-                Chip(label: "Circuit", on: !editor.pointToPoint) { model.act { $0.setPointToPoint(on: false) } }
-                Chip(label: "Point to point", on: editor.pointToPoint) { model.act { $0.setPointToPoint(on: true) } }
+                EditorChip(label: "Circuit", on: !editor.pointToPoint) { model.act { $0.setPointToPoint(on: false) } }
+                EditorChip(label: "Point to point", on: editor.pointToPoint) { model.act { $0.setPointToPoint(on: true) } }
             }
             .padding(.vertical, 8)
             if let note = editor.kindNote { DimLine(note).padding(.bottom, 8) }
@@ -390,7 +390,7 @@ struct TrackEditorView: View {
 }
 
 /// A filter chip, as Material's FilterChip on Android.
-struct Chip: View {
+struct EditorChip: View {
     let label: String
     let on: Bool
     var enabled = true
