@@ -140,8 +140,11 @@ class ReplayDriveTest {
         val parts = FrameParts()
         for (left in minutes downTo 1) {
             Log.i(Tag, "replaying; $left min left")
-            d.instrumentation.runOnMainSync { d.resumedApp()?.let(parts::follow) }
-            Thread.sleep(MillisPerMinute)
+            // Every second, so the window the track screen gets when it turns is measured from its start.
+            repeat((MillisPerMinute / MillisPerFollow).toInt()) {
+                d.instrumentation.runOnMainSync { d.resumedApp()?.let(parts::follow) }
+                Thread.sleep(MillisPerFollow)
+            }
         }
         Log.i(Tag, "FrameParts ${parts.text()}")
         d.instrumentation.runOnMainSync { parts.stop() }
@@ -252,6 +255,7 @@ class ReplayDriveTest {
         const val StartTimeoutMs = 90_000L
         const val SettleMs = 8_000L
         const val MillisPerMinute = 60_000L
+        const val MillisPerFollow = 1_000L
         const val MicrosPerSecond = 1_000_000L
 
         /** replay-drive.sh's REPLAY_MINUTES when it gives none. */

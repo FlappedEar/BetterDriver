@@ -104,4 +104,7 @@ timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace
   || echo "No track screen trace (FBBD-266)."
 # The app window's frames split into their parts over the whole drive (ReplayDriveTest, FrameParts).
 grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
+# The drive check's own frame lines, one per 30 s (UiChecks), to see when the slow frames came.
+timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null 2>/dev/null \
+  | grep -o "t_us=[0-9]* ui_frames .*" | tee -a "$out/track-trace.md"
 finish 0
