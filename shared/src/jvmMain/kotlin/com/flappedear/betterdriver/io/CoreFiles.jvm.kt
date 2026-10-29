@@ -8,6 +8,7 @@ import java.nio.file.StandardCopyOption
 
 actual typealias IOException = java.io.IOException
 
+@Suppress("TooManyFunctions") // One small call per file operation the stores use.
 actual object CoreFiles {
     actual fun join(dir: String, name: String): String = File(dir, name).path
 
@@ -23,12 +24,19 @@ actual object CoreFiles {
 
     actual fun readText(path: String): String = File(path).readText()
 
-    actual fun writeTextAtomically(path: String, text: String) {
+    actual fun readBytes(path: String): ByteArray = File(path).readBytes()
+
+    actual fun move(from: String, to: String): Boolean = File(from).renameTo(File(to))
+
+    actual fun writeTextAtomically(path: String, text: String) =
+        writeBytesAtomically(path, text.toByteArray(Charsets.UTF_8))
+
+    actual fun writeBytesAtomically(path: String, bytes: ByteArray) {
         val target = File(path)
         target.parentFile?.mkdirs()
         val tmp = File(target.parentFile, target.name + ".tmp")
         FileOutputStream(tmp).use { out ->
-            out.write(text.toByteArray(Charsets.UTF_8))
+            out.write(bytes)
             out.fd.sync()
         }
         try {

@@ -70,7 +70,7 @@ class CoachLibrary(
     private val tracks: () -> List<Track>,
 ) {
     val references = CoachReferenceStore(dir.path)
-    private val places = SessionPlaces(File(dir, PlacesFile))
+    private val places = SessionPlaces(File(dir, PlacesFile).path)
 
     /**
      * The reference for [track], rebuilt first if sessions, lines or the line plan changed since it was saved.

@@ -63,7 +63,7 @@ internal object CoachProtocol {
 /** Coach files: settings, and the per-track references with their session index. */
 internal fun coachDir(context: Context) = File(context.filesDir, "coach")
 
-internal fun coachSettings(context: Context) = CoachSettingsStore(File(coachDir(context), "settings.properties"))
+internal fun coachSettings(context: Context) = CoachSettingsStore(File(coachDir(context), "settings.properties").path)
 
 internal fun coachReferencesDir(context: Context) = File(coachDir(context), "references")
 
@@ -71,7 +71,7 @@ internal fun coachReferencesDir(context: Context) = File(coachDir(context), "ref
 internal fun coachPicks(context: Context) = CoachPicksStore(File(coachDir(context), "picks").path)
 
 /** The next-session focus of each analysed session (FBBD-20), by track. */
-internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachDir(context), "focus"))
+internal fun sessionFocusStore(context: Context) = SessionFocusStore(File(coachDir(context), "focus").path)
 
 /**
  * The coaching history (FBBD-180): per track and analysed session, what was driven through each

@@ -8,6 +8,7 @@ expect open class IOException(message: String?) : Exception
  * Android app and the iOS app keep their files the same way: java.io on Android, POSIX calls on
  * iOS. Writes go through a synced temporary file and a rename, so a reader never sees half a file.
  */
+@Suppress("TooManyFunctions") // One small call per file operation the stores use.
 expect object CoreFiles {
     /** [name] in folder [dir]. */
     fun join(dir: String, name: String): String
@@ -27,6 +28,15 @@ expect object CoreFiles {
 
     /** The UTF-8 text of the file at [path]; throws [IOException] when it cannot be read. */
     fun readText(path: String): String
+
+    /** The bytes of the file at [path]; throws [IOException] when it cannot be read. */
+    fun readBytes(path: String): ByteArray
+
+    /** Writes [bytes] to [path], its folders made first, through a synced temporary file and a rename. */
+    fun writeBytesAtomically(path: String, bytes: ByteArray)
+
+    /** Renames [from] to [to], replacing it; returns whether it did. */
+    fun move(from: String, to: String): Boolean
 
     /** Writes [text] as UTF-8 to [path], its folders made first, through a synced temporary file and a rename. */
     fun writeTextAtomically(path: String, text: String)

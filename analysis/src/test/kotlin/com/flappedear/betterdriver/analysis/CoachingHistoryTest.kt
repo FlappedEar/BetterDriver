@@ -401,7 +401,7 @@ class CoachingHistoryTest {
         assertEquals(listOf("s0", "s1"), store.history(track).map { it.sessionId })
 
         // Deleting the session (its recording and its focus record, FBBD-20) keeps what was learned.
-        val focus = SessionFocusStore(File(tmp, "coach/focus"))
+        val focus = SessionFocusStore(File(tmp, "coach/focus").path)
         focus.save(SessionFocusRecord(trackId = track, sessionId = "s0", sessionStartUtcMillis = 1_000,
             targets = listOf(FocusTarget(FocusTarget.idOf("s0", "c1"), "primary", "c1", "c1", 1, "Corner 1",
                 "sectorGap", "HIGH"))))

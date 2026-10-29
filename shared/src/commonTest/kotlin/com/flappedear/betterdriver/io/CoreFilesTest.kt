@@ -33,6 +33,20 @@ class CoreFilesTest {
     }
 
     @Test
+    fun bytesAreKeptAsTheyAreAndAFileMovesOverAnother() {
+        val a = CoreFiles.join(dir, "a.properties")
+        val b = CoreFiles.join(dir, "b.properties")
+        val bytes = byteArrayOf(0x61, 0x3D, 0xE9.toByte(), 0x0A)
+        CoreFiles.writeBytesAtomically(a, bytes)
+        CoreFiles.writeTextAtomically(b, "old")
+        assertTrue(bytes.contentEquals(CoreFiles.readBytes(a)))
+        assertTrue(CoreFiles.move(a, b))
+        assertFalse(CoreFiles.exists(a))
+        assertTrue(bytes.contentEquals(CoreFiles.readBytes(b)))
+        assertFalse(CoreFiles.move(a, b))
+    }
+
+    @Test
     fun listsOnlyFilesWithTheSuffix() {
         CoreFiles.writeTextAtomically(CoreFiles.join(dir, "x.json"), "{}")
         CoreFiles.writeTextAtomically(CoreFiles.join(dir, "y.txt"), "")
