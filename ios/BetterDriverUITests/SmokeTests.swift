@@ -78,11 +78,16 @@ final class SmokeTests: XCTestCase {
         func labelled(_ text: String) -> XCUIElement {
             app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", text)).firstMatch
         }
-        screen.swipeLeft()
-        XCTAssertTrue(labelled("Screen 2 of 2").waitForExistence(timeout: 10), "the second screen")
+        // Across the whole app: the first element with the screen's id can be a small child, too short
+        // for a swipe to reach the screen's 60 points.
+        app.swipeLeft()
+        if !labelled("Screen 2 of 2").waitForExistence(timeout: 10) {
+            print("SMOKE app:\n\(app.debugDescription)")
+            XCTFail("the second screen")
+        }
         // The simulated receiver measures no G, so its second screen is all tiles, as on Android.
         XCTAssertFalse(labelled("G radar").exists, "no G radar without G")
-        screen.swipeRight()
+        app.swipeRight()
         XCTAssertTrue(labelled("Screen 1 of 2").waitForExistence(timeout: 10), "back on the main screen")
         XCTAssertEqual(app.state, .runningForeground)
 
