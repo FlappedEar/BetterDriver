@@ -8,6 +8,9 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.live.LapKind
+import com.flappedear.betterdriver.timing.overlay.CarFrame
+import com.flappedear.betterdriver.timing.overlay.GForce
+import com.flappedear.betterdriver.timing.overlay.HudWidget
 import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
@@ -82,19 +85,25 @@ class DataVideoTest {
         assertEquals(0L, cuts[0].fromMicros)
         assertEquals(8_000_000L, cuts[0].toMicros)
         assertEquals(4_000_000L, cuts[0].sessionStartMicros)
-        val text = session.text(6_000_000, DataVideoSession.WholeVideo)
-        assertTrue(text.speed.all { it.isDigit() }, text.speed)
-        assertEquals("LAP", text.lapCaption)
-        assertEquals("—", text.lapValue)
-        // No laps: the delta slot stays empty.
-        assertNull(text.deltaValue)
-        assertNotNull(text.position)
-        // The band on a 1080p picture, as Android lays it out: a fifth of the height, the map inside it.
-        val band = session.band(1920, 1080)
-        assertEquals(1920, band.width)
-        assertEquals(216, band.height)
-        assertTrue(band.track.isNotEmpty())
-        assertTrue(band.track.all { it.x in 0f..1920f && it.y in 0f..216f })
+        val now = session.moment(6_000_000, DataVideoSession.WholeVideo)
+        assertTrue(now.speed.all { it.isDigit() }, now.speed)
+        assertEquals("LAP", now.lapCaption)
+        assertEquals("—", now.lapNumber)
+        // No laps: no delta.
+        assertNull(now.deltaText)
+        assertNotNull(now.position)
+        assertTrue(now.trail.isNotEmpty(), "the last 30 s on the map")
+        assertTrue(now.radar.isEmpty() || now.radar.all { it.fade in 0f..1f })
+        // The Tech HUD on a 1080p picture (FBBD-347): a phone-only drive has the gauge, the lap, both G
+        // widgets and the map, in two strips.
+        val hud = session.hud(1920, 1080)
+        assertEquals(1f, hud.scale)
+        assertEquals(
+            listOf(HudWidget.Tachometer, HudWidget.Lap, HudWidget.GRadar, HudWidget.GReadout, HudWidget.TrackMap),
+            hud.places.map { it.widget },
+        )
+        assertEquals(2, hud.strips.size)
+        assertTrue(session.outline.size > 1)
         assertEquals("BetterDriver-$id-video.mp4", session.fileName(DataVideoSession.WholeVideo))
     }
 
@@ -104,21 +113,31 @@ class DataVideoTest {
     }
 
     @Test
-    fun aLapAheadOfTheBestIsGreen() {
+    fun theLapTileReadsAsOverlays() {
         val lap = OverlayLap(3, LapKind.Timed, 65_432_000, -120_000, isBest = false)
-        val text = overlayText(OverlayFrame(123.6, lap, null, null), pointToPoint = false)
-        assertEquals("124", text.speed)
-        assertEquals("LAP 3", text.lapCaption)
-        assertEquals("1:05.4", text.lapValue)
-        assertEquals(OverlayInk.Gain, text.deltaInk)
-        val best = overlayText(OverlayFrame(null, lap.copy(isBest = true), null, null), pointToPoint = false)
-        assertEquals(OverlayInk.Best, best.lapCaptionInk)
-        assertEquals("LAP 3 · BEST", best.lapCaption)
-        assertEquals("RUN 3", overlayText(OverlayFrame(null, lap, null, null), pointToPoint = true).lapCaption)
-        // A single-lap video after the line keeps the final time in the gain colour (FBBD-346).
-        val held = overlayText(OverlayFrame(null, lap.copy(phase = LapPhase.Finished), null, null), pointToPoint = false)
-        assertEquals(OverlayInk.Gain, held.lapValueInk)
-        assertEquals(OverlayInk.Text, text.lapValueInk)
+        val car = CarFrame(rpm = 6123.4, throttlePct = 87.6, oilC = 131.0, tyreTemps = listOf(80.0, null, null, null))
+        val frame = OverlayFrame(123.6, lap, null, GForce(0.3, -1.2), car)
+        val m = HudMoment(frame, emptyList(), emptyList(), 83_456_400, false)
+        assertEquals("124", m.speed)
+        assertEquals("6123 RPM", m.rpmText)
+        assertEquals("3", m.lapNumber)
+        assertEquals("1:05.432", m.lapTimeText)
+        assertEquals("1:23.456", m.bestText)
+        assertEquals("-0.120", m.deltaText)
+        assertTrue(m.deltaAhead)
+        assertEquals("LAP 3", m.mapLap)
+        assertEquals("88%", m.throttleText)
+        assertEquals("—", m.brakeText)
+        assertEquals("1.24", m.gText)
+        assertEquals("131", m.rowText(HudWidget.Oil))
+        assertTrue(m.rowHot(HudWidget.Oil), "over the template's 128 °C warning")
+        assertEquals("80", m.tyreTempText(0))
+        assertEquals("—", m.tyreTempText(1))
+        val finished = HudMoment(
+            OverlayFrame(null, lap.copy(phase = LapPhase.Finished), null, null), emptyList(), emptyList(), null, true,
+        )
+        assertTrue(finished.lapFinished)
+        assertEquals("RUN 3", finished.mapLap)
         assertEquals("18 min of video", wholeVideoText(18 * 60_000_000L))
     }
 }
