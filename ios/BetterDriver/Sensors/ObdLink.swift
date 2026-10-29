@@ -25,6 +25,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// found, the log shows whether the adapter was off, busy with another phone, or named otherwise.
     private var others: Set<String> = []
     private var port: ObdBlePortLink?
+    /// When an adapter seen before, advertising again, last ended a retry delay early.
+    private var seenRetryAt = Date.distantPast
     /// The Wi-Fi network as iOS reports it: logged, and a network coming back is tried at once.
     private var wifi: NWPathMonitor?
     private var onWifi: Bool?
@@ -199,9 +201,13 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         }
         guard seen[peripheral.identifier] == nil else {
             // Known already: the scan can stop until the next round asks again. Advertising again while
-            // no connection is open means it is back in range or free (FBBD-271): try it at once.
+            // no connection is open means it may be back in range or free (FBBD-271): try it at once,
+            // at most once in 20 s, so one that keeps failing its setup keeps the retry delays.
             central.stopScan()
-            if port == nil { feed.retryNow() }
+            if port == nil, Date().timeIntervalSince(seenRetryAt) >= 20 {
+                seenRetryAt = Date()
+                feed.retryNow()
+            }
             return
         }
         seen[peripheral.identifier] = peripheral
