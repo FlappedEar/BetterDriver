@@ -41,7 +41,10 @@ final class MakeTrackTests: XCTestCase {
         let saved = NSPredicate(format: "isEnabled == false")
         expectation(for: saved, evaluatedWith: save)
         waitForExpectations(timeout: 30)
-        app.buttons["editorBack"].firstMatch.tap()
+        // Saved, the session is read again with its new track and the editor closes with the offer;
+        // Back only when it is still open.
+        let back = app.buttons["editorBack"].firstMatch
+        if back.waitForExistence(timeout: 3) { back.tap() }
         // Timed with the new track: the summary's lap times.
         let best = app.staticTexts["BEST ACTUAL LAP"].firstMatch
         var timed = false
