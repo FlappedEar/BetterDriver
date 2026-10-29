@@ -6,6 +6,8 @@ import BetterDriverCore
 struct CompareTab: View {
     let compare: LapCompare?
     let summary: SessionSummary
+    /// Android's Compare model of the same two laps, for what the car is doing along them (FBBD-175).
+    var states: CompareUi? = nil
     @State private var cursor: Double?
 
     var body: some View {
@@ -55,6 +57,8 @@ struct CompareTab: View {
                     }
                     .font(.caption)
                     .foregroundStyle(Palette.onSurfaceVariant)
+                    // Where each lap brakes, coasts, corners and drives (FBBD-175), on the same distance scale.
+                    if let states, states.hasStates { DrivingStatesStrip(ui: states) }
                 }
                 .padding(16)
                 .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16))
@@ -236,5 +240,68 @@ enum ChartMath {
         }
         let pad = (high - low) * rangePadding
         return (low - pad, high + pad)
+    }
+}
+
+/// What each compared lap's car was doing along the lap (FBBD-175, DrivingStatesStrip.kt): one thin
+/// strip per lap on the speed chart's distance scale, a key, and how long each lap coasted. The
+/// states, names and words are the shared core's.
+private struct DrivingStatesStrip: View {
+    let ui: CompareUi
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SectionLabel(CompareModelKt.drivingStatesLabel(ui: ui))
+            strip("Lap \(ui.referenceNumber)", ui.referenceStates, Palette.best)
+            strip("Lap \(ui.otherNumber)", ui.otherStates, Palette.cold)
+            keyText
+                .font(.caption)
+                .foregroundStyle(Palette.onSurfaceVariant)
+            if let coasting = CompareModelKt.coastingText(ui: ui) { Dim(coasting) }
+        }
+        .padding(.top, 8)
+        .accessibilityIdentifier("drivingStates")
+    }
+
+    /// The key: a coloured square and the name of each state.
+    private var keyText: Text {
+        var text = Text("")
+        for (i, key) in CompareModelKt.DrivingStateKeys.enumerated() {
+            if i > 0 { text = text + Text("  ") }
+            text = text + Text("■ ").foregroundColor(Self.color(key.state)) + Text(key.name)
+        }
+        return text
+    }
+
+    private func strip(_ label: String, _ runs: [DrivingStateRun], _ color: Color) -> some View {
+        HStack(spacing: 0) {
+            Text(label).font(.caption).foregroundStyle(color).frame(width: 52, alignment: .leading)
+            Canvas { ctx, size in
+                ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(Palette.surfaceVariant))
+                let length = ui.lengthMeters
+                guard length > 0 else { return }
+                for run in runs {
+                    let from = min(max(run.startMeters / length, 0), 1) * size.width
+                    let to = min(max(run.endMeters / length, 0), 1) * size.width
+                    if to > from {
+                        ctx.fill(Path(CGRect(x: from, y: 0, width: to - from, height: size.height)), with: .color(Self.color(run.state)))
+                    }
+                }
+            }
+            .frame(height: 10)
+            .accessibilityLabel("\(label): what the car is doing along the lap")
+        }
+    }
+
+    /// The pedals in the gain and loss colours, coasting in the warning one, as on Android. By the
+    /// state's Kotlin name: a multi-word Kotlin enum entry has no reliable Swift spelling.
+    static func color(_ state: DrivingState) -> Color {
+        switch state.name {
+        case "Braking": Palette.loss
+        case "Coasting": Palette.warning
+        case "Cornering": Palette.cold
+        case "Accelerating": Palette.gain.opacity(0.5)
+        default: Palette.gain
+        }
     }
 }

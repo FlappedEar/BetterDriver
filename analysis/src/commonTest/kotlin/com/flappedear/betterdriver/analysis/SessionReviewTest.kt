@@ -4,7 +4,10 @@ import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewOf
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.map.GgSource
+import com.flappedear.betterdriver.feature.analysis.DrivingStateKeys
 import com.flappedear.betterdriver.feature.analysis.MapColoring
+import com.flappedear.betterdriver.feature.analysis.coastingText
+import com.flappedear.betterdriver.feature.analysis.drivingStatesLabel
 import com.flappedear.betterdriver.feature.analysis.deltaRateText
 import com.flappedear.betterdriver.feature.analysis.focusSeconds
 import com.flappedear.betterdriver.feature.analysis.mapScale
@@ -185,6 +188,20 @@ class SessionReviewTest {
         assertTrue(kotlin.math.abs(at.distanceMeters - 500.0) < 50.0)
         assertEquals("Gaining 0.12 s per 100 m here", deltaRateText(-0.123))
         assertEquals("Losing 0.30 s per 100 m here", deltaRateText(0.3))
+    }
+
+    @Test
+    fun `Compare has what the car is doing along both laps with its key and coasting as on Android`() {
+        val compare = checkNotNull(checkNotNull(reviewSession(demo(), listOf(track)).defaultScreen()).compare)
+        assertEquals(listOf("Brake", "Coast", "Corner", "Throttle", "Flat out"), DrivingStateKeys.map { it.name })
+        assertTrue(drivingStatesLabel(compare).startsWith("What the car is doing"))
+        val measured = compare.copy(
+            referenceCoastingSeconds = 1.32,
+            otherCoastingSeconds = 2.054,
+            statesProvenance = null,
+        )
+        assertEquals("Coasting: lap 18 1.32 s · lap 19 2.05 s", coastingText(measured))
+        assertNull(coastingText(measured.copy(referenceCoastingSeconds = null, otherCoastingSeconds = null)))
     }
 
     @Test

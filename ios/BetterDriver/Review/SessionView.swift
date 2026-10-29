@@ -92,7 +92,7 @@ struct SessionView: View {
             switch tab {
             case .summary:
                 SummaryTab(summary: summary, sessionId: session.id, screen: screen, compare: { pick(index: $0, summary) }, openLine: { mapView = .line; tab = .map })
-            case .compare: CompareTab(compare: compare, summary: summary)
+            case .compare: CompareTab(compare: compare, summary: summary, states: screen?.compare)
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
             case .corners: CornersTab(screen: screen)

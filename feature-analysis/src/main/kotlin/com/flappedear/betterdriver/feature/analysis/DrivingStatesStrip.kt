@@ -29,15 +29,6 @@ import com.flappedear.betterdriver.core.ui.component.TrackLabel
 /** Test tag of the driving-state strips on the Compare tab (FBBD-175). */
 const val DrivingStatesTag = "driving-states"
 
-/** What each state is called on the strip's key. */
-internal val DrivingStateNames = mapOf(
-    DrivingState.Braking to "Brake",
-    DrivingState.Coasting to "Coast",
-    DrivingState.Cornering to "Corner",
-    DrivingState.Accelerating to "Throttle",
-    DrivingState.FullThrottle to "Flat out",
-)
-
 /** The colour of each state: the pedals in the screen's gain and loss colours, coasting in its warning one. */
 private fun TrackColors.of(state: DrivingState): Color = when (state) {
     DrivingState.Braking -> loss
@@ -57,7 +48,7 @@ private const val PartThrottleAlpha = 0.5f
 @Composable
 internal fun DrivingStatesStrip(ui: CompareUi) {
     val c = TrackTheme.colors
-    TrackLabel(marked("What the car is doing", ui.statesProvenance), Modifier.testTag(DrivingStatesTag))
+    TrackLabel(drivingStatesLabel(ui), Modifier.testTag(DrivingStatesTag))
     StateStrip("Lap ${ui.referenceNumber}", ui.referenceStates, ui.lengthMeters, c.best)
     StateStrip("Lap ${ui.otherNumber}", ui.otherStates, ui.lengthMeters, c.cold)
     Text(
@@ -72,15 +63,6 @@ internal fun DrivingStatesStrip(ui: CompareUi) {
         style = MaterialTheme.typography.bodySmall,
     )
     coastingText(ui)?.let { Dim(it) }
-}
-
-/** "Coasting: lap 2 1.32 s · lap 3 2.05 s", marked when not measured; null when neither lap has it. */
-internal fun coastingText(ui: CompareUi): String? {
-    val laps = listOfNotNull(
-        ui.referenceCoastingSeconds?.let { "lap ${ui.referenceNumber} ${marked(seconds(it), ui.statesProvenance)} s" },
-        ui.otherCoastingSeconds?.let { "lap ${ui.otherNumber} ${marked(seconds(it), ui.statesProvenance)} s" },
-    )
-    return if (laps.isEmpty()) null else "Coasting: " + laps.joinToString(" · ")
 }
 
 @Composable
