@@ -674,7 +674,8 @@ class ElmPoller(
         while (ended == null && running()) {
             val now = clock.nowMs()
             if (setChanged(now, set) || listensLost) return null
-            val next = scheduler.next(now)
+            // Every request dropped while CAN is still listened to: the dropped ones are still tried again.
+            val next = scheduler.next(now) ?: scheduler.retry().takeIf { listens.isNotEmpty() }
             val listenFor = listenWindow(canFirst, now, next, nextListen)
             when {
                 listenFor != null -> {

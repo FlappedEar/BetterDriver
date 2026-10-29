@@ -24,7 +24,7 @@ package com.flappedear.betterdriver.obd
  * [predictedHz] says what each request should get for an observed per-request latency, and
  * [achievedHz] measures what it did get over the last [rateWindowMs].
  */
-@Suppress("LongParameterList") // The rates and waits are set by tests; the reader takes the defaults.
+@Suppress("LongParameterList", "TooManyFunctions") // Rates and waits set by tests; one query per thing the reader asks.
 class PollScheduler(
     channels: List<PidChannel>,
     private val fastWeight: Int = DEFAULT_FAST_WEIGHT,
@@ -95,6 +95,14 @@ class PollScheduler(
         // A slow request that sat out its interval has fallen behind and goes as soon as it is due.
         return Next(due.minBy { it.pass }.request, nowMs)
     }
+
+    /**
+     * The dropped request tried again soonest, at its retry time; null when none is dropped. For a
+     * reader that goes on without [next] (one listening to CAN broadcasts), so that requests dropped
+     * all together come back too.
+     */
+    fun retry(): Next? =
+        slots.filter { it.dropped }.minByOrNull { it.retryAtMs }?.let { Next(it.request, it.retryAtMs) }
 
     /**
      * [request] was sent at [sentMs] and its answer came back [latencyMs] later; [answered] is true

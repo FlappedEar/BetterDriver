@@ -162,6 +162,18 @@ class PollSchedulerTest {
     }
 
     @Test
+    fun `with every request dropped, the soonest retry is still known`() {
+        val scheduler = PollScheduler(listOf(StandardPids.Coolant), dropAfterMisses = 1)
+        val coolant = StandardPids.Coolant.request
+        assertNull(scheduler.retry())
+        scheduler.completed(coolant, 1_000, 50, answered = false)
+        assertNull(scheduler.next(40_000), "the reader without CAN ends, as before")
+        assertEquals(PollScheduler.Next(coolant, 31_000), scheduler.retry())
+        assertEquals(PollScheduler.Outcome.Back, scheduler.completed(coolant, 31_000, 50, answered = true))
+        assertEquals(PollScheduler.Next(coolant, 31_500), scheduler.next(31_000), "polled again at its 2 Hz")
+    }
+
+    @Test
     fun `a request that answered before and now misses has stopped answering`() {
         val scheduler = PollScheduler(listOf(StandardPids.Coolant))
         val coolant = StandardPids.Coolant.request
