@@ -11,6 +11,9 @@ import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.recorder.live.GnssState
+import com.flappedear.betterdriver.recorder.log.CheckLog
+import com.flappedear.betterdriver.recorder.log.GnssSecond
+import com.flappedear.betterdriver.recorder.log.IosLog
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.Circuit
 import com.flappedear.betterdriver.timing.circuits.CircuitList
@@ -71,6 +74,27 @@ class LiveSessionTest {
         for (n in 0L..(25 * 140)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
     }
 
+    /** The shared core writes the recording's lines into the app's log as on Android (FBBD-356). */
+    @Test
+    fun theLogGetsTheSameRecordingLinesAsAndroid() {
+        val lines = mutableListOf<List<String?>>()
+        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        try {
+            val session = LiveSession.start(sessions, tracks, circuits, info.copy(devices = listOf("RaceBox Micro 1")), false)
+            for (n in 0L..(25 * 3)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
+            session.event("hr_disconnected", "")
+            assertTrue(session.stop())
+            assertTrue(lines.any { it[1] == CheckLog.SESSION && it[2]!!.startsWith("start utc_ms=${gnss.startUtcMillis} source=RaceBox_Micro_1") })
+            assertTrue(lines.any { it[1] == CheckLog.SESSION && it[2]!!.startsWith("stop t_us=") })
+            assertTrue(lines.any { it[1] == CheckLog.EVENT && it[2]!!.contains(" hr_disconnected") })
+            val seconds = lines.filter { it[1] == CheckLog.GNSS }.mapNotNull { GnssSecond.parse(it[2]!!) }
+            assertEquals(listOf(0L, 1L, 2L, 3L), seconds.map { it.second })
+            assertTrue(lines.filter { it[1] in setOf(CheckLog.SESSION, CheckLog.EVENT, CheckLog.GNSS) }.all { it[3] == session.id })
+        } finally {
+            IosLog.lines = null
+        }
+    }
+
     @Test
     fun aSavedTrackIsTimedAndItsLapsAreLogged() {
         save("ring.json", TrackJson.encode(ring))
@@ -127,6 +151,28 @@ class LiveSessionTest {
         val g = assertNotNull(session.screen().live.gCombined)
         assertTrue(abs(g - left) < 0.1, "G $g, expected $left")
         session.stop()
+    }
+
+    @Test
+    fun theTrackScreensFramesAreLoggedAsOnAndroid() {
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+        val ms = 1_000_000L
+        // 60 Hz for 30 s, one frame late by two refreshes; the frame after 30 s closes the stretch.
+        var closed: String? = null
+        for (n in 0L until 1_800) {
+            val late = n == 900L
+            closed = session.frame(n * 16_667_000, if (late) 50 * ms else 16_667_000, late)
+        }
+        assertNull(closed)
+        val text = assertNotNull(session.frame(30_000 * ms, 16_667_000, false))
+        assertEquals("frames=1800 janky=1 frozen=0 worst_ms=50 hist=0,0,0,1799,0,0,1,0,0,0,0", text)
+        assertEquals("frames=1 janky=0 frozen=0 worst_ms=16 hist=0,0,0,1,0,0,0,0,0,0,0", session.flushFrames())
+        assertNull(session.flushFrames())
+        session.stop()
+
+        val events = SessionStore(sessions).read(session.id).events.filter { it.kind == EventKinds.UI_FRAMES }
+        assertEquals(2, events.size)
+        assertEquals(text, events.first().text)
     }
 
     @Test

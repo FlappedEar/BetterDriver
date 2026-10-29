@@ -16,7 +16,7 @@ struct DiagnosticsPage: View {
     var body: some View {
         ShellPage(title: "Diagnostics") {
             ShellCard {
-                ListRow("Share log", value: busy ? "Preparing…" : DiagnosticsPage.mb(size) ?? "…", divider: false) {
+                ListRow("Share log", value: busy ? "Preparing…" : DiagnosticsPage.sizeLabel(size) ?? "…", divider: false) {
                     share()
                 }
                 .accessibilityIdentifier("diagnostics.share")
@@ -37,12 +37,17 @@ struct DiagnosticsPage: View {
                 }
             }
         } message: {
-            Text("This deletes \(DiagnosticsPage.mb(size) ?? "the log") of log, with the records of every drive in it.")
+            Text("This deletes \(size.flatMap { $0 > 0 ? DiagnosticsPage.sizeLabel($0) : nil } ?? "the log") of log, with the records of every drive in it.")
         }
     }
 
-    static func mb(_ bytes: Int64?) -> String? {
-        bytes.map { String(format: "%.1f MB", Double($0) / 1_000_000) }
+    /// "1.3 MB", or "16 KB" under a megabyte: the iPhone's log is often a few KB, which "0.0 MB"
+    /// hid (FBBD-383).
+    nonisolated static func sizeLabel(_ bytes: Int64?) -> String? {
+        guard let bytes else { return nil }
+        if bytes <= 0 { return "Empty" }
+        if bytes < 1_000_000 { return "\(max(1, (bytes + 500) / 1_000)) KB" }
+        return String(format: "%.1f MB", Double(bytes) / 1_000_000)
     }
 
     private func measure() async {
