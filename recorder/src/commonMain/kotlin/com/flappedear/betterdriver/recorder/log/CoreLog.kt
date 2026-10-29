@@ -15,19 +15,20 @@ expect fun logLine(level: Int, tag: String, message: String, error: Throwable? =
 
 /** The log's levels, as Android's Log priorities, and the lines common code writes for a recording. */
 object CoreLog {
-    const val DEBUG = 3
-    const val INFO = 4
-    const val WARN = 5
-    const val ERROR = 6
+    // Not DEBUG and so on: the iOS framework's Objective-C header would meet the DEBUG macro of debug builds.
+    const val LevelDebug = 3
+    const val LevelInfo = 4
+    const val LevelWarn = 5
+    const val LevelError = 6
 
     /** A line for recording [session], whichever recording the app is following. */
-    fun forSession(session: String, tag: String, message: String) = logLine(INFO, tag, message, null, session)
+    fun forSession(session: String, tag: String, message: String) = logLine(LevelInfo, tag, message, null, session)
 
     /** The level's letter in a line ([LogLine]'s format). */
     fun levelChar(level: Int) = when (level) {
-        DEBUG -> 'D'
-        INFO -> 'I'
-        WARN -> 'W'
+        LevelDebug -> 'D'
+        LevelInfo -> 'I'
+        LevelWarn -> 'W'
         else -> 'E'
     }
 }

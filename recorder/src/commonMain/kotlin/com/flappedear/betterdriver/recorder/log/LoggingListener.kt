@@ -17,7 +17,7 @@ class LoggingListener(
     private val now: () -> Long = { 0L },
 ) : RecorderListener {
     init {
-        logLine(CoreLog.INFO, Tag, "$sessionId started: $detail")
+        logLine(CoreLog.LevelInfo, Tag, "$sessionId started: $detail")
         val utc = startUtcMillis?.let { " utc_ms=$it" }.orEmpty()
         CoreLog.forSession(sessionId, CheckLog.SESSION, "start$utc source=${detail.replace(' ', '_')}")
     }
@@ -30,13 +30,13 @@ class LoggingListener(
     override fun onStatus(status: RecorderStatus) {
         when (status) {
             is RecorderStatus.Stopped -> {
-                val level = if (status.error == null) CoreLog.INFO else CoreLog.ERROR
+                val level = if (status.error == null) CoreLog.LevelInfo else CoreLog.LevelError
                 logLine(level, Tag, "$sessionId stopped: ${status.reason}", status.error, sessionId)
                 val reason = status.reason.replace(' ', '_')
                 CoreLog.forSession(sessionId, CheckLog.SESSION, "stop t_us=${now()} reason=$reason")
             }
             is RecorderStatus.StorageLow ->
-                logLine(CoreLog.WARN, Tag, "$sessionId storage low: ${status.usableBytes} bytes")
+                logLine(CoreLog.LevelWarn, Tag, "$sessionId storage low: ${status.usableBytes} bytes")
         }
     }
 

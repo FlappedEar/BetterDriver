@@ -4,7 +4,7 @@ import kotlin.math.abs
 import kotlin.math.pow
 import kotlin.math.roundToLong
 
-actual fun logInfo(tag: String, message: String) = logLine(CoreLog.INFO, tag, message, null, null)
+actual fun logInfo(tag: String, message: String) = logLine(CoreLog.LevelInfo, tag, message, null, null)
 
 actual fun logLine(level: Int, tag: String, message: String, error: Throwable?, session: String?) {
     val text = if (error == null) message else message + "\n" + error.stackTraceToString().trimEnd()

@@ -21,10 +21,10 @@ import kotlin.concurrent.withLock
  * Thread-safe. Never throws: a line that cannot be written is skipped.
  */
 object DebugLog {
-    const val DEBUG = CoreLog.DEBUG
-    const val INFO = CoreLog.INFO
-    const val WARN = CoreLog.WARN
-    const val ERROR = CoreLog.ERROR
+    const val DEBUG = CoreLog.LevelDebug
+    const val INFO = CoreLog.LevelInfo
+    const val WARN = CoreLog.LevelWarn
+    const val ERROR = CoreLog.LevelError
 
     @Volatile
     private var file: LogFile? = null
