@@ -17,10 +17,14 @@ your tab, compared laps, map view, corner and scroll position.
 
 ## A session without laps
 
-A session with no laps (driven away from any saved track, a commute for example) says so at the
-top, and under that shows the drive: distance, time, average speed while moving and top speed,
-the route on the map coloured by speed (touch it to read a point), and the speed along the drive.
-Map and chart share one cursor.
+A session with no laps (driven away from any saved track, a commute for example) keeps the same six
+tabs. Summary says there are no laps at the top, and under that shows the drive: distance, time,
+average speed while moving and top speed, the route on the map coloured by speed (touch it to read a
+point), and the speed along the drive. Map and chart share one cursor. Car has the pedals,
+temperatures and heart rate of the whole drive; the tabs that need laps say so.
+
+The bar at the top shows when the session started and its track. Its menu opens the track's
+progression and the coach review.
 
 ## Summary
 

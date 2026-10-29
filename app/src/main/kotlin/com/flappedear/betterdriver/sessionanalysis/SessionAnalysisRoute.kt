@@ -70,11 +70,11 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
-import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.shell.rememberAcrossTurns
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
@@ -301,6 +301,9 @@ internal fun SessionAnalysisRoute(
         state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching, proof)
     }
     val done = load as? Load.Done
+    // The session as Sessions lists it, for the title: its start and track, read or not.
+    val sessions = remember { Sessions.get(context) }
+    val listed = sessions.list.firstOrNull { it.id == id }
     val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)
     // MapTiler's photo under the perfect lap in 3D once a key is entered on the editor's map (UI-201 B).
     val mapKey = tracks.tiles.mapTilerKey
@@ -313,7 +316,14 @@ internal fun SessionAnalysisRoute(
                 onAction = { unavailableAction(load, nav, tracks, id) },
                 onCoachPick = { toggleCoachPick(load, coachPicks, it) },
                 layout = layout,
-                topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
+                topBar = {
+                    AnalysisTopBar(
+                        analysisTitle(listed?.info?.startUtcMillis, done?.loaded?.title ?: listed?.info?.track),
+                        onBack = onBack,
+                        onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
+                        onCoachReview = { nav.navigate(Routes.cueReview(id)) },
+                    )
+                },
                 optimalVideo = optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo),
                 // Progression over every session at the track (FBBD-181).
                 onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },

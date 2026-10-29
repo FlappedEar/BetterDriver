@@ -23,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Icon
 import androidx.compose.material3.PrimaryTabRow
@@ -90,18 +89,7 @@ fun AnalysisScreen(
             AnalysisState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is AnalysisState.Unavailable -> WithAcceleration(
-                state.acceleration,
-                state.quality,
-                state.gForces,
-                state.car,
-                state.drive,
-            ) {
-                Card {
-                    Text(state.message, style = MaterialTheme.typography.bodyLarge)
-                    state.action?.let { FilledTonalButton(onClick = onAction) { Text(it) } }
-                }
-            }
+            is AnalysisState.Unavailable -> NoLaps(state, onAction)
             is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, optimalVideo, layout, onProgression)
         }
     }
@@ -120,7 +108,6 @@ internal enum class AnalysisTab(val title: String, val icon: ImageVector) {
 }
 
 @Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per tab.
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun Ready(
     ui: AnalysisUi,
@@ -142,10 +129,48 @@ private fun Ready(
         onCompare(it)
         tab = AnalysisTab.Compare.ordinal
     }
-    // Six tabs fit a phone's width as icons with small names, like the bottom bar (UI-163 C).
+    AnalysisTabRow(tab) { tab = it }
+    TabPage(tab) {
+        val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
+        // The map and the G-G diagram sit side by side on a wide screen, so their tab is wider.
+        val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
+        when (AnalysisTab.entries[tab]) {
+            AnalysisTab.Summary -> {
+                // What to work on next comes first (FBBD-20): the answer the session is analysed for.
+                Focus(ui, compare, layout, width, whereToFindTime)
+                Summary(ui, width, optimalVideo)
+                // Heart rate under the lap times, only when the session recorded it (UI-107 A, UI-109).
+                ui.heartRate?.let { HeartRateCard(it, width) }
+                // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
+                // so the next focus and the best lap both stay on the first screen of a phone on its side.
+                CoachingHistory(ui.coaching, ui.lastFocusWonBackSeconds, width)
+                ui.progress?.let { Progress(it, width, onProgression) }
+                if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
+                ui.gForces?.let { GForcesCard(it, width) }
+                ui.acceleration?.let { AccelerationCard(it, width) }
+                ui.quality?.let { QualityCard(it, width) }
+            }
+            AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
+                ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
+            AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide, ui.line, mapView) { v -> mapView = v } }
+                ?: Card(width) { Dim("No map: the laps of this session have no usable GPS line.") }
+            AnalysisTab.Laps -> Laps(ui, compare, width)
+            AnalysisTab.Corners -> {
+                Sectors(ui, width)
+                CornerDetails(ui, width)
+            }
+            AnalysisTab.Car -> CarCards(ui.car, width)
+        }
+    }
+}
+
+/** The analysis's tab row: six tabs fit a phone's width as icons with small names, like the bottom bar (UI-163 C). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AnalysisTabRow(tab: Int, onTab: (Int) -> Unit) {
     PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
         AnalysisTab.entries.forEach { t ->
-            Tab(selected = tab == t.ordinal, onClick = { tab = t.ordinal }) {
+            Tab(selected = tab == t.ordinal, onClick = { onTab(t.ordinal) }) {
                 Column(
                     Modifier.padding(vertical = TabPadding),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -156,7 +181,11 @@ private fun Ready(
             }
         }
     }
-    // Each tab opens at its top: a new scroll state whenever the tab changes.
+}
+
+/** One tab's cards in a scrolling column. Each tab opens at its top: a new scroll state whenever the tab changes. */
+@Composable
+internal fun TabPage(tab: Int, content: @Composable ColumnScope.() -> Unit) {
     key(tab) {
         Column(
             Modifier
@@ -165,38 +194,8 @@ private fun Ready(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-            // The map and the G-G diagram sit side by side on a wide screen, so their tab is wider.
-            val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
-            when (AnalysisTab.entries[tab]) {
-                AnalysisTab.Summary -> {
-                    // What to work on next comes first (FBBD-20): the answer the session is analysed for.
-                    Focus(ui, compare, layout, width, whereToFindTime)
-                    Summary(ui, width, optimalVideo)
-                    // Heart rate under the lap times, only when the session recorded it (UI-107 A, UI-109).
-                    ui.heartRate?.let { HeartRateCard(it, width) }
-                    // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
-                    // so the next focus and the best lap both stay on the first screen of a phone on its side.
-                    CoachingHistory(ui.coaching, ui.lastFocusWonBackSeconds, width)
-                    ui.progress?.let { Progress(it, width, onProgression) }
-                    if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
-                    ui.gForces?.let { GForcesCard(it, width) }
-                    ui.acceleration?.let { AccelerationCard(it, width) }
-                    ui.quality?.let { QualityCard(it, width) }
-                }
-                AnalysisTab.Compare -> ui.compare?.let { Compare(it, width) }
-                    ?: Card(width) { Dim("No other counted lap to compare with the best lap.") }
-                AnalysisTab.Map -> ui.map?.let { MapTab(it, layout, wide, ui.line, mapView) { v -> mapView = v } }
-                    ?: Card(width) { Dim("No map: the laps of this session have no usable GPS line.") }
-                AnalysisTab.Laps -> Laps(ui, compare, width)
-                AnalysisTab.Corners -> {
-                    Sectors(ui, width)
-                    CornerDetails(ui, width)
-                }
-                AnalysisTab.Car -> CarCards(ui.car, width)
-            }
-        }
+            content = content,
+        )
     }
 }
 

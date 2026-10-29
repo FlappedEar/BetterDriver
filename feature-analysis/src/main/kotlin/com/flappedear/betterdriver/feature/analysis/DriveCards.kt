@@ -119,7 +119,7 @@ private fun DriveReadout(cursor: MapPoint?) {
 
 /** A loop and a half of road at changing speed, for the previews. */
 @Suppress("MagicNumber")
-private val PreviewDrive: DriveMap = run {
+internal val PreviewDrive: DriveMap = run {
     val points = (0..300).map { i ->
         val a = i / 200.0 * 2 * PI
         val speed = 50 + 40 * sin(a * 3)
