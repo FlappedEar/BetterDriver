@@ -11,6 +11,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -174,6 +175,18 @@ private class VirtualClock : ObdClock {
 
     override fun sleep(ms: Long) {
         now += ms
+    }
+}
+
+/** Real time plus every wait asked for, each wait taking 1 ms: seconds of retries pass at once. */
+private class FastForwardClock : ObdClock {
+    private val skipped = AtomicLong()
+
+    override fun nowMs() = System.nanoTime() / 1_000_000 + skipped.get()
+
+    override fun sleep(ms: Long) {
+        skipped.addAndGet(ms)
+        Thread.sleep(1)
     }
 }
 
@@ -358,6 +371,62 @@ class ObdDropTest {
         assertNull(escaped)
         assertEquals(1, heard.ready.size)
         assertTrue(System.nanoTime() - started < 30_000_000_000L, "waited for the 60 s retry")
+    }
+
+    /**
+     * A live Wi-Fi connection drops and the adapter is gone for [gone] rounds; returns the seconds the
+     * connector logged between the drop and car data back.
+     */
+    private fun secondsBackAfterDrop(gone: Int, lostFastMs: Long): Long {
+        val target = FlakyStreamTarget(
+            SimElm(SimElm.car(SimElm.Vlinker)),
+            WifiAt,
+            ObdTransport.Wifi,
+            listOf(Fault(dropAfter = 40)),
+        )
+        val dropped = AtomicBoolean(false)
+        val roundsWithout = AtomicInteger()
+        val targets = {
+            if (dropped.get() && roundsWithout.get() < gone) {
+                roundsWithout.incrementAndGet()
+                emptyList()
+            } else {
+                listOf(target)
+            }
+        }
+        val (heard, escaped) = runLikeTheApp({ h ->
+            val marking = object : ObdConnectorListener by h {
+                override fun ended(target: ObdTarget, reason: String) {
+                    dropped.set(true)
+                    h.ended(target, reason)
+                }
+            }
+            ObdConnector(targets, marking, ObdStatusTracker(), FastForwardClock(), lostFastMs = lostFastMs)
+        }) { it.ready.size >= 2 }
+        assertNull(escaped)
+        assertEquals(gone, roundsWithout.get())
+        val back = heard.logs.single { it.startsWith("car data back ") }
+        return back.removePrefix("car data back ").substringBefore(" s").toLong()
+    }
+
+    @Test
+    fun `car data is back within 10 s of a mid-drive drop once the adapter returns`() {
+        // The adapter gone for 3 rounds: with the 2 s retries after a loss about 8 s, on the ladder 40 s.
+        val fast = secondsBackAfterDrop(gone = 3, lostFastMs = ObdConnector.LOST_FAST_MS)
+        assertTrue(fast <= 10, "back after $fast s")
+        val ladder = secondsBackAfterDrop(gone = 3, lostFastMs = 0)
+        assertTrue(ladder >= 30, "the ladder alone took $ladder s")
+    }
+
+    @Test
+    fun `only a link loss counts as a drop, not the engine off or stopping`() {
+        assertTrue(ObdConnector.isLinkLoss("connection lost: read failed: Software caused connection abort"))
+        assertTrue(ObdConnector.isLinkLoss("connection lost: GATT status 8 (link lost)"))
+        assertTrue(ObdConnector.isLinkLoss("adapter stopped answering"))
+        assertFalse(ObdConnector.isLinkLoss("car stopped answering"))
+        assertFalse(ObdConnector.isLinkLoss("connection lost: closed"))
+        assertFalse(ObdConnector.isLinkLoss("connection lost: interrupted"))
+        assertFalse(ObdConnector.isLinkLoss("stopped"))
     }
 
     @Test

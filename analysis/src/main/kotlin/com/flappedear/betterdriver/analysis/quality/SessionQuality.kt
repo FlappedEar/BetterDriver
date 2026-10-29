@@ -86,6 +86,7 @@ fun sessionQuality(
         goProSection(data.events, clips, end),
         coachSection(data.events, samples),
         heartRateSection(HeartRateWindow.of(data.sampleSets, data.events), data.events, end),
+        obdSection(data.events, end),
         thermalSection(data.events),
         screenSection(data.events, outages(samples, end), end, underCoverFrom(samples)),
         exportSection(data.events, end),
