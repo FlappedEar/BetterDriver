@@ -187,11 +187,13 @@ private struct SummaryTab: View {
                 ProgressionSummaryCard(summary: summary, sessionId: sessionId)
                 if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, compare: compare) }
             } else if summary.laps.isEmpty {
-                Card {
-                    Text(summary.trackName == nil
-                         ? "No saved track with a start/finish line here, so no laps."
-                         : "No timed laps in this session.")
-                        .foregroundStyle(Palette.onSurfaceVariant)
+                if summary.trackName == nil {
+                    // A loop driven again and again: make a track from it (FBBD-367).
+                    MakeTrackCard(sessionId: sessionId)
+                } else {
+                    Card {
+                        Text("No timed laps in this session.").foregroundStyle(Palette.onSurfaceVariant)
+                    }
                 }
                 // Where the car went all the same, as Android's no-laps analysis (FBBD-342).
                 if let drive = summary.drive { DriveCards(drive: drive) }

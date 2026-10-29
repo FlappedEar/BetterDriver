@@ -76,6 +76,8 @@ final class EditorModel: ObservableObject {
 /// Opens track [id] in the editor once its sessions are read (Android's TrackEditorRoute).
 struct TrackEditorScreen: View {
     let trackId: String
+    /// A track made from a session (FBBD-367), not saved yet; null to edit saved track [trackId].
+    var proposal: TrackProposal? = nil
     let onClose: () -> Void
     @State private var model: EditorModel?
     @State private var missing = false
@@ -90,7 +92,9 @@ struct TrackEditorScreen: View {
         }
         .task {
             let id = trackId
+            let proposal = proposal
             let editor = await Task.detached { () -> TrackEditor? in
+                if let proposal { return ReviewBridge.library.proposalEditor(proposal: proposal) }
                 guard let track = TracksModel.library.get(id: id) else { return nil }
                 return TrackEditor(initial: track, sessions: TracksModel.library.editorSessions(track: track), stored: track)
             }.value

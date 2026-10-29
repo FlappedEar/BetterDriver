@@ -12,10 +12,12 @@ import com.flappedear.betterdriver.analysis.review.pickerSession
 import com.flappedear.betterdriver.analysis.review.pickerTracks
 import com.flappedear.betterdriver.analysis.review.sessionVideoSource
 import com.flappedear.betterdriver.analysis.review.ReviewedSession
+import com.flappedear.betterdriver.analysis.review.TrackProposal
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.review.savedTrackId
 import com.flappedear.betterdriver.analysis.review.trackFor
+import com.flappedear.betterdriver.analysis.review.trackProposal as proposeFromSession
 import com.flappedear.betterdriver.coach.CueCountsText
 import com.flappedear.betterdriver.coach.CueReview
 import com.flappedear.betterdriver.coach.card
@@ -116,6 +118,25 @@ class ReviewLibrary(base: String) {
         reviewed.linePlan?.let(plans::save)
         return reviewed
     }
+
+    /**
+     * The track to make from session [id] when it was driven at no saved track with a line
+     * (FBBD-367, Android's FBBD-151 offer); null otherwise, or when it cannot be read.
+     */
+    @Suppress("TooGenericExceptionCaught") // An unreadable session has nothing to offer.
+    fun trackProposal(id: String): TrackProposal? = try {
+        val data = store.read(id)
+        proposeFromSession(data, tracks(), circuits, sessionLabel(data.info.startUtcMillis))
+    } catch (_: Exception) {
+        null
+    }
+
+    /** The track editor on [proposal]'s track, with its session's drive to place lines on. */
+    fun proposalEditor(proposal: TrackProposal): TrackEditor = TrackEditor(
+        proposal.track,
+        listOf(EditorSession(proposal.label, proposal.fixes)),
+        stored = trackFiles.get(proposal.track.id),
+    )
 
     /**
      * Every other session at [track], newest first, read one at a time as the line analysis asks,
