@@ -96,9 +96,25 @@ enum OrientationLock {
 
     static func set(_ wanted: UIInterfaceOrientationMask) {
         mask = wanted == .portrait ? normal : wanted
+        turn(wanted, retry: true)
+    }
+
+    /// Asks iOS to turn, telling every presented controller (a player over a sheet too) that the
+    /// allowed orientations changed. iOS refuses while a full-screen cover is still sliding in, so a
+    /// refusal is asked again once it has settled.
+    private static func turn(_ wanted: UIInterfaceOrientationMask, retry: Bool) {
+        guard mask == (wanted == .portrait ? normal : wanted) else { return }
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        scene?.requestGeometryUpdate(.iOS(interfaceOrientations: wanted)) { _ in }
-        scene?.keyWindow?.rootViewController?.setNeedsUpdateOfSupportedInterfaceOrientations()
+        var controller = scene?.keyWindow?.rootViewController
+        while let c = controller {
+            c.setNeedsUpdateOfSupportedInterfaceOrientations()
+            controller = c.presentedViewController
+        }
+        scene?.requestGeometryUpdate(.iOS(interfaceOrientations: wanted)) { error in
+            AppLog.w("Orientation", "turn refused: \(error.localizedDescription)")
+            guard retry else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { turn(wanted, retry: false) }
+        }
     }
 }
 
