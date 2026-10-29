@@ -136,10 +136,15 @@ class ReplayDriveTest {
         val id = live.sessionId
         d.saveProps(marker, KeySession to id)
         val minutes = args.getString("minutes")?.toLongOrNull() ?: DefaultMinutes
+        // What makes the track screen's slow frames slow (FBBD-266), beside the drive check's frame time.
+        val parts = FrameParts()
         for (left in minutes downTo 1) {
             Log.i(Tag, "replaying; $left min left")
+            d.instrumentation.runOnMainSync { d.resumedApp()?.let(parts::follow) }
             Thread.sleep(MillisPerMinute)
         }
+        Log.i(Tag, "FrameParts ${parts.text()}")
+        d.instrumentation.runOnMainSync { parts.stop() }
         assertEquals("one recording all along", id, d.recorder().live?.sessionId)
         d.instrumentation.runOnMainSync { RecorderClient.get(d.app).stop() }
         d.waitFor(SaveTimeoutMs, "the session to be saved") {

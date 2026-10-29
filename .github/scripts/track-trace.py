@@ -82,6 +82,41 @@ def report(tp):
     state_table(slow_ids, "Frames of 16 ms or more")
     out.append("")
 
+    # Frames that drew (a draw inside) are the ones JankStats counts; the others only ran callbacks.
+    drew = rows(tp, f"""
+        with f as ({frames})
+        select f.id, f.dur from f where exists (select 1 from slice c where c.track_id = f.track_id
+          and c.ts >= f.ts and c.ts < f.ts + f.dur and c.depth > f.depth and c.name = 'draw')""")
+    drawn = sorted(r.dur for r in drew)
+    if drawn:
+        out.append(
+            f"{len(drawn)} of them drew: p50 {pct(drawn, .5) / MS:.1f} ms, p95 {pct(drawn, .95) / MS:.1f} ms, "
+            f"max {drawn[-1] / MS:.1f} ms."
+        )
+        out.append("")
+
+    # The UI thread's work outside the frames: it delays the next frame's start (JankStats counts that delay).
+    span = rows(tp, "select trace_start() a, trace_end() b")[0]
+    seconds = max((span.b - span.a) / 1e9, 1e-9)
+    running = rows(tp, f"select sum(dur) d from thread_state where utid = {utid} and state = 'Running'")[0].d or 0
+    in_frames = sum(r.d for r in states if r.state == "Running")
+    out.append(
+        f"UI thread running: {running / seconds / MS:.1f} ms a second, "
+        f"{(running - in_frames) / seconds / MS:.1f} ms of it outside frames."
+    )
+    outside = rows(tp, f"""
+        select s.name, count(*) n, sum(s.dur) total, max(s.dur) worst from slice s
+        join thread_track tt on s.track_id = tt.id
+        where tt.utid = {utid} and s.depth = 0 and s.name not like 'Choreographer#doFrame%'
+        group by s.name order by total desc limit 10""")
+    if outside:
+        out.append("")
+        out.append("| UI thread outside frames | Count | Total | Worst |")
+        out.append("| --- | --- | --- | --- |")
+        for r in outside:
+            out.append(f"| {r.name.replace('|', '/')[:70]} | {r.n} | {r.total / MS:.1f} ms | {r.worst / MS:.2f} ms |")
+    out.append("")
+
     # What the UI thread did inside the slow frames (or the slowest 5 % when none is slow), by slice name and depth.
     picked = slow_ids or {f.id for f in all_frames if f.dur >= pct(durs, .95)}
     ids = ",".join(str(i) for i in picked)
