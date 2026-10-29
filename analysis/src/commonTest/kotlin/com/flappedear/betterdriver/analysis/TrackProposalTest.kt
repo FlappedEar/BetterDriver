@@ -43,7 +43,7 @@ class TrackProposalTest {
     }
 
     @Test
-    fun `a saved track here without a line gets it, one with a line offers nothing`() {
+    fun `a saved track here without a line gets it and one with a line offers nothing`() {
         assertNull(trackProposal(session, listOf(track), CircuitList.Empty, "Morning"))
         val lineless = track.copy(startFinish = null)
         val p = assertNotNull(trackProposal(session, listOf(lineless), CircuitList.Empty, "Morning"))
