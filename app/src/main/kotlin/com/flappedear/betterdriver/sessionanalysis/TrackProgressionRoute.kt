@@ -115,12 +115,7 @@ internal fun TrackProgressionRoute(
     }
     LaunchedEffect(records, grouping, period, day, excluded, adding, title, mapping) {
         val kept = records ?: return@LaunchedEffect
-        val choice = ProgressionChoice(
-            grouping,
-            period,
-            day?.let { ProgressionDay.parse(it) },
-            excluded.lines().filter { it.isNotBlank() }.toSet(),
-        )
+        val choice = progressionChoice(grouping, period, day, excluded)
         state = withContext(Dispatchers.Default) {
             val zone = systemDayZone()
             val today = ProgressionDay.at(System.currentTimeMillis(), zone)
@@ -173,3 +168,16 @@ internal fun TrackProgressionRoute(
     }
     TrackProgressionScreen(state, actions, topBar = { ShellTopBar("Progression", onBack = onBack) })
 }
+
+/** What the screen shows, from its saved choices: [day] as ISO, the sessions left out one per line. */
+private fun progressionChoice(
+    grouping: ProgressionGrouping,
+    period: ProgressionPeriod,
+    day: String?,
+    excluded: String,
+) = ProgressionChoice(
+    grouping,
+    period,
+    day?.let { ProgressionDay.parse(it) },
+    excluded.lines().filter { it.isNotBlank() }.toSet(),
+)
