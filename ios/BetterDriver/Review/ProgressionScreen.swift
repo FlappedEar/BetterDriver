@@ -197,11 +197,9 @@ private struct ProgressionReady: View {
     }
 }
 
-private let progressionGroupingTitles: [(ProgressionGrouping, String)] = [
-    (.session, "Session"),
-    (.trackDay, "Track day"),
-    (.month, "Month"),
-]
+/// The shared core's chips, so no Kotlin enum entry is spelled here.
+private let progressionGroupingTitles: [(ProgressionGrouping, String)] =
+    TrackProgressionUiKt.ProgressionGroupingTitles.map { ($0.grouping, $0.title) }
 
 private let progressionPeriods: [ProgressionPeriod] = [.all, .quarter, .year]
 
@@ -408,7 +406,7 @@ private struct ProgressionPoints: View {
 
     private var title: String {
         if ui.grouping == .session { return "Sessions · untick one to leave it out" }
-        if ui.grouping == .trackDay { return "Track days · tap one for its sessions" }
+        if ui.grouping != .month { return "Track days · tap one for its sessions" }
         return "Months"
     }
 

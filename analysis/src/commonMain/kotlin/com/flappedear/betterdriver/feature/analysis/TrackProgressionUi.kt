@@ -409,3 +409,13 @@ private fun plural(n: Int, word: String) = when {
     word.endsWith("s") -> "$n ${word}es"
     else -> "$n ${word}s"
 }
+
+/** A grouping of the progression and the name of its chip. */
+data class ProgressionGroupingTitle(val grouping: ProgressionGrouping, val title: String)
+
+/** The progression's groupings as their chips name them, in order, the same on Android and iOS. */
+val ProgressionGroupingTitles = listOf(
+    ProgressionGroupingTitle(ProgressionGrouping.Session, "Session"),
+    ProgressionGroupingTitle(ProgressionGrouping.TrackDay, "Track day"),
+    ProgressionGroupingTitle(ProgressionGrouping.Month, "Month"),
+)
