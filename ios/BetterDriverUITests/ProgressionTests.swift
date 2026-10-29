@@ -26,7 +26,7 @@ final class ProgressionTests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 1).tap()
-        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         let more = app.buttons["sessionMore"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10), "no More menu")
         more.tap()
@@ -50,7 +50,7 @@ final class ProgressionTests: XCTestCase {
         keep("Progression, sessions")
         XCTAssertEqual(app.state, .runningForeground)
         app.buttons["Done"].firstMatch.tap()
-        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 30), "not back on the session")
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 30), "not back on the session")
         XCTAssertEqual(app.state, .runningForeground)
     }
 

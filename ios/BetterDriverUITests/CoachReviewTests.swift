@@ -25,7 +25,7 @@ final class CoachReviewTests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: jastrzab).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: jastrzab).tap()
-        XCTAssertTrue(app.staticTexts["BEST LAP"].waitForExistence(timeout: 120), "no summary")
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         // The cue counts are read off the main thread after the list: ask the menu again until it has them.
         let more = app.buttons["sessionMore"].firstMatch
         let item = coachReviewItem()
