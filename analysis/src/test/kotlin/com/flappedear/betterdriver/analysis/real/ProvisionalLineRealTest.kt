@@ -50,12 +50,14 @@ class ProvisionalLineRealTest {
             assertNotNull(made, "$name: no provisional line")
             // The line sits elsewhere on the lap, so a lap may fall off or onto either end.
             assertTrue(abs(laps.size - own.size) <= 2, "$name: ${laps.size} laps, the saved line gives ${own.size}")
-            // A lap from another point on the circuit sums the same corners, but a slow lap (traffic, a
-            // pit stop) is split differently, so the median moves; the best lap is the same pace.
+            // A lap from another point on the circuit sums the same corners, but the halves of two laps:
+            // a slow lap (traffic, a pit stop) moves the median, and a hot lap followed by a cooler one
+            // makes the best lap from the other line up to a couple of seconds slower (measured on
+            // 2026-10-29: +2.0 s at Silesia 27 Sep and Jastrząb 10:00). Within 2 % is the same pace.
             val best = laps.minOf { it.timeMillis }
             val ownBest = own.minOf { it.timeMillis }
             rows += "$name: ${laps.size} laps (saved line ${own.size}), best $best ms (saved $ownBest ms)"
-            assertTrue(abs(best - ownBest) <= 2_000, rows.last())
+            assertTrue(abs(best - ownBest) <= ownBest / 50, rows.last())
         }
         println(rows.joinToString("\n"))
     }
