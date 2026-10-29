@@ -249,7 +249,7 @@ class ProgressionTest {
         assertNotNull(p.lap(ProgressionMetric.BestLap)!!.values[1])
 
         // Kept and read back with its laps, its pickups and where it came from.
-        val store = CoachingHistoryStore(tmp)
+        val store = CoachingHistoryStore(tmp.path)
         assertTrue(store.save(imported))
         assertEquals(imported, store.get(sim.id, "s1"))
         assertTrue(File(tmp, "${sim.id}/s1.json").readText().contains("\"origin\":\"VBO lap-12.vbo\""))

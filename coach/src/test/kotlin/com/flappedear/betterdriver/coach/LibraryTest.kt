@@ -63,7 +63,7 @@ class LibraryTest {
     }
 
     private fun place(id: String): SessionPlace =
-        assertNotNull(SessionPlaces(File(tmp, "coach/places.json")).read()[id])
+        assertNotNull(SessionPlaces(File(tmp, "coach/places.json").path).read()[id])
 
     @Test
     fun `a reference is built from one earlier session and rebuilt when another appears`() {
@@ -230,7 +230,7 @@ class LibraryTest {
         store.delete(drive)
         assertNull(library.reference(edited))
         assertNull(library.references.get(track.id))
-        assertNull(SessionPlaces(File(tmp, "coach/places.json")).read()[drive])
+        assertNull(SessionPlaces(File(tmp, "coach/places.json").path).read()[drive])
     }
 
     @Test

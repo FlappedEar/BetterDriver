@@ -1,27 +1,25 @@
 package com.flappedear.betterdriver.setup
 
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
+import com.flappedear.betterdriver.io.CoreFiles
+import com.flappedear.betterdriver.io.IOException
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 /**
  * Arek's setup as one JSON file (FBBD-83). Writes go to a temporary file that is synced and then
  * renamed over the old one, so a crash leaves either the old or the new setup. A file that cannot
  * be read is moved aside, never overwritten, and [load] returns null so the caller starts again
- * from the old settings or a fresh setup.
+ * from the old settings or a fresh setup. Shared by the Android app and the iOS app (FBBD-359).
  *
  * Not thread-safe; the app keeps one instance and calls it off the main thread.
  */
-class SetupStore(private val file: File) {
+class SetupStore(private val file: String) {
 
     /** The saved setup, or null when there is none or it could not be read. */
     fun load(): Setup? {
-        if (!file.isFile) return null
+        if (!CoreFiles.isFile(file)) return null
         return try {
-            SetupJson.decode(file.readText())
+            SetupJson.decode(CoreFiles.readText(file))
         } catch (_: SetupFormatException) {
             setAside()
         } catch (_: IOException) {
@@ -29,26 +27,22 @@ class SetupStore(private val file: File) {
         }
     }
 
+    /** Saves [setup]; throws [IOException] when it cannot. */
+    @Throws(IOException::class)
     fun save(setup: Setup) {
-        file.parentFile?.mkdirs()
-        val tmp = File(file.path + ".tmp")
-        FileOutputStream(tmp).use { out ->
-            out.write(SetupJson.encode(setup).toByteArray(Charsets.UTF_8))
-            out.fd.sync()
-        }
-        try {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(tmp.toPath(), file.toPath(), StandardCopyOption.REPLACE_EXISTING)
-        }
+        CoreFiles.writeTextAtomically(file, SetupJson.encode(setup))
     }
 
     /** Files moved aside because they could not be read. */
-    fun setAsideFiles(): List<File> =
-        file.parentFile?.listFiles { f -> f.name.startsWith(file.name + UnreadableMarker) }.orEmpty().toList()
+    fun setAsideFiles(): List<String> {
+        val dir = file.trimEnd('/').substringBeforeLast('/', ".")
+        val name = file.trimEnd('/').substringAfterLast('/')
+        return CoreFiles.list(dir).filter { it.startsWith(name + UnreadableMarker) }.map { CoreFiles.join(dir, it) }
+    }
 
+    @OptIn(ExperimentalTime::class)
     private fun setAside(): Setup? {
-        file.renameTo(File(file.path + UnreadableMarker + System.currentTimeMillis()))
+        CoreFiles.move(file, file + UnreadableMarker + Clock.System.now().toEpochMilliseconds())
         return null
     }
 

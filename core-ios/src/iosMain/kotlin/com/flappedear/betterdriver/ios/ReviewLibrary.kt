@@ -3,6 +3,9 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
+import com.flappedear.betterdriver.analysis.line.DayPlanStore
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.LapVideoReview
@@ -35,7 +38,6 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.circuits.CircuitListException
 import com.flappedear.betterdriver.timing.track.Track
-import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.transfer.ReceivedBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
@@ -68,8 +70,8 @@ class ReviewLibrary(base: String) {
     private val tracksRoot = "$base/tracks"
     private val store = SessionStore(sessionsRoot)
     private val inbox = SessionInbox(sessionsRoot, "$base/transfer", tracksRoot)
-    private val plans = IosLinePlanStore(linePlansDir(base))
-    private val days = IosDayPlanStore(dayPlansDir(base))
+    private val plans = LinePlanStore(linePlansDir(base))
+    private val days = DayPlanStore(dayPlansDir(base))
     private val trackFiles = TrackLibrary(tracksRoot, sessionsRoot)
     private val foreign = ForeignInbox(sessionsRoot, "$base/transfer")
     private val cueCountsFile = "$base/coach/cues.txt"
@@ -115,8 +117,17 @@ class ReviewLibrary(base: String) {
     fun review(id: String): ReviewedSession {
         val saved = tracks()
         val reviewed = reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
-        reviewed.linePlan?.let(plans::save)
+        reviewed.linePlan?.let(::savePlan)
         return reviewed
+    }
+
+    // A plan that cannot be saved only leaves the next coached session without it.
+    @Suppress("TooGenericExceptionCaught")
+    private fun savePlan(plan: LinePlan) {
+        try {
+            plans.save(plan)
+        } catch (_: Exception) {
+        }
     }
 
     /**
@@ -260,20 +271,8 @@ class ReviewLibrary(base: String) {
     /** [value] with two decimals, as Android's screens write seconds. */
     fun twoDecimals(value: Double): String = fixed(value, 2)
 
-    /** The saved tracks; a file that does not read as a track is skipped. */
-    fun tracks(): List<Track> {
-        val fm = NSFileManager.defaultManager
-        val names = fm.contentsOfDirectoryAtPath(tracksRoot, null)?.filterIsInstance<String>().orEmpty()
-        return names.filter { it.endsWith(".json") }.mapNotNull { name ->
-            val text = NSString.stringWithContentsOfFile("$tracksRoot/$name", NSUTF8StringEncoding, null)
-                ?: return@mapNotNull null
-            try {
-                TrackJson.decode(text)
-            } catch (_: TrackFormatException) {
-                null
-            }
-        }
-    }
+    /** The saved tracks, as the track list reads them; a file that does not read as a track is set aside. */
+    fun tracks(): List<Track> = trackFiles.list()
 
     /** Unpacks and checks the .bdsession at [path]; see SessionInbox.receive. */
     @Throws(Exception::class)

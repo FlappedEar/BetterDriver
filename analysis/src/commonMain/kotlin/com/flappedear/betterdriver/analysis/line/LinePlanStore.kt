@@ -2,10 +2,11 @@ package com.flappedear.betterdriver.analysis.line
 
 import com.flappedear.betterdriver.analysis.coaching.checkedId
 import com.flappedear.betterdriver.analysis.coaching.writeAtomically
+import com.flappedear.betterdriver.io.CoreFiles
+import com.flappedear.betterdriver.io.IOException
+import com.flappedear.betterdriver.io.filesEndingWith
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.io.IOException
 
 /**
  * The line plans of each track, one `<track id>/<session id>.json` in [dir] per analysed session,
@@ -14,7 +15,7 @@ import java.io.IOException
  * Writes are synced and renamed into place; a file that cannot be read counts as none. They hold
  * positions, so they go with their track.
  */
-class LinePlanStore(private val dir: File) {
+class LinePlanStore(private val dir: String) {
     private val json = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -25,9 +26,12 @@ class LinePlanStore(private val dir: File) {
 
     /** Every session's plan at [trackId], in the order they were driven. */
     fun plans(trackId: String): List<LinePlan> =
-        File(dir, checkedId(trackId)).listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
-            .mapNotNull { f -> read(f)?.takeIf { it.trackId == trackId && f.name == it.sessionId + Suffix } }
-            .sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))
+        CoreFiles.join(dir, checkedId(trackId)).let { d ->
+            CoreFiles.filesEndingWith(d, Suffix)
+                .mapNotNull { name ->
+                    read(CoreFiles.join(d, name))?.takeIf { it.trackId == trackId && name == it.sessionId + Suffix }
+                }
+        }.sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))
 
     /** Saves [plan] as its session's unless the same is saved already; returns whether it wrote. */
     fun save(plan: LinePlan): Boolean {
@@ -39,16 +43,14 @@ class LinePlanStore(private val dir: File) {
 
     /** Deletes every plan of [trackId], with its track; returns whether none is left. */
     fun delete(trackId: String): Boolean {
-        val d = File(dir, checkedId(trackId))
-        d.deleteRecursively()
-        return !d.exists()
+        return CoreFiles.deleteRecursively(CoreFiles.join(dir, checkedId(trackId)))
     }
 
     @Suppress("SwallowedException") // A file that cannot be read is no plan; the next analysis writes it again.
-    private fun read(f: File): LinePlan? {
-        if (!f.isFile) return null
+    private fun read(f: String): LinePlan? {
+        if (!CoreFiles.isFile(f)) return null
         return try {
-            json.decodeFromString(LinePlan.serializer(), f.readText())
+            json.decodeFromString(LinePlan.serializer(), CoreFiles.readText(f))
                 .takeIf { it.format == LinePlan.Format && it.version == LinePlan.Version }
         } catch (_: SerializationException) {
             null
@@ -60,7 +62,7 @@ class LinePlanStore(private val dir: File) {
     }
 
     private fun fileFor(trackId: String, sessionId: String) =
-        File(File(dir, checkedId(trackId)), checkedId(sessionId) + Suffix)
+        CoreFiles.join(CoreFiles.join(dir, checkedId(trackId)), checkedId(sessionId) + Suffix)
 
     private companion object {
         const val Suffix = ".json"

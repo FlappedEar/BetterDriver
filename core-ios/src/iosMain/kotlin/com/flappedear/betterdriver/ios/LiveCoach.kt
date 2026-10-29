@@ -2,12 +2,14 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.line.DayPlanStore
+import com.flappedear.betterdriver.analysis.line.LinePlanStore
 import com.flappedear.betterdriver.coach.AudioDelayUsed
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachFix
 import com.flappedear.betterdriver.coach.CoachLanguage
 import com.flappedear.betterdriver.coach.CoachReference
-import com.flappedear.betterdriver.coach.CoachReferenceJson
+import com.flappedear.betterdriver.coach.CoachReferenceStore
 import com.flappedear.betterdriver.coach.CoachSession
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CoachStatus
@@ -25,18 +27,12 @@ import com.flappedear.betterdriver.recorder.store.StoredSession
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
+import kotlin.concurrent.Volatile
 import platform.Foundation.NSDate
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.create
-import platform.Foundation.stringWithContentsOfFile
 import platform.Foundation.timeIntervalSince1970
-import platform.Foundation.writeToFile
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_queue_create
 import platform.darwin.dispatch_sync
-import kotlin.concurrent.Volatile
 
 /**
  * The phone's voice, as the app gives it to the coach (FBBD-333): Swift's AVSpeechSynthesizer. [speaking]
@@ -159,7 +155,7 @@ class LiveCoach internal constructor(
      */
     private fun start(track: Track) {
         val focus = coaches(track) && settings.verbosity >= Verbosity.Focus
-        val line = if (focus) IosLinePlanStore(linePlansDir).get(track.id) else null
+        val line = if (focus) LinePlanStore(linePlansDir).get(track.id) else null
         val library = IosCoachLibrary(sessionsDir, referencesDir)
         val reference = if (focus) library.reference(track, exclude = sessionId, line?.let(::plannedTargets)) else null
         // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
@@ -167,7 +163,7 @@ class LiveCoach internal constructor(
         val sameDay = reference != null && library.drivenSameDay(reference, nowUtc)
         // The first session of a new day there works on the last track day's focus (FBBD-315, UI-214 B),
         // while no session since that day made a newer line plan, as CoachService.planFocusOf.
-        val days = IosDayPlanStore(dayPlansBeside(linePlansDir))
+        val days = DayPlanStore(dayPlansBeside(linePlansDir))
         val day = if (focus && !sameDay) days.days(track.id).lastOrNull() else null
         val fresh = day?.plan?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
         val plan = fresh?.let { planFocus(it, sessionId) } ?: line?.let { planFocus(it, sessionId) }
@@ -259,12 +255,14 @@ class LiveCoach internal constructor(
 }
 
 /**
- * The coach references on the iPhone (FBBD-333), one file per track in [referencesDir] as on Android
- * (`<track id>.coach.json`), built from the sessions in [sessionsDir] that recorded the track. A
- * reference is rebuilt only when those sessions or the track's lines changed.
+ * The coach references on the iPhone (FBBD-333), one file per track in [referencesDir], kept by the
+ * CoachReferenceStore Android uses (`<track id>.coach.json`), built from the sessions in
+ * [sessionsDir] that recorded the track. A reference is rebuilt only when those sessions or the
+ * track's lines changed.
  */
-internal class IosCoachLibrary(sessionsDir: String, private val referencesDir: String) {
+internal class IosCoachLibrary(sessionsDir: String, referencesDir: String) {
     private val sessions = SessionStore(sessionsDir)
+    private val references = CoachReferenceStore(referencesDir)
 
     /**
      * The reference for [track], aimed at [plan] (FBBD-307), rebuilt first if needed; sessions still
@@ -274,18 +272,23 @@ internal class IosCoachLibrary(sessionsDir: String, private val referencesDir: S
         val here = sessions.list()
             .filter { it.state != SessionState.RECORDING && it.id != exclude && recordedAt(it) == track.id }
             .map { it.id }
-        val current = read(track.id)
+        val current = references.get(track.id)
         val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
             current.planKey == plan?.key
         if (upToDate) return current
         val laps = here.mapNotNull { id -> readOrNull(id)?.let { SessionLaps(id, tracedLaps(track, it.coachFixes())) } }
         val built = buildReference(track, laps, plan)
-        if (built == null) {
-            NSFileManager.defaultManager.removeItemAtPath(fileFor(track.id), null)
-        } else {
-            write(built)
-        }
+        keep(track.id, built)
         return built
+    }
+
+    /** Keeps [built] as [trackId]'s reference; one that cannot be written still coaches this session. */
+    @Suppress("TooGenericExceptionCaught")
+    private fun keep(trackId: String, built: CoachReference?) {
+        try {
+            if (built == null) references.delete(trackId) else references.save(built)
+        } catch (_: Exception) {
+        }
     }
 
     /** Whether a session [reference] was built from ended within 12 hours before [nowUtcMillis] (FBBD-190). */
@@ -312,20 +315,7 @@ internal class IosCoachLibrary(sessionsDir: String, private val referencesDir: S
         null
     }
 
-    private fun fileFor(trackId: String) = "$referencesDir/$trackId$Suffix"
-
-    private fun read(trackId: String): CoachReference? =
-        NSString.stringWithContentsOfFile(fileFor(trackId), NSUTF8StringEncoding, null)
-            ?.let { CoachReferenceJson.decode(it, trackId) }
-
-    private fun write(reference: CoachReference) {
-        NSFileManager.defaultManager.createDirectoryAtPath(referencesDir, true, null, null)
-        NSString.create(string = CoachReferenceJson.encode(reference))
-            .writeToFile(fileFor(reference.trackId), true, NSUTF8StringEncoding, null)
-    }
-
     private companion object {
-        const val Suffix = ".coach.json"
         const val MicrosPerMilli = 1_000L
         const val SameDayMillis = 12L * 60 * 60 * 1_000
     }

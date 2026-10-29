@@ -49,7 +49,7 @@ class AppDriver {
         val setup = Setup()
             .addEquipment(EquipmentModel.DEMO_GNSS, newId = { "demo-${n++}" })
             .addCar(car, newId = { "car-${n++}" })
-        SetupStore(File(app.filesDir, "setup.json")).save(setup)
+        SetupStore(File(app.filesDir, "setup.json").path).save(setup)
         app.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).edit()
             .putBoolean("setup_done", true)
             .commit()

@@ -1,14 +1,13 @@
 package com.flappedear.betterdriver.timing.track
 
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.io.RandomAccessFile
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import com.flappedear.betterdriver.io.CoreFiles
+import com.flappedear.betterdriver.io.IOException
+import com.flappedear.betterdriver.io.filesEndingWith
+import com.flappedear.betterdriver.io.withFolderLock
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 /**
  * Arek's tracks, one JSON file each in [dir] (FBBD-54). Writes go to a temporary file that is
@@ -20,20 +19,21 @@ import java.util.concurrent.ConcurrentHashMap
  * needs tracks, and the editor, the session analysis and the coach references all write. Each change
  * (read, check, write or delete) holds a monitor per folder and a file lock next to the folder, so no
  * change is lost and two writes never share a temporary file. Reads need no lock: a file is only ever
- * replaced whole. Blocking; call it off the main thread.
+ * replaced whole. Blocking; call it off the main thread. Shared by the Android app and the iOS app
+ * (FBBD-359).
  */
 @Suppress("TooManyFunctions") // One entry point per thing kept: tracks, their corners and their corrections.
-class TrackStore(private val dir: File) {
+class TrackStore(private val dir: String) {
 
     /** Every readable track, by name. Unreadable files are moved aside and reported in [setAside]. */
     fun all(): List<Track> {
-        val files = dir.listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
+        val files = CoreFiles.filesEndingWith(dir, Suffix).map { CoreFiles.join(dir, it) }
         return files.mapNotNull(::readOrSetAside).sortedBy { it.displayName.lowercase() }
     }
 
     fun get(id: String): Track? {
         val file = fileFor(id)
-        return if (file.isFile) readOrSetAside(file) else null
+        return if (CoreFiles.isFile(file)) readOrSetAside(file) else null
     }
 
     /**
@@ -48,7 +48,7 @@ class TrackStore(private val dir: File) {
      */
     fun save(
         track: Track,
-        nowUtcMillis: Long = System.currentTimeMillis(),
+        nowUtcMillis: Long = nowMillis(),
         adoptIdentity: Boolean = false,
     ): Track = locked {
         val stored = track.storedOver(get(track.id), nowUtcMillis, adoptIdentity)
@@ -81,7 +81,7 @@ class TrackStore(private val dir: File) {
         id: String,
         expected: TrackRevision,
         edit: SegmentEdit,
-        nowUtcMillis: Long = System.currentTimeMillis(),
+        nowUtcMillis: Long = nowMillis(),
     ): Track? = locked {
         val current = get(id)
         val made = current?.identity?.takeIf { it == expected }?.corrected(edit)
@@ -96,31 +96,29 @@ class TrackStore(private val dir: File) {
     /** Deletes the track; false when there was none. */
     fun delete(id: String): Boolean {
         val file = fileFor(id)
-        return dir.isDirectory && locked { file.delete() }
+        return CoreFiles.isDirectory(dir) && locked { CoreFiles.delete(file) }
     }
 
     /** Files moved aside because they could not be read. */
-    fun setAside(): List<File> = dir.listFiles { f -> f.name.contains(UnreadableMarker) }.orEmpty().toList()
+    fun setAside(): List<String> = CoreFiles.list(dir).filter { UnreadableMarker in it }.map { CoreFiles.join(dir, it) }
 
-    private fun fileFor(id: String): File {
+    private fun fileFor(id: String): String {
         require(id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_" }) { "bad track id: $id" }
-        return File(dir, id + Suffix)
+        return CoreFiles.join(dir, id + Suffix)
     }
 
     /**
      * A file that cannot be read is set aside under the lock, and only if it still cannot be read
      * then: a writer may have replaced it with a good track since this read (Audit A02).
      */
-    private fun readOrSetAside(file: File): Track? = read(file) ?: locked {
+    private fun readOrSetAside(file: String): Track? = read(file) ?: locked {
         read(file).also { track ->
-            if (track == null && file.exists()) {
-                file.renameTo(File(dir, file.name + UnreadableMarker + System.currentTimeMillis()))
-            }
+            if (track == null && CoreFiles.exists(file)) CoreFiles.move(file, file + UnreadableMarker + nowMillis())
         }
     }
 
-    private fun read(file: File): Track? = try {
-        TrackJson.decode(file.readText()).takeIf { it.id + Suffix == file.name }
+    private fun read(file: String): Track? = try {
+        TrackJson.decode(CoreFiles.readText(file)).takeIf { CoreFiles.join(dir, it.id + Suffix) == file }
             ?: throw TrackFormatException("id does not match file name")
     } catch (_: TrackFormatException) {
         null
@@ -128,57 +126,21 @@ class TrackStore(private val dir: File) {
         null
     }
 
+    /** Runs [change] holding this folder's lock, for this process's threads and other processes. */
+    private fun <T> locked(change: () -> T): T = withFolderLock(dir, change)
+
     /**
-     * Runs [change] holding this folder's monitor (threads of this process) and its file lock (other
-     * processes). The lock file sits next to the folder, so the folder holds only tracks and a backup
-     * or restore of it never meets a lock file.
+     * Each write has its own temporary file, so two writers never write into one (Audit A02): it is
+     * written and synced under a name of its own, then renamed over the track.
      */
-    private fun <T> locked(change: () -> T): T {
-        dir.mkdirs()
-        val canonical = dir.canonicalFile
-        val held = holding.get()
-        // Reentrant: a change reads, and a read may set a file aside under the lock.
-        if (canonical.path in held) return change()
-        val monitor = monitors.computeIfAbsent(canonical.path) { Any() }
-        return synchronized(monitor) {
-            val lockFile = File(canonical.parentFile, canonical.name + LockSuffix)
-            RandomAccessFile(lockFile, "rw").channel.use { channel ->
-                channel.lock().use {
-                    held += canonical.path
-                    try {
-                        change()
-                    } finally {
-                        held -= canonical.path
-                    }
-                }
-            }
-        }
-    }
-
-    /** Each write has its own temporary file, so two writers never write into one (Audit A02). */
-    private fun writeAtomically(target: File, text: String) {
-        val tmp = File(dir, "${target.name}.${UUID.randomUUID()}$TmpSuffix")
+    @OptIn(ExperimentalUuidApi::class)
+    private fun writeAtomically(target: String, text: String) {
+        val tmp = "$target.${Uuid.random()}$TmpSuffix"
         try {
-            FileOutputStream(tmp).use { out ->
-                out.write(text.toByteArray(Charsets.UTF_8))
-                out.fd.sync()
-            }
-            move(tmp, target)
+            CoreFiles.writeTextAtomically(tmp, text)
+            if (!CoreFiles.move(tmp, target)) throw IOException("cannot rename $tmp to $target")
         } finally {
-            tmp.delete()
-        }
-    }
-
-    private fun move(tmp: File, target: File) {
-        try {
-            Files.move(
-                tmp.toPath(),
-                target.toPath(),
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
-        } catch (_: AtomicMoveNotSupportedException) {
-            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
+            CoreFiles.delete(tmp)
         }
     }
 
@@ -186,12 +148,8 @@ class TrackStore(private val dir: File) {
         const val Suffix = ".track.json"
         const val UnreadableMarker = ".unreadable-"
         const val TmpSuffix = ".tmp"
-        const val LockSuffix = ".lock"
 
-        /** One monitor per tracks folder, shared by every instance in this process. */
-        val monitors = ConcurrentHashMap<String, Any>()
-
-        /** The folders whose lock this thread holds. */
-        val holding: ThreadLocal<MutableSet<String>> = ThreadLocal.withInitial { mutableSetOf() }
+        @OptIn(ExperimentalTime::class)
+        fun nowMillis(): Long = Clock.System.now().toEpochMilliseconds()
     }
 }
