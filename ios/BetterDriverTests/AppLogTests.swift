@@ -66,6 +66,15 @@ final class AppLogTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: note.path))
     }
 
+    func testTheSizeShowsKilobytesUnderAMegabyte() {
+        XCTAssertNil(DiagnosticsPage.sizeLabel(nil))
+        XCTAssertEqual(DiagnosticsPage.sizeLabel(0), "Empty")
+        XCTAssertEqual(DiagnosticsPage.sizeLabel(120), "1 KB")
+        XCTAssertEqual(DiagnosticsPage.sizeLabel(16_469), "16 KB")
+        XCTAssertEqual(DiagnosticsPage.sizeLabel(999_400), "999 KB")
+        XCTAssertEqual(DiagnosticsPage.sizeLabel(1_282_866), "1.3 MB")
+    }
+
     func testTheShareZipHoldsTheLog() throws {
         let log = LogWriter(dir: dir, echo: false)
         log.write("I", "A", "for the zip")
