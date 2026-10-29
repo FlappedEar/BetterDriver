@@ -83,6 +83,9 @@ class AppDriver {
         return list
     }
 
+    /** The app's resumed activity, or null. Main thread. */
+    fun resumedApp(): Activity? = resumedNow().firstOrNull()
+
     /** Main thread. */
     private fun resumedNow(): List<Activity> =
         ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).toList()
