@@ -10,9 +10,11 @@ app=com.flappedear.betterdriver
 runner=$app.test/androidx.test.runner.AndroidJUnitRunner
 test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-10}
-# When the one-minute trace starts, in s after the drive phase starts (FBBD-266): the first minute
-# on the track screen, where its slow frames are.
-TRACE_AFTER_S=${TRACE_AFTER_S:-3}
+# When the one-minute trace starts, in s after the drive phase starts (FBBD-266); none when unset:
+# tracing slows the frames it watches.
+TRACE_AFTER_S=${TRACE_AFTER_S:-}
+# EXPERIMENT (FBBD-266): the app compiled ahead of time before the drive, against JIT warm-up.
+COMPILE=${COMPILE:-speed}
 language=${LANGUAGE:-Polish}
 out=build/replay-drive
 mkdir -p "$out"
@@ -74,6 +76,10 @@ logcat=$!
 bash .github/scripts/wait-apk-build.sh || fail "the APKs did not build"
 adb install -r -t -g app/build/outputs/apk/debug/app-debug.apk || fail "app not installed"
 adb install -r -t -g app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk || fail "test APK not installed"
+if [ -n "$COMPILE" ]; then
+  echo "Compiling the app ($COMPILE): $(adb shell cmd package compile -m "$COMPILE" -f "$app" < /dev/null 2>&1)"
+  adb shell dumpsys package dexopt < /dev/null 2>/dev/null | grep -A3 "\[$app\]" | head -8
+fi
 
 # Which speech engines the emulator has: the coach needs one with a voice of $language.
 echo "Speech engines: $(adb shell cmd package query-services -a android.intent.action.TTS_SERVICE 2>/dev/null | grep -o 'packageName=[^ ]*' | sort -u | tr '\n' ' ')"
@@ -87,18 +93,21 @@ sleep 3
 echo "Replaying for $minutes min."
 # One minute of the drive traced (FBBD-266): where the track screen's frame time goes, from the UI
 # thread's state and slices and who held the CPUs (track-trace.py).
-adb push .github/scripts/track-trace.cfg /data/misc/perfetto-configs/track.cfg >/dev/null || true
-( sleep "$TRACE_AFTER_S" && adb shell perfetto --background --txt -c /data/misc/perfetto-configs/track.cfg \
-  -o /data/misc/perfetto-traces/track.pftrace < /dev/null >/dev/null 2>&1 ) &
-tracer=$!
+tracer=
+if [ -n "$TRACE_AFTER_S" ]; then
+  adb push .github/scripts/track-trace.cfg /data/misc/perfetto-configs/track.cfg >/dev/null || true
+  ( sleep "$TRACE_AFTER_S" && adb shell perfetto --background --txt -c /data/misc/perfetto-configs/track.cfg \
+    -o /data/misc/perfetto-traces/track.pftrace < /dev/null >/dev/null 2>&1 ) &
+  tracer=$!
+fi
 phase drive --no-restart $(( minutes * 60 + 300 ))
-kill "$tracer" 2>/dev/null || true
+[ -n "$tracer" ] && kill "$tracer" 2>/dev/null
 # Home, as a phone put away, stops any drawing before the check.
 adb shell input keyevent KEYCODE_HOME || true
 sleep 5
 phase check --no-restart
 # The trace is read after the check, so its work on this machine does not slow the emulator's.
-timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
+[ -n "$TRACE_AFTER_S" ] && timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
   && python3 -m pip install -q perfetto >/dev/null 2>&1 \
   && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
   || echo "No track screen trace (FBBD-266)."
