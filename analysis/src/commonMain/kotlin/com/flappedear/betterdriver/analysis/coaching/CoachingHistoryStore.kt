@@ -1,13 +1,10 @@
 package com.flappedear.betterdriver.analysis.coaching
 
+import com.flappedear.betterdriver.io.CoreFiles
+import com.flappedear.betterdriver.io.IOException
+import com.flappedear.betterdriver.io.filesEndingWith
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.nio.file.AtomicMoveNotSupportedException
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 
 /**
  * The coaching history (FBBD-180): one `<track id>/<session id>.json` in [dir] per analysed session
@@ -15,9 +12,9 @@ import java.nio.file.StandardCopyOption
  * brings it back (FBBD-156). It outlives its session: deleting a session's recording (to free space)
  * keeps what was learned from it, as it holds no positions. It goes with its track. Writes are
  * synced and renamed into place; a file that cannot be read, or that is not what its place says,
- * counts as none.
+ * counts as none. Shared by the Android app and the iOS app (FBBD-359).
  */
-class CoachingHistoryStore(private val dir: File) {
+class CoachingHistoryStore(private val dir: String) {
     // Defaults written too, so every file says its format and version.
     private val json = Json {
         ignoreUnknownKeys = true
@@ -29,9 +26,12 @@ class CoachingHistoryStore(private val dir: File) {
 
     /** Every session's record at [trackId], oldest first. */
     fun history(trackId: String): List<SessionCoachingRecord> =
-        File(dir, checkedId(trackId)).listFiles { f -> f.isFile && f.name.endsWith(Suffix) }.orEmpty()
-            .mapNotNull { f -> read(f)?.takeIf { it.trackId == trackId && f.name == it.sessionId + Suffix } }
-            .sortedWith(SessionOrder)
+        CoreFiles.join(dir, checkedId(trackId)).let { d ->
+            CoreFiles.filesEndingWith(d, Suffix)
+                .mapNotNull { name ->
+                    read(CoreFiles.join(d, name))?.takeIf { it.trackId == trackId && name == it.sessionId + Suffix }
+                }
+        }.sortedWith(SessionOrder)
 
     /**
      * Saves [record] unless the same is saved already; returns whether it wrote. A session analysed
@@ -39,9 +39,11 @@ class CoachingHistoryStore(private val dir: File) {
      */
     fun save(record: SessionCoachingRecord): Boolean {
         val f = fileFor(record.trackId, record.sessionId)
-        val elsewhere = dir.listFiles { d -> d.isDirectory && d.name != record.trackId }.orEmpty()
-            .map { File(it, f.name) }.filter { it.exists() }
-        elsewhere.forEach { it.delete() }
+        val name = checkedId(record.sessionId) + Suffix
+        val elsewhere = CoreFiles.list(dir)
+            .filter { it != record.trackId && CoreFiles.isDirectory(CoreFiles.join(dir, it)) }
+            .map { CoreFiles.join(CoreFiles.join(dir, it), name) }.filter(CoreFiles::exists)
+        elsewhere.forEach(CoreFiles::delete)
         if (read(f) == record) return elsewhere.isNotEmpty()
         writeAtomically(f, json.encodeToString(SessionCoachingRecord.serializer(), record))
         return true
@@ -49,15 +51,13 @@ class CoachingHistoryStore(private val dir: File) {
 
     /** Deletes every record of [trackId], with its track; returns whether none is left. */
     fun delete(trackId: String): Boolean {
-        val d = File(dir, checkedId(trackId))
-        d.deleteRecursively()
-        return !d.exists()
+        return CoreFiles.deleteRecursively(CoreFiles.join(dir, checkedId(trackId)))
     }
 
-    private fun read(f: File): SessionCoachingRecord? {
-        if (!f.isFile) return null
+    private fun read(f: String): SessionCoachingRecord? {
+        if (!CoreFiles.isFile(f)) return null
         return try {
-            json.decodeFromString(SessionCoachingRecord.serializer(), f.readText())
+            json.decodeFromString(SessionCoachingRecord.serializer(), CoreFiles.readText(f))
                 .takeIf { it.format == SessionCoachingRecord.Format && it.version == SessionCoachingRecord.Version }
         } catch (_: SerializationException) {
             null
@@ -69,7 +69,7 @@ class CoachingHistoryStore(private val dir: File) {
     }
 
     private fun fileFor(trackId: String, sessionId: String) =
-        File(File(dir, checkedId(trackId)), checkedId(sessionId) + Suffix)
+        CoreFiles.join(CoreFiles.join(dir, checkedId(trackId)), checkedId(sessionId) + Suffix)
 
     private companion object {
         const val Suffix = ".json"
@@ -77,7 +77,7 @@ class CoachingHistoryStore(private val dir: File) {
 }
 
 /** A track or session [id], once it is known to be safe as a file name. */
-internal fun checkedId(id: String): String {
+fun checkedId(id: String): String {
     require(id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_." } && id != "." && id != "..") {
         "bad id: $id"
     }
@@ -85,16 +85,4 @@ internal fun checkedId(id: String): String {
 }
 
 /** Writes [text] to a temporary file, syncs it and renames it over [target], so a reader never sees half of it. */
-internal fun writeAtomically(target: File, text: String) {
-    target.parentFile?.mkdirs()
-    val tmp = File(target.parentFile, target.name + ".tmp")
-    FileOutputStream(tmp).use { out ->
-        out.write(text.toByteArray(Charsets.UTF_8))
-        out.fd.sync()
-    }
-    try {
-        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-    } catch (_: AtomicMoveNotSupportedException) {
-        Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING)
-    }
-}
+internal fun writeAtomically(target: String, text: String) = CoreFiles.writeTextAtomically(target, text)

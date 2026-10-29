@@ -1,79 +1,12 @@
-@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
-
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.PlannedTarget
 import com.flappedear.betterdriver.coach.PlannedTargets
-import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.Json
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.create
-import platform.Foundation.stringWithContentsOfFile
-import platform.Foundation.writeToFile
 
-/** Where the line plans are kept under the app's folder [base], as coach/lines on Android. */
+/** Where the line plans (LinePlanStore, shared with Android) are kept under the app's folder [base]: coach/lines. */
 internal fun linePlansDir(base: String) = "$base/coach/lines"
-
-/**
- * The line plans of each track on the iPhone and iPad (FBBD-333), laid out as Android's LinePlanStore
- * keeps them: one `<track id>/<session id>.json` in [dir] per reviewed session. The track's plan is
- * its latest session's ([get]). A file that cannot be read counts as none.
- */
-internal class IosLinePlanStore(private val dir: String) {
-    private val json = Json {
-        ignoreUnknownKeys = true
-        encodeDefaults = true
-    }
-
-    /** The plan of [trackId]'s latest reviewed session, or null without one. */
-    fun get(trackId: String): LinePlan? = plans(trackId).lastOrNull()
-
-    /** Every session's plan at [trackId], in the order they were driven. */
-    fun plans(trackId: String): List<LinePlan> {
-        if (!safe(trackId)) return emptyList()
-        val folder = "$dir/$trackId"
-        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(folder, null).orEmpty()
-            .filterIsInstance<String>().filter { it.endsWith(Suffix) }
-        return names
-            .mapNotNull { name ->
-                read("$folder/$name")?.takeIf { it.trackId == trackId && name == it.sessionId + Suffix }
-            }
-            .sortedWith(compareBy({ it.sessionStartUtcMillis }, { it.sessionId }))
-    }
-
-    /** Saves [plan] as its session's unless the same is saved already; returns whether it wrote. */
-    fun save(plan: LinePlan): Boolean {
-        val folder = "$dir/${plan.trackId}"
-        val path = "$folder/${plan.sessionId}$Suffix"
-        if (!safe(plan.trackId) || !safe(plan.sessionId) || read(path) == plan) return false
-        NSFileManager.defaultManager.createDirectoryAtPath(folder, true, null, null)
-        return NSString.create(string = json.encodeToString(LinePlan.serializer(), plan))
-            .writeToFile(path, true, NSUTF8StringEncoding, null)
-    }
-
-    @Suppress("SwallowedException") // A file that cannot be read is no plan; the next review writes it again.
-    private fun read(path: String): LinePlan? {
-        val text = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) ?: return null
-        return try {
-            json.decodeFromString(LinePlan.serializer(), text)
-                .takeIf { it.format == LinePlan.Format && it.version == LinePlan.Version }
-        } catch (_: SerializationException) {
-            null
-        } catch (_: IllegalArgumentException) {
-            null
-        }
-    }
-
-    private fun safe(id: String) = id.isNotEmpty() && '/' !in id && id != "." && id != ".."
-
-    private companion object {
-        const val Suffix = ".json"
-    }
-}
 
 /**
  * The targets of [plan] in its corners with a CornerId, as the coach reference takes them: the

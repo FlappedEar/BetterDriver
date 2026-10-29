@@ -196,6 +196,20 @@ class TrackLibraryTest {
     }
 
     @Test
+    fun tracksSavedByEarlierBuildsAreKeptUnderTheSharedStoresNames() {
+        val made = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
+        val old = made.copy(id = "earlier-build", name = "Old ring")
+        write(old.id, TrackJson.encode(old), suffix = ".json")
+        assertNull(library.get(old.id))
+        // The next start of the app (a new library) moves it to <id>.track.json, as Android names it.
+        val next = TrackLibrary(tracks, sessions)
+        assertEquals(old, next.get(old.id))
+        assertEquals(listOf("Moto ring", "Old ring"), next.list().map { it.displayName })
+        assertFalse(NSFileManager.defaultManager.fileExistsAtPath("$tracks/${old.id}.json"))
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$tracks/${old.id}.track.json"))
+    }
+
+    @Test
     fun oddTapsNeverEndTheEditor() {
         record()
         val track = library.createAt(gnss.centerLat, gnss.centerLon, "Moto ring")
@@ -223,8 +237,10 @@ class TrackLibraryTest {
         editor.cancel()
     }
 
-    private fun write(id: String, text: String) {
+    /** Writes [text] as track [id]'s file, as the shared TrackStore names it ([suffix]) or as earlier builds did. */
+    private fun write(id: String, text: String, suffix: String = ".track.json") {
+        NSFileManager.defaultManager.createDirectoryAtPath(tracks, true, null, null)
         NSString.create(string = text)
-            .writeToFile("$tracks/$id.json", atomically = true, encoding = NSUTF8StringEncoding, error = null)
+            .writeToFile("$tracks/$id$suffix", atomically = true, encoding = NSUTF8StringEncoding, error = null)
     }
 }

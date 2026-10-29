@@ -1,9 +1,9 @@
 package com.flappedear.betterdriver.recorder
 
+import com.flappedear.betterdriver.io.FileError
+import com.flappedear.betterdriver.io.PosixFiles
 import com.flappedear.betterdriver.io.writeProperties
-import com.flappedear.betterdriver.recorder.store.FileError
 import com.flappedear.betterdriver.recorder.store.Frames
-import com.flappedear.betterdriver.recorder.store.PosixFiles
 import com.flappedear.betterdriver.recorder.store.Record
 import com.flappedear.betterdriver.recorder.store.SessionFileNames
 import com.flappedear.betterdriver.recorder.store.SessionStore

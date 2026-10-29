@@ -240,7 +240,7 @@ class Tracks private constructor(private val context: Context) {
      * re-created with the same id never picks up stale ones. [onDone] gets false when any is left.
      */
     fun delete(id: String, onDone: (Boolean) -> Unit) = io.execute {
-        val references = CoachReferenceStore(coachReferencesDir(context))
+        val references = CoachReferenceStore(coachReferencesDir(context).path)
         val picks = coachPicks(context)
         val focus = sessionFocusStore(context)
         val history = coachingHistoryStore(context)

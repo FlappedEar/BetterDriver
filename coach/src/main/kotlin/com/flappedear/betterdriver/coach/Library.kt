@@ -69,8 +69,8 @@ class CoachLibrary(
     private val plans: (trackId: String) -> PlannedTargets? = { null },
     private val tracks: () -> List<Track>,
 ) {
-    val references = CoachReferenceStore(dir)
-    private val places = SessionPlaces(File(dir, PlacesFile))
+    val references = CoachReferenceStore(dir.path)
+    private val places = SessionPlaces(File(dir, PlacesFile).path)
 
     /**
      * The reference for [track], rebuilt first if sessions, lines or the line plan changed since it was saved.

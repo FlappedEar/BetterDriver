@@ -87,13 +87,13 @@ class ReplayDriveTest {
         val setup = Setup()
             .addEquipment(EquipmentModel.DEMO_TRACK, newId = { "demo-${n++}" })
             .addCar(CarName, newId = { "car-${n++}" })
-        SetupStore(File(d.app.filesDir, "setup.json")).save(setup)
+        SetupStore(File(d.app.filesDir, "setup.json").path).save(setup)
         d.app.getSharedPreferences(AppPrefs.FileName, Context.MODE_PRIVATE).edit()
             .putBoolean("setup_done", true)
             .commit()
         DemoReplay.choose(d.app, DemoReplay.SilesiaRing)
         // The coach process reads its settings from this file at each session start (CoachProtocol).
-        CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties"))
+        CoachSettingsStore(File(d.app.filesDir, "coach/settings.properties").path)
             .write(CoachSettings(Verbosity.Full, language = language, learningLaps = LearningLaps))
         earlierOuting()
         AppLog.clear(d.app)
@@ -114,7 +114,7 @@ class ReplayDriveTest {
             SampleSet(n * MicrosPerSecond / replay.rateHz, replay.fix(n)).toCoachFix()
         }
         val reference = checkNotNull(buildReference(track, listOf(SessionLaps("earlier", tracedLaps(track, fixes)))))
-        CoachReferenceStore(File(d.app.filesDir, "coach/references")).save(reference.copy(sessions = emptyList()))
+        CoachReferenceStore(File(d.app.filesDir, "coach/references").path).save(reference.copy(sessions = emptyList()))
     }
 
     /**

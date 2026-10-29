@@ -124,7 +124,7 @@ class TrackTest {
         assertEquals(listOf("tor-poznan"), store.all().map { it.id })
         val aside = store.setAside()
         assertEquals(1, aside.size)
-        assertEquals("{ half a track", aside.single().readText())
+        assertEquals("{ half a track", File(aside.single()).readText())
         assertEquals(listOf("tor-poznan"), store.all().map { it.id })
     }
 

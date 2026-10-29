@@ -74,7 +74,7 @@ class CoachVoicesTest {
     @Test
     fun `speech settings are saved and read back`() {
         val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
-        val store = CoachSettingsStore(file)
+        val store = CoachSettingsStore(file.path)
         assertEquals(Speech(), store.read().speech)
         val s = CoachSettings(speech = Speech("en-gb-x-gbc-local", 1.2f, 0.9f, engine = "org.woheller69.ttsengine"))
         store.write(s)
@@ -87,15 +87,18 @@ class CoachVoicesTest {
     fun `an out of range or damaged rate falls back`() {
         val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
         file.writeText("speechRate=9\nspeechPitch=0.1\nttsVoice=\n")
-        assertEquals(Speech(rate = Speech.MaxRate, pitch = Speech.MinPitch), CoachSettingsStore(file).read().speech)
+        assertEquals(
+            Speech(rate = Speech.MaxRate, pitch = Speech.MinPitch),
+            CoachSettingsStore(file.path).read().speech,
+        )
         file.writeText("speechRate=NaN\n")
-        assertEquals(Speech(), CoachSettingsStore(file).read().speech)
+        assertEquals(Speech(), CoachSettingsStore(file.path).read().speech)
     }
 
     @Test
     fun `a settings file too large to read whole gives the defaults`() {
         val file = Files.createTempDirectory("coach").resolve("settings.properties").toFile()
         file.writeText("speechRate=1.2\nttsVoice=" + "x".repeat(CoachSettingsStore.MaxBytes.toInt()) + "\n")
-        assertEquals(CoachSettings(), CoachSettingsStore(file).read())
+        assertEquals(CoachSettings(), CoachSettingsStore(file.path).read())
     }
 }
