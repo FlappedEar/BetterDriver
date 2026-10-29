@@ -36,6 +36,8 @@ struct SessionView: View {
     @State private var screen: AnalysisUi?
     @State private var failure: String?
     @State private var notYet: String?
+    @State private var coachReview: CoachReviewLink?
+    @State private var progression = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,8 +54,14 @@ struct SessionView: View {
             // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Progression at this track") { notYet = "Progression at a track" }
-                    Button("Coach review") { notYet = "Coach review" }
+                    Button("Progression at this track") { progression = true }
+                    // Only for a session the coach spoke in, with its cues, as Android's card (FBBD-99).
+                    if let cues = CoachReviewCounts.shared.counts[session.id] {
+                        Button { coachReview = CoachReviewLink(session) } label: {
+                            Text("Coach review")
+                            Text(CoachReviewCounts.text(cues))
+                        }
+                    }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -61,6 +69,8 @@ struct SessionView: View {
             }
         }
         .notImplementedAlert($notYet)
+        .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
+        .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
 
@@ -76,7 +86,7 @@ struct SessionView: View {
         } else if let summary {
             switch tab {
             case .summary:
-                SummaryTab(summary: summary, screen: screen, compare: { pick(index: $0, summary) }, openLine: { tab = .map })
+                SummaryTab(summary: summary, sessionId: session.id, screen: screen, compare: { pick(index: $0, summary) }, openLine: { tab = .map })
             case .compare: CompareTab(compare: compare, summary: summary)
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line)
@@ -151,6 +161,7 @@ private struct TabRow: View {
 /// runs. A session with no laps shows its drive, G-forces and runs, which need no laps (FBBD-342).
 private struct SummaryTab: View {
     let summary: SessionSummary
+    let sessionId: String
     let screen: AnalysisUi?
     let compare: (Int) -> Void
     let openLine: () -> Void
@@ -161,6 +172,8 @@ private struct SummaryTab: View {
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
                 SummaryTimesCard(ui: ui)
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
+                // This session against the earlier ones at its track (FBBD-122), as Android under the lap times.
+                ProgressionSummaryCard(summary: summary, sessionId: sessionId)
                 if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, compare: compare) }
             } else if summary.laps.isEmpty {
                 Card {
