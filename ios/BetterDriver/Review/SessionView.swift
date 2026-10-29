@@ -36,6 +36,7 @@ struct SessionView: View {
     @State private var screen: AnalysisUi?
     @State private var failure: String?
     @State private var notYet: String?
+    @State private var progression = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -52,7 +53,7 @@ struct SessionView: View {
             // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
-                    Button("Progression at this track") { notYet = "Progression at a track" }
+                    Button("Progression at this track") { progression = true }
                     Button("Coach review") { notYet = "Coach review" }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
@@ -61,6 +62,7 @@ struct SessionView: View {
             }
         }
         .notImplementedAlert($notYet)
+        .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
 
