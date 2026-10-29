@@ -37,7 +37,7 @@ final class CoachReviewTests: XCTestCase {
         }
         XCTAssertTrue(offered, "no Coach review in the More menu")
         keep("Session More, coach review")
-        item.tap()
+        tapMenuItem(item)
         reviewShows("Coach review")
         app.buttons["Done"].firstMatch.tap()
         XCTAssertEqual(app.state, .runningForeground)
@@ -55,14 +55,27 @@ final class CoachReviewTests: XCTestCase {
         XCTAssertTrue(app.buttons["Share"].firstMatch.waitForExistence(timeout: 10), "no session menu")
         XCTAssertFalse(coachReviewItem().exists, "Coach review on a session with no cues")
         app.tap()
-        rows.element(boundBy: jastrzab).press(forDuration: 1.2)
+        // The cue counts are read off the main thread after the list: ask the menu again until it has them.
         let item = coachReviewItem()
-        XCTAssertTrue(item.waitForExistence(timeout: 10), "no Coach review on the coached session")
+        var offered = false
+        for _ in 0..<12 where !offered {
+            rows.element(boundBy: jastrzab).press(forDuration: 1.2)
+            offered = item.waitForExistence(timeout: 5)
+            if !offered { app.tap() }
+        }
+        XCTAssertTrue(offered, "no Coach review on the coached session")
         keep("Session row, coach review")
-        item.tap()
+        tapMenuItem(item)
         reviewShows("Coach review, from the list")
         app.buttons["Done"].firstMatch.tap()
         XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    /// A menu item is tapped where it is: on a busy CI simulator XCUITest's scroll-to-visible on it
+    /// can time out (kAXErrorCannotComplete) while the menu is already on screen.
+    private func tapMenuItem(_ item: XCUIElement) {
+        sleep(1)
+        item.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     /// "Coach review" with its cue count under it.
