@@ -35,7 +35,8 @@ class LoggingListener(
                 val reason = status.reason.replace(' ', '_')
                 CoreLog.forSession(sessionId, CheckLog.SESSION, "stop t_us=${now()} reason=$reason")
             }
-            is RecorderStatus.StorageLow -> logLine(CoreLog.WARN, Tag, "$sessionId storage low: ${status.usableBytes} bytes")
+            is RecorderStatus.StorageLow ->
+                logLine(CoreLog.WARN, Tag, "$sessionId storage low: ${status.usableBytes} bytes")
         }
     }
 

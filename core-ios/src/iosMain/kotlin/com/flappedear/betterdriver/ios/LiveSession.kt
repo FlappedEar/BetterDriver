@@ -274,7 +274,11 @@ class LiveSession private constructor(
             val receiver = info.devices.firstOrNull().orEmpty()
             val logs = listOf(
                 LoggingListener(recording.id, receiver, info.startUtcMillis, recording::nowMicros),
-                GnssSecondLog(recording.id, info.startUtcMillis, skipsWithoutFix = receiver.startsWith(RaceBoxIds.MICRO_PREFIX)),
+                GnssSecondLog(
+                    recording.id,
+                    info.startUtcMillis,
+                    skipsWithoutFix = receiver.startsWith(RaceBoxIds.MICRO_PREFIX),
+                ),
                 HeartRateLog(recording.id),
             )
             lateinit var session: LiveSession
