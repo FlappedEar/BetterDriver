@@ -36,6 +36,7 @@ struct SessionView: View {
     @State private var screen: AnalysisUi?
     @State private var failure: String?
     @State private var notYet: String?
+    @State private var coachReview: CoachReviewLink?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,7 +54,13 @@ struct SessionView: View {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
                     Button("Progression at this track") { notYet = "Progression at a track" }
-                    Button("Coach review") { notYet = "Coach review" }
+                    // Only for a session the coach spoke in, with its cues, as Android's card (FBBD-99).
+                    if let cues = CoachReviewCounts.shared.counts[session.id] {
+                        Button { coachReview = CoachReviewLink(session) } label: {
+                            Text("Coach review")
+                            Text(CoachReviewCounts.text(cues))
+                        }
+                    }
                 } label: {
                     Label("More", systemImage: "ellipsis.circle")
                 }
@@ -61,6 +68,7 @@ struct SessionView: View {
             }
         }
         .notImplementedAlert($notYet)
+        .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
 

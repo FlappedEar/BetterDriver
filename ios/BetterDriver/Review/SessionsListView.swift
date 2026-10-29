@@ -13,6 +13,7 @@ struct SessionsListView: View {
     @State private var deleting: SessionRow?
     @State private var trackDay: TrackDayLink?
     @State private var watching: SessionRow?
+    @State private var coachReview: CoachReviewLink?
     /// The camera whose files Files is picking, and for which session (UI-32).
     @State private var addingTo: (sessionId: String, camera: ListedCamera)?
     @State private var pickingCameraFiles = false
@@ -48,7 +49,13 @@ struct SessionsListView: View {
                                 ForEach(model.addableCameras(session), id: \.sourceId) { camera in
                                     Button("Add \(camera.name) video") { addFiles(session, camera) }
                                 }
-                                Button("Coach review") { notYet = "Coach review" }
+                                // Only on a session the coach spoke in, with its cues, as Android's card (FBBD-99).
+                                if let cues = CoachReviewCounts.shared.counts[session.id] {
+                                    Button { coachReview = CoachReviewLink(session) } label: {
+                                        Text("Coach review")
+                                        Text(CoachReviewCounts.text(cues))
+                                    }
+                                }
                                 Button("Share") { model.share(session) }
                                 Button("Delete", role: .destructive) { deleting = session }
                             }
@@ -94,6 +101,7 @@ struct SessionsListView: View {
         }
         .sheet(isPresented: $showingTracks) { TracksView() }
         .sheet(item: $trackDay) { TrackDayView(link: $0) }
+        .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
         .fullScreenCover(item: $watching) { session in
             DataVideoWatchPage(sessionId: session.id) { watching = nil }
         }
