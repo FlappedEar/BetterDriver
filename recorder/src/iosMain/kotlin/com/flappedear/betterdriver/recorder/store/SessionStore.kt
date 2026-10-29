@@ -2,7 +2,6 @@ package com.flappedear.betterdriver.recorder.store
 
 import com.flappedear.betterdriver.io.FileError
 import com.flappedear.betterdriver.io.PosixFiles
-import com.flappedear.betterdriver.io.parseProperties
 import com.flappedear.betterdriver.io.writeProperties
 import com.flappedear.betterdriver.recorder.SessionInfo
 import platform.Foundation.NSDate
@@ -12,40 +11,24 @@ import platform.Foundation.NSTimeZone
 import platform.Foundation.NSUUID
 import platform.Foundation.dateWithTimeIntervalSince1970
 import platform.Foundation.localTimeZone
-import platform.Foundation.timeIntervalSince1970
 
 private const val IdSuffixChars = 8
 private const val MillisPerSecond = 1_000.0
 
-/** Name prefix of a session directory being deleted; such directories are never listed. */
-private const val DeletingPrefix = ".deleting-"
-
-/** One stored session as the list shows it, as SessionSummary on Android. */
-data class StoredSession(
-    val id: String,
-    val dir: String,
-    val info: SessionInfo,
-    val state: SessionState,
-    /** From the clean stop, or from the last sample found by recovery. Null while recording or before recovery. */
-    val durationMicros: Long? = null,
-)
-
-enum class DeleteResult { DELETED, NOT_FOUND, RECORDING, FAILED }
-
 /**
  * Session directories under [root] on iOS, one per recording, in the same layout and file format
  * as the Android store (SessionFiles), so a session moves between the two unchanged (FBBD-332).
+ * Listing, recovery, reading and deleting are the shared core's [SessionFolders] (FBBD-359).
  */
 class SessionStore(val root: String) {
+    private val folders = SessionFolders(root)
 
     init {
         PosixFiles.mkdirs(root)
-        // A delete cut short by a crash leaves a hidden directory; finish it.
-        PosixFiles.list(root).filter { it.startsWith(DeletingPrefix) }
-            .forEach { PosixFiles.deleteRecursively(PosixFiles.join(root, it)) }
+        folders.finishDeletes()
     }
 
-    fun dir(id: String) = PosixFiles.join(root, id)
+    fun dir(id: String) = folders.dir(id)
 
     /**
      * Creates the directory, takes the session lock and writes the metadata before any sample is
@@ -73,95 +56,21 @@ class SessionStore(val root: String) {
         return Triple(id, dir, lock)
     }
 
-    fun state(dir: String): SessionState = when {
-        PosixFiles.isFile(PosixFiles.join(dir, SessionFileNames.FINISHED)) -> SessionState.FINISHED
-        PosixFiles.isLocked(PosixFiles.join(dir, SessionFileNames.LOCK)) -> SessionState.RECORDING
-        PosixFiles.isFile(PosixFiles.join(dir, SessionFileNames.RECOVERY)) -> SessionState.RECOVERED
-        else -> SessionState.INTERRUPTED
-    }
-
-    private fun props(path: String): Map<String, String>? = try {
-        if (PosixFiles.isFile(path)) parseProperties(PosixFiles.readBytes(path)) else null
-    } catch (_: FileError) {
-        null // unreadable: treated as missing
-    } catch (_: IllegalArgumentException) {
-        null // malformed escape in the file
-    }
+    fun state(dir: String): SessionState = folders.state(dir)
 
     /** Sessions with readable metadata, newest first. */
-    fun list(): List<StoredSession> = PosixFiles.list(root)
-        .filter { !it.startsWith(".") && PosixFiles.isDirectory(dir(it)) }
-        .mapNotNull { id ->
-            val d = dir(id)
-            val p = props(PosixFiles.join(d, SessionFileNames.META)) ?: return@mapNotNull null
-            val info = try {
-                metaFromEntries(p)
-            } catch (_: RuntimeException) {
-                return@mapNotNull null // damaged metadata: not listed
-            }
-            val duration = durationMicrosOf(
-                props(PosixFiles.join(d, SessionFileNames.FINISHED)),
-                props(PosixFiles.join(d, SessionFileNames.RECOVERY)),
-            )
-            StoredSession(id, d, info, state(d), duration)
-        }
-        .sortedByDescending { it.info.startUtcMillis }
+    fun list(): List<StoredSession> = folders.list()
 
-    private fun chunkPaths(dir: String): List<String> =
-        PosixFiles.list(dir).filter(SessionFileNames::isChunk).sorted().map { PosixFiles.join(dir, it) }
-
-    /**
-     * Run at app start. Finds sessions that were not stopped cleanly and nobody is recording,
-     * checks their chunks and marks them recovered. Chunk files are only read, never changed (FBBD-71).
-     * Each session is on its own: one that cannot be recovered is left as it is and the rest still
-     * are; [onError] hears about it. A session whose recording took its lock meanwhile is left alone.
-     */
-    @Suppress("TooGenericExceptionCaught") // Any failure of one session must not stop the others.
+    /** Run at app start: marks sessions that were not stopped cleanly as recovered (FBBD-71). */
     fun recoverInterrupted(onError: (id: String, e: Exception) -> Unit = { _, _ -> }): List<RecoveryReport> =
-        list().filter { it.state == SessionState.INTERRUPTED }.mapNotNull { s ->
-            try {
-                val report = recoveryReportOf(s.id, chunkPaths(s.dir).map { path -> { PosixFiles.readBytes(path) } })
-                val now = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
-                if (state(s.dir) != SessionState.INTERRUPTED) return@mapNotNull null
-                PosixFiles.writeAtomically(
-                    PosixFiles.join(s.dir, SessionFileNames.RECOVERY),
-                    writeProperties(recoveryEntries(report, now)),
-                )
-                report
-            } catch (e: Exception) {
-                onError(s.id, e)
-                null
-            }
-        }
+        folders.recoverInterrupted(onError)
 
     /**
      * Reads session [id], in any state, including one being recorded (up to its last write).
      * With [samples] false the sample sets are left out.
      */
-    fun read(id: String, samples: Boolean = true): SessionData {
-        val d = dir(id)
-        val p = props(PosixFiles.join(d, SessionFileNames.META)) ?: error("no readable ${SessionFileNames.META} in $d")
-        val chunks = chunkPaths(d).asSequence().map(PosixFiles::readBytes)
-        return sessionDataOf(id, metaFromEntries(p), state(d), chunks, samples)
-    }
+    fun read(id: String, samples: Boolean = true): SessionData = folders.read(dir(id), samples)
 
-    /**
-     * Deletes session [id] with everything in its directory. A session being recorded is refused.
-     * The directory is first renamed to a hidden name, so it leaves the list at once and a delete cut
-     * short is finished by the next [SessionStore].
-     */
-    fun delete(id: String): DeleteResult {
-        val target = dir(id)
-        val doomed = PosixFiles.join(root, "$DeletingPrefix$id")
-        return when {
-            id.isEmpty() || id.startsWith(".") || '/' in id || !PosixFiles.isDirectory(target) -> DeleteResult.NOT_FOUND
-            state(target) == SessionState.RECORDING -> DeleteResult.RECORDING
-            !PosixFiles.move(target, doomed) -> DeleteResult.FAILED
-            else -> {
-                PosixFiles.syncDir(root)
-                PosixFiles.deleteRecursively(doomed)
-                DeleteResult.DELETED
-            }
-        }
-    }
+    /** Deletes session [id] with everything in its directory. A session being recorded is refused. */
+    fun delete(id: String): DeleteResult = folders.delete(id)
 }
