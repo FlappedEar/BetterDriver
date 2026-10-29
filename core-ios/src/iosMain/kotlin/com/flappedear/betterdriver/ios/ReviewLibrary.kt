@@ -264,7 +264,8 @@ class ReviewLibrary(base: String) {
             val known = readSmall(cueCountsFile)?.let(CueCountsText::decode) ?: mutableMapOf()
             val found = rememberCueCounts(sessions(), { it.id }, { it.durationMicros }, known, ::countCues)
             if (found.changed) {
-                NSFileManager.defaultManager.createDirectoryAtPath(cueCountsFile.substringBeforeLast('/'), true, null, null)
+                val dir = cueCountsFile.substringBeforeLast('/')
+                NSFileManager.defaultManager.createDirectoryAtPath(dir, true, null, null)
                 // Only a cache: a count that is not kept is read again next time.
                 NSString.create(string = CueCountsText.encode(known))
                     .writeToFile(cueCountsFile, true, NSUTF8StringEncoding, null)
