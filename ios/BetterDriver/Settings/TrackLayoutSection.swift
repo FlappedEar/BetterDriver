@@ -4,7 +4,8 @@ import SwiftUI
 /// The track screen's layout in Settings › Track screen (FBBD-345, UI-304 A), as the Android app's
 /// TrackLayoutSection, so the tiles are set before driving: the screen drawn as it looks, and a tap on
 /// a tile opens its list (UI-124 A). Each car has its own layout (UI-306): the cars are listed and the
-/// picked one's is drawn, the next session's car first. Screen 2 is not on the iPhone yet.
+/// picked one's is drawn, the next session's car first. Both screens are drawn: the main one and the
+/// second, with the G radar (FBBD-262, FBBD-318).
 struct TrackLayoutSection: View {
     @EnvironmentObject private var settings: SettingsModel
     @State private var picked: String?
@@ -18,6 +19,11 @@ struct TrackLayoutSection: View {
         let next = setup.session.carId
         let carId = picked.flatMap { setup.car(id: $0) != nil ? $0 : nil } ?? next
         let ids = TrackTiles.shared.ids(setup: setup, carId: carId, second: false)
+        let secondIds = TrackTiles.shared.ids(setup: setup, carId: carId, second: true)
+        let model = TrackScreenModel(
+            layout: ids, secondIds: secondIds, receiverHasG: Self.receiverHasG,
+            coachOn: SettingsCore.shared.coachOn(s: settings.coach)
+        )
         if !setup.cars.isEmpty {
             ShellLabel("Layout for")
             ShellCard {
@@ -36,20 +42,15 @@ struct TrackLayoutSection: View {
             }
         }
         ShellLabel("Screen 1 · tap a tile to change it")
-        TrackLayoutPreview(
-            model: TrackScreenModel(
-                layout: ids, receiverHasG: Self.receiverHasG, coachOn: SettingsCore.shared.coachOn(s: settings.coach)
-            ),
-            onTapTile: { editing = SheetId(id: "\($0)") }
-        )
+        TrackLayoutPreview(model: model, page: 0) { editing = SheetId(id: "0:\($0)") }
+            .accessibilityIdentifier("layoutMain")
         ShellLabel("Screen 2 · swipe left while driving")
-        ShellCard {
-            NavigationLink { NotImplementedPage(title: "Screen 2") } label: {
-                ListRow("G radar and more tiles", divider: false, chevron: true)
-            }
-            .buttonStyle(.plain)
-        }
-        DimText("A tile with no data in a session is left out.")
+        TrackLayoutPreview(model: model, page: 1) { editing = SheetId(id: "1:\($0)") }
+            .accessibilityIdentifier("layoutSecond")
+        DimText(
+            "Screen 2 shows the G radar and the first \(TrackScreenModel.radarColumns * TrackScreenModel.secondRows) "
+                + "tiles. A tile with no data in a session is left out."
+        )
         ShellCard {
             ListRow("Reset tiles to default", divider: false) {
                 settings.update { TrackTiles.shared.reset(setup: $0, carId: carId) }
@@ -57,16 +58,21 @@ struct TrackLayoutSection: View {
             }
         }
         .sheet(item: $editing) { chosen in
-            let slot = Int(chosen.id) ?? 0
+            let parts = chosen.id.split(separator: ":").compactMap { Int($0) }
+            let page = parts.first ?? 0
+            let slot = parts.last ?? 0
+            let pageIds = page == 0 ? ids : secondIds
             TileListSheet(
-                title: "Tile \(slot + 1) · screen 1",
-                current: ids.indices.contains(slot) && !ids[slot].isEmpty ? ids[slot] : nil,
+                title: "Tile \(slot + 1) · screen \(page + 1)",
+                current: pageIds.indices.contains(slot) && !pageIds[slot].isEmpty ? pageIds[slot] : nil,
                 groups: TrackTiles.shared.settingsOptions(
                     receiverHasG: Self.receiverHasG, receiver: setup.active().gnss?.name
                 )
             ) { id in
-                settings.update { TrackTiles.shared.choose(setup: $0, carId: carId, second: false, slot: Int32(slot), id: id) }
-                AppLog.i("Settings", "tile car=\(carId ?? "none") page=0 slot=\(slot) id=\(id ?? "empty")")
+                settings.update {
+                    TrackTiles.shared.choose(setup: $0, carId: carId, second: page == 1, slot: Int32(slot), id: id)
+                }
+                AppLog.i("Settings", "tile car=\(carId ?? "none") page=\(page) slot=\(slot) id=\(id ?? "empty")")
                 editing = nil
             }
         }
@@ -77,6 +83,7 @@ struct TrackLayoutSection: View {
 /// (TrackLayoutPreview): the track screen is designed on an iPhone 15 (852 x 393 points).
 private struct TrackLayoutPreview: View {
     let model: TrackScreenModel
+    let page: Int
     let onTapTile: (Int) -> Void
 
     private static let width: CGFloat = 852
@@ -85,14 +92,13 @@ private struct TrackLayoutPreview: View {
     var body: some View {
         GeometryReader { geo in
             let scale = geo.size.width / Self.width
-            TrackScreenContent(model: model, onTapTile: onTapTile)
+            TrackScreenContent(model: model, page: page) { _, slot in onTapTile(slot) }
                 .frame(width: Self.width, height: Self.height)
                 .background(TrackColors.background)
                 .clipShape(RoundedRectangle(cornerRadius: 8 / scale))
                 .scaleEffect(scale, anchor: .topLeading)
         }
         .aspectRatio(Self.width / Self.height, contentMode: .fit)
-        .accessibilityIdentifier("layoutMain")
     }
 }
 

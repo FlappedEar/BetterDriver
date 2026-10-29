@@ -137,6 +137,57 @@ class PollSchedulerTest {
     }
 
     @Test
+    fun `a dropped request is tried again later, and waits longer each time it still misses`() {
+        // FBBD-382: dropped for good meant temperatures gone for the rest of a 30-minute drive.
+        val scheduler = PollScheduler(listOf(StandardPids.Rpm, StandardPids.Coolant), dropAfterMisses = 2)
+        val coolant = StandardPids.Coolant.request
+        assertEquals(PollScheduler.Outcome.Missed, scheduler.completed(coolant, 0, 50, answered = false))
+        assertEquals(PollScheduler.Outcome.Dropped, scheduler.completed(coolant, 1_000, 50, answered = false))
+        assertEquals(listOf(StandardPids.Rpm.request), scheduler.active)
+        assertEquals(30_000, scheduler.retryWaitMs(coolant))
+        assertEquals(StandardPids.Rpm.request, scheduler.next(30_999)?.request)
+        assertEquals(PollScheduler.Next(coolant, 31_000), scheduler.next(31_000))
+        assertEquals(PollScheduler.Outcome.StillDropped, scheduler.completed(coolant, 31_000, 50, answered = false))
+        assertEquals(60_000, scheduler.retryWaitMs(coolant))
+        assertEquals(PollScheduler.Next(coolant, 91_000), scheduler.next(91_000))
+        assertEquals(PollScheduler.Outcome.Back, scheduler.completed(coolant, 91_000, 50, answered = true))
+        assertEquals(listOf(StandardPids.Rpm.request, coolant), scheduler.active)
+        assertEquals(0, scheduler.retryWaitMs(coolant))
+        // Back level with engine speed, not ahead of it by the time it was out.
+        val next = (0 until 10).map { i ->
+            val at = 91_100L + i * 600
+            scheduler.next(at)!!.request.also { scheduler.completed(it, at, 50, answered = true) }
+        }
+        assertTrue(next.count { it == StandardPids.Rpm.request } >= 5, next.toString())
+    }
+
+    @Test
+    fun `with every request dropped, the soonest retry is still known`() {
+        val scheduler = PollScheduler(listOf(StandardPids.Coolant), dropAfterMisses = 1)
+        val coolant = StandardPids.Coolant.request
+        assertNull(scheduler.retry())
+        scheduler.completed(coolant, 1_000, 50, answered = false)
+        assertNull(scheduler.next(40_000), "the reader without CAN ends, as before")
+        assertEquals(PollScheduler.Next(coolant, 31_000), scheduler.retry())
+        assertEquals(PollScheduler.Outcome.Back, scheduler.completed(coolant, 31_000, 50, answered = true))
+        assertEquals(PollScheduler.Next(coolant, 31_500), scheduler.next(31_000), "polled again at its 2 Hz")
+    }
+
+    @Test
+    fun `a request that answered before and now misses has stopped answering`() {
+        val scheduler = PollScheduler(listOf(StandardPids.Coolant))
+        val coolant = StandardPids.Coolant.request
+        scheduler.completed(coolant, 0, 50, answered = false)
+        scheduler.completed(coolant, 500, 50, answered = false)
+        assertTrue(!scheduler.stoppedAnswering(coolant, 2), "never answered: the car may not have it")
+        scheduler.completed(coolant, 1_000, 50, answered = true)
+        scheduler.completed(coolant, 1_500, 50, answered = false)
+        assertTrue(!scheduler.stoppedAnswering(coolant, 2))
+        scheduler.completed(coolant, 2_000, 50, answered = false)
+        assertTrue(scheduler.stoppedAnswering(coolant, 2))
+    }
+
+    @Test
     fun `only slow channels wait for their interval`() {
         val scheduler = PollScheduler(listOf(StandardPids.Coolant), slowMaxHz = 2.0)
         assertEquals(PollScheduler.Next(StandardPids.Coolant.request, 0), scheduler.next(0))

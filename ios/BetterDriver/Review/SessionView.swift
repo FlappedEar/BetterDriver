@@ -40,6 +40,11 @@ struct SessionView: View {
     @State private var progression = false
     @State private var everyPass: EveryPassLink?
     @State private var mapView: MapTabView = .laps
+    /// Video with data (FBBD-152): its sheet, then its player full screen; closing the player comes
+    /// back to the sheet.
+    @State private var dataVideo = false
+    @State private var playing: DataVideoPlayback?
+    @State private var toPlay: DataVideoPlayback?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -53,7 +58,7 @@ struct SessionView: View {
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id, title: title) }
+            ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) { dataVideo = true } }
             // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
@@ -70,6 +75,19 @@ struct SessionView: View {
                 }
                 .accessibilityIdentifier("sessionMore")
             }
+        }
+        .sheet(isPresented: $dataVideo, onDismiss: {
+            playing = toPlay
+            toPlay = nil
+        }) {
+            DataVideoSheet(sessionId: session.id, title: title) { p in
+                toPlay = p
+                dataVideo = false
+            } onClose: { dataVideo = false }
+                .presentationDetents([.medium, .large])
+        }
+        .fullScreenCover(item: $playing, onDismiss: { dataVideo = true }) { p in
+            DataVideoPlayerPage(playback: p) { playing = nil }
         }
         .notImplementedAlert($notYet)
         .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
