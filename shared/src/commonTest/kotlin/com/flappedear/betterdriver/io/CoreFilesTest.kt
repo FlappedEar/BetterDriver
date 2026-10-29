@@ -77,4 +77,15 @@ class CoreFilesTest {
         assertFalse(CoreFiles.exists(d))
         assertTrue(CoreFiles.deleteRecursively(d))
     }
+
+    @Test
+    fun aFolderLockIsReentrantAndKeepsItsFileBesideTheFolder() {
+        val tracks = CoreFiles.join(dir, "tracks")
+        val got = withFolderLock(tracks) { withFolderLock(tracks) { 42 } }
+        assertEquals(42, got)
+        assertTrue(CoreFiles.isDirectory(tracks))
+        assertEquals(emptyList(), CoreFiles.list(tracks))
+        assertTrue(CoreFiles.isFile("$tracks.lock"))
+        assertEquals(7, withFolderLock(tracks) { 7 })
+    }
 }

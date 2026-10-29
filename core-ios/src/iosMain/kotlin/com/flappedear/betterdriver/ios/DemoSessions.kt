@@ -10,12 +10,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionWriter
 import com.flappedear.betterdriver.timing.demo.SessionReplay
 import com.flappedear.betterdriver.timing.track.Track
-import com.flappedear.betterdriver.timing.track.TrackJson
-import platform.Foundation.NSFileManager
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.create
-import platform.Foundation.writeToFile
+import com.flappedear.betterdriver.timing.track.iosTrackStore
 
 /** The demo replays are read at this rate, as DemoParityTest reads them. */
 private const val DemoRateHz = 10
@@ -31,7 +26,7 @@ private const val DemoEndReason = "demo"
 internal object DemoSessions {
     /**
      * Writes the replay [replay] at [track] into [store] as a session starting at [startUtcMillis],
-     * and saves [track] in [tracksRoot] (<id>.json) so the review finds it. Returns the session's id.
+     * and saves [track] in [tracksRoot] (TrackStore) so the review finds it. Returns the session's id.
      */
     fun add(store: SessionStore, tracksRoot: String, replay: String, track: Track, startUtcMillis: Long): String {
         saveTrack(tracksRoot, track)
@@ -55,11 +50,9 @@ internal object DemoSessions {
 
     private fun micros(n: Long) = n * MicrosPerSecond / DemoRateHz
 
+    /** As Android's demo: a track already saved under its id is kept, as Arek may have moved its lines. */
     private fun saveTrack(tracksRoot: String, track: Track) {
-        NSFileManager.defaultManager.createDirectoryAtPath(tracksRoot, true, null, null)
-        val text = NSString.create(string = TrackJson.encode(track))
-        check(text.writeToFile("$tracksRoot/${track.id}.json", true, NSUTF8StringEncoding, null)) {
-            "could not save the track ${track.id}"
-        }
+        val store = iosTrackStore(tracksRoot)
+        if (store.get(track.id) == null) store.save(track)
     }
 }

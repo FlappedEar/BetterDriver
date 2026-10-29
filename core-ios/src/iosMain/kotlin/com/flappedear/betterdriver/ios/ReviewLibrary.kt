@@ -24,7 +24,6 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.circuits.CircuitListException
 import com.flappedear.betterdriver.timing.track.Track
-import com.flappedear.betterdriver.timing.track.TrackFormatException
 import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.transfer.ReceivedBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
@@ -154,20 +153,8 @@ class ReviewLibrary(base: String) {
     /** [value] with two decimals, as Android's screens write seconds. */
     fun twoDecimals(value: Double): String = fixed(value, 2)
 
-    /** The saved tracks; a file that does not read as a track is skipped. */
-    fun tracks(): List<Track> {
-        val fm = NSFileManager.defaultManager
-        val names = fm.contentsOfDirectoryAtPath(tracksRoot, null)?.filterIsInstance<String>().orEmpty()
-        return names.filter { it.endsWith(".json") }.mapNotNull { name ->
-            val text = NSString.stringWithContentsOfFile("$tracksRoot/$name", NSUTF8StringEncoding, null)
-                ?: return@mapNotNull null
-            try {
-                TrackJson.decode(text)
-            } catch (_: TrackFormatException) {
-                null
-            }
-        }
-    }
+    /** The saved tracks, as the track list reads them; a file that does not read as a track is set aside. */
+    fun tracks(): List<Track> = trackFiles.list()
 
     /** Unpacks and checks the .bdsession at [path]; see SessionInbox.receive. */
     @Throws(Exception::class)

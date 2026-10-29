@@ -5,8 +5,7 @@ package com.flappedear.betterdriver.transfer
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.track.Track
-import com.flappedear.betterdriver.timing.track.TrackFormatException
-import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.iosTrackStore
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
@@ -17,11 +16,9 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSNumber
-import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
 import platform.Foundation.closeFile
 import platform.Foundation.create
-import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.fileHandleForReadingAtPath
 import platform.Foundation.fileHandleForWritingAtPath
 import platform.Foundation.readDataOfLength
@@ -46,7 +43,7 @@ class ReceivedBundle internal constructor(val session: ReceivedSession, internal
  * does on Android: a bundle is unpacked into [stagingRoot] and checked; only a complete, undamaged
  * session is then moved into [sessionsRoot] with one rename, so a failed import never leaves half a
  * session in the list. [stagingRoot] must be on the same volume. The track a session was timed with
- * is kept as [tracksRoot]/<track id>.json.
+ * is kept in [tracksRoot] by the shared TrackStore.
  */
 class SessionInbox(
     private val sessionsRoot: String,
@@ -214,45 +211,29 @@ internal fun sizeOf(path: String): Long =
     (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)?.longLongValue
         ?: throw ImportFileException("cannot read $path")
 
-/** The saved tracks, one [root]/<track id>.json each, as TrackJson writes them. */
-private class TrackFiles(private val root: String) {
-    private val fm get() = NSFileManager.defaultManager
+/** The saved tracks in [root], kept by the TrackStore Android uses (FBBD-359). */
+private class TrackFiles(root: String) {
+    private val store = iosTrackStore(root)
 
-    fun saved(id: String): Track? {
-        val bytes = if (SessionEntryLimits.validSessionId(id)) readSmall("$root/$id.json") else null
-        return try {
-            bytes?.let { TrackJson.decode(it.decodeToString()) }
-        } catch (_: TrackFormatException) {
-            null
-        }
+    @Suppress("TooGenericExceptionCaught") // A track that cannot be read is none, never a crash in Swift.
+    fun saved(id: String): Track? = try {
+        if (SessionEntryLimits.validSessionId(id)) store.get(id) else null
+    } catch (_: Exception) {
+        null
     }
 
-    /** Keeps the session's track if none of its id is saved, or over the saved one with [replace]. */
+    /**
+     * Keeps the session's track if none of its id is saved, or over the saved one with [replace], as
+     * Android's import stores it: the next revision, with the driver's corner corrections if it
+     * carries them (FBBD-179).
+     */
     fun keep(session: ReceivedSession, replace: Boolean) {
-        val track = session.track
-        val json = session.trackJson
-        val path = "$root/${track?.id}.json"
-        val wanted = track != null && json != null && SessionEntryLimits.validSessionId(track.id)
-        if (wanted && (replace || !fm.fileExistsAtPath(path))) {
-            mkdirs(root)
-            val tmp = "$path.tmp"
-            val bytes = checkNotNull(json).encodeToByteArray()
-            fm.createFileAtPath(tmp, bytes.toNSData(0, bytes.size), null)
-            if (fm.fileExistsAtPath(path)) {
-                fm.replaceItemAtURL(NSURL.fileURLWithPath(path), NSURL.fileURLWithPath(tmp), null, 0u, null, null)
-            } else {
-                fm.moveItemAtPath(tmp, path, null)
-            }
+        val track = session.track ?: return
+        if (!SessionEntryLimits.validSessionId(track.id)) return
+        if (replace || store.get(track.id) == null) {
+            store.save(track, adoptIdentity = track.identity?.corrected == true)
         }
     }
-}
-
-/** The whole file at [path] if it is there and small enough to read whole. */
-private fun readSmall(path: String): ByteArray? {
-    val size = (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)
-        ?.longLongValue
-    val fits = size != null && size <= SessionEntryLimits.MaxSmallFileBytes
-    return if (fits) NSData.dataWithContentsOfFile(path)?.toByteArray() else null
 }
 
 /** Reads the file at [path] in pieces, handing each to [block] with its length. */
