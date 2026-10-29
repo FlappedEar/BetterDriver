@@ -17,16 +17,22 @@ package com.flappedear.betterdriver.obd
  *
  * A request that gets no usable answer [dropAfterMisses] times in a row (NO DATA, a negative response,
  * an equation with no value) is dropped, so a profile channel the car does not have stops costing time.
+ * A dropped request is tried once more after [retryAfterMs], then after twice as long each time it
+ * still gets nothing, up to [maxRetryAfterMs] (FBBD-382): one that stopped answering for a while,
+ * like temperatures on 2026-10-29, comes back, and one the car never had costs one request in minutes.
  *
  * [predictedHz] says what each request should get for an observed per-request latency, and
  * [achievedHz] measures what it did get over the last [rateWindowMs].
  */
+@Suppress("LongParameterList") // The rates and waits are set by tests; the reader takes the defaults.
 class PollScheduler(
     channels: List<PidChannel>,
     private val fastWeight: Int = DEFAULT_FAST_WEIGHT,
     private val slowMaxHz: Double = DEFAULT_SLOW_MAX_HZ,
     private val dropAfterMisses: Int = DEFAULT_DROP_AFTER_MISSES,
     private val rateWindowMs: Long = DEFAULT_RATE_WINDOW_MS,
+    private val retryAfterMs: Long = DEFAULT_RETRY_AFTER_MS,
+    private val maxRetryAfterMs: Long = DEFAULT_MAX_RETRY_AFTER_MS,
     groups: List<List<PidChannel>> = channels.groupBy { it.request }.values.toList(),
 ) {
     private class Slot(val request: Request, val members: Set<Request>, val fast: Boolean) {
@@ -34,6 +40,21 @@ class PollScheduler(
         var lastSentMs = Long.MIN_VALUE
         var misses = 0
         var dropped = false
+        var answeredOnce = false
+
+        /** When a dropped request is tried again, and how long it waits after that if it still misses. */
+        var retryAtMs = Long.MAX_VALUE
+        var retryWaitMs = 0L
+
+        /** [members] got a value at [atMs]: polled again as usual. */
+        fun answered(members: Collection<Request>, atMs: Long) {
+            misses = 0
+            answeredOnce = true
+            dropped = false
+            retryAtMs = Long.MAX_VALUE
+            retryWaitMs = 0
+            for (member in members) answers[member]?.addLast(atMs)
+        }
 
         /** A fast request sent since the last slow one; every fast one is before the next slow one goes. */
         var sentSinceSlow = true
@@ -63,6 +84,8 @@ class PollScheduler(
     fun next(nowMs: Long): Next? {
         val live = slots.filter { !it.dropped }
         if (live.isEmpty()) return null
+        // A dropped request whose wait is over is tried once, before the others.
+        slots.firstOrNull { it.dropped && it.retryAtMs <= nowMs }?.let { return Next(it.request, nowMs) }
         val fastWaiting = live.any { it.fast && !it.sentSinceSlow }
         val due = live.filter { it.fast || dueAt(it) <= nowMs && !fastWaiting }
         if (due.isEmpty()) {
@@ -76,7 +99,7 @@ class PollScheduler(
     /**
      * [request] was sent at [sentMs] and its answer came back [latencyMs] later; [answered] is true
      * when at least one of its channels got a value. For a group, [answeredRequests] are the members
-     * that got a value (all of them when not given).
+     * that got a value (all of them when not given). Says what became of the request, for the log.
      */
     fun completed(
         request: Request,
@@ -84,9 +107,12 @@ class PollScheduler(
         latencyMs: Long,
         answered: Boolean,
         answeredRequests: Collection<Request>? = null,
-    ) {
-        val slot = byRequest[request] ?: return
-        slot.pass += 1.0 / weightOf(slot)
+    ): Outcome {
+        val slot = byRequest[request] ?: return Outcome.Missed
+        val retried = slot.dropped
+        // A request back from being dropped starts level with the others, not ahead by the time it was out.
+        val level = slots.filter { !it.dropped }.minOfOrNull { it.pass } ?: 0.0
+        slot.pass = maxOf(slot.pass, level) + 1.0 / weightOf(slot)
         slot.lastSentMs = sentMs
         if (slot.fast) {
             slot.sentSinceSlow = true
@@ -94,13 +120,35 @@ class PollScheduler(
             slots.forEach { it.sentSinceSlow = false }
         }
         this.latencyMs = this.latencyMs?.let { it + LATENCY_SMOOTHING * (latencyMs - it) } ?: latencyMs.toDouble()
-        if (answered) {
-            slot.misses = 0
-            for (member in answeredRequests ?: slot.members) slot.answers[member]?.addLast(sentMs + latencyMs)
-        } else if (++slot.misses >= dropAfterMisses) {
-            slot.dropped = true
+        val outcome = when {
+            answered -> {
+                slot.answered(answeredRequests ?: slot.members, sentMs + latencyMs)
+                if (retried) Outcome.Back else Outcome.Answered
+            }
+            retried -> {
+                slot.retryWaitMs = minOf(slot.retryWaitMs * 2, maxRetryAfterMs)
+                Outcome.StillDropped
+            }
+            ++slot.misses >= dropAfterMisses -> {
+                slot.dropped = true
+                slot.retryWaitMs = retryAfterMs
+                Outcome.Dropped
+            }
+            else -> Outcome.Missed
         }
+        if (slot.dropped) slot.retryAtMs = sentMs + slot.retryWaitMs
+        return outcome
     }
+
+    /** Whether [request] answered before and has now got no usable answer [misses] times in a row. */
+    fun stoppedAnswering(request: Request, misses: Int): Boolean =
+        byRequest[request]?.let { it.answeredOnce && it.misses >= misses } == true
+
+    /** How many times in a row [request] got no usable answer. */
+    fun missesInARow(request: Request): Int = byRequest[request]?.misses ?: 0
+
+    /** How long a dropped [request] waits before it is tried again, in ms; 0 when it is polled. */
+    fun retryWaitMs(request: Request): Long = byRequest[request]?.takeIf { it.dropped }?.retryWaitMs ?: 0
 
     /** Answers per second [request] got over the [rateWindowMs] before [nowMs]. */
     fun achievedHz(request: Request, nowMs: Long): Double {
@@ -145,11 +193,16 @@ class PollScheduler(
     /** Send [request] at [notBeforeMs]. */
     data class Next(val request: Request, val notBeforeMs: Long)
 
+    /** What became of a request: answered, missed, dropped, tried again and still dropped, or back. */
+    enum class Outcome { Answered, Missed, Dropped, StillDropped, Back }
+
     companion object {
         const val DEFAULT_FAST_WEIGHT = 5
         const val DEFAULT_SLOW_MAX_HZ = 2.0
         const val DEFAULT_DROP_AFTER_MISSES = 5
         const val DEFAULT_RATE_WINDOW_MS = 5_000L
+        const val DEFAULT_RETRY_AFTER_MS = 30_000L
+        const val DEFAULT_MAX_RETRY_AFTER_MS = 300_000L
         private const val MS_PER_S = 1000.0
         private const val LATENCY_SMOOTHING = 0.2
     }

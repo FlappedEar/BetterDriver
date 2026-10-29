@@ -63,6 +63,10 @@ private class TimedCorolla(
     val maxRequestBytes: Int = Int.MAX_VALUE,
     val echo: Boolean = false,
     val takesSt: Boolean = false,
+    /** FBBD-382: the ECU's time for a request of these PIDs at this time, when not [ecuMs]. */
+    val ecuMsAt: (pids: List<Int>, nowMs: Long) -> Long? = { _, _ -> null },
+    /** FBBD-382: the car gives nothing for a request of these PIDs at this time. */
+    val silentAt: (pids: List<Int>, nowMs: Long) -> Boolean = { _, _ -> false },
 ) : ObdClock {
     var now = 0L
     val sent = ArrayList<String>()
@@ -133,6 +137,7 @@ private class TimedCorolla(
             now += transportMs
             return "?"
         }
+        val ecuMs = ecuMsAt(pids, now) ?: ecuMs
         stMs?.let { st ->
             // The ECU answers after the adapter stopped waiting: as if it had nothing.
             if (ecuMs > st) {
@@ -140,7 +145,7 @@ private class TimedCorolla(
                 return "NO DATA"
             }
         }
-        val asked = if (multiPidEcu) pids else pids.take(1)
+        val asked = (if (multiPidEcu) pids else pids.take(1)).takeUnless { silentAt(pids, now) }.orEmpty()
         val messages = listOfNotNull(
             ecuAnswer(asked) { it in supported || it == 0x00 }?.let { 0x7E8 to it },
             if (tcm && ++mode01Requests > tcmSilentFor) {
@@ -568,6 +573,42 @@ class ObdRatesTest {
         assertEquals(102L, car.stMs)
         assertTrue(car.sent.none { it == "ATST0F" }, "no shorter step after the loss")
         assertTrue(slow.listener.values.any { it.first == "oil_temp" && it.third > END_MS - 10_000 })
+    }
+
+    @Test
+    fun `temperatures that stop answering under the shortened timeout put it back and keep coming`() {
+        // FBBD-382, the drive of 2026-10-29 12:51: the Wi-Fi clone took 3-PID requests, AT ST went to
+        // 0F (61 ms), then the temperatures got nothing for the rest of the drive. Here the ECU takes
+        // 90 ms for them from 30 s: the shortened wait loses them, the adapter's own one does not.
+        val temps = setOf(0x05, 0x0F, 0x46, 0x5C)
+        val car = TimedCorolla(
+            CountSupport.REJECTED, maxRequestBytes = 4, takesSt = true,
+            ecuMsAt = { pids, now -> if (now >= 30_000 && pids.all { it in temps }) 90 else null },
+        )
+        val drive = run(car, pollSet = { PollSet.Driver })
+        val logs = drive.listener.logs
+        assertTrue(logs.any { it == "timeout ATST0F kept" }, logs.toString())
+        val back = logs.filter { it.startsWith("timeout ATST0F: ") && it.endsWith("stopped answering, back to ATST32") }
+        assertEquals(1, back.size, logs.toString())
+        assertEquals(204L, car.stMs)
+        for (id in listOf("coolant_temp", "oil_temp")) {
+            assertTrue(drive.listener.values.any { it.first == id && it.third > END_MS - 5_000 }, "$id: $logs")
+        }
+    }
+
+    @Test
+    fun `a request dropped for no answer is tried again and comes back`() {
+        // FBBD-382: a request that got nothing 5 times in a row was dropped for good, without a word.
+        // Here the oil temperature gives nothing from 10 s to 30 s, asked on its own at 2 Hz.
+        val car = TimedCorolla(
+            CountSupport.MESSAGES, transportMs = 20,
+            silentAt = { pids, now -> pids == listOf(0x5C) && now in 10_000L until 30_000L },
+        )
+        val drive = run(car, multiPid = false, pollSet = { PollSet.Driver })
+        val logs = drive.listener.logs
+        assertTrue("dropped oil_temp after 5 misses (NO DATA), retry in 30 s" in logs, logs.toString())
+        assertTrue("oil_temp answer again" in logs, logs.toString())
+        assertTrue(drive.listener.values.any { it.first == "oil_temp" && it.third > 45_000 }, logs.toString())
     }
 
     @Test
