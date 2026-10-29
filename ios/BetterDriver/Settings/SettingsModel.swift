@@ -43,6 +43,16 @@ final class SettingsModel: ObservableObject {
                 )
             }
         }
+        // A Wi-Fi OBD-II adapter that is never there, for the car data page's test (FBBD-261).
+        if ProcessInfo.processInfo.arguments.contains("-obdWifi"),
+           !setup.equipment.contains(where: { $0.modelName == ModelName.obdWifi }),
+           let wifi = SettingsCore.shared.model(name: ModelName.obdWifi) {
+            update {
+                SettingsCore.shared.addEquipment(
+                    setup: $0, model: wifi, name: "Wi-Fi OBD-II adapter", address: "192.168.0.10:35000", id: "test-obd-wifi"
+                )
+            }
+        }
         #endif
         // Once, also over a setup.json from a build before this move (TestFlight 1.15.0): after it,
         // Settings › Equipment is the one list, so an item removed there stays removed.

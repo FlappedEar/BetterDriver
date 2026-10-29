@@ -13,6 +13,8 @@ import kotlinx.cinterop.reinterpret
 import kotlinx.cinterop.sizeOf
 import kotlinx.cinterop.usePinned
 import kotlinx.cinterop.value
+import com.flappedear.betterdriver.setup.CarParameter
+import com.flappedear.betterdriver.setup.CarParameterSource
 import platform.Foundation.NSData
 import platform.Foundation.NSRecursiveLock
 import platform.Foundation.NSThread
@@ -317,6 +319,49 @@ class ObdFeedTest {
         assertEquals(0x0A00A8C0u, ipv4("192.168.0.10"))
         assertEquals(null, ipv4("192.168.0"))
         assertEquals(null, ipv4("192.168.0.256"))
+    }
+
+    @Test
+    fun theSessionCarsOwnParameterAndSwitchedOnPidsAreRecorded() {
+        // FBBD-344: speed switched on (rpm off), and an own request for 01 05.
+        val car = com.flappedear.betterdriver.setup.CarProfile(
+            id = "corolla",
+            name = "Corolla",
+            recordedPids = listOf(0x0D),
+            parameters = listOf(
+                CarParameter("coolant2", "Coolant 2", CarParameterSource.OBD, "A-40", "°C", pid = 0x05),
+            ),
+        )
+        val port = SimPort(Car)
+        val sink = Sink()
+        val target = IosBleObdTarget("vLinker MC+", "uuid-1", port)
+        val feed = ObdFeed(sink, { listOf(target) }, listener, car, emptyList())
+        feed.start()
+        val recorded = waitFor(20.0) { sink.setCount >= 5 }
+        feed.stop()
+        assertTrue(recorded, "values recorded; adapter saw ${port.commands.take(30)}")
+        val names = sink.channelNames
+        assertTrue("obd_speed" in names, "channels $names")
+        assertTrue(names.any { "custom_coolant2" in it }, "channels $names")
+        assertTrue("obd_rpm" !in names, "channels $names")
+        assertTrue(waitFor(10.0) { stopped() }, "the OBD thread ends")
+    }
+
+    @Test
+    fun theSessionPollSetFollowsTheCarAndItsTiles() {
+        val frs = com.flappedear.betterdriver.setup.CarProfile(
+            id = "frs",
+            name = "Scion FR-S 2013",
+            recordedPids = listOf(0x0C),
+        )
+        val set = sessionPollSet(frs, listOf("speed", "obd_speed", ""))
+        assertTrue(set.broadcastCar)
+        assertEquals(setOf(0x0C), set.pids)
+        assertTrue("speed" in set.ids.orEmpty())
+        assertEquals(PollSet.Driver, sessionPollSet(null, emptyList()))
+        assertTrue(!isBroadcastCar("Toyota GR86 2023"))
+        assertTrue(!isBroadcastCar("Toyota 86 2022"))
+        assertTrue(isBroadcastCar("Subaru BRZ"))
     }
 
     @Test

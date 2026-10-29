@@ -3,6 +3,8 @@
 package com.flappedear.betterdriver.obd
 
 import com.flappedear.betterdriver.recorder.SampleSink
+import com.flappedear.betterdriver.setup.CarScanRecord
+import com.flappedear.betterdriver.setup.TileIds
 import kotlin.concurrent.Volatile
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
@@ -12,6 +14,7 @@ import platform.Foundation.NSData
 import platform.Foundation.NSThread
 import platform.Foundation.create
 import platform.posix.memcpy
+import com.flappedear.betterdriver.setup.CarProfile as SetupCar
 
 /**
  * A Bluetooth LE OBD-II adapter as the iOS app reaches it over CoreBluetooth (FBBD-333); the Swift
@@ -94,16 +97,25 @@ private const val MsPerSecond = 1_000.0
 /**
  * OBD-II in an iOS recording (FBBD-333), as the Android app's ObdSource and ObdLink: an
  * [ObdConnector] on a thread of its own tries [targets] in order, sets the adapter up, reads the
- * car's channels in the driver's set ([PollSet.Driver]; on an FR-S its CAN broadcasts, told by its
- * VIN) and records them into [sink] through an [ObdSession]. A lost adapter is retried with the
- * Android delays; nothing it throws reaches the recording. [status] is the connection as the track
- * screen shows it.
+ * car's channels in the session's set ([sessionPollSet] of [car] and its track screen [tiles]; on an
+ * FR-S its CAN broadcasts, told by its name or VIN), with [car]'s own parameters ([ownProfile],
+ * FBBD-344), and records them into [sink] through an [ObdSession]. A lost adapter is retried with
+ * the Android delays; nothing it throws reaches the recording. [status] is the connection as the
+ * track screen shows it. With [page] it is the car data page's own connection outside a session
+ * (FBBD-261, FBBD-344): it reads every channel the car has ([PollSet.All]) into [NoSamples] and can
+ * scan what the car offers ([scanCar]).
  */
 class ObdFeed(
     sink: SampleSink,
     private val targets: () -> List<ObdTarget>,
     private val listener: ObdFeedListener,
+    car: SetupCar? = null,
+    tiles: List<String> = emptyList(),
+    private val page: Boolean = false,
 ) {
+    private val profile = ownProfile(car)
+    private val pollSet = if (page) PollSet.All else sessionPollSet(car, tiles)
+    private val scanRun = ObdScanRun()
     private val clock = object : ObdClock {
         override fun nowMs() = monoNanos() / NanosPerMs
 
@@ -121,7 +133,15 @@ class ObdFeed(
     fun start() {
         if (running) return
         running = true
-        val c = ObdConnector(targets, Relay(), tracker, clock, pollSet = { PollSet.Driver })
+        listener.log(
+            (if (page) "page" else "session") +
+                " car ${profile.channels.size + profile.signals.size} own parameters, " +
+                "pids=${pollSet.pids?.sorted()?.joinToString(",") { it.toString(Hex) } ?: "default"} " +
+                "broadcast=${pollSet.broadcastCar}",
+        )
+        val c = ObdConnector(
+            targets, Relay(), tracker, clock, profile = { profile }, pollSet = { pollSet }, scan = { scanRun.asked },
+        )
         connector = c
         val thread = NSThread {
             read(c)
@@ -140,6 +160,25 @@ class ObdFeed(
     fun retryNow() {
         connector?.retryNow()
     }
+
+    /** Scans what the car offers (UI-303 B): the connection starts again and scans first. */
+    fun scanCar() {
+        scanRun.start(clock.nowMs())
+        connector?.restart()
+    }
+
+    /** Whether a scan asked for is running. */
+    val scanning: Boolean get() = scanRun.since != null
+
+    /** Why the last scan did not finish, or null. */
+    val scanNote: String? get() = scanRun.note
+
+    /**
+     * Checks the scan against the connection, as the page does every half second: a new scan comes
+     * back once, as it is stored with the car, taken at wall-clock [wallMs]; one running too long
+     * gives up with [scanNote].
+     */
+    fun takeScan(wallMs: Long): CarScanRecord? = scanRun.check(status(), clock.nowMs())?.toRecord(wallMs)
 
     @Suppress("TooGenericExceptionCaught") // Whatever goes wrong, car data ends and the recording goes on.
     private fun read(c: ObdConnector) {
@@ -170,6 +209,35 @@ class ObdFeed(
         override fun log(text: String) = listener.log(text)
     }
 }
+
+/**
+ * What an iOS session reads from [car] (FBBD-283, FBBD-344), as the Android app's sessionPollSet:
+ * [PollSet.Driver] plus the OBD-II channels of the track screen [tiles] ("obd_coolant_temp"), the
+ * standard PIDs switched on for the car, and its CAN broadcasts on a first-generation FR-S / 86.
+ */
+fun sessionPollSet(car: SetupCar?, tiles: List<String>): PollSet {
+    val obdTiles = tiles.filter { it.startsWith(TileIds.OBD_PREFIX) }.map { it.removePrefix(TileIds.OBD_PREFIX) }
+    return PollSet.Driver.plus(obdTiles).copy(
+        broadcastCar = car?.name?.let(::isBroadcastCar) == true,
+        pids = car?.recordedPids?.toSet(),
+    )
+}
+
+/**
+ * Whether a car named [name] is a first-generation FR-S / 86 / BRZ, whose CAN broadcasts are
+ * listened for (FBBD-263, FBBD-284); a GR86 or a model year from 2022 on is not. As the Android
+ * app's isBroadcastCar; the car's VIN decides too.
+ */
+internal fun isBroadcastCar(name: String): Boolean =
+    BroadcastCarName.containsMatchIn(name) && !Gen2Name.containsMatchIn(name) &&
+        Year.findAll(name).none { it.value.toInt() >= FirstGen2Year }
+
+private const val FirstGen2Year = 2022
+private const val Hex = 16
+private val Gen2Name = Regex("""\bGR ?86\b""", RegexOption.IGNORE_CASE)
+private val Year = Regex("""\b(19|20)\d\d\b""")
+private val BroadcastCarName =
+    Regex("""\bFR-?S\b|\bGT ?86\b|\bFT ?86\b|\bToyota 86\b|\bBRZ\b""", RegexOption.IGNORE_CASE)
 
 internal fun NSData.toByteArray(): ByteArray {
     val out = ByteArray(length.toInt())

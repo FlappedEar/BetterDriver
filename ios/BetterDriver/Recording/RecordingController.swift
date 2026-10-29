@@ -183,7 +183,10 @@ final class RecordingController: ObservableObject {
         let active = SettingsModel.shared.setup.active()
         // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338), with none listed one
         // nearby, and the Wi-Fi adapter.
-        let car = ObdLink(sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth))
+        let car = ObdLink(
+            sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth),
+            setup: SettingsModel.shared.setup, tiles: tileIds
+        )
         obd = car
         car.start()
         // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a
@@ -209,7 +212,10 @@ final class RecordingController: ObservableObject {
     }
 
     /// Settings items of [model] that iOS reaches by their Bluetooth identifier.
-    private static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
+    /// The session's OBD-II connection as the car data page shows it (FBBD-261), nil while none records.
+    func obdStatus() -> ObdStatus? { obd?.status() }
+
+    static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
         items.compactMap { item in
             guard item.modelName == model, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
             return (id, item.name)
