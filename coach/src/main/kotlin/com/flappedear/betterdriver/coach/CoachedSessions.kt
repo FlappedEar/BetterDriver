@@ -19,25 +19,14 @@ class CoachedSessions(private val sessions: SessionStore, private val file: File
     fun counts(list: List<SessionSummary> = sessions.list()): Map<String, Int> {
         val known = read()
         val done = list.filter { it.state != SessionState.RECORDING }
-        var changed = false
-        val counts = done.associate { s ->
-            val key = "${s.durationMicros ?: -1}"
-            val cached = known[s.id]?.takeIf { it.substringBefore(':') == key }?.substringAfter(':')?.toIntOrNull()
-            val n = cached ?: count(s).also {
-                known[s.id] = "$key:$it"
-                changed = true
-            }
-            s.id to n
-        }
-        val ids = done.map { it.id }.toSet()
-        if (known.keys.retainAll(ids)) changed = true
-        if (changed) write(known)
-        return counts.filterValues { it > 0 }
+        val found = rememberCueCounts(done, { it.id }, { it.durationMicros }, known, ::count)
+        if (found.changed) write(known)
+        return found.counts
     }
 
     @Suppress("TooGenericExceptionCaught") // A damaged session counts as no cues; it is never a crash.
     private fun count(s: SessionSummary): Int = try {
-        sessions.read(s.dir, samples = false).events.count { it.kind == CoachEvents.CUE }
+        CueReview.count(sessions.read(s.dir, samples = false).events)
     } catch (_: IOException) {
         0
     } catch (_: RuntimeException) {

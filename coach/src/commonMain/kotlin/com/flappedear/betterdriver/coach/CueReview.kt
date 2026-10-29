@@ -63,6 +63,12 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
             return CueReview(cues, unsaid)
         }
 
+        /**
+         * How many cues the coach logged in a session's [events], as the session list counts them to
+         * offer the review (FBBD-99): every cue event, the out-lap plan's too.
+         */
+        fun count(events: List<RecorderEvent>): Int = events.count { it.kind == CoachEvents.CUE }
+
         /** The cue number of a "late seq=…" or "no voice seq=…" problem; null for any other problem. */
         private fun unsaidSeq(text: String): Int? {
             val rest = UnsaidPrefixes.firstOrNull { text.startsWith(it) }?.let { text.removePrefix(it) }

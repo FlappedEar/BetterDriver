@@ -26,9 +26,10 @@ import com.flappedear.betterdriver.coach.CornerPass
 import com.flappedear.betterdriver.coach.Cue
 import com.flappedear.betterdriver.coach.CueKind
 import com.flappedear.betterdriver.coach.CueReview
+import com.flappedear.betterdriver.coach.CueVerdictTone
 import com.flappedear.betterdriver.coach.ReviewedCue
-import com.flappedear.betterdriver.coach.confidenceText
-import com.flappedear.betterdriver.coach.outcome
+import com.flappedear.betterdriver.coach.card
+import com.flappedear.betterdriver.coach.notSaid
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
@@ -70,37 +71,32 @@ private fun ReviewHeader(title: String, review: CueReview) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         DimText(review.summary)
-        if (review.problems > 0) {
-            val n = review.problems
-            DimText(if (n == 1) "1 cue not said (too late or no voice)" else "$n cues not said (too late or no voice)")
-        }
+        review.notSaid?.let { DimText(it) }
     }
 }
 
 @Composable
 private fun CueCard(item: ReviewedCue) {
     val c = TrackTheme.colors
-    val cue = item.cue
-    val (verdict, color) = when {
-        cue.kind == CueKind.LapTime -> "Lap time" to Color.Unspecified
-        cue.kind == CueKind.Praise -> "Praise" to c.gain
-        item.result == null -> "No pass after" to Color.Unspecified
-        item.result?.improved == true -> "Better" to c.gain
-        else -> "Not yet" to c.loss
+    // The card's words are common code, so the iPhone's review reads the same (FBBD-99).
+    val card = item.card()
+    val color = when (card.tone) {
+        CueVerdictTone.Plain -> Color.Unspecified
+        CueVerdictTone.Gain -> c.gain
+        CueVerdictTone.Loss -> c.loss
     }
     ShellCard {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            val where = listOfNotNull("Lap ${cue.lap}", cue.heardTurn?.let { "Turn $it" }).joinToString(" · ")
             Text(
-                where,
+                card.place,
                 style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
                 modifier = Modifier.weight(1f),
             )
-            DimText(verdict, color = color)
+            DimText(card.verdict, color = color)
         }
-        Text("“${cue.text}”", style = MaterialTheme.typography.bodyLarge)
-        cue.confidenceText()?.let { DimText(it) }
-        item.outcome()?.let { DimText(it) }
+        Text(card.quote, style = MaterialTheme.typography.bodyLarge)
+        card.confidence?.let { DimText(it) }
+        card.outcome?.let { DimText(it) }
     }
 }
 
