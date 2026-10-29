@@ -6,6 +6,11 @@ import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.LapVideoReview
+import com.flappedear.betterdriver.analysis.review.PickerSession
+import com.flappedear.betterdriver.analysis.review.PickerTrack
+import com.flappedear.betterdriver.analysis.review.pickerSession
+import com.flappedear.betterdriver.analysis.review.pickerTracks
+import com.flappedear.betterdriver.analysis.review.sessionVideoSource
 import com.flappedear.betterdriver.analysis.review.ReviewedSession
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewSession
@@ -185,6 +190,48 @@ class ReviewLibrary(base: String) {
         return reviewed.lapsOnVideo(aIndex, bIndex, clipIndex(dir), dir, ::fileExists)
     }
 
+    /**
+     * The laps of the newest sessions at each saved track for Compare laps (FBBD-92), as Android's
+     * lap picker reads them: each session is replayed into laps at the track it was driven at, with
+     * its video, and kept until it or the saved tracks change. Off the main thread.
+     */
+    // A damaged session is left out; the others still load.
+    @Suppress("TooGenericExceptionCaught")
+    fun lapPicker(): List<PickerTrack> {
+        pickerLock.lock()
+        try {
+            val saved = tracks().filter { it.timeable }
+            val revisions = saved.associate { it.id to it.revision }
+            val newest = sessions().take(MaxPickerSessions)
+            pickerCache.keys.retainAll(newest.map { it.id }.toSet())
+            val read = newest.mapNotNull { s ->
+                val stamp = PickerStamp(s.durationMicros, revisions)
+                val known = pickerCache[s.id]?.takeIf { it.first == stamp }
+                val entry = known?.second ?: try {
+                    val data = store.read(s.id)
+                    trackFor(data, saved)?.let { track ->
+                        val dir = videoDir(s.id)
+                        val video = sessionVideoSource(data, clipIndex(dir), dir, ::fileExists)
+                        pickerSession(data, track, sessionLabel(s.info.startUtcMillis), video)?.let { track.id to it }
+                    }
+                } catch (_: Exception) {
+                    null
+                }
+                pickerCache[s.id] = stamp to entry
+                entry
+            }
+            return pickerTracks(read, saved)
+        } finally {
+            pickerLock.unlock()
+        }
+    }
+
+    private val pickerLock = NSLock()
+    private val pickerCache = HashMap<String, Pair<PickerStamp, Pair<String, PickerSession>?>>()
+
+    /** What a session's laps were read against: its length and every saved track's revision. */
+    private data class PickerStamp(val durationMicros: Long?, val tracks: Map<String, Int>)
+
     private fun videoDir(id: String) = "${store.dir(id)}/${VideoFiles.DIR}"
 
     private fun clipIndex(dir: String) = readSmall("$dir/$ClipIndexFile")?.let(::indexedClips).orEmpty()
@@ -345,6 +392,9 @@ class ReviewLibrary(base: String) {
 
 /** At most this many other sessions at the track give targets, newest first (as on Android). */
 private const val MaxLineSessions = 20
+
+/** Compare laps reads at most this many newest sessions, as Android's review (bounds memory). */
+private const val MaxPickerSessions = 30
 
 /** Of at most this many newest sessions at any track. */
 private const val MaxScannedSessions = 60

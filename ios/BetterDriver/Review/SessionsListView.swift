@@ -14,6 +14,7 @@ struct SessionsListView: View {
     @State private var trackDay: TrackDayLink?
     @State private var watching: SessionRow?
     @State private var coachReview: CoachReviewLink?
+    @State private var comparingLaps = false
     /// The camera whose files Files is picking, and for which session (UI-32).
     @State private var addingTo: (sessionId: String, camera: ListedCamera)?
     @State private var pickingCameraFiles = false
@@ -90,6 +91,11 @@ struct SessionsListView: View {
                         .accessibilityIdentifier("openTracks")
                 }
             }
+            // Android's Sessions header: Compare laps from any sessions at a track (FBBD-92).
+            ToolbarItem(placement: .primaryAction) {
+                Button("Compare laps") { comparingLaps = true }
+                    .accessibilityIdentifier("compareLaps")
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button {
                     addingTo = nil
@@ -102,6 +108,7 @@ struct SessionsListView: View {
         .sheet(isPresented: $showingTracks) { TracksView() }
         .sheet(item: $trackDay) { TrackDayView(link: $0) }
         .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
+        .fullScreenCover(isPresented: $comparingLaps) { LapPickerScreen() }
         .fullScreenCover(item: $watching) { session in
             DataVideoWatchPage(sessionId: session.id) { watching = nil }
         }

@@ -215,7 +215,7 @@ class ReviewedSession internal constructor(
         val laps = reviewLapsOf(data, review.track)
         val a = analysis?.let { laps?.of(it, aIndex) }
         val b = analysis?.let { laps?.of(it, bIndex) }
-        val source = videoOf(data, indexed, dir, present)
+        val source = sessionVideoSource(data, indexed, dir, present)
         return if (a != null && b != null) LapVideoReview(VideoLap(a, source), VideoLap(b, source)) else null
     }
 
@@ -230,7 +230,8 @@ class ReviewedSession internal constructor(
         dir: String,
         present: (String) -> Boolean,
     ): CornerLapsUi? = analysis?.let {
-        everyPassOf(it, session, cornerId, reviewLapsOf(data, review.track), videoOf(data, indexed, dir, present))
+        val video = sessionVideoSource(data, indexed, dir, present)
+        everyPassOf(it, session, cornerId, reviewLapsOf(data, review.track), video)
     }
 
     /** Where the lap review of two passes through corner [cornerId] starts, as a share of the lap. */

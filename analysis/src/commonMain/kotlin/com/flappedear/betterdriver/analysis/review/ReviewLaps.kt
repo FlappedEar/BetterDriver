@@ -40,7 +40,12 @@ internal fun reviewLapsOf(data: SessionData?, track: Track?): ReviewLaps? =
     if (data != null && track != null) ReviewLaps(data, track) else null
 
 /** The video of [data] from its events and clip index [indexed], with files [present] in [dir]. */
-internal fun videoOf(data: SessionData?, indexed: List<VideoClip>, dir: String, present: (String) -> Boolean) =
+fun sessionVideoSource(
+    data: SessionData?,
+    indexed: List<VideoClip>,
+    dir: String,
+    present: (String) -> Boolean,
+): LapVideoSource? =
     data?.let { LapVideoSource.of(VideoTimeline.from(it.events, indexed), dir, present) }
 
 /**

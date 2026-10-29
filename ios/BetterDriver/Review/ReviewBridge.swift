@@ -227,6 +227,15 @@ enum ReviewBridge {
     }
 
     /// Android's analysis screen with lap [index] compared, for Corners and Car.
+    /// The laps of the newest sessions at each saved track, for Compare laps (FBBD-379), as Android's
+    /// lap picker. Replays every session not read yet: never on the main thread.
+    static func lapPicker() -> [PickerTrack] { library.lapPicker() }
+
+    /// Laps [a] against [b] (keys "session:lap") on video, as Android's lap review opens two picked laps.
+    static func pickedReview(_ tracks: [PickerTrack], a: String, b: String) -> LapVideoReview? {
+        LapPickerKt.pickedReview(tracks: tracks, a: a, b: b)
+    }
+
     /// Every counted pass through corner [cornerId] with its traces and video, as Android's Corner
     /// laps screen (FBBD-93, FBBD-153). Reads the session's laps again: never on the main thread.
     static func everyPass(_ summary: SessionSummary, cornerId: String) -> CornerLapsUi? {
