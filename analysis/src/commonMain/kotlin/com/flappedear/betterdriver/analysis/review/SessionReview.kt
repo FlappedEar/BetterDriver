@@ -29,6 +29,7 @@ import com.flappedear.betterdriver.feature.analysis.LineUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.lineUi
+import com.flappedear.betterdriver.feature.analysis.mapUi
 import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.recorder.RecorderEvent
@@ -178,7 +179,12 @@ class ReviewedSession internal constructor(
         return analysisUi("", analysis, comparison)
             ?.let { withHeartRate(it, analysis, session, strap) }
             ?.let { withCar(it, analysis, session, strap) }
-            ?.copy(acceleration = whole.acceleration, gForces = whole.gForces)
+            // The Map tab's Laps view (FBBD-149): the compared lap on the map, as Android's analysis reads it.
+            ?.copy(
+                acceleration = whole.acceleration,
+                gForces = whole.gForces,
+                map = mapUi(analysis, session, comparison),
+            )
     }
 
     /**

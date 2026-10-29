@@ -4,7 +4,12 @@ import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewOf
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.map.GgSource
+import com.flappedear.betterdriver.feature.analysis.MapColoring
+import com.flappedear.betterdriver.feature.analysis.deltaRateText
 import com.flappedear.betterdriver.feature.analysis.focusSeconds
+import com.flappedear.betterdriver.feature.analysis.mapScale
+import com.flappedear.betterdriver.feature.analysis.mapStrokes
+import com.flappedear.betterdriver.feature.analysis.pointAtDistance
 import com.flappedear.betterdriver.feature.analysis.ggRingText
 import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.feature.analysis.lineUi
@@ -166,6 +171,23 @@ class SessionReviewTest {
     }
 
     @Test
+    fun `the Map tab's Laps view colours the compared lap against the best as on Android`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val map = checkNotNull(checkNotNull(reviewed.defaultScreen()).map)
+        assertEquals(19, map.lapNumber)
+        assertEquals(18, map.referenceNumber)
+        val delta = mapScale(map.map, MapColoring.Delta)
+        val strokes = mapStrokes(map.map, delta, Gain, Neutral, Loss)
+        assertTrue(strokes.isNotEmpty())
+        assertTrue(strokes.any { it.argb != Neutral })
+        assertTrue(checkNotNull(mapScale(map.map, MapColoring.Speed).speed).high > 0.0)
+        val at = checkNotNull(pointAtDistance(map.map, 500.0))
+        assertTrue(kotlin.math.abs(at.distanceMeters - 500.0) < 50.0)
+        assertEquals("Gaining 0.12 s per 100 m here", deltaRateText(-0.123))
+        assertEquals("Losing 0.30 s per 100 m here", deltaRateText(0.3))
+    }
+
+    @Test
     fun `a session away from every saved track has no laps`() {
         val review = reviewOf(demo(), emptyList())
         assertNull(review.track)
@@ -176,5 +198,8 @@ class SessionReviewTest {
         const val StartUtcMillis = 1_790_000_000_000L
         const val RateHz = 10
         const val MicrosPerSecond = 1_000_000L
+        val Gain = 0xFF22D37A.toInt()
+        val Neutral = 0xFF8C9AA5.toInt()
+        val Loss = 0xFFFF6863.toInt()
     }
 }

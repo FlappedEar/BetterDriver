@@ -306,18 +306,26 @@ struct SummaryGForcesCard: View {
     }
 }
 
-/// Android's GgChart (FBBD-149): every reading as a dot, speeding up toward the top, left turns to
-/// the left, a ring every 0.5 g (solid every 1 g).
-private struct SummaryGgChart: View {
+/// Android's GgChart (FBBD-149): every reading of [trace] as a dot, speeding up toward the top, left
+/// turns to the left, a ring every 0.5 g (solid every 1 g), over [reference] (the best lap) in its
+/// own colour; [cursor] is the reading at the map cursor, ringed.
+struct SummaryGgChart: View {
     let trace: GgTrace
+    var reference: GgTrace? = nil
+    var color: Color = Palette.best
+    var referenceColor: Color = Palette.best
+    var cursor: GgPoint? = nil
 
     var body: some View {
-        let points = trace.points.map { (lat: $0.lateralG, lon: $0.longitudinalG) }
-        let rings = MapUiKt.ggRings(maxG: points.map { hypot($0.lat, $0.lon) }.max() ?? 0).map { $0.doubleValue }
+        let all = trace.points + (reference?.points ?? [])
+        let rings = MapUiKt.ggRings(maxG: all.map { hypot($0.lateralG, $0.longitudinalG) }.max() ?? 0).map { $0.doubleValue }
         Canvas { ctx, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
             let radius = min(size.width, size.height) / 2 - 14
             let perG = radius / CGFloat(rings.last ?? 1)
+            func at(_ p: GgPoint) -> CGPoint {
+                CGPoint(x: center.x - CGFloat(p.lateralG) * perG, y: center.y - CGFloat(p.longitudinalG) * perG)
+            }
             for ring in rings {
                 let r = CGFloat(ring) * perG
                 let solid = ring.truncatingRemainder(dividingBy: 1) == 0
@@ -343,13 +351,22 @@ private struct SummaryGgChart: View {
                      at: CGPoint(x: center.x, y: center.y - radius - 6))
             ctx.draw(Text("Brake").font(.system(size: 10)).foregroundStyle(Palette.onSurfaceVariant),
                      at: CGPoint(x: center.x, y: center.y + radius + 6))
-            var dots = Path()
-            for p in points {
-                let x = center.x - CGFloat(p.lat) * perG
-                let y = center.y - CGFloat(p.lon) * perG
-                dots.addEllipse(in: CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3))
+            // The best lap first, so the shown lap reads on top.
+            let layers: [(GgTrace?, Color)] = [(reference, referenceColor.opacity(0.55)), (trace, color.opacity(0.8))]
+            for (g, c) in layers {
+                guard let g else { continue }
+                var dots = Path()
+                for p in g.points {
+                    let o = at(p)
+                    dots.addEllipse(in: CGRect(x: o.x - 1.5, y: o.y - 1.5, width: 3, height: 3))
+                }
+                ctx.fill(dots, with: .color(c))
             }
-            ctx.fill(dots, with: .color(Palette.best.opacity(0.8)))
+            if let cursor {
+                let o = at(cursor)
+                ctx.stroke(Path(ellipseIn: CGRect(x: o.x - 6, y: o.y - 6, width: 12, height: 12)),
+                           with: .color(Palette.onBackground), lineWidth: 2)
+            }
         }
     }
 }

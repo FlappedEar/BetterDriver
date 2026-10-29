@@ -39,7 +39,6 @@ import com.flappedear.betterdriver.core.ui.layout.HeightClass
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.core.ui.layout.WidthClass
 import java.util.Locale
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /** Speeds on the map are in this unit, as on the Compare tab. */
@@ -114,9 +113,7 @@ private fun LapsMap(ui: MapUi, layout: LayoutSize, modifier: Modifier) {
         mutableStateOf(if (ui.referenceNumber != null) MapColoring.Delta else MapColoring.Speed)
     }
     var cursorMeters by rememberSaveable(ui.lapNumber) { mutableStateOf<Double?>(null) }
-    val cursor = remember(ui.map, cursorMeters) {
-        cursorMeters?.let { d -> ui.map.runs.flatten().minByOrNull { abs(it.distanceMeters - d) } }
-    }
+    val cursor = remember(ui.map, cursorMeters) { cursorMeters?.let { pointAtDistance(ui.map, it) } }
     val scale = remember(ui.map, coloring) { mapScale(ui.map, coloring) }
     val onCursor: (MapPoint) -> Unit = { cursorMeters = it.distanceMeters }
     Box(modifier) {
@@ -160,9 +157,9 @@ private fun MapCard(
         LapMapView(ui.map, scale, cursor, onCursor, Modifier.fillMaxWidth().aspectRatio(aspect))
         MapLegend(scale, SpeedUnit, Modifier.fillMaxWidth())
         if (ui.referenceNumber == null) {
-            Dim("This is the best lap, so there is no time to compare. Pick another lap on Laps.")
+            Dim(MapBestLapNote)
         } else if (scale.coloring == MapColoring.Delta) {
-            Dim("Time vs best: where this lap gains or loses time against the best lap, per 100 m.")
+            Dim(MapDeltaNote)
         }
     }
 }
@@ -190,11 +187,10 @@ private fun LapTitle(ui: MapUi) {
 private fun MapReadout(ui: MapUi, cursor: MapPoint?) {
     val c = TrackTheme.colors
     if (cursor == null) {
-        Dim("Touch or drag along the line to read a point. The ringed dot is the start/finish line.")
+        Dim(MapCursorHint)
         return
     }
-    val corner = ui.map.corners.minByOrNull { abs(it.distanceMeters - cursor.distanceMeters) }
-        ?.takeIf { abs(it.distanceMeters - cursor.distanceMeters) <= CornerReadoutMeters }
+    val corner = cursorCorner(ui.map, cursor)
     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
         Dim("${cursor.distanceMeters.roundToInt()} m" + (corner?.let { " · ${cornerTag(it.name)}" } ?: ""))
         Text(cursor.speed?.let { "${it.roundToInt()} $SpeedUnit" } ?: "–", fontWeight = FontWeight.SemiBold)
@@ -206,14 +202,8 @@ private fun MapReadout(ui: MapUi, cursor: MapPoint?) {
             )
         }
     }
-    cursor.deltaRate?.let { rate ->
-        val amount = String.format(Locale.ROOT, "%.2f s per 100 m", abs(rate))
-        Dim(if (rate < 0) "Gaining $amount here" else "Losing $amount here", color = if (rate < 0) c.gain else c.loss)
-    }
+    cursor.deltaRate?.let { rate -> Dim(deltaRateText(rate), color = if (rate < 0) c.gain else c.loss) }
 }
-
-/** A corner is named in the readout within this distance of its middle. */
-private const val CornerReadoutMeters = 40.0
 
 @Composable
 private fun GgCard(ui: MapUi, cursor: MapPoint?, modifier: Modifier) {
