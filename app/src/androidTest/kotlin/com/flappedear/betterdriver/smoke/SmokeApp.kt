@@ -41,6 +41,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.sessionanalysis.SessionMenu
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.shell.ActionsLabel
 import com.flappedear.betterdriver.shell.AppPrefs
@@ -296,7 +297,7 @@ fun SmokeRule.openSession(car: String) {
     onNode(hasScrollToNodeAction()).performScrollToNode(hasText(car, substring = true))
     // The card's detail line; a tap there opens the card.
     onNodeWithText(car, substring = true, useUnmergedTree = true).performClick()
-    waitForText("Lap analysis")
+    waitFor(hasContentDescription(SessionMenu))
 }
 
 /**
@@ -306,7 +307,7 @@ fun SmokeRule.openSession(car: String) {
 fun SmokeRule.openSessionRow(id: String) {
     onNode(hasScrollToNodeAction()).performScrollToNode(hasTestTag(sessionRowTag(id)))
     onNode(hasTestTag(sessionRowTag(id))).performClick()
-    waitForText("Lap analysis")
+    waitFor(hasContentDescription(SessionMenu))
 }
 
 /** Android's back, as the system back gesture. */

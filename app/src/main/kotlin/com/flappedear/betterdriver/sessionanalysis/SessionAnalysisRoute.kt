@@ -70,11 +70,11 @@ import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
-import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.shell.rememberAcrossTurns
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
@@ -131,8 +131,15 @@ private sealed interface Load {
         val epoch: Long = 0L,
     ) : Load
 
-    /** No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151). */
-    data class Failed(val state: AnalysisState.Unavailable, val proposal: Proposal? = null) : Load
+    /**
+     * No analysis; [proposal], when the session drove a loop that is no saved track yet (FBBD-151);
+     * [trackId], the saved track the session was at when it has no complete lap there.
+     */
+    data class Failed(
+        val state: AnalysisState.Unavailable,
+        val proposal: Proposal? = null,
+        val trackId: String? = null,
+    ) : Load
 }
 
 /** What the screen read and worked out for one session: kept while the tablet turns (FBBD-323). */
@@ -301,6 +308,9 @@ internal fun SessionAnalysisRoute(
         state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching, proof)
     }
     val done = load as? Load.Done
+    // The session as Sessions lists it, for the title: its start and track, read or not.
+    val sessions = remember { Sessions.get(context) }
+    val listed = sessions.list.firstOrNull { it.id == id }
     val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)
     // MapTiler's photo under the perfect lap in 3D once a key is entered on the editor's map (UI-201 B).
     val mapKey = tracks.tiles.mapTilerKey
@@ -313,7 +323,16 @@ internal fun SessionAnalysisRoute(
                 onAction = { unavailableAction(load, nav, tracks, id) },
                 onCoachPick = { toggleCoachPick(load, coachPicks, it) },
                 layout = layout,
-                topBar = { ShellTopBar("Lap analysis", onBack = onBack) },
+                topBar = {
+                    AnalysisTopBar(
+                        analysisTitle(listed?.info?.startUtcMillis, done?.loaded?.title ?: listed?.info?.track),
+                        onBack = onBack,
+                        // Also for a session at a track with no complete lap there.
+                        onProgression = (trackId ?: (load as? Load.Failed)?.trackId)
+                            ?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
+                        onCoachReview = { nav.navigate(Routes.cueReview(id)) },
+                    )
+                },
                 optimalVideo = optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo),
                 // Progression over every session at the track (FBBD-181).
                 onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
@@ -429,6 +448,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         }
         return Load.Failed(
             AnalysisState.Unavailable(why, acceleration = acceleration, gForces = gForces, car = car, drive = drive),
+            trackId = track.id,
         )
     }
     // The coach's own record of the session: which focus it worked on, and its cues at each corner (FBBD-180).

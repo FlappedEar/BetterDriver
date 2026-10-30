@@ -2,19 +2,13 @@ package com.flappedear.betterdriver.feature.analysis
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,8 +23,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.flappedear.betterdriver.analysis.map.DriveMap
-import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
@@ -121,40 +113,6 @@ private fun clock(seconds: Double): String {
         String.format(Locale.ROOT, "%d:%02d:%02d", h, m, s)
     } else {
         String.format(Locale.ROOT, "%d:%02d", m, s)
-    }
-}
-
-/**
- * The analysis's message when it has no laps to show (a road drive, say), then the drive's route on
- * the map and its speed (FBBD-342) when it has positions, the session's G-forces and the Acceleration
- * card when the session has runs: they need no laps. Then its pedals, temperatures and heart rate
- * (FBBD-176, UI-162 A) when it recorded any, and its data quality (FBBD-183), once worked out.
- */
-@Composable
-internal fun WithAcceleration(
-    acceleration: AccelerationUi?,
-    quality: QualityUi? = null,
-    gForces: GgTrace? = null,
-    car: CarUi? = null,
-    drive: DriveMap? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        content()
-        val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-        // The route first (FBBD-342): with no laps, where the drive went is what is left to see.
-        drive?.let { DriveCards(it, width) }
-        gForces?.let { GForcesCard(it, width) }
-        acceleration?.let { AccelerationCard(it, width) }
-        car?.let { CarCards(it, width) }
-        quality?.let { QualityCard(it, width) }
     }
 }
 
