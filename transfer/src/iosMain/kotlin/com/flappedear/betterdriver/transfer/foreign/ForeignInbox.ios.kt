@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalForeignApi::class)
+@file:OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 
 package com.flappedear.betterdriver.transfer.foreign
 
@@ -10,8 +10,10 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionWriter
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
+import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSDate
 import platform.Foundation.NSFileHandle
@@ -162,10 +164,13 @@ private class FileBytes(path: String, private val total: Long, private val onPro
 
     /** Fills [buf] from [offset] with up to [length] (at least 1) bytes; returns how many, or -1 at the end. */
     fun read(buf: ByteArray, offset: Int, length: Int): Int {
-        val data = handle.readDataOfLength(length.toULong())
-        val n = data.length.toInt()
+        // Its own autorelease pool, as pump (FBBD-393): a large file's pieces must not pile up.
+        val n = autoreleasepool {
+            val data = handle.readDataOfLength(length.toULong())
+            if (data.length > 0u) buf.usePinned { memcpy(it.addressOf(offset), data.bytes, data.length) }
+            data.length.toInt()
+        }
         if (n == 0) return -1
-        buf.usePinned { memcpy(it.addressOf(offset), data.bytes, data.length) }
         count += n
         if (count > ImportLimits.MaxBytes) {
             throw ImportFormatException("the file is too large (over ${ImportLimits.MaxBytes / BytesPerMegabyte} MB)")

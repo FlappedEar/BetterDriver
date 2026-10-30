@@ -386,10 +386,13 @@ extension ReviewBridge {
     /// The track day of sessions [ids] (FBBD-315), read and worded by the shared core as on Android.
     static func trackDay(_ ids: [String]) -> TrackDayState { library.trackDay(ids: ids) }
 
-    /// Session [id] as a .bdsession to share, as Android's Share: its files, video included, and its track.
-    static func share(_ id: String) throws -> URL {
+    /// Session [id] as a .bdsession to share, as Android's Share: its files, video included, and its
+    /// track; [progress] gets bytes written and their total.
+    static func share(_ id: String, progress: @escaping (Int64, Int64) -> Void = { _, _ in }) throws -> URL {
         let out = FileManager.default.temporaryDirectory.appendingPathComponent("share", isDirectory: true)
-        return URL(fileURLWithPath: try library.share(id: id, outRoot: out.path) { _, _ in })
+        return URL(fileURLWithPath: try library.share(id: id, outRoot: out.path) { written, total in
+            progress(written.int64Value, total.int64Value)
+        })
     }
 
     /// What session [id] takes on this device, in bytes, and whether it has video.

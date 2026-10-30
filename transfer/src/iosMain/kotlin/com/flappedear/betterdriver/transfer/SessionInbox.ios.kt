@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.timing.track.iosTrackStore
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
+import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
 import platform.Foundation.NSFileHandle
@@ -236,15 +237,23 @@ private class TrackFiles(root: String) {
     }
 }
 
-/** Reads the file at [path] in pieces, handing each to [block] with its length. */
+/**
+ * Reads the file at [path] in pieces, handing each to [block] with its length. Each piece, and
+ * whatever [block] writes with it, is let go in its own autorelease pool: the loop runs in one
+ * background job, so without it every NSData read stays until the job ends, and a session's
+ * video filled the iPhone's memory until iOS killed the app (FBBD-393).
+ */
 internal fun pump(path: String, block: (ByteArray, Int) -> Unit) {
     val input = NSFileHandle.fileHandleForReadingAtPath(path) ?: throw ImportFileException("cannot open $path")
     try {
         while (true) {
-            val data = input.readDataOfLength(ReadBytes.toULong())
-            val n = data.length.toInt()
+            val n = autoreleasepool {
+                val data = input.readDataOfLength(ReadBytes.toULong())
+                val n = data.length.toInt()
+                if (n > 0) block(data.toByteArray(), n)
+                n
+            }
             if (n == 0) break
-            block(data.toByteArray(), n)
         }
     } finally {
         input.closeFile()

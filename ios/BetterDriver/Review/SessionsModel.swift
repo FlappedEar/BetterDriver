@@ -167,24 +167,44 @@ final class SessionsModel {
 
     func row(_ id: String) -> SessionRow? { sessions.first { $0.id == id } }
 
-    /// The session being written to share, while it is.
-    private(set) var sharing: String?
+    /// The session being written to share, while it is, with its progress (Android's "Preparing…").
+    private(set) var sharing: ImportProgress?
 
     /// Writes [session] as a .bdsession, then opens the share sheet (AirDrop, Files, Quick Share to
-    /// Android), as Android's Share; a failure is said in [message].
+    /// Android), as Android's Share; a failure is said in [message]. The bundle holds the video, so
+    /// writing it takes a while: the list shows its progress meanwhile (FBBD-393).
     func share(_ session: SessionRow) {
         guard sharing == nil else { return }
         let id = session.id
-        sharing = id
+        sharing = ImportProgress(name: id, read: 0, total: 0, started: Date())
+        AppLog.i(Self.shareTag, "\(id): preparing to share")
         Task {
-            let result: Result<URL, Error> = await Task.detached { Result { try ReviewBridge.share(id) } }.value
+            let result: Result<URL, Error> = await Task.detached {
+                // One step per percent reaches the list, not one per 64 KB piece.
+                var shown = -1
+                return Result {
+                    try ReviewBridge.share(id) { written, total in
+                        let percent = total > 0 ? Int(written * 100 / total) : 0
+                        guard percent != shown else { return }
+                        shown = percent
+                        Task { @MainActor in self.sharing?.read = written; self.sharing?.total = total }
+                    }
+                }
+            }.value
             sharing = nil
             switch result {
-            case .success(let url): LogShare.share(url)
-            case .failure(let error): message = "Could not share the session: \(error.localizedDescription)"
+            case .success(let url):
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+                AppLog.i(Self.shareTag, "\(id): \(size / 1_000_000) MB ready, opening the share sheet")
+                LogShare.share(url)
+            case .failure(let error):
+                AppLog.w(Self.shareTag, "\(id): could not share: \(error.localizedDescription)")
+                message = "Could not share the session: \(error.localizedDescription)"
             }
         }
     }
+
+    private static let shareTag = "Share"
 
     /// Deletes [session] and its video (FBBD-90); a failure is said in [message].
     func delete(_ session: SessionRow) {

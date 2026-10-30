@@ -22,7 +22,11 @@ struct SessionsListView: View {
     var body: some View {
         List(selection: $selection) {
             if let progress = model.importing {
-                ImportCard(progress: progress)
+                ImportCard(title: "Importing \(progress.name)", progress: progress)
+                    .listRowBackground(Palette.surface)
+            }
+            if let progress = model.sharing {
+                ImportCard(title: "Preparing to share", progress: progress, identifier: "shareProgress")
                     .listRowBackground(Palette.surface)
             }
             if let work = model.goProWork {
@@ -240,13 +244,16 @@ private struct SessionRowView: View {
     }
 }
 
-/// Import progress: MB done of the file's size, percent and time left (UI-192 B).
+/// Import progress: MB done of the file's size, percent and time left (UI-192 B); the same card
+/// shows a session being prepared to share (FBBD-393).
 private struct ImportCard: View {
+    let title: String
     let progress: SessionsModel.ImportProgress
+    var identifier = "importProgress"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Importing \(progress.name)")
+            Text(title)
                 .font(.subheadline.weight(.semibold))
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -257,7 +264,7 @@ private struct ImportCard: View {
                 .foregroundStyle(Palette.onSurfaceVariant)
         }
         .padding(.vertical, 4)
-        .accessibilityIdentifier("importProgress")
+        .accessibilityIdentifier(identifier)
     }
 
     private var fraction: Double {
