@@ -48,6 +48,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var fileIndex: Int32 = 0
     private var firstPts: CMTime = .invalid
     private var lastSyncPts: CMTime = .invalid
+    /// The current file's frames: taken, dropped, late (BD-01).
+    private var counts = PhoneFrameCounts()
     private var failures = 0
     private static let maxFailures = 3
 
@@ -204,15 +206,23 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             }
             if writer == nil, running { open(at: pts, frame: sample) }
             guard let writer, writer.status == .writing, let videoIn else { return }
-            if videoIn.isReadyForMoreMediaData, !videoIn.append(sample) {
-                failedFile()
-                return
+            // A frame the writer is not ready for is counted and left out; only a frame in the file
+            // may be named by a video_sync (audit 30 Oct BD-01).
+            switch counts.frame(ready: videoIn.isReadyForMoreMediaData, append: { videoIn.append(sample) }) {
+            case .appended: sync(at: pts)
+            case .dropped: break
+            case .failed: failedFile()
             }
-            sync(at: pts)
         } else if output === audioOut, let writer, writer.status == .writing, let audioIn,
                   CMTimeCompare(pts, firstPts) >= 0, audioIn.isReadyForMoreMediaData {
             _ = audioIn.append(sample)
         }
+    }
+
+    /// A frame the camera dropped before it reached the app (it came late): counted for the file's log line.
+    func captureOutput(_ output: AVCaptureOutput, didDrop sample: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard output === videoOut, writer != nil else { return }
+        counts.late += 1
     }
 
     /// Starts the next file at the frame captured at [pts]; [frame] gives its size.
@@ -250,6 +260,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             file = name
             firstPts = pts
             lastSyncPts = pts
+            counts = PhoneFrameCounts()
             log.started(file: name, startMicros: sessionMicros(of: pts).frame, fps: recording.fps)
             // Green at the chosen mode, amber once stepped down (UI-07).
             status(recording.label, ok: recording == mode)
@@ -319,11 +330,25 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private func finishFile(reason: String) {
         guard let writer, let file else { return }
         log.stopped(file: file, reason: reason)
+        AppLog.i(Self.tag, "\(file) ended (\(reason)): \(counts.text)")
         // A failed writer is left as it is: its inputs only take marks while it writes.
         if writer.status == .writing {
             videoIn?.markAsFinished()
             audioIn?.markAsFinished()
-            writer.finishWriting {}
+            // The MP4 gets its index only when finishWriting answers (audit 30 Oct BD-02): until then
+            // the session's video is not offered, and its answer is checked and logged.
+            let sessionId = log.sessionId
+            PhoneVideoFinishing.shared.begin(sessionId: sessionId)
+            writer.finishWriting {
+                if writer.status == .completed {
+                    AppLog.i(Self.tag, "\(file) finished")
+                } else {
+                    AppLog.w(Self.tag, "\(file) not finished: \(Self.describe(writer))")
+                }
+                PhoneVideoFinishing.shared.end(sessionId: sessionId)
+            }
+        } else {
+            AppLog.w(Self.tag, "\(file) not finished: \(Self.describe(writer))")
         }
         self.writer = nil
         self.videoIn = nil
@@ -354,6 +379,12 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             self.status("Restarting", ok: false)
             self.capture.startRunning()
         }
+    }
+
+    private static let tag = "PhoneCamera"
+
+    private static func describe(_ writer: AVAssetWriter) -> String {
+        "status=\(writer.status.rawValue) error=\(writer.error.map { String(describing: $0) } ?? "none")"
     }
 
     private func status(_ text: String, ok: Bool) {

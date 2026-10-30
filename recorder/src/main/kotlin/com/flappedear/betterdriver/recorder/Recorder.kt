@@ -89,6 +89,23 @@ class Recorder(
             throw e
         }
     }
+
+    /**
+     * [start]s a recording and runs the host's [setup] of everything around it (audit 30 Oct BD-03).
+     * [setup] runs while the writer already writes, so when it throws, [undo] is called with the
+     * recording to stop it, before the exception goes on: a start never leaves a writer running
+     * that nothing will stop.
+     */
+    @Suppress("TooGenericExceptionCaught") // Rethrown after the recording is undone.
+    fun <T> startWith(info: SessionInfo, undo: (Recording) -> Unit, setup: (Recording) -> T): T {
+        val recording = start(info)
+        try {
+            return setup(recording)
+        } catch (e: Exception) {
+            undo(recording)
+            throw e
+        }
+    }
 }
 
 internal sealed interface Cmd {

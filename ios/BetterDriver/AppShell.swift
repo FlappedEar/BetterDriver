@@ -6,11 +6,15 @@ import UIKit
 /// holds the equipment, cars, tracks and coach (FBBD-338). The iPad shows the review shell, with
 /// Tracks in its session list (FBBD-331, FBBD-336).
 struct AppShell: View {
-    @StateObject private var recorder = RecordingController()
-    @StateObject private var settings = SettingsModel.shared
+    // Held, not observed: the recorder publishes the track screen 4 times a second, and observing it
+    // here rebuilt every tab with it, the session list's model included (FBBD-390). The tabs that show
+    // its state observe it themselves.
+    private let recorder = RecordingController.shared
+    private let settings = SettingsModel.shared
 
     var body: some View {
         if UIDevice.current.userInterfaceIdiom == .phone {
+            // parity-list:top-level
             TabView {
                 DriveView()
                     .tabItem { Label("Drive", systemImage: "steeringwheel") }

@@ -18,6 +18,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Encodes the 2.7K camera stream itself, in place of MediaRecorder (FBBD-246, FBBD-248): Camera2
@@ -90,6 +91,9 @@ internal class WideEncoder(
      */
     private val backlog = WriterBacklog(backlogKib, backlogWaitMs)
     private val videoFull = { timing.fullWait() }
+
+    /** A write threw: samples still queued are dropped, their room given back ([writeFailed]). */
+    private val writeFailure = AtomicBoolean(false)
 
     /** Video samples' time from encoder to MP4, logged once a minute ([SampleTiming.line]). */
     val timing = SampleTiming()
@@ -513,19 +517,29 @@ internal class WideEncoder(
         if (track == Track.Video) timing.held(heldNanos, info.size)
         val queued = System.nanoTime()
         onWriter {
-            beforeWrite?.invoke()
-            val begin = System.nanoTime()
-            synchronized(lock) {
-                val locked = System.nanoTime()
-                writeNanos = 0L
-                if (track == Track.Video) enteredNanos = entered
-                sample(track, data, info)
-                if (track == Track.Video) timing.written(info.size, begin - queued, locked - begin, writeNanos)
+            backlog.written(capacity, ::writeFailed) {
+                // After a failed write nothing more goes in: the file may be half-handled.
+                if (writeFailure.get()) return@written
+                beforeWrite?.invoke()
+                val begin = System.nanoTime()
+                synchronized(lock) {
+                    val locked = System.nanoTime()
+                    writeNanos = 0L
+                    if (track == Track.Video) enteredNanos = entered
+                    sample(track, data, info)
+                    if (track == Track.Video) timing.written(info.size, begin - queued, locked - begin, writeNanos)
+                }
             }
-            backlog.release(capacity)
             val spare = if (track == Track.Video) pool else soundPool
             if (spare.size < PoolSize) spare.offer(data)
         }
+    }
+
+    /** A write on the writer thread threw (audit 30 Oct BD-04): reported once, and the recording cannot go on. */
+    private fun writeFailed(e: Exception) {
+        if (!writeFailure.compareAndSet(false, true)) return
+        DebugLog.e(Tag, "writer failed", e)
+        events.failed("writer: ${e.javaClass.simpleName}")
     }
 
     /** Runs [task] on the writer thread, after every sample before it; dropped once the writer is shut down. */

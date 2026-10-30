@@ -4,7 +4,8 @@ import BetterDriverCore
 /// The sections of a session, the same six tabs as Android (UI-62 B, UI-157 B), drawn as
 /// Android's tab row: an icon over a small name (UI-163 C, UI-291 A). Summary opens first (UI-293 A).
 /// Video (Arek, 2026-10-30) shows only for a session with video: its Video with data, in sight
-/// rather than in the export menu.
+/// rather than in the export menu. Android gets it in FBBD-392; this list is marked again
+/// (`// parity-list:session-tabs`) once both apps have it.
 enum SessionTab: String, CaseIterable, Identifiable {
     case summary = "Summary"
     case compare = "Compare"
