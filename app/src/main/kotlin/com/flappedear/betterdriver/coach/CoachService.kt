@@ -1,7 +1,6 @@
 package com.flappedear.betterdriver.coach
 
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.os.Handler
@@ -10,14 +9,12 @@ import android.os.IBinder
 import android.os.Message
 import android.os.Messenger
 import android.os.RemoteException
-import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.RecorderProtocol
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
-import java.io.File
 
 private const val NanosPerMicro = 1_000L
 
@@ -26,10 +23,12 @@ private const val NanosPerMicro = 1_000L
  * that has the coach on, so it lives exactly as long as the recording and shares its priority; a coach
  * crash, hang or kill ends only this process, and the recording carries on untouched (FBBD-69).
  *
- * Everything runs on one background thread: loading the track and its reference from earlier sessions
- * (FBBD-26), the cue engine, and asking the [Voice] to say each cue (it follows playback and renders
- * pre-rendered clips on a thread of its own). Cues and their results are sent
- * back to the recorder, which logs them in the session for the cue review (FBBD-28).
+ * Everything runs on one background thread. The coaching itself is the shared [CoachRun], the same as
+ * on the iPhone (FBBD-357): loading the track and its reference from earlier sessions (FBBD-26), the
+ * cue engine, and its log lines. This service measures the output's delay (FBBD-49, FBBD-255), gives
+ * the cues to the [Voice] (it follows playback and renders pre-rendered clips on a thread of its own),
+ * and sends cues and their results back to the recorder, which logs them in the session for the cue
+ * review (FBBD-28).
  */
 class CoachService : Service() {
     private val thread = HandlerThread("coach").apply { start() }
@@ -41,26 +40,13 @@ class CoachService : Service() {
     private var routes: AudioRouteWatch? = null
 
     /** The recording being coached. Coach thread only. */
-    private class Active(
-        val id: String,
-        val startNanos: Long,
-        val recorder: Messenger?,
-        val settings: CoachSettings,
-        val delay: SessionDelays,
-        /** Where the delay cues are timed for came from: "measured" or "set" (FBBD-255). */
-        var timingSource: String,
-    ) {
-        var coach: CoachSession? = null
+    private class Active(val id: String, val startNanos: Long, val recorder: Messenger?) {
+        lateinit var run: CoachRun
+        val started: Boolean get() = ::run.isInitialized
 
-        /** The delay cues are timed for, of the output they play on now (FBBD-255). */
-        var timingMillis = settings.audioDelayMillis
+        fun micros(nanoTime: Long) = (nanoTime - startNanos) / NanosPerMicro
 
-        /** The output type and path ("live" or "clip") [timingMillis] is of. */
-        var timingOutput = ""
-        var timingPath = ""
-        var status: CoachStatus = CoachStatus.None
-
-        fun now() = (System.nanoTime() - startNanos) / NanosPerMicro
+        fun now() = micros(System.nanoTime())
     }
 
     private var active: Active? = null
@@ -69,19 +55,12 @@ class CoachService : Service() {
         super.onCreate()
         voice = Voice(this)
         routes = AudioRouteWatch(this, handler) { r ->
-            val a = active ?: return@AudioRouteWatch
+            val run = active?.run ?: return@AudioRouteWatch
             // A route change, not yet measured: what was measured on another device of its type is not its.
-            if (r.live == null && r.clip == null) a.delay.forget(r.output)
-            r.live?.let { a.delay.measured("live", it.output, it.millis) }
-            r.clip?.let { a.delay.measured("clip", it.output, it.millis) }
-            val output = r.timing?.output ?: r.output
-            val used = a.delay.on(r.path, output)
-            a.timingMillis = used.millis
-            a.timingSource = used.source
-            a.timingOutput = output
-            a.timingPath = r.path
-            a.coach?.audioDelay(used.millis)
-            DebugLog.i(Tag, "cues now timed for an audio delay of ${used.millis} ms (${used.source}) on ${r.output}")
+            if (r.live == null && r.clip == null) run.delays.forget(r.output)
+            r.live?.let { run.delays.measured("live", it.output, it.millis) }
+            r.clip?.let { run.delays.measured("clip", it.output, it.millis) }
+            run.outputChanged(r.path, r.timing?.output ?: r.output, named = r.output)
         }
     }
 
@@ -109,8 +88,8 @@ class CoachService : Service() {
                 else -> return false
             }
         } catch (e: Exception) {
-            DebugLog.w(Tag, "coach failed", e)
-            active?.let { report(it, it.now(), CoachEvents.PROBLEM, "error $e") }
+            val run = active?.takeIf { it.started }?.run
+            if (run != null) run.failed(e) else DebugLog.w(Tag, "coach failed", e)
         }
         return true
     }
@@ -128,144 +107,78 @@ class CoachService : Service() {
         val before = routes?.outputs?.device()?.id
         val live = OutputDelayProbe.probe()
         val clip = if (clips) OutputDelayProbe.probe(lowLatency = true) else null
-        val delays = SessionDelays(set.audioDelayMillis)
-        live?.let { delays.measured("live", it.output, it.millis) }
-        clip?.let { delays.measured("clip", it.output, it.millis) }
+        val a = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo)
+        val library = coachLibrary(this)
+        a.run = CoachRun(
+            id, set, CoachFolders.under(coachDir(this).path, sessionsDir(this).path),
+            object : CoachReferenceSource {
+                // The library aims each track's reference at its line plan itself.
+                override fun reference(track: Track, exclude: String, plan: PlannedTargets?) =
+                    library.reference(track, exclude)
+
+                override fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long) =
+                    library.drivenSameDay(reference, nowUtcMillis)
+            },
+            // A sound of an earlier recording, heard late, is not this one's.
+            Speaker(a), a::now, System::currentTimeMillis, { r -> handler.post { if (active === a) r() } },
+            { t, kind, text -> report(a, t, kind, text) },
+        ) { status -> sendStatus(a, status) }
+        live?.let { a.run.delays.measured("live", it.output, it.millis) }
+        clip?.let { a.run.delays.measured("clip", it.output, it.millis) }
         // Cues are timed for the path most of them take: the set delay when it was not measured.
         val path = if (clips) "clip" else "live"
         val output = (if (clips) clip else live)?.output ?: routes?.outputs?.output().orEmpty()
-        val delay = delays.on(path, output)
-        val settings = set.copy(audioDelayMillis = delay.millis)
-        DebugLog.i(Tag, "coaching session $id: $settings, audio delay ${delay.source} on $output")
+        a.run.begin(path, output)
         // Pre-rendered clips (FBBD-48) render now, meanwhile live text-to-speech says the cues.
-        voice?.use(settings.voice, settings.speech, settings.language)
-        active = Active(id, data.getLong(CoachProtocol.START_NANOS), replyTo, settings, delays, delay.source)
-            .also {
-                it.timingOutput = output
-                it.timingPath = path
-            }
+        voice?.use(set.voice, set.speech, set.language)
+        active = a
         routes?.watch(clips, live, clip, before)
     }
 
     /** Loads the saved track and its reference; fixes that arrive meanwhile wait, and their late cues are dropped. */
-    @Suppress("CyclomaticComplexMethod") // One step after another to start the coach on a known track.
     private fun track(data: Bundle) {
         val a = active ?: return
-        val track = data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) }
-        val library = coachLibrary(this)
-        val reference = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }?.let {
-            library.reference(it, exclude = a.id)
-        }
-        // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
-        val sameDay = reference != null && library.drivenSameDay(reference, System.currentTimeMillis())
-        // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
-        val picks = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
-            ?.let { coachPicks(this).get(it.id) }.orEmpty()
-        if (picks.isNotEmpty()) DebugLog.i(Tag, "picked corners: ${picks.joinToString { it.name }}")
-        // The corners with the most time to find in the track's line plan (FBBD-306, UI-174 A), else what
-        // the last analysed session at the track recommends working on (FBBD-20), primary first.
-        val coached = track?.takeIf { coaches(it) && a.settings.verbosity >= Verbosity.Focus }
-        // The first session of a new day there works on the last track day's focus instead (UI-214 B).
-        val plan = coached?.let { planFocusOf(this, it, a.id, sameDay) }
-        val focus = coached?.takeIf { plan == null }?.let { sessionFocusOf(this, it, a.id) }
-        // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
-        val settings = a.settings.copy(audioDelayMillis = a.timingMillis)
-        a.coach = CoachSession(
-            settings, track, reference, picks, sameDay, plan?.picks ?: focus?.picks.orEmpty(), plan?.seconds.orEmpty(),
-        )
-        // Which recommendation this session works on, for the coaching history (FBBD-180).
-        if (plan != null) {
-            val text = CoachEvents.planText(plan.sessionId, plan.cornerIds, plan.seconds.values.sum())
-            report(a, a.now(), CoachEvents.PLAN, text)
-        } else if (focus != null && focus.picks.isNotEmpty()) {
-            val corners = focus.record.targets.sortedBy { !it.primary }.mapNotNull { it.cornerId }
-            report(a, a.now(), CoachEvents.FOCUS, CoachEvents.focusText(focus.record.sessionId, corners))
-        }
-        updateStatus(a, a.coach?.status ?: CoachStatus.None)
+        a.run.start(data.getString(CoachProtocol.TRACK_ID)?.let { TrackStore(tracksDir(this)).get(it) })
     }
 
     private fun fix(data: Bundle) {
         val a = active ?: return
-        val coach = a.coach ?: return
         val speed = data.getDouble(CoachProtocol.SPEED, Double.NaN)
-        val fix = CoachFix(
-            data.getLong(CoachProtocol.T_US),
-            data.getDouble(CoachProtocol.LAT),
-            data.getDouble(CoachProtocol.LON),
-            speed.takeUnless { it.isNaN() },
-            data.getLong(CoachProtocol.FIX_AGE_US, 0L),
-            data.getDouble(CoachProtocol.THROTTLE, Double.NaN).takeUnless { it.isNaN() },
-            data.getDouble(CoachProtocol.STEERING, Double.NaN).takeUnless { it.isNaN() },
-            data.getDouble(CoachProtocol.RPM, Double.NaN).takeUnless { it.isNaN() },
+        a.run.fix(
+            CoachFix(
+                data.getLong(CoachProtocol.T_US),
+                data.getDouble(CoachProtocol.LAT),
+                data.getDouble(CoachProtocol.LON),
+                speed.takeUnless { it.isNaN() },
+                data.getLong(CoachProtocol.FIX_AGE_US, 0L),
+                data.getDouble(CoachProtocol.THROTTLE, Double.NaN).takeUnless { it.isNaN() },
+                data.getDouble(CoachProtocol.STEERING, Double.NaN).takeUnless { it.isNaN() },
+                data.getDouble(CoachProtocol.RPM, Double.NaN).takeUnless { it.isNaN() },
+            ),
         )
-        var asked: Asked? = null
-        // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
-        val out = coach.onFix(fix, a.now(), voiceFree = voice?.speaking != true) { text ->
-            val ask = Asked(a.now(), a.timingSource, a.timingOutput, a.timingPath).also { asked = it }
-            fun micros(nanoTime: Long) = (nanoTime - a.startNanos) / NanosPerMicro
-            // Both posted, so they run after this fix: by then the cue's number is known.
-            val ended = Ended { nanoTime, end ->
-                handler.post {
-                    val seq = ask.seq
-                    if (seq != null && active === a) {
-                        report(a, micros(nanoTime), CoachEvents.VOICE_END, CoachEvents.voiceEndText(seq, end))
-                    }
-                }
-            }
-            voice?.say(text, ended) { start ->
-                handler.post {
-                    val ready = start.readyNanos?.let(::micros)
-                    val used = a.delay.on(start.path, start.device)
-                    val voiced = ask.voiceText(start, ready, used.millis, used.source)
-                    if (voiced != null && active === a) report(a, micros(start.nanoTime), CoachEvents.VOICE, voiced)
-                }
-            } == true
-        }
-        for (e in out.events) report(a, e.tMicros, e.kind, e.text)
-        // At most one cue per fix; its sound start is logged against its number (FBBD-183).
-        asked?.seq = out.events.firstOrNull { it.kind == CoachEvents.CUE }
-            ?.let { CoachEvents.parseCue(it.tMicros, it.text)?.seq }
-        updateStatus(a, out.status)
     }
 
-    /**
-     * A cue asked of the voice at session time [askedMicros], timed for a delay of output [timedOutput]
-     * on path [timedPath] that was [timedSource] ("measured" or "set"); [seq] is set once the coach has logged it.
-     */
-    private class Asked(
-        val askedMicros: Long,
-        val timedSource: String,
-        val timedOutput: String,
-        val timedPath: String,
-    ) {
-        var seq: Int? = null
+    /** The [Voice] as the shared coach hears it, on recording [a]'s clock. */
+    private inner class Speaker(private val a: Active) : CoachVoiceOut {
+        override val speaking: Boolean get() = voice?.speaking == true
 
-        /** The event text of its sound starting, how it was said and where it went; null if never logged. */
-        fun voiceText(start: VoiceStart, readyMicros: Long?, outDelayMillis: Int, outDelaySource: String) = seq?.let {
-            // Its sound went another way than it was timed for: the route changed meanwhile, or a clip
-            // was not ready and live speech said it.
-            val timed = when {
-                start.device != timedOutput -> OtherOutput
-                start.path != timedPath -> OtherPath
-                else -> timedSource
-            }
-            CoachEvents.voiceText(
-                it, start.path, askedMicros, start.route, readyMicros, start.device, start.focus, outDelayMillis,
-                outDelaySource, timed,
+        override fun say(text: String, sound: CueSound): Boolean = voice?.say(
+            text,
+            Ended { nanoTime, end -> sound.ended(a.micros(nanoTime), end) },
+        ) { s ->
+            sound.started(
+                CueSoundStart(a.micros(s.nanoTime), s.path, s.route, s.device, s.readyNanos?.let(a::micros), s.focus),
             )
-        }
+        } == true
     }
 
-    private fun updateStatus(a: Active, status: CoachStatus) {
-        if (status == a.status) return
-        a.status = status
+    private fun sendStatus(a: Active, status: CoachStatus) =
         send(a, RecorderProtocol.MSG_COACH_STATUS) {
             status.corner?.let { putString(CoachProtocol.STATUS_CORNER, it) }
             status.text?.let { putString(CoachProtocol.STATUS_TEXT, it) }
             putBoolean(CoachProtocol.STATUS_PRAISE, status.praise)
             putBoolean(CoachProtocol.STATUS_DIM, status.dim)
         }
-    }
 
     private fun report(a: Active, tMicros: Long, kind: String, text: String) =
         send(a, RecorderProtocol.MSG_COACH_EVENT) {
@@ -289,82 +202,5 @@ class CoachService : Service() {
 
     private companion object {
         const val Tag = "CoachService"
-
-        /** timed_src of a cue whose sound went to another output than it was timed for (FBBD-255). */
-        const val OtherOutput = "other_output"
-
-        /** timed_src of a cue said on another path (live, clip) than it was timed for (FBBD-255). */
-        const val OtherPath = "other_path"
     }
-}
-
-/**
- * The focus of a line plan (FBBD-306): its corners as coach picks, most time to find first, and the
- * time to find in each by CornerId; made from session [sessionId].
- */
-private class PlanFocus(val sessionId: String, val picks: List<CornerPick>, val seconds: Map<String, Double>) {
-    val cornerIds: List<String> get() = picks.mapNotNull { it.cornerId }
-}
-
-/**
- * The focus of [track]'s line plan (FBBD-306, UI-174 A): the corners with the most time to find over
- * every session there, as the Map tab shows them; null without a plan, one made from session [current],
- * one whose corners are not the track's (no CornerIds), or one with nothing to work on. Out on a new
- * day there (not [sameDay]), the last track day's plan comes first (FBBD-315, UI-214 B) while no
- * session since that day made a newer line plan: the first session of the day works on the day's
- * corners, and the sessions after it on what the session before them found (UI-190 B).
- */
-private fun planFocusOf(context: Context, track: Track, current: String, sameDay: Boolean): PlanFocus? {
-    val line = linePlanStore(context).get(track.id)
-    if (!sameDay) {
-        val day = try {
-            dayPlanStore(context).days(track.id).lastOrNull()?.plan
-        } catch (e: IllegalArgumentException) {
-            DebugLog.w("CoachService", "day plan at ${track.id} not read", e)
-            null
-        }
-        val fresh = day?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
-        fresh?.let { focusOf(it, current, "day plan") }?.let { return it }
-    }
-    return line?.let { focusOf(it, current, "line plan") }
-}
-
-/** [plan]'s focus as coach picks; null when made from session [current], without CornerIds or with nothing to do. */
-private fun focusOf(plan: LinePlan, current: String, what: String): PlanFocus? {
-    val corners = plan.takeIf { it.sessionId != current && it.identityRevision != null }?.focus().orEmpty()
-        .filter { it.cornerId != null && it.target.line.isNotEmpty() }
-    if (corners.isEmpty()) return null
-    val picks = corners.map { c ->
-        CornerPick(
-            c.name, c.target.line.map { it.latitude }, c.target.line.map { it.longitude }, plan.sessionId,
-            c.cornerId, plan.identityRevision,
-        )
-    }
-    DebugLog.i("CoachService", "$what focus from ${plan.sessionId}: ${corners.joinToString { it.name }}")
-    // A braking point beyond his best (FBBD-312) is worth its step, a lower gear (FBBD-326) its laps.
-    val seconds = corners.associate { c ->
-        c.cornerId!! to
-            (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gear?.seconds ?: c.gainSeconds)
-    }
-    return PlanFocus(plan.sessionId, picks, seconds)
-}
-
-/** A session's next-session focus (FBBD-20) and its corners as coach picks, the primary first. */
-private class CoachFocus(val record: SessionFocusRecord, val picks: List<CornerPick>)
-
-/**
- * What the last analysed session at [track] recommends working on (FBBD-20); null when it cannot be
- * read. Never from session [current], nor from a session deleted since (its record goes with it,
- * but a failed delete may leave it), and never the reason the coach does not start.
- */
-private fun sessionFocusOf(context: Context, track: Track, current: String): CoachFocus? = try {
-    val sessions = sessionsDir(context)
-    val f = sessionFocusStore(context).latest(track.id, exclude = current) { File(sessions, it).isDirectory }
-    f?.let { r ->
-        DebugLog.i("CoachService", "session focus from ${r.sessionId}: ${r.targets.joinToString { it.name }}")
-    }
-    f?.let { CoachFocus(it, it.picks()) }
-} catch (e: IllegalArgumentException) {
-    DebugLog.w("CoachService", "session focus at ${track.id} not read", e)
-    null
 }

@@ -38,9 +38,6 @@ internal fun CoachFlag(ui: AnalysisUi, cornerId: String?, name: String, onCoachP
     }
 }
 
-/** Under a list with flags: what a flag does. */
-internal const val CoachFlagNote = "Flag a corner and the spoken coach works on it first next time at this track."
-
 private val FlagSize = 40.dp
 
 /** Material Icons flag and outlined_flag (Apache 2.0). */

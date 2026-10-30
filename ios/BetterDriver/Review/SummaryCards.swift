@@ -69,6 +69,10 @@ private struct SummaryFocusPrimary: View {
     let compare: (Int) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) { focus }
+    }
+
+    @ViewBuilder private var focus: some View {
         Button { row.compareIndex.map { compare($0.intValue) } } label: {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .bottom) {
@@ -98,6 +102,8 @@ private struct SummaryFocusPrimary: View {
         .buttonStyle(.plain)
         .disabled(row.compareIndex == nil)
         .accessibilityIdentifier("nextSessionPrimary")
+        // A focus corner offers every pass through it (FBBD-93), as Android's focus; a straight does not.
+        EveryPassButton(cornerId: row.cornerId).frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
@@ -107,6 +113,10 @@ private struct SummaryFocusSecondary: View {
     let compare: (Int) -> Void
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 0) { focus }
+    }
+
+    @ViewBuilder private var focus: some View {
         Button { row.compareIndex.map { compare($0.intValue) } } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack {
@@ -126,6 +136,7 @@ private struct SummaryFocusSecondary: View {
         }
         .buttonStyle(.plain)
         .disabled(row.compareIndex == nil)
+        EveryPassButton(cornerId: row.cornerId).frame(maxWidth: .infinity, alignment: .trailing)
     }
 }
 
@@ -215,47 +226,91 @@ struct SummaryHeartRateCard: View {
 /// Where time goes (FBBD-103, UI-67): where the fastest lap is slowest against the best time
 /// through each corner, with the lap that set it, then the other laps' largest single losses
 /// against the fastest. Tapping a loss compares that lap. Below High confidence a time is said
-/// without its number, and why is shown (FBBD-177).
+/// without its number, and why is shown (FBBD-177). The first row of each corner carries Android's
+/// coach flag (FBBD-363, FBBD-148): the spoken coach works on a flagged corner first next time there.
 struct SummaryTimeGoesCard: View {
     let ui: AnalysisUi
+    var summary: SessionSummary? = nil
     let compare: (Int) -> Void
+    @State private var flags: CoachFlags?
 
     var body: some View {
         Card {
             SectionTitle("Where time goes")
             if !ui.gains.isEmpty {
                 Dim(TimeGoesTextKt.timeGoesHeading(ui: ui))
-                ForEach(Array(ui.gains.enumerated()), id: \.offset) { _, gain in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(gain.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
-                            Dim(TimeGoesTextKt.setOnText(gain: gain)).frame(width: 80, alignment: .leading)
-                            SummaryLoss(text: TimeGoesTextKt.gainLossText(gain: gain), confidence: gain.confidence)
+                ForEach(Array(ui.gains.enumerated()), id: \.offset) { i, gain in
+                    HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(gain.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
+                                Dim(TimeGoesTextKt.setOnText(gain: gain)).frame(width: 80, alignment: .leading)
+                                SummaryLoss(text: TimeGoesTextKt.gainLossText(gain: gain), confidence: gain.confidence)
+                            }
+                            SummaryConfidence(confidence: gain.confidence)
                         }
-                        SummaryConfidence(confidence: gain.confidence)
+                        flag(flags?.gainFlag(ui: ui, index: Int32(i)), name: gain.name)
                     }
                 }
             }
             if !ui.losses.isEmpty {
                 Dim("Largest losses on other laps · tap to compare")
-                ForEach(Array(ui.losses.enumerated()), id: \.offset) { _, loss in
-                    Button { compare(Int(loss.lapIndex)) } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Dim("Lap \(loss.lapNumber)").frame(width: 56, alignment: .leading)
-                                Text(loss.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
-                                SummaryLoss(text: TimeGoesTextKt.lossLossText(loss: loss), confidence: loss.confidence)
+                ForEach(Array(ui.losses.enumerated()), id: \.offset) { i, loss in
+                    HStack(spacing: 4) {
+                        Button { compare(Int(loss.lapIndex)) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Dim("Lap \(loss.lapNumber)").frame(width: 56, alignment: .leading)
+                                    Text(loss.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
+                                    SummaryLoss(text: TimeGoesTextKt.lossLossText(loss: loss), confidence: loss.confidence)
+                                }
+                                SummaryConfidence(confidence: loss.confidence)
                             }
-                            SummaryConfidence(confidence: loss.confidence)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        flag(flags?.lossFlag(ui: ui, index: Int32(i)), name: loss.name)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+            if flags?.any(ui: ui) == true { Dim(AnalysisUiKt.CoachFlagNote) }
         }
-        .accessibilityIdentifier("timeGoes")
+        // No identifier on the card: its flags carry their own.
+        .task(id: summary?.id) { await loadFlags() }
+    }
+
+    /// The flag of corner [cornerId] at the end of a row; an empty slot keeps the column when the row
+    /// has none, so the rows line up. No flags until the track's picks have been read.
+    @ViewBuilder private func flag(_ cornerId: String?, name: String) -> some View {
+        if let cornerId, let flags {
+            let picked = flags.isPicked(cornerId: cornerId)
+            Button { toggle(cornerId) } label: {
+                Image(systemName: picked ? "flag.fill" : "flag")
+                    .foregroundStyle(picked ? Palette.cold : Palette.onSurfaceVariant)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(picked ? "Coaching \(name) next time" : "Coach \(name) next time")
+            .accessibilityIdentifier("coachFlag-\(cornerId)")
+        } else if flags?.any(ui: ui) == true {
+            Color.clear.frame(width: 40, height: 40)
+        }
+    }
+
+    private func loadFlags() async {
+        guard let summary else { return }
+        flags = await Task.detached(priority: .userInitiated) { ReviewBridge.coachFlags(summary) }.value
+    }
+
+    private func toggle(_ cornerId: String) {
+        guard let summary else { return }
+        Task {
+            flags = await Task.detached(priority: .userInitiated) {
+                ReviewBridge.toggleCoachFlag(summary, cornerId: cornerId)
+            }.value
+        }
     }
 }
 
@@ -295,18 +350,26 @@ struct SummaryGForcesCard: View {
     }
 }
 
-/// Android's GgChart (FBBD-149): every reading as a dot, speeding up toward the top, left turns to
-/// the left, a ring every 0.5 g (solid every 1 g).
-private struct SummaryGgChart: View {
+/// Android's GgChart (FBBD-149): every reading of [trace] as a dot, speeding up toward the top, left
+/// turns to the left, a ring every 0.5 g (solid every 1 g), over [reference] (the best lap) in its
+/// own colour; [cursor] is the reading at the map cursor, ringed.
+struct SummaryGgChart: View {
     let trace: GgTrace
+    var reference: GgTrace? = nil
+    var color: Color = Palette.best
+    var referenceColor: Color = Palette.best
+    var cursor: GgPoint? = nil
 
     var body: some View {
-        let points = trace.points.map { (lat: $0.lateralG, lon: $0.longitudinalG) }
-        let rings = MapUiKt.ggRings(maxG: points.map { hypot($0.lat, $0.lon) }.max() ?? 0).map { $0.doubleValue }
+        let all = trace.points + (reference?.points ?? [])
+        let rings = MapUiKt.ggRings(maxG: all.map { hypot($0.lateralG, $0.longitudinalG) }.max() ?? 0).map { $0.doubleValue }
         Canvas { ctx, size in
             let center = CGPoint(x: size.width / 2, y: size.height / 2)
             let radius = min(size.width, size.height) / 2 - 14
             let perG = radius / CGFloat(rings.last ?? 1)
+            func at(_ p: GgPoint) -> CGPoint {
+                CGPoint(x: center.x - CGFloat(p.lateralG) * perG, y: center.y - CGFloat(p.longitudinalG) * perG)
+            }
             for ring in rings {
                 let r = CGFloat(ring) * perG
                 let solid = ring.truncatingRemainder(dividingBy: 1) == 0
@@ -332,13 +395,22 @@ private struct SummaryGgChart: View {
                      at: CGPoint(x: center.x, y: center.y - radius - 6))
             ctx.draw(Text("Brake").font(.system(size: 10)).foregroundStyle(Palette.onSurfaceVariant),
                      at: CGPoint(x: center.x, y: center.y + radius + 6))
-            var dots = Path()
-            for p in points {
-                let x = center.x - CGFloat(p.lat) * perG
-                let y = center.y - CGFloat(p.lon) * perG
-                dots.addEllipse(in: CGRect(x: x - 1.5, y: y - 1.5, width: 3, height: 3))
+            // The best lap first, so the shown lap reads on top.
+            let layers: [(GgTrace?, Color)] = [(reference, referenceColor.opacity(0.55)), (trace, color.opacity(0.8))]
+            for (g, c) in layers {
+                guard let g else { continue }
+                var dots = Path()
+                for p in g.points {
+                    let o = at(p)
+                    dots.addEllipse(in: CGRect(x: o.x - 1.5, y: o.y - 1.5, width: 3, height: 3))
+                }
+                ctx.fill(dots, with: .color(c))
             }
-            ctx.fill(dots, with: .color(Palette.best.opacity(0.8)))
+            if let cursor {
+                let o = at(cursor)
+                ctx.stroke(Path(ellipseIn: CGRect(x: o.x - 6, y: o.y - 6, width: 12, height: 12)),
+                           with: .color(Palette.onBackground), lineWidth: 2)
+            }
         }
     }
 }

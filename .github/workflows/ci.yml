@@ -67,6 +67,10 @@ jobs:
             fi
           done
           exit $missing
+      # Every Android or iOS screen and platform log tag has a row in docs/parity.md, and a row where
+      # one platform lacks the feature names its Jira issue (FBBD-361).
+      - name: Feature parity matrix
+        run: python3 tools/parity/check.py
 
   check:
     name: ${{ matrix.name }}

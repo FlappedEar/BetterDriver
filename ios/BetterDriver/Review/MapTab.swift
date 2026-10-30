@@ -1,44 +1,75 @@
 import BetterDriverCore
 import SwiftUI
 
-/// The Map tab's "Where to find time" (FBBD-306) on the iPad, as on Android: the whole lap with a
-/// badge per corner with time to find, and the corners ranked by it (UI-164 A). Tapping a corner
-/// zooms the map to it and the list becomes what to do there (UI-166 A). Your best lap is coloured
-/// by the pedals and the target is a thin green line (UI-165 C).
+/// The Map tab's two views, as Android's MapView: the laps on the map first (FBBD-149), and where
+/// to find time (FBBD-306), which the Summary's link opens (UI-167 B).
+enum MapTabView: String, CaseIterable, Identifiable {
+    case laps = "Laps"
+    case line = "Where to find time"
+
+    var id: String { rawValue }
+}
+
+/// The Map tab, as on Android: Laps (the compared lap coloured by speed or by time against the
+/// best lap, with its G-G diagram, LapsMapView.swift) and "Where to find time" (FBBD-306): the whole
+/// lap with a badge per corner with time to find, and the corners ranked by it (UI-164 A). Tapping
+/// a corner zooms the map to it and the list becomes what to do there (UI-166 A). Your best lap is
+/// coloured by the pedals and the target is a thin green line (UI-165 C).
 struct MapTab: View {
     let line: WhereToFindTime?
+    let laps: MapUi?
+    @Binding var view: MapTabView
     @State private var picked: String?
     @State private var driving = false
 
     var body: some View {
-        if let line {
-            let corner = line.corners.first { $0.tag == picked }
-            VStack(spacing: 0) {
-                // The perfect lap in 3D starts from the view's header (UI-184 A).
-                if line.scene != nil {
-                    HStack {
-                        Spacer()
-                        Button("▶ Perfect lap in 3D") { driving = true }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Palette.accent)
-                            .accessibilityIdentifier("perfectLapButton")
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                ForEach(MapTabView.allCases) { option in
+                    Button { view = option } label: {
+                        Text(option.rawValue)
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .foregroundStyle(view == option ? Palette.onAccent : Palette.onBackground)
+                            .background(view == option ? Palette.accent : Palette.surfaceVariant, in: Capsule())
                     }
-                    .padding([.horizontal, .top], 16)
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("mapView\(option == .laps ? "Laps" : "Line")")
                 }
-                map(line, corner: corner)
-            }
-            .fullScreenCover(isPresented: $driving) {
-                if let scene = line.scene {
-                    // From the corner tapped on the view, or the start of the lap.
-                    let start = line.corners.firstIndex { $0.tag == picked } ?? 0
-                    PerfectLapPlayer(scene: scene, startCorner: start) { driving = false }
+                Spacer()
+                // The perfect lap in 3D starts from the view's header (UI-184 A).
+                if view == .line, line?.scene != nil {
+                    Button("▶ Perfect lap in 3D") { driving = true }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Palette.accent)
+                        .accessibilityIdentifier("perfectLapButton")
                 }
             }
+            .padding([.horizontal, .top], 16)
+            switch view {
+            case .laps: LapsMapView(ui: laps)
+            case .line: lineView
+            }
+        }
+        .fullScreenCover(isPresented: $driving) {
+            if let scene = line?.scene, let line {
+                // From the corner tapped on the view, or the start of the lap.
+                let start = line.corners.firstIndex { $0.tag == picked } ?? 0
+                PerfectLapPlayer(scene: scene, startCorner: start) { driving = false }
+            }
+        }
+    }
+
+    @ViewBuilder private var lineView: some View {
+        if let line {
+            map(line, corner: line.corners.first { $0.tag == picked })
         } else {
             Text("No line analysis for this session: it needs a lap through the track's corners with GPS all the way round.")
                 .foregroundStyle(Palette.onSurfaceVariant)
                 .multilineTextAlignment(.center)
                 .padding(40)
+            Spacer()
         }
     }
 

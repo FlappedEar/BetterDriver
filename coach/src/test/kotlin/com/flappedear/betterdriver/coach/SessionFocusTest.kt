@@ -80,7 +80,7 @@ class SessionFocusTest {
     @Test
     fun `each session's focus is kept per track and session, and the latest one with a focus is the next session's`() =
         withDir { dir ->
-            val store = SessionFocusStore(dir)
+            val store = SessionFocusStore(dir.path)
             assertNull(store.latest("sim"))
             val older = record("20261011-101500-aaaa", 1_000, 2, 0)
             val newer = record("20261012-101500-bbbb", 2_000, 1)
@@ -111,7 +111,7 @@ class SessionFocusTest {
 
     @Test
     fun `a written record says its format and version, and one of a newer version reads as none`() = withDir { dir ->
-        val store = SessionFocusStore(dir)
+        val store = SessionFocusStore(dir.path)
         val r = record("s1", 1_000, 0)
         assertTrue(store.save(r))
         val file = File(dir, "sim/s1.json")
@@ -134,7 +134,7 @@ class SessionFocusTest {
     @Test
     fun `a deleted session's focus is gone, and one whose session is gone is never the next session's`() =
         withDir { dir ->
-            val store = SessionFocusStore(dir)
+            val store = SessionFocusStore(dir.path)
             val older = record("s1", 1_000, 0)
             val newer = record("s2", 2_000, 1)
             store.save(older)
@@ -151,7 +151,7 @@ class SessionFocusTest {
     @Test
     fun `a record with a coordinate out of range or an unknown role reads as none, never failing the coach`() =
         withDir { dir ->
-            val store = SessionFocusStore(dir)
+            val store = SessionFocusStore(dir.path)
             val older = record("s1", 1_000, 0)
             val newer = record("s2", 2_000, 1)
             store.save(older)
@@ -171,7 +171,7 @@ class SessionFocusTest {
 
     @Test
     fun `a session analysed again at another track keeps one record, at the new track`() = withDir { dir ->
-        val store = SessionFocusStore(dir)
+        val store = SessionFocusStore(dir.path)
         val older = record("s1", 1_000, 0)
         val moved = record("s2", 2_000, 1)
         store.save(older)
@@ -186,7 +186,7 @@ class SessionFocusTest {
 
     @Test
     fun `a save that cannot delete the session's record at its old track fails`() = withDir { dir ->
-        val store = SessionFocusStore(dir)
+        val store = SessionFocusStore(dir.path)
         val moved = record("s2", 2_000, 1)
         // Something at the old track's record path that File.delete cannot remove.
         File(dir, "sim/s2.json/stuck").apply { parentFile.mkdirs() }.writeText("x")
@@ -199,7 +199,7 @@ class SessionFocusTest {
 
     @Test
     fun `a record keeps each focus under its CornerId, primary first, with what to change`() = withDir { dir ->
-        val store = SessionFocusStore(dir)
+        val store = SessionFocusStore(dir.path)
         val r = record("s1", 1, 1, 3).let { r ->
             r.copy(targets = r.targets.map { it.copy(cornerId = it.segmentId, identityRevision = 2) })
         }
@@ -217,7 +217,7 @@ class SessionFocusTest {
 
     @Test
     fun `a session id or track id that is no file name is refused`() = withDir { dir ->
-        val store = SessionFocusStore(dir)
+        val store = SessionFocusStore(dir.path)
         assertFailsWith<IllegalArgumentException> { store.save(record("../x", 1, 0)) }
         assertFailsWith<IllegalArgumentException> { store.get("../sim", "s1") }
     }

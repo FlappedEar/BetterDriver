@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.LogLine
 import com.flappedear.betterdriver.recorder.log.ProcessExit
+import com.flappedear.betterdriver.recorder.log.format
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir

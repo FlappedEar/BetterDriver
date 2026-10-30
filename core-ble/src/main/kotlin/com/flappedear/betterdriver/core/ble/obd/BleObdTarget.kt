@@ -237,8 +237,10 @@ private fun release(g: BluetoothGatt) {
 }
 
 /**
- * Bluetooth LE OBD-II adapters advertising nearby ([ObdAdapterNames]), for Add equipment (FBBD-121,
- * UI-105 C): a Bluetooth LE adapter needs no pairing. Emits as [scanBleDevices] does.
+ * Bluetooth LE OBD-II adapters advertising nearby ([ObdAdapterNames], by name or serial service), for
+ * Add equipment (FBBD-121, UI-105 C): a Bluetooth LE adapter needs no pairing. Emits as [scanBleDevices] does.
  */
 fun scanObdAdapters(context: Context): Flow<List<FoundBleDevice>> =
-    scanBleDevices(context) { name, _ -> ObdAdapterNames.isCandidate(name) }
+    scanBleDevices(context) { name, services ->
+        ObdAdapterNames.isCandidate(name, services.orEmpty().map { it.toString() })
+    }

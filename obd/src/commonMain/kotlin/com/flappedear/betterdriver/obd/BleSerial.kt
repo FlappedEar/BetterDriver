@@ -61,6 +61,15 @@ object BleSerial {
         Profile(short(0x18F0), short(0x2AF0), short(0x2AF1)),
     )
 
+    /**
+     * Services an ELM327 adapter may name in its advertisement, so one whose name says nothing is
+     * still tried (FBBD-121): [Known]'s except FFE0, the HM-10 module's, which many other gadgets carry.
+     */
+    private val Advertised = Known.map { it.service }.toSet() - short(0xFFE0)
+
+    /** Whether one of [services] (as a scan lists them, any UUID form) is an OBD adapter's serial service. */
+    fun advertisesSerial(services: List<String>): Boolean = services.any { uuid(it) in Advertised }
+
     /** Services every device has (GAP, GATT, device information, battery): never the serial line. */
     private val Standard = setOf(0x1800, 0x1801, 0x180A, 0x180F).map(::short).toSet()
 

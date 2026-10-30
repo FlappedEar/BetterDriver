@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.obd
 
 import com.flappedear.betterdriver.format.fixed
+import com.flappedear.betterdriver.obd.PollScheduler.Outcome
 
 /** What an [ElmPoller] reports. Called on the poller's thread. */
 interface ObdListener {
@@ -171,11 +172,8 @@ class ElmPoller(
     /** The header requests go to now; null is the adapter's default (FBBD-320). */
     private var currentHeader: Int? = null
 
-    /** FBBD-284: the [ST_STEPS] step in use (-1: the adapter's own), requests left in its trial, done. */
-    private var stStep = -1
-    private var stLeft = 0
-    private var stWarmup = 0
-    private var stDone = false
+    /** FBBD-284: the adapter's wait for more answers (`AT ST`), shortened when requests stay slow. */
+    private val timeout = AdapterTimeout({ line.command(it, AT_TIMEOUT_MS) }) { listener.log(it) }
 
     /** The adapter took a receive filter but would not drop it: no more listening on it. */
     private var filterStuck = false
@@ -192,7 +190,7 @@ class ElmPoller(
         setListens(broadcastsOn(protocol, supported))
         val available = availableOn(protocol, supported)
         val can = isCan(protocol)
-        resetTimeout(can)
+        timeout.reset(can)
         var set = pollSet()
         var first = true
         while (true) {
@@ -676,7 +674,8 @@ class ElmPoller(
         while (ended == null && running()) {
             val now = clock.nowMs()
             if (setChanged(now, set) || listensLost) return null
-            val next = scheduler.next(now)
+            // Every request dropped while CAN is still listened to: the dropped ones are still tried again.
+            val next = scheduler.next(now) ?: scheduler.retry().takeIf { listens.isNotEmpty() }
             val listenFor = listenWindow(canFirst, now, next, nextListen)
             when {
                 listenFor != null -> {
@@ -759,57 +758,27 @@ class ElmPoller(
         learn(request, learned, count, text, messages.size, values.size, group.any { it.pollClass == PollClass.FAST })
         requests++
         val answered = values.keys.mapTo(HashSet()) { it.request }
-        scheduler.completed(request, sent, done - sent, answered.isNotEmpty(), answered)
-        if (text != null) tuneTimeout(learned?.values, values.size, scheduler.latencyMs)
+        val outcome = scheduler.completed(request, sent, done - sent, answered.isNotEmpty(), answered)
+        afterAnswer(outcome, request, group, text, scheduler)
+        if (text != null) timeout.tune(learned?.values, values.size, scheduler.latencyMs)
         return text != null
     }
 
     /**
-     * Shortens the adapter's wait for more answers (`AT ST`, FBBD-284) when requests stay slow: an
-     * adapter that takes no response count, like Arek's Wi-Fi clone (latency_ms 226-241 with the count
-     * "on"), waits out its timeout, about 200 ms, after the one ECU has answered. Each of [ST_STEPS] is
-     * tried for [ST_TRIAL] requests; when one of them gets fewer values than the request got before
-     * ([want], null when not known yet), the step before is put back and kept. [latencyMs] is the
-     * scheduler's smoothed latency; nothing is tried while it is under [ST_TUNE_ABOVE_MS].
+     * Logs what became of [request] (FBBD-382). One that answered before and misses twice in a row
+     * while `AT ST` is shortened may be answered later than that: the adapter's own timeout goes back.
      */
-    /** A new connection starts at the adapter's own timeout; only CAN answers are timed by [ST_STEPS]. */
-    private fun resetTimeout(can: Boolean) {
-        stStep = -1
-        stLeft = 0
-        stWarmup = 0
-        stDone = !can
-    }
-
-    @Suppress("ReturnCount") // Each early return is one state of the tuning.
-    private fun tuneTimeout(want: Int?, got: Int, latencyMs: Double?) {
-        if (stDone) return
-        if (stLeft > 0) {
-            if (want != null && got < want) {
-                val back = ST_STEPS.getOrNull(stStep - 1) ?: ST_DEFAULT
-                line.command("ATST" + hex(back, 2), AT_TIMEOUT_MS)
-                listener.log("timeout ATST${hex(ST_STEPS[stStep], 2)} lost an answer: back to ATST${hex(back, 2)}")
-                stDone = true
-                return
-            }
-            if (--stLeft == 0) listener.log("timeout ATST${hex(ST_STEPS[stStep], 2)} kept")
-            return
+    private fun afterAnswer(
+        outcome: Outcome,
+        request: Request,
+        group: List<PidChannel>,
+        text: String?,
+        scheduler: PollScheduler,
+    ) {
+        outcomeLine(outcome, request, group, text, scheduler)?.let(listener::log)
+        if (outcome == Outcome.Missed && scheduler.stoppedAnswering(request, AdapterTimeout.BACK_AFTER_MISSES)) {
+            timeout.back(names(group))
         }
-        if (stStep < 0) {
-            val slow = latencyMs != null && latencyMs >= ST_TUNE_ABOVE_MS
-            if (!slow || ++stWarmup < ST_TRIAL) return
-        }
-        val next = stStep + 1
-        if (next >= ST_STEPS.size) {
-            stDone = true
-            return
-        }
-        if (line.command("ATST" + hex(ST_STEPS[next], 2), AT_TIMEOUT_MS)?.contains("OK") != true) {
-            listener.log("timeout: ATST${hex(ST_STEPS[next], 2)} not taken")
-            stDone = true
-            return
-        }
-        stStep = next
-        stLeft = ST_TRIAL
     }
 
     /**
@@ -956,16 +925,6 @@ class ElmPoller(
         /** How long a stopped monitor may take to print its prompt. */
         private const val MONITOR_STOP_MS = 1_000L
         private const val MAX_EMPTY_LISTENS = 10
-
-        /**
-         * FBBD-284: `AT ST` values tried in turn, in units of 4.096 ms: about 102, 78 and 61 ms, each
-         * still above the 50 ms an ECU has to answer a mode 01 request (SAE J1979 P2). 0x32 (205 ms)
-         * is the ELM327's default, put back when the first step loses an answer.
-         */
-        val ST_STEPS = listOf(0x19, 0x13, 0x0F)
-        private const val ST_DEFAULT = 0x32
-        private const val ST_TRIAL = 20
-        private const val ST_TUNE_ABOVE_MS = 120.0
 
         /** Characters of the VIN in the log: the maker and model, not the car's serial. */
         private const val VIN_LOGGED = 8

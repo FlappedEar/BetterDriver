@@ -99,7 +99,7 @@ class DayAnalysisRealTest {
         assertTrue(morning.identityRevision != null && morning.identityRevision == afternoon.identityRevision)
         // The morning is kept as its day's plan, and the afternoon measured against it.
         val plan = dayPlan(morning, "jastrzab", "2026-08-28", "s1303", 1L)
-        val store = DayPlanStore(File(tmp, "days"))
+        val store = DayPlanStore(File(tmp, "days").path)
         assertTrue(store.save(plan))
         assertTrue(!store.save(plan), "the same plan is not written again")
         assertEquals(plan, store.before("jastrzab", "2026-08-29"))

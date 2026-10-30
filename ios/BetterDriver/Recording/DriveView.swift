@@ -153,8 +153,9 @@ struct ReceiverSheet: View {
                 HStack {
                     Text("Video")
                     Spacer()
+                    // The chosen mode is listed from the first draw, before onAppear reads what the phone records.
                     Picker("Video", selection: $videoMode) {
-                        ForEach(modes) { Text($0.label).tag($0) }
+                        ForEach(modes.contains(videoMode) ? modes : modes + [videoMode]) { Text($0.label).tag($0) }
                     }
                     .pickerStyle(.menu)
                     .tint(Palette.accent)

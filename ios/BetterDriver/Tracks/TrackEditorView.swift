@@ -34,6 +34,27 @@ final class EditorModel: ObservableObject {
         }
     }
 
+    /// Starts correction [edit] of the corners (FBBD-366) and stores it; nothing when it does not apply.
+    func correct(_ edit: SegmentEdit?) {
+        guard let edit else { return }
+        var started: SegmentEdit?
+        act { started = $0.corners.startCorrection(edit: edit) }
+        store(started)
+    }
+
+    /// Stores correction [edit], already started, made to the corners shown; then shows them as stored.
+    func store(_ edit: SegmentEdit?) {
+        guard let edit, let expected = editor.corners.identity else { return }
+        let id = editor.track.id
+        Task.detached {
+            let result = TracksModel.library.correct(id: id, expected: expected, edit: edit)
+            await MainActor.run {
+                self.act { $0.corners.correctionStored(stored: result.track?.identity, applied: result.applied) }
+                NotificationCenter.default.post(name: .tracksChanged, object: nil)
+            }
+        }
+    }
+
     /// Stores the track; [done] gets false when it could not be written.
     func save(done: @escaping (Bool) -> Void) {
         let sent = editor.track
@@ -55,6 +76,8 @@ final class EditorModel: ObservableObject {
 /// Opens track [id] in the editor once its sessions are read (Android's TrackEditorRoute).
 struct TrackEditorScreen: View {
     let trackId: String
+    /// A track made from a session (FBBD-367), not saved yet; null to edit saved track [trackId].
+    var proposal: TrackProposal? = nil
     let onClose: () -> Void
     @State private var model: EditorModel?
     @State private var missing = false
@@ -69,7 +92,9 @@ struct TrackEditorScreen: View {
         }
         .task {
             let id = trackId
+            let proposal = proposal
             let editor = await Task.detached { () -> TrackEditor? in
+                if let proposal { return ReviewBridge.library.proposalEditor(proposal: proposal) }
                 guard let track = TracksModel.library.get(id: id) else { return nil }
                 return TrackEditor(initial: track, sessions: TracksModel.library.editorSessions(track: track), stored: track)
             }.value
@@ -164,6 +189,8 @@ struct TrackEditorView: View {
     private func back() {
         if editor.selected != nil {
             model.act { $0.cancel() }
+        } else if editor.corners.segmentId != nil {
+            model.act { $0.corners.select(id: nil) }
         } else if editor.changed {
             leaving = true
         } else {
@@ -193,6 +220,7 @@ struct TrackEditorView: View {
                     .frame(width: 44, height: 44)
             }
             .accessibilityLabel("Back")
+            .accessibilityIdentifier("editorBack")
             Text(editor.title)
                 .font(.title3.weight(.semibold))
                 .lineLimit(1)
@@ -201,6 +229,11 @@ struct TrackEditorView: View {
                 Button("Done") { model.act { $0.done() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(editor.selectedLine == nil)
+            } else if editor.corners.segmentId != nil {
+                Button("Done") { model.act { $0.corners.select(id: nil) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(editor.corners.correcting)
+                    .accessibilityIdentifier("segmentDone")
             } else {
                 if editor.isStored {
                     Button("Delete") { deleting = true }.foregroundStyle(TrackColors.loss)
@@ -265,8 +298,11 @@ struct TrackEditorView: View {
         VStack(alignment: .leading, spacing: 0) {
             if editor.selected != nil {
                 placingControls
+            } else if editor.corners.segmentId != nil && editor.corners.correctable {
+                SegmentControls(model: model)
             } else {
                 lineList
+                CornerList(model: model)
             }
         }
     }
@@ -274,10 +310,10 @@ struct TrackEditorView: View {
     private var placingControls: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Chip(label: "From your lap", on: editor.placingFromLap, enabled: editor.path != nil) {
+                EditorChip(label: "From your lap", on: editor.placingFromLap, enabled: editor.path != nil) {
                     model.act { $0.pickFromLap(fromLap: true) }
                 }
-                Chip(label: "Two taps", on: !editor.placingFromLap) { model.act { $0.pickFromLap(fromLap: false) } }
+                EditorChip(label: "Two taps", on: !editor.placingFromLap) { model.act { $0.pickFromLap(fromLap: false) } }
             }
             if editor.path == nil {
                 DimLine("No session here yet, so lines are placed with two taps.")
@@ -314,8 +350,8 @@ struct TrackEditorView: View {
             Divider().overlay(Palette.outline)
             HStack(spacing: 8) {
                 Text("Kind").frame(maxWidth: .infinity, alignment: .leading)
-                Chip(label: "Circuit", on: !editor.pointToPoint) { model.act { $0.setPointToPoint(on: false) } }
-                Chip(label: "Point to point", on: editor.pointToPoint) { model.act { $0.setPointToPoint(on: true) } }
+                EditorChip(label: "Circuit", on: !editor.pointToPoint) { model.act { $0.setPointToPoint(on: false) } }
+                EditorChip(label: "Point to point", on: editor.pointToPoint) { model.act { $0.setPointToPoint(on: true) } }
             }
             .padding(.vertical, 8)
             if let note = editor.kindNote { DimLine(note).padding(.bottom, 8) }
@@ -355,7 +391,7 @@ struct TrackEditorView: View {
 }
 
 /// A filter chip, as Material's FilterChip on Android.
-private struct Chip: View {
+struct EditorChip: View {
     let label: String
     let on: Bool
     var enabled = true

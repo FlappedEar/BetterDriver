@@ -10,11 +10,15 @@ enum EditorColors {
     static let halo = UIColor(red: 0x0B / 255, green: 0x0F / 255, blue: 0x12 / 255, alpha: 1)
     /// The recorded lap: a colour no satellite photo or street map has.
     static let lap = UIColor(red: 1, green: 0x3D / 255, blue: 0xD8 / 255, alpha: 1)
+    /// The track's corners (amber) and straights (faint), FBBD-179.
+    static let corner = UIColor(red: 0xF2 / 255, green: 0xB8 / 255, blue: 0x4B / 255, alpha: 1)
+    static let straight = UIColor(red: 0xC9 / 255, green: 0xD3 / 255, blue: 0xDA / 255, alpha: 0x99 / 255)
 }
 
 /// The editor's map (UI-23, UI-24), as EditorMap on Android: the background tiles, the recorded lap,
-/// every line with its direction arrow, and the selected line with its two draggable ends. A tap
-/// places the selected line; pinch and drag move the map.
+/// every line with its direction arrow, and the selected line with its two draggable ends; with no
+/// line selected, the track's corners and straights, the one being corrected with its draggable ends
+/// (FBBD-366). A tap places the selected line, else picks the corner there; pinch and drag move the map.
 struct EditorMap: UIViewRepresentable {
     @ObservedObject var model: EditorModel
     let source: TileSource
@@ -55,6 +59,8 @@ struct EditorMap: UIViewRepresentable {
         private var overlay: CachedTileOverlay?
         /// The end being dragged: true for the left one.
         private var draggingLeft: Bool?
+        /// The end of the corner being corrected that is dragged: true for its start.
+        private var draggingStart: Bool?
 
         init(_ model: EditorModel) { self.model = model }
 
@@ -112,23 +118,48 @@ struct EditorMap: UIViewRepresentable {
             return dl <= dr
         }
 
+        /// The handle of the corner being corrected under [point], if one is within reach: true for its start.
+        private func handle(at point: CGPoint, in map: MKMapView) -> Bool? {
+            let editor = model.editor
+            guard editor.selected == nil, editor.corners.correctable, !editor.corners.correcting else { return nil }
+            let reach: CGFloat = 32
+            return editor.corners.handles()
+                .map { ($0.start, map.convert($0.point.coordinate, toPointTo: map)) }
+                .map { ($0.0, hypot($0.1.x - point.x, $0.1.y - point.y)) }
+                .filter { $0.1 <= reach }
+                .min { $0.1 < $1.1 }?.0
+        }
+
         func gestureRecognizerShouldBegin(_ gesture: UIGestureRecognizer) -> Bool {
             guard let map = gesture.view as? MKMapView else { return false }
-            return end(at: gesture.location(in: map), in: map) != nil
+            let at = gesture.location(in: map)
+            return end(at: at, in: map) != nil || handle(at: at, in: map) != nil
         }
 
         @objc func dragged(_ drag: UIPanGestureRecognizer) {
             guard let map = drag.view as? MKMapView else { return }
             switch drag.state {
             case .began:
-                draggingLeft = end(at: drag.location(in: map), in: map)
+                let at = drag.location(in: map)
+                draggingLeft = end(at: at, in: map)
+                draggingStart = draggingLeft == nil ? handle(at: at, in: map) : nil
                 map.isScrollEnabled = false
             case .changed:
-                guard let left = draggingLeft else { return }
                 let c = map.convert(drag.location(in: map), toCoordinateFrom: map)
-                model.act { $0.moveEnd(left: left, lat: c.latitude, lon: c.longitude) }
+                if let left = draggingLeft {
+                    model.act { $0.moveEnd(left: left, lat: c.latitude, lon: c.longitude) }
+                } else if let start = draggingStart {
+                    let to = GeoPoint(lat: c.latitude, lon: c.longitude)
+                    model.act { $0.corners.drag(start: start, to: to) }
+                }
             default:
+                if draggingStart != nil {
+                    var edit: SegmentEdit?
+                    model.act { edit = $0.corners.endDrag() }
+                    model.store(edit)
+                }
                 draggingLeft = nil
+                draggingStart = nil
                 map.isScrollEnabled = true
             }
         }
@@ -156,6 +187,7 @@ final class EditorDrawing: UIView {
         let editor = model.editor
         func project(_ p: GeoPoint) -> CGPoint { map.convert(p.coordinate, toPointTo: self) }
         drawLap(ctx, editor.pathCoordinates.map { map.convert($0, toPointTo: self) }, highlight: editor.selected != nil)
+        if editor.selected == nil { drawCorners(editor.corners, project) }
         for item in editor.lines() {
             guard let line = item.line else { continue }
             drawLine(ctx, project(line.left), project(line.right), item)
@@ -165,6 +197,64 @@ final class EditorDrawing: UIView {
             ctx.setFillColor(EditorColors.accent.cgColor)
             ctx.fillEllipse(in: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10))
         }
+    }
+
+    /// The corners (amber) and straights (faint) along the centreline, numbered at each corner; the one
+    /// being corrected bold, with its ends as round handles (Android's IdentityLayer).
+    private func drawCorners(_ corners: CornerCorrector, _ project: (GeoPoint) -> CGPoint) {
+        let strokes = corners.strokes()
+        let anySelected = strokes.contains { $0.selected && corners.correctable }
+        for s in strokes {
+            let points = s.points.map(project)
+            if s.selected && corners.correctable {
+                stroke(points, EditorColors.halo, width: 8)
+                stroke(points, EditorColors.accent, width: 5)
+            } else if s.corner {
+                stroke(points, EditorColors.corner.withAlphaComponent(anySelected ? 0.55 : 0.9), width: 3)
+            } else {
+                stroke(points, EditorColors.straight, width: 1.5)
+            }
+        }
+        if corners.correctable {
+            for h in corners.handles() {
+                let p = project(h.point)
+                for (r, color) in [(CGFloat(9), EditorColors.halo), (7, EditorColors.accent), (3, EditorColors.halo)] {
+                    color.setFill()
+                    UIBezierPath(ovalIn: CGRect(x: p.x - r, y: p.y - r, width: 2 * r, height: 2 * r)).fill()
+                }
+            }
+        }
+        let shadow = NSShadow()
+        shadow.shadowColor = EditorColors.halo
+        shadow.shadowBlurRadius = 4
+        for s in strokes {
+            guard let number = s.number, !s.points.isEmpty else { continue }
+            let at = project(s.points[s.points.count / 2])
+            let selected = s.selected && corners.correctable
+            NSAttributedString(string: number, attributes: [
+                .font: UIFont.systemFont(ofSize: 11, weight: .semibold),
+                .foregroundColor: selected ? EditorColors.accent : EditorColors.corner,
+                .shadow: shadow,
+            ]).draw(at: CGPoint(x: at.x + 6, y: at.y - 16))
+        }
+    }
+
+    private func stroke(_ points: [CGPoint], _ color: UIColor, width: CGFloat) {
+        guard points.count >= 2 else { return }
+        let path = UIBezierPath()
+        path.move(to: points[0])
+        var last = points[0]
+        for p in points.dropFirst() where hypot(p.x - last.x, p.y - last.y) >= 2 {
+            path.addLine(to: p)
+            last = p
+        }
+        // The end exactly, however close to the last point drawn.
+        path.addLine(to: points[points.count - 1])
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.lineWidth = width
+        color.setStroke()
+        path.stroke()
     }
 
     private func drawLap(_ ctx: CGContext, _ points: [CGPoint], highlight: Bool) {

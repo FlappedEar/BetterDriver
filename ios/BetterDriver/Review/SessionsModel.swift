@@ -94,6 +94,8 @@ final class SessionsModel {
 
     func reload() {
         sessions = ReviewBridge.sessions()
+        // Which sessions the coach spoke in, for their Coach review (FBBD-99).
+        CoachReviewCounts.shared.refresh()
         let setup = SettingsModel.shared.setup
         let root = ReviewBridge.library.sessionsRoot
         cameraLines = Dictionary(uniqueKeysWithValues: sessions.map { s in

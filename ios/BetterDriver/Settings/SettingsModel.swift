@@ -28,8 +28,7 @@ final class SettingsModel: ObservableObject {
         self.base = base
         let hadCoach = FileManager.default.fileExists(atPath: SettingsModel.coachFile(base).path)
         setup = SettingsModel.loadSetup(base: base)
-        let coachText = try? String(contentsOf: SettingsModel.coachFile(base), encoding: .utf8)
-        coach = SettingsCore.shared.coachSettings(text: coachText)
+        coach = SettingsModel.coachStore(base).read()
         fullBrightness = defaults.object(forKey: Keys.brightness) as? Bool ?? true
         gnssSound = defaults.bool(forKey: Keys.gnssSound)
         #if DEBUG
@@ -94,14 +93,14 @@ final class SettingsModel: ObservableObject {
         let next = change(setup)
         guard next != setup else { return }
         setup = next
-        write(SettingsCore.shared.encodeSetup(setup: next), to: SettingsModel.setupFile(base))
+        save { try SettingsModel.setupStore(base).save(setup: next) }
     }
 
     func updateCoach(_ change: (CoachSettings) -> CoachSettings) {
         let next = change(coach)
         guard next != coach else { return }
         coach = next
-        write(SettingsCore.shared.coachText(settings: next), to: SettingsModel.coachFile(base))
+        save { try SettingsModel.coachStore(base).write(settings: next) }
     }
 
     /// A new item's id, as Android gives them.
@@ -111,29 +110,26 @@ final class SettingsModel: ObservableObject {
 
     private static func setupFile(_ base: URL) -> URL { base.appendingPathComponent("setup.json") }
 
+    /// setup.json through the store Android uses (FBBD-359): same file, same checks, same atomic write.
+    private static func setupStore(_ base: URL) -> SetupStore { SetupStore(file: setupFile(base).path) }
+
+    /// coach/settings.properties through the store Android uses (FBBD-359).
+    private static func coachStore(_ base: URL) -> CoachSettingsStore { CoachSettingsStore(file: coachFile(base).path) }
+
     private static func coachFile(_ base: URL) -> URL {
         base.appendingPathComponent("coach", isDirectory: true).appendingPathComponent("settings.properties")
     }
 
     /// The saved setup; a fresh install's (the phone camera only) when there is none. A file this build
-    /// cannot read is moved aside, never overwritten, as on Android.
+    /// cannot read is moved aside, never overwritten, as on Android (the shared SetupStore does both).
     private static func loadSetup(base: URL) -> Setup {
-        let file = setupFile(base)
-        if let text = try? String(contentsOf: file, encoding: .utf8) {
-            if let setup = SettingsCore.shared.decodeSetup(text: text) { return setup }
-            let aside = file.path + ".unreadable-\(Int64(Date().timeIntervalSince1970 * 1_000))"
-            try? FileManager.default.moveItem(atPath: file.path, toPath: aside)
-        }
-        return SettingsCore.shared.freshSetup(id: newId())
+        setupStore(base).load() ?? SettingsCore.shared.freshSetup(id: newId())
     }
 
-    private func write(_ text: String, to url: URL) {
+    /// Runs a store's write; one that fails is logged and the next change tries again.
+    private func save(_ write: () throws -> Void) {
         do {
-            try FileManager.default.createDirectory(
-                at: url.deletingLastPathComponent(), withIntermediateDirectories: true
-            )
-            // Written to a temporary file and moved over the old one, so a crash leaves one or the other.
-            try Data(text.utf8).write(to: url, options: .atomic)
+            try write()
         } catch {
             AppLog.w("Settings", "settings not saved: \(error.localizedDescription)")
         }

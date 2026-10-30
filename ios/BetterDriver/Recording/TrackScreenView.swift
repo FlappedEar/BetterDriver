@@ -4,12 +4,18 @@ import UIKit
 /// The in-car track screen on the iPhone (FBBD-332): the Android layout (UI-10 A with the tile row of
 /// UI-120 A) over the full landscape width, the notch over the left edge (UI-283 B). Status strip,
 /// delta left and lap times right, the coach line, then one row of six tiles, which take the coach
-/// line's place when the coach is off (UI-142 B). A 3 s hold anywhere stops the session (UI-16).
+/// line's place when the coach is off (UI-142 B). A swipe goes to the second screen and back (UI-121);
+/// a 3 s hold anywhere stops the session (UI-16).
 struct TrackScreenView: View {
     let model: TrackScreenModel?
     let onStop: () -> Void
 
     @State private var holdStart: Date?
+    /// The screen stays until a swipe back; the next session opens on the main one (UI-122).
+    @State private var page = 0
+
+    /// A swipe this far across, more across than down, changes the screen.
+    private static let swipeDistance: CGFloat = 60
 
     static let holdSeconds = 3.0
 
@@ -17,7 +23,7 @@ struct TrackScreenView: View {
         ZStack {
             TrackColors.background
             if let model {
-                TrackScreenContent(model: model)
+                TrackScreenContent(model: model, page: min(page, model.pages - 1))
             } else {
                 Text("Starting recording")
                     .font(TrackFonts.text(18))
@@ -37,6 +43,16 @@ struct TrackScreenView: View {
         } onPressingChanged: { pressing in
             holdStart = pressing ? Date() : nil
         }
+        // A swipe moves more than the hold allows, so it never counts as one (HoldToStop's onSwipe).
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 30).onEnded { drag in
+                let across = drag.translation.width
+                guard abs(across) > Self.swipeDistance, abs(across) > abs(drag.translation.height) else { return }
+                let pages = model?.pages ?? 1
+                page = min(max(page + (across < 0 ? 1 : -1), 0), pages - 1)
+                AppLog.i("Recording", "track screen page=\(page)")
+            }
+        )
         .statusBarHidden(true)
         .persistentSystemOverlays(.hidden)
         .accessibilityIdentifier("trackScreen")
@@ -52,10 +68,13 @@ struct TrackScreenView: View {
 }
 
 /// What the track screen draws (UI-10 A): status strip, delta and lap times, the coach line, the tiles.
-/// Settings › Track screen draws it too, scaled, with [onTapTile] for a tile's list (FBBD-345).
+/// [page] 1 is the second screen: the status strip, the G radar and three rows of tiles, the coach line
+/// (UI-121 B, UI-240 A). Settings › Track screen draws it too, scaled, with [onTapTile] for a tile's
+/// list (FBBD-345), given the page and the slot.
 struct TrackScreenContent: View {
     let model: TrackScreenModel
-    var onTapTile: ((Int) -> Void)?
+    var page = 0
+    var onTapTile: ((Int, Int) -> Void)?
 
     private static let gap: CGFloat = 6
     private static let topHeight: CGFloat = 30
@@ -65,7 +84,21 @@ struct TrackScreenContent: View {
 
     var body: some View {
         VStack(spacing: Self.gap) {
-            TopStrip(model: model).frame(height: Self.topHeight)
+            TopStrip(model: model, page: page).frame(height: Self.topHeight)
+            if page == 1 {
+                secondPage
+            } else {
+                mainPage
+            }
+        }
+        .padding(Self.gap)
+    }
+
+    private var mainTap: ((Int) -> Void)? { onTapTile.map { tap in { tap(0, $0) } } }
+
+    /// Delta and lap times, the coach line, then one row of six tiles (UI-120 A).
+    @ViewBuilder
+    private var mainPage: some View {
             GeometryReader { geo in
                 HStack(spacing: Self.gap) {
                     DeltaView(seconds: model.deltaSeconds)
@@ -73,16 +106,46 @@ struct TrackScreenContent: View {
                     LapTimesView(model: model)
                 }
             }
+            let slots = Array(model.tiles.indices)
             if let coach = model.coach {
                 CoachLineView(coach: coach).frame(height: Self.coachHeight)
-                TileRow(tiles: model.tiles, valueSize: 34, onTap: onTapTile).frame(height: Self.panelHeight)
+                TileRow(tiles: model.tiles, slots: slots, valueSize: 34, onTap: mainTap).frame(height: Self.panelHeight)
             } else {
                 // Without the coach line the tiles grow into its place (UI-142 B).
-                TileRow(tiles: model.tiles, valueSize: 50, onTap: onTapTile)
+                TileRow(tiles: model.tiles, slots: slots, valueSize: 50, onTap: mainTap)
                     .frame(height: Self.panelHeight + Self.coachHeight + Self.gap)
             }
+    }
+
+    /// The second screen: the status strip and the coach line stay, the line only when the coach speaks
+    /// (UI-142 B); the tiles take the rest (UI-121 B). With the G radar (UI-240 A) it is a square on the
+    /// left and the first nine tiles fill the rest, three rows of three.
+    @ViewBuilder
+    private var secondPage: some View {
+        let tiles = model.secondShown
+        let rows = TrackScreenModel.shownRows(
+            tiles, columns: model.secondShownColumns, rows: TrackScreenModel.secondRows, editing: model.editable
+        )
+        let tap: ((Int) -> Void)? = onTapTile.map { f in { f(1, $0) } }
+        HStack(spacing: Self.gap) {
+            if model.radarOn {
+                GRadarView(radar: model.radar).aspectRatio(1, contentMode: .fit)
+            }
+            if rows.isEmpty {
+                Spacer(minLength: 0)
+            } else {
+                VStack(spacing: Self.gap) {
+                    ForEach(rows, id: \.self) { row in
+                        TileRow(tiles: tiles, slots: row, valueSize: 46, onTap: tap)
+                    }
+                }
+                .accessibilityIdentifier("secondTiles")
+            }
         }
-        .padding(Self.gap)
+        .frame(maxHeight: .infinity)
+        if let coach = model.coach {
+            CoachLineView(coach: coach).frame(height: Self.coachHeight)
+        }
     }
 }
 
@@ -129,6 +192,7 @@ extension View {
 /// The status strip (UI-141 B), or in its place the one alert (UI-08), with the recording clock.
 private struct TopStrip: View {
     let model: TrackScreenModel
+    var page = 0
 
     var body: some View {
         if let alert = model.alert {
@@ -169,6 +233,17 @@ private struct TopStrip: View {
                     Dot(color: TrackColors.loss)
                     TrackLabel(text: "REC", size: 13)
                     Text(model.recordingTime).font(TrackFonts.number(15, .semibold)).foregroundStyle(TrackColors.text)
+                }
+                // Which screen is on (UI-122 A): the lit dot, the other there but plainly not lit.
+                if model.pages > 1 {
+                    HStack(spacing: 5) {
+                        ForEach(0..<model.pages, id: \.self) { i in
+                            Dot(color: i == page ? TrackColors.text : TrackColors.textDim.opacity(0.35))
+                        }
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("Screen \(page + 1) of \(model.pages)")
+                    .accessibilityIdentifier("trackPage\(page + 1)")
                 }
             }
             .padding(.horizontal, 8)
@@ -283,17 +358,20 @@ private struct CoachLineView: View {
     }
 }
 
-/// One row of tiles (UI-120 A); an empty slot is a dashed outline (UI-125 B). Values are fitted to
-/// the row, at most [valueSize]: 34 under the coach line, 50 without it (UI-142 B).
+/// One row of tiles (UI-120 A): [slots] of [tiles], so a slot keeps its number for a tap; an empty
+/// slot is a dashed outline (UI-125 B). Values are fitted to the row, at most [valueSize]: 34 under the
+/// coach line, 50 without it (UI-142 B), 46 on the second screen.
 private struct TileRow: View {
     let tiles: [TrackScreenModel.Tile?]
+    let slots: [Int]
     let valueSize: CGFloat
     /// A tap on a slot, in Settings › Track screen only (FBBD-345).
     var onTap: ((Int) -> Void)?
 
     var body: some View {
         HStack(spacing: 6) {
-            ForEach(Array(tiles.enumerated()), id: \.offset) { i, tile in
+            ForEach(slots, id: \.self) { i in
+                let tile = tiles[i]
                 let slot = Group {
                     if let tile {
                         TileView(tile: tile, valueSize: valueSize)

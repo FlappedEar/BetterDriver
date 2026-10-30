@@ -7,11 +7,14 @@ import com.flappedear.betterdriver.coach.pedalChannelId
 import com.flappedear.betterdriver.coach.rpmChannelId
 import com.flappedear.betterdriver.coach.steeringChannelId
 import com.flappedear.betterdriver.core.ble.RaceBoxChannels
+import com.flappedear.betterdriver.core.ble.RaceBoxIds
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.PhoneImuChannels
 import com.flappedear.betterdriver.recorder.Recorder
 import com.flappedear.betterdriver.recorder.RecorderConfig
+import com.flappedear.betterdriver.recorder.RecorderEvent
+import com.flappedear.betterdriver.recorder.RecorderListener
 import com.flappedear.betterdriver.recorder.RecorderStatus
 import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.SampleSet
@@ -20,6 +23,10 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
 import com.flappedear.betterdriver.recorder.live.LiveTracker
+import com.flappedear.betterdriver.recorder.log.FrameStretch
+import com.flappedear.betterdriver.recorder.log.GnssSecondLog
+import com.flappedear.betterdriver.recorder.log.HeartRateLog
+import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.circuits.CircuitListException
@@ -31,16 +38,11 @@ import com.flappedear.betterdriver.timing.live.placeName
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackEvent
-import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.detectTrack
+import com.flappedear.betterdriver.timing.track.iosTrackStore
 import kotlin.concurrent.Volatile
-import kotlinx.cinterop.BetaInteropApi
-import kotlinx.cinterop.ExperimentalForeignApi
-import platform.Foundation.NSFileManager
 import platform.Foundation.NSRecursiveLock
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.stringWithContentsOfFile
 
 private const val MaxErrorText = 500
 
@@ -50,12 +52,16 @@ private const val MaxErrorText = 500
  * SessionTiming). The links (RaceBox, phone GPS) push into it as a [SampleSink] from their own
  * queues; one lock keeps the live state consistent, and a failure there is logged in the session
  * and never stops the recording (FBBD-69). The live coach rides on it as on Android's recorder (FBBD-333).
+ * The continuous log gets the recording's start, events, GNSS second by second, heart rate 10 s at a
+ * time and its stop from the same shared listeners as on Android (FBBD-356), so one set of checks
+ * reads both apps' logs.
  */
 @Suppress("TooManyFunctions") // The recording's one Kotlin entry for the app: samples, screen, coach, stop.
 class LiveSession private constructor(
     private val recording: Recording,
     private val tracker: LiveTracker,
     private val timing: SessionTiming,
+    private val logs: List<RecorderListener>,
 ) : SampleSink {
     private val lock = NSRecursiveLock()
     private var liveFailed = false
@@ -75,6 +81,9 @@ class LiveSession private constructor(
 
     /** Reads each fix with the last pedal, wheel and engine speed, as Android's CoachLink; under the lock. */
     private var coachReader = CoachFixReader(null)
+
+    /** The track screen's frames (FBBD-376), from the main thread only. */
+    private val frames = FrameStretch()
 
     val id: String get() = recording.id
 
@@ -112,6 +121,7 @@ class LiveSession private constructor(
     override fun submit(set: SampleSet) {
         recording.submit(set)
         live {
+            logs.forEach { it.onSamples(set) }
             tracker.onSamples(set)
             timing.onSamples(set)
             // Read before the coach starts, so the pedal value is there for its first fix.
@@ -124,8 +134,9 @@ class LiveSession private constructor(
      * Starts the live coach (FBBD-333), as the Android recorder binds its coach when the coach is on:
      * it coaches at a saved track with laps, from the sessions in [sessionsDir] and the references it
      * keeps in [referencesDir], aimed at the line plans the review keeps in [linePlansDir], and says its
-     * cues with [speaker]. Its events go into this recording at their own times.
-     * [audioDelayFromPhone]: [settings]' delay is the output latency iOS reported.
+     * cues with [speaker]. Its events go into this recording at their own times. [settings] are as set;
+     * the cues are timed for [outputDelayMillis], the latency iOS reports for [output] now (0 when it
+     * reports none, so the set delay is used).
      */
     @Suppress("LongParameterList") // Where the coach's files are, and how it speaks.
     fun startCoach(
@@ -133,23 +144,48 @@ class LiveSession private constructor(
         referencesDir: String,
         linePlansDir: String,
         settings: CoachSettings,
-        audioDelayFromPhone: Boolean,
+        outputDelayMillis: Int,
+        output: String,
         speaker: CoachSpeaker,
     ) {
         val c = LiveCoach(
-            recording.id, sessionsDir, referencesDir, linePlansDir, settings, audioDelayFromPhone, speaker,
+            recording.id, sessionsDir, referencesDir, linePlansDir, settings, outputDelayMillis, output, speaker,
             recording::nowMicros,
-        ) { t, kind, text -> recording.eventAt(t, kind, text) }
+        ) { t, kind, text -> eventAt(t, kind, text) }
         guarded { if (coach == null) coach = c }
+    }
+
+    /**
+     * The audio output changed mid-session to [output] (FBBD-354): the coach's cues from now on allow for
+     * [millis], which iOS reported for it when [measured]; nothing without a coach.
+     */
+    fun audioDelay(millis: Int, measured: Boolean, output: String) {
+        guarded { coach }?.audioDelay(millis, measured, output)
     }
 
     /** Waits for the coach's queued work, for tests. */
     internal fun awaitCoach() = guarded { coach }?.awaitIdle()
 
-    override fun event(kind: String, text: String) = recording.event(kind, text)
+    override fun event(kind: String, text: String) = eventAt(recording.nowMicros(), kind, text)
+
+    /**
+     * One frame of the track screen (FBBD-376), as Android's JankStats reports one: when it started and
+     * how long it took on a nanosecond clock, and whether it was janky. Every 30 s the stretch is logged
+     * as the session's [EventKinds.UI_FRAMES] event, as on Android, and its text is returned for the app
+     * log; null otherwise. Main thread.
+     */
+    fun frame(startNanos: Long, durationNanos: Long, jank: Boolean): String? =
+        frames.add(startNanos, durationNanos, jank)?.text?.also { recording.event(EventKinds.UI_FRAMES, it) }
+
+    /** Logs the frames since the last stretch, as [frame] does, when the screen stops counting; main thread. */
+    fun flushFrames(): String? = frames.flush()?.text?.also { recording.event(EventKinds.UI_FRAMES, it) }
 
     /** An event stamped by its source at [tMicros] on the session clock, such as a camera's (PhoneVideoLog). */
-    internal fun eventAt(tMicros: Long, kind: String, text: String) = recording.eventAt(tMicros, kind, text)
+    internal fun eventAt(tMicros: Long, kind: String, text: String) {
+        recording.eventAt(tMicros, kind, text)
+        val event = RecorderEvent(tMicros, kind, text)
+        live { logs.forEach { it.onEvent(event) } }
+    }
 
     /** What the track screen shows now; call it on a timer, so a lost signal shows without new data. */
     fun screen(): LiveScreen {
@@ -173,11 +209,20 @@ class LiveSession private constructor(
     /** The recorder's warning that free space is low, for the track screen's alert. */
     private fun storageLow(bytes: Long) {
         storageLowBytes = bytes
+        // Only the log line, which keeps no state: the lock must not be taken here (see storageLowBytes).
+        val status = RecorderStatus.StorageLow(bytes)
+        logs.filterIsInstance<LoggingListener>().forEach { it.onStatus(status) }
     }
 
     /** Ends the recording cleanly; false if it had already ended. */
     fun stop(): Boolean = recording.stop().also { stopped ->
-        if (stopped) live { tracker.onStatus(RecorderStatus.Stopped(recording.endReason ?: "user")) }
+        if (stopped) {
+            val status = RecorderStatus.Stopped(recording.endReason ?: "user")
+            live {
+                tracker.onStatus(status)
+                logs.forEach { it.onStatus(status) }
+            }
+        }
     }
 
     private inline fun <T> guarded(body: () -> T): T {
@@ -241,14 +286,29 @@ class LiveSession private constructor(
                 accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { !receiverHasG },
             )
             // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12); each lap is logged
-            // with the predicted lap time shown before its line (FBBD-183), as on Android.
+            // at its crossing with the predicted lap time shown before its line (FBBD-183), and a
+            // provisional line placed where there is none is logged (FBBD-335), as on Android.
+            // The log's lines of this recording, as Android's recorder service adds them (logTo).
+            val receiver = info.devices.firstOrNull().orEmpty()
+            val logs = listOf(
+                LoggingListener(recording.id, receiver, info.startUtcMillis, recording::nowMicros),
+                GnssSecondLog(
+                    recording.id,
+                    info.startUtcMillis,
+                    skipsWithoutFix = receiver.startsWith(RaceBoxIds.MICRO_PREFIX),
+                ),
+                HeartRateLog(recording.id),
+            )
+            lateinit var session: LiveSession
             val timing = SessionTiming({ TrackFiles.read(tracksDir) }, circuits, onLap = { lap, predicted ->
-                recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
-            }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
+                session.eventAt(lap.endMicros, EventKinds.LAP_LINE, lapLineText(lap, predicted))
+            }, onProvisional = { made ->
+                session.event(TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
+            }) { found -> session.event(TrackEvent.KIND, TrackEvent.text(found)) }
             info.channels.forEach(tracker::onChannel)
-            return LiveSession(recording, tracker, timing).also { session ->
-                recording.onStorageLow = session::storageLow
-            }
+            session = LiveSession(recording, tracker, timing, logs)
+            recording.onStorageLow = session::storageLow
+            return session
         }
     }
 }
@@ -256,7 +316,7 @@ class LiveSession private constructor(
 /** One look at a running recording for the track screen. */
 data class LiveScreen(
     val live: LiveSnapshot,
-    /** Null until the car is at a saved track with a start/finish line. */
+    /** Null until the car is at a saved track with a start/finish line, or a provisional line is placed (FBBD-335). */
     val timing: LiveTimingState?,
     /** The saved track or directory circuit the car is at, once the first fix has named it. */
     val place: String?,
@@ -274,23 +334,17 @@ data class LiveScreen(
     val shownRateHz: Int get() = if (live.receiverRateHz > 0) live.receiverRateHz else live.fixRateHz
 }
 
-/** The saved tracks, one JSON file each (base/tracks/<id>.json), as TrackStore keeps them on Android. */
+/** The saved tracks (base/tracks), kept by the TrackStore Android uses (FBBD-359). */
 object TrackFiles {
-    private const val Suffix = ".json"
+    /** Every readable track in [dir]; a file that cannot be read is set aside, as on Android. */
+    fun read(dir: String): List<Track> = read(iosTrackStore(dir))
 
-    /** Every readable track in [dir]; a file that cannot be read is skipped and left as it is. */
-    @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-    @Suppress("TooGenericExceptionCaught") // Any damaged file is skipped, never a crash in Swift.
-    fun read(dir: String): List<Track> {
-        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null).orEmpty()
-        return names.filterIsInstance<String>().filter { it.endsWith(Suffix) }.mapNotNull { name ->
-            val text = NSString.stringWithContentsOfFile("$dir/$name", NSUTF8StringEncoding, null)
-            try {
-                text?.let(TrackJson::decode)
-            } catch (_: Exception) {
-                null
-            }
-        }.sortedBy { it.displayName.lowercase() }
+    /** Every readable track in [store]; none when the folder cannot be read, never a crash in Swift. */
+    @Suppress("TooGenericExceptionCaught")
+    internal fun read(store: TrackStore): List<Track> = try {
+        store.all()
+    } catch (_: Exception) {
+        emptyList()
     }
 
     /** The saved track or directory circuit at [lat], [lon], for the START button; null when none. */

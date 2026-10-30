@@ -115,7 +115,7 @@ class PolishPhrasesTest {
     fun `the language is stored with the other settings`() {
         val f = kotlin.io.path.createTempFile("coach", ".properties").toFile()
         try {
-            val store = CoachSettingsStore(f)
+            val store = CoachSettingsStore(f.path)
             assertEquals(CoachLanguage.English, store.read().language)
             store.write(CoachSettings(language = CoachLanguage.Polish))
             assertEquals(CoachLanguage.Polish, store.read().language)
