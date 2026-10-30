@@ -14,6 +14,7 @@ struct AppShell: View {
 
     var body: some View {
         if UIDevice.current.userInterfaceIdiom == .phone {
+            // parity-list:top-level
             TabView {
                 DriveView()
                     .tabItem { Label("Drive", systemImage: "steeringwheel") }
