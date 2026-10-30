@@ -249,14 +249,13 @@ internal fun pump(path: String, block: (ByteArray, Int) -> Unit) {
     val input = fopen(path, "rb") ?: throw ImportFileException("cannot open $path")
     val buffer = ByteArray(ReadBytes)
     try {
-        while (true) {
-            val n = buffer.usePinned { fread(it.addressOf(0), 1u, ReadBytes.toULong(), input) }.toInt()
+        // A short read is the end of the file, or an error ferror tells apart.
+        var n = ReadBytes
+        while (n == ReadBytes) {
+            n = buffer.usePinned { fread(it.addressOf(0), 1u, ReadBytes.toULong(), input) }.toInt()
             if (n > 0) block(buffer, n)
-            if (n < ReadBytes) {
-                if (ferror(input) != 0) throw ImportFileException("cannot read $path")
-                break
-            }
         }
+        if (ferror(input) != 0) throw ImportFileException("cannot read $path")
     } finally {
         fclose(input)
     }
