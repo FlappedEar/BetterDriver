@@ -29,7 +29,8 @@ final class VideoOrientationTests: XCTestCase {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("upright-\(UUID().uuidString).mp4")
         defer { try? FileManager.default.removeItem(at: url) }
         XCTAssertTrue(DataVideoDemo.write(url, seconds: 1, upright: true))
-        let source = try await XCTUnwrap(AVURLAsset(url: url).loadTracks(withMediaType: .video).first)
+        let tracks = try await AVURLAsset(url: url).loadTracks(withMediaType: .video)
+        let source = try XCTUnwrap(tracks.first)
         let tagged = try await source.load(.preferredTransform)
         XCTAssertEqual(tagged.b, 1, accuracy: 0.001)
 
