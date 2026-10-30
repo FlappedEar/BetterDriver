@@ -15,6 +15,9 @@ import com.flappedear.betterdriver.recorder.video.VideoFiles
 class PhoneVideoLog(private val session: LiveSession) {
     private val camera = CameraIds.PHONE
 
+    /** The session the files belong to. */
+    val sessionId: String get() = session.id
+
     /** The folder the camera writes its files to. */
     val videoDir: String get() = "${session.dir}/${VideoFiles.DIR}"
 

@@ -1,4 +1,5 @@
 import BetterDriverCore
+import Combine
 import SwiftUI
 import UIKit
 
@@ -12,6 +13,8 @@ struct ExportButton: View {
     var dataVideo: () -> Void = {}
 
     @State private var hasVideo = false
+    /// Counts the session changes, so [hasVideo] is read again after each.
+    @State private var videoCheck = 0
     @State private var running = false
     @State private var ready: ExportedFile?
     @State private var failure: String?
@@ -41,10 +44,15 @@ struct ExportButton: View {
         }
         .disabled(running)
         .accessibilityIdentifier("exportMenu")
-        .task(id: sessionId) {
+        .task(id: "\(sessionId)#\(videoCheck)") {
             let id = sessionId
-            hasVideo = await Task.detached { Exports.make().hasVideo(id: id) }.value
+            // Not while the phone camera is still finishing its MP4 (audit 30 Oct BD-02); read again
+            // when it is done, as the sessions change then.
+            hasVideo = await Task.detached {
+                !PhoneVideoFinishing.shared.busy(sessionId: id) && Exports.make().hasVideo(id: id)
+            }.value
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in videoCheck += 1 }
         .sheet(item: $ready) { file in
             SaveToFiles(url: file.url) { ready = nil }
         }
