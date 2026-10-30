@@ -6,10 +6,14 @@ import UIKit
 /// holds the equipment, cars, tracks and coach (FBBD-338). The iPad only reviews, so it has no Drive
 /// (Arek, 2026-10-30: "no recording on tablets, the rest for analysis stays").
 struct AppShell: View {
-    @StateObject private var recorder = RecordingController()
-    @StateObject private var settings = SettingsModel.shared
+    // Held, not observed: the recorder publishes the track screen 4 times a second, and observing it
+    // here rebuilt every tab with it, the session list's model included (FBBD-390). The tabs that show
+    // its state observe it themselves.
+    private let recorder = RecordingController.shared
+    private let settings = SettingsModel.shared
 
     var body: some View {
+        // parity-list:top-level
         TabView {
             if UIDevice.current.userInterfaceIdiom == .phone {
                 DriveView()

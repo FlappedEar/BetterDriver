@@ -3,7 +3,6 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.gopro.CameraDateTime
-import com.flappedear.betterdriver.gopro.GoProAck
 import com.flappedear.betterdriver.gopro.GoProClient
 import com.flappedear.betterdriver.gopro.GoProException
 import com.flappedear.betterdriver.gopro.GoProLink
@@ -199,8 +198,9 @@ data class PairedOpenGoPro(val model: GoProModel, val modelName: String)
 /**
  * The Open GoPro cameras of a session on the iPhone (FBBD-343), as Android's GoPros: each camera
  * turned on for the session starts recording when it starts and stops when it ends, and every
- * failure stays with that camera, never the recording. Acknowledgements go to the session's
- * events and the app log (FBBD-82), the recording note to `<session>/video/gopro-recordings.json`
+ * failure stays with that camera, never the recording. Acknowledgements of start and stop go to
+ * the session's events while it records and always to the app log (FBBD-82), the recording note
+ * (with the stop's time once the camera confirmed it) to `<session>/video/gopro-recordings.json`
  * for the download after the drive.
  */
 class OpenGoPros {
@@ -215,9 +215,9 @@ class OpenGoPros {
             val result = if (ack.ok) "ok" else "failed"
             val text = "camera=${goPro.sourceId} action=${ack.action} result=$result"
             logInfo(GoProTag, "$sessionId: $text")
-            if (ack.action == GoProAck.START && session.isRecording) {
-                session.eventAt(ack.sessionUs, EventKinds.GOPRO, text)
-            }
+            // START and STOP alike (audit 30 Oct BD-05). A STOP that answers after the session ended
+            // stays in the app log, and its time in the recording note (stopAck*, none = not confirmed).
+            if (session.isRecording) session.eventAt(ack.sessionUs, EventKinds.GOPRO, text)
         })
         running = running + camera
         scope.launch { camera.state.collect { logInfo(GoProTag, "${goPro.sourceId}: $it") } }

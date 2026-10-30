@@ -93,6 +93,13 @@ class LiveCoach internal constructor(
     /** Whether the recording's place has been handed over; the caller's lock is held. */
     private var placed = false
 
+    /**
+     * Whether the place is a saved track, the only place the coach has anything to say; the caller's lock
+     * is held. Elsewhere the fixes are not queued: 25 a second for a whole road drive did nothing but
+     * load the queue (FBBD-390).
+     */
+    private var atSavedTrack = false
+
     private val run: CoachRun = CoachRun(
         sessionId, settings, CoachFolders.under(linePlansDir.trimEnd('/').substringBeforeLast('/'), sessionsDir),
         IosCoachLibrary(sessionsDir, referencesDir), Voice(speaker), now,
@@ -123,9 +130,10 @@ class LiveCoach internal constructor(
         if (!placed && detection != null) {
             placed = true
             val saved = (detection as? TrackDetection.Saved)?.track
+            atSavedTrack = saved != null
             queued { run.start(saved) }
         }
-        if (fix != null && placed) queued { run.fix(fix) }
+        if (fix != null && atSavedTrack) queued { run.fix(fix) }
     }
 
     /**

@@ -33,6 +33,7 @@ import com.flappedear.betterdriver.shell.ShellIcons
 
 private data class TopLevelItem(val route: String, val label: String, val icon: ImageVector)
 
+// parity-list:top-level
 private val TopLevelItems = listOf(
     TopLevelItem(Routes.Drive, "Drive", ShellIcons.Drive),
     TopLevelItem(Routes.Sessions, "Sessions", ShellIcons.Sessions),

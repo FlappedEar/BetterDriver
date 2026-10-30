@@ -24,6 +24,17 @@ SwiftUI view struct named `...Page`, `View`, `Tab`, `Sheet` or `Screen`, `log-an
 a log tag written only by that platform's code. Log tags written from `commonMain` are shared and need
 no key. `python3 tools/parity/check.py --keys` lists them.
 
+Screens look and read the same on both platforms, Android being the reference (FBBD-394): the same
+tabs, sections and actions, with the same names, in the same order. Each such ordered list is marked
+in the code of both apps with a comment `// parity-list:<name>` on the line right above its
+declaration (an enum, a `listOf`, a `TabView`); the list is the first string literal of each line at
+the block's first level (an `if` or `else` block in it counts as that level, so an item shown on one
+device only is in the list). The "Screens" table below gives each list in the Android order, and CI
+fails when any marked list differs from it, when a marker has no row, or when a row's list is not
+marked in the Android code, or in the iOS code while the row's iOS cell says ✅ (a gap mark with a
+FBBD issue lets an iOS screen that still differs go unmarked until it is changed).
+`python3 tools/parity/check.py --lists` prints what it reads.
+
 ## Features
 | Area | Feature | Android | iOS | Code | Jira | Keys |
 |---|---|---|---|---|---|---|
@@ -46,7 +57,7 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Car data | Tyre pressures and temperatures (FlappedEar TPMS bridge) | ⚪ planned | ⚪ planned | — | FBBD-224 |  |
 | Heart rate | BLE heart-rate strap in the session; shown in review | ✅ 1.2.0 | ✅ TF 1.16+ | Session logic shared; link twice | FBBD-119, FBBD-225 |  |
 | Heart rate | Strap link lines in the debug log (found, connected, streaming, dropped, off) | ✅ 1.5.2 | 🟡 10 s heart-rate lines shared (#422); link lines (found, connected, dropped) own Swift text | HeartRateLog shared (#422); link lines twice until FBBD-358 | FBBD-279, FBBD-352, FBBD-356 | `log-ios:HeartRate` |
-| Video | Phone camera video tied to session time; 4K/1080p/720p at 60/30 | ✅ ≤0.3.1, 1.2.0 | ✅ no 2.7K | Platform (CameraX / AVFoundation) | FBBD-21, FBBD-88, FBBD-265 | `log-android:CameraService` `log-android:PhoneCamera` `log-android:VideoCaps` `log-android:VideoModes` `log-android:WideRecorder` `log-android:Thermal` `ios-screen:VideoModeSheet` |
+| Video | Phone camera video tied to session time; 4K/1080p/720p at 60/30 | ✅ ≤0.3.1, 1.2.0 | ✅ no 2.7K | Platform (CameraX / AVFoundation) | FBBD-21, FBBD-88, FBBD-265 | `log-android:CameraService` `log-android:PhoneCamera` `log-ios:PhoneCamera` `log-android:VideoCaps` `log-android:VideoModes` `log-android:WideRecorder` `log-android:Thermal` `ios-screen:VideoModeSheet` |
 | Video | GoPro files added and synced by GoPro GPS; other action cameras by clock | ✅ 0.3.14 | ✅ TF 1393 | core-ios GoPro import (iOS copy of Android logic) | FBBD-22, FBBD-120, FBBD-343 | `log-android:ClipIndexer` `log-android:GoProImport` |
 | Video | GoPro Bluetooth start/stop with the session | ✅ | ✅ TF 1400 | Shared OpenGoProCamera; BLE shim | FBBD-107, FBBD-343 | `log-android:GoPros` `log-ios:GoPro` |
 | Video | GoPro Wi-Fi download | ✅ | ⚪ planned | Android only | FBBD-343 |  |
@@ -111,3 +122,9 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Diagnostics | Log lines: coach cues, audio route, output delay | ✅ | ✅ TF 1425, same tags and text as Android | Coach lines shared (CoachRun, FBBD-357); audio route and output delay lines per platform | FBBD-354, FBBD-357 | `log-android:CoachService` `log-android:CoachLink` `log-ios:CoachService` |
 | Look | Pitwall look for the whole app | ⚪ planned parked by Arek | ⚪ planned parked | — | FBBD-317 |  |
 | Look | App shell: bottom bar Drive, Sessions, Car, Settings | ✅ | ✅ | Twice (Compose / SwiftUI) |  | `ios-screen:RootView` |
+
+## Screens
+| Screen | List | Order (Android) | iOS | Jira |
+|---|---|---|---|---|
+| Top-level navigation (phone bottom bar, tablet rail; tablets have no Drive) | `list:top-level` | Drive, Sessions, Car, Settings | ✅ one tab bar on iPhone and iPad; iPad without Drive, as Android tablets | FBBD-394 |
+| Session tabs | `list:session-tabs` | Summary, Compare, Map, Laps, Corners, Car | ✅ | FBBD-110 |

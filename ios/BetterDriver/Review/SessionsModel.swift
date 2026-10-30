@@ -55,31 +55,28 @@ final class SessionsModel {
     /// What the last adding of camera files to a session could not add, per session.
     private(set) var goProProblems: [String: [String]] = [:]
 
-    /// The app's start work is done: done once a run. SwiftUI may make a SessionsModel more than once
-    /// (RootView's @State runs its initial value each time the view is made again), and a second
-    /// start would clear staging in use, or with -freshInstall the sessions the list shows.
-    private static var started = false
+    /// The app's one session list: RootView takes it, so the start work below and the list's
+    /// observers exist once. A model made per RootView ran reload() each time SwiftUI made the view
+    /// again, 4 times a second while recording (FBBD-390).
+    static let shared = SessionsModel()
 
-    init() {
-        if !Self.started {
-            Self.started = true
-            ReviewBridge.clearStaging()
-            ReviewBridge.prepareForUITests()
-            // A session cut off by a kill or crash gets its recovery record and duration (audit BD-05).
-            DispatchQueue.global(qos: .utility).async {
-                let lines = ReviewBridge.recoverInterrupted()
-                for line in lines { AppLog.i("Recovery", line) }
-                guard !lines.isEmpty else { return }
-                DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
-            }
-            #if DEBUG
-            // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
-            if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),
-               !SettingsModel.shared.setup.equipment.contains(where: { $0.modelName == ModelName.goProFiles }) {
-                SettingsModel.shared.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: .hero8Black, id: "demo-gopro") }
-            }
-            #endif
+    private init() {
+        ReviewBridge.clearStaging()
+        ReviewBridge.prepareForUITests()
+        // A session cut off by a kill or crash gets its recovery record and duration (audit BD-05).
+        DispatchQueue.global(qos: .utility).async {
+            let lines = ReviewBridge.recoverInterrupted()
+            for line in lines { AppLog.i("Recovery", line) }
+            guard !lines.isEmpty else { return }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
         }
+        #if DEBUG
+        // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
+        if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),
+           !SettingsModel.shared.setup.equipment.contains(where: { $0.modelName == ModelName.goProFiles }) {
+            SettingsModel.shared.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: .hero8Black, id: "demo-gopro") }
+        }
+        #endif
         reload()
         // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
         NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in

@@ -52,6 +52,22 @@ internal class WriterBacklog(private val budgetKib: Int, private val waitMs: Lon
     /** The writer is done with a copy of [capacity] bytes that [reserve] made room for. */
     fun release(capacity: Int) = room.release(kibOf(capacity))
 
+    /**
+     * Runs the writer's [write] of a copy of [capacity] bytes, and gives its room back whatever
+     * happens (audit 30 Oct BD-04): until now an exception in the write kept the room taken for good,
+     * so the encoder later reported a stalled writer instead of the real failure, which went to [failed].
+     */
+    @Suppress("TooGenericExceptionCaught") // Any failure of the write is reported, never lost with the thread.
+    fun written(capacity: Int, failed: (Exception) -> Unit, write: () -> Unit) {
+        try {
+            write()
+        } catch (e: Exception) {
+            failed(e)
+        } finally {
+            release(capacity)
+        }
+    }
+
     /** Whole KiB, at least one; a copy bigger than the whole budget takes all of it. */
     private fun kibOf(bytes: Int) = ((bytes + BytesPerKib - 1) / BytesPerKib).coerceIn(1, budgetKib)
 

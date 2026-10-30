@@ -120,6 +120,19 @@ class BundleUnpackerTest {
         val newer = good.copyOf().also { it[BundleFormat.SessionMagic.size + 3] = 2 }
         assertTrue(assertFailsWith<BundleDamagedException> { unpack(newer) }.message!!.contains("newer"))
     }
+
+    /** Audit 30 Oct BD-06: two valid entries with the same path, or too many files, make a damaged bundle. */
+    @Test
+    fun `refuses a path that comes twice and too many files`() {
+        val twice = bundleOf(*files, "session/video/clip-0.mp4" to ByteArray(10))
+        val e = assertFailsWith<BundleDamagedException> { unpack(twice) }
+        assertEquals("session/video/clip-0.mp4 is in the bundle twice", e.message)
+        val many = (0..BundleFormat.MaxFiles).map { "f$it" to ByteArray(0) }.toTypedArray()
+        val tooMany = assertFailsWith<BundleDamagedException> { unpack(bundleOf(*many)) }
+        assertEquals("more than ${BundleFormat.MaxFiles} files", tooMany.message)
+        val most = many.dropLast(1).toTypedArray()
+        assertEquals(BundleFormat.MaxFiles, (unpack(bundleOf(*most)) as Collect).files.size)
+    }
 }
 
 class SessionBundleReceiverTest {

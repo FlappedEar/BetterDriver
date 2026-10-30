@@ -18,6 +18,12 @@ object BundleFormat {
     const val MaxPathChars = 512
 
     /**
+     * Most files one bundle or backup may hold (audit 30 Oct BD-06): far above a backup of hundreds of
+     * sessions, and it bounds the set of paths the readers keep to refuse a path seen twice.
+     */
+    const val MaxFiles = 200_000
+
+    /**
      * Whether a file named [name] in a session folder goes into a bundle: lock, temporary and
      * partial files, and files set aside as unreadable, stay behind.
      */

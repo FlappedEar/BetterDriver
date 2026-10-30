@@ -104,9 +104,11 @@ internal class BundleReader(input: InputStream, private val magic: ByteArray = B
         if (version > BundleFile.Version) throw BundleFormatException("made by a newer app (version $version)")
         if (version < 1) throw BundleFormatException("bad version $version")
         var files = 0
+        // A path may come only once, in a bounded number of files (audit 30 Oct BD-06).
+        val seen = HashSet<String>()
         var tag = data.readByte().toInt()
         while (tag == BundleFile.FileTag) {
-            readFile(onFile)
+            readFile(seen, onFile)
             files++
             tag = data.readByte().toInt()
         }
@@ -115,15 +117,21 @@ internal class BundleReader(input: InputStream, private val magic: ByteArray = B
         if (expected != files) throw BundleFormatException("bundle lists $expected files, holds $files")
     }
 
-    private fun readFile(onFile: (String, Long, InputStream) -> Unit) {
+    private fun readFile(seen: MutableSet<String>, onFile: (String, Long, InputStream) -> Unit) {
         val path = data.readUTF()
         BundleFile.checkPath(path)
+        checkNew(seen, path)
         val size = data.readLong()
         if (size < 0) throw BundleFormatException("bad size for $path")
         val contents = Bounded(data, size)
         onFile(path, size, contents)
         contents.skipRest()
         if (data.readInt() != contents.crc.value.toInt()) throw BundleFormatException("$path is damaged (CRC)")
+    }
+
+    private fun checkNew(seen: MutableSet<String>, path: String) {
+        if (!seen.add(path)) throw BundleFormatException("$path is in the bundle twice")
+        if (seen.size > BundleFormat.MaxFiles) throw BundleFormatException("more than ${BundleFormat.MaxFiles} files")
     }
 
     private fun kindOf(magic: ByteArray) = if (magic.contentEquals(BundleFile.Magic)) "bundle" else "backup"

@@ -5,7 +5,7 @@ import SwiftUI
 /// the screen in turn. Sessions arrive from Files, AirDrop or another app's Share sheet, or Import
 /// session in the list (UI-292 A).
 struct RootView: View {
-    @State private var model = SessionsModel()
+    @State private var model = SessionsModel.shared
     @State private var selection: String?
     @State private var columns: NavigationSplitViewVisibility = .all
     @Environment(\.horizontalSizeClass) private var sizeClass
