@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.log.LoadLine
 import com.flappedear.betterdriver.recorder.log.LogLine
-import java.util.Locale
 
 // How hard each of the app's processes worked while the session recorded (FBBD-281), from the
 // once-a-minute load lines every process logs. Shown for information on the phone; the CI replay drive
@@ -17,7 +17,7 @@ internal fun loadSection(lines: List<LogLine>): QualitySection? {
         .mapNotNull { line -> LoadLine.parse(line.message)?.let { line.process to it } }
         .groupBy({ it.first }, { it.second })
     if (byProcess.isEmpty()) return null
-    val metrics = byProcess.toSortedMap().map { (process, minutes) -> cpu(process, minutes) }
+    val metrics = byProcess.entries.sortedBy { it.key }.map { (process, minutes) -> cpu(process, minutes) }
     return QualitySection("App load", metrics)
 }
 
@@ -28,12 +28,9 @@ private fun cpu(process: String, minutes: List<LoadLine>): QualityMetric {
     val gc = minutes.sumOf { it.gcCount }
     val gcMs = minutes.sumOf { it.gcMillis }
     val alloc = minutes.sumOf { it.allocatedMb } * MillisPerMinute / wall
-    val how = String.format(
-        Locale.ROOT,
-        "mean of %d logged minutes, %% of one core; busiest minute %.1f %%; %d GC (%d ms); " +
-            "%.1f MB allocated a minute; up to %d MB heap, %d threads",
-        minutes.size, peak, gc, gcMs, alloc, minutes.maxOf { it.heapUsedMb }, minutes.maxOf { it.threads },
-    )
+    val how = "mean of ${minutes.size} logged minutes, % of one core; busiest minute ${fixed(peak, 1)} %; " +
+        "$gc GC ($gcMs ms); ${fixed(alloc, 1)} MB allocated a minute; " +
+        "up to ${minutes.maxOf { it.heapUsedMb }} MB heap, ${minutes.maxOf { it.threads }} threads"
     return info(loadCpuId(process), "CPU, $process process", mean, "%", Basis.MEASURED, how)
 }
 

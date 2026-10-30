@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 
@@ -107,8 +108,8 @@ private fun overlap(voiced: List<Voiced>, ends: List<RecorderEvent>): QualityMet
     // Which cues, so a FAIL can be told apart: one started early, or one cut off.
     val shown = overlaps.take(MaxOverlapsShown).joinToString { (a, b) ->
         val (endAt, how) = endOf.getValue(a.seq)
-        "cue ${a.seq} $how at ${"%.1f".format(endAt / MicrosPerSecond.toDouble())} s, " +
-            "cue ${b.seq} at ${"%.1f".format(b.tMicros / MicrosPerSecond.toDouble())} s"
+        "cue ${a.seq} $how at ${fixed(endAt / MicrosPerSecond.toDouble(), 1)} s, " +
+            "cue ${b.seq} at ${fixed(b.tMicros / MicrosPerSecond.toDouble(), 1)} s"
     }
     return judged(
         "coach.overlap", label, overlaps.size.toDouble(), "", overlaps.isEmpty(), Basis.MEASURED, OverlapCriterion,

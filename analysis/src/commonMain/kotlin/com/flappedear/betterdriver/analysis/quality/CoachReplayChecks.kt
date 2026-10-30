@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderEvent
 
@@ -158,7 +159,7 @@ private fun silentLaps(
     val silent = coached.filter { said[it.number] == 0 && (it.number !in quietLaps || it.number in atPace) }
         .map { it.number }
     val quietAtPace = coached.filter { it.number in quietLaps && it.number in atPace }
-        .joinToString { lap -> "${lap.number} (${"%.1f".format(lap.timeMillis / MillisPerSecond)} s, " +
+        .joinToString { lap -> "${lap.number} (${fixed(lap.timeMillis / MillisPerSecond, 1)} s, " +
             quiet.filter { it.lap == lap.number }.joinToString("/") { it.reason } + ")" }
     return judged(
         id, label, silent.size.toDouble(), "laps", silent.isEmpty(), Basis.MEASURED, criterion,

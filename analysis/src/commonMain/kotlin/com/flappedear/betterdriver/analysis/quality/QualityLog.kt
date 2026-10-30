@@ -1,6 +1,9 @@
 package com.flappedear.betterdriver.analysis.quality
 
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
+
+/** Decimals of a value in the log line, trailing zeros then dropped. */
+private const val ValueDecimals = 3
 
 /**
  * The report as lines of the drive's log, written when the session ends (FBBD-183): a summary, then
@@ -11,7 +14,7 @@ fun QualityReport.logLines(): List<String> {
     val summary = "summary pass=${count(Verdict.PASS)} fail=${count(Verdict.FAIL)} " +
         "not_measured=${count(Verdict.NOT_MEASURED)}"
     return listOf(summary) + metrics.map { m ->
-        val value = m.value?.let { String.format(Locale.ROOT, "%.3f", it).trimEnd('0').trimEnd('.') } ?: "-"
+        val value = m.value?.let { fixed(it, ValueDecimals).trimEnd('0').trimEnd('.') } ?: "-"
         val unit = m.unit.ifBlank { "-" }.replace(' ', '_')
         val keys = m.keys.joinToString(",").ifEmpty { "-" }
         "${m.id} ${m.verdict} value=$value unit=$unit keys=$keys"

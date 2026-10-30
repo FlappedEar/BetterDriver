@@ -1,8 +1,9 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.log.GnssSecond
-import java.util.Locale
+import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.sqrt
 
@@ -12,6 +13,7 @@ import kotlin.math.sqrt
 
 // Arek (2026-10-13): above 24 Hz is good, below 20 Hz would worry him. Missing messages are
 // judged on their own by the dropped-samples check.
+private const val DegreesPerHalfTurn = 180.0
 private const val MinRateHz = 24.0
 private const val MaxDroppedPercent = 0.5
 private const val MaxReconnectMicros = 5_000_000L
@@ -87,7 +89,7 @@ private fun rate(counts: List<Double>, skips: Long): QualityMetric {
     val hz = (counts.sum() + skips) / counts.size
     val counted = if (skips > 0) {
         ", with the $skips whole-second messages the RaceBox does not send with a fix counted " +
-            "(received: ${"%.2f".format(Locale.ROOT, received)} Hz)"
+            "(received: ${fixed(received, 2)} Hz)"
     } else {
         ""
     }
@@ -196,7 +198,7 @@ private fun spread(run: List<GnssSecond>): Double {
     val n = run.sumOf { it.fixes }.toDouble()
     val lat = run.sumOf { it.lat!! * it.fixes } / n
     val lon = run.sumOf { it.lon!! * it.fixes } / n
-    val kx = MetersPerDegree * cos(Math.toRadians(lat))
+    val kx = MetersPerDegree * cos(lat * PI / DegreesPerHalfTurn)
     val total = run.sumOf { g ->
         val dx = (g.lon!! - lon) * kx
         val dy = (g.lat!! - lat) * MetersPerDegree

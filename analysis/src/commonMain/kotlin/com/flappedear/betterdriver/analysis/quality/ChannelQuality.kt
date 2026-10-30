@@ -2,13 +2,14 @@ package com.flappedear.betterdriver.analysis.quality
 
 import com.flappedear.betterdriver.analysis.data.provenanceText
 import com.flappedear.betterdriver.analysis.recorded.HorizontalAccuracy
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.store.SessionData
-import java.util.Locale
 import kotlin.math.ceil
+import kotlin.math.roundToLong
 
 // The channels part of the session validation report (FBBD-174): where each channel's values come
 // from, and how far they can be trusted: its sample rate, its longest gap (the oldest a held value
@@ -51,7 +52,7 @@ internal fun channelsSection(data: SessionData): QualitySection {
         channelMetric(def, times[def.id] ?: ChannelTimes(), accuracy.takeIf { def.id in PositionIds })
     }
     val notes = data.info.imported?.let { o ->
-        val rate = o.sampleRateHz?.let { String.format(Locale.ROOT, ", %.1f Hz", it) }.orEmpty()
+        val rate = o.sampleRateHz?.let { ", ${fixed(it, 1)} Hz" }.orEmpty()
         val maker = if (o.receiver.isEmpty()) "" else ", made by ${o.receiver}"
         listOf(QualityNote(0, "Imported from ${o.format} file ${o.fileName}$maker$rate"))
     }.orEmpty()
@@ -99,7 +100,7 @@ internal class Centimetres {
     private var total = 0
 
     fun add(metres: Double) {
-        counts[Math.round(metres * CmPerMetre).coerceIn(0L, MaxAccuracyCm.toLong()).toInt()]++
+        counts[(metres * CmPerMetre).roundToLong().coerceIn(0L, MaxAccuracyCm.toLong()).toInt()]++
         total++
     }
 
@@ -123,9 +124,9 @@ private fun channelMetric(def: ChannelDef, t: ChannelTimes, accuracyMeters: Doub
         if (t.count < 2) {
             append("; ").append(t.count).append(if (t.count == 1) " sample" else " samples")
         } else {
-            append(String.format(Locale.ROOT, "; longest gap %.2f s", seconds(t.maxGap)))
+            append("; longest gap ${fixed(seconds(t.maxGap), 2)} s")
         }
-        accuracyMeters?.let { append(String.format(Locale.ROOT, "; median horizontal accuracy %.2f m", it)) }
+        accuracyMeters?.let { append("; median horizontal accuracy ${fixed(it, 2)} m") }
     }
     return info("channel.${def.id}", def.name, t.rateHz, "Hz", basis, how)
 }

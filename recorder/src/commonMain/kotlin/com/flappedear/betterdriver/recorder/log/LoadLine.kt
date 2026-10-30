@@ -1,7 +1,5 @@
 package com.flappedear.betterdriver.recorder.log
 
-import java.util.Locale
-
 /**
  * What one process had used up to one moment (FBBD-281): its CPU time, its garbage collections and
  * the bytes it allocated since it started, and its heap and threads then. Two samples a minute
@@ -38,11 +36,9 @@ data class LoadLine(
     val heapMaxMb: Long,
     val threads: Int,
 ) {
-    fun text(): String = String.format(
-        Locale.ROOT,
-        "$Prefix cpu_pct=%.1f cpu_ms=%d wall_ms=%d gc=%d gc_ms=%d alloc_mb=%.1f heap_mb=%d/%d threads=%d",
-        cpuPercent, cpuMillis, wallMillis, gcCount, gcMillis, allocatedMb, heapUsedMb, heapMaxMb, threads,
-    )
+    fun text(): String =
+        "$Prefix cpu_pct=${fixedDecimals(cpuPercent, 1)} cpu_ms=$cpuMillis wall_ms=$wallMillis gc=$gcCount " +
+            "gc_ms=$gcMillis alloc_mb=${fixedDecimals(allocatedMb, 1)} heap_mb=$heapUsedMb/$heapMaxMb threads=$threads"
 
     companion object {
         /** The log tag of these lines. */
