@@ -12,7 +12,7 @@ import com.flappedear.betterdriver.feature.analysis.firstCornerRows
 
 // "Coach this next time" (FBBD-363, Android's FBBD-148) for the iPad and iPhone: a flag on a corner
 // in Where time goes picks it for the spoken coach's next session at the track. The picks are kept
-// in the shared CoachPicksStore beside the line plans (coach/picks), where the shared CoachRun reads them at the session start.
+// in the shared CoachPicksStore (coach/picks), where the shared CoachRun reads them at the start.
 
 /** Where the picked corners (CoachPicksStore, shared with Android) are kept under the app's folder [base]. */
 internal fun coachPicksDir(base: String) = "$base/coach/picks"
