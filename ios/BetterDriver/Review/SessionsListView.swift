@@ -42,6 +42,7 @@ struct SessionsListView: View {
                             session: session,
                             cameras: model.cameraLines[session.id] ?? [],
                             problems: model.goProProblems[session.id] ?? [],
+                            facts: model.rowFacts[session.id],
                             actions: AnyView(rowActions(session))
                         )
                             .tag(session.id)
@@ -198,12 +199,27 @@ private struct SessionRowView: View {
     let session: SessionRow
     let cameras: [SessionCameraLine]
     let problems: [String]
+    /// Its detail line and best lap, once read.
+    let facts: SessionRowFacts?
     /// The row's ⋮ menu, as Android's session card.
     let actions: AnyView
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            times
+            // ⋮ beside the row, not inside it: the row is one element to tap, its menu another.
+            HStack(spacing: 4) {
+                times
+                Menu { actions } label: {
+                    Image(systemName: "ellipsis")
+                        .rotationEffect(.degrees(90))
+                        .frame(width: 32, height: 32)
+                        .contentShape(Rectangle())
+                }
+                .foregroundStyle(Palette.onSurfaceVariant)
+                .buttonStyle(.borderless)
+                .accessibilityLabel("Session actions")
+                .accessibilityIdentifier("sessionActions")
+            }
             // Android's GoPro lines (UI-31, UI-32): green when lined up by GPS, amber otherwise.
             ForEach(cameras, id: \.sourceId) { line in
                 HStack(spacing: 8) {
@@ -231,26 +247,27 @@ private struct SessionRowView: View {
     }
 
     private var times: some View {
-        HStack {
-            Text(session.start.formatted(date: .omitted, time: .shortened))
-                .font(.body.weight(.semibold).monospacedDigit())
-                .foregroundStyle(Palette.onBackground)
-            Spacer()
-            if let d = session.durationSeconds {
-                Text("\(Int(d / 60)) min")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(Palette.onSurfaceVariant)
+        // Android's row (UI-139 C): "14:02 · Silesia Ring", the car, length and what was recorded under
+        // it, the best lap beside it, then ⋮. The words come from the shared core.
+        HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text([session.start.formatted(date: .omitted, time: .shortened), session.track]
+                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Palette.onBackground)
+                let detail = facts?.detail ?? session.durationSeconds.map { "\(Int($0 / 60)) min" } ?? ""
+                if !detail.isEmpty {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                }
             }
-            Menu { actions } label: {
-                Image(systemName: "ellipsis")
-                    .rotationEffect(.degrees(90))
-                    .frame(width: 32, height: 32)
-                    .contentShape(Rectangle())
+            Spacer(minLength: 4)
+            if let best = facts?.best {
+                Text(best)
+                    .font(.body.weight(.semibold).monospacedDigit())
+                    .foregroundStyle(Palette.best)
             }
-            .foregroundStyle(Palette.onSurfaceVariant)
-            .buttonStyle(.borderless)
-            .accessibilityLabel("Session actions")
-            .accessibilityIdentifier("sessionActions")
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)

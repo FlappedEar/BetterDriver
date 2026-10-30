@@ -38,6 +38,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.review.sessionRowDetail
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.NumberFont
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -49,7 +50,6 @@ import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recording.DeleteState
 import com.flappedear.betterdriver.recording.ExportFormat
 import com.flappedear.betterdriver.recording.ExportState
-import com.flappedear.betterdriver.recording.formatDuration
 import com.flappedear.betterdriver.sharing.TransferState
 import java.io.File
 import java.time.Instant
@@ -232,15 +232,9 @@ internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault()):
     return listOf(time, s.info.track).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
-/** "Corolla · 22 min · 14 laps · Video · OBD · HR": the car, how long, and what was recorded. */
-internal fun rowDetail(s: SessionSummary, facts: SessionFacts?, video: Boolean): String = listOfNotNull(
-    s.info.car.ifBlank { null },
-    s.durationMicros?.let(::formatDuration),
-    facts?.laps?.takeIf { it > 0 }?.let { if (it == 1) "1 lap" else "$it laps" },
-    "Video".takeIf { video },
-    "OBD".takeIf { facts?.obd == true },
-    "HR".takeIf { facts?.heartRate == true },
-).joinToString(" · ")
+/** "Corolla · 22 min · 14 laps · Video · OBD · HR": the car, how long, and what was recorded (shared with iOS). */
+internal fun rowDetail(s: SessionSummary, facts: SessionFacts?, video: Boolean): String =
+    sessionRowDetail(s.info.car, s.durationMicros, facts, video)
 
 /** What runs for a session now, for its row; null when nothing does. */
 @Suppress("LongParameterList")

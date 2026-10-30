@@ -60,6 +60,13 @@ final class IPadLayoutTests: XCTestCase {
         expectation(for: hittable, evaluatedWith: rows.element(boundBy: 1))
         waitForExpectations(timeout: 15)
         XCTAssertFalse(app.buttons["Drive"].exists, "a Drive tab on the iPad")
+        // Android's row: time and track, then the laps and the rest from the shared core.
+        let row = rows.element(boundBy: 0)
+        let detailed = NSPredicate(format: "label CONTAINS ' laps'")
+        expectation(for: detailed, evaluatedWith: row)
+        waitForExpectations(timeout: 60)
+        XCTAssertTrue(row.label.contains("Silesia"), "no track in the row: \(row.label)")
+        XCTAssertTrue(app.buttons["sessionActions"].firstMatch.exists, "no ⋮ on the rows")
         keep("Sessions beside the session, \(name)")
         rows.element(boundBy: 1).tap()
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "the next session did not open")

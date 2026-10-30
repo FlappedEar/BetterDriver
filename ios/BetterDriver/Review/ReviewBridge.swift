@@ -166,6 +166,11 @@ enum ReviewBridge {
         }
     }
 
+    /// Each session's row as Android's (UI-139 C): its detail line and best lap. Reads sessions: not on the main thread.
+    static func sessionRows() -> [String: SessionRowFacts] {
+        library.sessionRows()
+    }
+
     static func summary(id: String) throws -> SessionSummary {
         let reviewed = try library.review(id: id)
         let review = reviewed.review

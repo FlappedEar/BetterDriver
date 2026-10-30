@@ -290,6 +290,11 @@ class ReviewLibrary(base: String) {
         }
     }
 
+    private val rows = SessionRows(store, ::tracks) { id -> clipIndex(videoDir(id)).isNotEmpty() }
+
+    /** Each listed session's row, as Android's (UI-139 C): its detail line and best lap. Off the main thread. */
+    fun sessionRows(): Map<String, SessionRowFacts> = rows.read(sessions())
+
     private val pickerLock = NSLock()
     private val pickerCache = HashMap<String, Pair<PickerStamp, Pair<String, PickerSession>?>>()
 
