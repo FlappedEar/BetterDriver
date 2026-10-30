@@ -43,8 +43,8 @@ final class ScreenLayoutTests: XCTestCase {
             }
             // The tab's numbers come off the main thread.
             sleep(3)
-            let times = app.descendants(matching: .any).matching(identifier: "lapTimes").firstMatch
-            let shown = times.exists ? summaryTexts(times) : []
+            // SwiftUI gives the card's identifier to each of its texts.
+            let shown = app.staticTexts.matching(identifier: "lapTimes").allElementsBoundByIndex.map(\.label)
             if !shown.contains(best) { problems.append("\(name) Summary: best lap \(best) not shown (\(shown))") }
             if !shown.contains(lap) { problems.append("\(name) Summary: \(lap) not shown (\(shown))") }
             // The whole Summary, a screen at a time.
@@ -82,16 +82,6 @@ final class ScreenLayoutTests: XCTestCase {
         }
     }
 
-    /// The texts of Summary's lap times card.
-    private func summaryTexts(_ card: XCUIElement) -> [String] {
-        guard let snapshot = try? card.snapshot() else { return [] }
-        var out: [String] = []
-        walk(snapshot) { node, _ in
-            if node.elementType == .staticText, !node.label.isEmpty { out.append(node.label) }
-        }
-        return out
-    }
-
     /// One screen's texts against each other and the room they have; a screenshot of it stays.
     private func check(_ screen: String) {
         keep(screen)
@@ -100,23 +90,30 @@ final class ScreenLayoutTests: XCTestCase {
             return
         }
         let window = root.frame
-        var texts: [(String, CGRect)] = []
-        walk(root) { node, inMap in
+        var texts: [(String, CGRect, String)] = []
+        walk(root, scroller: window) { node, inMap, scroller in
             guard node.elementType == .staticText, !inMap else { return }
             let label = node.label.trimmingCharacters(in: .whitespacesAndNewlines)
             let frame = node.frame
-            // Only what is wholly on screen: a text half scrolled off is read after the next swipe.
-            guard !label.isEmpty, frame.width >= 1, frame.height >= 1, window.contains(frame.insetBy(dx: 1, dy: 1)) else { return }
-            texts.append((label, frame))
+            // Only what is wholly in view: a text scrolled off, or under the bar above its scroll
+            // view (which keeps the frames of what it scrolls out), is read after the next swipe.
+            let seen = frame.insetBy(dx: 1, dy: 1)
+            guard !label.isEmpty, frame.width >= 1, frame.height >= 1,
+                  window.contains(seen), scroller.contains(seen) else { return }
+            texts.append((label, frame, String(describing: scroller)))
         }
-        for (label, frame) in texts where label.count >= ScreenLayoutTests.squeezeMinLength {
+        for (label, frame, _) in texts where label.count >= ScreenLayoutTests.squeezeMinLength {
             let perLetter = frame.width * frame.height / CGFloat(label.count)
             if perLetter < ScreenLayoutTests.minAreaPerLetter {
                 problems.append("\(screen): squeezed (\(Int(frame.width))×\(Int(frame.height)) pt) \"\(label.prefix(60))\"")
             }
         }
         for i in texts.indices {
-            for j in texts.indices where j > i && texts[i].0 != texts[j].0 {
+            for j in texts.indices where j > i {
+                // A row read as one text holds its own texts; content scrolled under a bar that stays
+                // put (the tabs, the title) is in another scroll view, or none.
+                let (x, y) = (texts[i].0, texts[j].0)
+                guard !x.contains(y), !y.contains(x), texts[i].2 == texts[j].2 else { continue }
                 let a = texts[i].1
                 let b = texts[j].1
                 let overlap = a.intersection(b)
@@ -129,11 +126,19 @@ final class ScreenLayoutTests: XCTestCase {
         }
     }
 
-    /// Every element under [node], and whether it is inside a map (whose labels are the map's own).
-    private func walk(_ node: XCUIElementSnapshot, inMap: Bool = false, _ visit: (XCUIElementSnapshot, Bool) -> Void) {
+    /// Every element under [node], whether it is inside a map (whose labels are the map's own), and
+    /// the frame of the scroll view it is in ([scroller] outside any: the window).
+    private func walk(
+        _ node: XCUIElementSnapshot,
+        inMap: Bool = false,
+        scroller: CGRect,
+        _ visit: (XCUIElementSnapshot, Bool, CGRect) -> Void
+    ) {
         let map = inMap || node.elementType == .map
-        visit(node, map)
-        for child in node.children { walk(child, inMap: map, visit) }
+        visit(node, map, scroller)
+        let scrolls = [XCUIElement.ElementType.scrollView, .table, .collectionView].contains(node.elementType)
+        let inner = scrolls ? node.frame : scroller
+        for child in node.children { walk(child, inMap: map, scroller: inner, visit) }
     }
 
     /// A tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
