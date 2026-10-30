@@ -39,10 +39,11 @@ final class ShareEntryPointsTests: XCTestCase {
     }
 
     func testShareLogOpensTheShareSheet() throws {
-        try XCTSkipIf(UIDevice.current.userInterfaceIdiom != .phone, "Settings is a tab on the iPhone")
+        // A tab on both: in the bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
         app.launchArguments = ["-freshInstall"]
         app.launch()
-        let settings = app.tabBars.buttons["Settings"]
+        let bottom = app.tabBars.buttons["Settings"]
+        let settings = bottom.waitForExistence(timeout: 30) ? bottom : app.buttons["Settings"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 30), "no Settings tab")
         settings.tap()
         let diagnostics = app.buttons["settings.diagnostics"].firstMatch

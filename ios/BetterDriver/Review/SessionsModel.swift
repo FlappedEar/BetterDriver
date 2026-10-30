@@ -50,6 +50,8 @@ final class SessionsModel {
     private(set) var goProWork: GoProWork?
     /// Each session's lined-up camera clips, one line per camera, as Android's session card shows them.
     private(set) var cameraLines: [String: [SessionCameraLine]] = [:]
+    /// Each session's detail line and best lap, as Android's row (UI-139 C); read after the list.
+    private(set) var rowFacts: [String: SessionRowFacts] = [:]
     /// What the last adding of camera files to a session could not add, per session.
     private(set) var goProProblems: [String: [String]] = [:]
 
@@ -98,6 +100,9 @@ final class SessionsModel {
         cameraLines = Dictionary(uniqueKeysWithValues: sessions.map { s in
             (s.id, GoProCore.shared.lines(setup: setup, sessionsRoot: root, sessionId: s.id))
         })
+        Task {
+            rowFacts = await Task.detached(priority: .utility) { ReviewBridge.sessionRows() }.value
+        }
     }
 
     /// The listed cameras started by hand without video in [session] yet: each offers Add, as on Android.

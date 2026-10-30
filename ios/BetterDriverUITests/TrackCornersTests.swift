@@ -88,21 +88,13 @@ final class TrackCornersTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 30), "not back on the session")
     }
 
-    /// Tracks: in Settings on an iPhone, a button over the session list on an iPad.
+    /// Tracks: in Settings, as Android, in the tab bar at the bottom or on an iPad in the bar at the top.
     private func openTracks() {
-        let settings = app.tabBars.buttons["Settings"]
-        if settings.waitForExistence(timeout: 5) {
-            settings.tap()
-            let tracks = app.buttons["settings.tracks"].firstMatch
-            XCTAssertTrue(tracks.waitForExistence(timeout: 10), "no Tracks in Settings")
-            tracks.tap()
-            return
-        }
-        let list = app.buttons["showSessions"].firstMatch
-        if list.waitForExistence(timeout: 5) { list.tap() }
-        let open = app.buttons["openTracks"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 10), "no Tracks button")
-        open.tap()
+        let bottom = app.tabBars.buttons["Settings"]
+        if bottom.waitForExistence(timeout: 5) { bottom.tap() } else { app.buttons["Settings"].firstMatch.tap() }
+        let tracks = app.buttons["settings.tracks"].firstMatch
+        XCTAssertTrue(tracks.waitForExistence(timeout: 10), "no Tracks in Settings")
+        tracks.tap()
     }
 
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.

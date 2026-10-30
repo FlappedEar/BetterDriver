@@ -11,7 +11,6 @@ import com.flappedear.betterdriver.feature.review.ReviewLoad
 import com.flappedear.betterdriver.feature.review.ReviewSession
 import com.flappedear.betterdriver.feature.review.ReviewTrack
 import com.flappedear.betterdriver.feature.review.SessionVideo
-import com.flappedear.betterdriver.core.ble.hr.HeartRateChannels
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionFiles
@@ -27,8 +26,9 @@ import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sessionanalysis.trackFor
+import com.flappedear.betterdriver.analysis.review.recordedFacts
+import com.flappedear.betterdriver.analysis.review.withLaps
 import com.flappedear.betterdriver.shell.SessionFacts
-import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackStore
@@ -120,8 +120,7 @@ class ReviewLaps private constructor(context: Context) {
         val data = store.read(s.id)
         // The track the session recorded at, else the nearest one (as the lap analysis picks it).
         val track = trackFor(data, saved)
-        val recorded = recordedSources(data)
-        val facts = SessionFacts(obd = ObdSource in recorded, heartRate = HeartRateChannels.SOURCE in recorded)
+        val facts = recordedFacts(data)
         if (track == null) {
             Cached(null, null, revisions(saved), Stamps.of(s.dir), facts)
         } else {
@@ -135,32 +134,17 @@ class ReviewLaps private constructor(context: Context) {
                 laps = laps.laps.map { ReviewLap(it, title, video) },
                 bestNumber = laps.best?.lap?.number,
             )
-            val timed = laps.laps.filter { it.lap.kind == LapKind.Timed }
             Cached(
                 track.id,
                 session.takeIf { it.laps.isNotEmpty() },
                 revisions(saved),
                 Stamps.of(s.dir),
-                facts.copy(laps = timed.size, bestMillis = laps.best?.lap?.timeMillis),
+                facts.withLaps(laps),
             )
         }
     } catch (e: Exception) {
         DebugLog.w(Tag, "reading session ${s.id} failed", e)
         Cached(null, null, revisions(saved), Stamps.of(s.dir), SessionFacts())
-    }
-
-    /** The sources ([ObdSource], heart rate) that recorded at least one value in the session. */
-    private fun recordedSources(data: SessionData): Set<String> {
-        val sourceOf = data.channels.values
-            .filter { it.source == ObdSource || it.source == HeartRateChannels.SOURCE }
-            .associate { it.id to it.source }
-        val found = HashSet<String>()
-        val wanted = sourceOf.values.toSet()
-        for (set in data.sampleSets) {
-            for (v in set.values) sourceOf[v.channelId]?.let(found::add)
-            if (found.size == wanted.size) break
-        }
-        return found
     }
 
     /**
@@ -182,9 +166,6 @@ class ReviewLaps private constructor(context: Context) {
 
     companion object {
         private const val Tag = "ReviewLaps"
-
-        /** The source of OBD-II channels (core-ble ObdSource). */
-        private const val ObdSource = "obd"
 
         /** Newest sessions read for review; bounds memory (each keeps its laps' paths). */
         private const val MaxSessions = 30

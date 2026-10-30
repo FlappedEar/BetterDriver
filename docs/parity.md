@@ -127,5 +127,5 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 ## Screens
 | Screen | List | Order (Android) | iOS | Jira |
 |---|---|---|---|---|
-| Top-level navigation (phone bottom bar, tablet rail; tablets have no Drive) | `list:top-level` | Drive, Sessions, Car, Settings | 🟡 iPhone tab bar the same; iPad shell still the review shell (not marked), being changed | FBBD-394 |
+| Top-level navigation (phone bottom bar, tablet rail; tablets have no Drive) | `list:top-level` | Drive, Sessions, Car, Settings | ✅ one tab bar on iPhone and iPad; iPad without Drive, as Android tablets | FBBD-394 |
 | Session tabs | `list:session-tabs` | Summary, Compare, Map, Laps, Corners, Car | 🟡 iOS adds Video after Car for a session with video (Arek 2026-10-30); Android to follow, then marked again | FBBD-110, FBBD-392 |
