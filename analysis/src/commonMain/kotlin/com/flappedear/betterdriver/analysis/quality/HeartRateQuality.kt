@@ -1,9 +1,9 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.log.HeartRateWindow
-import java.util.Locale
 
 // The heart-rate monitor part of the session validation report (FBBD-225): whether a listed strap
 // sent its heart rate about once a second, without long gaps, and came back after each link drop.
@@ -128,4 +128,4 @@ private fun reconnect(drops: List<HrDrop>): QualityMetric {
     )
 }
 
-private fun format(s: Double) = String.format(Locale.ROOT, "%.1f", s)
+private fun format(s: Double) = fixed(s, 1)

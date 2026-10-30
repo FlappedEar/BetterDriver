@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.analysis.quality
 
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import kotlin.math.ceil
+import kotlin.math.roundToLong
 
 // Small helpers shared by the report's sections (FBBD-183).
 
@@ -51,6 +52,6 @@ internal fun List<RecorderEvent>.ofKind(kind: String) = filter { it.kind == kind
 internal fun millis(micros: Long): Double = micros.toDouble() / MicrosPerMilli
 
 /** [micros] in whole milliseconds, for text. */
-internal fun ms(micros: Long): Long = Math.round(micros.toDouble() / MicrosPerMilli)
+internal fun ms(micros: Long): Long = (micros.toDouble() / MicrosPerMilli).roundToLong()
 
 internal fun seconds(micros: Long): Double = micros.toDouble() / MicrosPerSecond

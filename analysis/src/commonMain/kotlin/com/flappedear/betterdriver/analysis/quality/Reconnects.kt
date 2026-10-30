@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.log.GnssSecond
-import java.util.Locale
 
 // GNSS link drops and reconnects for the session validation report (FBBD-183), against FBBD-8 and
 // FBBD-43: each logged drop, the data gap around it, and whether data came back.
@@ -169,6 +169,6 @@ internal fun reconnectText(s: GnssSamples, d: Reconnect, endMicros: Long, underC
         endOfDrive(s, d, endMicros) -> "data never came back, parked at the end of the session"
         else -> "data never came back"
     }
-    val gap = String.format(Locale.ROOT, "%.1f", seconds(cost(s, d, endMicros)))
+    val gap = fixed(seconds(cost(s, d, endMicros)), 1)
     return "link drop (${d.text}): $gap s without data, $back"
 }

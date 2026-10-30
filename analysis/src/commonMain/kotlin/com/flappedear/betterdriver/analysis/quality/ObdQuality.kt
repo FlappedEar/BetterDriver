@@ -1,7 +1,7 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.RecorderEvent
-import java.util.Locale
 
 // The OBD-II part of the session validation report (FBBD-271, FBBD-173): how often car data dropped
 // mid-drive, how long it was gone, and whether it came back in the same session. Made from the
@@ -125,4 +125,4 @@ private fun timeWithout(first: Long, connects: List<Long>, ends: List<RecorderEv
     return total
 }
 
-private fun format(micros: Long) = String.format(Locale.ROOT, "%.1f", seconds(micros))
+private fun format(micros: Long) = fixed(seconds(micros), 1)

@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.analysis.quality
 
-import java.util.Locale
+import com.flappedear.betterdriver.format.fixed
 import kotlin.math.roundToLong
 
 // Dropped GNSS samples in the session validation report (FBBD-183), against FBBD-8 and FBBD-170,
@@ -111,7 +111,7 @@ internal const val NoFixText = "the receiver had no fix in this session, so no s
 
 /** The samples missing before the receiver's first fix (at [firstFixMicros], session time), for information. */
 internal fun beforeFixInfo(missing: Long, firstFixMicros: Long?): QualityMetric {
-    val at = firstFixMicros?.let { "first fix ${"%.1f".format(Locale.ROOT, seconds(it))} s in" }
+    val at = firstFixMicros?.let { "first fix ${fixed(seconds(it), 1)} s in" }
         ?: "no fix in this session"
     return info(
         "gnss.dropped_before_fix", "Dropped before first fix", missing.toDouble(), "", Basis.MEASURED,
@@ -124,7 +124,7 @@ internal fun beforeFixInfo(missing: Long, firstFixMicros: Long?): QualityMetric 
  * is within half a [usual] step of a whole second.
  */
 private fun isWholeSecondSkip(step: ReceiverStep, usual: Double, skipsWithoutFix: Boolean): Boolean {
-    val ms = Math.floorMod(step.fromUtc + step.millis / 2, MillisPerSecond)
+    val ms = (step.fromUtc + step.millis / 2).mod(MillisPerSecond)
     val onSecond = ms < usual / 2 || ms > MillisPerSecond - usual / 2
     return (step.fixBothSides || skipsWithoutFix) && (step.millis / usual).roundToLong() == 2L && onSecond
 }

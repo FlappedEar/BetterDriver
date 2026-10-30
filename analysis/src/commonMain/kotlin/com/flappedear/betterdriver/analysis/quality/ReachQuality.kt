@@ -1,8 +1,8 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.log.LogLine
 import com.flappedear.betterdriver.recorder.log.ReachLog
-import java.util.Locale
 
 // Whether Settings › Equipment's "In range" and "Not seen" (UI-138 B) were right (FBBD-280), from the
 // continuous log alone: the state the page last showed for a Bluetooth item before a recording
@@ -140,6 +140,6 @@ private fun judge(span: ReachSpan, s: LoggedSession, start: Long): Pair<Boolean,
     return ok to "${span.model} $address shown $shown ${secondsText(age)} s before Start, $link: $verdict"
 }
 
-private fun secondsText(millis: Long): String = String.format(Locale.ROOT, "%.1f", millis / MsPerSecond)
+private fun secondsText(millis: Long): String = fixed(millis / MsPerSecond, 1)
 
 private const val MsPerSecond = 1_000.0

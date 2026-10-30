@@ -1,9 +1,9 @@
 package com.flappedear.betterdriver.analysis.quality
 
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.RecorderEvent
 import com.flappedear.betterdriver.recorder.SampleSet
-import java.util.Locale
 import kotlin.math.roundToLong
 
 // The GNSS part of the session validation report (FBBD-183), against FBBD-8 and FBBD-46: sample
@@ -130,7 +130,7 @@ private fun rate(s: GnssSamples, acrossDrop: BooleanArray, skips: Long): Quality
     val hz = (intervals + skips) * MicrosPerSecond.toDouble() / span
     val counted = if (skips > 0) {
         ", with the $skips whole-second messages the RaceBox does not send with a fix counted " +
-            "(received: ${"%.2f".format(Locale.ROOT, received)} Hz)"
+            "(received: ${fixed(received, 2)} Hz)"
     } else {
         ""
     }
@@ -242,7 +242,7 @@ private fun gapMetrics(g: Gaps): List<QualityMetric> {
 
 /** The longest gap before the receiver's first fix (at [firstFixMicros], session time), for information (FBBD-273). */
 internal fun maxGapBeforeFixInfo(maxMillis: Double, firstFixMicros: Long?): QualityMetric {
-    val at = firstFixMicros?.let { "first fix ${"%.1f".format(Locale.ROOT, seconds(it))} s in" }
+    val at = firstFixMicros?.let { "first fix ${fixed(seconds(it), 1)} s in" }
         ?: "no fix in this session, so every gap is judged"
     return info(
         "gnss.max_gap_before_fix", "Longest gap before first fix", maxMillis, "ms", Basis.MEASURED,

@@ -1,10 +1,9 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.flappedear.betterdriver.recorder.log
 
-import java.time.Instant
-import java.time.OffsetDateTime
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.time.format.DateTimeParseException
+import kotlin.time.ExperimentalTime
+import kotlin.time.Instant
 
 /**
  * One line of the app's continuous log (FBBD-183): when it was written ([utcMillis], an instant) and
@@ -18,6 +17,7 @@ import java.time.format.DateTimeParseException
  * Lines of builds before that end in `Z` (UTC) and are read the same way.
  *
  * A stack trace follows its line on lines of its own, which [parse] does not read as lines.
+ * Reading is the shared core's (FBBD-359); writing in the phone's time zone is each platform's.
  */
 data class LogLine(
     val utcMillis: Long,
@@ -30,16 +30,8 @@ data class LogLine(
     val session: String?,
     val message: String,
 ) {
-    fun format(zone: ZoneId = ZoneId.systemDefault()): String = buildString {
-        append(timeText(utcMillis, zone)).append(' ')
-        append(uptimeMicros?.let(::uptimeText) ?: "-").append(' ')
-        append(process).append(' ').append(pid).append(' ').append(thread.replace(' ', '_')).append(' ')
-        append(level).append(' ').append(tag).append(" [").append(session ?: NoSession).append("]: ")
-        append(message)
-    }
-
     companion object {
-        private const val NoSession = "-"
+        const val NoSession = "-"
         private const val MicrosPerSecond = 1_000_000L
         private const val MicroDigits = 6
 
@@ -50,19 +42,13 @@ data class LogLine(
         /** The per-process files of builds before the continuous log: no boot clock, process or session. */
         private val Legacy = Regex("""^$Stamp (\d+) (\S+) ([DIWE]) (.*?): (.*)$""")
 
-        /** Always three fraction digits and an offset, `+00:00` for UTC itself (never `Z`). */
-        private val timeFormat = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSxxx")
-
-        /** [millis] as the log writes it: local time in [zone] with its offset from UTC. */
-        fun timeText(millis: Long, zone: ZoneId = ZoneId.systemDefault()): String =
-            timeFormat.format(Instant.ofEpochMilli(millis).atZone(zone))
-
-        private fun uptimeText(micros: Long) =
+        /** [micros] on the boot clock as the log writes it: seconds with six decimals. */
+        fun uptimeText(micros: Long) =
             "${micros / MicrosPerSecond}.${(micros % MicrosPerSecond).toString().padStart(MicroDigits, '0')}"
 
         private fun utc(text: String): Long? = try {
-            OffsetDateTime.parse(text, DateTimeFormatter.ISO_OFFSET_DATE_TIME).toInstant().toEpochMilli()
-        } catch (_: DateTimeParseException) {
+            Instant.parse(text).toEpochMilliseconds()
+        } catch (_: IllegalArgumentException) {
             null
         }
 
