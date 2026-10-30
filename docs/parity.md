@@ -52,8 +52,8 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Car data | FR-S passive CAN as primary car data (steering, brake pressure, pedal, rpm, temps) | ✅ 1.12.0 | 🟡 in shared code (broadcast poll set, ObdFeed), never run on a car | Shared obd core | FBBD-320, FBBD-263 |  |
 | Car data | Read only used channels; smooth RPM; steady temperatures | ✅ 1.6.0 | ✅ via shared core | Shared | FBBD-283, FBBD-284, FBBD-303 |  |
 | Car data | Car page: scan car, PIDs, CAN ids, own parameters | ✅ 1.17.0 | ✅ TF 1410 | Twice: Android CarScreens vs core-ios CarPageCore | FBBD-344 | `log-android:Car` `log-ios:Car` `route:Car` `route:CarPagePattern` `route:CarPidsPattern` `route:CarCanPattern` `route:CarParameterPattern` `ios-screen:CarPage` `ios-screen:CarPidsPage` `ios-screen:CarCanPage` |
-| Car data | Per-car PID profiles (FR-S first); generic PID discovery | ⚪ planned | ⚪ planned | Should be shared | FBBD-16, FBBD-15 |  |
-| Car data | OBD channels: crash-safe, independent reconnect, gaps and quality metadata | ⚪ planned | ⚪ planned | Should be shared | FBBD-173 |  |
+| Car data | Per-car PID profiles (FR-S first); generic PID discovery | ✅ 1.0.1, 1.12.0, 1.17.0 | ✅ via shared core | Shared (obd commonMain CarProfile, CarScan) | FBBD-16, FBBD-15 |  |
+| Car data | OBD channels: crash-safe, independent reconnect, gaps and quality metadata | ✅ 1.19.0 | 🟡 channels from the shared core; reconnect on rediscovery only | Channels shared; link supervisor twice | FBBD-173, FBBD-358 |  |
 | Car data | Tyre pressures and temperatures (FlappedEar TPMS bridge) | ⚪ planned | ⚪ planned | — | FBBD-224 |  |
 | Heart rate | BLE heart-rate strap in the session; shown in review | ✅ 1.2.0 | ✅ TF 1.16+ | Session logic shared; link twice | FBBD-119, FBBD-225 |  |
 | Heart rate | Strap link lines in the debug log (found, connected, streaming, dropped, off) | ✅ 1.5.2 | 🟡 10 s heart-rate lines shared (#422); link lines (found, connected, dropped) own Swift text | HeartRateLog shared (#422); link lines twice until FBBD-358 | FBBD-279, FBBD-352, FBBD-356 | `log-ios:HeartRate` |
