@@ -50,8 +50,10 @@ private struct LapsMapContent: View {
             Group {
                 if wide {
                     HStack(alignment: .top, spacing: 12) {
-                        mapCard(scale).frame(maxWidth: .infinity).layoutPriority(3)
-                        ggCard.frame(maxWidth: .infinity).layoutPriority(2)
+                        mapCard(scale).frame(maxWidth: .infinity)
+                        // A fixed column: with layout priorities the map took all but ~80 pt in
+                        // portrait and the words broke per syllable (Arek, TestFlight 1441).
+                        ggCard.frame(width: 320)
                     }
                 } else {
                     VStack(spacing: 12) {

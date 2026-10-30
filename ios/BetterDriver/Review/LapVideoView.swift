@@ -230,14 +230,13 @@ struct LapVideoView: View {
                         LapPane(lap: r.a, letter: "A", color: LapColors.a, player: st.a)
                         LapPane(lap: r.b, letter: "B", color: LapColors.b, player: st.b)
                     }
-                    .frame(maxWidth: .infinity)
-                    .layoutPriority(1.4)
+                    .frame(minWidth: 320, maxWidth: .infinity)
                     VStack(spacing: 12) {
                         TransportRow(st: st)
                         LapMapView(st: st).frame(maxHeight: .infinity)
                         DeltaChart(st: st).frame(height: 180)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(minWidth: 280, maxWidth: .infinity)
                 }
                 .padding(.bottom, 12)
             } else {

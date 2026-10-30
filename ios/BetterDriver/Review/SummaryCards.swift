@@ -27,14 +27,15 @@ struct SummaryFocusCard: View {
                     HStack(alignment: .top, spacing: 16) {
                         SummaryFocusPrimary(row: primary, compare: compare)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .layoutPriority(1.4)
+                        // A column of its own width: a layout priority on the primary left it about
+                        // 20 pt on an iPad in portrait, one letter per line (Arek, TestFlight 1441).
                         VStack(alignment: .leading, spacing: 4) {
                             SectionTitle("Also")
                             ForEach(Array(secondary.enumerated()), id: \.offset) { _, row in
                                 SummaryFocusSecondary(row: row, compare: compare)
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(width: 260, alignment: .leading)
                     }
                 } else {
                     SummaryFocusPrimary(row: primary, compare: compare)

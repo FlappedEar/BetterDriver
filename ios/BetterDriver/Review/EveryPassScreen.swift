@@ -118,8 +118,7 @@ struct EveryPassScreen: View {
                     if let traces = ui.traces { EveryPassTraces(ui: ui, traces: traces, highlight: highlight(ui)) }
                 }
             }
-            .frame(maxWidth: .infinity)
-            .layoutPriority(1.3)
+            .frame(minWidth: 320, maxWidth: .infinity)
         }
         .padding(16)
     }

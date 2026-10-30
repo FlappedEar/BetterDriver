@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// The app shell (FBBD-331, UI-290 B): a picked session fills the screen; ‹ Sessions or a swipe
-/// from the left edge brings the session list back over it. On an iPhone the list and the session
+/// The app shell (FBBD-331, UI-290 B): a picked session fills the screen; ‹ Sessions closes it and
+/// brings back the whole session list, beside the empty page, to pick or add another. On an iPhone the list and the session
 /// take the screen in turn. Sessions arrive from Files, AirDrop or another app's Share sheet, or + in
 /// the list (UI-292 A).
 struct RootView: View {
@@ -13,6 +13,9 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             SessionsListView(model: model, selection: $selection)
+                // iPadOS 26 puts its own sidebar button in the detail too: with ‹ Sessions beside it
+                // there were two buttons doing the same (Arek, TestFlight 1441).
+                .toolbar(removing: .sidebarToggle)
         } detail: {
             NavigationStack {
                 Group {
@@ -27,7 +30,12 @@ struct RootView: View {
                     // list and columns do nothing: a second ‹ there was dead (Arek, TestFlight).
                     if sizeClass == .regular && columns == .detailOnly {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button { columns = .all } label: {
+                            // Back to all sessions, as on Android: the session closes, the list
+                            // comes back beside the empty page (Arek, TestFlight 1441).
+                            Button {
+                                selection = nil
+                                columns = .all
+                            } label: {
                                 Label("Sessions", systemImage: "chevron.left").labelStyle(.titleAndIcon)
                             }
                             .accessibilityIdentifier("showSessions")
@@ -36,7 +44,8 @@ struct RootView: View {
                 }
             }
         }
-        .navigationSplitViewStyle(.prominentDetail)
+        // Side by side also in portrait: an overlay list over the session hid it again on any tap.
+        .navigationSplitViewStyle(.balanced)
         .toolbar(removing: .sidebarToggle)
         .onChange(of: selection) { _, id in
             if id != nil { columns = .detailOnly }
