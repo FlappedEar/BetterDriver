@@ -58,8 +58,11 @@ final class CoachReviewTests: XCTestCase {
         // The cue counts are read off the main thread after the list: ask the menu again until it has them.
         let item = coachReviewItem()
         var offered = false
+        // The rows carry a detail line now (Android's): on an iPhone the coached session can be below the fold.
+        let coached = rows.element(boundBy: jastrzab)
+        for _ in 0..<4 where !coached.isHittable { app.swipeUp() }
         for _ in 0..<12 where !offered {
-            rows.element(boundBy: jastrzab).press(forDuration: 1.2)
+            coached.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2)
             offered = item.waitForExistence(timeout: 5)
             if !offered { app.tap() }
         }
