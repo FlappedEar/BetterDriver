@@ -291,6 +291,10 @@ final class RecordingController: ObservableObject {
         obd?.stop()
         heartRate?.stop()
         frames?.stop()
+        // Set Shutter off goes out before the session closes, so a camera that answers at once has its
+        // stop in the session's events, as its start (audit 30 Oct BD-05).
+        goPros?.stop()
+        goPros = nil
         _ = live.stop()
         AppLog.i("Recording", "stop")
         end()

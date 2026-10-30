@@ -119,6 +119,33 @@ class WideEncoderTest {
         assertTrue("${file.stats.frames} frames: no more than the budget held", file.stats.frames <= budgetKib / 256)
     }
 
+    /**
+     * Audit 30 Oct BD-04: a write that throws on the writer thread. The failure is reported once as
+     * the writer's, not as a stalled writer later, the copies' room is given back and stop() ends.
+     */
+    @Test
+    fun throwingWriteIsReportedAndStopEnds() {
+        val events = Recorded()
+        val encoder = WideEncoder(
+            target,
+            Tone(),
+            System::nanoTime,
+            events,
+            backlogKib = 2_048,
+            backlogWaitMs = 200,
+            beforeWrite = { throw IllegalStateException("injected write fault") },
+        )
+        events.encoder = encoder
+        encoder.start(fileNo(1))
+        draw(encoder, seconds = 2)
+        encoder.stop()
+        assertEquals(
+            "the write fault is reported once, never as a stall",
+            listOf("encoder failed: writer: IllegalStateException"),
+            events.problems.toList(),
+        )
+    }
+
     private fun fileNo(n: Int) = File(dir, "phone_%04d.mp4".format(n))
 
     /** Draws numbered frames at [Fps] for [seconds], as the camera would; returns how many. */
