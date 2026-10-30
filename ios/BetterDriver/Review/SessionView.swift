@@ -3,7 +3,9 @@ import BetterDriverCore
 
 /// The sections of a session, the same six tabs as Android (UI-62 B, UI-157 B), drawn as
 /// Android's tab row: an icon over a small name (UI-163 C, UI-291 A). Summary opens first (UI-293 A).
-// parity-list:session-tabs
+/// Video (Arek, 2026-10-30) shows only for a session with video: its Video with data, in sight
+/// rather than in the export menu. Android gets it in FBBD-392; this list is marked again
+/// (`// parity-list:session-tabs`) once both apps have it.
 enum SessionTab: String, CaseIterable, Identifiable {
     case summary = "Summary"
     case compare = "Compare"
@@ -11,6 +13,7 @@ enum SessionTab: String, CaseIterable, Identifiable {
     case laps = "Laps"
     case corners = "Corners"
     case car = "Car"
+    case video = "Video"
 
     var id: String { rawValue }
 
@@ -22,6 +25,7 @@ enum SessionTab: String, CaseIterable, Identifiable {
         case .laps: "stopwatch"
         case .corners: "arrow.turn.up.right"
         case .car: "car"
+        case .video: "film"
         }
     }
 }
@@ -46,10 +50,13 @@ struct SessionView: View {
     @State private var dataVideo = false
     @State private var playing: DataVideoPlayback?
     @State private var toPlay: DataVideoPlayback?
+    /// The player came from the sheet, so closing it opens the sheet again; from the Video tab it returns there.
+    @State private var fromSheet = false
+    @State private var hasVideo = false
 
     var body: some View {
         VStack(spacing: 0) {
-            TabRow(selected: $tab)
+            TabRow(tabs: SessionTab.allCases.filter { $0 != .video || hasVideo }, selected: $tab)
             Divider().overlay(Palette.outline)
             content
                 .environment(\.everyPass, openEveryPass)
@@ -70,11 +77,15 @@ struct SessionView: View {
         }) {
             DataVideoSheet(sessionId: session.id, title: title) { p in
                 toPlay = p
+                fromSheet = true
                 dataVideo = false
             } onClose: { dataVideo = false }
                 .presentationDetents([.medium, .large])
         }
-        .fullScreenCover(item: $playing, onDismiss: { dataVideo = true }) { p in
+        .fullScreenCover(item: $playing, onDismiss: {
+            if fromSheet { dataVideo = true }
+            fromSheet = false
+        }) { p in
             DataVideoPlayerPage(playback: p) { playing = nil }
         }
         .notImplementedAlert($notYet)
@@ -83,6 +94,10 @@ struct SessionView: View {
         .fullScreenCover(item: $everyPass) { EveryPassScreen(link: $0) }
         .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
+        .task(id: session.id) {
+            let id = session.id
+            hasVideo = await Task.detached { Exports.make().hasVideo(id: id) }.value
+        }
     }
 
     private var title: String {
@@ -103,6 +118,7 @@ struct SessionView: View {
             case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
             case .corners: CornersTab(screen: screen)
             case .car: CarTab(car: screen?.car)
+            case .video: DataVideoPanel(sessionId: session.id, title: title) { playing = $0 }
             }
         } else {
             ProgressView().tint(Palette.accent).padding(.top, 60)
@@ -172,11 +188,12 @@ private struct SessionMoreMenu: View {
 
 /// Android's analysis tab row: an icon over a small name, the picked tab in the accent colour.
 private struct TabRow: View {
+    let tabs: [SessionTab]
     @Binding var selected: SessionTab
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(SessionTab.allCases) { t in
+            ForEach(tabs) { t in
                 Button { selected = t } label: {
                     VStack(spacing: 3) {
                         Image(systemName: t.symbol).font(.system(size: 18))

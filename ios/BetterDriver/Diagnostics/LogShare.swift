@@ -72,7 +72,10 @@ enum LogShare {
     @MainActor
     static func share(_ url: URL) {
         let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
-        guard var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController else { return }
+        guard var top = scene?.windows.first(where: \.isKeyWindow)?.rootViewController else {
+            AppLog.w(tag, "no window to show the share sheet for \(url.lastPathComponent)")
+            return
+        }
         while let shown = top.presentedViewController { top = shown }
         let sheet = UIActivityViewController(activityItems: [url], applicationActivities: nil)
         if let popover = sheet.popoverPresentationController {
@@ -81,6 +84,7 @@ enum LogShare {
             popover.permittedArrowDirections = []
         }
         top.present(sheet, animated: true)
+        AppLog.i(tag, "share sheet shown for \(url.lastPathComponent)")
     }
 
     private static let tag = "DebugLogs"

@@ -92,6 +92,32 @@ final class DataVideoTests: XCTestCase {
         app.buttons["dataVideoClose"].firstMatch.tap()
     }
 
+    /// A session with video has a Video tab (Arek, 2026-10-30): Watch plays it in landscape and
+    /// closing the player comes back to the tab.
+    func testTheVideoTabPlaysTheSessionsVideo() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        let tab = app.buttons["tabVideo"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 60), "no Video tab")
+        tab.tap()
+        let watch = app.buttons["dataVideoWatch"].firstMatch
+        XCTAssertTrue(watch.waitForExistence(timeout: 60), "no Watch in the Video tab")
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: watch)
+        waitForExpectations(timeout: 120)
+        keep("Video tab")
+        watch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 30), "no player")
+        sleep(4)
+        assertLandscape()
+        keep("Video tab playing")
+        app.buttons["dataVideoClose"].firstMatch.tap()
+        XCTAssertTrue(watch.waitForExistence(timeout: 30), "not back in the Video tab")
+    }
+
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
     private func openSessions() {
         let bottom = app.tabBars.buttons["Sessions"]
@@ -103,6 +129,9 @@ final class DataVideoTests: XCTestCase {
     /// Video plays in landscape on the iPhone, whichever way the phone is held. The iPad turns too,
     /// unless it shares the screen with another app.
     private func assertLandscape() {
+        // The video itself with its overlay: landscape on every device, also from a file tagged upright.
+        XCTAssertEqual(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.value as? String, "wide",
+                       "the video is not landscape")
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         let close = app.buttons["dataVideoClose"].firstMatch
         let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'landscape'"), object: close)
