@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+@file:OptIn(ExperimentalForeignApi::class)
 
 package com.flappedear.betterdriver.transfer.foreign
 
@@ -10,22 +10,19 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.store.SessionWriter
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
-import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
-import kotlinx.cinterop.autoreleasepool
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSDate
-import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSNumber
 import platform.Foundation.NSUUID
-import platform.Foundation.closeFile
-import platform.Foundation.fileHandleForReadingAtPath
-import platform.Foundation.readDataOfLength
 import platform.Foundation.timeIntervalSince1970
-import platform.posix.memcpy
+import platform.posix.fclose
+import platform.posix.ferror
+import platform.posix.fopen
+import platform.posix.fread
 
 /** A file that cannot be imported: not a known format, damaged, empty or too large. The message is for the user. */
 actual class ImportFormatException actual constructor(message: String, cause: Throwable?) : Exception(message, cause)
@@ -158,19 +155,18 @@ private fun sizeOf(path: String): Long =
  * fails past [ImportLimits.MaxBytes], as on Android.
  */
 private class FileBytes(path: String, private val total: Long, private val onProgress: (Long, Long) -> Unit) {
-    private val handle = NSFileHandle.fileHandleForReadingAtPath(path)
-        ?: throw ImportFormatException("cannot open the file")
+    // Read with stdio straight into Kotlin's buffer: no NSData per piece, which Kotlin lets go only
+    // when its collector runs (FBBD-393).
+    private val handle = fopen(path, "rb") ?: throw ImportFormatException("cannot open the file")
     private var count = 0L
 
     /** Fills [buf] from [offset] with up to [length] (at least 1) bytes; returns how many, or -1 at the end. */
     fun read(buf: ByteArray, offset: Int, length: Int): Int {
-        // Its own autorelease pool, as pump (FBBD-393): a large file's pieces must not pile up.
-        val n = autoreleasepool {
-            val data = handle.readDataOfLength(length.toULong())
-            if (data.length > 0u) buf.usePinned { memcpy(it.addressOf(offset), data.bytes, data.length) }
-            data.length.toInt()
+        val n = buf.usePinned { fread(it.addressOf(offset), 1u, length.toULong(), handle) }.toInt()
+        if (n == 0) {
+            if (ferror(handle) != 0) throw ImportFormatException("cannot read the file")
+            return -1
         }
-        if (n == 0) return -1
         count += n
         if (count > ImportLimits.MaxBytes) {
             throw ImportFormatException("the file is too large (over ${ImportLimits.MaxBytes / BytesPerMegabyte} MB)")
@@ -194,6 +190,6 @@ private class FileBytes(path: String, private val total: Long, private val onPro
     fun <T> use(block: (FileBytes) -> T): T = try {
         block(this)
     } finally {
-        handle.closeFile()
+        fclose(handle)
     }
 }
