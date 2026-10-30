@@ -1,4 +1,5 @@
 import BetterDriverCore
+import Combine
 import SwiftUI
 import UIKit
 
@@ -7,14 +8,16 @@ import UIKit
 /// GPX, and Video with data (FBBD-152) when it has video. The files are written in the background, then Files asks where to save them.
 struct ExportButton: View {
     let sessionId: String
-    /// The session's name, for the Video with data sheet.
-    var title = ""
+    /// Opens Video with data (FBBD-152). The session's page shows it, outside the toolbar, so the
+    /// sheet and its player stay up while the phone turns to landscape for the video.
+    var dataVideo: () -> Void = {}
 
     @State private var hasVideo = false
+    /// Counts the session changes, so [hasVideo] is read again after each.
+    @State private var videoCheck = 0
     @State private var running = false
     @State private var ready: ExportedFile?
     @State private var failure: String?
-    @State private var dataVideo = false
 
     var body: some View {
         Menu {
@@ -30,7 +33,7 @@ struct ExportButton: View {
             Button { export(.csv) } label: { Label("CSV", systemImage: "tablecells") }
             Button { export(.gpx) } label: { Label("GPX", systemImage: "point.topleft.down.to.point.bottomright.curvepath") }
             if hasVideo {
-                Button { dataVideo = true } label: { Label("Video with data", systemImage: "film.stack") }
+                Button { dataVideo() } label: { Label("Video with data", systemImage: "film.stack") }
             }
         } label: {
             if running {
@@ -41,16 +44,17 @@ struct ExportButton: View {
         }
         .disabled(running)
         .accessibilityIdentifier("exportMenu")
-        .task(id: sessionId) {
+        .task(id: "\(sessionId)#\(videoCheck)") {
             let id = sessionId
-            hasVideo = await Task.detached { Exports.make().hasVideo(id: id) }.value
+            // Not while the phone camera is still finishing its MP4 (audit 30 Oct BD-02); read again
+            // when it is done, as the sessions change then.
+            hasVideo = await Task.detached {
+                !PhoneVideoFinishing.shared.busy(sessionId: id) && Exports.make().hasVideo(id: id)
+            }.value
         }
+        .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in videoCheck += 1 }
         .sheet(item: $ready) { file in
             SaveToFiles(url: file.url) { ready = nil }
-        }
-        .sheet(isPresented: $dataVideo) {
-            DataVideoSheet(sessionId: sessionId, title: title.isEmpty ? "This session" : title) { dataVideo = false }
-                .presentationDetents([.medium, .large])
         }
         .alert(failure ?? "", isPresented: Binding(get: { failure != nil }, set: { if !$0 { failure = nil } })) {
             Button("OK", role: .cancel) {}

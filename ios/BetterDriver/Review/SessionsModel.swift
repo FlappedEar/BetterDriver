@@ -50,34 +50,33 @@ final class SessionsModel {
     private(set) var goProWork: GoProWork?
     /// Each session's lined-up camera clips, one line per camera, as Android's session card shows them.
     private(set) var cameraLines: [String: [SessionCameraLine]] = [:]
+    /// Each session's detail line and best lap, as Android's row (UI-139 C); read after the list.
+    private(set) var rowFacts: [String: SessionRowFacts] = [:]
     /// What the last adding of camera files to a session could not add, per session.
     private(set) var goProProblems: [String: [String]] = [:]
 
-    /// The app's start work is done: done once a run. SwiftUI may make a SessionsModel more than once
-    /// (RootView's @State runs its initial value each time the view is made again), and a second
-    /// start would clear staging in use, or with -freshInstall the sessions the list shows.
-    private static var started = false
+    /// The app's one session list: RootView takes it, so the start work below and the list's
+    /// observers exist once. A model made per RootView ran reload() each time SwiftUI made the view
+    /// again, 4 times a second while recording (FBBD-390).
+    static let shared = SessionsModel()
 
-    init() {
-        if !Self.started {
-            Self.started = true
-            ReviewBridge.clearStaging()
-            ReviewBridge.prepareForUITests()
-            // A session cut off by a kill or crash gets its recovery record and duration (audit BD-05).
-            DispatchQueue.global(qos: .utility).async {
-                let lines = ReviewBridge.recoverInterrupted()
-                for line in lines { AppLog.i("Recovery", line) }
-                guard !lines.isEmpty else { return }
-                DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
-            }
-            #if DEBUG
-            // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
-            if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),
-               !SettingsModel.shared.setup.equipment.contains(where: { $0.modelName == ModelName.goProFiles }) {
-                SettingsModel.shared.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: .hero8Black, id: "demo-gopro") }
-            }
-            #endif
+    private init() {
+        ReviewBridge.clearStaging()
+        ReviewBridge.prepareForUITests()
+        // A session cut off by a kill or crash gets its recovery record and duration (audit BD-05).
+        DispatchQueue.global(qos: .utility).async {
+            let lines = ReviewBridge.recoverInterrupted()
+            for line in lines { AppLog.i("Recovery", line) }
+            guard !lines.isEmpty else { return }
+            DispatchQueue.main.async { NotificationCenter.default.post(name: .sessionsChanged, object: nil) }
         }
+        #if DEBUG
+        // A GoPro started by hand in the equipment list, for adding its files (FBBD-343).
+        if ProcessInfo.processInfo.arguments.contains("-demoGoPro"),
+           !SettingsModel.shared.setup.equipment.contains(where: { $0.modelName == ModelName.goProFiles }) {
+            SettingsModel.shared.update { SettingsCore.shared.addGoProFiles(setup: $0, goPro: .hero8Black, id: "demo-gopro") }
+        }
+        #endif
         reload()
         // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
         NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in
@@ -94,11 +93,16 @@ final class SessionsModel {
 
     func reload() {
         sessions = ReviewBridge.sessions()
+        // Which sessions the coach spoke in, for their Coach review (FBBD-99).
+        CoachReviewCounts.shared.refresh()
         let setup = SettingsModel.shared.setup
         let root = ReviewBridge.library.sessionsRoot
         cameraLines = Dictionary(uniqueKeysWithValues: sessions.map { s in
             (s.id, GoProCore.shared.lines(setup: setup, sessionsRoot: root, sessionId: s.id))
         })
+        Task {
+            rowFacts = await Task.detached(priority: .utility) { ReviewBridge.sessionRows() }.value
+        }
     }
 
     /// The listed cameras started by hand without video in [session] yet: each offers Add, as on Android.
@@ -165,24 +169,44 @@ final class SessionsModel {
 
     func row(_ id: String) -> SessionRow? { sessions.first { $0.id == id } }
 
-    /// The session being written to share, while it is.
-    private(set) var sharing: String?
+    /// The session being written to share, while it is, with its progress (Android's "Preparing…").
+    private(set) var sharing: ImportProgress?
 
     /// Writes [session] as a .bdsession, then opens the share sheet (AirDrop, Files, Quick Share to
-    /// Android), as Android's Share; a failure is said in [message].
+    /// Android), as Android's Share; a failure is said in [message]. The bundle holds the video, so
+    /// writing it takes a while: the list shows its progress meanwhile (FBBD-393).
     func share(_ session: SessionRow) {
         guard sharing == nil else { return }
         let id = session.id
-        sharing = id
+        sharing = ImportProgress(name: id, read: 0, total: 0, started: Date())
+        AppLog.i(Self.shareTag, "\(id): preparing to share")
         Task {
-            let result: Result<URL, Error> = await Task.detached { Result { try ReviewBridge.share(id) } }.value
+            let result: Result<URL, Error> = await Task.detached {
+                // One step per percent reaches the list, not one per 64 KB piece.
+                var shown = -1
+                return Result {
+                    try ReviewBridge.share(id) { written, total in
+                        let percent = total > 0 ? Int(written * 100 / total) : 0
+                        guard percent != shown else { return }
+                        shown = percent
+                        Task { @MainActor in self.sharing?.read = written; self.sharing?.total = total }
+                    }
+                }
+            }.value
             sharing = nil
             switch result {
-            case .success(let url): LogShare.share(url)
-            case .failure(let error): message = "Could not share the session: \(error.localizedDescription)"
+            case .success(let url):
+                let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0 } ?? 0
+                AppLog.i(Self.shareTag, "\(id): \(size / 1_000_000) MB ready, opening the share sheet")
+                LogShare.share(url)
+            case .failure(let error):
+                AppLog.w(Self.shareTag, "\(id): could not share: \(error.localizedDescription)")
+                message = "Could not share the session: \(error.localizedDescription)"
             }
         }
     }
+
+    private static let shareTag = "Share"
 
     /// Deletes [session] and its video (FBBD-90); a failure is said in [message].
     func delete(_ session: SessionRow) {

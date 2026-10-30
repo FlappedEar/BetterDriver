@@ -79,15 +79,11 @@ final class ReviewScreensTests: XCTestCase {
         rows.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         keep("Session, back")
-        let ownBack = app.buttons["showSessions"].firstMatch
         if UIDevice.current.userInterfaceIdiom == .phone {
-            // The iPhone's list and session take the screen in turn: only the system back button.
-            XCTAssertFalse(ownBack.exists, "a second back button on the iPhone")
+            // The iPhone's list and session take the screen in turn: the system back button.
             app.navigationBars.buttons.element(boundBy: 0).tap()
-        } else {
-            XCTAssertTrue(ownBack.waitForExistence(timeout: 10), "no ‹ Sessions on the iPad")
-            ownBack.tap()
         }
+        // On the iPad the list stays beside the session, as on an Android tablet (FBBD-40).
         let back = NSPredicate(format: "isHittable == true")
         expectation(for: back, evaluatedWith: rows.element(boundBy: 0))
         waitForExpectations(timeout: 15)
@@ -131,8 +127,18 @@ final class ReviewScreensTests: XCTestCase {
             XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
             let menu = app.buttons["exportMenu"].firstMatch
             XCTAssertTrue(menu.waitForExistence(timeout: 10), "no export menu")
-            menu.tap()
-            app.buttons[format].firstMatch.tap()
+            // The menu closes when it gains Video with data on reading that the session has video
+            // (the demo has none, but the read can land while the menu opens), or when the summary's
+            // progress lands: open it again until the item can be tapped.
+            let item = app.buttons[format].firstMatch
+            for _ in 0..<4 where !(item.exists && item.isHittable) {
+                // A tap at the button's point: the AX scroll-to-visible a plain tap makes first can fail
+                // with kAXErrorCannotComplete while the summary is still loading.
+                menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                _ = item.waitForExistence(timeout: 5)
+            }
+            XCTAssertTrue(item.isHittable, "no \(format) in the export menu")
+            item.tap()
             // A failed export says so in an alert; a written one goes on to Files.
             let failed = app.alerts.firstMatch.waitForExistence(timeout: 15)
             XCTAssertFalse(failed, "\(format): \(app.alerts.firstMatch.label)")

@@ -44,11 +44,11 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.progression.ProgressionDay
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import java.time.LocalDate
 
 /** The progression screen's cards, for tests. */
 const val ProgressionLapsTag = "progression-laps"
@@ -70,7 +70,7 @@ interface ProgressionActions {
     fun period(period: ProgressionPeriod) {}
 
     /** Shows only [day]'s sessions, or every day again when null. */
-    fun day(day: LocalDate?) {}
+    fun day(day: ProgressionDay?) {}
 
     /** Leaves session [sessionId] out of the progression, or counts it again. */
     fun toggle(sessionId: String) {}

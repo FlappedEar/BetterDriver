@@ -10,6 +10,9 @@ app=com.flappedear.betterdriver
 runner=$app.test/androidx.test.runner.AndroidJUnitRunner
 test=$app.replay.ReplayDriveTest
 minutes=${REPLAY_MINUTES:-10}
+# When the one-minute trace starts, in s after the drive phase starts (FBBD-266); none when unset:
+# tracing slows the frames it watches.
+TRACE_AFTER_S=${TRACE_AFTER_S:-}
 language=${LANGUAGE:-Polish}
 out=build/replay-drive
 mkdir -p "$out"
@@ -25,6 +28,15 @@ fail() {
 finish() {
   timeout 60 adb exec-out run-as "$app" cat files/replay-drive.md < /dev/null > "$out/replay-drive.md" 2>/dev/null || true
   timeout 60 adb exec-out run-as "$app" cat files/logs/betterdriver.log < /dev/null > "$out/betterdriver.log" 2>/dev/null || true
+  # Where the frame time went (FBBD-266), also when the check failed: CPU time by stretch, the frames
+  # split into their parts (FrameParts) and the drive check's own frame lines, one per 30 s (UiChecks).
+  if [ -d "${cpu:-}" ]; then
+    timeout 60 python3 .github/scripts/cpu-windows.py "$cpu" "$out/cpu-windows.md" > /dev/null \
+      && cat "$out/cpu-windows.md" >> "$out/track-trace.md" && cat "$out/cpu-windows.md" \
+      || echo "No CPU snapshots (FBBD-266)."
+    grep -h "FrameParts" "$log" | tail -1 | tee -a "$out/track-trace.md"
+    grep -o "t_us=[0-9]* ui_frames .*" "$out/betterdriver.log" 2>/dev/null | tee -a "$out/track-trace.md"
+  fi
   # The report in the job's log too, where it can be read without the artifact.
   [ -s "$out/replay-drive.md" ] && cat "$out/replay-drive.md"
   # Each cue's trigger, sound start and end as the coach logged them (FBBD-253), and the voice's own
@@ -35,6 +47,9 @@ finish() {
   fi
   if [ -s "$out/replay-drive.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
     cat "$out/replay-drive.md" >> "$GITHUB_STEP_SUMMARY"
+  fi
+  if [ -s "$out/track-trace.md" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    cat "$out/track-trace.md" >> "$GITHUB_STEP_SUMMARY"
   fi
   sleep 2
   kill "$logcat" 2>/dev/null || true
@@ -78,10 +93,58 @@ sleep 3
 # The drive, started, driven and stopped in one test: the app stays in front on the track screen, as
 # on Arek's phone. The test runner waits for the app's main thread to go idle before a test, which it
 # never does while the track screen draws every frame: a stop phase of its own waited 8 min there.
+# The emulator settles first (FBBD-266): restored from its snapshot, Play services, the keyboard and the
+# system server keep its CPUs busy for a minute or two, and the start-up's frames measured then were the
+# emulator's, not the app's. Up to 3 min, until the CPUs are under 25 % busy for 10 s.
+busy() {
+  adb shell 'head -1 /proc/stat; sleep 5; head -1 /proc/stat' < /dev/null 2>/dev/null | awk '
+    { idle = $5 + $6; total = 0; for (i = 2; i <= NF; i++) total += $i }
+    NR == 1 { i0 = idle; t0 = total }
+    NR == 2 { if (total > t0) printf "%d", 100 * (1 - (idle - i0) / (total - t0)); else print 100 }'
+}
+settled=0
+for _ in $(seq 18); do
+  b=$(busy)
+  if [ "${b:-100}" -lt 25 ]; then settled=$((settled + 1)); else settled=0; fi
+  [ "$settled" -ge 2 ] && break
+done
+echo "Emulator CPUs ${b:-?} % busy before the drive."
 echo "Replaying for $minutes min."
+# One minute of the drive traced (FBBD-266): where the track screen's frame time goes, from the UI
+# thread's state and slices and who held the CPUs (track-trace.py).
+tracer=
+if [ -n "$TRACE_AFTER_S" ]; then
+  adb push .github/scripts/track-trace.cfg /data/misc/perfetto-configs/track.cfg >/dev/null || true
+  ( sleep "$TRACE_AFTER_S" && adb shell perfetto --background --txt -c /data/misc/perfetto-configs/track.cfg \
+    -o /data/misc/perfetto-traces/track.pftrace < /dev/null >/dev/null 2>&1 ) &
+  tracer=$!
+fi
+# Who uses the CPUs in each stretch of the start-up and of the steady drive (FBBD-266): every process's
+# and the app's (and speech engine's) threads' CPU time at set times, read by cpu-windows.py.
+cpu="$out/cpu"
+mkdir -p "$cpu"
+(
+  start=$(date +%s)
+  for at in 0 15 30 45 60 90 120 180 300; do
+    sleep $(( start + at - $(date +%s) > 0 ? start + at - $(date +%s) : 0 ))
+    timeout 30 adb shell 'echo "== ps"; ps -A -o PID,NAME; echo "== stat"; cat /proc/[0-9]*/stat 2>/dev/null; echo;
+      echo "== task"; for p in $(pidof '"$app $app:recorder $app:coach $app:camera"' com.google.android.tts); do
+        for f in /proc/$p/task/*/stat; do read -r l < $f; echo "$p:$l"; done; done 2>/dev/null' < /dev/null > "$cpu/$at.txt" 2>/dev/null
+  done
+) &
+sampler=$!
 phase drive --no-restart $(( minutes * 60 + 300 ))
+[ -n "$tracer" ] && kill "$tracer" 2>/dev/null
+kill "$sampler" 2>/dev/null
 # Home, as a phone put away, stops any drawing before the check.
 adb shell input keyevent KEYCODE_HOME || true
 sleep 5
 phase check --no-restart
+# The trace is read after the check, so its work on this machine does not slow the emulator's.
+if [ -n "$TRACE_AFTER_S" ]; then
+  timeout 60 adb pull /data/misc/perfetto-traces/track.pftrace "$out/track.pftrace" < /dev/null >/dev/null 2>&1 \
+    && python3 -m pip install -q perfetto >/dev/null 2>&1 \
+    && timeout 300 python3 .github/scripts/track-trace.py "$out/track.pftrace" "$out/track-trace.md" \
+    || echo "No track screen trace (FBBD-266)."
+fi
 finish 0

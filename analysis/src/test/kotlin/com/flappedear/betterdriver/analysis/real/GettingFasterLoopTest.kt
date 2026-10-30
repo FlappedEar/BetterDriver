@@ -31,13 +31,10 @@ import com.flappedear.betterdriver.coach.CoachReference
 import com.flappedear.betterdriver.coach.CoachSession
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.CornerMap
-import com.flappedear.betterdriver.coach.CornerPick
 import com.flappedear.betterdriver.coach.Cue
 import com.flappedear.betterdriver.coach.CueKind
 import com.flappedear.betterdriver.coach.FocusTarget
 import com.flappedear.betterdriver.coach.MinLossMicros
-import com.flappedear.betterdriver.coach.PlannedTarget
-import com.flappedear.betterdriver.coach.PlannedTargets
 import com.flappedear.betterdriver.coach.SessionFocusRecord
 import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.TracedLap
@@ -48,6 +45,8 @@ import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
 import com.flappedear.betterdriver.coach.identified
 import com.flappedear.betterdriver.coach.lapFrame
+import com.flappedear.betterdriver.coach.planFocus
+import com.flappedear.betterdriver.coach.plannedTargets
 import com.flappedear.betterdriver.coach.toCoachFix
 import com.flappedear.betterdriver.coach.tracedLaps
 import com.flappedear.betterdriver.recorder.Confidence
@@ -214,39 +213,6 @@ class GettingFasterLoopTest {
             ),
         )
 
-    /**
-     * [plan]'s focus as the app gives it to the coach (planFocusOf in CoachService): its corners as
-     * coach picks, most time to find first, and the time to find in each by CornerId; null without one.
-     */
-    private fun planFocus(plan: LinePlan): Pair<List<CornerPick>, Map<String, Double>>? {
-        val corners = plan.focus().filter { it.cornerId != null && it.target.line.isNotEmpty() }
-        if (plan.identityRevision == null || corners.isEmpty()) return null
-        val picks = corners.map { c ->
-            CornerPick(
-                c.name, c.target.line.map { it.latitude }, c.target.line.map { it.longitude }, plan.sessionId,
-                c.cornerId, plan.identityRevision,
-            )
-        }
-        return picks to corners.associate { c ->
-            c.cornerId!! to
-                (c.gainSeconds.takeIf { it > 0.0 } ?: c.brakeRoom?.seconds ?: c.gear?.seconds ?: c.gainSeconds)
-        }
-    }
-
-    /** [plan]'s targets as the app gives them to the coach (CoachReferences.plannedTargets). */
-    private fun plannedTargets(plan: LinePlan) = PlannedTargets(
-        plan.sessionId,
-        plan.corners.mapNotNull { c ->
-            c.cornerId?.let {
-                PlannedTarget(
-                    it, c.target.sessionId, c.target.lapSeconds,
-                    c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0, c.gear?.gear,
-                )
-            }
-        },
-        plan.gearbox,
-    )
-
     private fun loop(files: List<String>, track: Track): Pair<List<Step>, List<Turn>> {
         val steps = day(files, track)
         val records = listOfNotNull(record(track, steps.first(), emptyList())).toMutableList()
@@ -262,12 +228,12 @@ class GettingFasterLoopTest {
                 steps.subList(0, k).map { SessionLaps(it.data.id, tracedLaps(at, it.data.coachFixes())) },
                 from.linePlan?.let(::plannedTargets),
             )
-            // The focus as the app gives it (planFocusOf in the app's CoachService, UI-174 A): the line
-            // plan's corners with the most time to find, else the last session's focus (FBBD-20).
-            val planned = from.linePlan?.let(::planFocus)
+            // The focus as both apps give it (the shared coach run, UI-174 A): the line plan's corners
+            // with the most time to find, else the last session's focus (FBBD-20).
+            val planned = from.linePlan?.let { planFocus(it, to.data.id) }
             val coach = CoachSession(
                 CoachSettings(Verbosity.Focus), at, reference, sameDay = true,
-                focus = planned?.first ?: from.focus.picks(), focusSeconds = planned?.second.orEmpty(),
+                focus = planned?.picks ?: from.focus.picks(), focusSeconds = planned?.seconds.orEmpty(),
             )
             val focusEvent = RecorderEvent(
                 0, CoachEvents.FOCUS,
@@ -290,7 +256,7 @@ class GettingFasterLoopTest {
                     FocusCorner(t, measure.at(t.cornerId), attempts.firstOrNull { it.ask.cornerId == t.cornerId })
                 },
                 cues, proof, targets(at, reference, steps.subList(0, k), from.linePlan),
-                planned?.first?.mapNotNull { it.cornerId }?.associateWith { measure.at(it) },
+                planned?.cornerIds?.associateWith { measure.at(it) },
             )
         }
         return steps to turns

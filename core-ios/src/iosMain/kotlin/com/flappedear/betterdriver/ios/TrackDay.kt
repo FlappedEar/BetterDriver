@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
+import com.flappedear.betterdriver.analysis.line.DayPlanStore
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeDay
 import com.flappedear.betterdriver.analysis.line.dayPlan
@@ -33,7 +34,7 @@ private class DaySessionRead(val line: LineSession, val startUtcMillis: Long, va
 internal fun trackDayState(
     store: SessionStore,
     saved: List<Track>,
-    plans: IosDayPlanStore,
+    plans: DayPlanStore,
     tracks: TrackLibrary,
     ids: List<String>,
 ): TrackDayState {
@@ -66,7 +67,11 @@ internal fun trackDayState(
     val last = day.last()
     val plan = dayPlan(analysis, track.id, date, last.line.id, last.startUtcMillis)
     val previous = plans.before(track.id, date)
-    plans.save(plan)
+    // A day plan that cannot be saved only leaves the next day there without it.
+    try {
+        plans.save(plan)
+    } catch (_: Exception) {
+    }
     val proof = previous?.let { dayProof(it, analysis) }
     val previousLabel = previous?.let { dayLabel(it.day) }
     return TrackDayState.Ready(trackDayUi(analysis, track.displayName, format(first, DayPattern), proof, previousLabel))

@@ -98,7 +98,7 @@ class LineRealTest {
     fun `the plan keeps the same targets, joins them into the perfect lap and names the focus`() {
         val (analysis, line) = read()
         val plan = linePlan(line, analysis.axis!!.origin, "jastrzab", "s1606", 1L, identityRevision = null)
-        val store = LinePlanStore(File(tmp, "lines"))
+        val store = LinePlanStore(File(tmp, "lines").path)
         assertTrue(store.save(plan))
         assertEquals(plan, store.get("jastrzab"))
         assertTrue(!store.save(plan), "the same plan is not written again")

@@ -438,6 +438,9 @@ class CornerRows(val gains: Set<Int>, val losses: Set<Int>) {
     val any: Boolean get() = gains.isNotEmpty() || losses.isNotEmpty()
 }
 
+/** Under a list with flags: what a flag does. */
+const val CoachFlagNote = "Flag a corner and the spoken coach works on it first next time at this track."
+
 fun firstCornerRows(ui: AnalysisUi): CornerRows {
     val seen = mutableSetOf<String>()
     fun first(id: String?) = id != null && id in ui.coachPickable && seen.add(id)

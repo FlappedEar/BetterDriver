@@ -115,7 +115,15 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     val route = entry?.destination?.route
     // Chosen once: changing a NavHost's start destination rebuilds its graph.
     // Setup again if a required permission was revoked or a one-time grant expired.
-    val start = remember { if (prefs.setupDone && prefs.hasRequiredPermissions()) Routes.Drive else Routes.Setup }
+    // A tablet only reviews (no recording there, Arek 2026-10-30): it opens on Sessions.
+    val tablet = isTabletDevice()
+    val start = remember {
+        when {
+            tablet -> Routes.Sessions
+            prefs.setupDone && prefs.hasRequiredPermissions() -> Routes.Drive
+            else -> Routes.Setup
+        }
+    }
     FollowRecording(nav, recorder, sessions)
     FollowTransfers(nav, recorder)
     val updates = remember { AppUpdates.get(context) }

@@ -40,9 +40,6 @@ import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
 import com.flappedear.betterdriver.timing.live.SessionTiming
-import com.flappedear.betterdriver.timing.live.lapLineText
-import com.flappedear.betterdriver.timing.track.TrackEvent
-import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -273,54 +270,63 @@ class RecorderService : Service() {
                 devices = sources.map { it.name },
                 channels = gnssChannels(gnss),
             )
-            val recording = Recorder(store).start(info).also { logTo(it, gnss.name) }
-            val tracker = LiveTracker(
-                recording.id,
-                info.startUtcMillis,
-                recording::nowMicros,
-                droppedSamples = { recording.droppedCount },
-                accelIds = accelIdsFor(gnss),
-                accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { gnss.type == GnssType.PHONE },
-            )
-            recording.listeners.add(tracker)
-            // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
-            // newer one the UI process fetched since the last session is used.
-            val circuits = CircuitDirectory(circuitsDir(this)).load()
-            // Picks the track at the first fix and times laps there (FBBD-55, FBBD-12). It runs on the
-            // listener thread, so a timing failure is logged in the session and never stops it.
-            // Each lap is logged with the predicted lap time shown before its line (FBBD-183).
-            val timing = SessionTiming({ TrackStore(tracksDir(this)).all() }, circuits, onLap = { lap, predicted ->
-                recording.event(EventKinds.LAP_LINE, lapLineText(lap, predicted))
-            }) { found -> recording.event(TrackEvent.KIND, TrackEvent.text(found)) }
-            recording.listeners.add(timing)
-            // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
-            val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
-                null
-            } else {
-                CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
-            }
-            coach?.let(recording.listeners::add)
-            // Ends the recording here only when its writer has stopped, also for stops the recorder makes
-            // itself (storage full, write error), with the writer's reason (Audit A03).
-            val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
-            active = Active(recording, end, tracker, timing, coach, DeviceChecks(this, recording).also { it.start() })
-            carryOn(wanted, recording, restartOf.also { restartOf = null })
-            sources.forEach(recording::attach)
-            main.post {
-                // Already ended on its own (storage full): no wake lock or coach binding may outlive it.
-                if (active?.recording !== recording) return@post
-                cameraStatus = null
-                coachStatus = CoachStatus.None
-                coach?.bind()
-                cpu.acquire()
-                rememberWanted(wanted, car, track, gnss, sensors)
-                getSystemService(NotificationManager::class.java)
-                    .notify(NotificationId, recordingNotification(this, info.startUtcMillis, notificationDetail(info)))
+            Recorder(store).startWith(info, undo = undoStart) { recording ->
+                logTo(recording, gnss.name)
+                val tracker = LiveTracker(
+                    recording.id,
+                    info.startUtcMillis,
+                    recording::nowMicros,
+                    droppedSamples = { recording.droppedCount },
+                    accelIds = accelIdsFor(gnss),
+                    accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { gnss.type == GnssType.PHONE },
+                )
+                recording.listeners.add(tracker)
+                // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
+                // newer one the UI process fetched since the last session is used.
+                val timing = sessionTiming(tracksDir(this), recording, CircuitDirectory(circuitsDir(this)).load())
+                recording.listeners.add(timing)
+                // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
+                val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
+                    null
+                } else {
+                    CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
+                }
+                coach?.let(recording.listeners::add)
+                // Ends the recording here only when its writer has stopped, also for stops the recorder makes
+                // itself (storage full, write error), with the writer's reason (Audit A03).
+                val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
+                val device = DeviceChecks(this, recording).also { it.start() }
+                active = Active(recording, end, tracker, timing, coach, device)
+                carryOn(wanted, recording, restartOf.also { restartOf = null })
+                sources.forEach(recording::attach)
+                main.post {
+                    // Already ended on its own (storage full): no wake lock or coach binding may outlive it.
+                    if (active?.recording !== recording) return@post
+                    cameraStatus = null
+                    coachStatus = CoachStatus.None
+                    coach?.bind()
+                    cpu.acquire()
+                    rememberWanted(wanted, car, track, gnss, sensors)
+                    val notification = recordingNotification(this, info.startUtcMillis, notificationDetail(info))
+                    getSystemService(NotificationManager::class.java).notify(NotificationId, notification)
+                }
             }
         } catch (e: Exception) {
             lastError = "Could not start recording: $e".also { DebugLog.e(Tag, it, e) }
-            main.post { endForeground() }
+            // A recording that had begun is ended by [undoStart]; the service ends with it.
+            if (active == null) main.post { endForeground() }
         }
+    }
+
+    /**
+     * The start failed after [recording] began (audit 30 Oct BD-03): until now its writer went on with
+     * no service around it. It is stopped; once it is already the running one, through its end, so the
+     * service, wake lock and coach go only when the writer has stopped (Audit A03).
+     */
+    private val undoStart: (Recording) -> Unit = { recording ->
+        val stopped = active?.takeIf { it.recording === recording }?.end?.stop(StartFailed)
+            ?: recording.stop(StartFailed)
+        if (!stopped) DebugLog.w(Tag, "recording ${recording.id} still finishing after a failed start")
     }
 
     private fun stopRecording() {
@@ -350,7 +356,8 @@ class RecorderService : Service() {
         afterVideo.whenClosed(recording.id) { logQuality(this, control, recording.id) }
         // How the app's processes ended during the drive, read after it, so its ANRs are known (FBBD-41).
         control.execute { StartupLog.logExits(this) }
-        if (reason != UserStop) lastError = endedMessage(reason)
+        // A failed start keeps its own message, which says why.
+        if (reason != UserStop && reason != StartFailed) lastError = endedMessage(reason)
         wanted.edit().putBoolean(KeyWanted, false).commit()
         clients.broadcast()
         endForeground()
@@ -405,6 +412,9 @@ class RecorderService : Service() {
     companion object {
         private const val Tag = "RecorderService"
         private const val UserStop = "user"
+
+        /** The end reason of a recording whose start failed after it began (BD-03). */
+        private const val StartFailed = "start_failed"
         private const val KeyWanted = "wanted"
         private const val KeyCar = "car"
 

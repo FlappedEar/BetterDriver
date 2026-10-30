@@ -208,8 +208,12 @@ struct LapVideoView: View {
     @Environment(\.horizontalSizeClass) private var size
     @Environment(\.scenePhase) private var phase
 
-    init(review: LapVideoReview) {
+    /// Where the cursor starts, as a share of lap A; nil for the start line.
+    private let startFraction: Double?
+
+    init(review: LapVideoReview, startFraction: Double? = nil) {
         _st = StateObject(wrappedValue: ReviewTransport(review: review))
+        self.startFraction = startFraction
     }
 
     var body: some View {
@@ -226,14 +230,13 @@ struct LapVideoView: View {
                         LapPane(lap: r.a, letter: "A", color: LapColors.a, player: st.a)
                         LapPane(lap: r.b, letter: "B", color: LapColors.b, player: st.b)
                     }
-                    .frame(maxWidth: .infinity)
-                    .layoutPriority(1.4)
+                    .frame(minWidth: 320, maxWidth: .infinity)
                     VStack(spacing: 12) {
                         TransportRow(st: st)
                         LapMapView(st: st).frame(maxHeight: .infinity)
                         DeltaChart(st: st).frame(height: 180)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(minWidth: 280, maxWidth: .infinity)
                 }
                 .padding(.bottom, 12)
             } else {
@@ -252,7 +255,11 @@ struct LapVideoView: View {
         .background(Palette.background)
         .navigationTitle("Lap review")
         .navigationBarTitleDisplayMode(.inline)
-        .onAppear { st.wake() }
+        .onAppear {
+            // Opened on a corner (FBBD-153): the cursor a little before it, as Android's review route.
+            if let startFraction, st.cursor == 0 { st.scrub(to: startFraction, ended: true) }
+            st.wake()
+        }
         .onDisappear { st.stop() }
         // Never plays unseen.
         .onChange(of: phase) { _, p in if p != .active { st.stop() } }

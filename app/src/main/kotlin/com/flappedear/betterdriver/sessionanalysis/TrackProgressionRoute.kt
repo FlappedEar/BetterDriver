@@ -21,7 +21,9 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.progression.CornerMapping
+import com.flappedear.betterdriver.analysis.progression.ProgressionDay
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
+import com.flappedear.betterdriver.analysis.progression.systemDayZone
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.feature.analysis.ProgressionActions
 import com.flappedear.betterdriver.feature.analysis.ProgressionChoice
@@ -37,8 +39,6 @@ import com.flappedear.betterdriver.shell.ShellTopBar
 import com.flappedear.betterdriver.timing.track.TrackStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.time.LocalDate
-import java.time.ZoneId
 
 /** The progression at one track (FBBD-181), opened from a session's summary. */
 internal fun NavGraphBuilder.progressionDestination(nav: NavHostController, padding: PaddingValues) {
@@ -115,13 +115,12 @@ internal fun TrackProgressionRoute(
     }
     LaunchedEffect(records, grouping, period, day, excluded, adding, title, mapping) {
         val kept = records ?: return@LaunchedEffect
-        val choice = ProgressionChoice(
-            grouping, period, day?.let(LocalDate::parse), excluded.lines().filter { it.isNotBlank() }.toSet(),
-        )
+        val choice = progressionChoice(grouping, period, day, excluded)
         state = withContext(Dispatchers.Default) {
-            val zone = ZoneId.systemDefault()
+            val zone = systemDayZone()
+            val today = ProgressionDay.at(System.currentTimeMillis(), zone)
             ProgressionState.Ready(
-                progressionScreenUi(title, kept, choice, LocalDate.now(zone), zone, mapping).copy(adding = adding),
+                progressionScreenUi(title, kept, choice, today, zone, mapping).copy(adding = adding),
             )
         }
     }
@@ -135,7 +134,7 @@ internal fun TrackProgressionRoute(
                 setPeriod(period)
             }
 
-            override fun day(day: LocalDate?) {
+            override fun day(day: ProgressionDay?) {
                 setDay(day)
             }
 
@@ -155,7 +154,7 @@ internal fun TrackProgressionRoute(
                 period = p
             }
 
-            fun setDay(d: LocalDate?) {
+            fun setDay(d: ProgressionDay?) {
                 day = d?.toString()
                 // A track day opens to its sessions.
                 if (d != null) grouping = ProgressionGrouping.Session
@@ -169,3 +168,16 @@ internal fun TrackProgressionRoute(
     }
     TrackProgressionScreen(state, actions, topBar = { ShellTopBar("Progression", onBack = onBack) })
 }
+
+/** What the screen shows, from its saved choices: [day] as ISO, the sessions left out one per line. */
+private fun progressionChoice(
+    grouping: ProgressionGrouping,
+    period: ProgressionPeriod,
+    day: String?,
+    excluded: String,
+) = ProgressionChoice(
+    grouping,
+    period,
+    day?.let { ProgressionDay.parse(it) },
+    excluded.lines().filter { it.isNotBlank() }.toSet(),
+)

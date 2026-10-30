@@ -73,6 +73,24 @@ final class SmokeTests: XCTestCase {
         }
         XCTAssertTrue(screen.exists, "still recording after 15 s")
 
+        // A swipe goes to the second screen and back (FBBD-262, FBBD-318). By label: the track screen's id
+        // reaches its children and can stand in for theirs.
+        func labelled(_ text: String) -> XCUIElement {
+            app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", text)).firstMatch
+        }
+        // Across the whole app: the first element with the screen's id can be a small child, too short
+        // for a swipe to reach the screen's 60 points.
+        app.swipeLeft()
+        if !labelled("Screen 2 of 2").waitForExistence(timeout: 10) {
+            print("SMOKE app:\n\(app.debugDescription)")
+            XCTFail("the second screen")
+        }
+        // The live screen always has G (a RaceBox's or the phone's accelerometer), so the radar is there.
+        XCTAssertTrue(labelled("G radar").exists, "the G radar on the second screen")
+        app.swipeRight()
+        XCTAssertTrue(labelled("Screen 1 of 2").waitForExistence(timeout: 10), "back on the main screen")
+        XCTAssertEqual(app.state, .runningForeground)
+
         // The 3 s hold stops the session (UI-16).
         screen.press(forDuration: 4)
         XCTAssertTrue(start.waitForExistence(timeout: 20), "back on Drive after the stop")

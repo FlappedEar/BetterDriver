@@ -57,9 +57,9 @@ kotlin {
             kotlin.srcDir("src/test/kotlin")
             resources.srcDir("src/test/resources")
             dependencies {
-                // The coach's corners are checked against the analysis's (FBBD-172); the coach never
-                // depends on the analysis. Arek's real recordings are read through the session
-                // import, as the app reads them (FBBD-164). Neither is in the core-only build of
+                // The coach's corners are checked against the analysis's (FBBD-172); the analysis
+                // never depends on the coach (the coach reads its line plans). Arek's real recordings
+                // are read through the session import, as the app reads them (FBBD-164). Neither is in the core-only build of
                 // the iOS workflows, which runs no JVM tests.
                 listOf(":coach", ":transfer").mapNotNull(rootProject::findProject).forEach { implementation(it) }
                 implementation(project.dependencies.platform(libs.junit5.bom))

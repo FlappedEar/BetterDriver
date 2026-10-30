@@ -4,7 +4,15 @@ import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.reviewOf
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.map.GgSource
+import com.flappedear.betterdriver.feature.analysis.DrivingStateKeys
+import com.flappedear.betterdriver.feature.analysis.MapColoring
+import com.flappedear.betterdriver.feature.analysis.coastingText
+import com.flappedear.betterdriver.feature.analysis.drivingStatesLabel
+import com.flappedear.betterdriver.feature.analysis.deltaRateText
 import com.flappedear.betterdriver.feature.analysis.focusSeconds
+import com.flappedear.betterdriver.feature.analysis.mapScale
+import com.flappedear.betterdriver.feature.analysis.mapStrokes
+import com.flappedear.betterdriver.feature.analysis.pointAtDistance
 import com.flappedear.betterdriver.feature.analysis.ggRingText
 import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.feature.analysis.lineUi
@@ -142,6 +150,61 @@ class SessionReviewTest {
     }
 
     @Test
+    fun `every pass through a corner has its traces and clip and opens two laps on video as on Android`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val clips = indexedClips(
+            """{"version":1,"clips":[{"fileName":"p.mp4","kind":"PHONE","sourceId":"phone","sessionOffsetUs":0}]}""",
+        )
+        val corner = checkNotNull(reviewed.defaultScreen()).corners.first().id
+        val ui = checkNotNull(reviewed.everyPass(corner, clips, "v") { it == "v/p.mp4" })
+        assertEquals(corner, ui.cornerId)
+        assertTrue(ui.rows.size > 1)
+        assertTrue(ui.rows.all { it.reviewable })
+        assertTrue(ui.rows.first().best)
+        assertEquals("v/p.mp4", ui.rows.first().video?.path)
+        assertTrue(checkNotNull(ui.traces).passes.isNotEmpty())
+        // Without the file the passes are still listed, with no video.
+        assertTrue(checkNotNull(reviewed.everyPass(corner, clips, "v") { false }).rows.none { it.video != null })
+        // Two ticked passes open in the lap review, the faster through the corner first, cued before it.
+        val (a, b) = ui.rows.take(2).map { it.lapIndex }
+        val video = checkNotNull(reviewed.lapsOnVideo(a, b, clips, "v") { it == "v/p.mp4" })
+        assertEquals(reviewed.review.laps[a].seconds, video.a.timeMillis / 1000.0, 0.01)
+        assertEquals(reviewed.review.laps[b].seconds, video.b.timeMillis / 1000.0, 0.01)
+        assertTrue(checkNotNull(reviewed.reviewStart(corner)) in 0.0..1.0)
+    }
+
+    @Test
+    fun `the Map tab's Laps view colours the compared lap against the best as on Android`() {
+        val reviewed = reviewSession(demo(), listOf(track))
+        val map = checkNotNull(checkNotNull(reviewed.defaultScreen()).map)
+        assertEquals(19, map.lapNumber)
+        assertEquals(18, map.referenceNumber)
+        val delta = mapScale(map.map, MapColoring.Delta)
+        val strokes = mapStrokes(map.map, delta, Gain, Neutral, Loss)
+        assertTrue(strokes.isNotEmpty())
+        assertTrue(strokes.any { it.argb != Neutral })
+        assertTrue(checkNotNull(mapScale(map.map, MapColoring.Speed).speed).high > 0.0)
+        val at = checkNotNull(pointAtDistance(map.map, 500.0))
+        assertTrue(kotlin.math.abs(at.distanceMeters - 500.0) < 50.0)
+        assertEquals("Gaining 0.12 s per 100 m here", deltaRateText(-0.123))
+        assertEquals("Losing 0.30 s per 100 m here", deltaRateText(0.3))
+    }
+
+    @Test
+    fun `Compare has what the car is doing along both laps with its key and coasting as on Android`() {
+        val compare = checkNotNull(checkNotNull(reviewSession(demo(), listOf(track)).defaultScreen()).compare)
+        assertEquals(listOf("Brake", "Coast", "Corner", "Throttle", "Flat out"), DrivingStateKeys.map { it.name })
+        assertTrue(drivingStatesLabel(compare).startsWith("What the car is doing"))
+        val measured = compare.copy(
+            referenceCoastingSeconds = 1.32,
+            otherCoastingSeconds = 2.054,
+            statesProvenance = null,
+        )
+        assertEquals("Coasting: lap 18 1.32 s · lap 19 2.05 s", coastingText(measured))
+        assertNull(coastingText(measured.copy(referenceCoastingSeconds = null, otherCoastingSeconds = null)))
+    }
+
+    @Test
     fun `a session away from every saved track has no laps`() {
         val review = reviewOf(demo(), emptyList())
         assertNull(review.track)
@@ -152,5 +215,8 @@ class SessionReviewTest {
         const val StartUtcMillis = 1_790_000_000_000L
         const val RateHz = 10
         const val MicrosPerSecond = 1_000_000L
+        val Gain = 0xFF22D37A.toInt()
+        val Neutral = 0xFF8C9AA5.toInt()
+        val Loss = 0xFFFF6863.toInt()
     }
 }

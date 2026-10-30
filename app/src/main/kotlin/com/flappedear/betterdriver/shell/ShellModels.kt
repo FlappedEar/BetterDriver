@@ -80,14 +80,5 @@ data class ObdAdapterLabel(val name: String, val via: String) {
  */
 data class ObdView(val recording: Boolean, val status: ObdStatus?, val adapter: ObdAdapterLabel? = null)
 
-/**
- * What a session row in Sessions says about it (UI-139 C), read with its laps (ReviewLaps): its timed
- * laps and the best one at the saved track it was recorded at, and whether car data (OBD-II) and heart
- * rate were recorded. Unknown until the session has been read.
- */
-data class SessionFacts(
-    val laps: Int = 0,
-    val bestMillis: Long? = null,
-    val obd: Boolean = false,
-    val heartRate: Boolean = false,
-)
+/** What a session row in Sessions says about it (UI-139 C): shared with iOS. */
+typealias SessionFacts = com.flappedear.betterdriver.analysis.review.SessionFacts

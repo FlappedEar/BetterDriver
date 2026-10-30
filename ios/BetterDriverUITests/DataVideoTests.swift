@@ -52,11 +52,15 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 30), "no player")
         sleep(4)
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while playing")
+        assertLandscape()
         keep("Video with data playing")
         app.buttons["dataVideoClose"].firstMatch.tap()
 
+        // Closing the player comes back to the sheet, which reads the laps and the video again.
         let save = app.buttons["dataVideoSave"].firstMatch
         XCTAssertTrue(save.waitForExistence(timeout: 30), "no Save video")
+        expectation(for: enabled, evaluatedWith: save)
+        waitForExpectations(timeout: 120)
         save.tap()
         // Making the video ends in "Saved <file>" (Files' Save sheet in the app; left out in the tests), or
         // in a reason in the sheet.
@@ -83,8 +87,35 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 60), "no player")
         sleep(4)
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while playing")
+        assertLandscape()
         keep("Watch video")
         app.buttons["dataVideoClose"].firstMatch.tap()
+    }
+
+    /// A session with video has a Video tab (Arek, 2026-10-30): Watch plays it in landscape and
+    /// closing the player comes back to the tab.
+    func testTheVideoTabPlaysTheSessionsVideo() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        let tab = app.buttons["tabVideo"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 60), "no Video tab")
+        tab.tap()
+        let watch = app.buttons["dataVideoWatch"].firstMatch
+        XCTAssertTrue(watch.waitForExistence(timeout: 60), "no Watch in the Video tab")
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: watch)
+        waitForExpectations(timeout: 120)
+        keep("Video tab")
+        watch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 30), "no player")
+        sleep(4)
+        assertLandscape()
+        keep("Video tab playing")
+        app.buttons["dataVideoClose"].firstMatch.tap()
+        XCTAssertTrue(watch.waitForExistence(timeout: 30), "not back in the Video tab")
     }
 
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
@@ -93,6 +124,18 @@ final class DataVideoTests: XCTestCase {
         if bottom.waitForExistence(timeout: 5) { bottom.tap(); return }
         let top = app.buttons["Sessions"].firstMatch
         if top.waitForExistence(timeout: 5) { top.tap() }
+    }
+
+    /// Video plays in landscape on the iPhone, whichever way the phone is held. The iPad turns too,
+    /// unless it shares the screen with another app.
+    private func assertLandscape() {
+        // The video itself with its overlay: landscape on every device, also from a file tagged upright.
+        XCTAssertEqual(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.value as? String, "wide",
+                       "the video is not landscape")
+        guard UIDevice.current.userInterfaceIdiom == .phone else { return }
+        let close = app.buttons["dataVideoClose"].firstMatch
+        let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'landscape'"), object: close)
+        XCTAssertEqual(XCTWaiter.wait(for: [turned], timeout: 15), .completed, "the player is not in landscape")
     }
 
     private func keep(_ name: String) {

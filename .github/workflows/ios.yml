@@ -62,7 +62,8 @@ jobs:
   ios:
     name: iOS app
     runs-on: macos-15
-    timeout-minutes: 90
+    # The UI tests of both simulators took 80 min on a slow runner (PR #411): room above that.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4

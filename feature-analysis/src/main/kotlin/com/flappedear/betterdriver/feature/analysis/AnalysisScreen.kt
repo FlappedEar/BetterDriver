@@ -96,6 +96,7 @@ fun AnalysisScreen(
 }
 
 /** The sections of the analysis, one per tab (UI-62 B). */
+// parity-list:session-tabs
 internal enum class AnalysisTab(val title: String, val icon: ImageVector) {
     Summary("Summary", AnalysisIcons.Summary),
     Compare("Compare", AnalysisIcons.Compare),

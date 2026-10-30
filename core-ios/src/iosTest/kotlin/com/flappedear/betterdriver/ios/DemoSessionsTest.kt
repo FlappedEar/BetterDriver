@@ -163,6 +163,27 @@ class DemoSessionsTest {
         assertEquals(kept, tracks.get("jastrzab")?.identity, "the next day made another identity")
     }
 
+    @Test
+    fun aCoachedDemoHasItsCuesToReviewAndAnUncoachedOneNone() {
+        val demo = "$DemoAssetsDir/jastrzab.replay" to "$DemoAssetsDir/jastrzab.track.json"
+        val coached = library.addCoachedDemo(demo.first, demo.second, StartUtcMillis)
+        val plain = library.addDemo(demo.first, demo.second, StartUtcMillis + HourMillis)
+        val counts = library.cueCounts()
+        assertTrue(checkNotNull(counts[coached]) > 0, "$counts")
+        assertFalse(plain in counts, "$counts")
+        // The counts are kept: another library of the same folder has them without reading again.
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$base/coach/cues.txt"))
+        assertEquals(counts, ReviewLibrary(base).cueCounts())
+
+        val review = library.cueReview(coached)
+        assertTrue(review.cards.isNotEmpty(), review.summary)
+        assertTrue(review.cards.any { it.verdict == "Better" || it.verdict == "Not yet" }, review.summary)
+        assertTrue(review.cards.all { it.place.startsWith("Lap ") && it.quote.startsWith("“") }, "${review.cards}")
+        assertEquals("No cues", library.cueReview(plain).summary)
+        assertEquals(null, library.cueReview(plain).notSaid)
+        assertEquals("No cues", library.cueReview("no-such-session").summary)
+    }
+
     private fun read(path: String) = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
     private companion object {

@@ -24,6 +24,8 @@ import com.flappedear.betterdriver.analysis.progression.ProgressionFilter
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
 import com.flappedear.betterdriver.analysis.progression.ProgressionMetric
 import com.flappedear.betterdriver.analysis.progression.coachingProgression
+import com.flappedear.betterdriver.analysis.progression.dayZone
+import com.flappedear.betterdriver.analysis.progression.progressionDay
 import com.flappedear.betterdriver.analysis.progression.trackProgression
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
@@ -60,6 +62,7 @@ class ProgressionTest {
     lateinit var tmp: File
 
     private val utc = ZoneOffset.UTC
+    private val utcDays = utc.dayZone()
     private val day = 86_400_000L
     private val sim = SimTrack.rectangle()
 
@@ -93,7 +96,7 @@ class ProgressionTest {
 
     @Test
     fun `three sessions show each metric per session as each session's analysis has it, with a trend`() {
-        val p = trackProgression(records, zone = utc)
+        val p = trackProgression(records, zone = utcDays)
         assertEquals(listOf("s0", "s1", "s2"), p.points.map { it.key })
         assertEquals(1, p.revision)
         for ((i, a) in analyses.withIndex()) {
@@ -148,8 +151,8 @@ class ProgressionTest {
         assertEquals(laps.timedLaps[other].number, reReferenced.axisLapNumber)
         assertTrue(reReferenced.identified)
 
-        val before = trackProgression(records, zone = utc)
-        val after = trackProgression(listOf(records[0], recordOf(reReferenced, 1), records[2]), zone = utc)
+        val before = trackProgression(records, zone = utcDays)
+        val after = trackProgression(listOf(records[0], recordOf(reReferenced, 1), records[2]), zone = utcDays)
         assertEquals(before.corners.map { it.cornerId to it.name }, after.corners.map { it.cornerId to it.name })
         assertEquals(before.lap(ProgressionMetric.BestLap), after.lap(ProgressionMetric.BestLap))
         val tolerance = mapOf(
@@ -209,7 +212,7 @@ class ProgressionTest {
             record("c", at(d1.plusDays(20), 10), listOf(88.0, 88.5, 89.0)),
             record("d", at(LocalDate.of(2026, 10, 3), 10), listOf(87.0, 87.6, 88.0)),
         )
-        val byDay = trackProgression(rs, ProgressionGrouping.TrackDay, zone = utc)
+        val byDay = trackProgression(rs, ProgressionGrouping.TrackDay, zone = utcDays)
         assertEquals(listOf("2026-09-05", "2026-09-25", "2026-10-03"), byDay.points.map { it.key })
         assertEquals(listOf("a", "b"), byDay.points[0].sessionIds)
         // The day's laps pooled: its best, its median, never the slow lap that did not count.
@@ -218,34 +221,35 @@ class ProgressionTest {
         assertEquals(6, byDay.points[0].countedLaps)
         assertEquals(6, byDay.corners.single().of(ProgressionMetric.CornerTime)!!.values[0]?.count)
 
-        val byMonth = trackProgression(rs, ProgressionGrouping.Month, zone = utc)
+        val byMonth = trackProgression(rs, ProgressionGrouping.Month, zone = utcDays)
         assertEquals(listOf("2026-09", "2026-10"), byMonth.points.map { it.key })
         assertEquals(88.0, byMonth.lap(ProgressionMetric.BestLap)!!.values[0]?.value)
 
-        fun keys(f: ProgressionFilter) = trackProgression(rs, filter = f, zone = utc).points.map { it.key }
+        fun keys(f: ProgressionFilter) = trackProgression(rs, filter = f, zone = utcDays).points.map { it.key }
         assertEquals(listOf("b", "d"), keys(ProgressionFilter(sessionIds = setOf("b", "d"))))
-        assertEquals(listOf("a", "b"), keys(ProgressionFilter(days = setOf(d1))))
-        assertEquals(listOf("c", "d"), keys(ProgressionFilter(from = d1.plusDays(1))))
-        assertEquals(listOf("a", "b", "c"), keys(ProgressionFilter(to = LocalDate.of(2026, 9, 30))))
-        assertEquals(listOf("c"), keys(ProgressionFilter(from = d1.plusDays(1), to = LocalDate.of(2026, 9, 30))))
-        assertTrue(trackProgression(rs, filter = ProgressionFilter(sessionIds = emptySet()), zone = utc).empty)
+        assertEquals(listOf("a", "b"), keys(ProgressionFilter(days = setOf(d1.progressionDay()))))
+        assertEquals(listOf("c", "d"), keys(ProgressionFilter(from = d1.plusDays(1).progressionDay())))
+        assertEquals(listOf("a", "b", "c"), keys(ProgressionFilter(to = LocalDate.of(2026, 9, 30).progressionDay())))
+        val sep30 = LocalDate.of(2026, 9, 30).progressionDay()
+        assertEquals(listOf("c"), keys(ProgressionFilter(from = d1.plusDays(1).progressionDay(), to = sep30)))
+        assertTrue(trackProgression(rs, filter = ProgressionFilter(sessionIds = emptySet()), zone = utcDays).empty)
         // A day is the phone's: 23:30 UTC on the 5th is the 6th two hours east.
         val late = record("e", at(d1, 23) + 1_800_000L, listOf(90.0))
-        val east = trackProgression(listOf(late), ProgressionGrouping.TrackDay, zone = ZoneOffset.ofHours(2))
+        val east = trackProgression(listOf(late), ProgressionGrouping.TrackDay, zone = ZoneOffset.ofHours(2).dayZone())
         assertEquals("2026-09-06", east.points.single().key)
     }
 
     @Test
     fun `imported sessions take part, marked with where they came from, and their records keep it`() {
         val imported = recordOf(analyses[1], 1, origin = "VBO lap-12.vbo")
-        val p = trackProgression(listOf(records[0], imported, records[2]), zone = utc)
+        val p = trackProgression(listOf(records[0], imported, records[2]), zone = utcDays)
         assertEquals(listOf(false, true, false), p.points.map { it.imported })
         assertEquals(mapOf("s1" to "VBO lap-12.vbo"), p.points[1].origins)
         assertEquals(records[1].laps, imported.laps)
         assertNotNull(p.lap(ProgressionMetric.BestLap)!!.values[1])
 
         // Kept and read back with its laps, its pickups and where it came from.
-        val store = CoachingHistoryStore(tmp)
+        val store = CoachingHistoryStore(tmp.path)
         assertTrue(store.save(imported))
         assertEquals(imported, store.get(sim.id, "s1"))
         assertTrue(File(tmp, "${sim.id}/s1.json").readText().contains("\"origin\":\"VBO lap-12.vbo\""))
@@ -255,7 +259,7 @@ class ProgressionTest {
     @Test
     fun `a record from before the laps were kept still takes part, without lap times`() {
         val old = record("old", 1_000, emptyList())
-        val p = trackProgression(listOf(old, record("new", 2_000, listOf(80.0, 81.0, 82.0))), zone = utc)
+        val p = trackProgression(listOf(old, record("new", 2_000, listOf(80.0, 81.0, 82.0))), zone = utcDays)
         assertEquals(listOf("old", "new"), p.points.map { it.key })
         assertNull(p.lap(ProgressionMetric.BestLap)!!.values[0])
         assertEquals(80.0, p.lap(ProgressionMetric.BestLap)!!.values[1]?.value)
@@ -269,7 +273,7 @@ class ProgressionTest {
             record("r1b", 2_000, listOf(80.0), corners = listOf(corner("x9", pass(1, 6.0), pass(2, 6.0)))),
             record("r2", 3_000, listOf(79.0), revision = 2, corners = listOf(corner("c1", pass(1, 4.0), pass(2, 4.5)))),
         )
-        val p = trackProgression(rs, zone = utc)
+        val p = trackProgression(rs, zone = utcDays)
         assertEquals(2, p.revision)
         // Same CornerId "c1" in revision 1, yet not the same corner: left out.
         val c1 = p.corners.single()
@@ -286,7 +290,7 @@ class ProgressionTest {
                 else -> null
             }
         }
-        val mapped = trackProgression(rs, zone = utc, mapping = mapping)
+        val mapped = trackProgression(rs, zone = utcDays, mapping = mapping)
         val times = mapped.corners.single().of(ProgressionMetric.CornerTime)!!.values.map { it?.value }
         assertEquals(listOf(null, 6.0, 4.25), times)
         assertEquals(listOf("r1a"), mapped.otherRevisionSessions)
@@ -314,10 +318,10 @@ class ProgressionTest {
         )
 
         // Without the mapping, only the latest revision's session counts for the corners.
-        assertEquals(listOf("a", "b"), trackProgression(rs, zone = utc).otherRevisionSessions)
+        assertEquals(listOf("a", "b"), trackProgression(rs, zone = utcDays).otherRevisionSessions)
 
         // With the track's own: the named corner and the one split keep their history across all three.
-        val p = trackProgression(rs, zone = utc, mapping = CornerMapping.of(moved))
+        val p = trackProgression(rs, zone = utcDays, mapping = CornerMapping.of(moved))
         assertEquals(3, p.revision)
         assertEquals(emptyList(), p.otherRevisionSessions)
         fun times(id: String) =
@@ -347,7 +351,7 @@ class ProgressionTest {
                 record("c", 3_000, listOf(80.0), corners = listOf(unknownUnit)),
                 record("d", 4_000, listOf(80.0)),
             ),
-            zone = utc,
+            zone = utcDays,
         )
         val c = p.corners.single()
         val time = c.of(ProgressionMetric.CornerTime)!!
@@ -403,7 +407,7 @@ class ProgressionTest {
             record("s2", 3_000, listOf(79.0), corners = quick),
         )
         // The first session is filtered out, yet the focus it made is what the second worked on.
-        val p = trackProgression(rs, filter = ProgressionFilter(sessionIds = setOf("s1", "s2")), zone = utc)
+        val p = trackProgression(rs, filter = ProgressionFilter(sessionIds = setOf("s1", "s2")), zone = utcDays)
         val steps = coachingProgression(p, rs)
         assertEquals(listOf("s1", "s2"), steps.map { it.key })
         assertEquals(FocusVerdict.Improved, steps[0].attempts.single().verdict)
@@ -440,7 +444,8 @@ class ProgressionTest {
             record("a2", at(16), listOf(90.8, 90.4, 90.9), corners = c(5.14, 5.09, 5.11)),
         )
         val other = record("x", at(9) + 3 * day, listOf(89.0, 89.1, 89.2))
-        val p = trackProgression(today + other, filter = ProgressionFilter(days = setOf(d)), zone = utc)
+        val alone = ProgressionFilter(days = setOf(d.progressionDay()))
+        val p = trackProgression(today + other, filter = alone, zone = utcDays)
         assertEquals(listOf("m1", "m2", "a1", "a2"), p.points.map { it.key })
         for ((i, r) in today.withIndex()) {
             val counted = r.laps.filter { it.counted }.map { it.seconds }
@@ -471,6 +476,6 @@ class ProgressionTest {
         val slope = ys.indices.sumOf { (it - mx) * (ys[it] - my) } / ys.indices.sumOf { (it - mx) * (it - mx) }
         close(slope * (ys.size - 1), trend.change, 0.01, "change over the day")
         // Two laps make no trend.
-        assertNull(trackProgression(listOf(record("s", at(9), listOf(90.0, 91.0))), zone = utc).lapsInOrderTrend)
+        assertNull(trackProgression(listOf(record("s", at(9), listOf(90.0, 91.0))), zone = utcDays).lapsInOrderTrend)
     }
 }

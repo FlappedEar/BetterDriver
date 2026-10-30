@@ -11,29 +11,23 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
-import com.flappedear.betterdriver.timing.track.TrackJson
 import com.flappedear.betterdriver.timing.track.TrackRevision
+import com.flappedear.betterdriver.timing.track.corrected
 import com.flappedear.betterdriver.timing.track.detectTrack
+import com.flappedear.betterdriver.timing.track.iosTrackStore
 import com.flappedear.betterdriver.timing.track.newTrackAt
 import com.flappedear.betterdriver.timing.track.newTrackFrom
-import com.flappedear.betterdriver.timing.track.storedOver
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSDateFormatterMediumStyle
 import platform.Foundation.NSDateFormatterShortStyle
-import platform.Foundation.NSFileManager
 import platform.Foundation.NSRecursiveLock
-import platform.Foundation.NSString
-import platform.Foundation.NSUTF8StringEncoding
-import platform.Foundation.create
 import platform.Foundation.dateWithTimeIntervalSince1970
-import platform.Foundation.stringWithContentsOfFile
-import platform.Foundation.timeIntervalSince1970
-import platform.Foundation.writeToFile
 
 /** Sessions the editor loads for one track, newest first: enough to check lines, bounded in memory (as Android). */
 private const val MaxEditorSessions = 8
@@ -63,19 +57,21 @@ class Here(
 }
 
 /**
- * The saved tracks on the iPhone and iPad (FBBD-336), one TrackJson file each in [tracksDir]
- * (Application Support/tracks/<id>.json), which the recorder (LiveSession) and session import read:
- * the iOS side of Android's Tracks and TrackStore. A save replaces the file atomically with the next
- * revision, so the next session's first fix times laps with it. Calls hold one lock, so the Tracks
+ * The saved tracks on the iPhone and iPad (FBBD-336), kept in [tracksDir] by the TrackStore Android
+ * uses (FBBD-359: Application Support/tracks/<id>.track.json), which the recorder (LiveSession) and
+ * session import read: the iOS side of Android's Tracks. A save replaces the file atomically with the
+ * next revision, so the next session's first fix times laps with it. A file that cannot be read is
+ * set aside, as on Android. Calls hold one lock, so the Tracks
  * screen and the editor never interleave a read and a write; a call may read the disk, so the views
  * call it off the main thread where it can take long (the editor's sessions).
  */
 @Suppress("TooManyFunctions") // One entry point per thing the Tracks screen and the editor do.
 class TrackLibrary(private val tracksDir: String, private val sessionsDir: String) {
     private val lock = NSRecursiveLock()
+    private val store = iosTrackStore(tracksDir)
 
     /** Every readable track, by name. */
-    fun list(): List<Track> = locked { TrackFiles.read(tracksDir) }
+    fun list(): List<Track> = locked { TrackFiles.read(store) }
 
     /** The saved track [id], or null. */
     fun get(id: String): Track? = locked { read(id) }
@@ -89,13 +85,7 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     fun save(track: Track): Track = saving(track.id) {
         locked {
             if (!validId(track.id)) throw TrackSaveException("bad track id: ${track.id}")
-            val stored = track.storedOver(read(track.id), nowMillis())
-            NSFileManager.defaultManager.createDirectoryAtPath(tracksDir, true, null, null)
-            // Foundation writes a temporary file and renames it over the old one.
-            val ok = NSString.create(string = TrackJson.encode(stored))
-                .writeToFile(path(track.id), atomically = true, encoding = NSUTF8StringEncoding, error = null)
-            if (!ok) throw TrackSaveException("cannot write track ${track.id}")
-            stored
+            store.save(track)
         }
     }
 
@@ -105,13 +95,33 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
      * the lines, the revision and the update time stay. Returns the track as stored afterwards, null
      * if there is none or it cannot be written.
      */
+    @Suppress("TooGenericExceptionCaught") // A write that fails leaves the identity as it was, never a crash.
     fun updateIdentity(id: String, expected: TrackRevision?, identity: TrackRevision): Track? = locked {
-        val current = read(id)
-        if (current == null || current.identity != expected || current.identity == identity) return@locked current
-        val updated = current.copy(identity = identity)
-        val ok = NSString.create(string = TrackJson.encode(updated))
-            .writeToFile(path(id), atomically = true, encoding = NSUTF8StringEncoding, error = null)
-        if (ok) updated else null
+        try {
+            if (validId(id)) store.updateIdentity(id, expected, identity) else null
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Stores the driver's correction [edit] of track [id]'s corners (FBBD-179, FBBD-366), made to
+     * [expected], the corners the editor shows, as Tracks.correct and TrackStore.correctIdentity on
+     * Android: nothing is written when the stored corners are no longer [expected] (an analysis made
+     * the next revision). The update time becomes now, so a backup merge keeps the corrected track;
+     * the lines and the revision stay. Every session at the track is analysed with what is stored.
+     */
+    @Suppress("TooGenericExceptionCaught") // A failed write is a correction not kept, never a crash.
+    fun correct(id: String, expected: TrackRevision, edit: SegmentEdit): CornerCorrection = locked {
+        if (validId(id)) {
+            try {
+                store.correctIdentity(id, expected, edit)
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val now = read(id)
+        CornerCorrection(now, applied = now?.identity != null && now.identity == expected.corrected(edit))
     }
 
     /** A new track named after the circuit [circuit], saved with no lines yet (Create track). */
@@ -127,12 +137,15 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     fun validName(name: String): Boolean = name.trim().let { it.isNotEmpty() && it.length <= Track.MaxNameChars }
 
     /** Deletes track [id]; sessions recorded there keep their data and track name. True when it is gone. */
+    @Suppress("TooGenericExceptionCaught") // A delete that fails says so, never a crash.
     fun delete(id: String): Boolean = locked {
         if (!validId(id)) return@locked false
-        val p = path(id)
-        val fm = NSFileManager.defaultManager
-        if (fm.fileExistsAtPath(p)) fm.removeItemAtPath(p, null)
-        !fm.fileExistsAtPath(p)
+        try {
+            store.delete(id)
+            store.get(id) == null
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /** What is at [lat], [lon]: a saved track, else a circuit from [circuits], else nothing. */
@@ -180,13 +193,10 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     }
 
     @Suppress("TooGenericExceptionCaught") // Any damaged file reads as no track, never as a crash.
-    private fun read(id: String): Track? {
-        val text = if (validId(id)) NSString.stringWithContentsOfFile(path(id), NSUTF8StringEncoding, null) else null
-        return try {
-            text?.let(TrackJson::decode)?.takeIf { it.id == id }
-        } catch (_: Exception) {
-            null
-        }
+    private fun read(id: String): Track? = try {
+        if (validId(id)) store.get(id) else null
+    } catch (_: Exception) {
+        null
     }
 
     /** Runs [body], turning any failure into a [TrackSaveException] about [what]. */
@@ -197,11 +207,6 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
         throw e
     } catch (e: Exception) {
         throw TrackSaveException("cannot save $what: ${e.message}", e)
-    }
-
-    private fun path(id: String): String {
-        require(validId(id)) { "bad track id: $id" }
-        return "$tracksDir/$id.json"
     }
 
     private fun validId(id: String) = id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_" }
@@ -216,10 +221,11 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     }
 }
 
+/** A correction of a track's corners as stored: the [track] now (null when it is gone), and whether it is in it. */
+class CornerCorrection(val track: Track?, val applied: Boolean)
+
 /** A track could not be written. */
 class TrackSaveException(message: String, cause: Throwable? = null) : Exception(message, cause)
-
-private fun nowMillis(): Long = (NSDate().timeIntervalSince1970 * MillisPerSecond).toLong()
 
 /** "29 Aug 2026 at 17:20" in the device's language, as the session list. */
 private fun title(startUtcMillis: Long): String = NSDateFormatter().apply {

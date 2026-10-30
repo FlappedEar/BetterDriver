@@ -50,6 +50,7 @@ struct TracksScreen: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
+                            .accessibilityIdentifier("trackRow")
                             .overlay(alignment: .top) {
                                 if i > 0 { Rectangle().fill(Palette.outline).frame(height: 1) }
                             }

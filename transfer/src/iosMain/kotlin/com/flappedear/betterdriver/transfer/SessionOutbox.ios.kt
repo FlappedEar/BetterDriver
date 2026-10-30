@@ -14,16 +14,11 @@ import com.flappedear.betterdriver.transfer.SessionBundleReceiver.Companion.Sess
 import com.flappedear.betterdriver.transfer.SessionBundleReceiver.Companion.TrackEntry
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSDate
-import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileModificationDate
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileType
 import platform.Foundation.NSFileTypeRegular
-import platform.Foundation.closeFile
-import platform.Foundation.fileHandleForWritingAtPath
-import platform.Foundation.synchronizeFile
 import platform.Foundation.timeIntervalSince1970
-import platform.Foundation.writeData
 
 /** File name extension of a session bundle, as on Android. */
 const val SessionBundleFileExtension = "bdsession"
@@ -79,10 +74,9 @@ class SessionOutbox(private val sessionsRoot: String, private val outRoot: Strin
     ) {
         val total = files.sumOf { sizeOf("$dir/$it") }
         fm.removeItemAtPath(part, null)
-        if (!fm.createFileAtPath(part, null, null)) throw ImportFileException("cannot create $part")
-        val out = NSFileHandle.fileHandleForWritingAtPath(part) ?: throw ImportFileException("cannot open $part")
+        val out = FileWriter(part)
         try {
-            val packer = BundlePacker({ b, from, to -> if (to > from) out.writeData(b.toNSData(from, to)) })
+            val packer = BundlePacker({ b, from, to -> out.write(b, from, to) })
             val header = linkedMapOf("format" to Format, "version" to BundleFormat.Version.toString(), "session" to id)
             track?.let { header["track"] = it.id }
             packer.file(Header, writeProperties(header))
@@ -99,10 +93,13 @@ class SessionOutbox(private val sessionsRoot: String, private val outRoot: Strin
                 packer.end()
             }
             packer.finish()
-            out.synchronizeFile()
-            out.closeFile()
+            out.close()
         } catch (e: Exception) {
-            out.closeFile()
+            try {
+                out.close(sync = false)
+            } catch (_: ImportFileException) {
+                // The first failure is the one passed on.
+            }
             fm.removeItemAtPath(part, null)
             throw e
         }

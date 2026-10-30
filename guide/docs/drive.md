@@ -43,6 +43,13 @@ Lap timing, sectors and the coach need a saved track with a start/finish line. O
 A session recorded before its track was saved still counts: the app finds its laps once the
 track exists.
 
+At a place with no start/finish line yet (a new track, or one saved without its line), the app
+places a provisional line by itself once you have driven the same loop about one and a half
+times: across the middle of the longest straight, the way you drive. Lap times and the delta
+appear on the track screen from then on, and the laps before it are timed too. The line is not
+saved: after the session, **Make a track from this session** in the analysis lets you check and
+save it. A loop has to be 0.8 to 30 km long, so an ordinary road drive gets no line.
+
 ### The track editor
 
 The editor shows your recorded lap on a map.

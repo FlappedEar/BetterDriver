@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.recorder.store
 
+import com.flappedear.betterdriver.io.PosixFiles
 import com.flappedear.betterdriver.io.writeProperties
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.SessionInfo

@@ -17,6 +17,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.kotlinx.serialization.json)
+            // The shared file access the store writes with (FBBD-359).
+            implementation(project(":shared"))
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

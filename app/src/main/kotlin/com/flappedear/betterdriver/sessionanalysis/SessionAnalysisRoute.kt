@@ -34,8 +34,7 @@ import com.flappedear.betterdriver.analysis.map.driveMap
 import com.flappedear.betterdriver.analysis.map.sessionGg
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
-import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
-import com.flappedear.betterdriver.analysis.segments.segmentLine
+import com.flappedear.betterdriver.analysis.segments.flaggableCorners
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.segmentChanges
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
@@ -44,6 +43,7 @@ import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CornerPick
+import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.linePlanStore
@@ -391,13 +391,7 @@ private fun withPicks(state: AnalysisState, done: Load.Done, picks: List<CornerP
     if (state !is AnalysisState.Ready || picks == null) return state
     val candidates = done.coachCandidates
     val analysis = done.loaded.analysis
-    val identity = analysis.identity?.takeIf { analysis.identified }
-    val picked = if (identity != null) {
-        val ids = picks.mapNotNull { it.cornerIdIn(identity) }.toSet()
-        candidates.keys.filter { it in ids }.toSet()
-    } else {
-        candidates.filterValues { c -> picks.any { it.sameCorner(c) } }.keys
-    }
+    val picked = pickedOf(candidates, picks, analysis.identity?.takeIf { analysis.identified })
     return AnalysisState.Ready(state.ui.copy(coachPickable = candidates.keys, coachPicked = picked))
 }
 
@@ -411,24 +405,10 @@ private fun toggleCoachPick(load: Load?, picks: CoachPicksRepo, corner: String) 
  * Each corner of [analysis] as a coach pick: its line on the fastest lap, and its CornerId in the
  * track's corner identity (FBBD-172) when the analysis's corners are the track's.
  */
-private fun coachCandidates(analysis: SessionAnalysis, sessionId: String): Map<String, CornerPick> {
-    val axis = analysis.axis ?: return emptyMap()
-    val revision = analysis.identity?.number?.takeIf { analysis.identified }
-    return analysis.segments?.segments.orEmpty()
-        .filter { it.type == TrackSegmentType.Corner }
-        .mapNotNull { corner ->
-            val line = segmentLine(axis, corner).takeIf { it.isNotEmpty() } ?: return@mapNotNull null
-            corner.id to CornerPick(
-                corner.name,
-                line.map { it.latitudeDegrees },
-                line.map { it.longitudeDegrees },
-                sessionId,
-                cornerId = corner.id.takeIf { revision != null },
-                identityRevision = revision,
-            )
-        }
-        .toMap()
-}
+private fun coachCandidates(analysis: SessionAnalysis, sessionId: String): Map<String, CornerPick> =
+    flaggableCorners(analysis).associate {
+        it.id to CornerPick(it.name, it.lats, it.lons, sessionId, it.cornerId, it.identityRevision)
+    }
 
 // A damaged session or track file says so instead of crashing the app.
 @Suppress("TooGenericExceptionCaught", "ReturnCount")

@@ -5,29 +5,26 @@ package com.flappedear.betterdriver.transfer
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.track.Track
-import com.flappedear.betterdriver.timing.track.TrackFormatException
-import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.iosTrackStore
 import kotlinx.cinterop.BetaInteropApi
+import kotlinx.cinterop.CPointer
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
-import platform.Foundation.NSData
-import platform.Foundation.NSFileHandle
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSFileSize
 import platform.Foundation.NSFileSystemFreeSize
 import platform.Foundation.NSNumber
-import platform.Foundation.NSURL
 import platform.Foundation.NSUUID
-import platform.Foundation.closeFile
-import platform.Foundation.create
-import platform.Foundation.dataWithContentsOfFile
-import platform.Foundation.fileHandleForReadingAtPath
-import platform.Foundation.fileHandleForWritingAtPath
-import platform.Foundation.readDataOfLength
-import platform.Foundation.synchronizeFile
-import platform.Foundation.writeData
-import platform.posix.memcpy
+import platform.posix.FILE
+import platform.posix.fclose
+import platform.posix.ferror
+import platform.posix.fflush
+import platform.posix.fileno
+import platform.posix.fopen
+import platform.posix.fread
+import platform.posix.fsync
+import platform.posix.fwrite
 
 private const val ReadBytes = 1 shl 16
 private const val OldPrefix = "old-"
@@ -46,7 +43,7 @@ class ReceivedBundle internal constructor(val session: ReceivedSession, internal
  * does on Android: a bundle is unpacked into [stagingRoot] and checked; only a complete, undamaged
  * session is then moved into [sessionsRoot] with one rename, so a failed import never leaves half a
  * session in the list. [stagingRoot] must be on the same volume. The track a session was timed with
- * is kept as [tracksRoot]/<track id>.json.
+ * is kept in [tracksRoot] by the shared TrackStore.
  */
 class SessionInbox(
     private val sessionsRoot: String,
@@ -94,7 +91,7 @@ class SessionInbox(
      */
     fun trackDiffers(received: ReceivedBundle): Boolean {
         val track = received.session.track ?: return false
-        return tracks.saved(track.id)?.let { it != track } ?: false
+        return trackMatch(track, tracks.saved(track.id)) == TrackMatch.DIFFERENT
     }
 
     /**
@@ -168,30 +165,32 @@ class SessionInbox(
 
     /** The staged session folder, written one file at a time. */
     private inner class Staging(private val dir: String, private val volume: String) : StagingFiles {
-        private var out: NSFileHandle? = null
+        private var out: FileWriter? = null
 
         override fun create(path: String) {
             val full = "$dir/$path"
             mkdirs(full.substringBeforeLast('/'))
-            if (!fm.createFileAtPath(full, null, null)) throw ImportFileException("cannot create $path")
-            out = NSFileHandle.fileHandleForWritingAtPath(full) ?: throw ImportFileException("cannot open $path")
+            out = FileWriter(full)
         }
 
         override fun write(bytes: ByteArray, from: Int, to: Int) {
-            if (to > from) checkNotNull(out).writeData(bytes.toNSData(from, to))
+            checkNotNull(out).write(bytes, from, to)
         }
 
         override fun close() {
-            out?.let {
-                it.synchronizeFile()
-                it.closeFile()
-            }
+            val file = out
             out = null
+            file?.close()
         }
 
         fun abandon() {
-            out?.closeFile()
+            val file = out
             out = null
+            try {
+                file?.close(sync = false)
+            } catch (_: ImportFileException) {
+                // Abandoned: its files are removed next.
+            }
         }
 
         override fun freeBytes(): Long {
@@ -214,72 +213,70 @@ internal fun sizeOf(path: String): Long =
     (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)?.longLongValue
         ?: throw ImportFileException("cannot read $path")
 
-/** The saved tracks, one [root]/<track id>.json each, as TrackJson writes them. */
-private class TrackFiles(private val root: String) {
-    private val fm get() = NSFileManager.defaultManager
+/** The saved tracks in [root], kept by the TrackStore Android uses (FBBD-359). */
+private class TrackFiles(root: String) {
+    private val store = iosTrackStore(root)
 
-    fun saved(id: String): Track? {
-        val bytes = if (SessionEntryLimits.validSessionId(id)) readSmall("$root/$id.json") else null
-        return try {
-            bytes?.let { TrackJson.decode(it.decodeToString()) }
-        } catch (_: TrackFormatException) {
-            null
-        }
+    @Suppress("TooGenericExceptionCaught") // A track that cannot be read is none, never a crash in Swift.
+    fun saved(id: String): Track? = try {
+        if (SessionEntryLimits.validSessionId(id)) store.get(id) else null
+    } catch (_: Exception) {
+        null
     }
 
-    /** Keeps the session's track if none of its id is saved, or over the saved one with [replace]. */
+    /**
+     * Keeps the session's track if none of its id is saved, or over the saved one with [replace], as
+     * Android's import stores it: the next revision, with the driver's corner corrections if it
+     * carries them (FBBD-179).
+     */
     fun keep(session: ReceivedSession, replace: Boolean) {
-        val track = session.track
-        val json = session.trackJson
-        val path = "$root/${track?.id}.json"
-        val wanted = track != null && json != null && SessionEntryLimits.validSessionId(track.id)
-        if (wanted && (replace || !fm.fileExistsAtPath(path))) {
-            mkdirs(root)
-            val tmp = "$path.tmp"
-            val bytes = checkNotNull(json).encodeToByteArray()
-            fm.createFileAtPath(tmp, bytes.toNSData(0, bytes.size), null)
-            if (fm.fileExistsAtPath(path)) {
-                fm.replaceItemAtURL(NSURL.fileURLWithPath(path), NSURL.fileURLWithPath(tmp), null, 0u, null, null)
-            } else {
-                fm.moveItemAtPath(tmp, path, null)
-            }
+        val track = session.track ?: return
+        if (!SessionEntryLimits.validSessionId(track.id)) return
+        if (replace || store.get(track.id) == null) {
+            store.save(track, adoptIdentity = carriesCorrectionsOf(track))
         }
     }
 }
 
-/** The whole file at [path] if it is there and small enough to read whole. */
-private fun readSmall(path: String): ByteArray? {
-    val size = (NSFileManager.defaultManager.attributesOfItemAtPath(path, null)?.get(NSFileSize) as? NSNumber)
-        ?.longLongValue
-    val fits = size != null && size <= SessionEntryLimits.MaxSmallFileBytes
-    return if (fits) NSData.dataWithContentsOfFile(path)?.toByteArray() else null
-}
-
-/** Reads the file at [path] in pieces, handing each to [block] with its length. */
+/**
+ * Reads the file at [path] in pieces, handing each to [block] with its length. One buffer is read
+ * into with stdio and handed out again for every piece, which [block] must not keep. No NSData is
+ * made per piece: Kotlin lets those go only when its collector runs, which the small Kotlin objects
+ * around them did not make it do, so a session's video filled the iPhone's memory until iOS killed
+ * the app (FBBD-393).
+ */
 internal fun pump(path: String, block: (ByteArray, Int) -> Unit) {
-    val input = NSFileHandle.fileHandleForReadingAtPath(path) ?: throw ImportFileException("cannot open $path")
+    val input = fopen(path, "rb") ?: throw ImportFileException("cannot open $path")
+    val buffer = ByteArray(ReadBytes)
     try {
-        while (true) {
-            val data = input.readDataOfLength(ReadBytes.toULong())
-            val n = data.length.toInt()
-            if (n == 0) break
-            block(data.toByteArray(), n)
+        // A short read is the end of the file, or an error ferror tells apart.
+        var n = ReadBytes
+        while (n == ReadBytes) {
+            n = buffer.usePinned { fread(it.addressOf(0), 1u, ReadBytes.toULong(), input) }.toInt()
+            if (n > 0) block(buffer, n)
         }
+        if (ferror(input) != 0) throw ImportFileException("cannot read $path")
     } finally {
-        input.closeFile()
+        fclose(input)
     }
 }
 
-internal fun NSData.toByteArray(): ByteArray {
-    val n = length.toInt()
-    val out = ByteArray(n)
-    if (n > 0) out.usePinned { memcpy(it.addressOf(0), bytes, length) }
-    return out
-}
+/** A new file at [path], written from Kotlin's bytes with stdio, as [pump] reads (FBBD-393). */
+internal class FileWriter(private val path: String) {
+    private var file: CPointer<FILE>? = fopen(path, "wb") ?: throw ImportFileException("cannot create $path")
 
-internal fun ByteArray.toNSData(from: Int, to: Int): NSData =
-    if (to == from) {
-        NSData()
-    } else {
-        usePinned { NSData.create(bytes = it.addressOf(from), length = (to - from).toULong()) }
+    fun write(bytes: ByteArray, from: Int, to: Int) {
+        if (to <= from) return
+        val out = file ?: throw ImportFileException("$path is closed")
+        val n = bytes.usePinned { fwrite(it.addressOf(from), 1u, (to - from).toULong(), out) }.toInt()
+        if (n != to - from) throw ImportFileException("cannot write $path")
     }
+
+    /** Closes the file, on the disk first with [sync]; a second close does nothing. */
+    fun close(sync: Boolean = true) {
+        val out = file ?: return
+        file = null
+        val flushed = !sync || (fflush(out) == 0 && fsync(fileno(out)) == 0)
+        if (fclose(out) != 0 || !flushed) throw ImportFileException("cannot write $path")
+    }
+}

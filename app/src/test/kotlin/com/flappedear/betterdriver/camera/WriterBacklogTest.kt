@@ -128,4 +128,24 @@ class WriterBacklogTest {
         backlog.release(budgetKib * 4 * 1_024)
         assertEquals(0, backlog.takenKib)
     }
+
+    /** Audit 30 Oct BD-04: a write that throws still gives its room back, and the failure is reported. */
+    @Test
+    fun throwingWriteGivesItsRoomBackAndIsReported() {
+        val backlog = WriterBacklog(budgetKib, waitMs)
+        val failures = mutableListOf<Exception>()
+        repeat(budgetKib / 256 * 3) {
+            assertTrue("room for copy $it", backlog.reserve(256 * 1_024))
+            backlog.written(256 * 1_024, failures::add) { error("disk gone") }
+        }
+        assertEquals(0, backlog.takenKib)
+        assertFalse(backlog.stalled)
+        assertEquals(budgetKib / 256 * 3, failures.size)
+        assertTrue(failures.all { it is IllegalStateException })
+        var wrote = false
+        assertTrue(backlog.reserve(1_024))
+        backlog.written(1_024, failures::add) { wrote = true }
+        assertTrue(wrote)
+        assertEquals(0, backlog.takenKib)
+    }
 }

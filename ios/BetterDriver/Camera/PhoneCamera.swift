@@ -28,6 +28,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private let videoOut = AVCaptureVideoDataOutput()
     private let audioOut = AVCaptureAudioDataOutput()
     private var observers: [NSObjectProtocol] = []
+    /// Says which way up the phone is held; watched so the next file follows it ([landscape]).
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationWatch: NSKeyValueObservation?
     /// Main queue: [stop] came, possibly while the access prompt was still open.
     private var stopped = false
 
@@ -45,6 +48,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private var fileIndex: Int32 = 0
     private var firstPts: CMTime = .invalid
     private var lastSyncPts: CMTime = .invalid
+    /// The current file's frames: taken, dropped, late (BD-01).
+    private var counts = PhoneFrameCounts()
     private var failures = 0
     private static let maxFailures = 3
 
@@ -82,6 +87,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         }
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
+        rotationWatch = nil
+        rotationCoordinator = nil
         let capture = self.capture
         queue.async { capture.stopRunning() }
     }
@@ -92,9 +99,17 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             status("Not supported", ok: false)
             return
         }
-        // The angle that keeps the horizon level for how the phone is held now, as the file's
-        // orientation (the frames themselves are not turned).
-        let angle = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil).videoRotationAngleForHorizonLevelCapture
+        // Video is always landscape, as the track screen (Arek): the file's orientation (the frames
+        // themselves are not turned) is the landscape side the phone is held on, 0° or 180°. Held
+        // upright or flat, the last landscape side stays, at first the camera's own (0°): a turn of
+        // 90° made the car's video play sideways in a narrow upright frame.
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        let angle = Self.landscape(coordinator.videoRotationAngleForHorizonLevelCapture) ?? 0
+        rotationCoordinator = coordinator
+        rotationWatch = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) { [weak self] c, _ in
+            guard let self, let turned = Self.landscape(c.videoRotationAngleForHorizonLevelCapture) else { return }
+            self.queue.async { self.rotation = turned }
+        }
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: capture, queue: nil) { [weak self] _ in
@@ -120,6 +135,12 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             }
             self.capture.startRunning()
         }
+    }
+
+    /// [angle] when it is a landscape side (0° or 180°), else nil.
+    static func landscape(_ angle: CGFloat) -> CGFloat? {
+        let a = (Int(angle.rounded()) % 360 + 360) % 360
+        return a == 0 || a == 180 ? CGFloat(a) : nil
     }
 
     private func configure(_ device: AVCaptureDevice) throws {
@@ -185,15 +206,23 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             }
             if writer == nil, running { open(at: pts, frame: sample) }
             guard let writer, writer.status == .writing, let videoIn else { return }
-            if videoIn.isReadyForMoreMediaData, !videoIn.append(sample) {
-                failedFile()
-                return
+            // A frame the writer is not ready for is counted and left out; only a frame in the file
+            // may be named by a video_sync (audit 30 Oct BD-01).
+            switch counts.frame(ready: videoIn.isReadyForMoreMediaData, append: { videoIn.append(sample) }) {
+            case .appended: sync(at: pts)
+            case .dropped: break
+            case .failed: failedFile()
             }
-            sync(at: pts)
         } else if output === audioOut, let writer, writer.status == .writing, let audioIn,
                   CMTimeCompare(pts, firstPts) >= 0, audioIn.isReadyForMoreMediaData {
             _ = audioIn.append(sample)
         }
+    }
+
+    /// A frame the camera dropped before it reached the app (it came late): counted for the file's log line.
+    func captureOutput(_ output: AVCaptureOutput, didDrop sample: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard output === videoOut, writer != nil else { return }
+        counts.late += 1
     }
 
     /// Starts the next file at the frame captured at [pts]; [frame] gives its size.
@@ -231,6 +260,7 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             file = name
             firstPts = pts
             lastSyncPts = pts
+            counts = PhoneFrameCounts()
             log.started(file: name, startMicros: sessionMicros(of: pts).frame, fps: recording.fps)
             // Green at the chosen mode, amber once stepped down (UI-07).
             status(recording.label, ok: recording == mode)
@@ -300,11 +330,25 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private func finishFile(reason: String) {
         guard let writer, let file else { return }
         log.stopped(file: file, reason: reason)
+        AppLog.i(Self.tag, "\(file) ended (\(reason)): \(counts.text)")
         // A failed writer is left as it is: its inputs only take marks while it writes.
         if writer.status == .writing {
             videoIn?.markAsFinished()
             audioIn?.markAsFinished()
-            writer.finishWriting {}
+            // The MP4 gets its index only when finishWriting answers (audit 30 Oct BD-02): until then
+            // the session's video is not offered, and its answer is checked and logged.
+            let sessionId = log.sessionId
+            PhoneVideoFinishing.shared.begin(sessionId: sessionId)
+            writer.finishWriting {
+                if writer.status == .completed {
+                    AppLog.i(Self.tag, "\(file) finished")
+                } else {
+                    AppLog.w(Self.tag, "\(file) not finished: \(Self.describe(writer))")
+                }
+                PhoneVideoFinishing.shared.end(sessionId: sessionId)
+            }
+        } else {
+            AppLog.w(Self.tag, "\(file) not finished: \(Self.describe(writer))")
         }
         self.writer = nil
         self.videoIn = nil
@@ -335,6 +379,12 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             self.status("Restarting", ok: false)
             self.capture.startRunning()
         }
+    }
+
+    private static let tag = "PhoneCamera"
+
+    private static func describe(_ writer: AVAssetWriter) -> String {
+        "status=\(writer.status.rawValue) error=\(writer.error.map { String(describing: $0) } ?? "none")"
     }
 
     private func status(_ text: String, ok: Bool) {
