@@ -31,9 +31,14 @@ final class ProgressionTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         let more = app.buttons["sessionMore"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10), "no More menu")
-        more.tap()
         let open = app.buttons["Progression at this track"].firstMatch
-        XCTAssertTrue(open.waitForExistence(timeout: 10), "no Progression in the More menu")
+        // The menu can close while it opens, when the session's cue counts or progress land: open
+        // it again until its item can be tapped.
+        for _ in 0..<4 where !(open.exists && open.isHittable) {
+            more.tap()
+            _ = open.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(open.isHittable, "no Progression in the More menu")
         open.tap()
         XCTAssertFalse(app.staticTexts["Not implemented yet"].exists, "still the placeholder")
         // Each session at the track is analysed off the main thread. On a busy CI simulator a query

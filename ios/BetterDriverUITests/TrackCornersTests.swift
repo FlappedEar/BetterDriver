@@ -68,8 +68,13 @@ final class TrackCornersTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         let more = app.buttons["sessionMore"].firstMatch
         XCTAssertTrue(more.waitForExistence(timeout: 10), "no More menu")
-        more.tap()
-        app.buttons["Progression at this track"].firstMatch.tap()
+        let open = app.buttons["Progression at this track"].firstMatch
+        // The menu can close while it opens, when the session's cue counts or progress land.
+        for _ in 0..<4 where !(open.exists && open.isHittable) {
+            more.tap()
+            _ = open.waitForExistence(timeout: 5)
+        }
+        open.tap()
         let both = app.staticTexts["2 sessions on 1 day"].firstMatch
         var shown = false
         for _ in 0..<36 where !shown {

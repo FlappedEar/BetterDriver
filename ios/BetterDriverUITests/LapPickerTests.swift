@@ -36,11 +36,9 @@ final class LapPickerTests: XCTestCase {
         XCTAssertTrue(laps.element(boundBy: 2).waitForExistence(timeout: 10), "no Jastrząb laps")
         XCTAssertFalse(app.buttons["lapPickerCompare"].firstMatch.isEnabled, "Compare before two laps")
         laps.element(boundBy: 2).tap()
-        app.swipeUp()
-        app.swipeUp()
-        let shown = laps.allElementsBoundByIndex.filter { $0.isHittable }
-        XCTAssertTrue(shown.count > 1, "no lap to pick for B")
-        shown[shown.count - 1].tap()
+        // B: another lap of the same session, the next one (the list scrolls to it).
+        XCTAssertTrue(laps.element(boundBy: 3).exists, "no lap to pick for B")
+        laps.element(boundBy: 3).tap()
         keep("Compare laps, two picked")
         app.swipeDown()
         app.swipeDown()
