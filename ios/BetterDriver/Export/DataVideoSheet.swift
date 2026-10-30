@@ -14,6 +14,28 @@ struct DataVideoSheet: View {
     let onWatch: (DataVideoPlayback) -> Void
     let onClose: () -> Void
 
+    var body: some View {
+        NavigationStack {
+            DataVideoPanel(sessionId: sessionId, title: title, onWatch: onWatch)
+                .navigationTitle("Video with data")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Cancel", action: onClose)
+                    }
+                }
+        }
+        .accessibilityIdentifier("dataVideoSheet")
+    }
+}
+
+/// What Video with data offers, in its sheet and as the session's Video tab: the parts, Watch and
+/// Save video. Leaving it stops a video being made.
+struct DataVideoPanel: View {
+    let sessionId: String
+    let title: String
+    let onWatch: (DataVideoPlayback) -> Void
+
     @State private var loading = true
     @State private var session: DataVideoSession?
     @State private var durations: [String: KotlinLong] = [:]
@@ -28,63 +50,51 @@ struct DataVideoSheet: View {
     @State private var job: Task<Void, Never>?
 
     var body: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 10) {
-                DimText(
-                    "\(title). Speed, lap time, delta to your best lap, G and the track map are drawn over the video " +
-                        "on this phone."
-                )
-                if loading {
-                    DimText("Reading laps and video…")
-                    ProgressView().tint(Palette.accent)
-                } else if let failure {
-                    DimText(failure, color: TrackColors.loss)
-                } else {
-                    list
-                    if let picked, picked != 0 { handleRow }
-                }
-                Spacer(minLength: 0)
-                if let progress {
-                    HStack {
-                        ProgressView(value: progress).tint(Palette.accent)
-                        Button("Stop") { job?.cancel() }
-                    }
-                    DimText("Making the video…")
-                }
-                if let savedName {
-                    DimText("Saved \(savedName)")
-                        .accessibilityIdentifier("dataVideoSaved")
-                }
-                HStack {
-                    Spacer()
-                    Button("Save video") { save() }
-                        .buttonStyle(.bordered)
-                        .disabled(picked == nil || progress != nil)
-                        .accessibilityIdentifier("dataVideoSave")
-                    Button("Watch") { watch() }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Palette.accent)
-                        .foregroundStyle(Palette.onAccent)
-                        .disabled(picked == nil || progress != nil)
-                        .accessibilityIdentifier("dataVideoWatch")
-                }
+        VStack(alignment: .leading, spacing: 10) {
+            DimText(
+                "\(title). Speed, lap time, delta to your best lap, G and the track map are drawn over the video " +
+                    "on this phone."
+            )
+            if loading {
+                DimText("Reading laps and video…")
+                ProgressView().tint(Palette.accent)
+            } else if let failure {
+                DimText(failure, color: TrackColors.loss)
+            } else {
+                list
+                if let picked, picked != 0 { handleRow }
             }
-            .padding(16)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(Palette.background)
-            .navigationTitle("Video with data")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        job?.cancel()
-                        onClose()
-                    }
+            Spacer(minLength: 0)
+            if let progress {
+                HStack {
+                    ProgressView(value: progress).tint(Palette.accent)
+                    Button("Stop") { job?.cancel() }
                 }
+                DimText("Making the video…")
+            }
+            if let savedName {
+                DimText("Saved \(savedName)")
+                    .accessibilityIdentifier("dataVideoSaved")
+            }
+            HStack {
+                Spacer()
+                Button("Save video") { save() }
+                    .buttonStyle(.bordered)
+                    .disabled(picked == nil || progress != nil)
+                    .accessibilityIdentifier("dataVideoSave")
+                Button("Watch") { watch() }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Palette.accent)
+                    .foregroundStyle(Palette.onAccent)
+                    .disabled(picked == nil || progress != nil)
+                    .accessibilityIdentifier("dataVideoWatch")
             }
         }
-        .accessibilityIdentifier("dataVideoSheet")
+        .padding(16)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Palette.background)
         .task { await load() }
+        .onDisappear { job?.cancel() }
         .sheet(item: $saved) { file in
             SaveToFiles(url: file.url) { saved = nil }
         }
@@ -239,6 +249,8 @@ struct DataVideoPlayerPage: View {
                 })
             VideoPlayer(player: player)
                 .ignoresSafeArea(edges: .bottom)
+                // The video's own shape with its overlay, for the UI test: always landscape.
+                .accessibilityValue(playback.overlay.renderSize.width > playback.overlay.renderSize.height ? "wide" : "tall")
                 .accessibilityIdentifier("dataVideoPlayer")
             Button { onClose() } label: {
                 Image(systemName: "xmark.circle.fill")

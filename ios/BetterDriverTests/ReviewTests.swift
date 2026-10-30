@@ -6,7 +6,7 @@ import BetterDriverCore
 /// The iPad review's Swift side (FBBD-331): the tabs as on Android and the session file type.
 final class ReviewTests: XCTestCase {
     func testSixTabsAsOnAndroidSummaryFirst() {
-        XCTAssertEqual(SessionTab.allCases.map(\.rawValue), ["Summary", "Compare", "Map", "Laps", "Corners", "Car"])
+        XCTAssertEqual(SessionTab.allCases.map(\.rawValue), ["Summary", "Compare", "Map", "Laps", "Corners", "Car", "Video"])
     }
 
     func testSessionFileTypeIsDeclared() {

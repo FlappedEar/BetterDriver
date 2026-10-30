@@ -36,17 +36,25 @@ enum DataVideoMaker {
               let video = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid),
               let audio = composition.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)
         else { throw DataVideoError.noVideo }
-        var turned = false
+        var turned: CGAffineTransform?
+        // Where a file was recorded on the other landscape side than the first (the phone turned
+        // round during a break): one track has one transform, so those frames are turned here.
+        var flipped: [CMTimeRange] = []
         for cut in cuts {
             let asset = AVURLAsset(url: URL(fileURLWithPath: cut.path))
             let range = CMTimeRange(start: cmTime(cut.fromMicros), end: cmTime(cut.toMicros))
             let at = cmTime(cut.outputStartMicros)
             guard let source = try await asset.loadTracks(withMediaType: .video).first else { continue }
             try video.insertTimeRange(range, of: source, at: at)
-            if !turned {
-                // The phone's files say how they are turned (PhoneCamera's transform); the video is shown upright.
-                video.preferredTransform = try await source.load(.preferredTransform)
-                turned = true
+            // The phone's files say how they are turned (PhoneCamera's transform). Video is landscape,
+            // as the track screen: a file turned upright (recorded before landscape was forced) plays
+            // as the camera took it, which is the right way up for a phone in a landscape mount.
+            let transform = landscape(try await source.load(.preferredTransform))
+            if let first = turned {
+                if (transform.a < 0) != (first.a < 0) { flipped.append(CMTimeRange(start: at, duration: range.duration)) }
+            } else {
+                video.preferredTransform = transform
+                turned = transform
             }
             // A clip without sound is silent there, so clips with and without it follow each other.
             if let sound = try await asset.loadTracks(withMediaType: .audio).first {
@@ -55,8 +63,15 @@ enum DataVideoMaker {
         }
         if audio.segments.isEmpty { composition.removeTrack(audio) }
         let painter = TechHudPainter(session: session, cuts: cuts, part: part)
+        let flips = flipped
         let overlay = AVMutableVideoComposition(asset: composition) { request in
-            let source = request.sourceImage
+            var source = request.sourceImage
+            if flips.contains(where: { $0.containsTime(request.compositionTime) }) {
+                let e = source.extent
+                source = source.transformed(by: CGAffineTransform(translationX: -e.midX, y: -e.midY)
+                    .concatenating(CGAffineTransform(rotationAngle: .pi))
+                    .concatenating(CGAffineTransform(translationX: e.midX, y: e.midY)))
+            }
             let at = DataVideoMaker.micros(request.compositionTime)
             guard let hud = painter.overlay(at: at, size: source.extent.size) else {
                 request.finish(with: source, context: nil)
@@ -66,6 +81,11 @@ enum DataVideoMaker {
             request.finish(with: placed.composited(over: source), context: nil)
         }
         return (composition, overlay)
+    }
+
+    /// [transform] when it keeps the video landscape (0° or 180°), else none.
+    static func landscape(_ transform: CGAffineTransform) -> CGAffineTransform {
+        abs(transform.b) > 0.5 ? .identity : transform
     }
 
     static func micros(_ t: CMTime) -> Int64 {
@@ -143,8 +163,9 @@ enum DataVideoDemo {
         }
     }
 
-    /// A grey 640×360 H.264 file of [seconds] at 30 fps.
-    private static func write(_ url: URL, seconds: Int) -> Bool {
+    /// A grey 640×360 H.264 file of [seconds] at 30 fps, tagged as turned upright (90°) as the
+    /// iPhone's files were before landscape was forced: it still plays landscape.
+    static func write(_ url: URL, seconds: Int, upright: Bool = true) -> Bool {
         try? FileManager.default.removeItem(at: url)
         guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mp4) else { return false }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
@@ -154,6 +175,7 @@ enum DataVideoDemo {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: 640, kCVPixelBufferHeightKey as String: 360,
         ])
+        if upright { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }
         guard writer.canAdd(input) else { return false }
         writer.add(input)
         guard writer.startWriting() else { return false }
