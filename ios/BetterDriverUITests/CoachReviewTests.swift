@@ -55,7 +55,7 @@ final class CoachReviewTests: XCTestCase {
         XCTAssertTrue(menus.element(boundBy: jastrzab).waitForExistence(timeout: 30), "no session ⋮")
         // Silesia Ring was driven without the coach: as on Android, no Coach review there.
         sleep(5)
-        menus.element(boundBy: 0).tap()
+        tapWhereItIs(menus.element(boundBy: 0))
         XCTAssertTrue(app.buttons["Share"].firstMatch.waitForExistence(timeout: 10), "no session menu")
         XCTAssertFalse(coachReviewItem().exists, "Coach review on a session with no cues")
         closeMenu()
@@ -64,10 +64,12 @@ final class CoachReviewTests: XCTestCase {
         var offered = false
         // The rows carry a detail line now (Android's): on an iPhone the coached session can be below the fold.
         let coached = menus.element(boundBy: jastrzab)
-        for _ in 0..<4 where !coached.isHittable { app.swipeUp() }
+        // Clear of the navigation and tab bars, by frame: isHittable is not reliable here (see tapWhereItIs).
+        let onScreen = app.windows.firstMatch.frame.insetBy(dx: 0, dy: 100)
+        for _ in 0..<4 where !onScreen.contains(coached.frame) { app.swipeUp() }
         for _ in 0..<12 where !offered {
             XCTAssertTrue(coached.waitForExistence(timeout: 10), "the Sessions list left the screen")
-            coached.tap()
+            tapWhereItIs(coached)
             offered = item.waitForExistence(timeout: 5)
             if !offered { closeMenu() }
         }
@@ -83,6 +85,13 @@ final class CoachReviewTests: XCTestCase {
     private func closeMenu() {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
         sleep(1)
+    }
+
+    /// A row's ⋮ is tapped at its frame: on the iOS CI simulators XCUITest reported it "not hittable"
+    /// (ios.yml on 3581759) although the release gate tapped it. The menu check after each tap
+    /// catches a tap that missed.
+    private func tapWhereItIs(_ button: XCUIElement) {
+        button.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
     }
 
     /// A menu item is tapped where it is: on a busy CI simulator XCUITest's scroll-to-visible on it
