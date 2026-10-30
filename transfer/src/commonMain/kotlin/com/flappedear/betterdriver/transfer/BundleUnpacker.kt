@@ -22,7 +22,8 @@ interface BundleEntrySink {
 /**
  * Reads the bundle container (see BundleFile) pushed to it in pieces of any size, so a bundle of
  * any length, video included, is read in one pass with little memory (FBBD-331). [feed] each piece
- * in order, then [finish]. Every file's CRC and the file count are checked; anything wrong throws
+ * in order, then [finish]. Every file's CRC and the file count are checked, and a path may come
+ * only once, in at most [BundleFormat.MaxFiles] files (audit 30 Oct BD-06); anything wrong throws
  * [BundleDamagedException], possibly after some files were handed out.
  */
 class BundleUnpacker(private val sink: BundleEntrySink, private val magic: ByteArray = BundleFormat.SessionMagic) {
@@ -36,6 +37,7 @@ class BundleUnpacker(private val sink: BundleEntrySink, private val magic: ByteA
     private var crc = Crc32()
     private var files = 0
     private var path = ""
+    private val seen = HashSet<String>()
 
     /** Total bytes fed so far. */
     var bytesRead = 0L
@@ -112,6 +114,10 @@ class BundleUnpacker(private val sink: BundleEntrySink, private val magic: ByteA
                     throw BundleDamagedException("bad path in bundle: ${e.message}", e)
                 }
                 if (!BundleFormat.validPath(path)) throw BundleDamagedException("bad path in bundle: $path")
+                if (!seen.add(path)) throw BundleDamagedException("$path is in the bundle twice")
+                if (seen.size > BundleFormat.MaxFiles) {
+                    throw BundleDamagedException("more than ${BundleFormat.MaxFiles} files")
+                }
                 next(Step.SIZE, Long.SIZE_BYTES)
             }
             Step.SIZE -> {
