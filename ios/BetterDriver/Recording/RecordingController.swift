@@ -93,7 +93,10 @@ final class RecordingController: ObservableObject {
 
     var isRecording: Bool { session != nil }
 
-    init() {
+    /// The app's one recorder: its start work (observers, leftover Live Activities) runs once.
+    static let shared = RecordingController()
+
+    private init() {
         // A Live Activity left by a session the app died in would count on the lock screen.
         RecordingActivity.endLeftOver()
         // Swiped away while recording: close the session's files and its Live Activity as a stop does.
