@@ -3,6 +3,7 @@ import BetterDriverCore
 
 /// The sections of a session, the same six tabs as Android (UI-62 B, UI-157 B), drawn as
 /// Android's tab row: an icon over a small name (UI-163 C, UI-291 A). Summary opens first (UI-293 A).
+// parity-list:session-tabs
 enum SessionTab: String, CaseIterable, Identifiable {
     case summary = "Summary"
     case compare = "Compare"
