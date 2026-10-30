@@ -3,7 +3,6 @@ package com.flappedear.betterdriver.coach
 import android.content.Context
 import android.os.SystemClock
 import com.flappedear.betterdriver.analysis.identity.IdentityMigrations
-import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -28,24 +27,6 @@ internal fun coachLibrary(context: Context): CoachLibrary {
         plans = { id -> lines.get(id)?.let(::plannedTargets) },
     )
 }
-
-/**
- * The targets of [plan] in its corners with a CornerId, as the coach reference takes them, with the
- * braking points beyond his best (FBBD-312, UI-276 B: "Turn 9, brake 10 later") and the gear at
- * the slowest point with the car's gearbox (FBBD-326, UI-279 A: "Turn 7, brake at 80, second").
- */
-internal fun plannedTargets(plan: LinePlan) = PlannedTargets(
-    plan.sessionId,
-    plan.corners.mapNotNull { c ->
-        c.cornerId?.let {
-            PlannedTarget(
-                it, c.target.sessionId, c.target.lapSeconds,
-                c.brakeRoom?.laterMeters ?: 0, c.brakeRoom?.seconds ?: 0.0, c.gear?.gear,
-            )
-        }
-    },
-    plan.gearbox,
-)
 
 /** How often a refresh looks whether a recording started, in milliseconds. */
 private const val RecordingCheckMillis = 2_000L

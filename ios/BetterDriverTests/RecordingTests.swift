@@ -96,7 +96,8 @@ final class RecordingTests: XCTestCase {
             referencesDir: base.appendingPathComponent("coach/references").path,
             linePlansDir: base.appendingPathComponent("coach/lines").path,
             settings: LiveCoachKt.coachSettings(polish: false, audioDelayMillis: 0),
-            audioDelayFromPhone: false,
+            outputDelayMillis: 0,
+            output: "speaker",
             speaker: speaker
         )
         for n in Int64(0)...Int64(25 * 140) {
@@ -136,7 +137,8 @@ final class RecordingTests: XCTestCase {
             referencesDir: base.appendingPathComponent("coach/references").path,
             linePlansDir: base.appendingPathComponent("coach/lines").path,
             settings: spoken,
-            audioDelayFromPhone: false,
+            outputDelayMillis: 0,
+            output: "speaker",
             speaker: speaker
         )
         for n in Int64(0)...Int64(25 * 140) {
