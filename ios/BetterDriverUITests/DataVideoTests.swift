@@ -103,6 +103,9 @@ final class DataVideoTests: XCTestCase {
     /// Video plays in landscape on the iPhone, whichever way the phone is held. The iPad turns too,
     /// unless it shares the screen with another app.
     private func assertLandscape() {
+        // The video itself with its overlay: landscape on every device, also from a file tagged upright.
+        XCTAssertEqual(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.value as? String, "wide",
+                       "the video is not landscape")
         guard UIDevice.current.userInterfaceIdiom == .phone else { return }
         let close = app.buttons["dataVideoClose"].firstMatch
         let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'landscape'"), object: close)

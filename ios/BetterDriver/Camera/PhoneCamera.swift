@@ -28,6 +28,9 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     private let videoOut = AVCaptureVideoDataOutput()
     private let audioOut = AVCaptureAudioDataOutput()
     private var observers: [NSObjectProtocol] = []
+    /// Says which way up the phone is held; watched so the next file follows it ([landscape]).
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
+    private var rotationWatch: NSKeyValueObservation?
     /// Main queue: [stop] came, possibly while the access prompt was still open.
     private var stopped = false
 
@@ -82,6 +85,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         }
         observers.forEach { NotificationCenter.default.removeObserver($0) }
         observers.removeAll()
+        rotationWatch = nil
+        rotationCoordinator = nil
         let capture = self.capture
         queue.async { capture.stopRunning() }
     }
@@ -92,9 +97,17 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             status("Not supported", ok: false)
             return
         }
-        // The angle that keeps the horizon level for how the phone is held now, as the file's
-        // orientation (the frames themselves are not turned).
-        let angle = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil).videoRotationAngleForHorizonLevelCapture
+        // Video is always landscape, as the track screen (Arek): the file's orientation (the frames
+        // themselves are not turned) is the landscape side the phone is held on, 0° or 180°. Held
+        // upright or flat, the last landscape side stays, at first the camera's own (0°): a turn of
+        // 90° made the car's video play sideways in a narrow upright frame.
+        let coordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        let angle = Self.landscape(coordinator.videoRotationAngleForHorizonLevelCapture) ?? 0
+        rotationCoordinator = coordinator
+        rotationWatch = coordinator.observe(\.videoRotationAngleForHorizonLevelCapture, options: [.new]) { [weak self] c, _ in
+            guard let self, let turned = Self.landscape(c.videoRotationAngleForHorizonLevelCapture) else { return }
+            self.queue.async { self.rotation = turned }
+        }
         let center = NotificationCenter.default
         observers = [
             center.addObserver(forName: AVCaptureSession.wasInterruptedNotification, object: capture, queue: nil) { [weak self] _ in
@@ -120,6 +133,12 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             }
             self.capture.startRunning()
         }
+    }
+
+    /// [angle] when it is a landscape side (0° or 180°), else nil.
+    static func landscape(_ angle: CGFloat) -> CGFloat? {
+        let a = (Int(angle.rounded()) % 360 + 360) % 360
+        return a == 0 || a == 180 ? CGFloat(a) : nil
     }
 
     private func configure(_ device: AVCaptureDevice) throws {

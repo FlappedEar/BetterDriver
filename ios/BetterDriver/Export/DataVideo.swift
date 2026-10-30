@@ -44,8 +44,10 @@ enum DataVideoMaker {
             guard let source = try await asset.loadTracks(withMediaType: .video).first else { continue }
             try video.insertTimeRange(range, of: source, at: at)
             if !turned {
-                // The phone's files say how they are turned (PhoneCamera's transform); the video is shown upright.
-                video.preferredTransform = try await source.load(.preferredTransform)
+                // The phone's files say how they are turned (PhoneCamera's transform). Video is landscape,
+                // as the track screen: a file turned upright (recorded before landscape was forced) plays
+                // as the camera took it, which is the right way up for a phone in a landscape mount.
+                video.preferredTransform = landscape(try await source.load(.preferredTransform))
                 turned = true
             }
             // A clip without sound is silent there, so clips with and without it follow each other.
@@ -66,6 +68,11 @@ enum DataVideoMaker {
             request.finish(with: placed.composited(over: source), context: nil)
         }
         return (composition, overlay)
+    }
+
+    /// [transform] when it keeps the video landscape (0° or 180°), else none.
+    static func landscape(_ transform: CGAffineTransform) -> CGAffineTransform {
+        abs(transform.b) > 0.5 ? .identity : transform
     }
 
     static func micros(_ t: CMTime) -> Int64 {
@@ -143,8 +150,9 @@ enum DataVideoDemo {
         }
     }
 
-    /// A grey 640×360 H.264 file of [seconds] at 30 fps.
-    private static func write(_ url: URL, seconds: Int) -> Bool {
+    /// A grey 640×360 H.264 file of [seconds] at 30 fps, tagged as turned upright (90°) as the
+    /// iPhone's files were before landscape was forced: it still plays landscape.
+    static func write(_ url: URL, seconds: Int, upright: Bool = true) -> Bool {
         try? FileManager.default.removeItem(at: url)
         guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mp4) else { return false }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
@@ -154,6 +162,7 @@ enum DataVideoDemo {
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
             kCVPixelBufferWidthKey as String: 640, kCVPixelBufferHeightKey as String: 360,
         ])
+        if upright { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }
         guard writer.canAdd(input) else { return false }
         writer.add(input)
         guard writer.startWriting() else { return false }

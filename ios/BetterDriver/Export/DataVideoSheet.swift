@@ -239,6 +239,8 @@ struct DataVideoPlayerPage: View {
                 })
             VideoPlayer(player: player)
                 .ignoresSafeArea(edges: .bottom)
+                // The video's own shape with its overlay, for the UI test: always landscape.
+                .accessibilityValue(playback.overlay.renderSize.width > playback.overlay.renderSize.height ? "wide" : "tall")
                 .accessibilityIdentifier("dataVideoPlayer")
             Button { onClose() } label: {
                 Image(systemName: "xmark.circle.fill")
