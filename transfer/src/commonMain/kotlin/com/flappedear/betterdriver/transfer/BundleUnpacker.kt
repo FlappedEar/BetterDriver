@@ -114,10 +114,7 @@ class BundleUnpacker(private val sink: BundleEntrySink, private val magic: ByteA
                     throw BundleDamagedException("bad path in bundle: ${e.message}", e)
                 }
                 if (!BundleFormat.validPath(path)) throw BundleDamagedException("bad path in bundle: $path")
-                if (!seen.add(path)) throw BundleDamagedException("$path is in the bundle twice")
-                if (seen.size > BundleFormat.MaxFiles) {
-                    throw BundleDamagedException("more than ${BundleFormat.MaxFiles} files")
-                }
+                checkNew(path)
                 next(Step.SIZE, Long.SIZE_BYTES)
             }
             Step.SIZE -> {
@@ -140,6 +137,12 @@ class BundleUnpacker(private val sink: BundleEntrySink, private val magic: ByteA
             }
             Step.CONTENT, Step.DONE -> error("not a field")
         }
+    }
+
+    /** A path may come only once, in at most [BundleFormat.MaxFiles] files (audit 30 Oct BD-06). */
+    private fun checkNew(path: String) {
+        if (!seen.add(path)) throw BundleDamagedException("$path is in the bundle twice")
+        if (seen.size > BundleFormat.MaxFiles) throw BundleDamagedException("more than ${BundleFormat.MaxFiles} files")
     }
 
     private fun kind() = if (magic.contentEquals(BundleFormat.SessionMagic)) "bundle" else "backup"

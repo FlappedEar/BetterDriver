@@ -120,14 +120,18 @@ internal class BundleReader(input: InputStream, private val magic: ByteArray = B
     private fun readFile(seen: MutableSet<String>, onFile: (String, Long, InputStream) -> Unit) {
         val path = data.readUTF()
         BundleFile.checkPath(path)
-        if (!seen.add(path)) throw BundleFormatException("$path is in the bundle twice")
-        if (seen.size > BundleFormat.MaxFiles) throw BundleFormatException("more than ${BundleFormat.MaxFiles} files")
+        checkNew(seen, path)
         val size = data.readLong()
         if (size < 0) throw BundleFormatException("bad size for $path")
         val contents = Bounded(data, size)
         onFile(path, size, contents)
         contents.skipRest()
         if (data.readInt() != contents.crc.value.toInt()) throw BundleFormatException("$path is damaged (CRC)")
+    }
+
+    private fun checkNew(seen: MutableSet<String>, path: String) {
+        if (!seen.add(path)) throw BundleFormatException("$path is in the bundle twice")
+        if (seen.size > BundleFormat.MaxFiles) throw BundleFormatException("more than ${BundleFormat.MaxFiles} files")
     }
 
     private fun kindOf(magic: ByteArray) = if (magic.contentEquals(BundleFile.Magic)) "bundle" else "backup"

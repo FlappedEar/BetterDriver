@@ -270,7 +270,7 @@ class RecorderService : Service() {
                 devices = sources.map { it.name },
                 channels = gnssChannels(gnss),
             )
-            Recorder(store).startWith(info, undo = ::undoStart) { recording ->
+            Recorder(store).startWith(info, undo = undoStart) { recording ->
                 logTo(recording, gnss.name)
                 val tracker = LiveTracker(
                     recording.id,
@@ -283,8 +283,7 @@ class RecorderService : Service() {
                 recording.listeners.add(tracker)
                 // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
                 // newer one the UI process fetched since the last session is used.
-                val circuits = CircuitDirectory(circuitsDir(this)).load()
-                val timing = sessionTiming(tracksDir(this), recording, circuits)
+                val timing = sessionTiming(tracksDir(this), recording, CircuitDirectory(circuitsDir(this)).load())
                 recording.listeners.add(timing)
                 // The live coach runs in its own process, fed from here (FBBD-98); off in settings, it is not started.
                 val coach = if (coachSettings(this).read().verbosity == Verbosity.Off) {
@@ -324,7 +323,7 @@ class RecorderService : Service() {
      * no service around it. It is stopped; once it is already the running one, through its end, so the
      * service, wake lock and coach go only when the writer has stopped (Audit A03).
      */
-    private fun undoStart(recording: Recording) {
+    private val undoStart: (Recording) -> Unit = { recording ->
         val stopped = active?.takeIf { it.recording === recording }?.end?.stop(StartFailed)
             ?: recording.stop(StartFailed)
         if (!stopped) DebugLog.w(Tag, "recording ${recording.id} still finishing after a failed start")
