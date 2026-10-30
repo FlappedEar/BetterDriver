@@ -32,4 +32,5 @@ post-release PR, or with the next PR). A new page gets a row; a deleted page los
 | 12746768 | BetterDriver Development Workflow | 1.21.0 |
 | 12976197 | Design and UI | 1.21.0 |
 | 12812319 | BetterDriver UI decisions | 1.21.0 |
+| 40665106 | Working rules | 1.21.0 |
 | 12648738 | Racelogic VBOX track maps evaluation | won't change |
