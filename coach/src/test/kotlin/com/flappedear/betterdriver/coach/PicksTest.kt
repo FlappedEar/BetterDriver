@@ -82,6 +82,16 @@ class PicksTest {
     }
 
     @Test
+    fun `an analysis's corners show as flagged when picked in any session there, by line without an identity`() {
+        // FBBD-363: the iPad's Where time goes flags as Android's, from the shared pickedOf.
+        val candidates = mapOf("a" to sim.pick(0), "b" to sim.pick(1), "c" to sim.pick(2))
+        val picks = listOf(sim.pick(1, shift = Xy(5.0, 3.0)).copy(sessionId = "s2"))
+        assertEquals(setOf("b"), pickedOf(candidates, picks, identity = null))
+        assertTrue(pickedOf(candidates, emptyList(), identity = null).isEmpty())
+        assertEquals(setOf("a", "c"), pickedOf(candidates, listOf(sim.pick(0), sim.pick(2)), identity = null))
+    }
+
+    @Test
     fun `the other leg of a hairpin, driven the other way, is not the same corner`() {
         // The same stretch reversed stands in for a leg 0 m away driven the opposite way.
         val pick = sim.pick(1)

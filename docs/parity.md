@@ -65,7 +65,7 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Coach | Warm-up lap when the track was driven earlier the same day | ✅ 0.3.3 | ✅ | Shared | FBBD-190 |  |
 | Coach | Pre-rendered cue clips | ✅ ≤0.3.1 | ❌ live speech only | Android only | FBBD-48, FBBD-357 | `log-android:CueClips` |
 | Coach | Headset delay: measured, re-measured on route change, in the log | 🟡 open for 1.0 | 🟡 re-timed on route change and in the log (TF 1425), not yet tested with a headset | Delay bookkeeping, re-timing and its log lines shared (CoachRun, SessionDelays, FBBD-357); route watch and measuring per platform | FBBD-9, FBBD-49, FBBD-255, FBBD-354, FBBD-357 | `log-android:AudioOut` `log-android:AudioRoute` `log-android:OutputDelay` `log-ios:AudioRoute` `log-ios:OutputDelay` |
-| Coach | Coach corner picks from the review | ✅ 0.3.x | ❌ | Store shared (CoachPicksStore commonMain, #421); both coaches read the picks (CoachRun, FBBD-357); iOS UI to do | FBBD-148, FBBD-363 | `log-android:CoachPicks` |
+| Coach | Coach corner picks from the review | ✅ 0.3.x | 🔵 PR: flags in Where time goes | Store shared (CoachPicksStore commonMain, #421); both coaches read the picks (CoachRun, FBBD-357); flaggable corners and pickedOf shared | FBBD-148, FBBD-363 | `log-android:CoachPicks` |
 | Coach | Whole loop in CI on real sessions | 🟡 | ➖ n/a | CI | FBBD-311 |  |
 | Sessions | Sessions by day; delete; share a session (.bdsession) | ✅ | ✅ | UI per platform; bundle shared | FBBD-90, FBBD-95, FBBD-23 | `route:Sessions` `log-android:Sessions` `ios-screen:SessionsListView` `ios-screen:SessionRowView` |
 | Sessions | Export VBO + video (Circuit Tools), VBO, CSV, GPX | ✅ ≤0.3.21 | ✅ | Shared exporters | FBBD-25, FBBD-150, FBBD-216 |  |

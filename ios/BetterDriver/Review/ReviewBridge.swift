@@ -36,7 +36,7 @@ struct LapRow: Identifiable, Hashable {
 struct SessionSummary {
     /// The core's reviewed session, kept to compare laps without reading the session again.
     fileprivate let reviewed: ReviewedSession
-    fileprivate let id: String
+    let id: String
     let trackName: String?
     let laps: [LapRow]
     let bestLap: String?
@@ -243,6 +243,16 @@ enum ReviewBridge {
     }
 
     /// Timed laps [a] and [b] side by side on video, as Android opens two passes of a corner.
+    /// The corners Where time goes flags for the spoken coach, and those flagged at the track (FBBD-363).
+    static func coachFlags(_ summary: SessionSummary) -> CoachFlags {
+        library.coachFlags(reviewed: summary.reviewed, id: summary.id)
+    }
+
+    /// Flags or unflags [cornerId] for the coach's next session at the track; the flags after.
+    static func toggleCoachFlag(_ summary: SessionSummary, cornerId: String) -> CoachFlags {
+        library.toggleCoachFlag(reviewed: summary.reviewed, id: summary.id, cornerId: cornerId)
+    }
+
     static func lapsOnVideo(_ summary: SessionSummary, a: Int, b: Int) -> LapVideoReview? {
         library.lapsOnVideo(reviewed: summary.reviewed, id: summary.id, aIndex: Int32(a), bIndex: Int32(b))
     }

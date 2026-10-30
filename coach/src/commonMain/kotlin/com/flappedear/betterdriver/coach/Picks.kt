@@ -93,6 +93,20 @@ fun List<CornerPick>.toggled(pick: CornerPick): List<CornerPick> =
     if (any { it.sameCorner(pick) }) filterNot { it.sameCorner(pick) } else this + pick
 
 /**
+ * Of [candidates] (a corner of an analysis as a pick, by its segment id), those picked at the track
+ * ([picks]), as the analysis flags them (FBBD-148): by CornerId when the analysis's corners are the
+ * track's [identity] (FBBD-172), else by line, so a corner picked in one session shows as picked in
+ * every session there.
+ */
+fun pickedOf(candidates: Map<String, CornerPick>, picks: List<CornerPick>, identity: TrackRevision?): Set<String> =
+    if (identity != null) {
+        val ids = picks.mapNotNull { it.cornerIdIn(identity) }.toSet()
+        candidates.keys.filter { it in ids }.toSet()
+    } else {
+        candidates.filterValues { c -> picks.any { it.sameCorner(c) } }.keys
+    }
+
+/**
  * The corners of [map] the driver picked (FBBD-148), by the coach's number. With the track's corner
  * [identity] (FBBD-172) a coach corner is picked when it is in a picked track corner: the coach's
  * corners carry their CornerId ([identifyCorners]) and each pick names one ([CornerPick.cornerIdIn]).

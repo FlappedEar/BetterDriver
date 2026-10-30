@@ -215,7 +215,7 @@ private struct SummaryTab: View {
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
                 // This session against the earlier ones at its track (FBBD-122), as Android under the lap times.
                 ProgressionSummaryCard(summary: summary, sessionId: sessionId)
-                if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, compare: compare) }
+                if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, summary: summary, compare: compare) }
             } else if summary.laps.isEmpty {
                 if summary.trackName == nil {
                     // A loop driven again and again: make a track from it (FBBD-367).

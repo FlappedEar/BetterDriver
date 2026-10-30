@@ -226,47 +226,91 @@ struct SummaryHeartRateCard: View {
 /// Where time goes (FBBD-103, UI-67): where the fastest lap is slowest against the best time
 /// through each corner, with the lap that set it, then the other laps' largest single losses
 /// against the fastest. Tapping a loss compares that lap. Below High confidence a time is said
-/// without its number, and why is shown (FBBD-177).
+/// without its number, and why is shown (FBBD-177). The first row of each corner carries Android's
+/// coach flag (FBBD-363, FBBD-148): the spoken coach works on a flagged corner first next time there.
 struct SummaryTimeGoesCard: View {
     let ui: AnalysisUi
+    var summary: SessionSummary? = nil
     let compare: (Int) -> Void
+    @State private var flags: CoachFlags?
 
     var body: some View {
         Card {
             SectionTitle("Where time goes")
             if !ui.gains.isEmpty {
                 Dim(TimeGoesTextKt.timeGoesHeading(ui: ui))
-                ForEach(Array(ui.gains.enumerated()), id: \.offset) { _, gain in
-                    VStack(alignment: .leading, spacing: 2) {
-                        HStack {
-                            Text(gain.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
-                            Dim(TimeGoesTextKt.setOnText(gain: gain)).frame(width: 80, alignment: .leading)
-                            SummaryLoss(text: TimeGoesTextKt.gainLossText(gain: gain), confidence: gain.confidence)
+                ForEach(Array(ui.gains.enumerated()), id: \.offset) { i, gain in
+                    HStack(spacing: 4) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text(gain.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
+                                Dim(TimeGoesTextKt.setOnText(gain: gain)).frame(width: 80, alignment: .leading)
+                                SummaryLoss(text: TimeGoesTextKt.gainLossText(gain: gain), confidence: gain.confidence)
+                            }
+                            SummaryConfidence(confidence: gain.confidence)
                         }
-                        SummaryConfidence(confidence: gain.confidence)
+                        flag(flags?.gainFlag(ui: ui, index: Int32(i)), name: gain.name)
                     }
                 }
             }
             if !ui.losses.isEmpty {
                 Dim("Largest losses on other laps · tap to compare")
-                ForEach(Array(ui.losses.enumerated()), id: \.offset) { _, loss in
-                    Button { compare(Int(loss.lapIndex)) } label: {
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack {
-                                Dim("Lap \(loss.lapNumber)").frame(width: 56, alignment: .leading)
-                                Text(loss.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
-                                SummaryLoss(text: TimeGoesTextKt.lossLossText(loss: loss), confidence: loss.confidence)
+                ForEach(Array(ui.losses.enumerated()), id: \.offset) { i, loss in
+                    HStack(spacing: 4) {
+                        Button { compare(Int(loss.lapIndex)) } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Dim("Lap \(loss.lapNumber)").frame(width: 56, alignment: .leading)
+                                    Text(loss.name).foregroundStyle(Palette.onBackground).frame(maxWidth: .infinity, alignment: .leading)
+                                    SummaryLoss(text: TimeGoesTextKt.lossLossText(loss: loss), confidence: loss.confidence)
+                                }
+                                SummaryConfidence(confidence: loss.confidence)
                             }
-                            SummaryConfidence(confidence: loss.confidence)
+                            .padding(.vertical, 4)
+                            .contentShape(Rectangle())
                         }
-                        .padding(.vertical, 4)
-                        .contentShape(Rectangle())
+                        .buttonStyle(.plain)
+                        flag(flags?.lossFlag(ui: ui, index: Int32(i)), name: loss.name)
                     }
-                    .buttonStyle(.plain)
                 }
             }
+            if flags?.any(ui: ui) == true { Dim(AnalysisUiKt.CoachFlagNote) }
         }
-        .accessibilityIdentifier("timeGoes")
+        // No identifier on the card: its flags carry their own.
+        .task(id: summary?.id) { await loadFlags() }
+    }
+
+    /// The flag of corner [cornerId] at the end of a row; an empty slot keeps the column when the row
+    /// has none, so the rows line up. No flags until the track's picks have been read.
+    @ViewBuilder private func flag(_ cornerId: String?, name: String) -> some View {
+        if let cornerId, let flags {
+            let picked = flags.isPicked(cornerId: cornerId)
+            Button { toggle(cornerId) } label: {
+                Image(systemName: picked ? "flag.fill" : "flag")
+                    .foregroundStyle(picked ? Palette.cold : Palette.onSurfaceVariant)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(picked ? "Coaching \(name) next time" : "Coach \(name) next time")
+            .accessibilityIdentifier("coachFlag-\(cornerId)")
+        } else if flags?.any(ui: ui) == true {
+            Color.clear.frame(width: 40, height: 40)
+        }
+    }
+
+    private func loadFlags() async {
+        guard let summary else { return }
+        flags = await Task.detached(priority: .userInitiated) { ReviewBridge.coachFlags(summary) }.value
+    }
+
+    private func toggle(_ cornerId: String) {
+        guard let summary else { return }
+        Task {
+            flags = await Task.detached(priority: .userInitiated) {
+                ReviewBridge.toggleCoachFlag(summary, cornerId: cornerId)
+            }.value
+        }
     }
 }
 
