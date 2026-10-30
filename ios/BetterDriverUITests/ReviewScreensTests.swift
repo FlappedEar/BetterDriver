@@ -136,7 +136,9 @@ final class ReviewScreensTests: XCTestCase {
             // progress lands: open it again until the item can be tapped.
             let item = app.buttons[format].firstMatch
             for _ in 0..<4 where !(item.exists && item.isHittable) {
-                menu.tap()
+                // A tap at the button's point: the AX scroll-to-visible a plain tap makes first can fail
+                // with kAXErrorCannotComplete while the summary is still loading.
+                menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
                 _ = item.waitForExistence(timeout: 5)
             }
             XCTAssertTrue(item.isHittable, "no \(format) in the export menu")

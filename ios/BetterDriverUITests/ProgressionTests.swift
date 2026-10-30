@@ -35,7 +35,9 @@ final class ProgressionTests: XCTestCase {
         // The menu can close while it opens, when the session's cue counts or progress land: open
         // it again until its item can be tapped.
         for _ in 0..<4 where !(open.exists && open.isHittable) {
-            more.tap()
+            // A tap at the button's point: the AX scroll-to-visible a plain tap makes first can fail
+            // with kAXErrorCannotComplete while the summary is still loading.
+            more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
             _ = open.waitForExistence(timeout: 5)
         }
         XCTAssertTrue(open.isHittable, "no Progression in the More menu")
