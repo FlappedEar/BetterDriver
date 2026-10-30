@@ -73,7 +73,11 @@ private struct CornerDetailCard: View {
 
     var body: some View {
         Card {
-            SectionTitle(corner.name)
+            HStack {
+                SectionTitle(corner.name).frame(maxWidth: .infinity, alignment: .leading)
+                // Every pass through it, its traces and video (FBBD-153), as Android's Corners tab.
+                EveryPassButton(cornerId: corner.id)
+            }
             HStack {
                 Dim("").frame(maxWidth: .infinity, alignment: .leading)
                 Dim("Lap \(bestLap)").frame(width: 76, alignment: .leading)

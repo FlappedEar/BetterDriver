@@ -37,7 +37,9 @@ jobs:
     name: TestFlight
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: macos-15
-    timeout-minutes: 60
+    # The smoke gate runs every UI test on one iPhone before the archive; the review tests of
+    # PR #411 (some allowed 600 s) push it past an hour on a slow runner.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:

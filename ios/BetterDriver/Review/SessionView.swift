@@ -36,6 +36,10 @@ struct SessionView: View {
     @State private var screen: AnalysisUi?
     @State private var failure: String?
     @State private var notYet: String?
+    @State private var coachReview: CoachReviewLink?
+    @State private var progression = false
+    @State private var everyPass: EveryPassLink?
+    @State private var mapView: MapTabView = .laps
     /// Video with data (FBBD-152): its sheet, then its player full screen; closing the player comes
     /// back to the sheet.
     @State private var dataVideo = false
@@ -47,6 +51,7 @@ struct SessionView: View {
             TabRow(selected: $tab)
             Divider().overlay(Palette.outline)
             content
+                .environment(\.everyPass, openEveryPass)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .background(Palette.background)
@@ -54,15 +59,8 @@ struct SessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) { dataVideo = true } }
-            // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Progression at this track") { notYet = "Progression at a track" }
-                    Button("Coach review") { notYet = "Coach review" }
-                } label: {
-                    Label("More", systemImage: "ellipsis.circle")
-                }
-                .accessibilityIdentifier("sessionMore")
+                SessionMoreMenu(session: session, progression: $progression, coachReview: $coachReview)
             }
         }
         .sheet(isPresented: $dataVideo, onDismiss: {
@@ -79,6 +77,10 @@ struct SessionView: View {
             DataVideoPlayerPage(playback: p) { playing = nil }
         }
         .notImplementedAlert($notYet)
+        .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
+        // Every pass through a corner (FBBD-153), from the focus and the Corners tab, as on Android.
+        .fullScreenCover(item: $everyPass) { EveryPassScreen(link: $0) }
+        .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
     }
 
@@ -94,16 +96,22 @@ struct SessionView: View {
         } else if let summary {
             switch tab {
             case .summary:
-                SummaryTab(summary: summary, screen: screen, compare: { pick(index: $0, summary) }, openLine: { tab = .map })
-            case .compare: CompareTab(compare: compare, summary: summary)
+                SummaryTab(summary: summary, sessionId: session.id, screen: screen, compare: { pick(index: $0, summary) }, openLine: { mapView = .line; tab = .map })
+            case .compare: CompareTab(compare: compare, summary: summary, states: screen?.compare)
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
-            case .map: MapTab(line: summary.line)
+            case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
             case .corners: CornersTab(screen: screen)
             case .car: CarTab(car: screen?.car)
             }
         } else {
             ProgressView().tint(Palette.accent).padding(.top, 60)
         }
+    }
+
+    /// Every pass through a corner, once the session is read.
+    private var openEveryPass: ((String) -> Void)? {
+        guard let summary else { return nil }
+        return { everyPass = EveryPassLink(summary: summary, cornerId: $0) }
     }
 
     /// Picking a lap (timed lap [index]) compares it with the fastest, on Compare, Corners and Car;
@@ -133,6 +141,31 @@ struct SessionView: View {
         } catch {
             failure = "This session could not be read: \(error.localizedDescription)"
         }
+    }
+}
+
+/// Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
+/// Its own view, so that only it reads the cue counts: when they land, the session's page and its
+/// export menu are not drawn again, which would close a menu the driver is opening.
+private struct SessionMoreMenu: View {
+    let session: SessionRow
+    @Binding var progression: Bool
+    @Binding var coachReview: CoachReviewLink?
+
+    var body: some View {
+        Menu {
+            Button("Progression at this track") { progression = true }
+            // Only for a session the coach spoke in, with its cues, as Android's card (FBBD-99).
+            if let cues = CoachReviewCounts.shared.counts[session.id] {
+                Button { coachReview = CoachReviewLink(session) } label: {
+                    Text("Coach review")
+                    Text(CoachReviewCounts.text(cues))
+                }
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+        }
+        .accessibilityIdentifier("sessionMore")
     }
 }
 
@@ -169,6 +202,7 @@ private struct TabRow: View {
 /// runs. A session with no laps shows its drive, G-forces and runs, which need no laps (FBBD-342).
 private struct SummaryTab: View {
     let summary: SessionSummary
+    let sessionId: String
     let screen: AnalysisUi?
     let compare: (Int) -> Void
     let openLine: () -> Void
@@ -179,13 +213,17 @@ private struct SummaryTab: View {
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
                 SummaryTimesCard(ui: ui)
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
+                // This session against the earlier ones at its track (FBBD-122), as Android under the lap times.
+                ProgressionSummaryCard(summary: summary, sessionId: sessionId)
                 if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, compare: compare) }
             } else if summary.laps.isEmpty {
-                Card {
-                    Text(summary.trackName == nil
-                         ? "No saved track with a start/finish line here, so no laps."
-                         : "No timed laps in this session.")
-                        .foregroundStyle(Palette.onSurfaceVariant)
+                if summary.trackName == nil {
+                    // A loop driven again and again: make a track from it (FBBD-367).
+                    MakeTrackCard(sessionId: sessionId)
+                } else {
+                    Card {
+                        Text("No timed laps in this session.").foregroundStyle(Palette.onSurfaceVariant)
+                    }
                 }
                 // Where the car went all the same, as Android's no-laps analysis (FBBD-342).
                 if let drive = summary.drive { DriveCards(drive: drive) }

@@ -6,30 +6,31 @@ import com.flappedear.betterdriver.analysis.coaching.FocusVerdict
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.progression.CoachingStep
 import com.flappedear.betterdriver.analysis.progression.CornerMapping
+import com.flappedear.betterdriver.analysis.progression.DayZone
 import com.flappedear.betterdriver.analysis.progression.MetricSeries
 import com.flappedear.betterdriver.analysis.progression.MinimumTrendPoints
 import com.flappedear.betterdriver.analysis.progression.ProgressionFilter
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
 import com.flappedear.betterdriver.analysis.progression.ProgressionMetric
+import com.flappedear.betterdriver.analysis.progression.ProgressionDay
 import com.flappedear.betterdriver.analysis.progression.ProgressionPoint
 import com.flappedear.betterdriver.analysis.progression.TrackProgression
 import com.flappedear.betterdriver.analysis.progression.coachingProgression
+import com.flappedear.betterdriver.analysis.progression.dayLabel
+import com.flappedear.betterdriver.analysis.progression.monthLabel
+import com.flappedear.betterdriver.analysis.progression.sessionTimeLabel
 import com.flappedear.betterdriver.analysis.progression.trackProgression
 import com.flappedear.betterdriver.format.formatLapTime
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
-import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
-// The progression at a track (FBBD-181) as its screen shows it: each lap metric and each corner,
-// point by point, with the way it is going in words. A number is said only where the value is
-// precise (every pass behind it graded High, its channel measured in a known unit, FBBD-177);
-// elsewhere the same words without it. Lap times come from the start/finish line and are always said.
+// Common Kotlin (Android and iOS): the progression at a track (FBBD-181) as its screen shows it:
+// each lap metric and each corner, point by point, with the way it is going in words. A number is
+// said only where the value is precise (every pass behind it graded High, its channel measured in a
+// known unit, FBBD-177); elsewhere the same words without it. Lap times come from the start/finish
+// line and are always said.
 
 /** Which sessions the progression covers, counted back from today. */
 enum class ProgressionPeriod(val label: String, val days: Long?) {
@@ -86,7 +87,7 @@ data class PointRow(
     val detail: String,
     val origin: String? = null,
     val excluded: Boolean = false,
-    val day: LocalDate? = null,
+    val day: ProgressionDay? = null,
 )
 
 /** What came of the coaching at one point, in words. */
@@ -97,7 +98,7 @@ data class ProgressionUi(
     val title: String,
     val grouping: ProgressionGrouping,
     val period: ProgressionPeriod,
-    val day: LocalDate?,
+    val day: ProgressionDay?,
     val summary: String,
     val points: List<PointRow>,
     val laps: List<MetricRow>,
@@ -124,7 +125,7 @@ data class ProgressionUi(
 data class ProgressionChoice(
     val grouping: ProgressionGrouping = ProgressionGrouping.Session,
     val period: ProgressionPeriod = ProgressionPeriod.All,
-    val day: LocalDate? = null,
+    val day: ProgressionDay? = null,
     val excluded: Set<String> = emptySet(),
 )
 
@@ -138,8 +139,8 @@ fun progressionScreenUi(
     title: String,
     records: List<SessionCoachingRecord>,
     choice: ProgressionChoice,
-    today: LocalDate,
-    zone: ZoneId,
+    today: ProgressionDay,
+    zone: DayZone,
     mapping: CornerMapping = CornerMapping.SameRevisionOnly,
 ): ProgressionUi {
     val from = choice.period.days?.let { today.minusDays(it) }
@@ -180,8 +181,8 @@ fun progressionUi(
     coaching: List<CoachingStep>,
     excluded: Set<String>,
     period: ProgressionPeriod,
-    day: LocalDate?,
-    zone: ZoneId,
+    day: ProgressionDay?,
+    zone: DayZone,
 ): ProgressionUi {
     val n = progression.points.size
     val word = pointWord(progression.grouping)
@@ -252,18 +253,14 @@ private fun summary(listed: TrackProgression, shown: TrackProgression, excluded:
     }.joinToString(" · ")
 }
 
-private val DayFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH)
-private val SessionFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", Locale.ENGLISH)
-private val MonthFormat: DateTimeFormatter = DateTimeFormatter.ofPattern("MMMM yyyy", Locale.ENGLISH)
-
 /** "12 Oct 2026, 10:15" for a session, "12 Oct 2026" for a track day, "October 2026" for a month. */
-internal fun label(p: ProgressionPoint, grouping: ProgressionGrouping, zone: ZoneId): String = when (grouping) {
-    ProgressionGrouping.Session -> SessionFormat.format(Instant.ofEpochMilli(p.startUtcMillis).atZone(zone))
-    ProgressionGrouping.TrackDay -> DayFormat.format(p.day)
-    ProgressionGrouping.Month -> MonthFormat.format(p.day)
+internal fun label(p: ProgressionPoint, grouping: ProgressionGrouping, zone: DayZone): String = when (grouping) {
+    ProgressionGrouping.Session -> sessionTimeLabel(p.startUtcMillis, zone)
+    ProgressionGrouping.TrackDay -> p.day.dayLabel()
+    ProgressionGrouping.Month -> p.day.monthLabel()
 }
 
-private fun pointRow(p: ProgressionPoint, listed: TrackProgression, excluded: Set<String>, zone: ZoneId): PointRow {
+private fun pointRow(p: ProgressionPoint, listed: TrackProgression, excluded: Set<String>, zone: DayZone): PointRow {
     val i = listed.points.indexOf(p)
     val best = listed.lap(ProgressionMetric.BestLap)?.values?.getOrNull(i)?.value
     val sessions = if (listed.grouping == ProgressionGrouping.Session) {
@@ -412,3 +409,13 @@ private fun plural(n: Int, word: String) = when {
     word.endsWith("s") -> "$n ${word}es"
     else -> "$n ${word}s"
 }
+
+/** A grouping of the progression and the name of its chip. */
+data class ProgressionGroupingTitle(val grouping: ProgressionGrouping, val title: String)
+
+/** The progression's groupings as their chips name them, in order, the same on Android and iOS. */
+val ProgressionGroupingTitles = listOf(
+    ProgressionGroupingTitle(ProgressionGrouping.Session, "Session"),
+    ProgressionGroupingTitle(ProgressionGrouping.TrackDay, "Track day"),
+    ProgressionGroupingTitle(ProgressionGrouping.Month, "Month"),
+)

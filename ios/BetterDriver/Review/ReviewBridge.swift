@@ -227,6 +227,31 @@ enum ReviewBridge {
     }
 
     /// Android's analysis screen with lap [index] compared, for Corners and Car.
+    /// The laps of the newest sessions at each saved track, for Compare laps (FBBD-379), as Android's
+    /// lap picker. Replays every session not read yet: never on the main thread.
+    static func lapPicker() -> [PickerTrack] { library.lapPicker() }
+
+    /// Laps [a] against [b] (keys "session:lap") on video, as Android's lap review opens two picked laps.
+    static func pickedReview(_ tracks: [PickerTrack], a: String, b: String) -> LapVideoReview? {
+        LapPickerKt.pickedReview(tracks: tracks, a: a, b: b)
+    }
+
+    /// Every counted pass through corner [cornerId] with its traces and video, as Android's Corner
+    /// laps screen (FBBD-93, FBBD-153). Reads the session's laps again: never on the main thread.
+    static func everyPass(_ summary: SessionSummary, cornerId: String) -> CornerLapsUi? {
+        library.everyPass(reviewed: summary.reviewed, id: summary.id, cornerId: cornerId)
+    }
+
+    /// Timed laps [a] and [b] side by side on video, as Android opens two passes of a corner.
+    static func lapsOnVideo(_ summary: SessionSummary, a: Int, b: Int) -> LapVideoReview? {
+        library.lapsOnVideo(reviewed: summary.reviewed, id: summary.id, aIndex: Int32(a), bIndex: Int32(b))
+    }
+
+    /// Where the lap review of a corner's passes starts: a little before its entry, as a share of the lap.
+    static func reviewStart(_ summary: SessionSummary, cornerId: String) -> Double? {
+        summary.reviewed.reviewStart(cornerId: cornerId)?.doubleValue
+    }
+
     static func screen(_ summary: SessionSummary, lapIndex index: Int) -> AnalysisUi? {
         summary.reviewed.screen(otherIndex: Int32(index))
     }
@@ -374,7 +399,7 @@ extension ReviewBridge {
 
     /// The UI tests' launch arguments (FBBD-331), in debug builds only: -freshInstall starts with no
     /// sessions or tracks, as a new install; -demoSessions adds the Android app's built-in demo
-    /// sessions (Jastrząb, Silesia Ring) when they are not here yet.
+    /// sessions (Jastrząb, Silesia Ring) when they are not here yet; -demoCues coaches the Jastrząb one.
     static func prepareForUITests() {
         #if DEBUG
         let arguments = ProcessInfo.processInfo.arguments
@@ -390,17 +415,29 @@ extension ReviewBridge {
         var demos: [(String, Int64)] = [("jastrzab", 1_787_990_409_000), ("silesia-ring", 1_790_506_830_000)]
         // A second Jastrząb session an hour later the same day, for the track day (FBBD-315).
         if arguments.contains("-demoTrackDay") { demos.append(("jastrzab", 1_787_994_009_000)) }
+        // -demoCues: the Jastrząb demo driven with the spoken coach on, for its Coach review (FBBD-99).
+        let coached = arguments.contains("-demoCues")
         for (name, start) in demos {
-            _ = try? library.addDemo(
-                replayPath: demo.appendingPathComponent("\(name).replay").path,
-                trackPath: demo.appendingPathComponent("\(name).track.json").path,
-                startUtcMillis: start
-            )
+            let replay = demo.appendingPathComponent("\(name).replay").path
+            let track = demo.appendingPathComponent("\(name).track.json").path
+            if coached && name == "jastrzab" {
+                _ = try? library.addCoachedDemo(replayPath: replay, trackPath: track, startUtcMillis: start)
+            } else {
+                _ = try? library.addDemo(replayPath: replay, trackPath: track, startUtcMillis: start)
+            }
         }
         // The demos with no saved track, as a road drive reads: no laps, the drive on the map (FBBD-342).
         if arguments.contains("-demoNoTrack") { try? FileManager.default.removeItem(at: base.appendingPathComponent("tracks")) }
         // Phone video in the demo sessions, for Video with data (FBBD-152).
         if arguments.contains("-demoVideo") { DataVideoDemo.add(sessionsRoot: library.sessionsRoot) }
         #endif
+    }
+}
+
+extension ReviewBridge {
+    /// [summary]'s session against the earlier sessions at its track, as Android's summary card
+    /// (FBBD-122, FBBD-175); nil when it is at no track. Reads up to 60 sessions: never on the main thread.
+    static func progress(_ summary: SessionSummary) -> SessionProgress? {
+        library.progress(reviewed: summary.reviewed, id: summary.id)
     }
 }

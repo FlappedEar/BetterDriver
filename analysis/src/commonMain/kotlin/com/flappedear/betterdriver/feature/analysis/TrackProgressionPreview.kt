@@ -8,22 +8,21 @@ import com.flappedear.betterdriver.analysis.coaching.CornerRecord
 import com.flappedear.betterdriver.analysis.coaching.FocusAsk
 import com.flappedear.betterdriver.analysis.coaching.LapRecord
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
+import com.flappedear.betterdriver.analysis.progression.DayZone
+import com.flappedear.betterdriver.analysis.progression.ProgressionDay
 import com.flappedear.betterdriver.analysis.progression.ProgressionFilter
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
 import com.flappedear.betterdriver.analysis.progression.coachingProgression
 import com.flappedear.betterdriver.analysis.progression.trackProgression
-import java.time.LocalDate
-import java.time.ZoneOffset
 
 /**
  * Four example sessions at one track on three days, the driver quicker each time, the third
  * imported from a VBO file, Corner 2 the focus of the first: the progression screen's preview and
- * layout tests.
+ * layout tests, on Android and iOS.
  */
 val PreviewProgressionRecords: List<SessionCoachingRecord> by lazy {
-    val day = LocalDate.of(2026, 9, 5)
-    fun at(days: Long, hour: Int) = day.plusDays(days).atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli() +
-        hour * 3_600_000L
+    val day = ProgressionDay.of(2026, 9, 5)
+    fun at(days: Long, hour: Int) = day.plusDays(days).epochDay * 86_400_000L + hour * 3_600_000L
     fun corners(k: Int, grade: String = "HIGH") = (1..4).map { c ->
         CornerRecord(
             cornerId = "c$c",
@@ -70,7 +69,7 @@ val PreviewProgressionRecords: List<SessionCoachingRecord> by lazy {
 
 /** The progression screen with [PreviewProgressionRecords], grouped by [grouping]. */
 fun previewProgressionUi(grouping: ProgressionGrouping = ProgressionGrouping.Session): ProgressionUi {
-    val zone = ZoneOffset.UTC
+    val zone = DayZone.Utc
     val records = PreviewProgressionRecords
     val p = trackProgression(records, grouping, ProgressionFilter(), zone)
     val ui = progressionUi(

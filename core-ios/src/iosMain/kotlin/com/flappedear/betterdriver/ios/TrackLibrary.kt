@@ -11,9 +11,11 @@ import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.distanceMeters
 import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
+import com.flappedear.betterdriver.timing.track.SegmentEdit
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackDetection
 import com.flappedear.betterdriver.timing.track.TrackRevision
+import com.flappedear.betterdriver.timing.track.corrected
 import com.flappedear.betterdriver.timing.track.detectTrack
 import com.flappedear.betterdriver.timing.track.iosTrackStore
 import com.flappedear.betterdriver.timing.track.newTrackAt
@@ -100,6 +102,26 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
         } catch (_: Exception) {
             null
         }
+    }
+
+    /**
+     * Stores the driver's correction [edit] of track [id]'s corners (FBBD-179, FBBD-366), made to
+     * [expected], the corners the editor shows, as Tracks.correct and TrackStore.correctIdentity on
+     * Android: nothing is written when the stored corners are no longer [expected] (an analysis made
+     * the next revision). The update time becomes now, so a backup merge keeps the corrected track;
+     * the lines and the revision stay. Every session at the track is analysed with what is stored.
+     */
+    @Suppress("TooGenericExceptionCaught") // A failed write is a correction not kept, never a crash.
+    fun correct(id: String, expected: TrackRevision, edit: SegmentEdit): CornerCorrection = locked {
+        if (validId(id)) {
+            try {
+                store.correctIdentity(id, expected, edit)
+            } catch (_: Exception) {
+                null
+            }
+        }
+        val now = read(id)
+        CornerCorrection(now, applied = now?.identity != null && now.identity == expected.corrected(edit))
     }
 
     /** A new track named after the circuit [circuit], saved with no lines yet (Create track). */
@@ -198,6 +220,9 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
         }
     }
 }
+
+/** A correction of a track's corners as stored: the [track] now (null when it is gone), and whether it is in it. */
+class CornerCorrection(val track: Track?, val applied: Boolean)
 
 /** A track could not be written. */
 class TrackSaveException(message: String, cause: Throwable? = null) : Exception(message, cause)

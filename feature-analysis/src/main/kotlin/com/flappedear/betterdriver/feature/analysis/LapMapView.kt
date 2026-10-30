@@ -38,7 +38,6 @@ import com.flappedear.betterdriver.analysis.map.LapMap
 import com.flappedear.betterdriver.analysis.map.MapPoint
 import com.flappedear.betterdriver.analysis.map.nearestMapPoint
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import java.util.Locale
 
 /** Space kept round the track inside the map, so corner labels fit. */
 private val MapPadding = 32.dp
@@ -51,35 +50,6 @@ private val LabelOffset = 16.dp
 
 private val TagSize = 11.sp
 private const val TagHaloBlur = 6f
-
-/** One coloured stretch of the lap line, in metres; colours are worked out once per colouring. */
-private class MapStroke(val from: MapPoint, val to: MapPoint, val color: Color)
-
-/** The colour scale the line is drawn with, for the legend and the strokes. */
-internal class MapScale(val coloring: MapColoring, val speed: ScaleRange?, val gainLossLimit: Double)
-
-/** The scale of [map] in [coloring]: speeds widened to tens, time vs best to most of its rates. */
-internal fun mapScale(map: LapMap, coloring: MapColoring): MapScale {
-    val points = map.runs.flatten()
-    return MapScale(
-        coloring,
-        speedRange(points.mapNotNull { it.speed }),
-        gainLossLimit(points.mapNotNull { it.deltaRate }),
-    )
-}
-
-/** The colour of [p] on [scale]; [neutral] when the point has no value to colour. */
-private fun pointColor(p: MapPoint, scale: MapScale, gain: Int, neutral: Int, loss: Int): Color {
-    val argb = when (scale.coloring) {
-        MapColoring.Speed -> {
-            val range = scale.speed
-            val speed = p.speed
-            if (range == null || speed == null) null else scaleColor(range.fraction(speed))
-        }
-        MapColoring.Delta -> p.deltaRate?.let { gainLossColor(it, scale.gainLossLimit, gain, neutral, loss) }
-    }
-    return Color(argb ?: neutral)
-}
 
 /**
  * The lap on the map (FBBD-149): the track outline, the lap's GPS line coloured by [scale], its
@@ -99,19 +69,7 @@ internal fun LapMapView(
     val text = rememberTextMeasurer()
     val outlineColor = c.line
     val strokes = remember(map, scale, c) {
-        val gain = c.gain.toArgb()
-        val neutral = c.textDim.toArgb()
-        val loss = c.loss.toArgb()
-        map.runs.flatMap { run ->
-            run.zipWithNext { a, b ->
-                // A stretch takes the colour of its middle.
-                val middle = MapPoint(
-                    a.eastMeters, a.northMeters, a.distanceMeters,
-                    average(a.speed, b.speed), null, average(a.deltaRate, b.deltaRate),
-                )
-                MapStroke(a, b, pointColor(middle, scale, gain, neutral, loss))
-            }
-        }
+        mapStrokes(map, scale, c.gain.toArgb(), c.textDim.toArgb(), c.loss.toArgb())
     }
     val extent = remember(map) { mapExtent(map) }
     val move by rememberUpdatedState(onCursor)
@@ -160,7 +118,7 @@ internal fun LapMapView(
         val width = 4.dp.toPx()
         for (s in strokes) {
             drawLine(
-                s.color, at(s.from.eastMeters, s.from.northMeters), at(s.to.eastMeters, s.to.northMeters),
+                Color(s.argb), at(s.from.eastMeters, s.from.northMeters), at(s.to.eastMeters, s.to.northMeters),
                 width, StrokeCap.Round,
             )
         }
@@ -177,8 +135,6 @@ internal fun LapMapView(
         }
     }
 }
-
-private fun average(a: Double?, b: Double?) = if (a != null && b != null) (a + b) / 2 else a ?: b
 
 /** [label] centred on [center], with a halo so it reads over the line. */
 private fun DrawScope.drawTag(text: TextMeasurer, label: String, center: Offset, color: Color, halo: Color) {
@@ -221,7 +177,7 @@ internal fun MapLegend(scale: MapScale, speedUnit: String, modifier: Modifier = 
                     Dim(range?.let { "${it.high.toInt()} $speedUnit" } ?: "")
                 }
                 MapColoring.Delta -> {
-                    val limit = String.format(Locale.ROOT, "%.2f", scale.gainLossLimit)
+                    val limit = gainLossLimitText(scale)
                     Dim("Gaining $limit s", color = c.gain)
                     Dim("per 100 m")
                     Dim("Losing $limit s", color = c.loss)

@@ -7,10 +7,6 @@ import com.flappedear.betterdriver.analysis.focus.median
 import com.flappedear.betterdriver.analysis.segments.summarizeConsistency
 import com.flappedear.betterdriver.timing.track.TrackRevision
 import com.flappedear.betterdriver.timing.track.cornerIdIn
-import java.time.Instant
-import java.time.LocalDate
-import java.time.YearMonth
-import java.time.ZoneId
 
 // Longitudinal progression (FBBD-181): how the driver's laps and corners move from session to
 // session, track day to track day and month to month at one track. It is worked out from the
@@ -40,11 +36,11 @@ enum class ProgressionGrouping {
  */
 data class ProgressionFilter(
     val sessionIds: Set<String>? = null,
-    val days: Set<LocalDate>? = null,
-    val from: LocalDate? = null,
-    val to: LocalDate? = null,
+    val days: Set<ProgressionDay>? = null,
+    val from: ProgressionDay? = null,
+    val to: ProgressionDay? = null,
 ) {
-    fun accepts(record: SessionCoachingRecord, zone: ZoneId): Boolean {
+    fun accepts(record: SessionCoachingRecord, zone: DayZone): Boolean {
         val day = dayOf(record, zone)
         return (sessionIds == null || record.sessionId in sessionIds) &&
             (days == null || day in days) &&
@@ -54,8 +50,8 @@ data class ProgressionFilter(
 }
 
 /** The day [record]'s session was driven, in [zone]. */
-fun dayOf(record: SessionCoachingRecord, zone: ZoneId): LocalDate =
-    Instant.ofEpochMilli(record.sessionStartUtcMillis).atZone(zone).toLocalDate()
+fun dayOf(record: SessionCoachingRecord, zone: DayZone): ProgressionDay =
+    ProgressionDay.at(record.sessionStartUtcMillis, zone)
 
 /**
  * Which corner of another revision of the track's corners is which (FBBD-179 maps them when the
@@ -146,7 +142,7 @@ data class MetricSeries(
  */
 data class ProgressionPoint(
     val key: String,
-    val day: LocalDate,
+    val day: ProgressionDay,
     val startUtcMillis: Long,
     val sessionIds: List<String>,
     val origins: Map<String, String> = emptyMap(),
@@ -209,7 +205,7 @@ fun trackProgression(
     records: List<SessionCoachingRecord>,
     grouping: ProgressionGrouping = ProgressionGrouping.Session,
     filter: ProgressionFilter = ProgressionFilter(),
-    zone: ZoneId = ZoneId.systemDefault(),
+    zone: DayZone = systemDayZone(),
     mapping: CornerMapping = CornerMapping.SameRevisionOnly,
 ): TrackProgression {
     val kept = records.distinctBy { it.sessionId }.filter { filter.accepts(it, zone) }
@@ -240,10 +236,10 @@ fun trackProgression(
     return TrackProgression(trackId, grouping, points, lapSeries(groups), revision, corners, other, ordered)
 }
 
-private fun keyOf(r: SessionCoachingRecord, grouping: ProgressionGrouping, zone: ZoneId): String = when (grouping) {
+private fun keyOf(r: SessionCoachingRecord, grouping: ProgressionGrouping, zone: DayZone): String = when (grouping) {
     ProgressionGrouping.Session -> r.sessionId
     ProgressionGrouping.TrackDay -> dayOf(r, zone).toString()
-    ProgressionGrouping.Month -> YearMonth.from(dayOf(r, zone)).toString()
+    ProgressionGrouping.Month -> dayOf(r, zone).monthKey()
 }
 
 /** Whether any of [r]'s corners is one of [latest]'s by [mapping]. */
