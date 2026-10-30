@@ -42,8 +42,8 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Recording | RaceBox setup ladder, fast link, MTU handling, reconnect | ✅ 1.6.0, 1.16.0 | 🟡 own simpler link: reconnect 0.5–3 s, no setup ladder or fast link | Twice: core-ble GattLink/SetupLadder vs Swift | FBBD-282, FBBD-272, FBBD-358 | `log-android:Link` |
 | Recording | Other GNSS receivers: NMEA BLE/Wi-Fi, BLE LNS, VBOX Sport, Dragy, RaceChrono DIY | ✅ ≤0.3.x | ❌ | Android only (core-ble, JVM) | FBBD-105, FBBD-114..118, FBBD-374 |  |
 | Recording | Phone GPS when no receiver; phone accelerometer, live G with phone GPS | ✅ 1.8.0, 1.15.0 | ✅ | Shared fusion; sensor shim per platform | FBBD-275, FBBD-337, FBBD-226 | `log-android:PhoneGnss` `log-android:PhoneImu` |
-| Recording | Crash-safe recorder, session files, storage low stop | ✅ ≤0.3.1 | ✅ | Twice: recorder Recorder.kt JVM + iosMain | FBBD-70, FBBD-360 | `log-android:RecorderService` `log-android:RecorderClient` `log-android:DeviceChecks` `log-ios:Recording` |
-| Recording | Recover interrupted sessions | ✅ ≤0.3.1 | ✅ TF 1405 | Shared store | FBBD-71 | `log-ios:Recovery` |
+| Recording | Crash-safe recorder, session files, storage low stop | ✅ ≤0.3.1 | ✅ | Session list, recovery, read, delete shared (SessionFolders commonMain, #425); recorder writer twice: Recorder.kt JVM + iosMain | FBBD-70, FBBD-360 | `log-android:RecorderService` `log-android:RecorderClient` `log-android:DeviceChecks` `log-ios:Recording` |
+| Recording | Recover interrupted sessions | ✅ ≤0.3.1 | ✅ TF 1405 | Shared store (SessionFolders commonMain, #425) | FBBD-71 | `log-ios:Recovery` |
 | Recording | Recorder in its own process (coach crash never stops recording) | ✅ ≤0.3.1 | ➖ n/a single-process app | Platform | FBBD-69 | `log-android:RecorderForeground` |
 | Recording | Live Activity on the lock screen | ➖ n/a | ⚪ planned removed until app is stable | iOS only | FBBD-340 |  |
 | Car data | OBD-II over BLE (Vgate vLinker MC+) | ✅ 1.2.0 | ✅ TF 1419; vLinker and Konnwei BLE work on the iPhone (30 Oct drives) | OBD protocol shared (obd commonMain); link twice | FBBD-121, FBBD-333, FBBD-358 | `log-android:Obd` `log-ios:Obd` |
@@ -99,7 +99,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Analysis | Coach review (each cue and whether the next pass improved) | ✅ | ✅ TF 1440 (#411) | Shared CueCards in #411 | FBBD-99 | `route:CueReviewPattern` `ios-screen:CoachReviewScreen` |
 | Analysis | Coaching history | ✅ 0.3.9 | ❌ | Store shared (CoachingHistoryStore commonMain, #421); iOS UI to do | FBBD-180, FBBD-364 | `log-android:CoachingHistory` |
 | Analysis | Loop proof: time won back in focus corners | ✅ 1.10.0 | 🟡 track day proof only; session won-back needs coaching history | Shared analysis | FBBD-310, FBBD-313, FBBD-364 |  |
-| Analysis | Data quality card | ✅ 0.3.2 | ❌ log only | Quality checks JVM-only | FBBD-183, FBBD-365 | `log-android:QualityReports` |
+| Analysis | Data quality card | ✅ 0.3.2 | ❌ log only | Quality checks shared (analysis/quality commonMain, #432); iOS card to do | FBBD-183, FBBD-365 | `log-android:QualityReports` |
 | Analysis | Provenance and confidence; driving states and coasting | ✅ 0.3.3, 0.3.9 | ✅ TF 1440 driving-states strip on Compare (#411) | Shared (driving-state names and keys in CompareModel, #411) | FBBD-174, FBBD-177, FBBD-175, FBBD-380 |  |
 | Video export | Watch a session's video with the data overlay | ✅ 1.15.0 | ✅ TF 1.16+ | Overlay geometry shared | FBBD-341 | `route:WatchVideoPattern` `log-android:WatchVideo` `ios-screen:DataVideoWatchPage` `ios-screen:DataVideoPlayerPage` |
 | Video export | Video with data in Tech HUD layout; single-lap export | ✅ 1.17.0, 1.18.0 | ✅ TF 1413/1416 | HudGeometry shared; painter twice | FBBD-152, FBBD-346, FBBD-347 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
