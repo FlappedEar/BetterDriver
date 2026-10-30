@@ -13,6 +13,13 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.22.1
+
+- A session recorded at 1 Hz (phone GPS) no longer shows a raw theoretical best or realistic
+  optimal slower than its best lap; when the segments cannot add up to one, they are not shown.
+- **Settings › Diagnostics › Share log** is checked by the app's tests on every build, on Android
+  and on the iPhone and iPad. See [Settings](settings.md).
+
 ## 1.22.0
 
 - A session with no laps, such as a road drive, keeps the six analysis tabs: Summary has the drive,
