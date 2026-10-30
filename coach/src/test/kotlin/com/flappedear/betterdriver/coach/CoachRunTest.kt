@@ -83,7 +83,7 @@ class CoachRunTest {
         run.delays.measured("live", "speaker", 120)
         run.begin("live", "speaker")
         assertTrue(
-            logged.any { it.startsWith("CoachService: coaching session s1:") && "audio delay measured on speaker" in it },
+            logged.any { it.startsWith("CoachService: coaching session s1:") && it.endsWith("measured on speaker") },
             logged.joinToString("\n"),
         )
         run.start(track)

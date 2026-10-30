@@ -114,6 +114,7 @@ class CoachRun(
     private var timingPath = ""
 
     private var coach: CoachSession? = null
+    private val stores = CoachStores(folders, sessionId)
 
     /** The coach line, for the track screen. */
     var status: CoachStatus = CoachStatus.None
@@ -151,18 +152,16 @@ class CoachRun(
      */
     fun start(track: Track?) {
         val coached = track?.takeIf { coaches(it) && settings.verbosity >= Verbosity.Focus }
-        val line = coached?.let { t -> readOrNull("line plan", t) { LinePlanStore(folders.lines).get(t.id) } }
+        val line = coached?.let(stores::linePlan)
         val reference = coached?.let { references.reference(it, sessionId, line?.let(::plannedTargets)) }
         // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
         val sameDay = reference != null && references.drivenSameDay(reference, nowUtcMillis())
         // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
-        val picks = coached?.let { t -> readOrNull("coach picks", t) { CoachPicksStore(folders.picks).get(t.id) } }
-            .orEmpty()
-        if (picks.isNotEmpty()) logInfo(Tag, "picked corners: ${picks.joinToString { it.name }}")
+        val picks = coached?.let(stores::picks).orEmpty()
         // The corners with the most time to find in the track's line plan (FBBD-306, UI-174 A), else what
         // the last analysed session at the track recommends working on (FBBD-20), primary first.
-        val plan = coached?.let { planFocusOf(it, line, sameDay) }
-        val focus = coached?.takeIf { plan == null }?.let(::sessionFocusOf)
+        val plan = coached?.let { stores.focus(it, line, sameDay) }
+        val focus = coached?.takeIf { plan == null }?.let(stores::sessionFocus)
         val focusPicks = plan?.picks ?: focus?.picks().orEmpty()
         // Timed for the output the cues play on now: it may have changed since the start (FBBD-255).
         val c = CoachSession(
@@ -170,16 +169,7 @@ class CoachRun(
             plan?.seconds.orEmpty(),
         )
         coach = c
-        if (track == null) {
-            if (on) logInfo(Tag, "not at a saved track: no cues this session")
-        } else if (on) {
-            val from = reference?.let { "a reference of ${it.sessions.size} sessions" } ?: "no reference yet"
-            logInfo(
-                Tag,
-                "coaching at ${track.name}: $from, ${focusPicks.size} focus corners, " +
-                    "delay ${timing.millis} ms (${timing.source})",
-            )
-        }
+        if (on) logStart(track, reference, focusPicks.size)
         // Which recommendation this session works on, for the coaching history (FBBD-180).
         if (plan != null) {
             val text = CoachEvents.planText(plan.sessionId, plan.cornerIds, plan.seconds.values.sum())
@@ -189,6 +179,19 @@ class CoachRun(
             report(now(), CoachEvents.FOCUS, CoachEvents.focusText(focus.sessionId, corners))
         }
         updateStatus(c.status)
+    }
+
+    private fun logStart(track: Track?, reference: CoachReference?, focusCorners: Int) {
+        if (track == null) {
+            logInfo(Tag, "not at a saved track: no cues this session")
+            return
+        }
+        val from = reference?.let { "a reference of ${it.sessions.size} sessions" } ?: "no reference yet"
+        logInfo(
+            Tag,
+            "coaching at ${track.name}: $from, $focusCorners focus corners, " +
+                "delay ${timing.millis} ms (${timing.source})",
+        )
     }
 
     /** A fix of the recording; its cue, if any, is said now. */
@@ -217,45 +220,6 @@ class CoachRun(
         if (s == status) return
         status = s
         onStatus(s)
-    }
-
-    /**
-     * The focus of [track]'s line plan [line] (FBBD-306, UI-174 A): the corners with the most time to
-     * find over every session there, as the Map tab shows them. Out on a new day there (not [sameDay]),
-     * the last track day's plan comes first (FBBD-315, UI-214 B) while no session since that day made a
-     * newer line plan: the first session of the day works on the day's corners, and the sessions after
-     * it on what the session before them found (UI-190 B).
-     */
-    private fun planFocusOf(track: Track, line: LinePlan?, sameDay: Boolean): PlanFocus? {
-        if (!sameDay) {
-            val day = readOrNull("day plan", track) { DayPlanStore(folders.days).days(track.id).lastOrNull()?.plan }
-            val fresh = day?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
-            fresh?.let { focusOf(it, "day plan") }?.let { return it }
-        }
-        return line?.let { focusOf(it, "line plan") }
-    }
-
-    private fun focusOf(plan: LinePlan, what: String): PlanFocus? = planFocus(plan, sessionId)?.also { f ->
-        logInfo(Tag, "$what focus from ${plan.sessionId}: ${f.picks.joinToString { it.name }}")
-    }
-
-    /**
-     * What the last analysed session at [track] recommends working on (FBBD-20); never from this
-     * session, nor from a session deleted since (its record goes with it, but a failed delete may
-     * leave it).
-     */
-    private fun sessionFocusOf(track: Track): SessionFocusRecord? = readOrNull("session focus", track) {
-        SessionFocusStore(folders.focus).latest(track.id, exclude = sessionId) {
-            CoreFiles.isDirectory(CoreFiles.join(folders.sessions, it))
-        }
-    }?.also { r -> logInfo(Tag, "session focus from ${r.sessionId}: ${r.targets.joinToString { it.name }}") }
-
-    /** What [read] gives; a store that cannot be read counts as empty, never the reason the coach does not start. */
-    private fun <T> readOrNull(what: String, track: Track, read: () -> T?): T? = try {
-        read()
-    } catch (e: IllegalArgumentException) {
-        logLine(CoreLog.LevelWarn, Tag, "$what at ${track.id} not read", e)
-        null
     }
 
     /**
@@ -299,5 +263,60 @@ class CoachRun(
 
         /** timed_src of a cue said on another path (live, clip) than it was timed for (FBBD-255). */
         const val OtherPath = "other_path"
+    }
+}
+
+/** What the review keeps for the coach of session [sessionId], read from [folders] (FBBD-357). */
+private class CoachStores(private val folders: CoachFolders, private val sessionId: String) {
+    fun linePlan(track: Track): LinePlan? =
+        readOrNull("line plan", track) { LinePlanStore(folders.lines).get(track.id) }
+
+    fun picks(track: Track): List<CornerPick> {
+        val picks = readOrNull("coach picks", track) { CoachPicksStore(folders.picks).get(track.id) }.orEmpty()
+        if (picks.isNotEmpty()) logInfo(Tag, "picked corners: ${picks.joinToString { it.name }}")
+        return picks
+    }
+
+    /**
+     * The focus of [track]'s line plan [line] (FBBD-306, UI-174 A): the corners with the most time to
+     * find over every session there, as the Map tab shows them. Out on a new day there (not [sameDay]),
+     * the last track day's plan comes first (FBBD-315, UI-214 B) while no session since that day made a
+     * newer line plan: the first session of the day works on the day's corners, and the sessions after
+     * it on what the session before them found (UI-190 B).
+     */
+    fun focus(track: Track, line: LinePlan?, sameDay: Boolean): PlanFocus? {
+        if (!sameDay) {
+            val day = readOrNull("day plan", track) { DayPlanStore(folders.days).days(track.id).lastOrNull()?.plan }
+            val fresh = day?.takeIf { line == null || it.sessionStartUtcMillis >= line.sessionStartUtcMillis }
+            fresh?.let { focusOf(it, "day plan") }?.let { return it }
+        }
+        return line?.let { focusOf(it, "line plan") }
+    }
+
+    private fun focusOf(plan: LinePlan, what: String): PlanFocus? = planFocus(plan, sessionId)?.also { f ->
+        logInfo(Tag, "$what focus from ${plan.sessionId}: ${f.picks.joinToString { it.name }}")
+    }
+
+    /**
+     * What the last analysed session at [track] recommends working on (FBBD-20); never from this
+     * session, nor from a session deleted since (its record goes with it, but a failed delete may
+     * leave it).
+     */
+    fun sessionFocus(track: Track): SessionFocusRecord? = readOrNull("session focus", track) {
+        SessionFocusStore(folders.focus).latest(track.id, exclude = sessionId) {
+            CoreFiles.isDirectory(CoreFiles.join(folders.sessions, it))
+        }
+    }?.also { r -> logInfo(Tag, "session focus from ${r.sessionId}: ${r.targets.joinToString { it.name }}") }
+
+    /** What [read] gives; a store that cannot be read counts as empty, never the reason the coach does not start. */
+    private fun <T> readOrNull(what: String, track: Track, read: () -> T?): T? = try {
+        read()
+    } catch (e: IllegalArgumentException) {
+        logLine(CoreLog.LevelWarn, Tag, "$what at ${track.id} not read", e)
+        null
+    }
+
+    private companion object {
+        const val Tag = "CoachService"
     }
 }

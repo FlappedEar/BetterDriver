@@ -42,6 +42,7 @@ class CoachService : Service() {
     /** The recording being coached. Coach thread only. */
     private class Active(val id: String, val startNanos: Long, val recorder: Messenger?) {
         lateinit var run: CoachRun
+        val started: Boolean get() = ::run.isInitialized
 
         fun micros(nanoTime: Long) = (nanoTime - startNanos) / NanosPerMicro
 
@@ -87,13 +88,11 @@ class CoachService : Service() {
                 else -> return false
             }
         } catch (e: Exception) {
-            val run = active?.takeIf { it.isStarted() }?.run
+            val run = active?.takeIf { it.started }?.run
             if (run != null) run.failed(e) else DebugLog.w(Tag, "coach failed", e)
         }
         return true
     }
-
-    private fun Active.isStarted() = ::run.isInitialized
 
     private fun begin(data: Bundle, replyTo: Messenger?) {
         val id = data.getString(CoachProtocol.SESSION) ?: return
