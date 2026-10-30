@@ -81,6 +81,7 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -o pipefail
           previous=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vx "v$VERSION" | head -1)
           python3 .github/scripts/docs-current.py "$VERSION" "${previous#v}" | tee "$RUNNER_TEMP/docs.txt"
           {
