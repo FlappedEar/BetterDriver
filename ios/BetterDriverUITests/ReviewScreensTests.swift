@@ -79,15 +79,11 @@ final class ReviewScreensTests: XCTestCase {
         rows.element(boundBy: 0).tap()
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
         keep("Session, back")
-        let ownBack = app.buttons["showSessions"].firstMatch
         if UIDevice.current.userInterfaceIdiom == .phone {
-            // The iPhone's list and session take the screen in turn: only the system back button.
-            XCTAssertFalse(ownBack.exists, "a second back button on the iPhone")
+            // The iPhone's list and session take the screen in turn: the system back button.
             app.navigationBars.buttons.element(boundBy: 0).tap()
-        } else {
-            XCTAssertTrue(ownBack.waitForExistence(timeout: 10), "no ‹ Sessions on the iPad")
-            ownBack.tap()
         }
+        // On the iPad the list stays beside the session, as on an Android tablet (FBBD-40).
         let back = NSPredicate(format: "isHittable == true")
         expectation(for: back, evaluatedWith: rows.element(boundBy: 0))
         waitForExpectations(timeout: 15)

@@ -1,8 +1,8 @@
 import XCTest
 
 /// The iPad's session page in portrait and landscape (Arek, TestFlight 1441): Summary's Also column
-/// and the Map tab's G-G card keep a readable width, and ‹ Sessions brings back the whole list to
-/// pick or add another session. Screenshots of each stay in the test results.
+/// and the Map tab's G-G card keep a readable width, the session list stays beside the session as
+/// on an Android tablet, and Settings is a tab. Screenshots of each stay in the test results.
 final class IPadLayoutTests: XCTestCase {
     private let app = XCUIApplication()
 
@@ -52,21 +52,21 @@ final class IPadLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(gg.frame.width, 200, "the G-G card is too narrow (\(gg.frame))")
         keep("Map, \(name)")
 
-        // ‹ Sessions closes the session: the list with its import button is there to add another.
-        let back = app.buttons["showSessions"].firstMatch
-        XCTAssertTrue(back.waitForExistence(timeout: 10), "no ‹ Sessions")
-        back.tap()
+        // As an Android tablet: the list stays beside the session, with Import session over it, and
+        // another session opens from it. Settings is a tab, with the app's log (no Drive: no recording).
         let add = app.buttons["importSessions"].firstMatch
-        XCTAssertTrue(add.waitForExistence(timeout: 10), "no import in the list")
         let hittable = NSPredicate(format: "isHittable == true")
         expectation(for: hittable, evaluatedWith: add)
         expectation(for: hittable, evaluatedWith: rows.element(boundBy: 1))
         waitForExpectations(timeout: 15)
-        XCTAssertFalse(app.staticTexts["BEST ACTUAL LAP"].exists, "the session is still open")
-        keep("Sessions after back, \(name)")
-        // Another session opens from there.
+        XCTAssertFalse(app.buttons["Drive"].exists, "a Drive tab on the iPad")
+        keep("Sessions beside the session, \(name)")
         rows.element(boundBy: 1).tap()
         XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "the next session did not open")
+        let settings = app.tabBars.buttons["Settings"].exists ? app.tabBars.buttons["Settings"] : app.buttons["Settings"].firstMatch
+        XCTAssertTrue(settings.waitForExistence(timeout: 10), "no Settings tab")
+        settings.tap()
+        keep("Settings, \(name)")
     }
 
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.

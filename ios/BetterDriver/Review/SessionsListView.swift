@@ -3,12 +3,11 @@ import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
 
-/// Sessions by day (UI-139 C), with + to import files (UI-292 A) and the import's progress.
+/// Sessions by day (UI-139 C), with Import session above them (UI-292 A) and the import's progress.
 struct SessionsListView: View {
     @Bindable var model: SessionsModel
     @Binding var selection: String?
     @State private var picking = false
-    @State private var showingTracks = false
     @State private var notYet: String?
     @State private var deleting: SessionRow?
     @State private var trackDay: TrackDayLink?
@@ -21,6 +20,8 @@ struct SessionsListView: View {
 
     var body: some View {
         List(selection: $selection) {
+            actions
+                .listRowBackground(Palette.background)
             if let progress = model.importing {
                 ImportCard(progress: progress)
                     .listRowBackground(Palette.surface)
@@ -30,7 +31,7 @@ struct SessionsListView: View {
                     .listRowBackground(Palette.surface)
             }
             if model.sessions.isEmpty && model.importing == nil {
-                Text("No sessions yet. Open a .bdsession or .vbo from Files, AirDrop or another app, or tap +.")
+                Text("No sessions yet. Open a .bdsession or .vbo from Files, AirDrop or another app, or tap Import session.")
                     .foregroundStyle(Palette.onSurfaceVariant)
                     .listRowBackground(Palette.background)
             }
@@ -40,26 +41,13 @@ struct SessionsListView: View {
                         SessionRowView(
                             session: session,
                             cameras: model.cameraLines[session.id] ?? [],
-                            problems: model.goProProblems[session.id] ?? []
+                            problems: model.goProProblems[session.id] ?? [],
+                            actions: AnyView(rowActions(session))
                         )
                             .tag(session.id)
                             // Android's session card buttons: Watch video (FBBD-341), Add for each camera started
                             // by hand without video here yet (UI-32), Delete, Share, and the coach's review.
-                            .contextMenu {
-                                Button("Watch video") { watching = session }
-                                ForEach(model.addableCameras(session), id: \.sourceId) { camera in
-                                    Button("Add \(camera.name) video") { addFiles(session, camera) }
-                                }
-                                // Only on a session the coach spoke in, with its cues, as Android's card (FBBD-99).
-                                if let cues = CoachReviewCounts.shared.counts[session.id] {
-                                    Button { coachReview = CoachReviewLink(session) } label: {
-                                        Text("Coach review")
-                                        Text(CoachReviewCounts.text(cues))
-                                    }
-                                }
-                                Button("Share") { model.share(session) }
-                                Button("Delete", role: .destructive) { deleting = session }
-                            }
+                            .contextMenu { rowActions(session) }
                             .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)
                     }
                 } header: {
@@ -83,29 +71,6 @@ struct SessionsListView: View {
         .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle("Sessions")
-        .toolbar {
-            // The iPhone has Tracks as a tab of its own (AppShell).
-            if UIDevice.current.userInterfaceIdiom == .pad {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Tracks") { showingTracks = true }
-                        .accessibilityIdentifier("openTracks")
-                }
-            }
-            // Android's Sessions header: Compare laps from any sessions at a track (FBBD-92).
-            ToolbarItem(placement: .primaryAction) {
-                Button("Compare laps") { comparingLaps = true }
-                    .accessibilityIdentifier("compareLaps")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button {
-                    addingTo = nil
-                    picking = true
-                } label: { Image(systemName: "plus") }
-                    .accessibilityLabel("Import sessions")
-                    .accessibilityIdentifier("importSessions")
-            }
-        }
-        .sheet(isPresented: $showingTracks) { TracksView() }
         .sheet(item: $trackDay) { TrackDayView(link: $0) }
         .fullScreenCover(item: $coachReview) { CoachReviewScreen(link: $0) }
         .fullScreenCover(isPresented: $comparingLaps) { LapPickerScreen() }
@@ -145,6 +110,47 @@ struct SessionsListView: View {
                 model.importFiles(urls)
             }
         }
+    }
+
+    /// Android's session card buttons: Watch video (FBBD-341), Add for each camera started by hand without
+    /// video here yet (UI-32), Delete, Share, and the coach's review. Behind ⋮ on the row, as Android,
+    /// and on a long press.
+    @ViewBuilder private func rowActions(_ session: SessionRow) -> some View {
+        Button("Watch video") { watching = session }
+        ForEach(model.addableCameras(session), id: \.sourceId) { camera in
+            Button("Add \(camera.name) video") { addFiles(session, camera) }
+        }
+        // Only on a session the coach spoke in, with its cues, as Android's card (FBBD-99).
+        if let cues = CoachReviewCounts.shared.counts[session.id] {
+            Button { coachReview = CoachReviewLink(session) } label: {
+                Text("Coach review")
+                Text(CoachReviewCounts.text(cues))
+            }
+        }
+        Button("Share") { model.share(session) }
+        Button("Delete", role: .destructive) { deleting = session }
+    }
+
+    /// Android's Sessions header: Import session and Compare laps from any sessions at a track (FBBD-92).
+    /// In the list, not the toolbar: iPadOS 26 folded them into a "..." menu in the narrow sidebar
+    /// (Arek, TestFlight 1441). Tracks are in Settings, as Android.
+    private var actions: some View {
+        HStack(spacing: 16) {
+            Button {
+                addingTo = nil
+                picking = true
+            } label: { Label("Import session", systemImage: "plus") }
+                .accessibilityIdentifier("importSessions")
+            Button("Compare laps") { comparingLaps = true }
+                .accessibilityIdentifier("compareLaps")
+            Spacer(minLength: 0)
+        }
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(Palette.accent)
+        .buttonStyle(.borderless)
+        .labelStyle(.titleAndIcon)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
     }
 
     private func addFiles(_ session: SessionRow, _ camera: ListedCamera) {
@@ -192,6 +198,8 @@ private struct SessionRowView: View {
     let session: SessionRow
     let cameras: [SessionCameraLine]
     let problems: [String]
+    /// The row's ⋮ menu, as Android's session card.
+    let actions: AnyView
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -233,6 +241,16 @@ private struct SessionRowView: View {
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(Palette.onSurfaceVariant)
             }
+            Menu { actions } label: {
+                Image(systemName: "ellipsis")
+                    .rotationEffect(.degrees(90))
+                    .frame(width: 32, height: 32)
+                    .contentShape(Rectangle())
+            }
+            .foregroundStyle(Palette.onSurfaceVariant)
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Session actions")
+            .accessibilityIdentifier("sessionActions")
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .combine)

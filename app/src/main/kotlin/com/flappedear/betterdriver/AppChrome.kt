@@ -21,6 +21,7 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.navigation.NavHostController
 import com.flappedear.betterdriver.core.ui.layout.HeightClass
@@ -38,6 +39,19 @@ private val TopLevelItems = listOf(
     TopLevelItem(Routes.Car, "Car", ShellIcons.Car),
     TopLevelItem(Routes.Settings, "Settings", ShellIcons.Settings),
 )
+
+/** The bar's items: a tablet only reviews, so without Drive (Arek, 2026-10-30: no recording on tablets). */
+private fun topLevelItems(tabletDevice: Boolean) =
+    if (tabletDevice) TopLevelItems.filter { it.route != Routes.Drive } else TopLevelItems
+
+/**
+ * A tablet whichever way it is held or split: its smallest width is a tablet's (600 dp, Android's
+ * own line), unlike the window's size class, which an upright tablet shares with a phone held sideways.
+ */
+@Composable
+internal fun isTabletDevice(): Boolean = LocalConfiguration.current.smallestScreenWidthDp >= TabletSmallestWidthDp
+
+private const val TabletSmallestWidthDp = 600
 
 /** The window's size class (FBBD-40); the phone layout when there is no activity, as in previews. */
 @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
@@ -75,7 +89,8 @@ internal fun withoutStart(padding: PaddingValues): PaddingValues {
 @Composable
 internal fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        TopLevelItems.forEach { item ->
+        // An upright tablet has the bar too, still without Drive.
+        topLevelItems(isTabletDevice()).forEach { item ->
             NavigationBarItem(
                 selected = sectionOf(route) == item.route,
                 onClick = { openTopLevel(nav, item.route) },
@@ -86,12 +101,15 @@ internal fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean
     }
 }
 
-/** The bottom bar's items down the side of a tablet (FBBD-40), centred within reach of a thumb. */
+/**
+ * The bottom bar's items down the side of a tablet (FBBD-40), centred within reach of a thumb. A
+ * tablet only reviews, so it has no Drive (Arek, 2026-10-30: no recording on tablets).
+ */
 @Composable
 internal fun SideRail(nav: NavHostController, route: String, updateDot: Boolean) {
     NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
         Spacer(Modifier.weight(1f))
-        TopLevelItems.forEach { item ->
+        topLevelItems(tabletDevice = true).forEach { item ->
             NavigationRailItem(
                 selected = sectionOf(route) == item.route,
                 onClick = { openTopLevel(nav, item.route) },

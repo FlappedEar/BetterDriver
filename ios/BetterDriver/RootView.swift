@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// The app shell (FBBD-331, UI-290 B): a picked session fills the screen; ‹ Sessions closes it and
-/// brings back the whole session list, beside the empty page, to pick or add another. On an iPhone the list and the session
-/// take the screen in turn. Sessions arrive from Files, AirDrop or another app's Share sheet, or + in
-/// the list (UI-292 A).
+/// Sessions, as Android's (FBBD-40): on the iPad the list stays beside the picked session's review,
+/// or beside a hint to pick one, the picked row marked; on the iPhone the list and the session take
+/// the screen in turn. Sessions arrive from Files, AirDrop or another app's Share sheet, or Import
+/// session in the list (UI-292 A).
 struct RootView: View {
     @State private var model = SessionsModel()
     @State private var selection: String?
@@ -13,42 +13,23 @@ struct RootView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             SessionsListView(model: model, selection: $selection)
-                // iPadOS 26 puts its own sidebar button in the detail too: with ‹ Sessions beside it
-                // there were two buttons doing the same (Arek, TestFlight 1441).
+                // Android's list beside the analysis: two fifths, between a phone's width and a card's.
+                .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 440)
+                // The list never hides on the iPad, so no sidebar button (iPadOS 26 adds one here).
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             NavigationStack {
-                Group {
-                    if let id = selection, let session = model.row(id) {
-                        SessionView(session: session, revision: model.revision).id(id)
-                    } else {
-                        PickSession()
-                    }
-                }
-                .toolbar {
-                    // Collapsed (iPhone, narrow iPad window) the system back button returns to the
-                    // list and columns do nothing: a second ‹ there was dead (Arek, TestFlight).
-                    if sizeClass == .regular && columns == .detailOnly {
-                        ToolbarItem(placement: .topBarLeading) {
-                            // Back to all sessions, as on Android: the session closes, the list
-                            // comes back beside the empty page (Arek, TestFlight 1441).
-                            Button {
-                                selection = nil
-                                columns = .all
-                            } label: {
-                                Label("Sessions", systemImage: "chevron.left").labelStyle(.titleAndIcon)
-                            }
-                            .accessibilityIdentifier("showSessions")
-                        }
-                    }
+                if let id = selection, let session = model.row(id) {
+                    SessionView(session: session, revision: model.revision).id(id)
+                } else {
+                    PickSession()
                 }
             }
         }
-        // Side by side also in portrait: an overlay list over the session hid it again on any tap.
         .navigationSplitViewStyle(.balanced)
-        .toolbar(removing: .sidebarToggle)
-        .onChange(of: selection) { _, id in
-            if id != nil { columns = .detailOnly }
+        // Turned or resized, the iPad keeps the list: only a collapsed split (iPhone) shows one at a time.
+        .onChange(of: columns) { _, now in
+            if sizeClass == .regular && now != .all { columns = .all }
         }
         .onOpenURL { url in model.importFiles([url]) }
         .confirmationDialog(
@@ -86,7 +67,7 @@ private struct PickSession: View {
             Text("BetterDriver")
                 .font(.largeTitle.weight(.semibold))
                 .foregroundStyle(Palette.onBackground)
-            Text("Pick a session to review")
+            Text("Pick a session on the left to review it, or import one")
                 .foregroundStyle(Palette.onSurfaceVariant)
             Text("Core \(CoreBridge.version)")
                 .font(.footnote.monospacedDigit())
