@@ -88,7 +88,7 @@ def main():
             continue
         sha = pr["head"]["sha"]
         runs = list(paged(f"/repos/{repo}/commits/{sha}/check-runs", key="check_runs"))
-        statuses = request(f"/repos/{repo}/commits/{sha}/status")["statuses"]
+        statuses = list(paged(f"/repos/{repo}/commits/{sha}/status", key="statuses"))
         since = green_since(runs, statuses)
         if since is None or now - since <= limit:
             continue
