@@ -13,6 +13,15 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.22.0
+
+- A session with no laps, such as a road drive, keeps the six analysis tabs: Summary has the drive,
+  G-forces, acceleration runs and data quality, Car the whole drive's car values, and the tabs that
+  need laps say so. The bar shows the session's start time and track, and its menu opens the
+  track's progression and the coach review.
+- An Android tablet is for analysis only: it has no **Drive** and opens on **Sessions**, as the
+  iPad. See [Getting started](getting-started.md).
+
 ## 1.21.0
 
 - A Bluetooth LE OBD-II adapter with a name the app does not know is offered in **Add equipment**

@@ -45,10 +45,6 @@ values show. See [Car](car.md).
 The bottom bar (on an Android tablet, the rail down the side) has four places. A tablet (an iPad,
 or an Android tablet) is for analysis only, so it has no **Drive** and opens on **Sessions**.
 
-!!! note "Not released yet"
-    An Android tablet without **Drive** is merged after 1.21.0. It ships in the next release; the
-    iPad has it from TestFlight build 1448.
-
 
 | Item | What it holds |
 | --- | --- |
