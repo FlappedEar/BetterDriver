@@ -82,5 +82,12 @@ final class AppLogTests: XCTestCase {
         let size = try zip.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         XCTAssertEqual(zip.pathExtension, "zip")
         XCTAssertGreaterThan(size, 0)
+        // What Arek sends after a drive (FBBD-396): a zip keeps its file names readable in its
+        // directory, so each file is named in it.
+        let bytes = try Data(contentsOf: zip)
+        XCTAssertEqual(bytes.prefix(2), Data("PK".utf8), "not a zip")
+        for name in ["device.txt", "oslog.txt", log.file.lastPathComponent] {
+            XCTAssertNotNil(bytes.range(of: Data(name.utf8)), "no \(name) in the zip")
+        }
     }
 }
