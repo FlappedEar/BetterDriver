@@ -17,6 +17,8 @@ kotlin {
 
     sourceSets {
         commonMain.dependencies {
+            // The coach works on the review's line and day plans (FBBD-306, FBBD-315, FBBD-357).
+            implementation(project(":analysis"))
             implementation(project(":recorder"))
             implementation(project(":timing"))
             implementation(libs.kotlinx.serialization.json)

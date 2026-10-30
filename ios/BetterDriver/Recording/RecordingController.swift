@@ -247,13 +247,9 @@ final class RecordingController: ObservableObject {
         }
         let voice = CoachVoice(settings: settings)
         self.voice = voice
-        // For the headset delay test (FBBD-49), Android's lines (FBBD-354, FBBD-355): the output's delay
-        // and what the cues are timed for.
+        // For the headset delay test (FBBD-49), Android's line (FBBD-354, FBBD-355): the output's delay.
+        // What the cues are timed for is logged by the shared coach run (FBBD-357).
         AppLog.i("OutputDelay", CoachVoice.delayLine)
-        AppLog.i(
-            "CoachService",
-            "coaching session \(live.id): \(settings), audio delay \(phoneDelay > 0 ? "measured" : "set") on \(CoachVoice.output.type)"
-        )
         // A headset that connects or drops mid-session: the cues are timed for the new output, or for the
         // delay set in Settings when iOS reports none.
         let setDelay = coach.audioDelayMillis
@@ -264,8 +260,9 @@ final class RecordingController: ObservableObject {
             sessionsDir: AppFolders.sessions.path,
             referencesDir: AppFolders.coachReferences.path,
             linePlansDir: AppFolders.coachLines.path,
-            settings: settings,
-            audioDelayFromPhone: phoneDelay > 0,
+            settings: coach,
+            outputDelayMillis: Int32(phoneDelay),
+            output: CoachVoice.output.type,
             speaker: voice
         )
     }

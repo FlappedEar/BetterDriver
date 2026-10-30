@@ -55,9 +55,12 @@ class LiveCoachTest {
         val said = mutableListOf<String>()
         override val speaking = false
 
+        /** The output type the phrases go to. */
+        var device = "speaker"
+
         override fun say(text: String, speech: CoachSpeech): Boolean {
             said += text
-            speech.started("speaker", "builtInSpeaker")
+            speech.started(if (device == "speaker") "speaker" else "headset", device)
             speech.ended("done")
             return true
         }
@@ -78,7 +81,8 @@ class LiveCoachTest {
     private fun coachedSession(settings: CoachSettings, speaker: Speaker): LiveSession {
         val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
         val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
-        session.startCoach(sessions, references, lines, settings, audioDelayFromPhone = true, speaker = speaker)
+        // iOS reports the set delay as the speaker's latency, so the cues are timed for a measured delay.
+        session.startCoach(sessions, references, lines, settings, settings.audioDelayMillis, "speaker", speaker)
         for (n in 0L..(25 * 140)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
         session.awaitCoach()
         session.awaitCoach()
@@ -111,11 +115,19 @@ class LiveCoachTest {
         try {
             val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
             val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
-            val settings = coachSettings(polish = false, audioDelayMillis = 120)
-            session.startCoach(sessions, references, lines, settings, audioDelayFromPhone = true, speaker = Speaker())
-            // A headset connects 100 s in, after the first lap times, before the last (FBBD-354).
+            // 300 ms set in Settings; iOS reports 120 ms for the speaker at the start.
+            val settings = coachSettings(polish = false, audioDelayMillis = 300)
+            val speaker = Speaker()
+            session.startCoach(sessions, references, lines, settings, 120, "speaker", speaker)
+            // A headset connects 100 s in, after the first lap times, before the last (FBBD-354); iOS
+            // reports no latency for it, so the set delay is used.
             for (n in 0L..(25 * 140)) {
-                if (n == 25L * 100) session.audioDelay(300, measured = false, output = "bt_a2dp")
+                if (n == 25L * 100) {
+                    // The cues asked so far went to the speaker.
+                    session.awaitCoach()
+                    speaker.device = "bt_a2dp"
+                    session.audioDelay(300, measured = false, output = "bt_a2dp")
+                }
                 session.submit(SampleSet(n * 40_000, gnss.fix(n)))
             }
             session.awaitCoach()
@@ -143,7 +155,7 @@ class LiveCoachTest {
         coachedSession(coachSettings(polish = true, audioDelayMillis = 0), Speaker()).stop()
         val second = coachedSession(coachSettings(polish = true, audioDelayMillis = 0), Speaker())
         second.stop()
-        val reference = IosCoachLibrary(sessions, references).reference(ring, exclude = second.id)
+        val reference = IosCoachLibrary(sessions, references).reference(ring, exclude = second.id, plan = null)
         assertNotNull(reference, "built from the first session's laps")
         assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$references/ring.coach.json"))
     }
