@@ -49,22 +49,27 @@ final class CoachReviewTests: XCTestCase {
         openSessions()
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: jastrzab).waitForExistence(timeout: 120), "no demo sessions")
+        // The row's actions open from its ⋮ (sessionActions), as Android's session card. A tap to close
+        // a menu goes above the list: in the middle of the screen it can land on a row and open the session.
+        let menus = app.buttons.matching(identifier: "sessionActions")
+        XCTAssertTrue(menus.element(boundBy: jastrzab).waitForExistence(timeout: 30), "no session ⋮")
         // Silesia Ring was driven without the coach: as on Android, no Coach review there.
         sleep(5)
-        rows.element(boundBy: 0).press(forDuration: 1.2)
+        menus.element(boundBy: 0).tap()
         XCTAssertTrue(app.buttons["Share"].firstMatch.waitForExistence(timeout: 10), "no session menu")
         XCTAssertFalse(coachReviewItem().exists, "Coach review on a session with no cues")
-        app.tap()
+        closeMenu()
         // The cue counts are read off the main thread after the list: ask the menu again until it has them.
         let item = coachReviewItem()
         var offered = false
         // The rows carry a detail line now (Android's): on an iPhone the coached session can be below the fold.
-        let coached = rows.element(boundBy: jastrzab)
+        let coached = menus.element(boundBy: jastrzab)
         for _ in 0..<4 where !coached.isHittable { app.swipeUp() }
         for _ in 0..<12 where !offered {
-            coached.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5)).press(forDuration: 1.2)
+            XCTAssertTrue(coached.waitForExistence(timeout: 10), "the Sessions list left the screen")
+            coached.tap()
             offered = item.waitForExistence(timeout: 5)
-            if !offered { app.tap() }
+            if !offered { closeMenu() }
         }
         XCTAssertTrue(offered, "no Coach review on the coached session")
         keep("Session row, coach review")
@@ -72,6 +77,12 @@ final class CoachReviewTests: XCTestCase {
         reviewShows("Coach review, from the list")
         app.buttons["Done"].firstMatch.tap()
         XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    /// Closes an open menu with a tap above the list, where no row can be opened by mistake.
+    private func closeMenu() {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.06)).tap()
+        sleep(1)
     }
 
     /// A menu item is tapped where it is: on a busy CI simulator XCUITest's scroll-to-visible on it
