@@ -92,6 +92,32 @@ final class DataVideoTests: XCTestCase {
         app.buttons["dataVideoClose"].firstMatch.tap()
     }
 
+    /// A session with video has a Video tab (Arek, 2026-10-30): Watch plays it in landscape and
+    /// closing the player comes back to the tab.
+    func testTheVideoTabPlaysTheSessionsVideo() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        let tab = app.buttons["tabVideo"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 60), "no Video tab")
+        tab.tap()
+        let watch = app.buttons["dataVideoWatch"].firstMatch
+        XCTAssertTrue(watch.waitForExistence(timeout: 60), "no Watch in the Video tab")
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: watch)
+        waitForExpectations(timeout: 120)
+        keep("Video tab")
+        watch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 30), "no player")
+        sleep(4)
+        assertLandscape()
+        keep("Video tab playing")
+        app.buttons["dataVideoClose"].firstMatch.tap()
+        XCTAssertTrue(watch.waitForExistence(timeout: 30), "not back in the Video tab")
+    }
+
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
     private func openSessions() {
         let bottom = app.tabBars.buttons["Sessions"]
