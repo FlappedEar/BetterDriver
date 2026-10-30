@@ -65,8 +65,17 @@ for that session, so it never shows a made-up heart rate.
 ## OBD-II adapters
 
 - **OBD-II adapter** over Bluetooth Classic or Bluetooth LE, for example the Vgate vLinker MC+
-  and other ELM327/STN adapters. Pair it in Android's Bluetooth settings first.
+  and other ELM327/STN adapters. Pair a Bluetooth Classic adapter in Android's Bluetooth settings
+  first. A Bluetooth LE adapter with a name the app does not know (Konnwei KW902/KW903, LELink
+  and others) is offered in **Add equipment** when it advertises an ELM327 serial service.
 - **Wi-Fi OBD-II adapter** (192.168.0.10 : 35000): join its Wi-Fi network on the phone; if
   Android says the network has no internet, choose to stay connected.
+
+If the adapter drops during a drive, the app tries again every 2 seconds for 2 minutes, so car
+data comes back within seconds. A request the car stops answering is tried again after 30
+seconds, then less often, up to every 5 minutes, so the other values keep updating.
+
+On the iPhone, OBD-II works over Bluetooth LE and Wi-Fi; Bluetooth Classic adapters cannot connect
+to an iPhone.
 
 See [Car](car.md) for what is read and how to check it before driving.

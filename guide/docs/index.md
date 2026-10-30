@@ -1,9 +1,11 @@
 # BetterDriver
 
-BetterDriver is an Android track-day coach. A phone in the car records the session, shows live
-timing and speaks short coaching cues through your helmet headset. After the session, the phone
-or a tablet shows where the lap time went, what to do differently next time, and whether the last
-change worked.
+BetterDriver is a track-day coach for Android phones and the iPhone. The phone in the car records
+the session, shows live timing and speaks short coaching cues through your helmet headset. After
+the session, the phone or a tablet (an Android tablet or an iPad) shows where the lap time went,
+what to do differently next time, and whether the last change worked. Tablets are for analysis
+only: they do not record. The iPhone and iPad app looks and works like the Android app and comes
+through TestFlight; what it does not have yet is listed on [iPhone and iPad](ios.md).
 
 <figure markdown>
 ![The track screen during a lap](img/track_screen.png){ .shot }
@@ -31,7 +33,7 @@ does the next session show that it gained time.
 
 | You need | Why |
 | --- | --- |
-| An Android phone | Records, shows the track screen, speaks the cues. A tablet is optional, for review. |
+| An Android phone or an iPhone (12 or newer) | Records, shows the track screen, speaks the cues. A tablet (Android or iPad) is optional, for review only. |
 | A GNSS receiver | Lap timing. A RaceBox (Mini, Mini S or Micro) is the main one; other Bluetooth or Wi-Fi receivers and the phone's own GPS also work. See [Equipment](equipment.md). |
 | A helmet headset (optional) | Hears the coach. The app measures its audio delay by itself. |
 | An OBD-II adapter (optional) | Car data: RPM, throttle, pedals, temperatures. On a gen-1 FR-S/86/BRZ it also reads steering and brake pressure from the CAN bus. |
@@ -43,8 +45,8 @@ try timing and coaching anywhere. See [Try it without a track](demo.md).
 
 ## About this guide
 
-This guide describes **BetterDriver 1.21.0**, the latest release, and marks features that are
-merged but not yet released like this:
+This guide describes **BetterDriver 1.21.0**, the latest Android release, and the iPhone and iPad
+app on TestFlight. It marks Android features that are merged but not yet released like this:
 
 !!! note "Not released yet"
     Merged after 1.21.0. It ships in the next release.

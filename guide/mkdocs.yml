@@ -1,7 +1,7 @@
 # The end-user guide (FBBD-327): built by .github/workflows/guide.yml and published on GitHub Pages.
 # The pictures in docs/img are copied from the screenshot goldens at build time (see guide/README.md).
 site_name: BetterDriver guide
-site_description: How to record, read and use BetterDriver, the Android track-day coach.
+site_description: How to record, read and use BetterDriver, the track-day coach for Android and iPhone.
 site_url: https://flappedear.github.io/BetterDriver/
 repo_url: https://github.com/FlappedEar/BetterDriver
 repo_name: FlappedEar/BetterDriver
@@ -52,6 +52,7 @@ nav:
       - Car: car.md
       - Equipment: equipment.md
       - Settings: settings.md
+      - iPhone and iPad: ios.md
   - What's new: whats-new.md
 
 # Broken links and anchors fail the --strict build.

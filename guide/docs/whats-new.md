@@ -4,6 +4,59 @@ The full notes of every release are on
 [GitHub Releases](https://github.com/FlappedEar/BetterDriver/releases) and in
 [docs/release-notes](https://github.com/FlappedEar/BetterDriver/tree/main/docs/release-notes).
 
+## iPhone and iPad (TestFlight)
+
+- 30 Oct: Progression at a track, Coach review, Every pass, the Map tab's Laps view, Compare laps
+  from any sessions, driving-state strips, corner corrections and **Make a track from this
+  session**; coach corner flags in Where time goes; a smooth track screen through long
+  recordings; Share with video no longer runs out of memory; phone video always landscape and a
+  **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
+  See [iPhone and iPad](ios.md).
+
+## 1.21.0
+
+- A Bluetooth LE OBD-II adapter with a name the app does not know is offered in **Add equipment**
+  when it advertises an ELM327 serial service. See [Equipment](equipment.md#obd-ii-adapters).
+- A recording whose start fails part-way stops cleanly; a failed video write is reported at once;
+  a bundle or backup holding the same file twice is refused.
+- The iPhone and iPad catch up with Android's session review (above).
+
+## 1.20.2
+
+- OBD temperatures keep updating for the whole session: a request the car stops answering is tried
+  again after 30 s, then less often.
+
+## 1.20.1
+
+- A smoother track screen in the first seconds of a session.
+
+## 1.20.0
+
+- **Live laps at a new track**: with no saved start/finish, the app places a provisional line once
+  you have driven the loop about one and a half times, then times laps, sectors and delta live.
+  See [Drive and tracks](drive.md).
+
+## 1.19.0
+
+- Car data comes back within seconds after the OBD-II adapter drops mid-drive, and the session's
+  **Data quality** card has an OBD-II part.
+
+## 1.18.0
+
+- **Video with data** and **Watch video** draw FlappedEar Overlays' Tech HUD layout. See
+  [Export and sharing](export.md#video-with-data).
+
+## 1.17.0
+
+- The **Car** tab is the car's own page, with **Scan car** and your own OBD-II and CAN parameters.
+  See [Car](car.md).
+- A lap's video with data starts and ends a few seconds around the lap.
+
+## 1.16.0
+
+- The track screen's tiles are set in **Settings › Track screen**, one layout per car. See
+  [The track screen](track-screen.md#choosing-what-a-tile-shows).
+
 ## 1.15.0
 
 - **Watch video**: a session's sheet plays its video with the data band over it (speed, G, the

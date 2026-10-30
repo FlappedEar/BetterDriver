@@ -69,6 +69,16 @@ A release is reported done only after these, in the same session:
    video format, UI decisions, Roadmap, the Build Plan's history panel):
    update its summary and its "checked" date and release.
 5. Jira: the issues the release ships moved to their real state.
+6. Every Confluence page in `docs/confluence-pages.md` checked before this
+   release: summary re-checked, "checked" line bumped, and its row set to this
+   version in a PR. The release run lists these pages under "Docs for X.Y.Z".
+
+The release workflow's "Docs are current" step (`.github/scripts/docs-current.py`)
+refuses to publish when README.md or the user guide's home page does not name
+every platform (Android, iPhone and iPad), when the guide does not say it
+describes this version or "What's new" has no section for it, or when any
+Confluence page is still checked before the previous release. So a release
+whose pages were not caught up blocks the next one.
 
 The release run's summary repeats this list. From 0.3.25 to 0.4.0 the Home
 banner was not part of the steps and stayed at 0.3.24 for 20 releases. Until

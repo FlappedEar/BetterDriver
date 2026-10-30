@@ -2,7 +2,9 @@
 
 Tap a session in **Sessions** to open its lap analysis. Six tabs run along the top (the row
 scrolls sideways on a phone): **Summary**, **Compare**, **Map**, **Laps**, **Corners** and
-**Car**. On a tablet the session list stays beside the analysis, and turning the tablet keeps
+**Car**. On the iPhone and iPad a session with video has a seventh tab, **Video**, after **Car**
+(Watch video and Save video in one place); on Android these stay in the session's sheet. On a
+tablet the session list stays beside the analysis, and turning the tablet keeps
 your tab, compared laps, map view, corner and scroll position.
 
 ## Where the numbers come from
@@ -43,7 +45,8 @@ The Summary opens with what to do next and what came of last time:
 - **Heart rate** (when a strap was worn): average, highest and lowest.
 - **G-forces · whole session**: the G-G diagram and peaks.
 - **Data quality**: GNSS rate, gaps, video coverage and the other recording checks, and where each
-  channel came from.
+  channel came from. With OBD-II, its own part: link drops, the longest gap and the time without
+  car data.
 - **Progress over every session here**: opens the [progression](getting-faster.md#progress-over-every-session).
 
 ## Compare

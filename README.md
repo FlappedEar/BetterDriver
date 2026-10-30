@@ -1,8 +1,11 @@
 # BetterDriver
 
-Android track-day coach: logging and live timing, in-car spoken cues, and
-post-session analysis with video. Personal use, Android only: a phone in the
-car, a tablet for review. How to use it: the
+Track-day coach for Android and iOS: logging and live timing, in-car spoken
+cues, and post-session analysis with video. Personal use. A phone records in the
+car (an Android phone or an iPhone); a tablet (an Android tablet or an iPad) is
+for analysis only and does not record. The iPhone and iPad app is in `ios/`
+(SwiftUI, on TestFlight) and shares the Kotlin Multiplatform core with Android;
+what each platform has is in [docs/parity.md](docs/parity.md). How to use it: the
 [user guide](https://flappedear.github.io/BetterDriver/) (source in
 [guide/](guide/README.md)). Plan: Confluence "BetterDriver Build Plan"; work is
 tracked in Jira project FBBD.
@@ -27,6 +30,16 @@ tracked in Jira project FBBD.
 | `feature-track` | Always-on track screen |
 | `feature-review` | Lap review with each lap's video (phone and tablet layouts) |
 | `feature-analysis` | Session analysis screens: summary, focus, compare, corners and every pass, progression, data quality |
+| `shared` | Common file access, formats and maths for the shared core (Kotlin Multiplatform) |
+| `videosync` | Video clips on session time, MP4 and GPMF reading, GoPro GPS alignment and Open GoPro control, shared by both apps |
+| `racebox` | RaceBox message decoding, device session and receiver clock |
+| `heartrate` | Heart-rate strap decoding and the session's heart-rate state |
+| `core-ios` | Packs the shared modules as an XCFramework for the iOS app, with its bridges |
+| `ios/` | The iPhone and iPad app (SwiftUI, XcodeGen); see [ios/README.md](ios/README.md) |
+
+The modules `shared`, `analysis`, `coach`, `heartrate`, `obd`, `racebox`, `recorder`, `setup`,
+`timing`, `transfer` and `videosync` are Kotlin Multiplatform: a JVM target for Android and iOS
+targets. Logic both apps need goes into their `commonMain` (epic FBBD-355).
 
 `tools/` holds the scripts that make test fixtures (mock session, review fixtures, Circuit Tools
 sync kit) and update the circuit directory.
