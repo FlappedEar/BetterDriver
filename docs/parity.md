@@ -94,6 +94,7 @@ no key. `python3 tools/parity/check.py --keys` lists them.
 | Video export | Video with data in Tech HUD layout; single-lap export | ✅ 1.17.0, 1.18.0 | ✅ TF 1413/1416 | HudGeometry shared; painter twice | FBBD-152, FBBD-346, FBBD-347 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
 | Video export | Optimal-lap composite video | ✅ ≤0.3.2 | ❌ | Android only | FBBD-163, FBBD-370 | `log-android:OptimalVideo` |
 | Video export | Play video in landscape | ✅ | ✅ TF 1428 | UI | — | `log-ios:Orientation` |
+| Video export | Video tab in a session with video (Watch, Save video) | ❌ | 🔵 PR #435 | UI per platform | FBBD-392 |  |
 | Tracks | Tracks list, where you are, New track here | ✅ | ✅ TF 1.15+ | Store shared (TrackStore commonMain, #421); list UI twice: Android Tracks vs core-ios TrackLibrary | FBBD-336 | `route:Tracks` `log-android:Tracks` `ios-screen:TracksScreen` `ios-screen:TracksView` |
 | Tracks | Track editor: start/finish and sectors on the map; MapTiler or OSM | ✅ | ✅ | Twice: Android editor vs core-ios TrackEditor | FBBD-56, FBBD-230 | `route:TrackEditorPattern` `ios-screen:TrackEditorScreen` `ios-screen:TrackEditorView` |
 | Tracks | Circuit directory; point-to-point tracks; delete a track | ✅ | ✅ | Shared timing | FBBD-79, FBBD-155, FBBD-157 |  |
