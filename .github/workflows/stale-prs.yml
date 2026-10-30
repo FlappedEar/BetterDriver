@@ -1,0 +1,33 @@
+name: Stale green PRs
+
+# Flags open pull requests that have been green for more than 30 minutes without a merge
+# (.github/scripts/stale-prs.py). It comments once per head commit on each such PR, which
+# wakes the session following it, and lists them in the run summary. It never merges.
+on:
+  schedule:
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: read
+  statuses: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: stale-prs
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Green PRs waiting to merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Flag PRs green for more than 30 min
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          STALE_MINUTES: '30'
+        run: python3 .github/scripts/stale-prs.py
