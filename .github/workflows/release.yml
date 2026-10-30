@@ -75,6 +75,18 @@ jobs:
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: bash .github/scripts/release-acceptance.sh "$VERSION"
+      # README and the user guide cover every platform and this version, and no Confluence
+      # page is still checked before the previous release (docs/confluence-pages.md).
+      - name: Docs are current
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          previous=$(git tag -l 'v[0-9]*' --sort=-v:refname | grep -vx "v$VERSION" | head -1)
+          python3 .github/scripts/docs-current.py "$VERSION" "${previous#v}" | tee "$RUNNER_TEMP/docs.txt"
+          {
+            echo "## Docs for $VERSION"
+            grep '^TO UPDATE' "$RUNNER_TEMP/docs.txt" | sed 's/^/- /' || echo "- No Confluence page to update."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   # The release goes out only for a commit whose CI passed: its own run (ci.yml
   # on the push to main), or the pull request run that checked the very same
@@ -281,4 +293,5 @@ jobs:
             echo "3. What blocks 1.0 (16482306), plan of record (14483457), validation (15007745): summary re-checked, \"checked\" date and release bumped"
             echo "4. Pages whose subject $VERSION touches (Architecture, Recorder, RaceBox Micro BLE protocol, Steering angle, VBO video format, UI decisions, Roadmap, Build Plan history panel): summary and \"checked\" date updated"
             echo "5. Jira issues shipped in $VERSION moved to their real state"
+            echo "6. Every page listed under \"Docs for $VERSION\" (docs/confluence-pages.md) updated, and its row set to $VERSION in a PR; the next release refuses to publish while a page is still checked before $VERSION"
           } >> "$GITHUB_STEP_SUMMARY"

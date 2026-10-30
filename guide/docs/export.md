@@ -40,11 +40,14 @@ lap has its own video: the [perfect lap in 3D](getting-faster.md#perfect-lap-in-
 
 ## Share a session to the tablet
 
-Review is easiest on a tablet. To move a session there:
+Review is easiest on a tablet (an Android tablet or an iPad). A `.bdsession` file is the same on
+Android and iOS, so a session recorded on either phone opens on either tablet. To move a session
+there:
 
 1. On the phone, in **Sessions**, open the session's **⋮** sheet and tap **Share**.
-2. The app prepares the session as one file, with its video and its track, then opens Android's
-   share sheet. Choose **Quick Share** and the tablet (or Files, Drive and the rest).
+2. The app prepares the session as one file, with its video and its track, then opens the share
+   sheet. On Android choose **Quick Share** and the tablet (or Files, Drive and the rest); on the
+   iPhone choose AirDrop and the iPad, or Files.
 3. On the tablet, open the received file with BetterDriver, or use **Import session** in
    Sessions. The session and its track are added.
 

@@ -46,8 +46,8 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Recording | Recover interrupted sessions | ✅ ≤0.3.1 | ✅ TF 1405 | Shared store | FBBD-71 | `log-ios:Recovery` |
 | Recording | Recorder in its own process (coach crash never stops recording) | ✅ ≤0.3.1 | ➖ n/a single-process app | Platform | FBBD-69 | `log-android:RecorderForeground` |
 | Recording | Live Activity on the lock screen | ➖ n/a | ⚪ planned removed until app is stable | iOS only | FBBD-340 |  |
-| Car data | OBD-II over BLE (Vgate vLinker MC+) | ✅ 1.2.0 | 🟡 TF 1419, not yet proven in the car | OBD protocol shared (obd commonMain); link twice | FBBD-121, FBBD-333, FBBD-358 | `log-android:Obd` `log-ios:Obd` |
-| Car data | OBD-II over Wi-Fi ELM327 | ✅ 1.2.0 | 🟡 TF 1413 EINTR fix, not yet proven in the car | Socket shim per platform; supervisor twice | FBBD-351, FBBD-358 |  |
+| Car data | OBD-II over BLE (Vgate vLinker MC+) | ✅ 1.2.0 | ✅ TF 1419; vLinker and Konnwei BLE work on the iPhone (30 Oct drives) | OBD protocol shared (obd commonMain); link twice | FBBD-121, FBBD-333, FBBD-358 | `log-android:Obd` `log-ios:Obd` |
+| Car data | OBD-II over Wi-Fi ELM327 | ✅ 1.2.0 | ✅ TF 1413; connected and polled a whole 30 min drive (29 Oct 13:27 log) | Socket shim per platform; supervisor twice | FBBD-351, FBBD-358 |  |
 | Car data | OBD reconnect every 2 s after a drop | ✅ 1.19.0 | 🟡 retry on rediscovery only | Twice | FBBD-271, FBBD-358 |  |
 | Car data | FR-S passive CAN as primary car data (steering, brake pressure, pedal, rpm, temps) | ✅ 1.12.0 | 🟡 in shared code (broadcast poll set, ObdFeed), never run on a car | Shared obd core | FBBD-320, FBBD-263 |  |
 | Car data | Read only used channels; smooth RPM; steady temperatures | ✅ 1.6.0 | ✅ via shared core | Shared | FBBD-283, FBBD-284, FBBD-303 |  |
@@ -76,7 +76,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Coach | Warm-up lap when the track was driven earlier the same day | ✅ 0.3.3 | ✅ | Shared | FBBD-190 |  |
 | Coach | Pre-rendered cue clips | ✅ ≤0.3.1 | ❌ live speech only | Android only | FBBD-48, FBBD-357 | `log-android:CueClips` |
 | Coach | Headset delay: measured, re-measured on route change, in the log | 🟡 open for 1.0 | 🟡 re-timed on route change and in the log (TF 1425), not yet tested with a headset | Delay bookkeeping, re-timing and its log lines shared (CoachRun, SessionDelays, FBBD-357); route watch and measuring per platform | FBBD-9, FBBD-49, FBBD-255, FBBD-354, FBBD-357 | `log-android:AudioOut` `log-android:AudioRoute` `log-android:OutputDelay` `log-ios:AudioRoute` `log-ios:OutputDelay` |
-| Coach | Coach corner picks from the review | ✅ 0.3.x | 🔵 PR: flags in Where time goes | Store shared (CoachPicksStore commonMain, #421); both coaches read the picks (CoachRun, FBBD-357); flaggable corners and pickedOf shared | FBBD-148, FBBD-363 | `log-android:CoachPicks` |
+| Coach | Coach corner picks from the review | ✅ 0.3.x | ✅ TF 1441 flags in Where time goes (#434) | Store shared (CoachPicksStore commonMain, #421); both coaches read the picks (CoachRun, FBBD-357); flaggable corners and pickedOf shared | FBBD-148, FBBD-363 | `log-android:CoachPicks` |
 | Coach | Whole loop in CI on real sessions | 🟡 | ➖ n/a | CI | FBBD-311 |  |
 | Sessions | Sessions by day; delete; share a session (.bdsession) | ✅ | ✅ | UI per platform; bundle shared | FBBD-90, FBBD-95, FBBD-23 | `route:Sessions` `log-android:Sessions` `ios-screen:SessionsListView` `ios-screen:SessionRowView` |
 | Sessions | Export VBO + video (Circuit Tools), VBO, CSV, GPX | ✅ ≤0.3.21 | ✅ | Shared exporters | FBBD-25, FBBD-150, FBBD-216 |  |
@@ -87,30 +87,30 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Analysis | Summary: next-session focus, three lap times, where time goes, HR, G-G, acceleration runs | ✅ | ✅ TF 1416 | Words shared (SummaryText) | FBBD-20, FBBD-178, FBBD-103, FBBD-154 | `log-android:SessionFocus` `ios-screen:SummaryTab` |
 | Analysis | Session vs earlier sessions and vs session before | ✅ 0.3.x | ❌ not on the Summary | Android only (Progress.kt) | FBBD-122, FBBD-123, FBBD-377 |  |
 | Analysis | Map: where to find time, line plan, targets beyond own best | ✅ 1.10.0, 1.13.0 | ✅ | Shared analysis | FBBD-306, FBBD-312 | `log-android:LinePlan` `ios-screen:MapTab` |
-| Analysis | Lap map coloured by speed and delta | ✅ | 🔵 PR #411 Map tab Laps view | Shared MapScale (#411) | FBBD-149, FBBD-378 | `ios-screen:LapMapView` `ios-screen:LapsMapView` |
+| Analysis | Lap map coloured by speed and delta | ✅ | ✅ TF 1440 Map tab Laps view (#411) | Shared MapScale (#411) | FBBD-149, FBBD-378 | `ios-screen:LapMapView` `ios-screen:LapsMapView` |
 | Analysis | Perfect lap in 3D, and as MP4 | ✅ 1.10.0, 1.11.0 | ✅ | Shared scene; painter per platform | FBBD-308, FBBD-316 |  |
 | Analysis | Corners tab: theoretical best by corner, braking, speeds, pickup, gear | ✅ | ✅ | Shared | FBBD-104, FBBD-326 | `ios-screen:CornersTab` |
 | Analysis | Compare two laps with both videos, delta chart | ✅ | ✅ | Shared timing; UI per platform | FBBD-24, FBBD-93 | `route:Review` `ios-screen:LapVideoView` |
-| Analysis | Pick two laps from any sessions | ✅ | 🔵 PR #411 | Shared LapPicker (#411) | FBBD-92, FBBD-379 | `route:ReviewPattern` `log-android:ReviewLaps` `ios-screen:LapPickerScreen` |
-| Analysis | Every pass of one corner, with video | ✅ | 🔵 PR #411 | Shared ReviewLaps (#411) | FBBD-93, FBBD-153, FBBD-362 | `ios-screen:EveryPassScreen` `ios-screen:CornerClipView` |
+| Analysis | Pick two laps from any sessions | ✅ | ✅ TF 1440 (#411) | Shared LapPicker (#411) | FBBD-92, FBBD-379 | `route:ReviewPattern` `log-android:ReviewLaps` `ios-screen:LapPickerScreen` |
+| Analysis | Every pass of one corner, with video | ✅ | ✅ TF 1440 (#411) | Shared ReviewLaps (#411) | FBBD-93, FBBD-153, FBBD-362 | `ios-screen:EveryPassScreen` `ios-screen:CornerClipView` |
 | Analysis | Car tab: pedals, FR-S brake pressure and steering, temperatures, HR | ✅ 1.9.0, 1.13.0 | ✅ | UI per platform | FBBD-176, FBBD-322 | `ios-screen:CarTab` |
 | Analysis | Track day page | ✅ 1.11.0 | ✅ | Shared analysis; UI per platform | FBBD-315 | `route:TrackDayPattern` `log-android:TrackDay` `ios-screen:TrackDayView` |
-| Analysis | Progression at a track | ✅ 0.3.9 | 🔵 PR #411 | Moved to shared core in #411 | FBBD-181 | `route:TrackProgressionPattern` `log-android:Progression` `ios-screen:ProgressionScreen` `ios-screen:ProgressionSheet` `ios-screen:ProgressionMetricView` |
-| Analysis | Coach review (each cue and whether the next pass improved) | ✅ | 🔵 PR #411 | Shared CueCards in #411 | FBBD-99 | `route:CueReviewPattern` `ios-screen:CoachReviewScreen` |
+| Analysis | Progression at a track | ✅ 0.3.9 | ✅ TF 1440 (#411) | Moved to shared core in #411 | FBBD-181 | `route:TrackProgressionPattern` `log-android:Progression` `ios-screen:ProgressionScreen` `ios-screen:ProgressionSheet` `ios-screen:ProgressionMetricView` |
+| Analysis | Coach review (each cue and whether the next pass improved) | ✅ | ✅ TF 1440 (#411) | Shared CueCards in #411 | FBBD-99 | `route:CueReviewPattern` `ios-screen:CoachReviewScreen` |
 | Analysis | Coaching history | ✅ 0.3.9 | ❌ | Store shared (CoachingHistoryStore commonMain, #421); iOS UI to do | FBBD-180, FBBD-364 | `log-android:CoachingHistory` |
 | Analysis | Loop proof: time won back in focus corners | ✅ 1.10.0 | 🟡 track day proof only; session won-back needs coaching history | Shared analysis | FBBD-310, FBBD-313, FBBD-364 |  |
 | Analysis | Data quality card | ✅ 0.3.2 | ❌ log only | Quality checks JVM-only | FBBD-183, FBBD-365 | `log-android:QualityReports` |
-| Analysis | Provenance and confidence; driving states and coasting | ✅ 0.3.3, 0.3.9 | 🟡 provenance and confidence done; driving-states strip missing | Shared | FBBD-174, FBBD-177, FBBD-175, FBBD-380 |  |
+| Analysis | Provenance and confidence; driving states and coasting | ✅ 0.3.3, 0.3.9 | ✅ TF 1440 driving-states strip on Compare (#411) | Shared (driving-state names and keys in CompareModel, #411) | FBBD-174, FBBD-177, FBBD-175, FBBD-380 |  |
 | Video export | Watch a session's video with the data overlay | ✅ 1.15.0 | ✅ TF 1.16+ | Overlay geometry shared | FBBD-341 | `route:WatchVideoPattern` `log-android:WatchVideo` `ios-screen:DataVideoWatchPage` `ios-screen:DataVideoPlayerPage` |
 | Video export | Video with data in Tech HUD layout; single-lap export | ✅ 1.17.0, 1.18.0 | ✅ TF 1413/1416 | HudGeometry shared; painter twice | FBBD-152, FBBD-346, FBBD-347 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
 | Video export | Optimal-lap composite video | ✅ ≤0.3.2 | ❌ | Android only | FBBD-163, FBBD-370 | `log-android:OptimalVideo` |
 | Video export | Play video in landscape | ✅ | ✅ TF 1428 | UI | — | `log-ios:Orientation` |
-| Video export | Video tab in a session with video (Watch, Save video) | ❌ | 🔵 PR #435 | UI per platform | FBBD-392 |  |
+| Video export | Video tab in a session with video (Watch, Save video) | ❌ | ✅ TF 1447 (#435) | UI per platform | FBBD-392 |  |
 | Tracks | Tracks list, where you are, New track here | ✅ | ✅ TF 1.15+ | Store shared (TrackStore commonMain, #421); list UI twice: Android Tracks vs core-ios TrackLibrary | FBBD-336 | `route:Tracks` `log-android:Tracks` `ios-screen:TracksScreen` `ios-screen:TracksView` |
 | Tracks | Track editor: start/finish and sectors on the map; MapTiler or OSM | ✅ | ✅ | Twice: Android editor vs core-ios TrackEditor | FBBD-56, FBBD-230 | `route:TrackEditorPattern` `ios-screen:TrackEditorScreen` `ios-screen:TrackEditorView` |
 | Tracks | Circuit directory; point-to-point tracks; delete a track | ✅ | ✅ | Shared timing | FBBD-79, FBBD-155, FBBD-157 |  |
-| Tracks | Make a track from a session | ✅ | 🔵 PR #411 | Shared trackProposal (#411); Android still its own | FBBD-151, FBBD-367 |  |
-| Tracks | Manual corner and segment corrections | ✅ 0.3.9 | 🔵 PR #411 | Shared CornerCorrector (#411); Android editor not on it yet | FBBD-179, FBBD-366 |  |
+| Tracks | Make a track from a session | ✅ | ✅ TF 1440 (#411) | Shared trackProposal (#411); Android still its own | FBBD-151, FBBD-367 |  |
+| Tracks | Manual corner and segment corrections | ✅ 0.3.9 | ✅ TF 1440 (#411) | Shared CornerCorrector (#411); Android editor not on it yet | FBBD-179, FBBD-366 |  |
 | Tracks | Apple Maps on iOS | ➖ n/a | ⚪ planned paused | iOS only | FBBD-381 |  |
 | Settings | Settings topics; equipment; cars | ✅ | ✅ TF 1405 | Stores shared (SetupStore, CoachSettingsStore commonMain, #421); setup UI logic twice: Android vs core-ios SettingsCore | FBBD-338, FBBD-349 | `route:Settings` `route:SettingsTopicPattern` `route:AddEquipment` `route:EquipmentPattern` `route:CarPattern` `log-android:Settings` `log-ios:Settings` `ios-screen:SettingsView` `ios-screen:AppPage` `ios-screen:EquipmentPage` `ios-screen:EquipmentItemPage` `ios-screen:AddEquipmentPage` `ios-screen:CarsPage` `ios-screen:CarEditSheet` |
 | Settings | OBD page with connection and live values | ✅ 1.1.0 | ✅ | UI per platform | FBBD-261 | `route:Obd` `ios-screen:ObdPage` |
