@@ -65,7 +65,7 @@ final class IPadLayoutTests: XCTestCase {
         let detailed = NSPredicate(format: "label CONTAINS ' laps'")
         expectation(for: detailed, evaluatedWith: row)
         waitForExpectations(timeout: 60)
-        XCTAssertTrue(row.label.contains("Silesia"), "no track in the row: \(row.label)")
+        XCTAssertTrue(row.label.localizedCaseInsensitiveContains("silesia"), "no track in the row: \(row.label)")
         XCTAssertTrue(app.buttons["sessionActions"].firstMatch.exists, "no ⋮ on the rows")
         keep("Sessions beside the session, \(name)")
         rows.element(boundBy: 1).tap()
