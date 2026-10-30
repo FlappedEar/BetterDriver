@@ -23,24 +23,6 @@ final class VideoOrientationTests: XCTestCase {
         XCTAssertEqual(DataVideoMaker.landscape(.identity), .identity)
     }
 
-    /// A file tagged upright, as the 2026-10-30 drive's, makes a landscape composition: the overlay
-    /// is drawn at that size, so its tiles have the full width.
-    func testAFileTaggedUprightPlaysLandscape() async throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("upright-\(UUID().uuidString).mp4")
-        defer { try? FileManager.default.removeItem(at: url) }
-        XCTAssertTrue(DataVideoDemo.write(url, seconds: 1, upright: true))
-        let tracks = try await AVURLAsset(url: url).loadTracks(withMediaType: .video)
-        let source = try XCTUnwrap(tracks.first)
-        let tagged = try await source.load(.preferredTransform)
-        XCTAssertEqual(tagged.b, 1, accuracy: 0.001)
-
-        let composition = AVMutableComposition()
-        let track = try XCTUnwrap(composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid))
-        let range = try await source.load(.timeRange)
-        try track.insertTimeRange(range, of: source, at: .zero)
-        track.preferredTransform = DataVideoMaker.landscape(tagged)
-        // As DataVideoMaker.make builds the overlay's composition.
-        let video = AVMutableVideoComposition(asset: composition) { $0.finish(with: $0.sourceImage, context: nil) }
-        XCTAssertEqual(video.renderSize, CGSize(width: 640, height: 360))
-    }
+    // A file tagged upright playing landscape end to end: DataVideoTests (the demo video is tagged
+    // upright and the player says its video is wide).
 }
