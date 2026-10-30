@@ -59,21 +59,8 @@ struct SessionView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) { ExportButton(sessionId: session.id) { dataVideo = true } }
-            // Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
             ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    Button("Progression at this track") { progression = true }
-                    // Only for a session the coach spoke in, with its cues, as Android's card (FBBD-99).
-                    if let cues = CoachReviewCounts.shared.counts[session.id] {
-                        Button { coachReview = CoachReviewLink(session) } label: {
-                            Text("Coach review")
-                            Text(CoachReviewCounts.text(cues))
-                        }
-                    }
-                } label: {
-                    Label("More", systemImage: "ellipsis.circle")
-                }
-                .accessibilityIdentifier("sessionMore")
+                SessionMoreMenu(session: session, progression: $progression, coachReview: $coachReview)
             }
         }
         .sheet(isPresented: $dataVideo, onDismiss: {
@@ -154,6 +141,31 @@ struct SessionView: View {
         } catch {
             failure = "This session could not be read: \(error.localizedDescription)"
         }
+    }
+}
+
+/// Android's ways on from a session: the track's progression (FBBD-181) and the coach's cues (FBBD-99).
+/// Its own view, so that only it reads the cue counts: when they land, the session's page and its
+/// export menu are not drawn again, which would close a menu the driver is opening.
+private struct SessionMoreMenu: View {
+    let session: SessionRow
+    @Binding var progression: Bool
+    @Binding var coachReview: CoachReviewLink?
+
+    var body: some View {
+        Menu {
+            Button("Progression at this track") { progression = true }
+            // Only for a session the coach spoke in, with its cues, as Android's card (FBBD-99).
+            if let cues = CoachReviewCounts.shared.counts[session.id] {
+                Button { coachReview = CoachReviewLink(session) } label: {
+                    Text("Coach review")
+                    Text(CoachReviewCounts.text(cues))
+                }
+            }
+        } label: {
+            Label("More", systemImage: "ellipsis.circle")
+        }
+        .accessibilityIdentifier("sessionMore")
     }
 }
 

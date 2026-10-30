@@ -40,7 +40,9 @@ final class CoachReviewCounts {
         }
         reading = true
         Task {
-            counts = await Task.detached(priority: .utility) { ReviewBridge.cueCounts() }.value
+            let read = await Task.detached(priority: .utility) { ReviewBridge.cueCounts() }.value
+            // Only a change redraws the menus that show the counts.
+            if read != counts { counts = read }
             reading = false
             if again {
                 again = false
