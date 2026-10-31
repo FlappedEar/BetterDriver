@@ -28,5 +28,8 @@ struct AppShell: View {
         }
         .environmentObject(recorder)
         .environmentObject(settings)
+        // A backup or track file opened from Files or AirDrop asks here (FBBD-372).
+        .modifier(BackupPrompts())
+        .modifier(TrackImportPrompts())
     }
 }

@@ -17,6 +17,7 @@ struct TracksScreen: View {
     @State private var editing: EditingTrack?
     @State private var naming = false
     @State private var nameText = ""
+    @State private var importing = false
 
     var body: some View {
         Group {
@@ -62,6 +63,15 @@ struct TracksScreen: View {
             .background(Palette.background)
             .navigationTitle("Tracks")
             .toolbarBackground(Palette.background, for: .navigationBar)
+            // Import a track file from the other device (FBBD-80, FBBD-372), as Android's Tracks.
+            .toolbar {
+                ToolbarItem(placement: .primaryAction) {
+                    Button("Import") { importing = true }.accessibilityIdentifier("importTrack")
+                }
+            }
+            .fileImporter(isPresented: $importing, allowedContentTypes: [.bdtrack, .json, .data]) { result in
+                if case .success(let url) = result { TrackImportModel.shared.importFile(url) }
+            }
         }
         .onAppear { model.refresh() }
         .fullScreenCover(item: $editing) { e in

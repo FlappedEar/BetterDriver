@@ -38,4 +38,6 @@ actual object CoreFiles {
         if (exists(path)) PosixFiles.deleteRecursively(path)
         return !exists(path)
     }
+
+    actual fun mkdirs(path: String): Boolean = PosixFiles.mkdirs(path)
 }

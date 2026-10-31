@@ -552,6 +552,7 @@ class BackupTest {
             mapOf<String, Any>("b" to true, "i" to 1, "l" to 2L, "f" to 0.5f, "s" to "a:b"),
             BackupPrefs.kept(prefs),
         )
-        assertFailsWith<BundleFormatException> { BackupPrefs.decode("x=i\\:nope\n".byteInputStream()) }
+        assertFailsWith<BundleFormatException> { jvmPrefs("x=i\\:nope\n".byteInputStream()) }
+        assertFailsWith<BundleDamagedException> { BackupPrefs.decode("x=i\\:nope\n".encodeToByteArray()) }
     }
 }

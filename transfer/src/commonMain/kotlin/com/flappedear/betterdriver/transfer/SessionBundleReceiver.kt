@@ -120,20 +120,7 @@ class SessionBundleReceiver(private val files: StagingFiles) : BundleEntrySink {
         return ReceivedSession(id, info, track, trackJson)
     }
 
-    // Damaged metadata fails in many ways (as in SessionLimits.readInfo on the JVM).
-    @Suppress("TooGenericExceptionCaught")
-    private fun readInfo(bytes: ByteArray): SessionInfo {
-        val props = parseProperties(bytes)
-        val channels = (props["channels"] ?: "0").toIntOrNull()
-        if (channels == null || channels !in 0..MaxChannels) {
-            throw BundleDamagedException("session has a bad channel count")
-        }
-        return try {
-            metaFromEntries(props)
-        } catch (e: RuntimeException) {
-            throw BundleDamagedException("session has bad metadata: ${e.message}", e)
-        }
-    }
+    private fun readInfo(bytes: ByteArray): SessionInfo = checkedSessionInfo(bytes, "session")
 
     private fun decodeTrack(json: String): Track = try {
         TrackJson.decode(json)
@@ -147,9 +134,33 @@ class SessionBundleReceiver(private val files: StagingFiles) : BundleEntrySink {
         const val SessionPrefix = "session/"
         const val Format = "betterdriver-session"
         private const val MaxSmallEntry = 4L shl 20
+    }
+}
 
-        /** Far more channels than any receiver records; a larger count is a damaged file. */
-        private const val MaxChannels = 1024
+/** Far more channels than any receiver records; a larger count is a damaged file. */
+private const val MaxChannels = 1024
+
+/**
+ * The session info in a session's meta.properties [bytes], checked the same way for a bundle and a
+ * backup (as SessionLimits.readInfo on the JVM): its channel count before the channel list is built.
+ * [label] names the session in the error.
+ */
+// Damaged metadata fails in many ways, each with its reason.
+@Suppress("TooGenericExceptionCaught", "ThrowsCount")
+internal fun checkedSessionInfo(bytes: ByteArray, label: String): SessionInfo {
+    val props = try {
+        parseProperties(bytes)
+    } catch (e: IllegalArgumentException) {
+        throw BundleDamagedException("$label has bad metadata: ${e.message}", e)
+    }
+    val channels = (props["channels"] ?: "0").toIntOrNull()
+    if (channels == null || channels !in 0..MaxChannels) {
+        throw BundleDamagedException("$label has a bad channel count")
+    }
+    return try {
+        metaFromEntries(props)
+    } catch (e: RuntimeException) {
+        throw BundleDamagedException("$label has bad metadata: ${e.message}", e)
     }
 }
 
