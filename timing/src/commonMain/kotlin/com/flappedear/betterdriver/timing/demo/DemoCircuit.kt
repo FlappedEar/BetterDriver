@@ -2,6 +2,8 @@
 
 package com.flappedear.betterdriver.timing.demo
 
+import com.flappedear.betterdriver.math.toDegrees
+import com.flappedear.betterdriver.math.toRadians
 import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.fake.GnssScript
@@ -10,7 +12,6 @@ import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackLine
-import java.util.Random
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.ceil
@@ -90,13 +91,13 @@ private fun walk(a: Double, b: Double, out: MutableList<Pair<Xy, Piece>>? = null
     for (p in Layout) {
         if (p.bend) {
             val sign = if (p.degrees > 0) 1.0 else -1.0
-            val cx = x - sign * p.radius * sin(Math.toRadians(h))
-            val cy = y + sign * p.radius * cos(Math.toRadians(h))
-            val n = ceil(abs(Math.toRadians(p.degrees)) * p.radius / Step).toInt()
+            val cx = x - sign * p.radius * sin(toRadians(h))
+            val cy = y + sign * p.radius * cos(toRadians(h))
+            val n = ceil(abs(toRadians(p.degrees)) * p.radius / Step).toInt()
             for (k in 1..n) {
                 val hk = h + p.degrees * k / n
-                x = cx + sign * p.radius * sin(Math.toRadians(hk))
-                y = cy - sign * p.radius * cos(Math.toRadians(hk))
+                x = cx + sign * p.radius * sin(toRadians(hk))
+                y = cy - sign * p.radius * cos(toRadians(hk))
                 out?.add(Xy(x, y) to p)
             }
             h += p.degrees
@@ -108,8 +109,8 @@ private fun walk(a: Double, b: Double, out: MutableList<Pair<Xy, Piece>>? = null
             }
             val n = ceil(length / Step).toInt()
             for (k in 1..n) {
-                x += length / n * cos(Math.toRadians(h))
-                y += length / n * sin(Math.toRadians(h))
+                x += length / n * cos(toRadians(h))
+                y += length / n * sin(toRadians(h))
                 out?.add(Xy(x, y) to p)
             }
         }
@@ -150,7 +151,7 @@ private val TheCircuit: Path by lazy {
     xy[n] = raw.first() // Closed: the last point is the first.
     val heading = DoubleArray(n + 1) { i ->
         val d = xy[min(i + 1, n)] - xy[if (i == n) n - 1 else i]
-        (Math.toDegrees(atan2(d.x, d.y)) + 360.0) % 360.0
+        (toDegrees(atan2(d.x, d.y)) + 360.0) % 360.0
     }
     Path(xy, heading, radius, corner)
 }
@@ -190,7 +191,7 @@ class DemoCircuit(
 
     /** Lap [k] from the line, entered at [entry] m/s at [start] s; the first lap starts standing past the line. */
     private fun drive(k: Int, start: Double, entry: Double): Lap {
-        val random = Random(seed * 1_000_003L + k)
+        val random = JavaRandom(seed * 1_000_003L + k)
         val bends = Layout.count { it.bend }
         val grip = DoubleArray(bends) { if (k == 0) 0.8 else 0.9 + random.nextDouble() * 0.1 }
         val braking = DoubleArray(bends) { if (k == 0) 6.0 else 7.5 + random.nextDouble() * 1.5 }
@@ -218,7 +219,7 @@ class DemoCircuit(
     }
 
     /** Now and then a corner braked too early or taken too slowly, so the coach has something to say. */
-    private fun mistakes(random: Random, grip: DoubleArray, braking: DoubleArray) {
+    private fun mistakes(random: JavaRandom, grip: DoubleArray, braking: DoubleArray) {
         for (c in grip.indices) {
             if (random.nextDouble() >= MistakeChance) continue
             if (random.nextBoolean()) braking[c] = 5.0 + random.nextDouble() else grip[c] = 0.8
@@ -230,7 +231,7 @@ class DemoCircuit(
         val lap = lapAt(at)
         val local = at - lap.startSeconds
         val t = lap.seconds
-        var i = t.binarySearch(local).let { if (it >= 0) it else -it - 2 }.coerceIn(0, t.size - 2)
+        var i = lastAtOrBefore(t, local).coerceIn(0, t.size - 2)
         while (i < t.size - 2 && t[i + 1] <= t[i]) i++ // Past the standing start's equal times.
         val f = if (t[i + 1] > t[i]) ((local - t[i]) / (t[i + 1] - t[i])).coerceIn(0.0, 1.0) else 0.0
         val p = path.xy[i] + (path.xy[i + 1] - path.xy[i]) * f
@@ -277,4 +278,21 @@ class DemoCircuit(
             )
         }
     }
+}
+
+/** The last index of sorted [a] whose value is at most [x], -1 when none is (Arrays.binarySearch's floor). */
+private fun lastAtOrBefore(a: DoubleArray, x: Double): Int {
+    var lo = 0
+    var hi = a.size - 1
+    var found = -1
+    while (lo <= hi) {
+        val mid = (lo + hi) ushr 1
+        if (a[mid] <= x) {
+            found = mid
+            lo = mid + 1
+        } else {
+            hi = mid - 1
+        }
+    }
+    return found
 }

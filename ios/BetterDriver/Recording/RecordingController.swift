@@ -11,12 +11,15 @@ enum Receiver: Equatable {
     case phone
     /// The UI smoke test's receiver (UITestMode).
     case simulated
+    /// The Demo track in Settings › Equipment (FBBD-373): a made-up car drives its chosen drive.
+    case demoTrack
 
     var name: String {
         switch self {
         case .raceBox(let device): device.name
         case .phone: "Phone GPS"
         case .simulated: "Simulated GPS"
+        case .demoTrack: "Demo track"
         }
     }
 
@@ -73,6 +76,7 @@ final class RecordingController: ObservableObject {
     private var raceBox: RaceBoxLink?
     private var phone: PhoneGpsLink?
     private var simulated: SimulatedGpsLink?
+    private var demoTrack: DemoTrackLink?
     private var imu: PhoneImuLink?
     private var camera: PhoneCamera?
     /// The GNSS state at the last refresh, for the lost and back sounds.
@@ -159,9 +163,12 @@ final class RecordingController: ObservableObject {
         AppLog.session = live.id
         AppLog.i("Recording", "start receiver=\(receiver.name) camera=\(phoneCamera)")
         // The phone's accelerometer records in every session, as on Android; with phone GPS it gives the G.
-        let imu = PhoneImuLink(sink: live)
-        self.imu = imu
-        imu.start()
+        // Not with the Demo track, whose made-up drive it would not match (as Android's Sources).
+        if receiver != .demoTrack {
+            let imu = PhoneImuLink(sink: live)
+            self.imu = imu
+            imu.start()
+        }
         switch receiver {
         case .raceBox(let device):
             lastReceiverName = device.name
@@ -185,18 +192,30 @@ final class RecordingController: ObservableObject {
             let link = SimulatedGpsLink(sink: live)
             simulated = link
             link.start()
+        case .demoTrack:
+            do {
+                let link = try DemoTrackLink(sink: live)
+                demoTrack = link
+                link.start()
+            } catch {
+                AppLog.e("Recording", "demo track: \(error.localizedDescription)")
+                stop()
+                self.error = "Could not start the Demo track: \(error.localizedDescription)"
+            }
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
         let active = SettingsModel.shared.setup.active()
         // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338), with none listed one
-        // nearby, and the Wi-Fi adapter.
-        let car = ObdLink(
-            sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth),
-            setup: SettingsModel.shared.setup, tiles: tileIds + secondTileIds
-        )
-        obd = car
-        car.start()
+        // nearby, and the Wi-Fi adapter. Not with the Demo track's made-up car, as on Android.
+        if receiver != .demoTrack {
+            let car = ObdLink(
+                sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth),
+                setup: SettingsModel.shared.setup, tiles: tileIds + secondTileIds
+            )
+            obd = car
+            car.start()
+        }
         // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a
         // listed one.
         if let listed = Self.listed(active.sensors, ModelName.heartRate).first {
@@ -289,6 +308,7 @@ final class RecordingController: ObservableObject {
         raceBox?.stop()
         phone?.stop()
         simulated?.stop()
+        demoTrack?.stop()
         imu?.stop()
         camera?.stop()
         obd?.stop()
@@ -314,6 +334,7 @@ final class RecordingController: ObservableObject {
         raceBox = nil
         phone = nil
         simulated = nil
+        demoTrack = nil
         imu = nil
         camera?.stop()
         camera = nil
