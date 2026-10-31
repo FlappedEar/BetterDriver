@@ -20,9 +20,9 @@ import com.flappedear.betterdriver.core.ble.ImuCalibration
 import com.flappedear.betterdriver.core.ble.LinkProbe
 import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.RaceBoxDiagnostics
+import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsText
 import com.flappedear.betterdriver.core.ble.RaceBoxGatt
 import com.flappedear.betterdriver.core.ble.RaceBoxLink
-import com.flappedear.betterdriver.core.ble.RaceBoxMessages
 import com.flappedear.betterdriver.recording.RecorderClient
 import com.flappedear.betterdriver.recording.imuCalibrations
 import com.flappedear.betterdriver.setup.Equipment
@@ -173,14 +173,8 @@ private fun probe(diag: RaceBoxDiagnostics) = object : LinkProbe {
         }
     }
 
-    override fun queries(): List<ByteArray> {
-        val info = diag.snapshot(SystemClock.elapsedRealtime()).info
-        return buildList {
-            if (info.supportsGnssConfig) add(RaceBoxMessages.gnssConfigQuery())
-            // The plain Mini has no memory (p. 10); the Mini S and Micro answer the status query.
-            if (info.model != null && info.model != "RaceBox Mini") add(RaceBoxMessages.recordingStatusQuery())
-        }
-    }
+    override fun queries(): List<ByteArray> =
+        RaceBoxDiagnosticsText.queries(diag.snapshot(SystemClock.elapsedRealtime()).info)
 }
 
 private fun bluetoothAllowed(context: Context): Boolean =

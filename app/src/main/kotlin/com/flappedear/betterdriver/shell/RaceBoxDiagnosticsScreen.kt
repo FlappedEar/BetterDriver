@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.core.ble.RaceBoxDiagnosticsText
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
 
@@ -119,4 +120,4 @@ private fun RaceBoxDiagnosticsPreview() {
  * The screen's title: the RaceBox's live values, not Settings › Diagnostics (the app's log), so the
  * two are never one name.
  */
-const val RaceBoxDiagnosticsTitle = "RaceBox diagnostics"
+const val RaceBoxDiagnosticsTitle = RaceBoxDiagnosticsText.TITLE

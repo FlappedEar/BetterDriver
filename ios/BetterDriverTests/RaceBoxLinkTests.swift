@@ -35,6 +35,30 @@ final class RaceBoxLinkTests: XCTestCase {
         XCTAssertTrue(sink.events.contains(RaceBoxEvents.shared.CONNECTED))
     }
 
+    /// The diagnostics screen's probe (FBBD-371): the shared RaceBoxDiagnostics behind a lock, fed as
+    /// the link feeds it, asking only the read-only queries the firmware answers.
+    func testTheDiagnosticsProbeReadsTheExampleAndAsksReadOnlyQueries() {
+        let packet = Data(officialExample.split(separator: " ").map { UInt8($0, radix: 16)! })
+        let probe = RaceBoxDiagProbe(isMicro: true)
+        XCTAssertTrue(probe.queries().isEmpty, "nothing is asked before the Device Information strings")
+        probe.deviceInfo(id: "2A24", value: "RaceBox Micro")
+        probe.deviceInfo(id: "2A26", value: "3.4")
+        probe.link(rssi: -61, mtu: 185)
+        probe.state(LinkStateStreaming(hz: 25))
+        probe.data(packet.prefix(20))
+        probe.data(packet.dropFirst(20))
+        let (state, s) = probe.snapshot()
+        XCTAssertTrue(state is LinkStateStreaming)
+        XCTAssertEqual(s.messages, 1)
+        XCTAssertEqual(s.latest?.satellites, 11)
+        XCTAssertEqual(s.rssiDbm?.intValue, -61)
+        let queries = probe.queries()
+        XCTAssertEqual(queries.count, 2)
+        // B5 62 FF 27 (receiver settings) and B5 62 FF 22 (memory status), both with empty payloads.
+        XCTAssertEqual(Array(queries[0].prefix(6)), [0xB5, 0x62, 0xFF, 0x27, 0x00, 0x00])
+        XCTAssertEqual(Array(queries[1]), [0xB5, 0x62, 0xFF, 0x22, 0x00, 0x00, 0x21, 0x62])
+    }
+
     func testRaceBoxNamesAreRecognised() {
         XCTAssertTrue(FoundRaceBox.companion.isRaceBox(name: "RaceBox Micro 1234563241"))
         XCTAssertFalse(FoundRaceBox.companion.isRaceBox(name: "Pixel Buds"))

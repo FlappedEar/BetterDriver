@@ -2,8 +2,7 @@
 
 package com.flappedear.betterdriver.core.ble
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
+import com.flappedear.betterdriver.core.JvmSynchronized
 
 /** RaceBox reply and command ids (RaceBox BLE Protocol Description rev 8). */
 object RaceBoxMessages {
@@ -52,7 +51,7 @@ data class RaceBoxMemoryStatus(
     companion object {
         fun parse(payload: ByteArray): RaceBoxMemoryStatus? {
             if (payload.size != 12) return null
-            val b = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
+            val b = LittleEndian(payload)
             val security = payload[2].toInt()
             return RaceBoxMemoryStatus(
                 recording = payload[0].toInt() != 0,
@@ -124,8 +123,9 @@ data class RaceBoxDiagnosticsSnapshot(
 
 /**
  * Collects what a RaceBox reports for the diagnostics screen. Feed it raw notification bytes and
- * the other link facts; read [snapshot]. Pure Kotlin so it can be tested without a device.
- * Synchronized: notifications and GATT callbacks arrive on different threads.
+ * the other link facts; read [snapshot]. Common Kotlin (FBBD-371): the Android app's GATT link and
+ * the iOS app's CoreBluetooth link feed the same probe. Synchronized on the JVM, where notifications
+ * and GATT callbacks arrive on different threads; on iOS one serial queue feeds it.
  *
  * [isMicro] is the guess from the advertised name, used for the power byte until the device's
  * Model string arrives.
@@ -148,7 +148,7 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
     private var capture: MutableList<ImuSample>? = null
 
     /** [nowMs] is a monotonic clock, used only for the message rate. */
-    @Synchronized
+    @JvmSynchronized
     fun feed(bytes: ByteArray, nowMs: Long) {
         reader.feed(bytes) { frame ->
             if (frame.messageClass != RaceBoxClass) return@feed
@@ -185,46 +185,46 @@ class RaceBoxDiagnostics(private val isMicro: Boolean) {
         return steps.sorted()[steps.size / 2]
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun deviceInfo(edit: (RaceBoxDeviceInfo) -> RaceBoxDeviceInfo) {
         info = edit(info)
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun calibration(c: ImuCalibration?) {
         calibration = c
     }
 
     /** Starts collecting raw motion samples for a calibration. */
-    @Synchronized
+    @JvmSynchronized
     fun startCapture() {
         capture = mutableListOf()
     }
 
     /** Ends a capture and returns its samples (empty if none was running). */
-    @Synchronized
+    @JvmSynchronized
     fun endCapture(): List<ImuSample> = capture.orEmpty().also { capture = null }
 
     /** Link facts from GATT: signal strength in dBm, negotiated MTU in bytes. */
-    @Synchronized
+    @JvmSynchronized
     fun link(rssiDbm: Int? = null, mtuBytes: Int? = null) {
         rssiDbm?.let { rssi = it }
         mtuBytes?.let { mtu = it }
     }
 
     /** After a reconnect: drop a partial packet and restart gap tracking. Totals are kept. */
-    @Synchronized
+    @JvmSynchronized
     fun reset() {
         reader.reset()
         lastItow = null
         steps.clear()
     }
 
-    @Synchronized
+    @JvmSynchronized
     fun snapshot(nowMs: Long): RaceBoxDiagnosticsSnapshot {
         while (arrivals.isNotEmpty() && nowMs - arrivals.first() >= RateWindowMs) arrivals.removeFirst()
         val d = latest
-        val micro = info.model?.startsWith(RaceBoxGatt.MICRO_PREFIX) ?: isMicro
+        val micro = info.model?.startsWith(RaceBoxIds.MICRO_PREFIX) ?: isMicro
         return RaceBoxDiagnosticsSnapshot(
             info = info,
             latest = d,
