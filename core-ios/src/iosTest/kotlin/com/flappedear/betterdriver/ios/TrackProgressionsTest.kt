@@ -94,10 +94,14 @@ class TrackProgressionsTest {
     fun theSummaryKeepsTheSessionInTheCoachingHistoryAsAndroid() {
         val first = addJastrzab(StartUtcMillis)
         val second = addJastrzab(StartUtcMillis + DayMillis)
-        // No focus was worked on and no gain checked yet: no card, but each session's record is kept
-        // where Android keeps it (FBBD-364), with the corners the track now keeps.
+        // The first has nothing before it; the second shows what came of the first's focus, as
+        // Android's card (FBBD-364): its three corners, measured through both sessions' line plans.
         assertTrue(library.coaching(library.review(first), first).empty)
-        assertTrue(library.coaching(library.review(second), second).empty)
+        val card = library.coaching(library.review(second), second)
+        assertEquals(3, card.attempts.size)
+        assertTrue(card.checks.isEmpty())
+        assertNotNull(card.wonBack)
+        // Each session's record is kept where Android keeps it, with the corners the track now keeps.
         val history = "$base/coach/history/jastrzab"
         assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$history/$first.json"))
         assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$history/$second.json"))
