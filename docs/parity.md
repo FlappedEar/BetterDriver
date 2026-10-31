@@ -90,6 +90,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Analysis | Map: where to find time, line plan, targets beyond own best | ✅ 1.10.0, 1.13.0 | ✅ | Shared analysis | FBBD-306, FBBD-312 | `log-android:LinePlan` `ios-screen:MapTab` |
 | Analysis | Lap map coloured by speed and delta | ✅ | ✅ TF 1440 Map tab Laps view (#411) | Shared MapScale (#411) | FBBD-149, FBBD-378 | `ios-screen:LapMapView` `ios-screen:LapsMapView` |
 | Analysis | Perfect lap in 3D, and as MP4 | ✅ 1.10.0, 1.11.0 | ✅ | Shared scene; painter per platform | FBBD-308, FBBD-316 |  |
+| Analysis | Satellite photo under the perfect lap in 3D | ✅ 1.11.0 (MapTiler key) | 🟡 player: Apple Maps satellite, no key (FBBD-381); saved MP4 keeps the drawn road (Apple terms: no stored imagery) | Shared scene tiles (SceneGround, SceneTile); tile source per platform: Android MapTilerGround, iOS PerfectLapTiles (MKMapSnapshotter, memory only) | FBBD-316, FBBD-381 |  |
 | Analysis | Corners tab: theoretical best by corner, braking, speeds, pickup, gear | ✅ | ✅ | Shared | FBBD-104, FBBD-326 | `ios-screen:CornersTab` |
 | Analysis | Compare two laps with both videos, delta chart | ✅ | ✅ | Shared timing; UI per platform | FBBD-24, FBBD-93 | `route:Review` `ios-screen:LapVideoView` |
 | Analysis | Pick two laps from any sessions | ✅ | ✅ TF 1440 (#411) | Shared LapPicker (#411) | FBBD-92, FBBD-379 | `route:ReviewPattern` `log-android:ReviewLaps` `ios-screen:LapPickerScreen` |
@@ -108,11 +109,11 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Video export | Play video in landscape | ✅ | ✅ TF 1428 | UI | — | `log-ios:Orientation` |
 | Video export | Video tab in a session with video (Watch, Save video) | ✅ 1.24.0 (FBBD-392, #453) | ✅ TF 1447 (#435) | Parts listed twice (Android VideoExports, core-ios DataVideo); tab UI per platform | FBBD-392 |  |
 | Tracks | Tracks list, where you are, New track here | ✅ | ✅ TF 1.15+ | Store shared (TrackStore commonMain, #421); list UI twice: Android Tracks vs core-ios TrackLibrary | FBBD-336 | `route:Tracks` `log-android:Tracks` `ios-screen:TracksScreen` `ios-screen:TracksView` |
-| Tracks | Track editor: start/finish and sectors on the map; MapTiler or OSM | ✅ | ✅ | Twice: Android editor vs core-ios TrackEditor | FBBD-56, FBBD-230 | `route:TrackEditorPattern` `ios-screen:TrackEditorScreen` `ios-screen:TrackEditorView` |
+| Tracks | Track editor: start/finish and sectors on the map; Android MapTiler or OSM, iOS Apple Maps satellite or map (FBBD-381) | ✅ | ✅ | Twice: Android editor vs core-ios TrackEditor | FBBD-56, FBBD-230 | `route:TrackEditorPattern` `ios-screen:TrackEditorScreen` `ios-screen:TrackEditorView` |
 | Tracks | Circuit directory; point-to-point tracks; delete a track | ✅ | ✅ | Shared timing | FBBD-79, FBBD-155, FBBD-157 |  |
 | Tracks | Make a track from a session | ✅ | ✅ TF 1440 (#411) | Shared trackProposal (#411); Android still its own | FBBD-151, FBBD-367 |  |
 | Tracks | Manual corner and segment corrections | ✅ 0.3.9 | ✅ TF 1440 (#411) | Shared CornerCorrector (#411); Android editor not on it yet | FBBD-179, FBBD-366 |  |
-| Tracks | Apple Maps on iOS | ➖ n/a | ⚪ planned paused | iOS only | FBBD-381 |  |
+| Tracks | Apple Maps on iOS (editor Satellite/Map, 3D ground) | ➖ n/a | 🔵 FBBD-381 | iOS only (Android uses MapTiler/OSM) | FBBD-381 |  |
 | Settings | Settings topics; equipment; cars | ✅ | ✅ TF 1405 | Stores shared (SetupStore, CoachSettingsStore commonMain, #421); setup UI logic twice: Android vs core-ios SettingsCore | FBBD-338, FBBD-349 | `route:Settings` `route:SettingsTopicPattern` `route:AddEquipment` `route:EquipmentPattern` `route:CarPattern` `log-android:Settings` `log-ios:Settings` `ios-screen:SettingsView` `ios-screen:AppPage` `ios-screen:EquipmentPage` `ios-screen:EquipmentItemPage` `ios-screen:AddEquipmentPage` `ios-screen:CarsPage` `ios-screen:CarEditSheet` |
 | Settings | OBD page with connection and live values | ✅ 1.1.0 | ✅ | UI per platform | FBBD-261 | `route:Obd` `ios-screen:ObdPage` |
 | Settings | Spoken coach settings; phone video setting; About and credits | ✅ | ✅ | UI per platform | FBBD-98, FBBD-88, FBBD-79 | `route:CoachSettings` `route:About` `log-android:CoachPrefs` `ios-screen:CoachSettingsPage` `ios-screen:AboutPage` `ios-screen:VideoPage` |

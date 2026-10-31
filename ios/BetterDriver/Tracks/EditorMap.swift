@@ -15,13 +15,13 @@ enum EditorColors {
     static let straight = UIColor(red: 0xC9 / 255, green: 0xD3 / 255, blue: 0xDA / 255, alpha: 0x99 / 255)
 }
 
-/// The editor's map (UI-23, UI-24), as EditorMap on Android: the background tiles, the recorded lap,
-/// every line with its direction arrow, and the selected line with its two draggable ends; with no
-/// line selected, the track's corners and straights, the one being corrected with its draggable ends
-/// (FBBD-366). A tap places the selected line, else picks the corner there; pinch and drag move the map.
+/// The editor's map (UI-23, UI-24), as EditorMap on Android: Apple's satellite photo or map, the
+/// recorded lap, every line with its direction arrow, and the selected line with its two draggable ends;
+/// with no line selected, the track's corners and straights, the one being corrected with its draggable
+/// ends (FBBD-366). A tap places the selected line, else picks the corner there; pinch and drag move the map.
 struct EditorMap: UIViewRepresentable {
     @ObservedObject var model: EditorModel
-    let source: TileSource
+    let background: EditorBackground
 
     func makeCoordinator() -> Coordinator { Coordinator(model) }
 
@@ -32,6 +32,8 @@ struct EditorMap: UIViewRepresentable {
         map.isPitchEnabled = false
         map.showsCompass = false
         map.pointOfInterestFilter = .excludingAll
+        // The app is dark: the plain map too.
+        map.overrideUserInterfaceStyle = .dark
         let drawing = EditorDrawing(map: map, model: model)
         drawing.frame = map.bounds
         drawing.autoresizingMask = [.flexibleWidth, .flexibleHeight]
@@ -42,13 +44,13 @@ struct EditorMap: UIViewRepresentable {
         let drag = UIPanGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.dragged(_:)))
         drag.delegate = context.coordinator
         map.addGestureRecognizer(drag)
-        context.coordinator.show(source, on: map)
+        context.coordinator.show(background, on: map)
         context.coordinator.fit(map)
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
-        context.coordinator.show(source, on: map)
+        context.coordinator.show(background, on: map)
         context.coordinator.drawing?.setNeedsDisplay()
     }
 
@@ -56,7 +58,7 @@ struct EditorMap: UIViewRepresentable {
     final class Coordinator: NSObject, MKMapViewDelegate, UIGestureRecognizerDelegate {
         let model: EditorModel
         weak var drawing: EditorDrawing?
-        private var overlay: CachedTileOverlay?
+        private var shown: EditorBackground?
         /// The end being dragged: true for the left one.
         private var draggingLeft: Bool?
         /// The end of the corner being corrected that is dragged: true for its start.
@@ -64,14 +66,10 @@ struct EditorMap: UIViewRepresentable {
 
         init(_ model: EditorModel) { self.model = model }
 
-        func show(_ source: TileSource, on map: MKMapView) {
-            // By address as well as id: a changed MapTiler key keeps the id but needs the new key.
-            if let current = overlay?.source, current.id == source.id,
-               current.url(z: 0, x: 0, y: 0) == source.url(z: 0, x: 0, y: 0) { return }
-            if let old = overlay { map.removeOverlay(old) }
-            let next = CachedTileOverlay(source: source)
-            map.addOverlay(next, level: .aboveLabels)
-            overlay = next
+        func show(_ background: EditorBackground, on map: MKMapView) {
+            if shown == background { return }
+            map.preferredConfiguration = background.configuration
+            shown = background
         }
 
         /// Fits the map to the recorded lap, else the start/finish line, else the track's area.
@@ -91,11 +89,6 @@ struct EditorMap: UIViewRepresentable {
                 let c = editor.track.center.coordinate
                 map.setRegion(MKCoordinateRegion(center: c, latitudinalMeters: 800, longitudinalMeters: 800), animated: false)
             }
-        }
-
-        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            if let tiles = overlay as? MKTileOverlay { return MKTileOverlayRenderer(tileOverlay: tiles) }
-            return MKOverlayRenderer(overlay: overlay)
         }
 
         func mapViewDidChangeVisibleRegion(_ mapView: MKMapView) { drawing?.setNeedsDisplay() }
