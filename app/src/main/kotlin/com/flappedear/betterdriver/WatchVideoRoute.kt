@@ -19,27 +19,44 @@ import androidx.navigation.navArgument
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.videoexport.VideoExports
+import com.flappedear.betterdriver.videoexport.VideoPart
 import com.flappedear.betterdriver.videoexport.WatchLoad
 import com.flappedear.betterdriver.videoexport.WatchVideoScreen
+import com.flappedear.betterdriver.videoexport.WholeVideo
 
 /** The Watch video destination, [Routes.WatchVideoPattern] (FBBD-341). */
 internal fun NavGraphBuilder.watchVideo(nav: NavHostController, padding: PaddingValues) {
     composable(
         Routes.WatchVideoPattern,
-        arguments = listOf(navArgument(Routes.SessionIdArg) { type = NavType.StringType }),
+        arguments = listOf(
+            navArgument(Routes.SessionIdArg) { type = NavType.StringType },
+            navArgument(Routes.VideoPartArg) {
+                type = NavType.IntType
+                defaultValue = WholeVideo
+            },
+            navArgument(Routes.VideoHandleArg) {
+                type = NavType.IntType
+                defaultValue = 0
+            },
+        ),
     ) { e ->
-        val id = e.arguments?.getString(Routes.SessionIdArg).orEmpty()
-        Box(Modifier.padding(padding)) { WatchVideoRoute(nav, id) }
+        val args = e.arguments
+        val id = args?.getString(Routes.SessionIdArg).orEmpty()
+        val part = args?.getInt(Routes.VideoPartArg, WholeVideo) ?: WholeVideo
+        val handle = args?.getInt(Routes.VideoHandleArg, 0) ?: 0
+        Box(Modifier.padding(padding)) { WatchVideoRoute(nav, id, part, handle) }
     }
 }
 
-/** Session [id]'s whole video with the data overlay, read off the main thread first. */
+/** Session [id]'s video with the data overlay, [part] of it with [handle] seconds, read off the main thread first. */
 @Composable
-private fun WatchVideoRoute(nav: NavHostController, id: String) {
+private fun WatchVideoRoute(nav: NavHostController, id: String, part: VideoPart, handle: Int) {
     val context = LocalContext.current
-    var load by remember(id) { mutableStateOf<WatchLoad>(WatchLoad.Loading) }
-    LaunchedEffect(id) {
-        VideoExports.get(context).watch(id) { s -> load = s?.let { WatchLoad.Ready(it) } ?: WatchLoad.NoVideo }
+    var load by remember(id, part, handle) { mutableStateOf<WatchLoad>(WatchLoad.Loading) }
+    LaunchedEffect(id, part, handle) {
+        VideoExports.get(context).watch(id, part, handle) { s ->
+            load = s?.let { WatchLoad.Ready(it) } ?: WatchLoad.NoVideo
+        }
     }
     val title = Sessions.get(context).list.firstOrNull { it.id == id }?.let(::sessionTitle).orEmpty()
     WatchVideoScreen(title, load, onBack = { nav.popBackStack() })

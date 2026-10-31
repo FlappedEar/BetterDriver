@@ -106,7 +106,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Video export | Video with data in Tech HUD layout; single-lap export; gear on the RPM gauge | ✅ 1.17.0, 1.18.0, 1.23.0 | ✅ TF 1413/1416, gear via shared core | HudGeometry, gear and texts shared; painter twice | FBBD-152, FBBD-346, FBBD-347, FBBD-397 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
 | Video export | Optimal-lap composite video | ✅ ≤0.3.2 | ❌ | Android only | FBBD-163, FBBD-370 | `log-android:OptimalVideo` |
 | Video export | Play video in landscape | ✅ | ✅ TF 1428 | UI | — | `log-ios:Orientation` |
-| Video export | Video tab in a session with video (Watch, Save video) | ❌ | ✅ TF 1447 (#435) | UI per platform | FBBD-392 |  |
+| Video export | Video tab in a session with video (Watch, Save video) | ✅ (FBBD-392) | ✅ TF 1447 (#435) | Parts listed twice (Android VideoExports, core-ios DataVideo); tab UI per platform | FBBD-392 |  |
 | Tracks | Tracks list, where you are, New track here | ✅ | ✅ TF 1.15+ | Store shared (TrackStore commonMain, #421); list UI twice: Android Tracks vs core-ios TrackLibrary | FBBD-336 | `route:Tracks` `log-android:Tracks` `ios-screen:TracksScreen` `ios-screen:TracksView` |
 | Tracks | Track editor: start/finish and sectors on the map; MapTiler or OSM | ✅ | ✅ | Twice: Android editor vs core-ios TrackEditor | FBBD-56, FBBD-230 | `route:TrackEditorPattern` `ios-screen:TrackEditorScreen` `ios-screen:TrackEditorView` |
 | Tracks | Circuit directory; point-to-point tracks; delete a track | ✅ | ✅ | Shared timing | FBBD-79, FBBD-155, FBBD-157 |  |
@@ -129,4 +129,4 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Screen | List | Order (Android) | iOS | Jira |
 |---|---|---|---|---|
 | Top-level navigation (phone bottom bar, tablet rail; tablets have no Drive) | `list:top-level` | Drive, Sessions, Car, Settings | ✅ one tab bar on iPhone and iPad; iPad without Drive, as Android tablets | FBBD-394 |
-| Session tabs | `list:session-tabs` | Summary, Compare, Map, Laps, Corners, Car | 🟡 iOS adds Video after Car for a session with video (Arek 2026-10-30); Android to follow, then marked again | FBBD-110, FBBD-392 |
+| Session tabs | `list:session-tabs` | Summary, Compare, Map, Laps, Corners, Car, Video | ✅ same tabs; Video after Car only for a session with video, on both (FBBD-392) | FBBD-110, FBBD-392 |

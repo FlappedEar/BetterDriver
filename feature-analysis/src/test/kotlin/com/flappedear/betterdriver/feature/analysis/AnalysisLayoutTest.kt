@@ -1,7 +1,11 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import androidx.activity.ComponentActivity
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -52,7 +56,8 @@ abstract class AnalysisLayoutTest(private val device: String) {
     @Test
     fun everyTabLaysOutCleanly() {
         compose.edgeToEdge()
-        compose.setContent { AppScreen { Analysis() } }
+        // With video: all seven tabs (FBBD-392).
+        compose.setContent { AppScreen { Analysis(video = true) } }
         val problems = ArrayList<String>()
         AnalysisTab.entries.forEach { t ->
             tab(t).performClick()
@@ -352,6 +357,28 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.onNodeWithTag(LineViewTag).assertExists()
     }
 
+    /**
+     * Video is the last tab, after Car, only for a session with video (FBBD-392), as on iOS; the tab
+     * shows what the app gives it.
+     */
+    @Test
+    fun videoTabAfterCarOnlyWithVideo() {
+        compose.edgeToEdge()
+        var video by mutableStateOf(false)
+        compose.setContent { AppScreen { Analysis(video = video) } }
+        compose.waitForIdle()
+        compose.onAllNodes(hasText(AnalysisTab.Video.title) and IsTab).assertCountEquals(0)
+        video = true
+        compose.waitForIdle()
+        val tabs = compose.onAllNodes(IsTab).fetchSemanticsNodes().sortedBy { it.positionInRoot.x }
+        check(tabs.size == AnalysisTab.entries.size) { "${tabs.size} tabs on $device" }
+        val last = tabs.last().config.getOrNull(SemanticsProperties.Text).orEmpty().joinToString()
+        check(last == AnalysisTab.Video.title) { "last tab is $last on $device" }
+        tab(AnalysisTab.Video).performClick()
+        compose.waitForIdle()
+        compose.onNode(hasText(VideoSlot)).assertIsDisplayed()
+    }
+
     private fun hasTestTagPrefix(prefix: String) = SemanticsMatcher("test tag starts with $prefix") {
         it.config.getOrNull(SemanticsProperties.TestTag)?.startsWith(prefix) == true
     }
@@ -364,8 +391,10 @@ abstract class AnalysisLayoutTest(private val device: String) {
     }
 }
 
+private const val VideoSlot = "The session's video"
+
 @Composable
-private fun Analysis(coachFocusFirst: Boolean = false, perfectLap: Boolean = false) {
+private fun Analysis(coachFocusFirst: Boolean = false, perfectLap: Boolean = false, video: Boolean = false) {
     val line = if (perfectLap) PreviewLine.copy(scene = perfectLapScene(previewPerfectLapPlan())) else PreviewLine
     AnalysisScreen(
         AnalysisState.Ready(
@@ -373,6 +402,7 @@ private fun Analysis(coachFocusFirst: Boolean = false, perfectLap: Boolean = fal
         ),
         onCompare = {},
         layout = deviceLayout(),
+        video = if (video) ({ Text(VideoSlot) }) else null,
     )
 }
 

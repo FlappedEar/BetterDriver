@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import androidx.activity.ComponentActivity
+import androidx.compose.material3.Text
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.SemanticsMatcher
@@ -43,7 +44,7 @@ abstract class NoLapsLayoutTest(private val device: String) {
 
     @Test
     fun everyTabLaysOutCleanly() {
-        show(RoadDrive)
+        show(RoadDrive, video = true)
         val problems = ArrayList<String>()
         AnalysisTab.entries.forEach { t ->
             tab(t).performClick()
@@ -78,6 +79,22 @@ abstract class NoLapsLayoutTest(private val device: String) {
         }
     }
 
+    /** A commute's video has its tab too (FBBD-392); a session without video has the six tabs. */
+    @Test
+    fun videoTabOnlyWithVideo() {
+        show(RoadDrive)
+        compose.onAllNodes(IsTab).assertCountEquals(AnalysisTab.entries.size - 1)
+        compose.onAllNodes(hasText(AnalysisTab.Video.title) and IsTab).assertCountEquals(0)
+    }
+
+    @Test
+    fun videoTabShowsTheVideo() {
+        show(RoadDrive, video = true)
+        tab(AnalysisTab.Video).performClick()
+        compose.waitForIdle()
+        compose.onNode(hasText(VideoSlot)).assertIsDisplayed()
+    }
+
     @Test
     fun carTabShowsTheWholeDrive() {
         show(RoadDrive)
@@ -94,9 +111,18 @@ abstract class NoLapsLayoutTest(private val device: String) {
         compose.onAllNodes(IsTab).assertCountEquals(0)
     }
 
-    private fun show(state: AnalysisState) {
+    private fun show(state: AnalysisState, video: Boolean = false) {
         compose.edgeToEdge()
-        compose.setContent { AppScreen { AnalysisScreen(state, onCompare = {}, layout = deviceLayout()) } }
+        compose.setContent {
+            AppScreen {
+                AnalysisScreen(
+                    state,
+                    onCompare = {},
+                    layout = deviceLayout(),
+                    video = if (video) ({ Text(VideoSlot) }) else null,
+                )
+            }
+        }
         compose.waitForIdle()
     }
 
@@ -104,6 +130,7 @@ abstract class NoLapsLayoutTest(private val device: String) {
 
     private companion object {
         val IsTab = SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab)
+        const val VideoSlot = "The session's video"
         val RoadDrive = AnalysisState.Unavailable(
             "No laps: this session, a road drive for example, was not recorded at a track with a start/finish line.",
             action = "Tracks",

@@ -26,11 +26,11 @@ import androidx.compose.ui.unit.dp
  * session's G-forces, its acceleration runs and its data quality (FBBD-183), which need no laps; Car
  * has its pedals, temperatures and heart rate over the whole drive (FBBD-176, UI-162 A). The tabs that
  * need laps say so. A session that could not be read at all, with nothing to show, is just the message
- * and its data quality.
+ * and its data quality. [video], when given, is the Video tab (FBBD-392): a commute's video too.
  */
 @Suppress("CyclomaticComplexMethod") // One branch per tab.
 @Composable
-internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit) {
+internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit, video: (@Composable () -> Unit)? = null) {
     val message = @Composable { modifier: Modifier ->
         Card(modifier) {
             Text(state.message, style = MaterialTheme.typography.bodyLarge)
@@ -38,7 +38,7 @@ internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit) {
         }
     }
     val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
-    if (listOf(state.drive, state.gForces, state.acceleration, state.car).all { it == null }) {
+    if (video == null && listOf(state.drive, state.gForces, state.acceleration, state.car).all { it == null }) {
         // The data quality still shows: it says why the recording has nothing else (FBBD-183).
         Column(
             Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -51,9 +51,10 @@ internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit) {
         return
     }
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
-    AnalysisTabRow(tab) { tab = it }
-    TabPage(tab) {
-        when (AnalysisTab.entries[tab]) {
+    val shown = shownTab(tab, video != null)
+    AnalysisTabRow(shown, video != null) { tab = it }
+    TabPage(shown.ordinal) {
+        when (shown) {
             AnalysisTab.Summary -> {
                 message(width)
                 state.drive?.let { DriveCards(it, width) }
@@ -66,6 +67,7 @@ internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit) {
             AnalysisTab.Laps -> Card(width) { Dim(NoTimedLaps) }
             AnalysisTab.Corners -> Card(width) { Dim(NoCorners) }
             AnalysisTab.Car -> CarCards(state.car, width)
+            AnalysisTab.Video -> VideoTab(video, width)
         }
     }
 }

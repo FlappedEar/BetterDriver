@@ -70,6 +70,7 @@ import kotlin.math.roundToInt
  * [optimalVideo], when given, goes under the theoretical best: the optimal lap's video (FBBD-163).
  * [onProgression], when given, opens the progression over every session at the track (FBBD-181)
  * from the card that sets this session against the earlier ones.
+ * [video], when given, is the Video tab after Car (FBBD-392): only a session with video has it, as on iOS.
  */
 @Composable
 fun AnalysisScreen(
@@ -82,6 +83,7 @@ fun AnalysisScreen(
     topBar: @Composable () -> Unit = {},
     optimalVideo: (@Composable () -> Unit)? = null,
     onProgression: (() -> Unit)? = null,
+    video: (@Composable () -> Unit)? = null,
 ) {
     Column(modifier.fillMaxSize()) {
         topBar()
@@ -89,8 +91,9 @@ fun AnalysisScreen(
             AnalysisState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            is AnalysisState.Unavailable -> NoLaps(state, onAction)
-            is AnalysisState.Ready -> Ready(state.ui, onCompare, onCoachPick, optimalVideo, layout, onProgression)
+            is AnalysisState.Unavailable -> NoLaps(state, onAction, video)
+            is AnalysisState.Ready ->
+                Ready(state.ui, onCompare, onCoachPick, optimalVideo, layout, onProgression, video)
         }
     }
 }
@@ -106,9 +109,20 @@ internal enum class AnalysisTab(val title: String, val icon: ImageVector) {
 
     /** The car's values and the heart rate (FBBD-176, UI-157 B). */
     Car("Car", AnalysisIcons.Car),
+
+    /** The session's video with data, Watch and Save video (FBBD-392); only for a session with video, as on iOS. */
+    Video("Video", AnalysisIcons.Video),
 }
 
-@Suppress("CyclomaticComplexMethod", "LongMethod") // One branch per tab.
+/** The tabs a session shows: Video only when it has video (FBBD-392). */
+internal fun analysisTabs(video: Boolean): List<AnalysisTab> =
+    AnalysisTab.entries.filter { it != AnalysisTab.Video || video }
+
+/** The tab [saved] shows, Summary when it is a tab the session no longer has. */
+internal fun shownTab(saved: Int, video: Boolean): AnalysisTab =
+    analysisTabs(video).firstOrNull { it.ordinal == saved } ?: AnalysisTab.Summary
+
+@Suppress("CyclomaticComplexMethod", "LongMethod", "LongParameterList") // One branch per tab.
 @Composable
 private fun Ready(
     ui: AnalysisUi,
@@ -117,6 +131,7 @@ private fun Ready(
     optimalVideo: (@Composable () -> Unit)?,
     layout: LayoutSize,
     onProgression: (() -> Unit)?,
+    video: (@Composable () -> Unit)?,
 ) {
     var tab by rememberSaveable { mutableIntStateOf(AnalysisTab.Summary.ordinal) }
     // The Map tab's view, here so the next-session card can open Where to find time (UI-190 B).
@@ -130,12 +145,13 @@ private fun Ready(
         onCompare(it)
         tab = AnalysisTab.Compare.ordinal
     }
-    AnalysisTabRow(tab) { tab = it }
-    TabPage(tab) {
+    val shown = shownTab(tab, video != null)
+    AnalysisTabRow(shown, video != null) { tab = it }
+    TabPage(shown.ordinal) {
         val width = Modifier.widthIn(max = 720.dp).fillMaxWidth()
         // The map and the G-G diagram sit side by side on a wide screen, so their tab is wider.
         val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
-        when (AnalysisTab.entries[tab]) {
+        when (shown) {
             AnalysisTab.Summary -> {
                 // What to work on next comes first (FBBD-20): the answer the session is analysed for.
                 Focus(ui, compare, layout, width, whereToFindTime)
@@ -161,17 +177,31 @@ private fun Ready(
                 CornerDetails(ui, width)
             }
             AnalysisTab.Car -> CarCards(ui.car, width)
+            AnalysisTab.Video -> VideoTab(video, width)
         }
     }
 }
 
-/** The analysis's tab row: six tabs fit a phone's width as icons with small names, like the bottom bar (UI-163 C). */
+/** The Video tab's content, in the width of the other tabs' cards. */
+@Composable
+internal fun VideoTab(video: (@Composable () -> Unit)?, modifier: Modifier) {
+    Box(modifier.testTag("video-tab")) { video?.invoke() }
+}
+
+/**
+ * The analysis's tab row: six tabs, seven with Video, fit a phone's width as icons with small names,
+ * like the bottom bar (UI-163 C). [onTab] gets the tab's ordinal.
+ */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun AnalysisTabRow(tab: Int, onTab: (Int) -> Unit) {
-    PrimaryTabRow(selectedTabIndex = tab, containerColor = MaterialTheme.colorScheme.background) {
-        AnalysisTab.entries.forEach { t ->
-            Tab(selected = tab == t.ordinal, onClick = { onTab(t.ordinal) }) {
+internal fun AnalysisTabRow(tab: AnalysisTab, video: Boolean, onTab: (Int) -> Unit) {
+    val tabs = analysisTabs(video)
+    PrimaryTabRow(
+        selectedTabIndex = tabs.indexOf(tab).coerceAtLeast(0),
+        containerColor = MaterialTheme.colorScheme.background,
+    ) {
+        tabs.forEach { t ->
+            Tab(selected = tab == t, onClick = { onTab(t.ordinal) }) {
                 Column(
                     Modifier.padding(vertical = TabPadding),
                     horizontalAlignment = Alignment.CenterHorizontally,
