@@ -221,10 +221,7 @@ class LiveSession private constructor(
         logs.filterIsInstance<LoggingListener>().forEach { it.onStatus(status) }
     }
 
-    /**
-     * Ends the recording cleanly; false if it had already ended. The session's quality report then
-     * goes into the log, as on Android (FBBD-183), worked out off the caller's thread.
-     */
+    /** Ends the recording cleanly; false if it had already ended. */
     fun stop(): Boolean = recording.stop().also { stopped ->
         if (stopped) {
             val status = RecorderStatus.Stopped(recording.endReason ?: "user")
@@ -232,11 +229,10 @@ class LiveSession private constructor(
                 tracker.onStatus(status)
                 logs.forEach { it.onStatus(status) }
             }
-            quality.logAtStop(recording.id)
         }
     }
 
-    /** Waits for the quality report the stop logs, for tests. */
+    /** Waits for the quality report the end of the recording logs, for tests. */
     internal fun awaitQuality() = quality.awaitLogged()
 
     private inline fun <T> guarded(body: () -> T): T {
@@ -322,6 +318,11 @@ class LiveSession private constructor(
             info.channels.forEach(tracker::onChannel)
             session = LiveSession(recording, tracker, timing, logs, SessionQualityReports(sessionsDir, tracksDir))
             recording.onStorageLow = session::storageLow
+            // However the recording ends (the driver's stop, storage full), its quality report goes into
+            // the log off the recorder's thread, as Android's recorder service does at every end (FBBD-183).
+            // An end on a write error leaves the session to recovery, so it has no report yet.
+            val quality = session.quality
+            recording.onEnded = { quality.logAtStop(recording.id) }
             return session
         }
     }

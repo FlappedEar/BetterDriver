@@ -219,6 +219,28 @@ class LiveSessionTest {
         session.stop()
     }
 
+    /** A recording the recorder ends itself (storage full) logs its quality report too, as on Android. */
+    @Test
+    fun aStorageFullEndLogsTheQualityReport() {
+        val lines = mutableListOf<List<String?>>()
+        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        try {
+            // Any disk is below this stop level: the first sample ends the recording.
+            val config = RecorderConfig(storageStopBytes = Long.MAX_VALUE)
+            val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false, config = config)
+            session.submit(SampleSet(0, gnss.fix(0)))
+            assertFalse(session.isRecording)
+            assertEquals("storage_full", session.endReason)
+            assertFalse(session.stop())
+            session.awaitQuality()
+            val quality = lines.filter { it[1] == CheckLog.QUALITY }
+            assertTrue(quality.first()[2]!!.startsWith("summary pass="))
+            assertTrue(quality.all { it[3] == session.id })
+        } finally {
+            IosLog.lines = null
+        }
+    }
+
     @Test
     fun theStartButtonNamesThePlace() {
         save("ring.json", TrackJson.encode(ring))
