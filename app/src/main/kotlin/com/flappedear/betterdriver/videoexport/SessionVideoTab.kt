@@ -51,7 +51,10 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
     val pickFile = rememberLauncherForActivityResult(CreateDocument(Mp4MimeType)) { uri ->
         val target = saving?.let { decodeTarget("$sessionId:$it") }
         saving = null
-        if (uri != null && target != null) exports.start(sessionId, target.part, uri, false, target.handleSeconds)
+        // No recording runs here: one opens the track screen (FollowRecording) and stops any export.
+        if (uri != null && target != null) {
+            exports.start(sessionId, target.part, uri, recording = false, handleSeconds = target.handleSeconds)
+        }
     }
     val rendering = exports.running == sessionId
     val busy = exports.running != null
@@ -68,25 +71,33 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
             VideoLoad.Unreadable -> DimText("This session's video could not be read.", color = TrackTheme.colors.loss)
             is VideoLoad.Ready -> PartList(o.options, picked) { picked = it }
         }
-        val part = picked
-        if (ready != null && part != null && isSingleLap(part)) HandleRow(handle) { handle = it }
+        // A part to act on: read, and one picked.
+        val part = picked.takeIf { ready != null }
+        if (part != null && isSingleLap(part)) HandleRow(handle) { handle = it }
         VideoExportLine(exports.states[sessionId], rendering) { exports.cancel(sessionId) }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
-            OutlinedButton(
-                onClick = {
-                    val p = picked ?: return@OutlinedButton
-                    val h = handleFor(p, handle)
-                    saving = "$p:$h"
-                    pickFile.launch(videoExportFileName(sessionId, p, ready?.pointToPoint == true))
-                },
-                enabled = ready != null && part != null && !busy,
-                modifier = Modifier.testTag(SaveVideoTag),
-            ) { Text("Save video") }
-            Button(
-                onClick = { picked?.let { onWatch(it, handleFor(it, handle)) } },
-                enabled = ready != null && part != null && canWatch(part),
-                modifier = Modifier.testTag(WatchVideoTag),
-            ) { Text("Watch") }
+        VideoTabButtons(
+            canSave = part != null && !busy,
+            canWatchPart = part != null && canWatch(part),
+            onSave = {
+                if (part != null) {
+                    saving = "$part:${handleFor(part, handle)}"
+                    pickFile.launch(videoExportFileName(sessionId, part, ready?.pointToPoint == true))
+                }
+            },
+            onWatch = { if (part != null) onWatch(part, handleFor(part, handle)) },
+        )
+    }
+}
+
+/** Save video and Watch, at the end of the tab. */
+@Composable
+private fun VideoTabButtons(canSave: Boolean, canWatchPart: Boolean, onSave: () -> Unit, onWatch: () -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+        OutlinedButton(onClick = onSave, enabled = canSave, modifier = Modifier.testTag(SaveVideoTag)) {
+            Text("Save video")
+        }
+        Button(onClick = onWatch, enabled = canWatchPart, modifier = Modifier.testTag(WatchVideoTag)) {
+            Text("Watch")
         }
     }
 }
