@@ -10,6 +10,7 @@ import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -87,6 +88,37 @@ class TrackProgressionsTest {
         NSFileManager.defaultManager.removeItemAtPath("$base/tracks", null)
         assertNull(library.progressions.trackOf(id))
         assertNull(library.progress(library.review(id), id))
+    }
+
+    @Test
+    fun theSummaryKeepsTheSessionInTheCoachingHistoryAsAndroid() {
+        val first = addJastrzab(StartUtcMillis)
+        val second = addJastrzab(StartUtcMillis + DayMillis)
+        // The first has nothing before it; the second shows what came of the first's focus, as
+        // Android's card (FBBD-364): its three corners, measured through both sessions' line plans.
+        assertTrue(library.coaching(library.review(first), first).empty)
+        val card = library.coaching(library.review(second), second)
+        assertEquals(3, card.attempts.size)
+        assertTrue(card.checks.isEmpty())
+        assertNotNull(card.wonBack)
+        // Each session's record is kept where Android keeps it, with the corners the track now keeps.
+        val history = "$base/coach/history/jastrzab"
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$history/$first.json"))
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$history/$second.json"))
+        assertNotNull(library.tracks().single { it.id == "jastrzab" }.identity)
+        // The progression reads the kept records, so a library opened again reads no session.
+        val again = ReviewLibrary(base)
+        val track = assertNotNull(again.progressions.trackOf(second))
+        var read = 0
+        again.progressions.addNewest(track.id, {}) { read++ }
+        assertEquals(0, read)
+        val screen = again.progressions.screen(
+            track.id, track.name, ProgressionGrouping.Session, ProgressionPeriod.All, null, emptySet(), 0,
+        )
+        assertEquals(listOf(second, first), screen.points.map { it.key })
+        // The history goes with its track, as on Android.
+        assertTrue(TrackLibrary("$base/tracks", "$base/sessions").delete(track.id))
+        assertFalse(NSFileManager.defaultManager.fileExistsAtPath(history))
     }
 
     private companion object {

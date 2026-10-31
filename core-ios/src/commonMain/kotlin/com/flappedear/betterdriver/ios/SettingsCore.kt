@@ -56,6 +56,13 @@ object SettingsCore {
         if (setup.equipment.none { it.model == EquipmentModel.PHONE_GPS }) add(EquipmentModel.PHONE_GPS)
     }
 
+    /**
+     * What Add equipment offers under "Try the app" (UI-79 B), as on Android: the Demo track once
+     * (FBBD-373). Android's Demo GNSS is not on the iPhone.
+     */
+    fun tryTheApp(setup: Setup): List<EquipmentModel> = listOf(EquipmentModel.DEMO_TRACK)
+        .filter { m -> setup.equipment.none { it.model == m } }
+
     /** The model named [name] (its Kotlin name, "RACEBOX"), or null. */
     fun model(name: String): EquipmentModel? = EquipmentModel.entries.firstOrNull { it.name == name }
 

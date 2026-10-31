@@ -227,6 +227,12 @@ enum ReviewBridge {
         )
     }
 
+    /// The summary's coaching history card (FBBD-180, FBBD-364): keeps the session's record in the
+    /// coaching history, as Android, and words what came of its focus. Reads files: not on the main thread.
+    static func coaching(_ summary: SessionSummary) -> CoachingCardUi {
+        library.coaching(reviewed: summary.reviewed, id: summary.id)
+    }
+
     /// The fastest lap against lap [index] of [summary]'s session; nil without a fastest lap.
     static func compare(_ summary: SessionSummary, lapIndex index: Int) -> LapCompare? {
         summary.reviewed.compare(otherIndex: Int32(index)).map(lapCompare)

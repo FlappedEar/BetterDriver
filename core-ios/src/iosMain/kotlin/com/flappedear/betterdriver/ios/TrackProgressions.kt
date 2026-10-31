@@ -1,8 +1,10 @@
 package com.flappedear.betterdriver.ios
 
-import com.flappedear.betterdriver.analysis.coaching.CoachedSession
+import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryAlgorithm
+import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
-import com.flappedear.betterdriver.analysis.coaching.sessionCoachingRecord
+import com.flappedear.betterdriver.analysis.coaching.keepCoachingHistory
+import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
 import com.flappedear.betterdriver.analysis.progression.CornerMapping
 import com.flappedear.betterdriver.analysis.progression.ProgressionDay
@@ -38,19 +40,19 @@ data class ProgressionTrack(val id: String, val name: String)
  * The progression at a track (FBBD-181) on the iPhone and iPad, as Android's TrackProgressionRoute
  * makes it: each session at the track is analysed with the track's corner identity (kept with the
  * track, as Android's analyzeAtTrack keeps it) into its coaching history record (FBBD-180), from
- * which the shared core works out and words the screen. Android keeps the records on disk; here
- * they are kept while the app runs, so a track opened again shows at once and only new sessions are
- * read. Thread-safe: the app reads sessions off the main thread while the screen is redrawn.
+ * which the shared core works out and words the screen. The records are kept in the coaching
+ * [history] Android keeps (FBBD-364), which the summary's coaching card reads too: a track opened
+ * again shows at once, only sessions without a current record are read, and a record outlives its
+ * session, as on Android. Thread-safe: the app reads sessions off the main thread while the screen
+ * is redrawn.
  */
 @Suppress("TooGenericExceptionCaught") // A damaged session never stops the others.
 class TrackProgressions internal constructor(
     private val store: SessionStore,
     private val tracks: TrackLibrary,
+    private val history: CoachingHistoryStore,
 ) {
     private val lock = NSRecursiveLock()
-
-    /** Each track's records, by session id. */
-    private val records = mutableMapOf<String, MutableMap<String, SessionCoachingRecord>>()
 
     /** Sessions already tried for a track ("track/session"), so none is analysed twice in vain. */
     private val tried = mutableSetOf<String>()
@@ -63,7 +65,7 @@ class TrackProgressions internal constructor(
     }
 
     /**
-     * Analyses the sessions at track [trackId] with no record yet, newest first, as Android's
+     * Analyses the sessions at track [trackId] with no current record, newest first, as Android's
      * addNewest: at most [MaxProgressionAdds] tried, of the [MaxProgressionScan] newest of the track's
      * sessions. [left] hears, before each, how many more may be tried at most, and 0 at the end;
      * [added] hears after each session added, so the screen shows it. Returns how many were tried.
@@ -75,18 +77,17 @@ class TrackProgressions internal constructor(
         } catch (_: Exception) {
             emptyList()
         }
-        // A session deleted since leaves the progression.
-        locked { records[trackId]?.keys?.retainAll(sessions.toSet()) }
         val saved = tracks.list()
-        fun current(id: String) = locked { records[trackId]?.containsKey(id) == true }
+        val kept = records(trackId).filter { it.algorithm == CoachingHistoryAlgorithm }
+            .map { it.sessionId }.toMutableSet()
         fun triedHere(id: String) = locked { "$trackId/$id" in tried }
-        val pending = sessions.count { !current(it) && !triedHere(it) }
+        val pending = sessions.count { it !in kept && !triedHere(it) }
         var passed = 0
         var seen = 0
         var tries = 0
         for (id in sessions) {
             if (seen >= MaxProgressionScan || tries >= MaxProgressionAdds) break
-            if (current(id)) {
+            if (id in kept) {
                 seen++
             } else if (!triedHere(id)) {
                 left(minOf(pending - passed, MaxProgressionAdds - tries))
@@ -96,7 +97,10 @@ class TrackProgressions internal constructor(
                     seen++
                     tries++
                 }
-                if (result == Added.Kept) added()
+                if (result == Added.Kept) {
+                    kept += id
+                    added()
+                }
             }
         }
         left(0)
@@ -118,7 +122,7 @@ class TrackProgressions internal constructor(
         excluded: Set<String>,
         adding: Int,
     ): ProgressionUi {
-        val kept = locked { records[trackId]?.values?.toList().orEmpty() }
+        val kept = records(trackId)
         val zone = systemDayZone()
         val today = ProgressionDay.at((NSDate().timeIntervalSince1970 * MillisPerSecond).toLong(), zone)
         val mapping = CornerMapping.of(tracks.get(trackId)?.identity)
@@ -141,18 +145,22 @@ class TrackProgressions internal constructor(
             val analysis = analyzeKeepingIdentity(telemetrySessionOf(data, track), identity, start) { expected, made ->
                 tracks.updateIdentity(trackId, expected, made)?.identity
             }
-            val events = data.events
-            val coached = CoachedSession(
-                CoachEvents.focusSource(events), CoachEvents.cuesByCorner(events), CoachEvents.planCorners(events),
+            val coached = CoachEvents.coachedSession(data.events)
+            keepCoachingHistory(
+                history, trackId, data.id, start, analysis, coached, originOf(data.info),
+                trackKept = { tracks.get(trackId) != null },
             )
-            val origin = data.info.imported?.let { "${it.format} ${it.fileName}".trim() }
-            val record = sessionCoachingRecord(analysis, trackId, data.id, start, coached, origin)
-                ?: return Added.Analysed
-            locked { records.getOrPut(trackId) { mutableMapOf() }[id] = record }
-            Added.Kept
+            if (history.get(trackId, data.id) == null) Added.Analysed else Added.Kept
         } catch (_: Exception) {
             Added.Failed
         }
+    }
+
+    /** The records at [trackId], as Android's readHistory; none when they cannot be read. */
+    private fun records(trackId: String): List<SessionCoachingRecord> = try {
+        history.history(trackId)
+    } catch (_: Exception) {
+        emptyList()
     }
 
     private inline fun <T> locked(body: () -> T): T {

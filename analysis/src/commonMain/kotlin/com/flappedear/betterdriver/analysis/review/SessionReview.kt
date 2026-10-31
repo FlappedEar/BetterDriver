@@ -2,12 +2,18 @@ package com.flappedear.betterdriver.analysis.review
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.coaching.CoachedSession
+import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
+import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
+import com.flappedear.betterdriver.analysis.coaching.keepCoachingHistory
+import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.segments.FlaggableCorner
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.flaggableCorners as cornersToFlag
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
+import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
 import com.flappedear.betterdriver.analysis.line.LineSession
 import com.flappedear.betterdriver.analysis.line.analyzeLine
 import com.flappedear.betterdriver.analysis.line.LinePlan
@@ -19,11 +25,9 @@ import com.flappedear.betterdriver.analysis.map.sessionGg
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
-import com.flappedear.betterdriver.analysis.summary.EarlierSession
-import com.flappedear.betterdriver.analysis.summary.PreviousLaps
+import com.flappedear.betterdriver.analysis.summary.EarlierSessions
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
-import com.flappedear.betterdriver.analysis.summary.segmentChanges
-import com.flappedear.betterdriver.analysis.summary.summarizeProgress
+import com.flappedear.betterdriver.analysis.summary.progressAgainst
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
@@ -144,6 +148,7 @@ data class ReviewCompare(
  * drive on the map with its speed and figures when the session has no timed lap (FBBD-342), as
  * Android's no-laps analysis shows it; null with laps or without positions.
  */
+@Suppress("TooManyFunctions") // Everything the iOS review asks of one analysed session.
 class ReviewedSession internal constructor(
     val review: SessionReview,
     private val analysis: SessionAnalysis?,
@@ -161,6 +166,30 @@ class ReviewedSession internal constructor(
 
     /** The track's corner identity when the analysis's corners are the track's (FBBD-172); else null. */
     val identity: TrackRevision? get() = analysis?.let { a -> a.identity?.takeIf { a.identified } }
+
+    /** The session's events (coach cues and focus among them); none when it was not read. */
+    val events: List<RecorderEvent> get() = data?.events.orEmpty()
+
+    /**
+     * Keeps this session's record in the coaching history [store] (FBBD-180), as Android's analysis
+     * screen does, with what the coach did ([coached], from its events), and returns what its summary
+     * shows of the history (FBBD-364). [trackKept] says whether its track is still saved when the
+     * record is written. Nothing for a session at no saved track or whose corners are not the track's.
+     */
+    @Suppress("ReturnCount") // Each missing piece leaves the history out.
+    fun keepCoaching(
+        store: CoachingHistoryStore,
+        coached: CoachedSession,
+        trackKept: (String) -> Boolean = { true },
+    ): SessionCoaching {
+        val analysis = analysis ?: return SessionCoaching()
+        val data = data ?: return SessionCoaching()
+        val trackId = review.track?.id ?: return SessionCoaching()
+        return keepCoachingHistory(
+            store, trackId, data.id, data.info.startUtcMillis, analysis, coached, originOf(data.info),
+            trackKept = { trackKept(trackId) },
+        )
+    }
 
     /** The fastest lap against the second fastest counted lap, as Android opens Compare; or null. */
     fun defaultCompare(): ReviewCompare? = analysis?.let(::defaultComparedLap)?.let(::compare)
@@ -247,18 +276,10 @@ class ReviewedSession internal constructor(
     fun reviewStart(cornerId: String): Double? = analysis?.let { cornerReviewStart(it, cornerId) }
 
     /**
-     * This session against the [earlier] sessions at its track (newest first), as Android's summary
-     * shows it (FBBD-122, FBBD-175): with each corner's and straight's typical time against the session
-     * before ([previous]), and [limited] when older sessions were not read. Null when the session is at
-     * no track.
+     * This session against the [earlier] sessions at its track, as Android's summary shows it
+     * (FBBD-122, FBBD-175, [progressAgainst]). Null when the session is at no track.
      */
-    fun progress(earlier: List<EarlierSession>, previous: PreviousLaps?, limited: Boolean): SessionProgress? {
-        val analysis = analysis ?: return null
-        return summarizeProgress(analysis.laps, earlier).copy(
-            changes = previous?.let { segmentChanges(analysis, it) }.orEmpty(),
-            earlierLimited = limited,
-        )
-    }
+    fun progress(earlier: EarlierSessions): SessionProgress? = analysis?.let { progressAgainst(it, earlier) }
 
     /** The fastest lap against timed lap [otherIndex]; null without a fastest lap or an axis. */
     fun compare(otherIndex: Int): ReviewCompare? {
@@ -295,12 +316,19 @@ fun reviewOf(
     data: SessionData,
     tracks: List<Track>,
     others: (Track) -> Sequence<LineSession> = { emptySequence() },
-): SessionReview = reviewSession(data, tracks, others).review
+): SessionReview = reviewSession(data, tracks, others = others).review
 
-/** As [reviewOf], keeping the analysis for [ReviewedSession.compare]. */
+/**
+ * As [reviewOf], keeping the analysis for [ReviewedSession.compare]. With [keepIdentity] the track's
+ * corner identity made or revised by the analysis is stored, as Android's analyzeAtTrack stores it
+ * (FBBD-172): it gets the track's id, the identity expected and the one made, and returns the one
+ * stored (see analyzeKeepingIdentity), so the session's coaching history record (FBBD-364) is kept
+ * under the corners the track keeps.
+ */
 fun reviewSession(
     data: SessionData,
     tracks: List<Track>,
+    keepIdentity: ((trackId: String, expected: TrackRevision?, made: TrackRevision) -> TrackRevision?)? = null,
     others: (Track) -> Sequence<LineSession> = { emptySequence() },
 ): ReviewedSession {
     val track = trackFor(data, tracks)
@@ -312,7 +340,13 @@ fun reviewSession(
         )
     }
     val session = telemetrySessionOf(data, track)
-    val analysis = analyzeSession(session, identity = track.identity)
+    val analysis = if (keepIdentity == null) {
+        analyzeSession(session, identity = track.identity)
+    } else {
+        analyzeKeepingIdentity(session, track.identity, data.info.startUtcMillis) { expected, made ->
+            keepIdentity(track.id, expected, made)
+        }
+    }
     val fastest = analysis.laps.fastestLapIndex
     val laps = analysis.laps.timedLaps.mapIndexed { i, lap ->
         ReviewLap(lap.number, lap.durationSeconds, lap.deltaToBestSeconds, i == fastest, lap.referenceEligible)

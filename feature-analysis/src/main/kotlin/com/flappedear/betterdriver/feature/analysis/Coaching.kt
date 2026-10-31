@@ -18,114 +18,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.flappedear.betterdriver.analysis.coaching.FocusVerdict
-import com.flappedear.betterdriver.analysis.coaching.ImprovedSeconds
-import com.flappedear.betterdriver.analysis.coaching.Persistence
-import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
-import com.flappedear.betterdriver.analysis.coaching.attemptText
-import com.flappedear.betterdriver.analysis.coaching.checkText
-import com.flappedear.betterdriver.analysis.line.CornerProof
-import com.flappedear.betterdriver.analysis.line.LineProof
-import com.flappedear.betterdriver.analysis.line.ProofVerdict
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.core.ui.component.NumberText
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
-import java.time.ZoneId
-import java.util.Locale
-import kotlin.math.abs
 
 /** The coaching history card, for tests. */
 const val CoachingHistoryTag = "coaching-history"
-
-/**
- * The coaching history as the summary shows it: what came of the focus worked on, then the gains
- * checked. A focus corner [proof] measured (FBBD-310, UI-191 A) says how much came back, how much is
- * left to the target and whether the coach spoke there; the others say what the history found.
- */
-fun coachingRows(coaching: SessionCoaching, zone: ZoneId, proof: LineProof? = null): List<CoachingRow> {
-    val attempts = coaching.attempts.map { a ->
-        measuredCorner(proof, a.ask.cornerId)?.let { p ->
-            return@map CoachingRow(a.ask.name, proofStatus(p), proofText(p), false, a.ask.cornerId, measured = true)
-        }
-        val status = when (a.verdict) {
-            FocusVerdict.Improved -> CoachingStatus.Improved
-            FocusVerdict.NoGain -> CoachingStatus.NoGain
-            FocusVerdict.TooFewPasses, FocusVerdict.NotDriven, FocusVerdict.NotComparable -> CoachingStatus.Pending
-        }
-        CoachingRow(a.ask.name, status, attemptText(a), !a.timePrecise, a.ask.cornerId)
-    }
-    val checks = coaching.checks.map { c ->
-        val status = when (c.persistence) {
-            Persistence.Persisted -> CoachingStatus.Learned
-            Persistence.Partial -> CoachingStatus.Partly
-            Persistence.Reverted -> CoachingStatus.Lost
-        }
-        CoachingRow(c.attempt.ask.name, status, checkText(c, zone), !c.timePrecise, c.attempt.ask.cornerId, false)
-    }
-    return attempts + checks
-}
-
-/**
- * The time won back over the focus corners [proof] measured that [coaching] worked on (UI-191 A),
- * slower ones counting against it; null when it compared none of them (none driven, say).
- */
-fun lastFocusWonBack(coaching: SessionCoaching, proof: LineProof?): Double? {
-    val deltas = coaching.attempts.mapNotNull { measuredCorner(proof, it.ask.cornerId)?.wonBackSeconds }
-    return if (deltas.isEmpty()) null else deltas.sum()
-}
-
-private fun measuredCorner(proof: LineProof?, cornerId: String): CornerProof? =
-    proof?.corners?.firstOrNull { it.cornerId == cornerId && it.verdict != ProofVerdict.NotComparable }
-
-private fun proofStatus(p: CornerProof) = when (p.verdict) {
-    ProofVerdict.Faster -> if (p.cues == 0) CoachingStatus.FasterNoCue else CoachingStatus.Faster
-    ProofVerdict.Slower -> CoachingStatus.Slower
-    ProofVerdict.NotDriven -> CoachingStatus.NotDriven
-    ProofVerdict.Same, ProofVerdict.NotComparable -> CoachingStatus.Same
-}
-
-/** What came of one measured focus corner in words (UI-191 A). */
-fun proofText(p: CornerProof): String {
-    val back = p.wonBackSeconds ?: return "No pass through it this session"
-    val cue = cueText(p.cues)
-    return when (p.verdict) {
-        ProofVerdict.Faster -> if (p.cues == 0) {
-            "${proofSeconds(back)} back without a cue from the coach"
-        } else {
-            val left = p.leftSeconds ?: 0.0
-            val target = if (left < HalfHundredth) {
-                "on your target now"
-            } else {
-                "${proofSeconds(left)} still to your target"
-            }
-            listOfNotNull("${proofSeconds(back)} back", target, cue).joinToString(" · ")
-        }
-        ProofVerdict.Slower -> listOfNotNull("${proofSeconds(-back)} slower", cue).joinToString(" · ")
-        else -> {
-            val way = when {
-                abs(back) < HalfHundredth -> "The same time"
-                back > 0 -> "${proofSeconds(back)} faster"
-                else -> "${proofSeconds(-back)} slower"
-            }
-            listOfNotNull("$way: within GPS timing", cue).joinToString(" · ")
-        }
-    }
-}
-
-private fun cueText(cues: Int?) = when (cues) {
-    null -> null
-    0 -> "no cue here"
-    1 -> "the coach spoke here once"
-    else -> "the coach spoke here $cues times"
-}
-
-private const val HalfHundredth = 0.005
-
-private fun proofSeconds(value: Double) = String.format(Locale.ROOT, "%.2f s", value)
-
-/** Under the measured corners: what was compared (UI-191 A). */
-val ProofNote = "Fastest pass through each corner this session against the session before, and against the " +
-    "target then. Under ${String.format(Locale.ROOT, "%.2f", ImprovedSeconds)} s is GPS timing."
 
 /**
  * What came of the last focus (FBBD-180), beside the next one: for each corner the session worked
@@ -136,36 +34,32 @@ val ProofNote = "Fastest pass through each corner this session against the sessi
  */
 @Composable
 internal fun CoachingHistory(rows: List<CoachingRow>, wonBack: Double?, modifier: Modifier) {
-    if (rows.isEmpty()) return
-    val attempts = rows.filter { it.attempt }
-    val checks = rows.filter { !it.attempt }
+    // The card as the shared core lays it out, the same on iOS (FBBD-364).
+    val card = coachingCard(rows, wonBack)
+    if (card.empty) return
     Card(modifier.testTag(CoachingHistoryTag)) {
-        if (attempts.isNotEmpty()) {
-            TrackLabel("Last focus · what came of it")
-            wonBack?.let { WonBack(it) }
-            attempts.forEach { Line(it) }
-            if (attempts.any { it.measured }) Dim(ProofNote)
+        if (card.attempts.isNotEmpty()) {
+            TrackLabel(LastFocusLabel)
+            card.wonBack?.let { WonBack(it, card.wonBackText.orEmpty(), card.wonBackLost) }
+            card.attempts.forEach { Line(it) }
+            card.note?.let { Dim(it) }
         }
-        if (checks.isNotEmpty()) {
-            if (attempts.isNotEmpty()) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            TrackLabel("Earlier gains · did they hold")
-            checks.forEach { Line(it) }
+        if (card.checks.isNotEmpty()) {
+            if (card.attempts.isNotEmpty()) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            TrackLabel(EarlierGainsLabel)
+            card.checks.forEach { Line(it) }
         }
     }
 }
 
 /** The time won back over the last focus, on top (UI-191 A). */
 @Composable
-private fun WonBack(seconds: Double) {
+private fun WonBack(figure: String, text: String, lost: Boolean) {
     val c = TrackTheme.colors
     Row(Modifier.testTag(WonBackTag), verticalAlignment = Alignment.Bottom) {
-        NumberText(
-            String.format(Locale.ROOT, "%.2f s", abs(seconds)),
-            size = 24.dp,
-            color = if (seconds < 0) c.loss else c.gain,
-        )
+        NumberText(figure, size = 24.dp, color = if (lost) c.loss else c.gain)
         Spacer(Modifier.width(10.dp))
-        Dim(if (seconds < 0) "lost on the corners you worked on" else "won back on the corners you worked on")
+        Dim(text)
     }
 }
 
@@ -184,10 +78,9 @@ private fun Line(row: CoachingRow) {
     Column(Modifier.fillMaxWidth().then(tap), verticalArrangement = Arrangement.spacedBy(2.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(row.name, Modifier.weight(1f), color = c.text, fontWeight = FontWeight.SemiBold)
-            val color = when (row.status) {
-                CoachingStatus.Learned, CoachingStatus.Improved, CoachingStatus.Faster, CoachingStatus.FasterNoCue ->
-                    c.gain
-                CoachingStatus.Lost, CoachingStatus.Slower -> c.loss
+            val color = when {
+                row.status.gain -> c.gain
+                row.status.loss -> c.loss
                 else -> c.textDim
             }
             Text(row.status.label, color = color, style = MaterialTheme.typography.labelLarge)

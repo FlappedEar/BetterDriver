@@ -27,20 +27,23 @@ enum RememberedStrap {
 /// shared HeartRateSession, which records the heart rate, RR intervals and energy and logs connects
 /// and drops exactly as on Android. A strap with no plausible heart rate in the first 45 s of the
 /// session is off until it ends (FBBD-285). With no strap remembered yet, the first one advertising
-/// the Heart Rate Service in that time is used and remembered. Keeps reconnecting until stopped, with
-/// the RaceBox link's delays. All CoreBluetooth work runs on one serial queue.
-final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+/// the Heart Rate Service in that time is used and remembered. The link's life cycle is the shared
+/// NotifyLinkCore, the one Android's GattNotifyLink runs (FBBD-358): the same retries, setup timeouts,
+/// quiet wait after 6 setups without data, 5 s silence restart and "Link" log lines. This class only
+/// turns CoreBluetooth's callbacks into the core's steps. All CoreBluetooth work runs on one serial queue.
+final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, NotifyLinkIo {
     private let queue = DispatchQueue(label: "hr.link", qos: .userInitiated)
     private var central: CBCentralManager!
     private let sink: SampleSink
-    private let policy = ReconnectPolicy(firstDelayMs: 500, maxDelayMs: 3_000)
     private let startedAt = Date()
     private var session: HeartRateSession?
+    private var core: NotifyLinkCore?
     private var deviceId: UUID?
     private var peripheral: CBPeripheral?
     private var watch: DispatchSourceTimer?
     private var running = false
-    private var flowing = false
+    /// A connection the core asked for is open; callbacks of one it closed are left out.
+    private var connectionOpen = false
     /// Notifications since the last rate line, logged once a minute as Android's link log (FBBD-352).
     private var notifications = 0
     private var rateSince = Date()
@@ -70,10 +73,10 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
                 AppLog.i("HeartRate", "no strap listed: the first one found in 45 s is used")
             }
             self.central = CBCentralManager(delegate: self, queue: self.queue)
-            // A strap that never answers sends no state changes on iOS (a pending connect waits for it),
-            // so the 45 s start window is checked on a timer, as Android's reconnect attempts check it.
+            // Once a second, as Android's watchdog: the core's rate, silence and setup checks, and the
+            // 45 s start window (a strap that never answers sends no state changes on iOS).
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
-            timer.schedule(deadline: .now() + 5, repeating: 5)
+            timer.schedule(deadline: .now() + 1, repeating: 1)
             timer.setEventHandler { [weak self] in self?.check() }
             timer.resume()
             self.watch = timer
@@ -94,6 +97,9 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         watch?.cancel()
         watch = nil
         if central?.isScanning == true { central?.stopScan() }
+        core?.stop()
+        // The core holds this link as its IO: dropping it here lets a finished recording go.
+        core = nil
         if let p = peripheral { central?.cancelPeripheralConnection(p) }
         peripheral = nil
     }
@@ -102,14 +108,28 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
     private func begin(id: UUID, name: String) {
         deviceId = id
         let s = HeartRateSession(sink: sink, address: id.uuidString, deviceName: name) { [weak self] in
-            // Off for the session: called on this queue, from the session itself.
+            // Off for the session: called from the session, inside the core's state change; the link
+            // ends after it returns.
             AppLog.i("HeartRate", "off for this session: no plausible heart rate in the first 45 s")
-            self?.end()
+            self?.queue.async { self?.end() }
         }
         session = s
         // The start window counts from the session start, not from when the strap was found.
         let sinceStart = Int64(Date().timeIntervalSince(startedAt) * 1_000_000)
         s.start(windowStartMicros: sink.nowMicros() - sinceStart)
+        core = NotifyLinkCore(
+            address: id.uuidString,
+            io: self,
+            now: { KotlinLong(value: Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000)) },
+            onState: { state in s.linkChanged(s: state) },
+            silenceTimeoutMs: 5_000,
+            setupTimeoutMs: NotifyLinkCore.companion.SetupTimeoutMs,
+            backgroundSetupTimeoutMs: NotifyLinkCore.companion.BackgroundSetupTimeoutMs,
+            policy: ReconnectPolicy(
+                firstDelayMs: NotifyLinkCore.companion.FirstRetryMs,
+                maxDelayMs: NotifyLinkCore.companion.MaxRetryMs
+            )
+        )
     }
 
     private var searching: Bool {
@@ -118,6 +138,7 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
 
     private func check() {
         guard running else { return }
+        core?.tick()
         if Date().timeIntervalSince(rateSince) >= 60 {
             let bpm = session?.status()?.bpm.map { "\($0.intValue) bpm" } ?? "no heart rate"
             AppLog.i("HeartRate", "rate: \(notifications) notifications in 60 s, last \(bpm)")
@@ -133,7 +154,8 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         }
     }
 
-    private func connect() {
+    /// Bluetooth is on: the core starts with a strap known to this phone, else the strap is looked for.
+    private func find() {
         guard running, central.state == .poweredOn else { return }
         guard let id = deviceId else {
             if searching { central.scanForPeripherals(withServices: [heartRateService]) }
@@ -145,31 +167,44 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
             return
         }
         peripheral = p
-        p.delegate = self
-        // A pending connect does not time out: iOS completes it when the strap is in range again.
-        AppLog.i("HeartRate", "connecting \(p.identifier.uuidString)")
-        central.connect(p)
-        session?.connecting()
+        core?.start()
     }
 
-    private func dropped(_ reason: String) {
-        AppLog.i("HeartRate", "dropped: \(reason)")
-        flowing = false
-        guard running, let session, session.reconnecting(reason: reason) else { return }
-        let delay = Double(policy.nextDelayMs()) / 1_000
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.connect() }
+    // MARK: NotifyLinkIo, called by the core on this queue
+
+    func open(plan: ConnectPlan) -> String? {
+        guard running else { return "stopped" }
+        guard central.state == .poweredOn else { return "Bluetooth off" }
+        guard let p = peripheral else { return "strap not known to this phone" }
+        p.delegate = self
+        // iOS has no MTU request or background connection of its own: a pending connect waits for the
+        // strap, and the core gives it up after the plan's setup time.
+        central.connect(p)
+        connectionOpen = true
+        return nil
     }
+
+    func close(setupFailed: Bool) {
+        connectionOpen = false
+        if let p = peripheral { central.cancelPeripheralConnection(p) }
+    }
+
+    func later(delayMs: Int64, action: @escaping () -> Void) {
+        queue.asyncAfter(deadline: .now() + .milliseconds(Int(delayMs)), execute: action)
+    }
+
+    func detail() -> String? { nil }
 
     // MARK: CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         AppLog.i("HeartRate", "Bluetooth state \(central.state.rawValue) (5 = on, 3 = not allowed, 4 = off)")
         if central.state == .poweredOn {
-            connect()
-        } else if flowing {
-            // iOS drops its connections without a didDisconnect when Bluetooth goes off: the strap is
-            // gone for the session's log too, and is asked for again once Bluetooth is back on.
-            dropped(central.state == .unauthorized ? "Bluetooth not allowed" : "Bluetooth off")
+            find()
+        } else if connectionOpen {
+            // iOS drops its connections without a didDisconnect when Bluetooth goes off: the core
+            // retries until Bluetooth is back on.
+            core?.failed(reason: central.state == .unauthorized ? "Bluetooth not allowed" : "Bluetooth off")
         }
     }
 
@@ -190,39 +225,46 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         }
         central.stopScan()
         self.peripheral = peripheral
-        connect()
+        core?.start()
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-        AppLog.i("HeartRate", "connected")
+        guard connectionOpen else { return }
+        core?.connected()
+        core?.reached(next: .services)
         peripheral.discoverServices([heartRateService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        dropped(error?.localizedDescription ?? "connect failed")
+        guard connectionOpen else { return }
+        core?.failed(reason: error?.localizedDescription ?? "connect failed")
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        dropped(error?.localizedDescription ?? "disconnected")
+        guard connectionOpen else { return }
+        core?.failed(reason: error?.localizedDescription ?? "disconnected")
     }
 
     // MARK: CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard connectionOpen, let core else { return }
+        let status = error?.localizedDescription ?? "no error"
+        core.log(text: "services found, \(status), \(core.elapsed()) ms after connecting began")
         guard let service = peripheral.services?.first(where: { $0.uuid == heartRateService }) else {
-            AppLog.i("HeartRate", "no Heart Rate Service: disconnecting")
-            central.cancelPeripheralConnection(peripheral)
+            core.failed(reason: "service \(HeartRateIds.shared.SERVICE) not found")
             return
         }
         peripheral.discoverCharacteristics([heartRateMeasurement], for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard connectionOpen, let core else { return }
         guard let ch = service.characteristics?.first(where: { $0.uuid == heartRateMeasurement }) else {
-            AppLog.i("HeartRate", "no Heart Rate Measurement: disconnecting")
-            central.cancelPeripheralConnection(peripheral)
+            core.failed(reason: "characteristic \(HeartRateIds.shared.MEASUREMENT) not found")
             return
         }
+        core.reached(next: .notifications)
         peripheral.setNotifyValue(true, for: ch)
     }
 
@@ -231,25 +273,21 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard characteristic.uuid == heartRateMeasurement else { return }
+        guard connectionOpen, let core, characteristic.uuid == heartRateMeasurement else { return }
         // Notifications refused: no data would ever come on this connection, so drop it and try again.
         if error != nil || !characteristic.isNotifying {
-            AppLog.i("HeartRate", "notifications refused: \(error?.localizedDescription ?? "not notifying")")
-            central.cancelPeripheralConnection(peripheral)
+            core.failed(reason: "enable notifications: \(error?.localizedDescription ?? "not notifying")")
         } else {
-            AppLog.i("HeartRate", "notifications on")
+            core.log(text: "notifications on, \(core.elapsed()) ms after connecting began")
+            core.reached(next: .firstValue)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard characteristic.uuid == heartRateMeasurement, let value = characteristic.value, let session else { return }
+        guard connectionOpen, characteristic.uuid == heartRateMeasurement else { return }
+        guard let value = characteristic.value, let session else { return }
         notifications += 1
-        if !flowing {
-            flowing = true
-            policy.reset()
-            AppLog.i("HeartRate", "streaming")
-            guard session.streaming() else { return }
-        }
+        core?.data()
         session.feed(data: value)
     }
 }

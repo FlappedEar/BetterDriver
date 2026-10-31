@@ -24,10 +24,12 @@ import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
-import com.flappedear.betterdriver.analysis.line.LineProof
+import com.flappedear.betterdriver.analysis.coaching.lastFocusProof
+import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
+import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.map.DriveMap
 import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.map.driveMap
@@ -36,17 +38,16 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.segments.flaggableCorners
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
-import com.flappedear.betterdriver.analysis.summary.segmentChanges
-import com.flappedear.betterdriver.analysis.summary.summarizeProgress
+import com.flappedear.betterdriver.analysis.summary.progressAgainst
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CornerPick
-import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.linePlanStore
+import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
@@ -71,6 +72,7 @@ import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
@@ -82,6 +84,7 @@ import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.findSessionLoop
 import com.flappedear.betterdriver.timing.track.proposeTrack
 import com.flappedear.betterdriver.tracks.Tracks
+import com.flappedear.betterdriver.videoexport.SessionVideoTab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -245,10 +248,7 @@ internal fun SessionAnalysisRoute(
         progress = withContext(Dispatchers.IO) {
             val loaded = l.loaded
             val earlier = earlierSessions(store.value, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
-            summarizeProgress(loaded.analysis.laps, earlier.sessions).copy(
-                changes = earlier.previous?.let { segmentChanges(loaded.analysis, it) }.orEmpty(),
-                earlierLimited = earlier.limited,
-            )
+            progressAgainst(loaded.analysis, earlier)
         }
     }
     // Where to find time (FBBD-306) reads every session at the track, so it comes after the rest; it
@@ -336,6 +336,16 @@ internal fun SessionAnalysisRoute(
                 optimalVideo = optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo),
                 // Progression over every session at the track (FBBD-181).
                 onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
+                // The Video tab, only for a session with video (FBBD-392), as on iOS.
+                video = if (id in sessions.withVideo) {
+                    {
+                        SessionVideoTab(id, listed?.let(::sessionTitle).orEmpty()) { part, handle ->
+                            nav.navigate(Routes.watchVideo(id, part, handle))
+                        }
+                    }
+                } else {
+                    null
+                },
             )
         }
     }

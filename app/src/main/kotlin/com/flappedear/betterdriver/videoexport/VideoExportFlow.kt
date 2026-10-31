@@ -87,4 +87,4 @@ internal fun decodeTarget(text: String): VideoExportTarget? {
     return if (part == null || handle == null) null else VideoExportTarget(text.substring(0, i), part, handle)
 }
 
-private const val Mp4MimeType = "video/mp4"
+internal const val Mp4MimeType = "video/mp4"

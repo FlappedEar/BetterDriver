@@ -3,8 +3,6 @@
 package com.flappedear.betterdriver.recorder.fake
 
 import com.flappedear.betterdriver.recorder.DataSource
-import com.flappedear.betterdriver.recorder.GnssChannels
-import com.flappedear.betterdriver.recorder.Provenance
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SampleSink
 
@@ -81,6 +79,6 @@ class FakeGnssSource(
 
     companion object {
         /** The GNSS channels, marked as made up (FBBD-174): Demo GNSS never measures anything. */
-        val Channels = GnssChannels.ALL.map { it.copy(provenance = Provenance.SIMULATED) }
+        val Channels = SimulatedGnssChannels
     }
 }

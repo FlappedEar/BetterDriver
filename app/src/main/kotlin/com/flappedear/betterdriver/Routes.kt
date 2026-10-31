@@ -105,10 +105,16 @@ object Routes {
     fun sessionAnalysis(id: String, corner: String? = null) =
         "sessions/$id/analysis" + (corner?.let { "?corner=${Uri.encode(it)}" } ?: "")
 
-    /** One session's whole video with the data overlay (FBBD-341). */
-    const val WatchVideoPattern = "sessions/{id}/video"
+    /**
+     * One session's video with the data overlay (FBBD-341): the whole video, or from the Video tab
+     * (FBBD-392) one lap with its handle seconds.
+     */
+    const val WatchVideoPattern = "sessions/{id}/video?part={part}&handle={handle}"
+    const val VideoPartArg = "part"
+    const val VideoHandleArg = "handle"
 
-    fun watchVideo(id: String) = "sessions/$id/video"
+    fun watchVideo(id: String, part: Int = 0, handle: Int = 0) =
+        "sessions/$id/video" + if (part == 0) "" else "?part=$part&handle=$handle"
 
     /** The cue review of one session (FBBD-99). */
     const val CueReviewPattern = "sessions/{id}/cues"

@@ -158,6 +158,7 @@ enum ModelName {
     static let goPro = "GOPRO"
     static let goProFiles = "GOPRO_FILES"
     static let cameraFiles = "CAMERA_FILES"
+    static let demoTrack = "DEMO_TRACK"
 }
 
 enum KindName {

@@ -71,6 +71,9 @@ private func modelNote(_ model: String) -> String {
     case ModelName.goProFiles: "Start it by hand. Add its videos to the session afterwards."
     case ModelName.cameraFiles:
         "Start it by hand. Add its MP4 videos to the session afterwards; they are lined up by the camera's clock."
+    case ModelName.demoTrack:
+        "A made-up car drives what Drives says: the Demo circuit, or one of your sessions again. " +
+            "Laps, sectors and coach cues without a track day. Its positions are not real data."
     default: "Records position and speed for each session it is chosen for."
     }
 }
@@ -84,6 +87,9 @@ struct EquipmentItemPage: View {
     @State private var renaming = false
     @State private var newName = ""
     @State private var choosingVideo = false
+    @State private var choosingDrive = false
+    /** The Demo track's current drive (FBBD-373), read when the page opens and after a pick. */
+    @State private var driveLabel = ""
 
     var body: some View {
         if let item = settings.setup.equipment(id: id) {
@@ -117,6 +123,11 @@ struct EquipmentItemPage: View {
                         }
                         .buttonStyle(.plain)
                     }
+                    // What the Demo track drives (FBBD-235 on Android, FBBD-373).
+                    if item.modelName == ModelName.demoTrack {
+                        ListRow("Drives", value: driveLabel) { choosingDrive = true }
+                            .accessibilityIdentifier("demoDrives")
+                    }
                 }
                 DimText(modelNote(item.modelName))
                 RemoveButton(text: "Remove") {
@@ -130,6 +141,70 @@ struct EquipmentItemPage: View {
                 Button("Cancel", role: .cancel) {}
             }
             .sheet(isPresented: $choosingVideo) { VideoModeSheet(item: item) }
+            .sheet(isPresented: $choosingDrive, onDismiss: readDrive) { DemoDrivesSheet() }
+            .onAppear(perform: readDrive)
+        }
+    }
+
+    private func readDrive() {
+        driveLabel = DemoTrackCore.shared.chosenLabel(filesDir: AppFolders.base.path)
+    }
+}
+
+/**
+ * What the Demo track drives (FBBD-373), Android's Drives dialog (FBBD-235): the demo circuit first,
+ * then Arek's Silesia Ring and Jastrząb laps built into the app and the sessions newest first. A pick
+ * chooses it and closes the sheet.
+ */
+struct DemoDrivesSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @State private var choices: [DemoChoice] = []
+    @State private var chosen: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Drives")
+                .font(.title3.weight(.semibold))
+                .foregroundStyle(Palette.onBackground)
+                .padding(.bottom, 8)
+            if choices.isEmpty {
+                ProgressView().padding(.vertical, 12)
+            }
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(choices.enumerated()), id: \.offset) { i, choice in
+                        let picked = choice.id == chosen
+                        ListRow(
+                            label: choice.label,
+                            divider: i > 0,
+                            action: {
+                                DemoTrackCore.shared.choose(filesDir: AppFolders.base.path, id: choice.id)
+                                dismiss()
+                            },
+                            trailing: {
+                                Image(systemName: picked ? "largecircle.fill.circle" : "circle")
+                                    .foregroundStyle(picked ? Palette.accent : Palette.onSurfaceVariant)
+                            }
+                        )
+                        .accessibilityIdentifier("demoDrive.\(choice.id ?? "circuit")")
+                    }
+                }
+            }
+            Button("Cancel") { dismiss() }
+                .tint(Palette.accent)
+                .padding(.vertical, 12)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 22)
+        .presentationDetents([.medium, .large])
+        .presentationBackground(Palette.surface)
+        .task {
+            let sessions = AppFolders.sessions.path
+            let base = AppFolders.base.path
+            // Reads every session's meta: off the main queue.
+            let list = await Task.detached { DemoTrackCore.shared.choices(sessionsDir: sessions) }.value
+            chosen = DemoTrackCore.shared.current(choices: list, id: DemoTrackCore.shared.chosen(filesDir: base)).id
+            choices = list
         }
     }
 }
@@ -241,6 +316,19 @@ struct AddEquipmentPage: View {
                     }
                 }
             }
+            // The demo receiver in its own group, last, as on Android (UI-79 B, FBBD-373).
+            let demos = SettingsCore.shared.tryTheApp(setup: settings.setup)
+            if !demos.isEmpty {
+                ShellLabel("Try the app")
+                ShellCard {
+                    ForEach(Array(demos.enumerated()), id: \.element.name) { i, m in
+                        ListRow(m.label, value: withoutNote(m.name), divider: i > 0) {
+                            add(m.name, name: m.label, address: nil)
+                        }
+                        .accessibilityIdentifier("add.\(m.name)")
+                    }
+                }
+            }
         }
         .onAppear { scanner.start() }
         .onDisappear { scanner.stop() }
@@ -261,6 +349,7 @@ struct AddEquipmentPage: View {
         case ModelName.phoneGps: "This phone's own GPS, about 1 position a second"
         case ModelName.goProFiles: "HERO8 or older, MAX"
         case ModelName.cameraFiles: "DJI Action, Insta360, Garmin and others"
+        case ModelName.demoTrack: "Laps and coach cues on a made-up circuit"
         default: "Built in"
         }
     }

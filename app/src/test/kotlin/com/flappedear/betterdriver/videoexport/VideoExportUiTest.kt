@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.videoexport
 
+import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.shell.dataVideoDetail
 import com.flappedear.betterdriver.timing.live.LapKind
 import org.junit.Assert.assertEquals
@@ -33,6 +34,18 @@ class VideoExportUiTest {
         assertEquals("Run 1 · 1:42.37" to "No video", lapOptionText(lap(1, onVideo = false), pointToPoint = true))
         assertEquals("BetterDriver-abc-run2.mp4", videoExportFileName("abc", 2, pointToPoint = true))
         assertEquals("BetterDriver-abc-video.mp4", videoExportFileName("abc", WholeVideo, pointToPoint = true))
+    }
+
+    /** The Video tab (FBBD-392) watches the whole video or a lap; a composite lap is only exported. */
+    @Test
+    fun theVideoTabWatchesTheWholeVideoOrALapWithItsHandle() {
+        assertTrue(canWatch(WholeVideo))
+        assertTrue(canWatch(3))
+        assertFalse(canWatch(videoPartOf(OptimalKind.RealisticOptimal)))
+        assertFalse(canWatch(videoPartOf(OptimalKind.RawTheoreticalBest)))
+        assertEquals(7, handleFor(3, 7))
+        assertEquals(0, handleFor(WholeVideo, 7))
+        assertEquals(0, handleFor(videoPartOf(OptimalKind.RealisticOptimal), 7))
     }
 
     @Test

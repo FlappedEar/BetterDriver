@@ -4,8 +4,8 @@ import BetterDriverCore
 /// The sections of a session, the same six tabs as Android (UI-62 B, UI-157 B), drawn as
 /// Android's tab row: an icon over a small name (UI-163 C, UI-291 A). Summary opens first (UI-293 A).
 /// Video (Arek, 2026-10-30) shows only for a session with video: its Video with data, in sight
-/// rather than in the export menu. Android gets it in FBBD-392; this list is marked again
-/// (`// parity-list:session-tabs`) once both apps have it.
+/// rather than in the export menu; Android has it too (FBBD-392).
+// parity-list:session-tabs
 enum SessionTab: String, CaseIterable, Identifiable {
     case summary = "Summary"
     case compare = "Compare"
@@ -216,7 +216,7 @@ private struct TabRow: View {
 }
 
 /// Android's Summary (AnalysisScreen.kt): what to work on next first (FBBD-20), the three lap
-/// times (FBBD-178), heart rate, where time goes, then the whole session's G-forces and acceleration
+/// times (FBBD-178), heart rate, what came of the last focus (FBBD-180), where time goes, then the whole session's G-forces and acceleration
 /// runs. A session with no laps shows its drive, G-forces and runs, which need no laps (FBBD-342).
 private struct SummaryTab: View {
     let summary: SessionSummary
@@ -231,6 +231,8 @@ private struct SummaryTab: View {
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
                 SummaryTimesCard(ui: ui)
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
+                // What came of the last focus (FBBD-180, FBBD-364): the loop closed, under the lap times as on Android.
+                CoachingHistoryCard(summary: summary)
                 // This session against the earlier ones at its track (FBBD-122), as Android under the lap times.
                 ProgressionSummaryCard(summary: summary, sessionId: sessionId)
                 if !ui.gains.isEmpty || !ui.losses.isEmpty { SummaryTimeGoesCard(ui: ui, summary: summary, compare: compare) }

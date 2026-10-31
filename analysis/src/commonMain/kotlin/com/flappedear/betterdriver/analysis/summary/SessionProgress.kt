@@ -86,3 +86,22 @@ fun summarizeProgress(current: LapSession, earlier: List<EarlierSession>): Sessi
         previousSpreadSeconds = previous?.laps?.spread(),
     )
 }
+
+/**
+ * The best lap against the earlier sessions here, in words, the same on Android and iOS. With
+ * [SessionProgress.earlierLimited] only the newest sessions were read, so the best is theirs rather
+ * than of every session here.
+ */
+fun progressBestText(progress: SessionProgress): String {
+    val limited = progress.earlierLimited
+    val sessions = "${if (limited) "last" else "earlier"} ${progress.earlierSessions} sessions"
+    return when {
+        progress.earlierSessions == 0 && limited -> "No recent earlier session at this track."
+        progress.earlierSessions == 0 -> "First session at this track."
+        progress.bestDeltaSeconds == null -> "No counted lap in the $sessions here."
+        limited && progress.newBest -> "New best of your $sessions here"
+        limited -> "Best lap against your $sessions here"
+        progress.newBest -> "New best lap here"
+        else -> "Best lap against your best here"
+    }
+}

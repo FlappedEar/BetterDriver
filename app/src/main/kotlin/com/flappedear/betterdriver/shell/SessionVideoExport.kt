@@ -125,7 +125,7 @@ internal fun VideoExportSheet(
 
 /** Seconds of video before and after the lap: FilterChips 5 to 8 s, as Overlays' "Handle". */
 @Composable
-private fun HandleRow(seconds: Int, onPick: (Int) -> Unit) {
+internal fun HandleRow(seconds: Int, onPick: (Int) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         DimText("Seconds before and after the lap")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -137,7 +137,7 @@ private fun HandleRow(seconds: Int, onPick: (Int) -> Unit) {
 }
 
 @Composable
-private fun PartList(options: VideoExportOptions, picked: VideoPart?, onPick: (VideoPart) -> Unit) {
+internal fun PartList(options: VideoExportOptions, picked: VideoPart?, onPick: (VideoPart) -> Unit) {
     LazyColumn(Modifier.fillMaxWidth().heightIn(max = ListMaxHeight)) {
         item {
             PartRow(

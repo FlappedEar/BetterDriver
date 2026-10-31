@@ -83,6 +83,9 @@ class ProgressionDay(val epochDay: Long) : Comparable<ProgressionDay> {
 /** "12 Oct 2026". */
 fun ProgressionDay.dayLabel() = "$dayOfMonth ${MonthNames[month - 1].take(ShortMonth)} $year"
 
+/** "12 Oct", as java.time's "d MMM" in English. */
+fun ProgressionDay.dayMonthLabel() = "$dayOfMonth ${MonthNames[month - 1].take(ShortMonth)}"
+
 /** "October 2026". */
 fun ProgressionDay.monthLabel() = "${MonthNames[month - 1]} $year"
 

@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.EventKinds
@@ -89,6 +90,13 @@ object CoachEvents {
     fun planCorners(events: List<RecorderEvent>): List<String> = events.filter { it.kind == FOCUS || it.kind == PLAN }
         .maxByOrNull { it.tMicros }?.takeIf { it.kind == PLAN }
         ?.let { split(it.text).first["corners"] }?.split(',')?.filter { it.isNotBlank() }.orEmpty()
+
+    /**
+     * What the coach did in a session with [events], as its coaching history record keeps it (FBBD-180):
+     * the session whose focus it worked on, its corner cues and the line plan's corners.
+     */
+    fun coachedSession(events: List<RecorderEvent>) =
+        CoachedSession(focusSource(events), cuesByCorner(events), planCorners(events))
 
     /** How many corner cues were said at each CornerId in a session with [events]; cues without one are left out. */
     fun cuesByCorner(events: List<RecorderEvent>): Map<String, Int> = events.asSequence()
