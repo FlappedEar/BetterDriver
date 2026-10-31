@@ -69,9 +69,16 @@ final class SatelliteMapTests: XCTestCase {
 
     /// Picks [name] from the editor's map menu.
     private func pick(_ name: String, on picker: XCUIElement) {
-        picker.tap()
-        let item = app.buttons.matching(NSPredicate(format: "label == %@ OR label == %@", name, "✓ \(name)")).firstMatch
-        XCTAssertTrue(item.waitForExistence(timeout: 10), "no \(name) in the map menu")
+        let item = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label == %@ OR label == %@", name, "✓ \(name)")).firstMatch
+        // A tap at the button's point, again while the menu is not up: as the session More menu's tests,
+        // the menu can close while it opens.
+        for _ in 0..<4 where !(item.exists && item.isHittable) {
+            picker.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+            _ = item.waitForExistence(timeout: 5)
+        }
+        XCTAssertTrue(item.exists, "no \(name) in the map menu")
+        keep("Track editor, map menu")
         item.tap()
         sleep(1)
     }
