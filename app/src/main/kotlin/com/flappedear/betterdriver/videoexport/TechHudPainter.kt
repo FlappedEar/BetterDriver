@@ -23,6 +23,7 @@ import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.OverlayLap
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
+import com.flappedear.betterdriver.timing.overlay.gearText
 import com.flappedear.betterdriver.timing.overlay.hudWidgets
 import com.flappedear.betterdriver.timing.overlay.lapDelta
 import com.flappedear.betterdriver.timing.overlay.lapTime
@@ -128,7 +129,7 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
 
     private fun pad(s: Float) = 14 * s
 
-    // TechTachometer.qml: a 270° arc with a red zone, the scale in thousands, speed in the middle.
+    // TechTachometer.qml: a 270° arc with a red zone, the scale in thousands; the gear and speed in the middle.
     private fun tachometer(c: Canvas, b: Box, f: OverlayFrame) {
         val side = min(b.width, b.height)
         val cx = b.centerX
@@ -169,20 +170,41 @@ internal class TechHudPainter(fonts: HudFonts, private val data: OverlayData) {
             c.drawArc(oval, ArcStart, ArcSweep * max(0.001f, rpmRatio(rpm)), false, line)
         }
 
+        tachometerText(c, cx, cy, side, f)
+    }
+
+    /** The gauge's middle: the gear and the speed (UI-310 A), or the speed alone without a gearbox. */
+    private fun tachometerText(c: Canvas, cx: Float, cy: Float, side: Float, f: OverlayFrame) {
         val speed = f.speedKmh?.roundToInt()?.toString() ?: Dash
-        val rpmText = (rpm?.roundToInt()?.toString() ?: Dash) + " RPM"
         val gap = side * 0.012f
+        if (f.car.gears) {
+            // UI-310 A (FBBD-397): the gear large in amber in the middle, the speed small under it; the
+            // arc shows the engine speed, so no RPM number. A dash while no gear reads (a shift).
+            val gear = gearText(f.car.gear)
+            val gearColour = if (f.car.gear != null) Amber else Dim
+            val hg = setText(bold, side * 0.35f, gearColour)
+            val hs = setText(bold, side * 0.1f, Text)
+            val hu = setText(semibold, side * 0.045f, Dim, side * 0.008f)
+            var top = cy + side * 0.02f - (hg + hs + hu + 2 * gap) / 2
+            setText(bold, side * 0.35f, gearColour)
+            textTop(c, gear, cx - bold.measureText(gear) / 2, top, bold)
+            top += hg + gap
+            setText(bold, side * 0.1f, Text)
+            textTop(c, speed, cx - bold.measureText(speed) / 2, top, bold)
+            top += hs + gap
+            setText(semibold, side * 0.045f, Dim, side * 0.008f)
+            textTop(c, "KM/H", cx - semibold.measureText("KM/H") / 2, top, semibold)
+            return
+        }
+        // No gearbox in the session (no engine speed, a hybrid): the speed as before, without the RPM number.
         val h1 = setText(bold, side * 0.25f, Text)
         val h2 = setText(semibold, side * 0.055f, Dim, side * 0.008f)
-        val total = h1 + h2 + lineHeight(semibold.also { it.textSize = side * 0.065f }) + 2 * gap
-        var top = cy + side * 0.04f - total / 2
+        var top = cy + side * 0.04f - (h1 + h2 + gap) / 2
+        setText(bold, side * 0.25f, Text)
         textTop(c, speed, cx - bold.measureText(speed) / 2, top, bold)
         top += h1 + gap
         setText(semibold, side * 0.055f, Dim, side * 0.008f)
         textTop(c, "KM/H", cx - semibold.measureText("KM/H") / 2, top, semibold)
-        top += h2 + gap
-        setText(semibold, side * 0.065f, Dim)
-        textTop(c, rpmText, cx - semibold.measureText(rpmText) / 2, top, semibold)
     }
 
     private fun rpmRatio(v: Double): Float = (v / RpmMax).coerceIn(0.0, 1.0).toFloat()

@@ -67,6 +67,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Track screen | Provisional start/finish at a track with no line | ✅ 1.20.0 | ✅ TF 1422 | Shared timing (SessionTiming), wired in Android RecorderService and iOS LiveSession | FBBD-335, FBBD-369 |  |
 | Track screen | Status strip: OBD and HR connected/connecting/lost; GNSS lost sound | ✅ 1.3.0 | ✅ | UI per platform | FBBD-268, FBBD-64 | `log-android:GnssSound` |
 | Track screen | Configurable tiles; layout editor per car in Settings | ✅ 1.4.0, 1.16.0 | ✅ TF 1405 | Twice: app TrackTiles vs core-ios TrackTiles | FBBD-262, FBBD-345 | `ios-screen:TileView` `ios-screen:TileListSheet` `ios-screen:TrackScreenPage` `ios-screen:TrackScreenView` |
+| Track screen | Gear tile, from RPM and speed with the session's own fitted gearbox | ✅ 1.23.0 | ✅ via shared core | LiveGear shared (timing commonMain), wired in Android RecorderService and iOS LiveSession; tile lists twice | FBBD-397 |  |
 | Track screen | Second swipe screen and G radar | ✅ 1.12.0 | ✅ TF 1432 | Tile ids shared (TrackTiles); UI per platform | FBBD-262, FBBD-318, FBBD-368 | `ios-screen:GRadarView` |
 | Track screen | Frame time p95 within budget | ✅ 1.20.0 | 🟡 frame stretches logged every 30 s (#430), budget not gated | FrameStretch shared (recorder commonMain) | FBBD-266, FBBD-376 | `log-ios:Frames` |
 | Track screen | Demo track and built-in replay drives | ✅ 0.3.33+ | ❌ | Android only | FBBD-233, FBBD-254, FBBD-373 | `log-android:DemoReplay` |
@@ -102,7 +103,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Analysis | Data quality card | ✅ 0.3.2 | ❌ log only | Quality checks shared (analysis/quality commonMain, #432); iOS card to do | FBBD-183, FBBD-365 | `log-android:QualityReports` |
 | Analysis | Provenance and confidence; driving states and coasting | ✅ 0.3.3, 0.3.9 | ✅ TF 1440 driving-states strip on Compare (#411) | Shared (driving-state names and keys in CompareModel, #411) | FBBD-174, FBBD-177, FBBD-175, FBBD-380 |  |
 | Video export | Watch a session's video with the data overlay | ✅ 1.15.0 | ✅ TF 1.16+ | Overlay geometry shared | FBBD-341 | `route:WatchVideoPattern` `log-android:WatchVideo` `ios-screen:DataVideoWatchPage` `ios-screen:DataVideoPlayerPage` |
-| Video export | Video with data in Tech HUD layout; single-lap export | ✅ 1.17.0, 1.18.0 | ✅ TF 1413/1416 | HudGeometry shared; painter twice | FBBD-152, FBBD-346, FBBD-347 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
+| Video export | Video with data in Tech HUD layout; single-lap export; gear on the RPM gauge | ✅ 1.17.0, 1.18.0, 1.23.0 | ✅ TF 1413/1416, gear via shared core | HudGeometry, gear and texts shared; painter twice | FBBD-152, FBBD-346, FBBD-347, FBBD-397 | `log-android:VideoExports` `log-android:VideoExportService` `ios-screen:DataVideoSheet` |
 | Video export | Optimal-lap composite video | ✅ ≤0.3.2 | ❌ | Android only | FBBD-163, FBBD-370 | `log-android:OptimalVideo` |
 | Video export | Play video in landscape | ✅ | ✅ TF 1428 | UI | — | `log-ios:Orientation` |
 | Video export | Video tab in a session with video (Watch, Save video) | ❌ | ✅ TF 1447 (#435) | UI per platform | FBBD-392 |  |

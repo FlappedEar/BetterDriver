@@ -29,6 +29,9 @@ fun steeringText(degrees: Double?): String {
     return if (whole == 0) "0°" else "$whole° ${if (degrees > 0) "L" else "R"}"
 }
 
+/** The gear on the RPM gauge (FBBD-397, UI-310 A): "2", or a dash while no gear reads. */
+fun gearText(gear: Int?): String = gear?.toString() ?: HudDash
+
 /** What a widget shows for a value it has none of. */
 const val HudDash = "—"
 

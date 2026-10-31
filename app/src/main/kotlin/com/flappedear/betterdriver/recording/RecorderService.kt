@@ -39,6 +39,7 @@ import com.flappedear.betterdriver.recorder.log.HeartRateLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
+import com.flappedear.betterdriver.timing.gear.LiveGear
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -146,6 +147,8 @@ class RecorderService : Service() {
         val recording: Recording,
         val end: RecordingEnd,
         val tracker: LiveTracker,
+        /** The gear for the Gear tile (FBBD-397), fitted from this session's engine and road speed. */
+        val gear: LiveGear,
         val timing: SessionTiming,
         val coach: CoachLink?,
         val device: DeviceChecks,
@@ -281,6 +284,8 @@ class RecorderService : Service() {
                     accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { gnss.type == GnssType.PHONE },
                 )
                 recording.listeners.add(tracker)
+                val gear = LiveGear(recording::nowMicros)
+                recording.listeners.add(gear)
                 // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
                 // newer one the UI process fetched since the last session is used.
                 val timing = sessionTiming(tracksDir(this), recording, CircuitDirectory(circuitsDir(this)).load())
@@ -296,7 +301,7 @@ class RecorderService : Service() {
                 // itself (storage full, write error), with the writer's reason (Audit A03).
                 val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
                 val device = DeviceChecks(this, recording).also { it.start() }
-                active = Active(recording, end, tracker, timing, coach, device)
+                active = Active(recording, end, tracker, gear, timing, coach, device)
                 carryOn(wanted, recording, restartOf.also { restartOf = null })
                 sources.forEach(recording::attach)
                 main.post {
@@ -372,7 +377,7 @@ class RecorderService : Service() {
     /** The current recording's live values, or an empty bundle when idle; plus the last start error. */
     private fun state(): Bundle {
         val a = active
-        val state = a?.tracker?.snapshot()?.let(RecorderProtocol::toBundle) ?: Bundle()
+        val state = a?.let { it.gear.withGear(it.tracker.snapshot()) }?.let(RecorderProtocol::toBundle) ?: Bundle()
         if (a != null) {
             state.putLong(RecorderProtocol.KEY_START_NANOS, a.recording.startNanos)
             cameraStatus?.let { (text, ok) ->

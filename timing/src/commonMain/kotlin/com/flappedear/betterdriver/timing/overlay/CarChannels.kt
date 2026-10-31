@@ -67,6 +67,13 @@ internal fun carChannelIds(channels: Collection<ChannelDef>): Map<CarValue, Int>
  */
 data class CarFrame(
     val rpm: Double? = null,
+    /**
+     * The gear at this moment from engine speed and road speed (FBBD-397), 1 for first; null where
+     * they fit no gear (a shift, the converter slipping) or the session has no gearbox ([gears]).
+     */
+    val gear: Int? = null,
+    /** The session's engine speed fits a gearbox, so the overlay shows a gear (UI-310 A), or a dash. */
+    val gears: Boolean = false,
     /** The accelerator pedal, else the throttle plate, in %. */
     val throttlePct: Double? = null,
     val brakePct: Double? = null,

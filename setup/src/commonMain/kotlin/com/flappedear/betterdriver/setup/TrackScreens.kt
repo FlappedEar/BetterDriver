@@ -75,6 +75,12 @@ object TileIds {
     const val PREDICTED_LAP = "predicted_lap"
     const val LAP_NUMBER = "lap_number"
 
+    /**
+     * The gear the car is in, worked out from engine speed and road speed (FBBD-397, UI-309 A); the
+     * live snapshot carries it as a channel of this name (timing LiveGear.GearChannel).
+     */
+    const val GEAR = "gear"
+
     /** The heart-rate monitor, by the recorder's channel name. */
     const val HEART_RATE = "heart_rate"
 

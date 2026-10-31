@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.timing.overlay.LapPhase
 import com.flappedear.betterdriver.timing.overlay.OverlayFrame
 import com.flappedear.betterdriver.timing.overlay.StackPosition
 import com.flappedear.betterdriver.timing.overlay.TechHudLayout
+import com.flappedear.betterdriver.timing.overlay.gearText
 import com.flappedear.betterdriver.timing.overlay.lapDelta
 import com.flappedear.betterdriver.timing.overlay.lapTime
 import com.flappedear.betterdriver.timing.overlay.steeringText
@@ -58,7 +59,13 @@ class HudMoment internal constructor(
 
     val speed: String = frame.speedKmh?.roundToInt()?.toString() ?: HudDash
     val rpm: Double? = car.rpm
-    val rpmText: String = (car.rpm?.roundToInt()?.toString() ?: HudDash) + " RPM"
+
+    /** The session's engine speed fits a gearbox (FBBD-397): the gauge shows the gear large (UI-310 A). */
+    val gears: Boolean = car.gears
+
+    /** The gear ("2"), or a dash while none reads; the gauge draws it amber when [gearKnown]. */
+    val gear: String = gearText(car.gear)
+    val gearKnown: Boolean = car.gear != null
 
     /** "LAP" or "RUN" (a point-to-point track, FBBD-155). */
     val lapCaption: String = if (pointToPoint) "RUN" else "LAP"

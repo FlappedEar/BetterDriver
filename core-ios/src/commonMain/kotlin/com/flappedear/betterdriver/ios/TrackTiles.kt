@@ -56,8 +56,17 @@ object TrackTiles {
 
     private val heartRate = Channel(TileIds.HEART_RATE, "Heart rate", "bpm")
 
+    /** The gear, from engine speed and road speed (FBBD-397, UI-309 A): listed with the car, after RPM. */
+    private val gear = Channel(TileIds.GEAR, "Gear", "")
+
+    /** The car's channels in a tile's list: the generic PIDs with Gear after RPM, then CAN. */
+    private val carChannels: List<Channel> = (obdChannels + canChannels).let { list ->
+        val at = list.indexOfFirst { it.id == TileIds.obd("rpm") } + 1
+        list.take(at) + gear + list.drop(at)
+    }
+
     private val known: Map<String, Channel> =
-        (timingChannels + gnssChannels + obdChannels + canChannels + heartRate).associateBy { it.id }
+        (timingChannels + gnssChannels + carChannels + heartRate).associateBy { it.id }
 
     private val timingIds = timingChannels.map { it.id }.toSet()
 
@@ -147,7 +156,7 @@ object TrackTiles {
         return listOf(
             TileOptionGroup("Timing", options(timingChannels)),
             TileOptionGroup(listOfNotNull("GPS", receiver).joinToString(" · "), options(gnssChannels)),
-            TileOptionGroup("Car · OBD-II", options(obdChannels + canChannels + otherObd)),
+            TileOptionGroup("Car · OBD-II", options(carChannels + otherObd)),
             TileOptionGroup("You · heart rate", options(listOf(heartRate))),
         )
     }
