@@ -74,10 +74,16 @@ final class PerfectLapPainter {
             CGPoint(x: (CGFloat(t.u0) + s * CGFloat(t.u1 - t.u0)) * w, y: (CGFloat(t.v0) + v * CGFloat(t.v1 - t.v0)) * h)
         }
         cg.interpolationQuality = .medium
+        // The picture, a seam wider: cells outside it are neither cut finer nor drawn. A perspective map
+        // keeps lines straight, so a cell lands exactly inside its four corners' box.
+        let view = cg.boundingBoxOfClipPath.insetBy(dx: -2 * Self.seamPx, dy: -2 * Self.seamPx)
         var drew = false
         func cell(_ s0: CGFloat, _ t0: CGFloat, _ s1: CGFloat, _ t1: CGFloat, depth: Int) {
             let st = [(s0, t0), (s1, t0), (s1, t1), (s0, t1)]
             let corners = st.map { map.point($0.0, $0.1) }
+            let xs = corners.map(\.x), ys = corners.map(\.y)
+            let box = CGRect(x: xs.min()!, y: ys.min()!, width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+            if !box.intersects(view) { return }
             let mid = map.point((s0 + s1) / 2, (t0 + t1) / 2)
             // How far the true middle is from where the two triangles would put it.
             let flatA = CGPoint(x: (corners[0].x + corners[2].x) / 2, y: (corners[0].y + corners[2].y) / 2)
