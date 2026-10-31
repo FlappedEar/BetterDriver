@@ -132,7 +132,7 @@ struct DataVideoPanel: View {
                     .disabled(!p.enabled)
                     .accessibilityIdentifier("dataVideoPart\(p.part)")
                 }
-                if parts.count <= 1 {
+                if !parts.contains(where: { $0.part > 0 }) {
                     DimText("No laps: the session was not at a saved track with a start/finish line.")
                 }
             }
