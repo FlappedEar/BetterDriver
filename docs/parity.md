@@ -86,7 +86,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Analysis | Six-tab session analysis (Summary, Compare, Map, Laps, Corners, Car) | ✅ | ✅ | Screen models twice (app sessionanalysis / ReviewBridge.swift) | FBBD-110, FBBD-360 | `route:SessionAnalysisPattern` `log-android:SessionAnalysis` `ios-screen:SessionView` `ios-screen:CompareTab` `ios-screen:LapsTab` |
 | Analysis | Session without laps: route, speed, figures in the six tabs | 🔵 PR #416 tabs (figures 1.15.0) | ✅ | Twice | FBBD-342, FBBD-353 |  |
 | Analysis | Summary: next-session focus, three lap times, where time goes, HR, G-G, acceleration runs | ✅ | ✅ TF 1416 | Words shared (SummaryText) | FBBD-20, FBBD-178, FBBD-103, FBBD-154 | `log-android:SessionFocus` `ios-screen:SummaryTab` |
-| Analysis | Session vs earlier sessions and vs session before | ✅ 0.3.x | ❌ not on the Summary | Android only (Progress.kt) | FBBD-122, FBBD-123, FBBD-377 |  |
+| Analysis | Session vs earlier sessions and vs session before | ✅ 0.3.x | ✅ Summary card (#411, TF 1440) | Shared (readEarlierSessions, progressAgainst, progressBestText in analysis summary); UI per platform (Progress.kt / ProgressionCard.swift) | FBBD-122, FBBD-123, FBBD-377 |  |
 | Analysis | Map: where to find time, line plan, targets beyond own best | ✅ 1.10.0, 1.13.0 | ✅ | Shared analysis | FBBD-306, FBBD-312 | `log-android:LinePlan` `ios-screen:MapTab` |
 | Analysis | Lap map coloured by speed and delta | ✅ | ✅ TF 1440 Map tab Laps view (#411) | Shared MapScale (#411) | FBBD-149, FBBD-378 | `ios-screen:LapMapView` `ios-screen:LapsMapView` |
 | Analysis | Perfect lap in 3D, and as MP4 | ✅ 1.10.0, 1.11.0 | ✅ | Shared scene; painter per platform | FBBD-308, FBBD-316 |  |
