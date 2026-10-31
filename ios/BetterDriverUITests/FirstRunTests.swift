@@ -15,6 +15,10 @@ final class FirstRunTests: XCTestCase {
 
     func testAFreshIPhoneOpensOnTheChecklistAndDoneOpensTheApp() throws {
         try XCTSkipIf(!phone, "the iPad only reviews: no checklist at launch")
+        // A fresh install has answered no permission yet: earlier tests on this simulator may have.
+        for resource: XCUIProtectedResource in [.location, .bluetooth, .camera, .microphone] {
+            app.resetAuthorizationStatus(for: resource)
+        }
         app.launchArguments = ["-uiTestReset", "-firstRun"]
         app.launch()
         let summary = app.staticTexts["setup.summary"]
