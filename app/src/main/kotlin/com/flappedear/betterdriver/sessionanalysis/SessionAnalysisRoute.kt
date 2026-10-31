@@ -36,8 +36,7 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.segments.flaggableCorners
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
-import com.flappedear.betterdriver.analysis.summary.segmentChanges
-import com.flappedear.betterdriver.analysis.summary.summarizeProgress
+import com.flappedear.betterdriver.analysis.summary.progressAgainst
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
@@ -247,10 +246,7 @@ internal fun SessionAnalysisRoute(
         progress = withContext(Dispatchers.IO) {
             val loaded = l.loaded
             val earlier = earlierSessions(store.value, id, loaded.startUtcMillis, loaded.track, loaded.tracks)
-            summarizeProgress(loaded.analysis.laps, earlier.sessions).copy(
-                changes = earlier.previous?.let { segmentChanges(loaded.analysis, it) }.orEmpty(),
-                earlierLimited = earlier.limited,
-            )
+            progressAgainst(loaded.analysis, earlier)
         }
     }
     // Where to find time (FBBD-306) reads every session at the track, so it comes after the rest; it

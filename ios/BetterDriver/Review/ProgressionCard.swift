@@ -18,7 +18,7 @@ struct ProgressionCard: View {
                let earlierBest = progress.earlierBestSeconds?.doubleValue,
                let delta = progress.bestDeltaSeconds?.doubleValue {
                 HStack {
-                    Text(progressionBestText(progress))
+                    Text(SessionProgressKt.progressBestText(progress: progress))
                         .foregroundStyle(Palette.onBackground)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     Text(CoreBridge.delta(seconds: delta))
@@ -27,7 +27,7 @@ struct ProgressionCard: View {
                 }
                 Dim("Was \(progressionLapTime(earlierBest)), \(progress.earlierBestLabel ?? "")")
             } else {
-                Dim(progressionBestText(progress))
+                Dim(SessionProgressKt.progressBestText(progress: progress))
             }
             // How consistent the session was (FBBD-175): its typical (median) lap and the spread around it.
             if let median = progress.lapMedianSeconds?.doubleValue {
@@ -108,21 +108,6 @@ private struct ProgressionChanges: View {
             }
         }
     }
-}
-
-/// The best lap against the earlier sessions here, in words. With earlierLimited only the newest
-/// sessions were read, so the best is theirs rather than of every session here.
-private func progressionBestText(_ progress: SessionProgress) -> String {
-    let limited = progress.earlierLimited
-    let count = progress.earlierSessions
-    let sessions = "\(limited ? "last" : "earlier") \(count) sessions"
-    if count == 0 && limited { return "No recent earlier session at this track." }
-    if count == 0 { return "First session at this track." }
-    if progress.bestDeltaSeconds == nil { return "No counted lap in the \(sessions) here." }
-    if limited && progress.newBest { return "New best of your \(sessions) here" }
-    if limited { return "Best lap against your \(sessions) here" }
-    if progress.newBest { return "New best lap here" }
-    return "Best lap against your best here"
 }
 
 private func progressionLapTime(_ seconds: Double) -> String {

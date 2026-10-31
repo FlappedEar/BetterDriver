@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.ReviewedSession
 import com.flappedear.betterdriver.analysis.review.reviewSession
 import com.flappedear.betterdriver.analysis.summary.EarlierSession
+import com.flappedear.betterdriver.analysis.summary.EarlierSessions
 import com.flappedear.betterdriver.analysis.summary.PreviousLaps
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
 import com.flappedear.betterdriver.feature.analysis.trackDayUi
@@ -312,7 +313,7 @@ class ScreensRealDataTest {
         }
         @Suppress("TooGenericExceptionCaught")
         try {
-            val progress = reviewed.progress(sessions, previous, false)
+            val progress = reviewed.progress(EarlierSessions(sessions, previous, false))
             if (progress == null) problem(where, "no progress at its track")
             text(where, "progress", progress)
         } catch (e: Exception) {

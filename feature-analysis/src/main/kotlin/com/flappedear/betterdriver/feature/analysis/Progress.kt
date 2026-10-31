@@ -9,6 +9,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.analysis.summary.progressBestText
 import com.flappedear.betterdriver.analysis.summary.quicker
 import com.flappedear.betterdriver.analysis.summary.slower
 import com.flappedear.betterdriver.core.ui.TrackTheme
@@ -42,11 +43,11 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
         val earlierBest = progress.earlierBestSeconds
         val delta = progress.bestDeltaSeconds
         when {
-            progress.earlierSessions == 0 || earlierBest == null || delta == null -> Dim(bestText(progress))
+            progress.earlierSessions == 0 || earlierBest == null || delta == null -> Dim(progressBestText(progress))
             else -> {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        bestText(progress),
+                        progressBestText(progress),
                         Modifier.weight(1f),
                         color = c.text,
                     )
@@ -89,24 +90,6 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
                 Text(ProgressionLinkText)
             }
         }
-    }
-}
-
-/**
- * The best lap against the earlier sessions here, in words. With [SessionProgress.earlierLimited]
- * only the newest sessions were read, so the best is theirs rather than of every session here.
- */
-private fun bestText(progress: SessionProgress): String {
-    val limited = progress.earlierLimited
-    val sessions = "${if (limited) "last" else "earlier"} ${progress.earlierSessions} sessions"
-    return when {
-        progress.earlierSessions == 0 && limited -> "No recent earlier session at this track."
-        progress.earlierSessions == 0 -> "First session at this track."
-        progress.bestDeltaSeconds == null -> "No counted lap in the $sessions here."
-        limited && progress.newBest -> "New best of your $sessions here"
-        limited -> "Best lap against your $sessions here"
-        progress.newBest -> "New best lap here"
-        else -> "Best lap against your best here"
     }
 }
 
