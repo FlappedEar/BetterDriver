@@ -41,6 +41,8 @@ kotlin {
             api(project(":recorder"))
             // api: SessionAnalysis carries the track's corner identity (FBBD-172), a :timing type.
             api(project(":timing"))
+            // The clip index (ClipIndexJson) the session's quality report reads, as both apps keep it (FBBD-365).
+            implementation(project(":videosync"))
             // api: QualityReport is @Serializable, so its users see the serializer types.
             api(libs.kotlinx.serialization.json)
         }

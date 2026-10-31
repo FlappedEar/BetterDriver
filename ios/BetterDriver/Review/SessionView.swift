@@ -258,6 +258,8 @@ private struct SummaryTab: View {
             }
             if let g = summary.whole.gForces { SummaryGForcesCard(trace: g) }
             if let runs = summary.whole.acceleration { SummaryAccelerationCard(ui: runs) }
+            // Last, as on Android: also on a session without laps, where it says why (FBBD-183, FBBD-365).
+            SummaryQualityCard(sessionId: sessionId)
         }
         .accessibilityIdentifier("summaryTab")
     }

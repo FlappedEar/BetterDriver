@@ -31,6 +31,7 @@ import com.flappedear.betterdriver.coach.rememberCueCounts
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.feature.analysis.CoachingCardUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
+import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
@@ -82,6 +83,13 @@ class ReviewLibrary(base: String) {
     private val cueCountLock = NSLock()
     private val coachPicks = CoachPicksStore(coachPicksDir(base))
     private val coachPickLock = NSLock()
+    private val quality = SessionQualityReports(sessionsRoot, tracksRoot)
+
+    /**
+     * The Data quality card of session [id] (FBBD-183, FBBD-365): its checks passed, failed and not
+     * measured, with each failure, from the report kept beside it as on Android; null when there is none.
+     */
+    fun quality(id: String): QualityUi? = quality.card(id)
 
     /** The coaching history (FBBD-180), kept as Android keeps it: one record per analysed session. */
     private val history = CoachingHistoryStore(coachingHistoryDir(base))

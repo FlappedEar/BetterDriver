@@ -14,6 +14,8 @@ actual object CoreFiles {
 
     actual fun size(path: String): Long = PosixFiles.size(path)
 
+    actual fun lastModifiedMillis(path: String): Long = PosixFiles.lastModifiedMillis(path)
+
     actual fun list(dir: String): List<String> = PosixFiles.list(dir)
 
     actual fun readText(path: String): String = readBytes(path).decodeToString()
