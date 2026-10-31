@@ -50,8 +50,10 @@ Signing & Capabilities after each `generate.sh`.
 
 ## CI
 
-`.github/workflows/ios.yml` runs on a macOS runner: the core's common tests on the iOS
-simulator, the XCFramework, and the app's unit tests on an iPad and an iPhone simulator.
+`.github/workflows/ios.yml` runs on macOS runners. One job runs the core's common tests on the
+iOS simulator, builds the simulator XCFramework and builds the app and its tests once; four jobs
+then run the unit and UI tests from that build at the same time, on an iPad and an iPhone
+simulator, each in two halves. The "iOS app" check passes when all of them passed.
 
 ## TestFlight
 
