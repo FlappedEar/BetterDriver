@@ -125,7 +125,14 @@ class VideoExports private constructor(private val context: Context) {
                 if (cuts.isEmpty()) {
                     null
                 } else {
-                    val data = OverlayData(p.sets, p.laps, measuredG(p.data), channels = p.data.channels.values)
+                    // One lap as Save video draws it: it alone, 0:00 before its line, its time after.
+                    val data = OverlayData(
+                        p.sets,
+                        p.laps,
+                        measuredG(p.data),
+                        hotlap = part.takeIf(::isSingleLap),
+                        channels = p.data.channels.values,
+                    )
                     WatchSource(cuts, p.video, data)
                 }
             }

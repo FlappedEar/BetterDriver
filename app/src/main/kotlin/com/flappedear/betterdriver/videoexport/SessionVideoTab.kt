@@ -44,7 +44,11 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
         exports.options(sessionId) { o -> options = o?.let { VideoLoad.Ready(it) } ?: VideoLoad.Unreadable }
     }
     val ready = (options as? VideoLoad.Ready)?.options
-    var picked by rememberSaveable(sessionId, ready) { mutableStateOf(ready?.preselected) }
+    // Kept across Watch and back: the default is set once the parts are read, only if nothing was picked.
+    var picked by rememberSaveable(sessionId) { mutableStateOf<VideoPart?>(null) }
+    LaunchedEffect(ready) {
+        if (picked == null) picked = ready?.preselected
+    }
     var handle by rememberSaveable { mutableStateOf(DefaultLapHandleSeconds) }
     // "<part>:<handle seconds>" until a file is picked.
     var saving by rememberSaveable { mutableStateOf<String?>(null) }
