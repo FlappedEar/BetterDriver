@@ -11,9 +11,9 @@ val SimulatedGnssChannels = GnssChannels.ALL.map { it.copy(provenance = Provenan
 /**
  * Feeds a [GnssScript]'s fixes into [sink] as time passes (FBBD-373), for an app whose timer ticks
  * now and then, the iPhone's Demo track: [advance] sends every fix due by then, fix n at n / rateHz
- * seconds after [start], each stamped with the sink's clock as it is sent, as Android's FakeGnssSource
- * sends them from its own thread. A late tick catches up, a few seconds of fixes per tick at most;
- * fix numbers never skip.
+ * seconds after [start], each stamped with the time it was due on the sink's clock, so a late tick
+ * keeps the drive's spacing for timing (Codex). A late tick catches up, a few seconds of fixes per tick
+ * at most; fix numbers never skip.
  */
 class ScriptFeed(private val script: GnssScript, private val sink: SampleSink) {
     private var startMicros = -1L
@@ -36,7 +36,7 @@ class ScriptFeed(private val script: GnssScript, private val sink: SampleSink) {
         var count = 0
         // A few seconds per tick at most: after a long pause the rest follows on the next ticks.
         while (next <= due && count < script.rateHz * MaxCatchUpSeconds) {
-            sink.submit(SampleSet(sink.nowMicros(), script.fix(next)))
+            sink.submit(SampleSet(startMicros + next * MicrosPerSecond / script.rateHz, script.fix(next)))
             next++
             count++
         }

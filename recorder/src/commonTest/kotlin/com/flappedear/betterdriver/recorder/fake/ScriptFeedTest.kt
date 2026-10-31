@@ -27,7 +27,7 @@ class ScriptFeedTest {
     private val gnss = FakeGnss()
 
     @Test
-    fun sendsEachFixWhenItIsDueStampedWithTheSinksClock() {
+    fun sendsEachFixWhenItIsDueStampedWithItsDueTime() {
         val sink = ClockSink()
         val feed = ScriptFeed(gnss, sink)
         assertEquals(0, feed.advance(), "nothing before start")
@@ -53,5 +53,8 @@ class ScriptFeedTest {
         assertTrue(ticks > 1, "spread over ticks")
         assertEquals(60L * gnss.rateHz + 1, feed.sent)
         assertEquals((0L..60L * gnss.rateHz).map(gnss::fix), sink.sets.map { it.values })
+        // Stamped when due, not when the late tick sent them.
+        val due = (0L..60L * gnss.rateHz).map { 7_000_000L + it * 1_000_000L / gnss.rateHz }
+        assertEquals(due, sink.sets.map { it.tMicros })
     }
 }
