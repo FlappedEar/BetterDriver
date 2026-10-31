@@ -117,4 +117,17 @@ class NotifyLinkCoreTest {
         core.start()
         assertEquals(0, device.opened.size)
     }
+
+    @Test
+    fun aRaceBoxLinkNeverWaitsQuietly() {
+        val device = Device()
+        val core = NotifyLinkCore(
+            "AA:BB", device, { device.t }, {}, 3_000, 10_000, 30_000, ReconnectPolicy(500, 3_000), Int.MAX_VALUE,
+        )
+        core.start()
+        // A receiver that is off: setups go on, each with a time limit, with no quiet wait.
+        device.run(core, 600_000)
+        assertTrue(device.opened.size > QuietAfterSetups + 1)
+        assertTrue(device.opened.all { it.setupTimeoutMs <= 30_000L })
+    }
 }

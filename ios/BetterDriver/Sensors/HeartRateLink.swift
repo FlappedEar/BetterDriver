@@ -128,7 +128,8 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
             policy: ReconnectPolicy(
                 firstDelayMs: NotifyLinkCore.companion.FirstRetryMs,
                 maxDelayMs: NotifyLinkCore.companion.MaxRetryMs
-            )
+            ),
+            quietAfter: NotifyLinkCoreKt.QuietAfterSetups
         )
     }
 

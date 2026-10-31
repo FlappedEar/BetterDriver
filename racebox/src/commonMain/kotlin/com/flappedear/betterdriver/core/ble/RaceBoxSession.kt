@@ -40,4 +40,17 @@ class RaceBoxSession(
         decoder.reset()
         wasStreaming = false
     }
+
+    /**
+     * The RaceBox link at [address] is now [s], on either platform (FBBD-358): logged as every link
+     * is, then [streaming] or [reconnecting].
+     */
+    fun linkChanged(address: String, s: LinkState) {
+        logLink(address, s, wasStreaming)
+        when (s) {
+            is LinkState.Streaming -> streaming(address)
+            is LinkState.Reconnecting -> reconnecting(s.reason)
+            else -> Unit
+        }
+    }
 }

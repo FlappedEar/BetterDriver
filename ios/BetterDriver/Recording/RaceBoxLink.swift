@@ -71,18 +71,23 @@ final class RaceBoxScanner: NSObject, CBCentralManagerDelegate {
 
 /// The RaceBox in a recording on iOS (FBBD-332): connects to the chosen RaceBox, turns on its UART
 /// notifications and hands every notification to the shared RaceBoxSession, which decodes it into
-/// the recording exactly as on Android. Keeps reconnecting until stopped, with the Android app's
-/// delays (ReconnectPolicy). All CoreBluetooth work runs on one serial queue.
-final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate {
+/// the recording exactly as on Android. The link's life cycle is the shared NotifyLinkCore with the
+/// Android RaceBox link's numbers (FBBD-358): retries 0.5–3 s, the setup ladder with 10 s and 30 s
+/// setup times, a restart after 3 s without data, no quiet wait, and the same "Link" log lines. iOS
+/// chooses the MTU and the connection interval itself, so the Android link's MTU request and fast
+/// link have nothing to do here. All CoreBluetooth work runs on one serial queue.
+final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, NotifyLinkIo {
     private let queue = DispatchQueue(label: "racebox.link", qos: .userInitiated)
     private var central: CBCentralManager!
     private let deviceId: UUID
     private let session: RaceBoxSession
     private let onState: (RaceBoxLinkState) -> Void
-    private let policy = ReconnectPolicy(firstDelayMs: 500, maxDelayMs: 3_000)
+    private var core: NotifyLinkCore?
     private var peripheral: CBPeripheral?
+    private var watch: DispatchSourceTimer?
     private var running = false
-    private var flowing = false
+    /// A connection the core asked for is open; callbacks of one it closed are left out.
+    private var connectionOpen = false
 
     /// [sink] is the recording; [onState] runs on the main queue.
     init(deviceId: UUID, deviceName: String, sink: SampleSink, onState: @escaping (RaceBoxLinkState) -> Void) {
@@ -104,26 +109,63 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             guard !self.running else { return }
             self.running = true
             self.session.start()
+            let address = self.deviceId.uuidString
+            let session = self.session
+            let onState = self.onState
+            self.core = NotifyLinkCore(
+                address: address,
+                io: self,
+                now: { KotlinLong(value: Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000)) },
+                onState: { state in
+                    session.linkChanged(address: address, s: state)
+                    let shown = RaceBoxLink.shown(state)
+                    DispatchQueue.main.async { onState(shown) }
+                },
+                silenceTimeoutMs: 3_000,
+                setupTimeoutMs: 10_000,
+                backgroundSetupTimeoutMs: 30_000,
+                policy: ReconnectPolicy(firstDelayMs: 500, maxDelayMs: 3_000),
+                quietAfter: Int32.max
+            )
             self.central = CBCentralManager(delegate: self, queue: self.queue)
+            // Once a second, as Android's watchdog: the core's rate, silence and setup checks.
+            let timer = DispatchSource.makeTimerSource(queue: self.queue)
+            timer.schedule(deadline: .now() + 1, repeating: 1)
+            timer.setEventHandler { [weak self] in self?.core?.tick() }
+            timer.resume()
+            self.watch = timer
         }
     }
 
     func stop() {
         queue.async {
             self.running = false
+            self.watch?.cancel()
+            self.watch = nil
             // A lookup scan for a RaceBox this phone did not know yet may still be running.
             if self.central?.isScanning == true { self.central?.stopScan() }
-            if let p = self.peripheral { self.central?.cancelPeripheralConnection(p) }
+            self.core?.stop()
+            // The core holds this link as its IO: dropping it lets a finished recording go.
+            self.core = nil
             self.peripheral = nil
             self.report(.off)
         }
+    }
+
+    /// The recording screen's state for the core's [state].
+    private static func shown(_ state: LinkState) -> RaceBoxLinkState {
+        if let r = state as? LinkStateReconnecting { return .reconnecting(reason: r.reason) }
+        if state is LinkStateStreaming { return .streaming }
+        if state is LinkStateConnecting { return .connecting }
+        return .off
     }
 
     private func report(_ state: RaceBoxLinkState) {
         DispatchQueue.main.async { self.onState(state) }
     }
 
-    private func connect() {
+    /// Bluetooth is on: the core starts with a RaceBox known to this phone, else it is looked for.
+    private func find() {
         guard running, central.state == .poweredOn else { return }
         guard let p = peripheral ?? central.retrievePeripherals(withIdentifiers: [deviceId]).first else {
             // Not known to this phone yet: look for it.
@@ -132,28 +174,43 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             return
         }
         peripheral = p
-        p.delegate = self
-        // A pending connect does not time out: iOS completes it when the RaceBox is in range again.
-        central.connect(p)
-        report(.connecting)
+        core?.start()
     }
 
-    private func dropped(_ reason: String) {
-        flowing = false
-        session.reconnecting(reason: reason)
-        guard running else { return }
-        report(.reconnecting(reason: reason))
-        let delay = Double(policy.nextDelayMs()) / 1_000
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in self?.connect() }
+    // MARK: NotifyLinkIo, called by the core on this queue
+
+    func open(plan: ConnectPlan) -> String? {
+        guard running else { return "stopped" }
+        guard central.state == .poweredOn else { return "Bluetooth off" }
+        guard let p = peripheral else { return "RaceBox not known to this phone" }
+        p.delegate = self
+        // A pending connect waits for the RaceBox; the core gives it up after the plan's setup time.
+        central.connect(p)
+        connectionOpen = true
+        return nil
     }
+
+    func close(setupFailed: Bool) {
+        connectionOpen = false
+        if let p = peripheral { central.cancelPeripheralConnection(p) }
+    }
+
+    func later(delayMs: Int64, action: @escaping () -> Void) {
+        queue.asyncAfter(deadline: .now() + .milliseconds(Int(delayMs)), execute: action)
+    }
+
+    func detail() -> String? { nil }
 
     // MARK: CBCentralManagerDelegate
 
     func centralManagerDidUpdateState(_ central: CBCentralManager) {
         switch central.state {
-        case .poweredOn: connect()
-        case .unauthorized: report(.unavailable(reason: "Bluetooth not allowed"))
-        case .poweredOff: report(.unavailable(reason: "Bluetooth off"))
+        case .poweredOn: find()
+        case .unauthorized, .poweredOff:
+            let reason = central.state == .unauthorized ? "Bluetooth not allowed" : "Bluetooth off"
+            // iOS drops its connections without a didDisconnect when Bluetooth goes off.
+            if connectionOpen { core?.failed(reason: reason) }
+            report(.unavailable(reason: reason))
         default: break
         }
     }
@@ -164,39 +221,48 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         advertisementData: [String: Any],
         rssi RSSI: NSNumber
     ) {
-        guard peripheral.identifier == deviceId else { return }
+        guard running, peripheral.identifier == deviceId else { return }
         central.stopScan()
         self.peripheral = peripheral
-        connect()
+        core?.start()
     }
 
     func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        guard connectionOpen else { return }
+        core?.connected()
+        core?.reached(next: .services)
         peripheral.discoverServices([uartService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
-        dropped(error?.localizedDescription ?? "connect failed")
+        guard connectionOpen else { return }
+        core?.failed(reason: error?.localizedDescription ?? "connect failed")
     }
 
     func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
-        dropped(error?.localizedDescription ?? "disconnected")
+        guard connectionOpen else { return }
+        core?.failed(reason: error?.localizedDescription ?? "disconnected")
     }
 
     // MARK: CBPeripheralDelegate
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        guard connectionOpen, let core else { return }
+        core.log(text: "services found, \(core.elapsed()) ms after connecting began")
         guard let service = peripheral.services?.first(where: { $0.uuid == uartService }) else {
-            central.cancelPeripheralConnection(peripheral)
+            core.failed(reason: "service \(RaceBoxIds.shared.UART_SERVICE) not found")
             return
         }
         peripheral.discoverCharacteristics([uartTx], for: service)
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        guard connectionOpen, let core else { return }
         guard let tx = service.characteristics?.first(where: { $0.uuid == uartTx }) else {
-            central.cancelPeripheralConnection(peripheral)
+            core.failed(reason: "characteristic \(RaceBoxIds.shared.UART_TX) not found")
             return
         }
+        core.reached(next: .notifications)
         peripheral.setNotifyValue(true, for: tx)
     }
 
@@ -205,19 +271,19 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         didUpdateNotificationStateFor characteristic: CBCharacteristic,
         error: Error?
     ) {
-        guard characteristic.uuid == uartTx else { return }
+        guard connectionOpen, let core, characteristic.uuid == uartTx else { return }
         // Notifications refused: no data would ever come on this connection, so drop it and try again.
-        if error != nil || !characteristic.isNotifying { central.cancelPeripheralConnection(peripheral) }
+        if error != nil || !characteristic.isNotifying {
+            core.failed(reason: "enable notifications: \(error?.localizedDescription ?? "not notifying")")
+        } else {
+            core.log(text: "notifications on, \(core.elapsed()) ms after connecting began")
+            core.reached(next: .firstValue)
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard characteristic.uuid == uartTx, let value = characteristic.value else { return }
-        if !flowing {
-            flowing = true
-            policy.reset()
-            session.streaming(address: deviceId.uuidString)
-            report(.streaming)
-        }
+        guard connectionOpen, characteristic.uuid == uartTx, let value = characteristic.value else { return }
+        core?.data()
         session.feed(data: value)
     }
 }

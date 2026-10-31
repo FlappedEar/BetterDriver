@@ -35,14 +35,8 @@ class RaceBoxSource(
             link?.requestFastLink(reason)
         }
         session.start()
-        link = RaceBoxLink(context, address, onData = session::feed, onState = { s ->
-            logLink(address, s, session.wasStreaming)
-            when (s) {
-                is LinkState.Streaming -> session.streaming(address)
-                is LinkState.Reconnecting -> session.reconnecting(s.reason)
-                else -> Unit
-            }
-        }).also { it.start() }
+        link = RaceBoxLink(context, address, onData = session::feed, onState = { s -> session.linkChanged(address, s) })
+            .also { it.start() }
     }
 
     override fun stop() {

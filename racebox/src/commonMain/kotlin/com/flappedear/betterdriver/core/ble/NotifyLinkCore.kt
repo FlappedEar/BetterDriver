@@ -16,8 +16,8 @@ const val QuietAfterSetups = 6
  * (FBBD-281). The phone then connects on its own once the device advertises (a strap put on, a
  * receiver switched on), with no rounds, no log lines and no retries until then.
  */
-fun notifyPlan(setupsWithoutData: Int, ladder: SetupLadder): ConnectPlan =
-    if (setupsWithoutData >= QuietAfterSetups) {
+fun notifyPlan(setupsWithoutData: Int, ladder: SetupLadder, quietAfter: Int = QuietAfterSetups): ConnectPlan =
+    if (setupsWithoutData >= quietAfter) {
         ConnectPlan(autoConnect = true, askMtu = false, setupTimeoutMs = Long.MAX_VALUE)
     } else {
         ladder.plan()
@@ -68,7 +68,7 @@ interface NotifyLinkIo {
  * connect, subscribe, and reconnect after a drop, a failure, no data within the setup time of
  * connecting (15 s, 30 s on a background connection), or [silenceTimeoutMs] without data, until
  * [stop]. Setups that bring no data change how the next one connects ([SetupLadder]); after
- * [QuietAfterSetups] of them the link waits on one connection with no time limit (FBBD-281). Each
+ * [quietAfter] of them (6 by default) the link waits on one connection with no time limit (FBBD-281). Each
  * step is logged with the tag "Link" (FBBD-279), the same lines on both platforms.
  *
  * Not thread-safe: the platform calls it on one thread or queue, [tick] once a second. [onState]
@@ -85,6 +85,8 @@ class NotifyLinkCore(
     private val setupTimeoutMs: Long = SetupTimeoutMs,
     backgroundSetupTimeoutMs: Long = BackgroundSetupTimeoutMs,
     private val policy: ReconnectPolicy = ReconnectPolicy(FirstRetryMs, MaxRetryMs),
+    /** Setups without data before the quiet wait; [Int.MAX_VALUE] for a link that never waits (RaceBox). */
+    private val quietAfter: Int = QuietAfterSetups,
 ) {
     private val ladder = SetupLadder(setupTimeoutMs, backgroundSetupTimeoutMs)
     private var running = false
@@ -186,11 +188,11 @@ class NotifyLinkCore(
         if (!running) return
         setupStartedAt = now()
         lastDataAt = 0L
-        plan = notifyPlan(setupsWithoutData, ladder)
+        plan = notifyPlan(setupsWithoutData, ladder, quietAfter)
         val timeout = plan.setupTimeoutMs
         setupDeadlineAt = if (timeout == Long.MAX_VALUE) timeout else setupStartedAt + timeout
         step = NotifyStep.CONNECT
-        if (setupsWithoutData == QuietAfterSetups) {
+        if (setupsWithoutData == quietAfter) {
             log("$setupsWithoutData setups without data: waiting quietly until it advertises")
         }
         val detail = io.detail()?.let { ", $it" }.orEmpty()
