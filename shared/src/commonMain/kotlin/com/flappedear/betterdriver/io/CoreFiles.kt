@@ -23,6 +23,9 @@ expect object CoreFiles {
     /** The size of the file at [path] in bytes; 0 when there is none. */
     fun size(path: String): Long
 
+    /** When the file at [path] was last changed, in UTC milliseconds; 0 when there is none. */
+    fun lastModifiedMillis(path: String): Long
+
     /** The names of what is in folder [dir]; none when it cannot be listed. */
     fun list(dir: String): List<String>
 

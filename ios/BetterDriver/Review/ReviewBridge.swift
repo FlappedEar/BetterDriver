@@ -166,6 +166,12 @@ enum ReviewBridge {
         }
     }
 
+    /// The session's Data quality card (FBBD-183, FBBD-365), as Android's; nil when it has no report.
+    /// Makes the report the first time: not on the main thread.
+    static func quality(id: String) -> QualityUi? {
+        library.quality(id: id)
+    }
+
     /// Each session's row as Android's (UI-139 C): its detail line and best lap. Reads sessions: not on the main thread.
     static func sessionRows() -> [String: SessionRowFacts] {
         library.sessionRows()

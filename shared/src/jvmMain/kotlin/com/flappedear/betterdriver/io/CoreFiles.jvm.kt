@@ -20,6 +20,8 @@ actual object CoreFiles {
 
     actual fun size(path: String): Long = File(path).length()
 
+    actual fun lastModifiedMillis(path: String): Long = File(path).lastModified()
+
     actual fun list(dir: String): List<String> = File(dir).list()?.toList().orEmpty()
 
     actual fun readText(path: String): String = File(path).readText()

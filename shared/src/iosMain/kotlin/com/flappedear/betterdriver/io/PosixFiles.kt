@@ -37,6 +37,8 @@ import platform.posix.strerror
 import platform.posix.write
 
 private const val FileMode = 0x1A4 // 0644
+private const val MillisPerSecond = 1_000L
+private const val NanosPerMilli = 1_000_000L
 
 /** A file system call failed; the message names the call, the path and errno's text. */
 class FileError(message: String) : IOException(message)
@@ -81,6 +83,16 @@ object PosixFiles {
     fun size(path: String): Long = memScoped {
         val st = alloc<stat>()
         if (stat(path, st.ptr) != 0) 0L else st.st_size
+    }
+
+    /** When the file at [path] was last changed, in UTC milliseconds; 0 when there is none. */
+    fun lastModifiedMillis(path: String): Long = memScoped {
+        val st = alloc<stat>()
+        if (stat(path, st.ptr) != 0) {
+            0L
+        } else {
+            st.st_mtimespec.tv_sec * MillisPerSecond + st.st_mtimespec.tv_nsec / NanosPerMilli
+        }
     }
 
     fun readBytes(path: String): ByteArray {

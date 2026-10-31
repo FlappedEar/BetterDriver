@@ -62,6 +62,8 @@ class LiveSessionTest {
 
     @AfterTest
     fun cleanUp() {
+        // The quality report a stop queues reads the session: it is done before the folder goes.
+        SessionQualityReports(sessions, tracks).awaitLogged()
         NSFileManager.defaultManager.removeItemAtPath(base, null)
     }
 
@@ -90,6 +92,37 @@ class LiveSessionTest {
             val seconds = lines.filter { it[1] == CheckLog.GNSS }.mapNotNull { GnssSecond.parse(it[2]!!) }
             assertEquals(listOf(0L, 1L, 2L, 3L), seconds.map { it.second })
             assertTrue(lines.filter { it[1] in setOf(CheckLog.SESSION, CheckLog.EVENT, CheckLog.GNSS) }.all { it[3] == session.id })
+        } finally {
+            IosLog.lines = null
+        }
+    }
+
+    /**
+     * At the stop the session's quality report goes into the log as on Android (FBBD-183), and the
+     * Summary's Data quality card reads the same report (FBBD-365).
+     */
+    @Test
+    fun theStopLogsTheQualityReportAndTheCardReadsIt() {
+        val lines = mutableListOf<List<String?>>()
+        IosLog.lines = { level, tag, message, session -> lines += listOf(level, tag, message, session) }
+        try {
+            val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+            drive(session)
+            assertTrue(session.stop())
+            session.awaitQuality()
+            val quality = lines.filter { it[1] == CheckLog.QUALITY }
+            val summary = quality.first()[2]!!
+            assertTrue(summary.startsWith("summary pass="), summary)
+            assertTrue(quality.size > 1)
+            assertTrue(quality.all { it[3] == session.id })
+            assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$sessions/${session.id}/quality.json"))
+
+            val card = assertNotNull(ReviewLibrary(base).quality(session.id))
+            assertEquals(
+                summary,
+                "summary pass=${card.passed} fail=${card.failed} not_measured=${card.notMeasured}",
+            )
+            assertEquals(card.failed, card.failures.size)
         } finally {
             IosLog.lines = null
         }
