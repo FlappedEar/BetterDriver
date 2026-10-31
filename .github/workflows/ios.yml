@@ -32,6 +32,7 @@ on:
       - "*.gradle.kts"
       - "gradle.properties"
       - ".github/workflows/ios.yml"
+      - ".github/scripts/ios-simulator.py"
   push:
     branches: [main]
     paths:
@@ -54,6 +55,7 @@ on:
       - "*.gradle.kts"
       - "gradle.properties"
       - ".github/workflows/ios.yml"
+      - ".github/scripts/ios-simulator.py"
   workflow_dispatch:
 
 permissions:
