@@ -466,7 +466,7 @@ private fun fileExists(path: String): Boolean = NSFileManager.defaultManager.fil
 private fun readSmall(path: String): String? = NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null)
 
 /** "29 Aug 2026 at 17:20" in the device's language, as Android's medium date and short time. */
-private fun sessionLabel(startUtcMillis: Long): String = NSDateFormatter().apply {
+internal fun sessionLabel(startUtcMillis: Long): String = NSDateFormatter().apply {
     dateStyle = NSDateFormatterMediumStyle
     timeStyle = NSDateFormatterShortStyle
 }.stringFromDate(NSDate.dateWithTimeIntervalSince1970(startUtcMillis / MillisPerSecond))

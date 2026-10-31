@@ -8,7 +8,8 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.analysis.demo.DemoSession
+import com.flappedear.betterdriver.analysis.demo.DemoTrack
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.DemoReplay
@@ -20,22 +21,22 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
- * The Demo track's "Drives" choice (FBBD-235): the demo circuit, Arek's Silesia Ring and Jastrząb laps
- * built into the app (FBBD-237, FBBD-254) and every session on the phone that is not recording, newest
- * first, labelled by date and track. Null until the list is read.
+ * The Demo track's "Drives" choice (FBBD-235): the shared list ([DemoTrack.choices], as on the iPhone,
+ * FBBD-373) of the demo circuit, Arek's Silesia Ring and Jastrząb laps built into the app and every
+ * session on the phone that is not recording, newest first, labelled by date and track. Null until the
+ * list is read.
  */
 @Composable
 internal fun rememberDemoDrives(): DemoDrives? {
     val context = LocalContext.current
     var chosen by remember { mutableStateOf(DemoReplay.sessionId(context)) }
-    val sessions by produceState<List<DemoDrive>?>(null) {
-        value = withContext(Dispatchers.IO) { sessionDrives(context) }
+    val choices by produceState<List<DemoDrive>?>(null) {
+        value = withContext(Dispatchers.IO) { demoChoices(context) }
     }
-    val list = sessions ?: return null
-    val choices = listOf(DemoDrives.Circuit, silesiaRing(), jastrzab()) + list
+    val list = choices ?: return null
     return DemoDrives(
-        current = choices.firstOrNull { it.sessionId == chosen } ?: DemoDrives.Circuit,
-        choices = choices,
+        current = list.firstOrNull { it.sessionId == chosen } ?: DemoDrives.Circuit,
+        choices = list,
         onChoose = { d ->
             DemoReplay.choose(context, d.sessionId)
             chosen = d.sessionId
@@ -43,24 +44,9 @@ internal fun rememberDemoDrives(): DemoDrives? {
     )
 }
 
-/** Arek's Silesia Ring laps built into the app (FBBD-237), named as a session at that track would be. */
-private fun silesiaRing() =
-    DemoDrive(DemoReplay.SilesiaRing, "${sessionLabel(DemoReplay.SilesiaRingStartUtcMillis)} · Silesia Ring")
-
-/** Arek's Autodrom Jastrząb laps built into the app (FBBD-254), named as Silesia Ring's are. */
-private fun jastrzab() =
-    DemoDrive(DemoReplay.Jastrzab, "${sessionLabel(DemoReplay.JastrzabStartUtcMillis)} · Autodrom Jastrząb")
-
-/** Logged with the count, so a log tells an empty list from a missing session (Arek, 0.3.35). */
-private fun sessionDrives(context: Context): List<DemoDrive> {
-    val all = SessionStore(sessionsDir(context)).list()
-    val drives = all
-        .filter { it.state != SessionState.RECORDING }
-        .sortedByDescending { it.info.startUtcMillis }
-        .map { s ->
-            val label = sessionLabel(s.info.startUtcMillis)
-            DemoDrive(s.id, if (s.info.track.isBlank()) label else "$label · ${s.info.track}")
-        }
-    DebugLog.i("DemoReplay", "drives list: ${drives.size} of ${all.size} sessions on the phone")
-    return drives
+private fun demoChoices(context: Context): List<DemoDrive> {
+    val sessions = SessionStore(sessionsDir(context)).list().map {
+        DemoSession(it.id, it.info.startUtcMillis, it.info.track, it.state == SessionState.RECORDING)
+    }
+    return DemoTrack.choices(sessions, ::sessionLabel).map { DemoDrive(it.id, it.label) }
 }

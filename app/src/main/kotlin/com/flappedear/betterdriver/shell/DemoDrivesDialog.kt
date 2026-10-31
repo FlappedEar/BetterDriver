@@ -14,6 +14,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.flappedear.betterdriver.analysis.demo.DemoTrack
 
 /** One thing the Demo track can drive: a session on the phone, or the made-up circuit when [sessionId] is null. */
 data class DemoDrive(val sessionId: String?, val label: String)
@@ -30,7 +31,7 @@ data class DemoDrives(
 ) {
     companion object {
         /** The made-up circuit's choice. */
-        val Circuit = DemoDrive(null, "Demo circuit (made up)")
+        val Circuit = DemoDrive(DemoTrack.Circuit.id, DemoTrack.Circuit.label)
     }
 }
 

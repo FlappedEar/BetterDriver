@@ -70,7 +70,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Track screen | Gear tile, from RPM and speed with the session's own fitted gearbox | ✅ 1.23.0 | ✅ via shared core | LiveGear shared (timing commonMain), wired in Android RecorderService and iOS LiveSession; tile lists twice | FBBD-397 |  |
 | Track screen | Second swipe screen and G radar | ✅ 1.12.0 | ✅ TF 1432 | Tile ids shared (TrackTiles); UI per platform | FBBD-262, FBBD-318, FBBD-368 | `ios-screen:GRadarView` |
 | Track screen | Frame time p95 within budget | ✅ 1.20.0 | 🟡 frame stretches logged every 30 s (#430), budget not gated | FrameStretch shared (recorder commonMain) | FBBD-266, FBBD-376 | `log-ios:Frames` |
-| Track screen | Demo track and built-in replay drives | ✅ 0.3.33+ | ❌ | Android only | FBBD-233, FBBD-254, FBBD-373 | `log-android:DemoReplay` |
+| Track screen | Demo track and built-in replay drives | ✅ 0.3.33+ | 🔵 | Shared | FBBD-233, FBBD-254, FBBD-373 | `ios-screen:DemoDrivesSheet` |
 | Coach | Spoken corner cues, never in a braking zone; praise; cool-down laps | ✅ ≤0.3.1 … 0.3.41 | ✅ | Shared (CoachRun commonMain, FBBD-357): reference, focus, cue scheduling, cue sound log; speech per platform | FBBD-97, FBBD-243, FBBD-244, FBBD-357 |  |
 | Coach | Coach uses the line plan, steering and gear | ✅ 1.10.0, 1.12.0, 1.14.0 | ✅ via shared core | Shared | FBBD-307, FBBD-321, FBBD-326 | `log-android:CoachReferences` |
 | Coach | Polish voice, voice picker, speech speed | ✅ 0.3.42, 0.3.43 | ✅ | Speech per platform | FBBD-240, FBBD-245 | `log-android:Voice` `log-ios:Voice` `route:CoachVoice` |

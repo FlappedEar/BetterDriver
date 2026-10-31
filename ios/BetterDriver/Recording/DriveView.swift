@@ -142,6 +142,13 @@ struct ReceiverSheet: View {
                 .padding(.vertical, 12)
             }
             row("Phone GPS only", "1 Hz", ok: false) { onPick(.phone) }
+            // The Demo track once added in Settings › Equipment, with what it drives (FBBD-373).
+            if settings.setup.equipment.contains(where: { $0.modelName == ModelName.demoTrack }) {
+                row("Demo track", DemoTrackCore.shared.chosenLabel(filesDir: AppFolders.base.path), ok: true) {
+                    onPick(.demoTrack)
+                }
+                .accessibilityIdentifier("receiver.demoTrack")
+            }
             // Phone video with the session (FBBD-21), as the phone camera in Android's equipment list.
             Toggle("Phone camera video", isOn: $camera)
                 .tint(Palette.accent)
