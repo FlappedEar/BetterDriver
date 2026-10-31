@@ -137,10 +137,6 @@ class DataVideoSession internal constructor(
                 .also { compositeCache = durations to it }
     }
 
-    /** The plan of composite lap [part]; null for the whole video or a lap. */
-    private fun plan(part: Int, durations: Map<String, Long>): OptimalClipPlan? =
-        kindOf(part)?.let { composites(durations).of(it).plan }
-
     /** The plan the last composite lap was cut with, for its overlay. */
     private val cutPlans = HashMap<Int, OptimalClipPlan>()
 
@@ -196,7 +192,7 @@ class DataVideoSession internal constructor(
 
     /** A composite lap: its parts' pieces, back to back, as Android's export cuts it (no handle). */
     private fun compositeCuts(part: Int, durations: Map<String, Long>): List<DataVideoCut> {
-        val plan = plan(part, durations) ?: return emptyList()
+        val plan = kindOf(part)?.let { composites(durations).of(it).plan } ?: return emptyList()
         lock.withLock { cutPlans[part] = plan }
         return plan.cuts.map {
             val c = it.cut
