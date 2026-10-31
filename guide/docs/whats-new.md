@@ -20,8 +20,8 @@ The full notes of every release are on
   [the Video tab](analysis.md#the-video-tab).
 - iPhone: **Demo track** and the built-in replay drives, the same laps as Android. See
   [Try it without a track](demo.md).
-- iPhone and iPad: **Last focus · what came of it** on the Summary, as on Android. See
-  [Getting faster](getting-faster.md).
+- iPhone and iPad: **Last focus · what came of it** and the **Data quality** card on the Summary,
+  as on Android. See [Getting faster](getting-faster.md) and [Lap analysis](analysis.md#summary).
 - A heart-rate strap and a RaceBox reconnect on the iPhone as on Android.
 
 ## 1.23.0

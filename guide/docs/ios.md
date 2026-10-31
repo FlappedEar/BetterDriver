@@ -24,8 +24,8 @@ version number. Session files (`.bdsession`) move between the two in both direct
   sessions, Every pass, Progression, Coach review, track day, the perfect lap in 3D, Watch video,
   Video with data, VBO, CSV and GPX export, and the track editor with corner corrections and
   **Make a track from this session**.
-- On the Summary, this session against earlier sessions at the track and **Last focus · what came
-  of it**, the coaching history.
+- On the Summary, this session against earlier sessions at the track, **Last focus · what came
+  of it** (the coaching history) and the **Data quality** card.
 - **Demo track** and the built-in replay drives, to try the app without a track.
 
 ## Not on iOS yet
@@ -35,7 +35,6 @@ version number. Session files (`.bdsession`) move between the two in both direct
 | Other GNSS receivers (NMEA over Bluetooth or Wi-Fi, BLE LNS, VBOX Sport, Dragy, RaceChrono DIY) | [Equipment](equipment.md) |
 | Bluetooth Classic receivers and OBD-II adapters | iOS does not allow them |
 | Backup and restore; sharing tracks between devices | [Export and sharing](export.md#backup) |
-| The **Data quality** card in the analysis | [Lap analysis](analysis.md#summary) |
 | The optimal-lap composite video | [Export and sharing](export.md) |
 | GoPro download over Wi-Fi | [Equipment](equipment.md) |
 | RaceBox diagnostics, the camera test and **Run setup again** (shown as "Not implemented yet") | [Settings](settings.md) |
