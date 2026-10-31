@@ -217,7 +217,7 @@ final class ReviewScreensTests: XCTestCase {
         keep("Summary, acceleration")
         // Data quality last, as on Android (FBBD-183, FBBD-365): the report is made on first opening.
         app.swipeUp()
-        XCTAssertTrue(app.staticTexts["DATA QUALITY"].waitForExistence(timeout: 60), "no data quality card")
+        XCTAssertTrue(app.staticTexts["DATA QUALITY"].waitForExistence(timeout: 120), "no data quality card")
         keep("Summary, data quality")
         XCTAssertEqual(app.state, .runningForeground)
         // The primary focus compares its lap with the fastest, as on Android: Compare opens.

@@ -503,7 +503,9 @@ struct SummaryQualityCard: View {
     @State private var ui: QualityUi?
 
     var body: some View {
-        Group {
+        // A container that is always there, unlike a Group, which hands its .task to its children and
+        // so would never load the report while it shows none.
+        VStack(spacing: 0) {
             if let ui {
                 Card {
                     HStack {
