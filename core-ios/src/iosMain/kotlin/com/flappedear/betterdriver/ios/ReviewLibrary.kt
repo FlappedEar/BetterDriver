@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.DayPlanStore
 import com.flappedear.betterdriver.analysis.line.LinePlan
@@ -28,6 +29,7 @@ import com.flappedear.betterdriver.coach.card
 import com.flappedear.betterdriver.coach.notSaid
 import com.flappedear.betterdriver.coach.rememberCueCounts
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
+import com.flappedear.betterdriver.feature.analysis.CoachingCardUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
@@ -40,6 +42,7 @@ import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.circuits.CircuitListException
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackJson
+import com.flappedear.betterdriver.timing.track.TrackRevision
 import com.flappedear.betterdriver.transfer.ReceivedBundle
 import com.flappedear.betterdriver.transfer.SessionInbox
 import com.flappedear.betterdriver.transfer.SessionOutbox
@@ -80,8 +83,11 @@ class ReviewLibrary(base: String) {
     private val coachPicks = CoachPicksStore(coachPicksDir(base))
     private val coachPickLock = NSLock()
 
-    /** The progression at each track (FBBD-181), its sessions' records kept while the app runs. */
-    val progressions = TrackProgressions(store, trackFiles)
+    /** The coaching history (FBBD-180), kept as Android keeps it: one record per analysed session. */
+    private val history = CoachingHistoryStore(coachingHistoryDir(base))
+
+    /** The progression at each track (FBBD-181), read from and kept in the coaching history. */
+    val progressions = TrackProgressions(store, trackFiles, history)
 
     /** Every session with readable metadata, newest first; one still recording is left out. */
     fun sessions(): List<StoredSession> = store.list().filter { it.state != SessionState.RECORDING }
@@ -114,12 +120,16 @@ class ReviewLibrary(base: String) {
      * out: the targets come from the other sessions at its track (LineSessions on Android). The
      * result keeps the analysis, so Compare can pick another lap without reading the session again.
      * The session's line plan is kept for the track's next coached session, as Android keeps it
-     * (FBBD-333); a plan that cannot be saved only leaves the coach without one.
+     * (FBBD-333); a plan that cannot be saved only leaves the coach without one. The track's corner
+     * identity the analysis makes is stored, as Android's analysis stores it (FBBD-172).
      */
     @Throws(Exception::class)
     fun review(id: String): ReviewedSession {
         val saved = tracks()
-        val reviewed = reviewSession(store.read(id), saved) { track -> lineSessions(id, track, saved) }
+        val keep = { trackId: String, expected: TrackRevision?, made: TrackRevision ->
+            trackFiles.updateIdentity(trackId, expected, made)?.identity
+        }
+        val reviewed = reviewSession(store.read(id), saved, keep) { track -> lineSessions(id, track, saved) }
         reviewed.linePlan?.let(::savePlan)
         return reviewed
     }
@@ -131,6 +141,21 @@ class ReviewLibrary(base: String) {
             plans.save(plan)
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * The summary's coaching history card of [reviewed] (session [id]), as Android's (FBBD-180,
+     * FBBD-310, FBBD-364): its record is kept in the coaching history, then what came of the focus it
+     * worked on and whether earlier gains held are worded by the shared core. Call after [review],
+     * which keeps the session's line plan. Empty when there is nothing to show or it cannot be read.
+     * Off the main thread.
+     */
+    // A history that cannot be read or kept only leaves the card out.
+    @Suppress("TooGenericExceptionCaught")
+    fun coaching(reviewed: ReviewedSession, id: String): CoachingCardUi = try {
+        sessionCoachingCard(reviewed, id, history, plans) { trackFiles.get(it) != null }
+    } catch (_: Exception) {
+        CoachingCardUi.None
     }
 
     /**

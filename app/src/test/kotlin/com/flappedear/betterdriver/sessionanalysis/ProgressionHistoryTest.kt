@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.sessionanalysis
 
+import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.recorder.ImportOrigin
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.sessionanalysis.AddResult.Added

@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -70,6 +71,9 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     private val lock = NSRecursiveLock()
     private val store = iosTrackStore(tracksDir)
 
+    /** The coaching history (FBBD-180) beside the tracks; it goes with its track, as on Android. */
+    private val history = CoachingHistoryStore(coachingHistoryDir(tracksDir.substringBeforeLast('/')))
+
     /** Every readable track, by name. */
     fun list(): List<Track> = locked { TrackFiles.read(store) }
 
@@ -136,11 +140,15 @@ class TrackLibrary(private val tracksDir: String, private val sessionsDir: Strin
     /** Whether [name], trimmed, can name a track. */
     fun validName(name: String): Boolean = name.trim().let { it.isNotEmpty() && it.length <= Track.MaxNameChars }
 
-    /** Deletes track [id]; sessions recorded there keep their data and track name. True when it is gone. */
+    /**
+     * Deletes track [id] with its coaching history, as Android, so a track made again under its id
+     * never inherits it; sessions recorded there keep their data and track name. True when it is gone.
+     */
     @Suppress("TooGenericExceptionCaught") // A delete that fails says so, never a crash.
     fun delete(id: String): Boolean = locked {
         if (!validId(id)) return@locked false
         try {
+            if (!history.delete(id)) return@locked false
             store.delete(id)
             store.get(id) == null
         } catch (_: Exception) {

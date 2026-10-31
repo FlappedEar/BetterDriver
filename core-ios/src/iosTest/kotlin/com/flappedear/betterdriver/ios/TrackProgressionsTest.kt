@@ -10,6 +10,7 @@ import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -87,6 +88,33 @@ class TrackProgressionsTest {
         NSFileManager.defaultManager.removeItemAtPath("$base/tracks", null)
         assertNull(library.progressions.trackOf(id))
         assertNull(library.progress(library.review(id), id))
+    }
+
+    @Test
+    fun theSummaryKeepsTheSessionInTheCoachingHistoryAsAndroid() {
+        val first = addJastrzab(StartUtcMillis)
+        val second = addJastrzab(StartUtcMillis + DayMillis)
+        // No focus was worked on and no gain checked yet: no card, but each session's record is kept
+        // where Android keeps it (FBBD-364), with the corners the track now keeps.
+        assertTrue(library.coaching(library.review(first), first).empty)
+        assertTrue(library.coaching(library.review(second), second).empty)
+        val history = "$base/coach/history/jastrzab"
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$history/$first.json"))
+        assertTrue(NSFileManager.defaultManager.fileExistsAtPath("$history/$second.json"))
+        assertNotNull(library.tracks().single { it.id == "jastrzab" }.identity)
+        // The progression reads the kept records, so a library opened again reads no session.
+        val again = ReviewLibrary(base)
+        val track = assertNotNull(again.progressions.trackOf(second))
+        var read = 0
+        again.progressions.addNewest(track.id, {}) { read++ }
+        assertEquals(0, read)
+        val screen = again.progressions.screen(
+            track.id, track.name, ProgressionGrouping.Session, ProgressionPeriod.All, null, emptySet(), 0,
+        )
+        assertEquals(listOf(second, first), screen.points.map { it.key })
+        // The history goes with its track, as on Android.
+        assertTrue(TrackLibrary("$base/tracks", "$base/sessions").delete(track.id))
+        assertFalse(NSFileManager.defaultManager.fileExistsAtPath(history))
     }
 
     private companion object {

@@ -4,12 +4,13 @@ import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryAlgorithm
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
+import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.store.SessionState
-import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.recorder.store.SessionStore
+import com.flappedear.betterdriver.recorder.store.SessionSummary
 import com.flappedear.betterdriver.sharing.AppDataGate
 import com.flappedear.betterdriver.timing.track.TrackStore
 import java.util.Collections

@@ -24,10 +24,12 @@ import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.coaching.CoachedSession
 import com.flappedear.betterdriver.analysis.coaching.SessionCoaching
-import com.flappedear.betterdriver.analysis.line.LineProof
+import com.flappedear.betterdriver.analysis.coaching.lastFocusProof
+import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.compare.compareLaps
 import com.flappedear.betterdriver.analysis.data.TelemetrySession
 import com.flappedear.betterdriver.analysis.laps.LapSessionStatus
+import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.map.DriveMap
 import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.map.driveMap
@@ -43,10 +45,10 @@ import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CornerPick
-import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.linePlanStore
+import com.flappedear.betterdriver.coach.pickedOf
 import com.flappedear.betterdriver.coach.sessionFocusStore
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.feature.analysis.AccelerationUi
