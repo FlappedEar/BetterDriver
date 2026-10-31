@@ -1,6 +1,8 @@
 package com.flappedear.betterdriver.core.ble.hr
 
 import com.flappedear.betterdriver.core.JvmSynchronized
+import com.flappedear.betterdriver.core.ble.LinkState
+import com.flappedear.betterdriver.core.ble.logLink
 import com.flappedear.betterdriver.recorder.SampleSink
 import kotlin.concurrent.Volatile
 
@@ -62,6 +64,9 @@ class HeartRateSession(
     /** Whether data flowed since the last drop; a drop before any data is not a disconnect. */
     private var wasStreaming = false
 
+    /** As [wasStreaming], for the link's log lines: whether the last state logged was streaming. */
+    private var loggedStreaming = false
+
     fun start() = start(sink.nowMicros())
 
     /**
@@ -81,6 +86,21 @@ class HeartRateSession(
     @JvmSynchronized
     fun feed(bytes: ByteArray) {
         if (!offIfNotFound()) decoder.feed(bytes)
+    }
+
+    /**
+     * The strap link's new state [s], from the shared notify link on either platform (FBBD-358):
+     * logged, then [streaming], [reconnecting] or [connecting]. Nothing once the strap is off.
+     */
+    fun linkChanged(s: LinkState) {
+        if (offIfNotFound()) return
+        logLink(address, s, loggedStreaming)
+        when (s) {
+            is LinkState.Streaming -> streaming()
+            is LinkState.Reconnecting -> reconnecting(s.reason)
+            else -> connecting()
+        }
+        if (s is LinkState.Streaming || s is LinkState.Reconnecting) loggedStreaming = s is LinkState.Streaming
     }
 
     /** The link is connecting, before any data. */
