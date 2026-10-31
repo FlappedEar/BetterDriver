@@ -37,17 +37,25 @@ internal fun StatusDot(state: DeviceState, modifier: Modifier = Modifier) {
     Box(modifier.size(10.dp).background(color, CircleShape))
 }
 
-/** Screen title row, with an optional back button. */
+/** Screen title row, with an optional back button, or another button in its place ([navigation]). */
 @Composable
-internal fun ShellTopBar(title: String, onBack: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
+internal fun ShellTopBar(
+    title: String,
+    onBack: (() -> Unit)? = null,
+    navigation: (@Composable () -> Unit)? = null,
+    actions: @Composable RowScope.() -> Unit = {},
+) {
     Row(
-        Modifier.fillMaxWidth().height(56.dp).padding(horizontal = if (onBack == null) 20.dp else 4.dp),
+        Modifier.fillMaxWidth().height(56.dp)
+            .padding(horizontal = if (onBack == null && navigation == null) 20.dp else 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
             IconButton(onClick = onBack) {
                 Icon(ShellIcons.Back, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+        } else {
+            navigation?.invoke()
         }
         Text(
             title,

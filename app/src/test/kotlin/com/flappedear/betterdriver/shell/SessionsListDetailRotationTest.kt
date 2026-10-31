@@ -91,7 +91,7 @@ class SessionsListDetailRotationTest {
             layout = layout,
             shown = "a",
             onClose = {},
-            detail = { _, _, _ -> Counter("detail") },
+            detail = { _, _, _, _ -> Counter("detail") },
             list = { m -> Column(m) { Counter("list") } },
         )
     }
