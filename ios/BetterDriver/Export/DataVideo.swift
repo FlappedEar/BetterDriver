@@ -145,42 +145,53 @@ enum DataVideoSaver {
 
 #if DEBUG
 /// For the UI tests (-demoVideo): ten seconds of phone video in each session, a minute in, so Video
-/// with data has something to show on the simulator, which has no camera.
+/// with data has something to show on the simulator, which has no camera. -demoVideoLong films all of
+/// each demo session instead (90 min at one frame a second), so its composite laps are on video (FBBD-370).
 enum DataVideoDemo {
-    static func add(sessionsRoot: String) {
+    static func add(sessionsRoot: String, long: Bool = false) {
         let root = URL(fileURLWithPath: sessionsRoot, isDirectory: true)
         let ids = (try? FileManager.default.contentsOfDirectory(atPath: sessionsRoot)) ?? []
+        let seconds = long ? 5_400 : 10
+        let offset = long ? 0 : 60_000_000
+        // One file, written once and copied into each session.
+        let source = FileManager.default.temporaryDirectory.appendingPathComponent("phone_demo.mp4")
+        guard long ? write(source, seconds: seconds, fps: 1, width: 320, height: 180, upright: false)
+            : write(source, seconds: seconds) else { return }
         for id in ids {
             let dir = root.appendingPathComponent(id, isDirectory: true).appendingPathComponent("video", isDirectory: true)
+            let file = dir.appendingPathComponent("phone_demo.mp4")
+            try? FileManager.default.removeItem(at: file)
             guard (try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)) != nil,
-                  write(dir.appendingPathComponent("phone_demo.mp4"), seconds: 10) else { continue }
+                  (try? FileManager.default.copyItem(at: source, to: file)) != nil else { continue }
             let index = """
             {"version":1,"clips":[{"fileName":"phone_demo.mp4","kind":"PHONE","sourceId":"phone",\
-            "sessionOffsetUs":60000000,"alignment":{"method":"CAPTURE_CLOCK","uncertaintyUs":0},\
-            "durationUs":10000000,"status":"LOCAL"}]}
+            "sessionOffsetUs":\(offset),"alignment":{"method":"CAPTURE_CLOCK","uncertaintyUs":0},\
+            "durationUs":\(Int64(seconds) * 1_000_000),"status":"LOCAL"}]}
             """
             try? index.write(to: dir.appendingPathComponent("clips.json"), atomically: true, encoding: .utf8)
         }
     }
 
-    /// A grey 640×360 H.264 file of [seconds] at 30 fps, tagged as turned upright (90°) as the
+    /// A grey [width]×[height] H.264 file of [seconds] at [fps], tagged as turned upright (90°) as the
     /// iPhone's files were before landscape was forced: it still plays landscape.
-    static func write(_ url: URL, seconds: Int, upright: Bool = true) -> Bool {
+    static func write(
+        _ url: URL, seconds: Int, fps: Int = 30, width: Int = 640, height: Int = 360, upright: Bool = true
+    ) -> Bool {
         try? FileManager.default.removeItem(at: url)
         guard let writer = try? AVAssetWriter(outputURL: url, fileType: .mp4) else { return false }
         let input = AVAssetWriterInput(mediaType: .video, outputSettings: [
-            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: 640, AVVideoHeightKey: 360,
+            AVVideoCodecKey: AVVideoCodecType.h264, AVVideoWidthKey: width, AVVideoHeightKey: height,
         ])
         let adaptor = AVAssetWriterInputPixelBufferAdaptor(assetWriterInput: input, sourcePixelBufferAttributes: [
             kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey as String: 640, kCVPixelBufferHeightKey as String: 360,
+            kCVPixelBufferWidthKey as String: width, kCVPixelBufferHeightKey as String: height,
         ])
         if upright { input.transform = CGAffineTransform(rotationAngle: .pi / 2) }
         guard writer.canAdd(input) else { return false }
         writer.add(input)
         guard writer.startWriting() else { return false }
         writer.startSession(atSourceTime: .zero)
-        for i in 0 ..< seconds * 30 {
+        for i in 0 ..< seconds * fps {
             while !input.isReadyForMoreMediaData { Thread.sleep(forTimeInterval: 0.002) }
             guard let pool = adaptor.pixelBufferPool else { return false }
             var buffer: CVPixelBuffer?
@@ -191,7 +202,9 @@ enum DataVideoDemo {
                 memset(base, Int32(60 + i % 60), CVPixelBufferGetDataSize(buffer))
             }
             CVPixelBufferUnlockBaseAddress(buffer, [])
-            guard adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: 30)) else { return false }
+            guard adaptor.append(buffer, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: CMTimeScale(fps))) else {
+                return false
+            }
         }
         input.markAsFinished()
         let done = DispatchSemaphore(value: 0)

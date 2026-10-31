@@ -25,6 +25,7 @@ import androidx.media3.transformer.ProgressHolder
 import androidx.media3.transformer.Transformer
 import com.flappedear.betterdriver.analysis.analyzeSession
 import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
+import com.flappedear.betterdriver.analysis.optimal.OptimalVideo
 import com.flappedear.betterdriver.analysis.recorded.measuredG
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.feature.review.SessionVideo

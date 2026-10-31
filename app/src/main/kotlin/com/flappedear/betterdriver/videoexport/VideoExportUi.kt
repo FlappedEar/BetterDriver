@@ -1,6 +1,7 @@
 package com.flappedear.betterdriver.videoexport
 
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
+import com.flappedear.betterdriver.analysis.optimal.OptimalOption
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.timing.live.LapKind

@@ -2,8 +2,10 @@ import AVKit
 import BetterDriverCore
 import SwiftUI
 
-/// What Video with data shows (FBBD-152), as Android's sheet: the whole session or one lap, each lap
-/// with its time and the best lap chosen to start with; laps the camera missed cannot be chosen.
+/// What Video with data shows (FBBD-152), as Android's sheet: the whole session, the composite laps
+/// (realistic optimal and raw theoretical best, FBBD-163/178, iOS FBBD-370: saved only, as on Android)
+/// or one lap, each lap with its time and the best lap chosen to start with; laps the camera missed
+/// cannot be chosen.
 /// A lap starts a few seconds before its line and ends as long after (FBBD-346, FlappedEar Overlays'
 /// Handle: 5 to 8 s, 6 to start with). Watch hands it with the overlay to [onWatch], which closes the sheet
 /// and plays it full screen in landscape (a player over the sheet lost its way when the phone turned);
@@ -62,7 +64,7 @@ struct DataVideoPanel: View {
                 DimText(failure, color: TrackColors.loss)
             } else {
                 list
-                if let picked, picked != 0 { handleRow }
+                if let picked, picked > 0 { handleRow }
             }
             Spacer(minLength: 0)
             if let progress {
@@ -86,7 +88,8 @@ struct DataVideoPanel: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Palette.accent)
                     .foregroundStyle(Palette.onAccent)
-                    .disabled(picked == nil || progress != nil)
+                    // A composite lap is only saved, as on Android: its overlay is the composite's own.
+                    .disabled(picked == nil || progress != nil || isComposite)
                     .accessibilityIdentifier("dataVideoWatch")
             }
         }
@@ -98,6 +101,11 @@ struct DataVideoPanel: View {
         .sheet(item: $saved) { file in
             SaveToFiles(url: file.url) { saved = nil }
         }
+    }
+
+    /// The picked part is a composite lap.
+    private var isComposite: Bool {
+        picked.map { DataVideoSession.companion.isComposite(part: $0) } ?? false
     }
 
     private var list: some View {
@@ -157,7 +165,8 @@ struct DataVideoPanel: View {
             let (s, d) = opened
             session = s
             durations = d
-            parts = s.parts(durations: d)
+            // The composite laps need the lap analysis: read off the main queue.
+            parts = await Task.detached(priority: .userInitiated) { s.parts(durations: d) }.value
             // The best lap when it is on video, else the whole video, as on Android.
             picked = parts.first { $0.best && $0.enabled }?.part ?? parts.first { $0.part == 0 && $0.enabled }?.part
             if parts.allSatisfy({ !$0.enabled }) { failure = "This session's video could not be read." }

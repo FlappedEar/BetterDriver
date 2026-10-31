@@ -5,7 +5,14 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalLap
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapResult
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapUnavailable
 import com.flappedear.betterdriver.analysis.optimal.OptimalPart
+import com.flappedear.betterdriver.analysis.optimal.PartOnVideo
+import com.flappedear.betterdriver.analysis.optimal.kindDescription
+import com.flappedear.betterdriver.analysis.optimal.kindName
+import com.flappedear.betterdriver.analysis.optimal.missingText
 import com.flappedear.betterdriver.analysis.optimal.optimalClipPlan
+import com.flappedear.betterdriver.analysis.optimal.optimalOption
+import com.flappedear.betterdriver.analysis.optimal.optimalOptionText
+import com.flappedear.betterdriver.analysis.optimal.optimalPartText
 import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import org.junit.Assert.assertEquals

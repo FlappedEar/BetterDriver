@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.overlay.Box
@@ -45,14 +46,17 @@ class HudRadarDot(val g: GForce, val fade: Float)
 /**
  * What the Tech HUD shows at one moment (FBBD-347), with the texts as Android's TechHudPainter writes
  * them; a value the session has none of is null, its text a dash. [trail] is the map's trail of the
- * lap so far, in runs without gaps; [radar] the G radar's last second.
+ * lap so far, in runs without gaps; [radar] the G radar's last second. With [optimal] (a composite
+ * lap's video, FBBD-163, iOS FBBD-370) the lap tile shows the lap the part comes from over the
+ * theoretical lap's running time and its gain on the fastest lap, as Android's TechHudPainter.
  */
 class HudMoment internal constructor(
-    frame: OverlayFrame,
+    private val frame: OverlayFrame,
     val trail: List<List<Xy>>,
     val radar: List<HudRadarDot>,
-    bestLapMicros: Long?,
-    pointToPoint: Boolean,
+    private val bestLapMicros: Long?,
+    private val pointToPoint: Boolean,
+    private val optimal: OptimalOverlayText? = null,
 ) {
     private val car = frame.car
     private val lap = frame.lap
@@ -69,16 +73,35 @@ class HudMoment internal constructor(
 
     /** "LAP" or "RUN" (a point-to-point track, FBBD-155). */
     val lapCaption: String = if (pointToPoint) "RUN" else "LAP"
+
+    /**
+     * The lap tile's caption, longest first: the painter draws the first that fits. [lapCaption] alone,
+     * or for a composite lap "REALISTIC OPTIMAL · LAP 5 · CORNER 3", "LAP 5 · CORNER 3", "LAP 5".
+     */
+    val captions: List<String> = optimal?.captions ?: listOf(lapCaption)
+
+    /** A composite lap's tile has no lap number in amber: its caption names the lap. */
+    val composite: Boolean = optimal != null
     val lapNumber: String = lap?.number?.toString() ?: HudDash
-    val lapTimeText: String = lap?.let { lapTime(it.lapMicros) } ?: NoTime
+    val lapTimeText: String = when {
+        optimal != null -> lapTime(optimal.theoreticalMicros)
+        lap != null -> lapTime(lap.lapMicros)
+        else -> NoTime
+    }
 
     /** A single-lap export after the line (FBBD-346): the final time held, in green. */
-    val lapFinished: Boolean = lap?.phase == LapPhase.Finished
+    val lapFinished: Boolean = optimal == null && lap?.phase == LapPhase.Finished
     val bestText: String = bestLapMicros?.let(::lapTime) ?: HudDash
 
-    /** The live delta to the best lap ("-0.123"); null without one. */
-    val deltaText: String? = lap?.deltaMicros?.let { lapDelta(it / MicrosPerSecond) }
-    val deltaAhead: Boolean = (lap?.deltaMicros ?: 0) <= 0
+    /** The delta to the best lap ("-0.123"), live or a composite lap's gain so far; null without one. */
+    private val deltaSeconds: Double? =
+        if (optimal != null) optimal.deltaSeconds else lap?.deltaMicros?.let { it / MicrosPerSecond }
+    val deltaText: String? = deltaSeconds?.let(::lapDelta)
+    val deltaAhead: Boolean = (deltaSeconds ?: 0.0) <= 0.0
+
+    /** This moment with a composite lap's tile (FBBD-370). */
+    internal fun asComposite(text: OptimalOverlayText): HudMoment =
+        HudMoment(frame, trail, radar, bestLapMicros, pointToPoint, text)
 
     /** "LAP 7" over the map; null outside a lap. */
     val mapLap: String? = lap?.let { "$lapCaption ${it.number}" }
