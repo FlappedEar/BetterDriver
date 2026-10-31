@@ -25,6 +25,7 @@ import com.flappedear.betterdriver.analysis.segments.LineConsensus
 import com.flappedear.betterdriver.analysis.segments.PopulationLap
 import com.flappedear.betterdriver.analysis.segments.SegmentReview
 import com.flappedear.betterdriver.analysis.segments.SegmentReviewSmoothingMeters
+import com.flappedear.betterdriver.analysis.segments.TheoreticalBestIncompleteCoverage
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestLap
 import com.flappedear.betterdriver.analysis.segments.TheoreticalBestSummary
 import com.flappedear.betterdriver.analysis.segments.TimeLossRanking
@@ -173,7 +174,17 @@ private fun analyzeLaps(
     }
     val eligible = laps.timedLaps.indices.filter { laps.timedLaps[it].referenceEligible }
     val eligibleTimes = eligible.map { timed.times[it] }
-    val best = computeTheoreticalBest(segments, eligibleTimes)
+    // A segment the fastest lap has no time through takes its time from a slower lap (at 1 Hz the
+    // last metres before the line are often uncovered, FBBD-396): a total slower than the fastest
+    // lap is no theoretical best, so it is withheld as incomplete.
+    val best = computeTheoreticalBest(segments, eligibleTimes).let { b ->
+        val total = b.totalSeconds
+        if (total != null && total > fastest.durationSeconds + OptimalAboveFastestSeconds) {
+            b.copy(totalSeconds = null, unavailableReason = TheoreticalBestIncompleteCoverage)
+        } else {
+            b
+        }
+    }
     val fastestTimes = timed.times[fastestIndex]
     val losses = rankTimeLosses(
         segments,
@@ -199,13 +210,20 @@ private fun analyzeLaps(
         laps, fastest.number, review, consensus, segments, timed.axis, timed.times, timed.traces, best,
         publishTheoreticalBest(segments, best, eligibleTimes, fastestTimes), losses, cornerMetrics, variability,
         identity = identified?.identity,
+        // The fastest lap is itself one way to combine the laps, so a slower total is not one.
         realisticOptimal = realisticOptimal(
             session, timed.axis, segments, laps.timedLaps, timed.times, timed.traces, fastestIndex,
-        ),
+        )?.takeIf { it.totalSeconds <= fastest.durationSeconds + OptimalAboveFastestSeconds },
         robustness = robustness,
         drivingStates = states,
     )
 }
+
+/**
+ * How much slower than the fastest lap a theoretical best or realistic optimal may add up to, from
+ * timing its segments on the axis rather than at the line, before it is withheld (FBBD-396).
+ */
+private const val OptimalAboveFastestSeconds = 0.05
 
 /** Metres either side the line's curvature is smoothed over for the driving states' turning. */
 private const val DrivingStatesSmoothingMeters = 20.0

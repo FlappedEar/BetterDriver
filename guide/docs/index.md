@@ -45,11 +45,11 @@ try timing and coaching anywhere. See [Try it without a track](demo.md).
 
 ## About this guide
 
-This guide describes **BetterDriver 1.22.0**, the latest Android release, and the iPhone and iPad
+This guide describes **BetterDriver 1.22.1**, the latest Android release, and the iPhone and iPad
 app on TestFlight. It marks Android features that are merged but not yet released like this:
 
 !!! note "Not released yet"
-    Merged after 1.22.0. It ships in the next release.
+    Merged after 1.22.1. It ships in the next release.
 
 The pictures are the app's own screenshot tests, drawn from test data, so the numbers in them are
 examples. Screen and button names in **bold** are the app's own words.
