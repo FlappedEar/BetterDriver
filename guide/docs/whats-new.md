@@ -22,7 +22,7 @@ The full notes of every release are on
   [Try it without a track](demo.md).
 - iPhone and iPad: **Last focus · what came of it** on the Summary, as on Android. See
   [Getting faster](getting-faster.md).
-- A heart-rate strap reconnects on the iPhone as on Android.
+- A heart-rate strap and a RaceBox reconnect on the iPhone as on Android.
 
 ## 1.23.0
 
