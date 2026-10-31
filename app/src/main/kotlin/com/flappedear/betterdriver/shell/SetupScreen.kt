@@ -33,6 +33,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.setup.FirstRunSetup
+import com.flappedear.betterdriver.setup.FirstRunStepKind
+import com.flappedear.betterdriver.setup.PermissionsState
 import com.flappedear.betterdriver.setup.Setup
 
 /**
@@ -51,41 +54,27 @@ fun SetupScreen(
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val active = setup.active()
-    val permissions = permissionsStep()
-    val steps = listOf(
-        permissions,
-        SetupStep(
-            "GNSS receiver",
-            active.gnss?.name ?: "Needed for lap timing",
-            done = active.gnss != null,
-            action = if (active.gnss == null) "Add" else null,
-            onAction = onAddReceiver,
-        ),
-        SetupStep(
-            "Cameras",
-            active.cameras.joinToString(", ") { it.name }.ifEmpty { "None (optional)" },
-            done = active.cameras.isNotEmpty(),
-            action = "Set up",
-            onAction = onCameras,
-        ),
-        SetupStep(
-            "Car",
-            active.car?.name ?: "Optional",
-            done = active.car != null,
-            action = if (setup.cars.isEmpty()) "Add" else "Choose",
-            onAction = if (setup.cars.isEmpty()) onAddCar else onCar,
-        ),
-    )
-    SetupChecklist(steps, canFinish = permissions.done, onDone = onDone, modifier = modifier)
+    val permissions = permissionsState()
+    val steps = FirstRunSetup.steps(setup, permissions.state).map { step ->
+        val onAction = when (step.kind) {
+            FirstRunStepKind.PERMISSIONS -> permissions.onAction
+            FirstRunStepKind.GNSS -> onAddReceiver
+            FirstRunStepKind.CAMERAS -> onCameras
+            FirstRunStepKind.CAR -> if (setup.cars.isEmpty()) onAddCar else onCar
+        }
+        SetupStep(step.title, step.detail, step.done, step.action, step.notes, onAction)
+    }
+    SetupChecklist(steps, canFinish = permissions.state.requiredGranted, onDone = onDone, modifier = modifier)
 }
+
+private class PermissionsStep(val state: PermissionsState, val onAction: () -> Unit)
 
 /**
  * The permissions step: done once the required ones are granted. After the dialog has answered,
  * each denied permission says what will not work (FBBD-35).
  */
 @Composable
-private fun permissionsStep(): SetupStep {
+private fun permissionsState(): PermissionsStep {
     val context = LocalContext.current
     val required = remember { requiredPermissions() }
     val all = remember { required + optionalPermissions() }
@@ -111,18 +100,9 @@ private fun permissionsStep(): SetupStep {
         if (allGranted) blocked = false
         onPauseOrDispose {}
     }
-    return SetupStep(
-        "Permissions",
-        "Location and nearby devices · camera, mic and notifications optional",
-        done = granted,
-        action = when {
-            blocked -> "Settings"
-            allGranted -> null
-            else -> "Allow"
-        },
-        notes = denied.map { it.deniedLine() },
-        onAction = { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) },
-    )
+    return PermissionsStep(
+        PermissionsState(granted, allGranted, blocked, denied.map { it.line }),
+    ) { if (blocked) context.openAppSettings() else launcher.launch(all.toTypedArray()) }
 }
 
 @Composable
@@ -133,20 +113,20 @@ internal fun SetupChecklist(
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxSize()) {
-        ShellTopBar("Set up")
+        ShellTopBar(FirstRunSetup.TITLE)
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            DimText("${steps.count { it.done }} of ${steps.size} done. You can start without the optional steps.")
+            DimText(FirstRunSetup.summary(steps.count { it.done }, steps.size))
             steps.forEach { SetupRow(it) }
         }
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Button(onClick = onDone, enabled = canFinish, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                Text("Done", style = MaterialTheme.typography.titleMedium)
+                Text(FirstRunSetup.DONE, style = MaterialTheme.typography.titleMedium)
             }
             if (!canFinish) {
-                DimText("Allow location and nearby devices first.", Modifier.align(Alignment.CenterHorizontally))
+                DimText(FirstRunSetup.PERMISSIONS_FIRST, Modifier.align(Alignment.CenterHorizontally))
             }
         }
     }

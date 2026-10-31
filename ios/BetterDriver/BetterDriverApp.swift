@@ -8,6 +8,8 @@ struct BetterDriverApp: App {
 
     init() {
         UITestMode.resetIfAsked()
+        // Before Settings reads setup.json: an install from before the checklist counts as set up.
+        FirstRunGate.shared.decideAtLaunch()
     }
 
     var body: some Scene {
