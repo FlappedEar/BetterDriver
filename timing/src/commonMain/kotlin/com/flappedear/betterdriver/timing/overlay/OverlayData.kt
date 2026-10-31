@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.timing.gear.DriveSample
+import com.flappedear.betterdriver.timing.gear.GearTracker
 import com.flappedear.betterdriver.timing.gear.Gearbox
 import com.flappedear.betterdriver.timing.gear.fitGearbox
 import com.flappedear.betterdriver.timing.geo.GeoPoint
@@ -101,6 +102,10 @@ class OverlayData(
      */
     val gearbox: Gearbox?
 
+    /** The gear from each engine speed reading on, as [GearTracker] reads it in time order (0: none). */
+    private val gearTimes: LongArray
+    private val gearSteps: IntArray
+
     /** The car's values this session has samples of (FBBD-347): the overlay leaves out the rest. */
     val carValues: Set<CarValue> get() = car.keys
 
@@ -150,7 +155,15 @@ class OverlayData(
         }
         val ids = carChannelIds(channels)
         car = carSeries(sorted, ids)
-        gearbox = ids[CarValue.Rpm]?.let { fitGearbox(listOf(driveSamples(sorted, it, speed))) }
+        val drive = ids[CarValue.Rpm]?.let { driveSamples(sorted, it, speed) }.orEmpty()
+        gearbox = drive.takeIf { it.isNotEmpty() }?.let { fitGearbox(listOf(it)) }
+        val tracker = gearbox?.let(::GearTracker)
+        val tracked = if (tracker == null) emptyList() else drive.map { d ->
+            val t = (d.tSeconds * MicrosPerSecond).toLong()
+            t to (tracker.next(t, d.rpm ?: 0.0, d.speedMps) ?: 0)
+        }
+        gearTimes = LongArray(tracked.size) { tracked[it].first }
+        gearSteps = IntArray(tracked.size) { tracked[it].second }
     }
 
     /** The G at [sessionMicros], as [at] has it; the radar's trail reads it back in time. */
@@ -195,8 +208,7 @@ class OverlayData(
     private fun carAt(t: Long): CarFrame {
         fun v(value: CarValue) = car[value]?.at(t)
         val rpm = v(CarValue.Rpm)
-        val kmh = speed.at(t)
-        val gear = if (rpm != null && kmh != null) gearbox?.gearAt(rpm, kmh / KmhPerMs) else null
+        val gear = gearAt(t)
         return CarFrame(
             rpm = rpm,
             gear = gear,
@@ -211,6 +223,18 @@ class OverlayData(
             tyreTemps = CarValue.TyreTemps.map(::v),
             tyrePressures = CarValue.TyrePressures.map(::v),
         )
+    }
+
+    /**
+     * The gear at [t]: held through the converter's slip and changed where engine speed steps to
+     * another gear, as the Gear tile reads it; null standing or where engine speed is missing.
+     */
+    @Suppress("ReturnCount")
+    private fun gearAt(t: Long): Int? {
+        if (gearTimes.isEmpty() || t < gearTimes[0]) return null
+        val i = floorIndex(gearTimes, t)
+        if (t - gearTimes[i] > GearTracker.MaxGapMicros) return null
+        return gearSteps[i].takeIf { it > 0 }
     }
 
     fun at(sessionMicros: Long): OverlayFrame {
