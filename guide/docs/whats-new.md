@@ -13,6 +13,17 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.24.0
+
+- An Android session with video gets a **Video** tab after **Car**, as on the iPhone and iPad:
+  pick the whole session, a composite lap or a lap, then **Watch** or **Save video**. See
+  [the Video tab](analysis.md#the-video-tab).
+- iPhone: **Demo track** and the built-in replay drives, the same laps as Android. See
+  [Try it without a track](demo.md).
+- iPhone and iPad: **Last focus · what came of it** and the **Data quality** card on the Summary,
+  as on Android. See [Getting faster](getting-faster.md) and [Lap analysis](analysis.md#summary).
+- A heart-rate strap and a RaceBox reconnect on the iPhone as on Android.
+
 ## 1.23.0
 
 - **Gear** can be picked as a track screen tile (Settings › Track screen), worked out from RPM and
