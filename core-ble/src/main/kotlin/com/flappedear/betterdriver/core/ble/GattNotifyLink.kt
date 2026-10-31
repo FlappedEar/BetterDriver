@@ -155,6 +155,9 @@ class GattNotifyLink(
                 ?.takeIf { it.isEnabled }?.getRemoteDevice(address)?.let(::bondName)
         } catch (_: IllegalArgumentException) {
             null
+        } catch (_: SecurityException) {
+            // No Bluetooth permission: open() reports it as the failure.
+            null
         }
     }
 

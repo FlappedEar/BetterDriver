@@ -98,6 +98,8 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         watch = nil
         if central?.isScanning == true { central?.stopScan() }
         core?.stop()
+        // The core holds this link as its IO: dropping it here lets a finished recording go.
+        core = nil
         if let p = peripheral { central?.cancelPeripheralConnection(p) }
         peripheral = nil
     }
