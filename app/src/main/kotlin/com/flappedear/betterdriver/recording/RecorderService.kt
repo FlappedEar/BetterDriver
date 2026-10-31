@@ -10,7 +10,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
-import com.flappedear.betterdriver.analysis.quality.logLines
+import com.flappedear.betterdriver.analysis.quality.logQuality
 import com.flappedear.betterdriver.coach.CoachLink
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
@@ -32,7 +32,6 @@ import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveFixAge
 import com.flappedear.betterdriver.recorder.live.LiveTracker
-import com.flappedear.betterdriver.recorder.log.CheckLog
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLog
@@ -459,7 +458,7 @@ class RecorderService : Service() {
          */
         private fun logQuality(context: Context, control: Executor, id: String) = control.execute {
             val report = qualityReports(context).load(id) ?: return@execute
-            report.logLines().forEach { DebugLog.forSession(id, CheckLog.QUALITY, it) }
+            logQuality(id, report)
         }
 
         /** What a restart after this process is killed records again (START_STICKY). Main thread. */

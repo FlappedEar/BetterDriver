@@ -493,3 +493,48 @@ private struct SummaryRunTime: View {
             .frame(width: 72, alignment: .trailing)
     }
 }
+
+/// Data quality (FBBD-183, FBBD-365), as Android's card: how many of the session's checks passed,
+/// failed or could not be measured, with each failure, its value and its FBBD keys. "≈" marks a value
+/// worked out by a heuristic or an estimate rather than read from the data. The report is made the
+/// first time the session is opened, so the card comes in on its own.
+struct SummaryQualityCard: View {
+    let sessionId: String
+    @State private var ui: QualityUi?
+
+    var body: some View {
+        // A container that is always there, unlike a Group, which hands its .task to its children and
+        // so would never load the report while it shows none.
+        VStack(spacing: 0) {
+            if let ui {
+                Card {
+                    HStack {
+                        SectionTitle("Data quality").frame(maxWidth: .infinity, alignment: .leading)
+                        Dim(
+                            "\(ui.passed) pass · \(ui.failed) fail · \(ui.notMeasured) not measured",
+                            color: ui.failed > 0 ? Palette.loss : Palette.onSurfaceVariant
+                        )
+                    }
+                    ForEach(Array(ui.failures.enumerated()), id: \.offset) { _, row in
+                        HStack {
+                            Text(row.label)
+                                .foregroundStyle(Palette.onBackground)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text((row.derived ? "≈" : "") + row.value)
+                                .fontWeight(.semibold)
+                                .foregroundStyle(Palette.loss)
+                                .multilineTextAlignment(.trailing)
+                        }
+                        if !row.keys.isEmpty { Dim(row.keys) }
+                    }
+                    Dim("Every check, with how its value was found, is in the shared log (Settings › Diagnostics).")
+                }
+                .accessibilityIdentifier("dataQuality")
+            }
+        }
+        .task(id: sessionId) {
+            let id = sessionId
+            ui = await Task.detached(priority: .utility) { ReviewBridge.quality(id: id) }.value
+        }
+    }
+}

@@ -54,8 +54,8 @@ private const val MaxErrorText = 500
  * queues; one lock keeps the live state consistent, and a failure there is logged in the session
  * and never stops the recording (FBBD-69). The live coach rides on it as on Android's recorder (FBBD-333).
  * The continuous log gets the recording's start, events, GNSS second by second, heart rate 10 s at a
- * time and its stop from the same shared listeners as on Android (FBBD-356), so one set of checks
- * reads both apps' logs.
+ * time and its stop from the same shared listeners as on Android (FBBD-356), and the session's quality
+ * report after the stop (FBBD-365), so one set of checks reads both apps' logs.
  */
 @Suppress("TooManyFunctions") // The recording's one Kotlin entry for the app: samples, screen, coach, stop.
 class LiveSession private constructor(
@@ -63,6 +63,7 @@ class LiveSession private constructor(
     private val tracker: LiveTracker,
     private val timing: SessionTiming,
     private val logs: List<RecorderListener>,
+    private val quality: SessionQualityReports,
 ) : SampleSink {
     private val lock = NSRecursiveLock()
     private var liveFailed = false
@@ -231,6 +232,9 @@ class LiveSession private constructor(
         }
     }
 
+    /** Waits for the quality report the end of the recording logs, for tests. */
+    internal fun awaitQuality() = quality.awaitLogged()
+
     private inline fun <T> guarded(body: () -> T): T {
         lock.lock()
         try {
@@ -312,8 +316,13 @@ class LiveSession private constructor(
                 session.event(TrackEvent.PROVISIONAL_KIND, TrackEvent.provisionalText(made))
             }) { found -> session.event(TrackEvent.KIND, TrackEvent.text(found)) }
             info.channels.forEach(tracker::onChannel)
-            session = LiveSession(recording, tracker, timing, logs)
+            session = LiveSession(recording, tracker, timing, logs, SessionQualityReports(sessionsDir, tracksDir))
             recording.onStorageLow = session::storageLow
+            // However the recording ends (the driver's stop, storage full), its quality report goes into
+            // the log off the recorder's thread, as Android's recorder service does at every end (FBBD-183).
+            // An end on a write error leaves the session to recovery, so it has no report yet.
+            val quality = session.quality
+            recording.onEnded = { quality.logAtStop(recording.id) }
             return session
         }
     }

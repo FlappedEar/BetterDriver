@@ -5,8 +5,8 @@ import com.flappedear.betterdriver.analysis.quality.QualityMetric
 import com.flappedear.betterdriver.analysis.quality.QualityReport
 import com.flappedear.betterdriver.analysis.quality.QualitySection
 import com.flappedear.betterdriver.analysis.quality.Verdict
-import org.junit.Assert.assertEquals
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
 
 class QualityUiTest {
     private fun metric(label: String, value: Double?, unit: String, verdict: Verdict, basis: Basis = Basis.MEASURED) =
