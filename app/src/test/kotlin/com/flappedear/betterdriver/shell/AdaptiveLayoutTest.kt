@@ -37,6 +37,10 @@ class AdaptiveLayoutTest {
         // Turned upright with a session open, the tablet keeps showing it.
         assertEquals(SessionsPanes.Detail, sessionsPanes(tabletUpright, shown = "a"))
         assertEquals(SessionsPanes.List, sessionsPanes(tabletUpright, shown = null))
+        // The list beside a session hidden: the session alone; with nothing picked the list shows.
+        assertEquals(SessionsPanes.Detail, sessionsPanes(tabletWide, shown = "a", listHidden = true))
+        assertEquals(SessionsPanes.ListAndDetail, sessionsPanes(tabletWide, shown = null, listHidden = true))
+        assertEquals(SessionsPanes.List, sessionsPanes(phone, shown = null, listHidden = true))
     }
 
     @Test

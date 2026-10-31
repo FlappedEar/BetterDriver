@@ -124,6 +124,7 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Diagnostics | Log lines: coach cues, audio route, output delay | ✅ | ✅ TF 1425, same tags and text as Android | Coach lines shared (CoachRun, FBBD-357); audio route and output delay lines per platform | FBBD-354, FBBD-357 | `log-android:CoachService` `log-android:CoachLink` `log-ios:CoachService` |
 | Look | Pitwall look for the whole app | ⚪ planned parked by Arek | ⚪ planned parked | — | FBBD-317 |  |
 | Look | App shell: bottom bar Drive, Sessions, Car, Settings | ✅ | ✅ | Twice (Compose / SwiftUI) |  | `ios-screen:RootView` |
+| Look | Tablet: session list beside the session, list button hides it and shows it again | ✅ | ✅ iPad | Twice (Compose / SwiftUI) | FBBD-40 |  |
 
 ## Screens
 | Screen | List | Order (Android) | iOS | Jira |

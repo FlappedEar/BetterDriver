@@ -12,8 +12,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -31,20 +36,30 @@ import com.flappedear.betterdriver.core.ui.layout.WidthClass
  * The list and each session's analysis keep their state (scroll, tab, compared lap) when the tablet
  * turns, as the panes rearrange (FBBD-323).
  *
- * [detail] gets the session, the size class of its pane, and its back action: none beside the list,
- * where the list stays in view.
+ * [detail] gets the session, the size class of its pane, its back action (none beside the list), and
+ * on a tablet the button that hides the list beside it, so the analysis takes the whole width, or
+ * shows it again (Arek 2026-10-31: the list was stuck beside the session). Closing the session shows
+ * the list again.
  */
 @Composable
 internal fun SessionsListDetail(
     layout: LayoutSize,
     shown: String?,
     onClose: () -> Unit,
-    detail: @Composable (id: String, pane: LayoutSize, onBack: (() -> Unit)?) -> Unit,
+    detail: @Composable (id: String, pane: LayoutSize, onBack: (() -> Unit)?, listToggle: SessionListToggle?) -> Unit,
     list: @Composable (Modifier) -> Unit,
 ) {
     val states = rememberSaveableStateHolder()
     BackHandler(enabled = shown != null, onBack = onClose)
-    val panes = sessionsPanes(layout, shown)
+    var listHidden by rememberSaveable { mutableStateOf(false) }
+    // A closed (or deleted) session leaves the list in view for the next pick.
+    LaunchedEffect(shown == null) { if (shown == null) listHidden = false }
+    val panes = sessionsPanes(layout, shown, listHidden)
+    val listToggle = if (layout.tablet && shown != null) {
+        SessionListToggle(hidden = listHidden) { listHidden = !listHidden }
+    } else {
+        null
+    }
     // Every arrangement composes each pane at the same place: saved state is found by its place, so
     // a pane moved elsewhere when the tablet turns would start over (FBBD-323).
     BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -68,7 +83,7 @@ internal fun SessionsListDetail(
                             PickSession()
                         } else {
                             states.SaveableStateProvider(detailKey(shown)) {
-                                detail(shown, pane, onClose.takeUnless { sideBySide })
+                                detail(shown, pane, onClose.takeUnless { sideBySide || listToggle != null }, listToggle)
                             }
                         }
                     }
@@ -104,7 +119,7 @@ private fun SessionsListDetailPreview() {
             layout = LayoutSize(WidthClass.Expanded, HeightClass.Medium),
             shown = null,
             onClose = {},
-            detail = { _, _, _ -> },
+            detail = { _, _, _, _ -> },
             list = { m -> Column(m) { ShellTopBar("Sessions") } },
         )
     }
