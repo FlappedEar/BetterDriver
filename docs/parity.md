@@ -98,8 +98,8 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 | Analysis | Track day page | ✅ 1.11.0 | ✅ | Shared analysis; UI per platform | FBBD-315 | `route:TrackDayPattern` `log-android:TrackDay` `ios-screen:TrackDayView` |
 | Analysis | Progression at a track | ✅ 0.3.9 | ✅ TF 1440 (#411) | Moved to shared core in #411 | FBBD-181 | `route:TrackProgressionPattern` `log-android:Progression` `ios-screen:ProgressionScreen` `ios-screen:ProgressionSheet` `ios-screen:ProgressionMetricView` |
 | Analysis | Coach review (each cue and whether the next pass improved) | ✅ | ✅ TF 1440 (#411) | Shared CueCards in #411 | FBBD-99 | `route:CueReviewPattern` `ios-screen:CoachReviewScreen` |
-| Analysis | Coaching history | ✅ 0.3.9 | ❌ | Store shared (CoachingHistoryStore commonMain, #421); iOS UI to do | FBBD-180, FBBD-364 | `log-android:CoachingHistory` |
-| Analysis | Loop proof: time won back in focus corners | ✅ 1.10.0 | 🟡 track day proof only; session won-back needs coaching history | Shared analysis | FBBD-310, FBBD-313, FBBD-364 |  |
+| Analysis | Coaching history | ✅ 0.3.9 | 🔵 Summary card + records kept as Android | Shared: CoachingHistoryStore (#421), keepCoachingHistory, rows and texts (CoachingRows, CoachingText); UI per platform | FBBD-180, FBBD-364 |  |
+| Analysis | Loop proof: time won back in focus corners | ✅ 1.10.0 | 🔵 track day and session won-back | Shared analysis (lastFocusProof, coachingCard) | FBBD-310, FBBD-313, FBBD-364 |  |
 | Analysis | Data quality card | ✅ 0.3.2 | ❌ log only | Quality checks shared (analysis/quality commonMain, #432); iOS card to do | FBBD-183, FBBD-365 | `log-android:QualityReports` |
 | Analysis | Provenance and confidence; driving states and coasting | ✅ 0.3.3, 0.3.9 | ✅ TF 1440 driving-states strip on Compare (#411) | Shared (driving-state names and keys in CompareModel, #411) | FBBD-174, FBBD-177, FBBD-175, FBBD-380 |  |
 | Video export | Watch a session's video with the data overlay | ✅ 1.15.0 | ✅ TF 1.16+ | Overlay geometry shared | FBBD-341 | `route:WatchVideoPattern` `log-android:WatchVideo` `ios-screen:DataVideoWatchPage` `ios-screen:DataVideoPlayerPage` |

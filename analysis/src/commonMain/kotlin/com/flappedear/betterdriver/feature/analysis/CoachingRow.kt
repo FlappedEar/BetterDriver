@@ -34,6 +34,13 @@ enum class CoachingStatus(val label: String) {
 
     /** No pass through it this session. */
     NotDriven("Not driven"),
+    ;
+
+    /** Whether it reads as a gain (shown green on both apps). */
+    val gain: Boolean get() = this == Learned || this == Improved || this == Faster || this == FasterNoCue
+
+    /** Whether it reads as a loss (shown red); neither: dim. */
+    val loss: Boolean get() = this == Lost || this == Slower
 }
 
 /**

@@ -2,11 +2,10 @@ package com.flappedear.betterdriver.analysis.coaching
 
 import com.flappedear.betterdriver.analysis.confidence.ConsistentLaps
 import com.flappedear.betterdriver.analysis.focus.FocusMetric
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZoneOffset
-import java.time.format.DateTimeFormatter
-import java.util.Locale
+import com.flappedear.betterdriver.analysis.progression.DayZone
+import com.flappedear.betterdriver.analysis.progression.ProgressionDay
+import com.flappedear.betterdriver.analysis.progression.dayMonthLabel
+import com.flappedear.betterdriver.format.fixed
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -14,7 +13,8 @@ import kotlin.math.roundToInt
 // The coaching history in words (FBBD-180), as the session summary shows it beside the next-session
 // focus. A number is said only where it is precise (every pass behind it graded High, its channel
 // measured, its unit known); otherwise the same sentence says it without the number. Pass counts are
-// said either way: they are not advice (FBBD-177).
+// said either way: they are not advice (FBBD-177). Common Kotlin: the Android and iOS summaries
+// say it the same (FBBD-364).
 
 /**
  * What came of [a] in its session, for example: "You worked on Corner 4 with the coach in this
@@ -53,7 +53,7 @@ fun attemptText(a: FocusAttempt): String {
  * median corner time is 0.15 s better than before the focus, and the braking point 7 m later."
  * [zone] dates the session that worked on it.
  */
-fun checkText(c: FocusCheck, zone: ZoneId = ZoneOffset.UTC): String {
+fun checkText(c: FocusCheck, zone: DayZone = DayZone.Utc): String {
     val held = when (c.persistence) {
         Persistence.Persisted -> "the gain held"
         Persistence.Partial -> "the gain partly held"
@@ -117,10 +117,9 @@ private fun timePhrase(gain: Double, precise: Boolean): String = when {
 }
 
 /** "8 m ", "4 km/h ": the size of the change, rounded to a whole number, one at least. */
-private fun amount(s: MetricShift): String =
-    String.format(Locale.ROOT, "%d %s ", max(1, abs(s.delta).roundToInt()), s.unit.trim())
+private fun amount(s: MetricShift): String = "${max(1, abs(s.delta).roundToInt())} ${s.unit.trim()} "
 
-private fun seconds(value: Double) = String.format(Locale.ROOT, "%.2f s", abs(value))
+private fun seconds(value: Double) = "${fixed(abs(value), 2)} s"
 
 private fun joined(parts: List<String>): String =
     if (parts.size == 1) parts[0] else parts.dropLast(1).joinToString(", ") + " and " + parts.last()
@@ -131,8 +130,6 @@ private fun plural(n: Int, word: String) = when {
     else -> "$n ${word}s"
 }
 
-private val Day: DateTimeFormatter = DateTimeFormatter.ofPattern("d MMM", Locale.ENGLISH)
-
 /** "12 Oct": the day [record]'s session was driven, in [zone]. */
-private fun dayOf(record: SessionCoachingRecord, zone: ZoneId): String =
-    Day.format(Instant.ofEpochMilli(record.sessionStartUtcMillis).atZone(zone))
+private fun dayOf(record: SessionCoachingRecord, zone: DayZone): String =
+    ProgressionDay.at(record.sessionStartUtcMillis, zone).dayMonthLabel()

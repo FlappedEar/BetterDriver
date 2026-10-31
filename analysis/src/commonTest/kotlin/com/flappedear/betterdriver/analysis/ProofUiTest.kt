@@ -1,4 +1,4 @@
-package com.flappedear.betterdriver.feature.analysis
+package com.flappedear.betterdriver.analysis
 
 import com.flappedear.betterdriver.analysis.coaching.FocusAsk
 import com.flappedear.betterdriver.analysis.coaching.FocusAttempt
@@ -8,17 +8,26 @@ import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
 import com.flappedear.betterdriver.analysis.line.CornerProof
 import com.flappedear.betterdriver.analysis.line.LineProof
 import com.flappedear.betterdriver.analysis.line.ProofVerdict
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Test
+import com.flappedear.betterdriver.analysis.progression.DayZone
+import com.flappedear.betterdriver.feature.analysis.CoachingStatus
+import com.flappedear.betterdriver.feature.analysis.coachingRows
+import com.flappedear.betterdriver.feature.analysis.lastFocusWonBack
+import com.flappedear.betterdriver.feature.analysis.proofText
+import com.flappedear.betterdriver.feature.analysis.wonBackFigure
+import com.flappedear.betterdriver.feature.analysis.wonBackText
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-/** What came of the last focus in words (FBBD-310, UI-191 A). */
+/** What came of the last focus in words (FBBD-310, UI-191 A), the same on Android and iOS (FBBD-364). */
 class ProofUiTest {
     private fun proof(before: Double, after: Double?, verdict: ProofVerdict, cues: Int?, target: Double = 9.70) =
         CornerProof("c1", "T11", before, after, target, verdict, cues)
 
     @Test
-    fun `each corner says the time back, what is left to the target and whether the coach spoke there`() {
+    fun eachCornerSaysTheTimeBackWhatIsLeftAndWhetherTheCoachSpoke() {
         assertEquals(
             "0.20 s back · 0.05 s still to your target · the coach spoke here 4 times",
             proofText(proof(9.95, 9.75, ProofVerdict.Faster, 4)),
@@ -45,7 +54,7 @@ class ProofUiTest {
     }
 
     @Test
-    fun `the time won back is over the corners compared, and there is none when none was driven`() {
+    fun theTimeWonBackIsOverTheCornersComparedAndNoneWhenNoneDriven() {
         fun record(id: String) =
             SessionCoachingRecord(trackId = "t", sessionId = id, sessionStartUtcMillis = 0L, identityRevision = 3)
         fun attempt(corner: String) = FocusAttempt(
@@ -60,5 +69,21 @@ class ProofUiTest {
             listOf(corner("c1", 8.9, ProofVerdict.Faster), corner("c2", 9.03, ProofVerdict.Same)),
         )
         assertEquals(0.07, lastFocusWonBack(coaching, driven)!!, 1e-9)
+        // The rows: measured corners say it in seconds; one with no pass says so.
+        val rows = coachingRows(coaching, DayZone.Utc, driven)
+        assertEquals(listOf(CoachingStatus.FasterNoCue, CoachingStatus.Same), rows.map { it.status })
+        assertTrue(rows.all { it.attempt && it.measured })
+        assertEquals("0.10 s back without a cue from the coach", rows[0].text)
+        assertEquals("0.03 s slower: within GPS timing · no cue here", rows[1].text)
+        assertTrue(rows[0].status.gain)
+        assertFalse(rows[1].status.gain || rows[1].status.loss)
+    }
+
+    @Test
+    fun theWonBackFigureHasNoSignAndItsTextSaysWhichWay() {
+        assertEquals("0.12 s", wonBackFigure(0.12))
+        assertEquals("0.12 s", wonBackFigure(-0.12))
+        assertEquals("won back on the corners you worked on", wonBackText(0.12))
+        assertEquals("lost on the corners you worked on", wonBackText(-0.12))
     }
 }
