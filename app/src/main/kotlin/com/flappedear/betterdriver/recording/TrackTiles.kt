@@ -49,8 +49,17 @@ private val CanChannels = CanBroadcasts.all.map { it.channel }.distinctBy { it.i
 
 private val HeartRate = TileChannel(TileIds.HEART_RATE, "Heart rate", "bpm")
 
+/** The gear, from engine speed and road speed (FBBD-397, UI-309 A): listed with the car, after RPM. */
+private val Gear = TileChannel(TileIds.GEAR, "Gear", "")
+
+/** The car's channels in the tile list: the generic PIDs with Gear after RPM, then what the car broadcasts. */
+private val CarChannels: List<TileChannel> = (ObdChannels + CanChannels).let { list ->
+    val at = list.indexOfFirst { it.id == TileIds.obd("rpm") } + 1
+    list.take(at) + Gear + list.drop(at)
+}
+
 private val Known: Map<String, TileChannel> =
-    (TimingChannels + GnssChannels + ObdChannels + CanChannels + HeartRate).associateBy { it.id }
+    (TimingChannels + GnssChannels + CarChannels + HeartRate).associateBy { it.id }
 
 private fun channel(id: String): TileChannel = Known[id] ?: TileChannel(
     id,
@@ -141,7 +150,7 @@ internal fun tileChoices(s: TileSources, receiver: String?): List<TileChoiceGrou
     return listOf(
         TileChoiceGroup("Timing", choices(TimingChannels)),
         TileChoiceGroup(listOfNotNull("GPS", receiver).joinToString(" · "), choices(GnssChannels)),
-        TileChoiceGroup("Car · OBD-II", choices(ObdChannels + CanChannels + otherObd)),
+        TileChoiceGroup("Car · OBD-II", choices(CarChannels + otherObd)),
         TileChoiceGroup("You · heart rate", choices(listOf(HeartRate))),
     )
 }

@@ -13,6 +13,13 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.23.0
+
+- **Gear** can be picked as a track screen tile (Settings › Track screen), worked out from RPM and
+  speed; a dash while it cannot be read. See [Track screen](track-screen.md).
+- The video's RPM gauge shows the gear large, with the speed small under it and no RPM number,
+  on Android and the iPhone. See [Export](export.md).
+
 ## 1.22.1
 
 - A session recorded at 1 Hz (phone GPS) no longer shows a raw theoretical best or realistic

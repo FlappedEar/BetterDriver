@@ -3,6 +3,9 @@ package com.flappedear.betterdriver.timing.overlay
 import com.flappedear.betterdriver.recorder.ChannelDef
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
+import com.flappedear.betterdriver.timing.gear.DriveSample
+import com.flappedear.betterdriver.timing.gear.Gearbox
+import com.flappedear.betterdriver.timing.gear.fitGearbox
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
@@ -92,6 +95,12 @@ class OverlayData(
     private val hotlap: LapTrace? = hotlap?.let { n -> traces.firstOrNull { it.lap.number == n } }
     private val car: Map<CarValue, TimeSeries>
 
+    /**
+     * The car's gearbox as this session's engine speed and road speed show it (FBBD-397), for the
+     * gear on the RPM gauge (UI-310 A); null without engine speed or when no known gearbox fits.
+     */
+    val gearbox: Gearbox?
+
     /** The car's values this session has samples of (FBBD-347): the overlay leaves out the rest. */
     val carValues: Set<CarValue> get() = car.keys
 
@@ -139,7 +148,9 @@ class OverlayData(
         startLine = laps?.track?.startFinish?.let { line ->
             frame?.let { it.toXy(line.left) to it.toXy(line.right) }
         }
-        car = carSeries(sorted, carChannelIds(channels))
+        val ids = carChannelIds(channels)
+        car = carSeries(sorted, ids)
+        gearbox = ids[CarValue.Rpm]?.let { fitGearbox(listOf(driveSamples(sorted, it, speed))) }
     }
 
     /** The G at [sessionMicros], as [at] has it; the radar's trail reads it back in time. */
@@ -183,8 +194,13 @@ class OverlayData(
 
     private fun carAt(t: Long): CarFrame {
         fun v(value: CarValue) = car[value]?.at(t)
+        val rpm = v(CarValue.Rpm)
+        val kmh = speed.at(t)
+        val gear = if (rpm != null && kmh != null) gearbox?.gearAt(rpm, kmh / KmhPerMs) else null
         return CarFrame(
-            rpm = v(CarValue.Rpm),
+            rpm = rpm,
+            gear = gear,
+            gears = gearbox != null,
             throttlePct = v(CarValue.Accelerator) ?: v(CarValue.Throttle),
             brakePct = v(CarValue.Brake),
             steeringDeg = v(CarValue.SteeringAngle),
@@ -276,6 +292,26 @@ private fun SampleSet.valueOf(channelId: Int): Double? =
     values.firstOrNull { it.channelId == channelId }?.value?.takeIf { it.isFinite() }
 
 private const val KmhPerMs = 3.6
+
+/**
+ * The engine speed readings of channel [rpmId] in [sorted] with the road speed then, at most one every
+ * [GearStepMicros]: CAN sends engine speed 100 times a second, and ten readings a second fit a gearbox.
+ */
+@Suppress("LoopWithTooManyJumpStatements") // Each reading without both values or too soon is skipped.
+private fun driveSamples(sorted: List<SampleSet>, rpmId: Int, speed: TimeSeries): List<DriveSample> {
+    val out = ArrayList<DriveSample>()
+    var last = Long.MIN_VALUE
+    for (s in sorted) {
+        if (last != Long.MIN_VALUE && s.tMicros - last < GearStepMicros) continue
+        val rpm = s.valueOf(rpmId) ?: continue
+        val kmh = speed.at(s.tMicros) ?: continue
+        out += DriveSample(s.tMicros / MicrosPerSecond, kmh / KmhPerMs, rpm, null)
+        last = s.tMicros
+    }
+    return out
+}
+
+private const val GearStepMicros = 90_000L
 
 /** A series for each of [ids]' values that has samples in [sorted]. */
 private fun carSeries(sorted: List<SampleSet>, ids: Map<CarValue, Int>): Map<CarValue, TimeSeries> {

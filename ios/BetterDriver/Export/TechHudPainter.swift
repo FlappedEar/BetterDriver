@@ -104,7 +104,7 @@ final class TechHudPainter: @unchecked Sendable {
 
     private func pad(_ s: CGFloat) -> CGFloat { 14 * s }
 
-    // TechTachometer.qml: a 270° arc with a red zone, the scale in thousands, speed in the middle.
+    // TechTachometer.qml: a 270° arc with a red zone, the scale in thousands; the gear and speed in the middle.
     private func tachometer(_ cg: CGContext, _ b: Rect, _ m: HudMoment) {
         let side = min(b.width, b.height)
         let cx = b.centerX, cy = b.centerY
@@ -144,18 +144,34 @@ final class TechHudPainter: @unchecked Sendable {
             arc(0, max(0.001, rpmRatio(rpm)))
         }
 
+        tachometerText(cx, cy, side, m)
+    }
+
+    /** The gauge's middle: the gear and the speed (UI-310 A), or the speed alone without a gearbox. */
+    private func tachometerText(_ cx: CGFloat, _ cy: CGFloat, _ side: CGFloat, _ m: HudMoment) {
         let gap = side * 0.012
+        let kern = side * 0.008
+        if m.gears {
+            // UI-310 A (FBBD-397): the gear large in amber, the speed small under it; no RPM number.
+            let gearFont = bold(side * 0.35)
+            let speedFont = bold(side * 0.1)
+            let unit = semibold(side * 0.045)
+            let total = lineHeight(gearFont) + lineHeight(speedFont) + lineHeight(unit) + 2 * gap
+            var top = cy + side * 0.02 - total / 2
+            textTop(m.gear, gearFont, m.gearKnown ? Hud.amber : Hud.dim, x: cx - width(m.gear, gearFont) / 2, top: top)
+            top += lineHeight(gearFont) + gap
+            textTop(m.speed, speedFont, Hud.text, x: cx - width(m.speed, speedFont) / 2, top: top)
+            top += lineHeight(speedFont) + gap
+            textTop("KM/H", unit, Hud.dim, x: cx - width("KM/H", unit, kern) / 2, top: top, kern: kern)
+            return
+        }
+        // No gearbox in the session (no engine speed, a hybrid): the speed as before, without the RPM number.
         let big = bold(side * 0.25)
         let unit = semibold(side * 0.055)
-        let small = semibold(side * 0.065)
-        let total = lineHeight(big) + lineHeight(unit) + lineHeight(small) + 2 * gap
-        var top = cy + side * 0.04 - total / 2
+        var top = cy + side * 0.04 - (lineHeight(big) + lineHeight(unit) + gap) / 2
         textTop(m.speed, big, Hud.text, x: cx - width(m.speed, big) / 2, top: top)
         top += lineHeight(big) + gap
-        let kern = side * 0.008
         textTop("KM/H", unit, Hud.dim, x: cx - width("KM/H", unit, kern) / 2, top: top, kern: kern)
-        top += lineHeight(unit) + gap
-        textTop(m.rpmText, small, Hud.dim, x: cx - width(m.rpmText, small) / 2, top: top)
     }
 
     private func rpmRatio(_ v: Double) -> CGFloat { CGFloat(min(1, max(0, v / Hud.rpmMax))) }

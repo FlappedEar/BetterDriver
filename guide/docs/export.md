@@ -27,7 +27,8 @@ Overlays exports one lap. Its lap time shows 0:00 until the line, runs during th
 keeps the final time and the gap to your best lap after it.
 
     The video uses the **Tech HUD** layout of FlappedEar Overlays, so a video from the phone looks like
-    one made in Overlays. Along the bottom: the RPM gauge with the speed in it, the lap (lap number,
+    one made in Overlays. Along the bottom: the RPM gauge with the gear large in its middle and the
+    speed under it (a session without RPM shows the speed alone), the lap (lap number,
     running time, best lap and the delta to it), throttle and brake, OIL, ATF and COOLANT with their
     ranges, tyres and the steering wheel. Top left the track map with the lap's trail and the car, top
     right the heart rate, bottom right the G radar with its last second and the G numbers. A widget

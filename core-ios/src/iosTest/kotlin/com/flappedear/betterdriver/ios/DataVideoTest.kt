@@ -25,6 +25,7 @@ import platform.Foundation.writeToFile
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -119,7 +120,8 @@ class DataVideoTest {
         val frame = OverlayFrame(123.6, lap, null, GForce(0.3, -1.2), car)
         val m = HudMoment(frame, emptyList(), emptyList(), 83_456_400, false)
         assertEquals("124", m.speed)
-        assertEquals("6123 RPM", m.rpmText)
+        assertFalse(m.gears, "no gearbox in this frame: the speed alone, no RPM number (UI-310 A)")
+        assertEquals("—", m.gear)
         assertEquals("3", m.lapNumber)
         assertEquals("1:05.432", m.lapTimeText)
         assertEquals("1:23.456", m.bestText)
@@ -133,6 +135,11 @@ class DataVideoTest {
         assertTrue(m.rowHot(HudWidget.Oil), "over the template's 128 °C warning")
         assertEquals("80", m.tyreTempText(0))
         assertEquals("—", m.tyreTempText(1))
+        val inGear = frame.copy(car = car.copy(gear = 2, gears = true))
+        val geared = HudMoment(inGear, emptyList(), emptyList(), null, false)
+        assertTrue(geared.gears)
+        assertEquals("2", geared.gear)
+        assertTrue(geared.gearKnown)
         val finished = HudMoment(
             OverlayFrame(null, lap.copy(phase = LapPhase.Finished), null, null), emptyList(), emptyList(), null, true,
         )

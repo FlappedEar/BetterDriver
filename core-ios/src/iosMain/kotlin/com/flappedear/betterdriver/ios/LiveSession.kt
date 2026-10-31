@@ -30,6 +30,7 @@ import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.circuits.CircuitListException
+import com.flappedear.betterdriver.timing.gear.LiveGear
 import com.flappedear.betterdriver.timing.geo.GeoPoint
 import com.flappedear.betterdriver.timing.live.LiveTimingState
 import com.flappedear.betterdriver.timing.live.SessionTiming
@@ -82,6 +83,9 @@ class LiveSession private constructor(
     /** Reads each fix with the last pedal, wheel and engine speed, as Android's CoachLink; under the lock. */
     private var coachReader = CoachFixReader(null)
 
+    /** The gear for the Gear tile (FBBD-397), fitted from this session's engine and road speed; under the lock. */
+    private val gear = LiveGear(recording::nowMicros)
+
     /** The track screen's frames (FBBD-376), from the main thread only. */
     private val frames = FrameStretch()
 
@@ -101,6 +105,7 @@ class LiveSession private constructor(
         recording.defineChannel(def)
         live {
             tracker.onChannel(def)
+            gear.onChannel(def)
             coachChannel(def)
         }
     }
@@ -123,6 +128,7 @@ class LiveSession private constructor(
         live {
             logs.forEach { it.onSamples(set) }
             tracker.onSamples(set)
+            gear.onSamples(set)
             timing.onSamples(set)
             // Read before the coach starts, so the pedal value is there for its first fix.
             val fix = coachReader.read(set)
@@ -193,7 +199,7 @@ class LiveSession private constructor(
         val ended = recording.endReason
         return guarded {
             storageLowBytes?.let { tracker.onStatus(RecorderStatus.StorageLow(it)) }
-            val live = tracker.snapshot()
+            val live = gear.withGear(tracker.snapshot())
             val detection = timing.detection
             LiveScreen(
                 live = live,

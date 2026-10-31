@@ -39,6 +39,7 @@ import com.flappedear.betterdriver.recorder.log.HeartRateLog
 import com.flappedear.betterdriver.recorder.log.LoggingListener
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.timing.circuits.CircuitDirectory
+import com.flappedear.betterdriver.timing.gear.LiveGear
 import com.flappedear.betterdriver.timing.live.SessionTiming
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
@@ -149,7 +150,10 @@ class RecorderService : Service() {
         val timing: SessionTiming,
         val coach: CoachLink?,
         val device: DeviceChecks,
-    )
+    ) {
+        /** The gear for the Gear tile (FBBD-397), fitted from this session's engine and road speed. */
+        val gear = LiveGear(recording::nowMicros).also(recording.listeners::add)
+    }
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -372,7 +376,7 @@ class RecorderService : Service() {
     /** The current recording's live values, or an empty bundle when idle; plus the last start error. */
     private fun state(): Bundle {
         val a = active
-        val state = a?.tracker?.snapshot()?.let(RecorderProtocol::toBundle) ?: Bundle()
+        val state = a?.let { it.gear.withGear(it.tracker.snapshot()) }?.let(RecorderProtocol::toBundle) ?: Bundle()
         if (a != null) {
             state.putLong(RecorderProtocol.KEY_START_NANOS, a.recording.startNanos)
             cameraStatus?.let { (text, ok) ->
