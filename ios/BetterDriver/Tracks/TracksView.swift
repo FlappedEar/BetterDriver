@@ -74,6 +74,8 @@ struct TracksScreen: View {
             }
         }
         .onAppear { model.refresh() }
+        // A track imported or restored while this screen shows (FBBD-372).
+        .onReceive(NotificationCenter.default.publisher(for: .tracksChanged)) { _ in model.refresh() }
         .fullScreenCover(item: $editing) { e in
             TrackEditorScreen(trackId: e.id) {
                 editing = nil
