@@ -1,10 +1,15 @@
 name: iOS
 
-# The iPhone/iPad app (FBBD-328) on a macOS runner: the Kotlin core modules' common
+# The iPhone/iPad app (FBBD-328) on macOS runners: the Kotlin core modules' common
 # tests on the iOS simulator (ci.yml runs their JVM tests), the XCFramework, and the
 # SwiftUI app's unit and UI tests on an iPad and an iPhone simulator. Runs when the app, a core
 # module with iOS targets or the build changes: every module core-ios exports is listed in both
 # path filters below, which ci.yml's Changes job checks.
+#
+# One job builds the core and the app once; four jobs then run the tests at the same time
+# (iPad and iPhone, each in two halves) from that build. Before, one runner ran both devices
+# one after the other: ~90 min, 63 of them UI tests. The last job, "iOS app", passes only when
+# every test job passed.
 on:
   pull_request:
     paths:
@@ -27,6 +32,7 @@ on:
       - "*.gradle.kts"
       - "gradle.properties"
       - ".github/workflows/ios.yml"
+      - ".github/scripts/ios-simulator.py"
   push:
     branches: [main]
     paths:
@@ -49,6 +55,7 @@ on:
       - "*.gradle.kts"
       - "gradle.properties"
       - ".github/workflows/ios.yml"
+      - ".github/scripts/ios-simulator.py"
   workflow_dispatch:
 
 permissions:
@@ -59,11 +66,10 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  ios:
-    name: iOS app
+  build:
+    name: iOS build
     runs-on: macos-15
-    # The UI tests of both simulators took 80 min on a slow runner (PR #411): room above that.
-    timeout-minutes: 120
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -80,51 +86,113 @@ jobs:
         run: |
           xcodebuild -version
           brew install xcodegen
-      # One iPad and one iPhone simulator that exist on this runner image (names change with Xcode).
-      - name: Pick simulators
+      - name: Pick a simulator
         id: sim
-        run: |
-          xcrun simctl list devices available -j > devices.json
-          python3 - <<'EOF' >> "$GITHUB_OUTPUT"
-          import json
-          runtimes = json.load(open("devices.json"))["devices"]
-          ios = sorted((k for k in runtimes if "iOS" in k), key=lambda k: [int(p) for p in k.rsplit("iOS-", 1)[1].split("-")])
-          devices = runtimes[ios[-1]]
-          ipad = next(d for d in devices if d["name"].startswith("iPad"))
-          iphone = next(d for d in devices if d["name"].startswith("iPhone"))
-          print(f"ipad={ipad['udid']}")
-          print(f"iphone={iphone['udid']}")
-          print(f"names={ipad['name']} / {iphone['name']} ({ios[-1]})")
-          EOF
-      - name: Simulators
-        run: echo "${{ steps.sim.outputs.names }}"
+        run: python3 .github/scripts/ios-simulator.py iPhone >> "$GITHUB_OUTPUT"
+      - name: Simulator
+        run: echo "${{ steps.sim.outputs.name }}"
+      # Only the simulator slice of the core: the tests never run on a device (ios-release.yml
+      # builds the device slice). Wrapped as the XCFramework the Xcode project links.
       - name: Shared core on the iOS simulator
-        run: >
-          ./gradlew -Pbetterdriver.coreOnly -PiosSimulator=${{ steps.sim.outputs.iphone }}
-          iosSimulatorArm64Test :core-ios:assembleBetterDriverCoreDebugXCFramework
-          --stacktrace
+        run: |
+          ./gradlew -Pbetterdriver.coreOnly -PiosSimulator=${{ steps.sim.outputs.udid }} \
+            iosSimulatorArm64Test :core-ios:linkDebugFrameworkIosSimulatorArm64 --stacktrace
+          rm -rf core-ios/build/XCFrameworks/debug
+          xcodebuild -create-xcframework \
+            -framework core-ios/build/bin/iosSimulatorArm64/debugFramework/BetterDriverCore.framework \
+            -output core-ios/build/XCFrameworks/debug/BetterDriverCore.xcframework
       - name: Generate the Xcode project
         run: SKIP_CORE=1 ios/generate.sh
-      # The full log goes to the artifact; the step log keeps the errors and test results.
-      - name: App unit tests (iPad + iPhone)
+      # The full log goes to the artifact; the step log keeps the errors.
+      - name: Build the app and its tests
         shell: bash
         run: |
           set -o pipefail
           mkdir -p build
-          xcodebuild test \
+          xcodebuild build-for-testing \
             -project ios/BetterDriver.xcodeproj \
             -scheme BetterDriver \
-            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.ipad }}" \
-            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.iphone }}" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath build/dd \
+            CODE_SIGNING_ALLOWED=NO > build/xcodebuild-build.log 2>&1 && status=0 || status=$?
+          grep -E "error:|\*\* (TEST BUILD|BUILD) " build/xcodebuild-build.log || true
+          exit $status
+      # A tar keeps the app's symlinks and executable bits, which an artifact's zip drops.
+      - name: Pack the build
+        run: tar -cf build/products.tar -C build/dd/Build Products
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-build
+          path: build/products.tar
+          retention-days: 1
+          compression-level: 1
+      - name: Build results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-build-results
+          path: |
+            build/xcodebuild-build.log
+            */build/reports/tests
+          if-no-files-found: ignore
+
+  test:
+    name: iOS tests (${{ matrix.device }} ${{ matrix.part }})
+    needs: build
+    runs-on: macos-15
+    # The slowest half took ~17 min on the iPad (PR #456): room for a slow runner.
+    timeout-minutes: 60
+    strategy:
+      # Report every failing half, not only the first one.
+      fail-fast: false
+      matrix:
+        device: [iPad, iPhone]
+        part: [1, 2]
+    env:
+      # Part 1 runs these UI test classes (about half the UI tests' time); part 2 runs everything
+      # else, so a new test class always runs.
+      PART1: >-
+        BetterDriverUITests/ReviewScreensTests
+        BetterDriverUITests/ScreenLayoutTests
+        BetterDriverUITests/DataVideoTests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - name: Pick a simulator
+        id: sim
+        run: python3 .github/scripts/ios-simulator.py ${{ matrix.device }} >> "$GITHUB_OUTPUT"
+      # Boots while the build downloads.
+      - name: Boot ${{ steps.sim.outputs.name }}
+        run: nohup xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b > /dev/null 2>&1 &
+      - uses: actions/download-artifact@v4
+        with:
+          name: ios-build
+          path: build
+      - name: Unpack the build
+        run: |
+          mkdir -p build/dd/Build
+          tar -xf build/products.tar -C build/dd/Build
+      # The full log goes to the artifact; the step log keeps the errors and test results.
+      - name: Tests (${{ matrix.device }} ${{ matrix.part }})
+        shell: bash
+        run: |
+          set -o pipefail
+          if [ "${{ matrix.part }}" = 1 ]; then flag=-only-testing; else flag=-skip-testing; fi
+          selection=()
+          for t in $PART1; do selection+=("$flag:$t"); done
+          xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
+          xcodebuild test-without-building \
+            -xctestrun "$xctestrun" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            "${selection[@]}" \
             -resultBundlePath build/ios-tests.xcresult \
-            -disable-concurrent-destination-testing \
             -parallel-testing-enabled NO \
             -test-timeouts-enabled YES \
             -default-test-execution-time-allowance 480 \
             -maximum-test-execution-time-allowance 600 \
-            CODE_SIGNING_ALLOWED=NO > build/xcodebuild.log 2>&1 && status=0 || status=$?
+            > build/xcodebuild.log 2>&1 && status=0 || status=$?
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
-          # With two destinations xcodebuild prints no per-test lines: the result bundle names the failures.
           xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/summary.json || true
           sed -n '/SMOKE app:/,/Test Case .*failed/p' build/xcodebuild.log | head -n 300 || true
           python3 -c 'import json; d=json.load(open("build/summary.json")); print("RESULT", d.get("result"), d.get("passedTests"), "passed", d.get("failedTests"), "failed"); [print("FAILED", json.dumps(f)) for f in d.get("testFailures", [])]' || head -c 3000 build/summary.json
@@ -139,16 +207,26 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-review-screenshots
+          name: ios-review-screenshots-${{ matrix.device }}-${{ matrix.part }}
           path: build/screenshots
           if-no-files-found: ignore
       - name: Test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ios-test-results
+          name: ios-test-results-${{ matrix.device }}-${{ matrix.part }}
           path: |
             build/ios-tests.xcresult
             build/xcodebuild.log
-            */build/reports/tests
           if-no-files-found: ignore
+
+  passed:
+    name: iOS app
+    needs: [build, test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every iOS job passed
+        run: |
+          echo "build: ${{ needs.build.result }}, tests: ${{ needs.test.result }}"
+          [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
