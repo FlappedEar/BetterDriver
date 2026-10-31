@@ -220,7 +220,9 @@ struct BackupPrompts: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(isPresented: $model.asking) {
-                BackupDialog(sessions: model.sessions, onBackUp: model.backUp) { model.asking = false }
+                BackupDialog(sessions: model.sessions, onBackUp: { model.backUp(includeSessions: $0) }) {
+                    model.asking = false
+                }
                     .presentationDetents([.medium])
             }
             .sheet(item: $model.offer, onDismiss: { model.cancel() }) { offer in
