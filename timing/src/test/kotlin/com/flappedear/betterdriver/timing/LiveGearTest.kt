@@ -87,25 +87,39 @@ class LiveGearTest {
     }
 
     @Test
-    fun `a shift, an old reading or standing shows a dash, not a gear`() {
+    fun `slip holds the gear, a shift changes it where the RPM steps, an old reading or standing shows a dash`() {
         var now = 0L
         val gear = LiveGear { now }
         gear.onChannel(rpmDef)
         drive(150).forEach { gear.onSamples(it); now = it.tMicros }
         assertNotNull(gear.gearbox)
-        // Halfway between 2nd and 3rd at 24 m/s: the converter slipping through a shift.
-        val between = (rpm(24.0, 2) + rpm(24.0, 3)) / 2
-        now += 100_000
-        gear.onSamples(reading(now, 24.0, between))
-        assertNull(gear.gear())
-        // In 2nd again, then nothing for two seconds: the reading is old.
-        now += 100_000
-        gear.onSamples(reading(now, 24.0, rpm(24.0, 2)))
+        fun at(mps: Double, rpm: Double, steps: Int = 1) = repeat(steps) {
+            now += 100_000
+            gear.onSamples(reading(now, mps, rpm))
+        }
+        // The drive ended in 4th: a downshift to 2nd takes 0.2 s of 2nd's engine speed.
+        at(24.0, rpm(24.0, 2), steps = 3)
         assertEquals(2, gear.gear())
+        // Lifting and braking: the converter slips 7 % under 2nd's engine speed for seconds. Still 2nd.
+        at(24.0, rpm(24.0, 2) * 0.93, steps = 30)
+        assertEquals(2, gear.gear())
+        // Back on the throttle: 7 % over. Still 2nd.
+        at(24.0, rpm(24.0, 2) * 1.07, steps = 30)
+        assertEquals(2, gear.gear())
+        // Upshift: the engine speed drops to 3rd's. One reading past the middle is not yet a shift...
+        at(24.0, rpm(24.0, 3) * 1.05)
+        assertEquals(2, gear.gear())
+        // ...0.2 s of it is.
+        at(24.0, rpm(24.0, 3) * 1.03, steps = 2)
+        assertEquals(3, gear.gear())
+        // A blip down to 2nd while braking, the converter still slipping under it.
+        at(22.0, rpm(22.0, 2) * 0.94, steps = 3)
+        assertEquals(2, gear.gear())
+        // Nothing for two seconds: the reading is old.
         now += 2_000_000
         assertNull(gear.gear())
         // Standing at idle.
-        gear.onSamples(reading(now, 0.0, 750.0))
+        at(0.0, 750.0)
         assertNull(gear.gear())
     }
 
