@@ -6,7 +6,6 @@ import com.flappedear.betterdriver.core.ble.GattNotifyLink
 import com.flappedear.betterdriver.core.ble.GattNotifySpec
 import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.NotifyLink
-import com.flappedear.betterdriver.core.ble.logLink
 import com.flappedear.betterdriver.core.ble.scanBleDevices
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
@@ -66,18 +65,8 @@ class HeartRateSource internal constructor(
         }
         this.session = session
         session.start()
-        // onState runs on the link's one thread, so this needs no lock.
-        var wasStreaming = false
-        link = connect(session::feed) { s ->
-            if (session.offIfNotFound()) return@connect
-            logLink(address, s, wasStreaming)
-            when (s) {
-                is LinkState.Streaming -> session.streaming()
-                is LinkState.Reconnecting -> session.reconnecting(s.reason)
-                else -> session.connecting()
-            }
-            if (s is LinkState.Streaming || s is LinkState.Reconnecting) wasStreaming = s is LinkState.Streaming
-        }
+        // onState runs on the link's one thread, so the session's link state needs no lock.
+        link = connect(session::feed, session::linkChanged)
         current = this
         link?.start()
     }

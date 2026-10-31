@@ -15,6 +15,8 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             api(project(":recorder"))
+            // LinkState and the shared notify link (FBBD-358).
+            api(project(":racebox"))
         }
         commonTest.dependencies {
             implementation(kotlin("test"))

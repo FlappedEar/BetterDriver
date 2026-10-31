@@ -1,7 +1,6 @@
 package com.flappedear.betterdriver.core.ble
 
 import com.flappedear.betterdriver.recorder.SampleSink
-import com.flappedear.betterdriver.recorder.log.DebugLog
 
 /**
  * The `onState` of a source's link: writes [connected] (with [address]) when data starts flowing,
@@ -27,14 +26,4 @@ fun linkEvents(
         }
         if (streaming || s is LinkState.Reconnecting) wasStreaming = streaming
     }
-}
-
-/**
- * Writes a link's state to the debug log (FBBD-146): every change except the message rate of a
- * link that keeps streaming, which updates every second.
- */
-fun logLink(address: String, s: LinkState, wasStreaming: Boolean) {
-    if (s is LinkState.Streaming && wasStreaming) return
-    val level = if (s is LinkState.Reconnecting) DebugLog.WARN else DebugLog.INFO
-    DebugLog.log(level, "Link", "$address $s", null)
 }
