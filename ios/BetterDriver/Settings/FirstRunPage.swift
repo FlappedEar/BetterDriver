@@ -133,8 +133,19 @@ final class FirstRunPermissions: NSObject, ObservableObject, CLLocationManagerDe
 
     /// Location, Bluetooth, camera and microphone granted; used at launch to decide on the checklist.
     static var requiredGranted: Bool {
+        if grantedForTests { return true }
         let place = CLLocationManager().authorizationStatus
         return (place == .authorizedWhenInUse || place == .authorizedAlways) && CBManager.authorization == .allowedAlways
+    }
+
+    /// The UI test of Done and the next launch (-requiredGrantedForTest): the simulator's Bluetooth
+    /// answer is not something a test can count on, so location and Bluetooth count as allowed.
+    private static var grantedForTests: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-requiredGrantedForTest")
+        #else
+        return false
+        #endif
     }
 
     func refresh() {
@@ -143,7 +154,7 @@ final class FirstRunPermissions: NSObject, ObservableObject, CLLocationManagerDe
         let bluetooth = CBManager.authorization
         let camera = AVCaptureDevice.authorizationStatus(for: .video)
         let mic = AVCaptureDevice.authorizationStatus(for: .audio)
-        let required = placeOk && bluetooth == .allowedAlways
+        let required = Self.grantedForTests || (placeOk && bluetooth == .allowedAlways)
         let all = required && camera == .authorized && mic == .authorized
         var denied: [PermissionLine] = []
         if place == .denied || place == .restricted { denied.append(.location) }

@@ -1,10 +1,15 @@
 import XCTest
 import UIKit
 
+/// The shared core's text under Done (FirstRunSetup.PERMISSIONS_FIRST).
+private enum FirstRunText {
+    static let permissionsFirst = "Allow location and nearby devices first."
+}
+
 /// First run (FBBD-371), as Android's Setup screen: a fresh iPhone opens on the checklist, its four
-/// steps in Android's order, Done waits for location and Bluetooth, and after Done the app opens on
-/// its tabs. The iPad only reviews and opens on Sessions. Settings › App › Run setup again shows
-/// the checklist on both.
+/// steps in Android's order, Allow asks iOS (location first), Done waits for location and
+/// Bluetooth, and after Done the app opens on its tabs. The iPad only reviews and opens on
+/// Sessions. Settings › App › Run setup again shows the checklist on both.
 final class FirstRunTests: XCTestCase {
     private let app = XCUIApplication()
     private var phone: Bool { UIDevice.current.userInterfaceIdiom == .phone }
@@ -13,7 +18,7 @@ final class FirstRunTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testAFreshIPhoneOpensOnTheChecklistAndDoneOpensTheApp() throws {
+    func testAFreshIPhoneOpensOnTheChecklistAndAllowAsksIOS() throws {
         try XCTSkipIf(!phone, "the iPad only reviews: no checklist at launch")
         // A fresh install has answered no permission yet: earlier tests on this simulator may have.
         for resource: XCUIProtectedResource in [.location, .bluetooth, .camera, .microphone] {
@@ -35,24 +40,34 @@ final class FirstRunTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Needed for lap timing"].exists, "no GNSS receiver yet")
         XCTAssertTrue(app.staticTexts["Phone camera"].exists, "the phone camera")
 
-        // Allow: iOS asks for location, Bluetooth, camera and microphone, one after another.
+        // Done waits for location and Bluetooth.
+        XCTAssertFalse(app.buttons["setup.done"].isEnabled, "Done before location and Bluetooth are allowed")
+        XCTAssertTrue(app.staticTexts[FirstRunText.permissionsFirst].exists, "what Done waits for")
+
+        // Allow asks iOS, location first.
         let allow = app.buttons["setup.action.Permissions"]
         XCTAssertTrue(allow.waitForExistence(timeout: 5), "Allow on the permissions step")
         allow.tap()
-        allowSystemAlerts()
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let question = springboard.alerts.firstMatch
+        XCTAssertTrue(question.waitForExistence(timeout: 10), "iOS asks for a permission after Allow")
+        XCTAssertTrue(question.label.localizedCaseInsensitiveContains("location"), "location first: \(question.label)")
+    }
+
+    func testDoneOpensTheAppAndTheNextLaunchSkipsTheChecklist() throws {
+        try XCTSkipIf(!phone, "the iPad only reviews: no checklist at launch")
+        // Location and Bluetooth count as allowed: Done is the step under test.
+        app.launchArguments = ["-uiTestReset", "-firstRun", "-requiredGrantedForTest"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["setup.summary"].waitForExistence(timeout: 20), "the checklist on a fresh install")
         let done = app.buttons["setup.done"]
-        let enabled = NSPredicate(format: "isEnabled == true")
-        let granted = expectation(for: enabled, evaluatedWith: done)
-        if XCTWaiter.wait(for: [granted], timeout: 30) != .completed {
-            print("FIRSTRUN app:\n\(app.debugDescription)")
-            XCTFail("Done once location and Bluetooth are allowed")
-        }
+        XCTAssertTrue(done.waitForExistence(timeout: 5) && done.isEnabled, "Done once location and Bluetooth are allowed")
         done.tap()
         XCTAssertTrue(tab("Drive").waitForExistence(timeout: 10), "the app's tabs after Done")
 
         // Set up: the next launch opens on the tabs.
         app.terminate()
-        app.launchArguments = ["-firstRun"]
+        app.launchArguments = ["-firstRun", "-requiredGrantedForTest"]
         app.launch()
         XCTAssertTrue(tab("Drive").waitForExistence(timeout: 20), "the tabs on the next launch")
         XCTAssertFalse(app.staticTexts["setup.summary"].exists, "no checklist once set up")
@@ -93,18 +108,6 @@ final class FirstRunTests: XCTestCase {
 
     private func step(_ title: String) -> XCUIElement {
         app.descendants(matching: .any)["setup.step.\(title)"].firstMatch
-    }
-
-    /// iOS's permission questions, each allowed, as a first-time user would.
-    private func allowSystemAlerts() {
-        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-        for _ in 0..<6 {
-            let alert = springboard.alerts.firstMatch
-            guard alert.waitForExistence(timeout: 5) else { return }
-            let allow = ["Allow While Using App", "Allow", "OK", "Allow Once"].map { alert.buttons[$0] }.first { $0.exists }
-            guard let allow else { return }
-            allow.tap()
-        }
     }
 
     /// A top-level tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
