@@ -147,12 +147,13 @@ class RecorderService : Service() {
         val recording: Recording,
         val end: RecordingEnd,
         val tracker: LiveTracker,
-        /** The gear for the Gear tile (FBBD-397), fitted from this session's engine and road speed. */
-        val gear: LiveGear,
         val timing: SessionTiming,
         val coach: CoachLink?,
         val device: DeviceChecks,
-    )
+    ) {
+        /** The gear for the Gear tile (FBBD-397), fitted from this session's engine and road speed. */
+        val gear = LiveGear(recording::nowMicros).also(recording.listeners::add)
+    }
 
     private val main = Handler(Looper.getMainLooper())
 
@@ -284,8 +285,6 @@ class RecorderService : Service() {
                     accelZId = PhoneImuChannels.ACCEL_Z.id.takeIf { gnss.type == GnssType.PHONE },
                 )
                 recording.listeners.add(tracker)
-                val gear = LiveGear(recording::nowMicros)
-                recording.listeners.add(gear)
                 // The circuit list names circuits for tracks not saved yet (FBBD-79). Read at each start, so a
                 // newer one the UI process fetched since the last session is used.
                 val timing = sessionTiming(tracksDir(this), recording, CircuitDirectory(circuitsDir(this)).load())
@@ -301,7 +300,7 @@ class RecorderService : Service() {
                 // itself (storage full, write error), with the writer's reason (Audit A03).
                 val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
                 val device = DeviceChecks(this, recording).also { it.start() }
-                active = Active(recording, end, tracker, gear, timing, coach, device)
+                active = Active(recording, end, tracker, timing, coach, device)
                 carryOn(wanted, recording, restartOf.also { restartOf = null })
                 sources.forEach(recording::attach)
                 main.post {
