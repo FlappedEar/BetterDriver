@@ -123,6 +123,27 @@ class LiveGearTest {
     }
 
     @Test
+    fun `a hybrid cruising steadily first, then driven, loses the gear it seemed to have`() {
+        var now = 0L
+        val gear = LiveGear { now }
+        gear.onChannel(rpmDef)
+        // 60 s at a steady 25 m/s and 2000 rpm: one ratio, which is no gearbox.
+        (0 until 600).forEach { i ->
+            now = i * 100_000L
+            gear.onSamples(reading(now, 25.0, 2000.0))
+        }
+        assertNull(gear.gearbox, "one ratio alone is not a gearbox")
+        // Then driven: the engine follows no gears.
+        drive(150) { s -> 1500.0 + 2500.0 * abs(sin(s * 7.3)) }.forEach {
+            val shifted = SampleSet(it.tMicros + 60_000_000L, it.values)
+            gear.onSamples(shifted)
+            now = shifted.tMicros
+        }
+        assertNull(gear.gearbox)
+        assertFalse(gear.shows())
+    }
+
+    @Test
     fun `without engine speed there is no Gear tile`() {
         val gear = LiveGear { 0L }
         drive(10).forEach { set ->

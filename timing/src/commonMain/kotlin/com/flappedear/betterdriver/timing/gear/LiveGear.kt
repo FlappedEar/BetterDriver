@@ -72,11 +72,14 @@ class LiveGear(private val nowMicros: () -> Long) : RecorderListener {
         if (readings.size > MaxReadings) readings.removeFirst()
         if (++sinceFit >= RefitEvery) {
             sinceFit = 0
-            val fit = fitGearbox(listOf(readings.toList()))
+            // One ratio alone (a hybrid cruising steadily) is no gearbox; a fit that later readings
+            // disprove is dropped, so an engine without fixed gears loses the tile again.
+            val fit = fitGearbox(listOf(readings.toList()))?.takeIf { it.gears.size >= MinGears }
             if (fit != null) {
                 gearbox = fit
                 failedFits = 0
-            } else if (gearbox == null && drivenReadings() >= MinFitReadings) {
+            } else if (drivenReadings() >= MinFitReadings) {
+                gearbox = null
                 failedFits++
             }
         }
@@ -130,6 +133,9 @@ class LiveGear(private val nowMicros: () -> Long) : RecorderListener {
 
         /** Fits without a gearbox, each with enough readings, before the tile is left out. */
         const val GiveUpFits = 6
+
+        /** A gearbox shows at least two gears in the readings kept. */
+        private const val MinGears = 2
 
         /** As [fitGearbox] needs at least. */
         private const val MinFitReadings = 200

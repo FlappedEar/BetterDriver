@@ -312,7 +312,6 @@ private fun driveSamples(sorted: List<SampleSet>, rpmId: Int, speed: TimeSeries)
 }
 
 private const val GearStepMicros = 90_000L
-private const val MicrosPerSecond = 1_000_000.0
 
 /** A series for each of [ids]' values that has samples in [sorted]. */
 private fun carSeries(sorted: List<SampleSet>, ids: Map<CarValue, Int>): Map<CarValue, TimeSeries> {
