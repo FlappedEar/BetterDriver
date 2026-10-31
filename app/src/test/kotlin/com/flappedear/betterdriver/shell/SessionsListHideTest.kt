@@ -102,9 +102,15 @@ class SessionsListHideTest {
             layout = layout,
             shown = shown,
             onClose = { shown = null },
-            detail = { _, pane, onBack, listToggle ->
+            detail = { _, _, onBack, listToggle ->
                 Column {
-                    AnalysisTopBar("detail", onBack = onBack, listToggle = listToggle, onProgression = null, onCoachReview = {})
+                    AnalysisTopBar(
+                        "detail",
+                        onBack = onBack,
+                        listToggle = listToggle,
+                        onProgression = null,
+                        onCoachReview = {},
+                    )
                     BoxWithConstraints {
                         detailWidth = maxWidth.value
                     }
