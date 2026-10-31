@@ -32,8 +32,8 @@ fun keepCoachingHistory(
     analysis: SessionAnalysis,
     coached: CoachedSession,
     origin: String? = null,
-    trackKept: () -> Boolean = { true },
     write: (() -> Unit) -> Unit = { it() },
+    trackKept: () -> Boolean = { true },
 ): SessionCoaching {
     val record = try {
         sessionCoachingRecord(analysis, trackId, sessionId, startUtcMillis, coached, origin)

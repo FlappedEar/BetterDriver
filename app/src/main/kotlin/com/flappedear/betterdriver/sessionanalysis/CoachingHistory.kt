@@ -27,9 +27,11 @@ internal fun keepCoachingHistory(
     coached: CoachedSession,
     origin: String? = null,
     trackKept: () -> Boolean = { true },
-): SessionCoaching = keepShared(store, trackId, sessionId, startUtcMillis, analysis, coached, origin, trackKept) {
-    AppDataGate.writeIfCurrent(epoch, it)
-}
+): SessionCoaching = keepShared(
+    store, trackId, sessionId, startUtcMillis, analysis, coached, origin,
+    write = { AppDataGate.writeIfCurrent(epoch, it) },
+    trackKept = trackKept,
+)
 
 /**
  * [this] with what came of the last focus and whether earlier gains held (FBBD-180), in the phone's

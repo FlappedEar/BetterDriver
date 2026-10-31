@@ -146,9 +146,10 @@ class TrackProgressions internal constructor(
                 tracks.updateIdentity(trackId, expected, made)?.identity
             }
             val coached = CoachEvents.coachedSession(data.events)
-            keepCoachingHistory(history, trackId, data.id, start, analysis, coached, originOf(data.info)) {
-                tracks.get(trackId) != null
-            }
+            keepCoachingHistory(
+                history, trackId, data.id, start, analysis, coached, originOf(data.info),
+                trackKept = { tracks.get(trackId) != null },
+            )
             if (history.get(trackId, data.id) == null) Added.Analysed else Added.Kept
         } catch (_: Exception) {
             Added.Failed
