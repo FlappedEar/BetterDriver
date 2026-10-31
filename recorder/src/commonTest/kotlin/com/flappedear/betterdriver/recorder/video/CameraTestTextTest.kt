@@ -9,9 +9,12 @@ class CameraTestTextTest {
     @Test
     fun `a part reads as the test screen shows it`() {
         assertEquals("camera 57.2 fps · skipped 3.1 %", CameraTestPart(57.24, 3.06).text)
-        val part = CameraTestPart.of(frames = 3_594, skipped = 6, seconds = 60.0)!!
+        val part = CameraTestPart.of(frames = 3_594, dropped = 6, notWritten = 0, seconds = 60.0)!!
         assertEquals("camera 59.9 fps · skipped 0.2 %", part.text)
-        assertNull(CameraTestPart.of(frames = 0, skipped = 0, seconds = 0.0))
+        // Frames the file refused were delivered: counted once, not added to the total again.
+        val refused = CameraTestPart.of(frames = 600, dropped = 0, notWritten = 300, seconds = 10.0)!!
+        assertEquals("camera 60.0 fps · skipped 50.0 %", refused.text)
+        assertNull(CameraTestPart.of(frames = 0, dropped = 0, notWritten = 0, seconds = 0.0))
     }
 
     @Test

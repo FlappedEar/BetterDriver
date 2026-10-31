@@ -13,11 +13,13 @@ data class CameraTestPart(val fps: Double, val skippedPercent: Double) {
     companion object {
         /**
          * The part's result from its frame counts: [frames] the camera delivered over [seconds],
-         * [skipped] it dropped or the file could not take. Null before any frame.
+         * [dropped] the camera dropped before delivering them, and [notWritten] of the delivered ones
+         * the file could not take. Skipped is both, out of every frame the camera made
+         * ([frames] + [dropped]). Null before any frame.
          */
-        fun of(frames: Long, skipped: Long, seconds: Double): CameraTestPart? {
+        fun of(frames: Long, dropped: Long, notWritten: Long, seconds: Double): CameraTestPart? {
             if (frames <= 0 || seconds <= 0) return null
-            return CameraTestPart(frames / seconds, skipped * Percent / (frames + skipped))
+            return CameraTestPart(frames / seconds, (dropped + notWritten) * Percent / (frames + dropped))
         }
 
         private const val Percent = 100.0

@@ -45,7 +45,10 @@ final class CameraTestRun: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     private var firstPts: CMTime = .invalid
     private var lastPts: CMTime = .invalid
     private var frames: Int64 = 0
-    private var skipped: Int64 = 0
+    /// Frames the camera dropped before they reached the app.
+    private var dropped: Int64 = 0
+    /// Delivered frames part 1's file could not take.
+    private var notWritten: Int64 = 0
     private var minuteTimer: DispatchSourceTimer?
     private var endTimer: DispatchSourceTimer?
     private var minutes = 0
@@ -139,7 +142,8 @@ final class CameraTestRun: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard !over else { return }
         status.part = n
         frames = 0
-        skipped = 0
+        dropped = 0
+        notWritten = 0
         firstPts = .invalid
         lastPts = .invalid
         minutes = 0
@@ -166,7 +170,7 @@ final class CameraTestRun: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
         guard firstPts.isValid, lastPts.isValid else { return nil }
         let seconds = CMTimeGetSeconds(CMTimeSubtract(lastPts, firstPts))
         // The frames after the first over the time between the first and the last.
-        return CameraTestPart.companion.of(frames: frames - 1, skipped: skipped, seconds: seconds)
+        return CameraTestPart.companion.of(frames: frames - 1, dropped: dropped, notWritten: notWritten, seconds: seconds)
     }
 
     /// The part's rate so far, once a minute, as a session's video logs its frames.
@@ -246,9 +250,18 @@ final class CameraTestRun: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
             frames += 1
             guard CameraTestText.shared.withMp4(part: Int32(status.part)) else { return }
             if writer == nil { open(at: pts, frame: sample) }
-            guard let writer, writer.status == .writing, let videoIn else { return }
+            guard let writer, let videoIn else { return }
+            // A file that failed (a full disk) ends the part with its error: part 1 no longer
+            // tests writing the MP4, so the comparison would mean nothing.
+            if writer.status == .failed || writer.status == .cancelled {
+                let reason = writer.error?.localizedDescription ?? "status \(writer.status.rawValue)"
+                AppLog.w(text.TAG, "camera test part 1: the MP4 failed: \(reason)")
+                partEnded(error: "the MP4 failed")
+                return
+            }
+            guard writer.status == .writing else { return }
             // A frame the file is not ready for is skipped, as in a session.
-            if !videoIn.isReadyForMoreMediaData || !videoIn.append(sample) { skipped += 1 }
+            if !videoIn.isReadyForMoreMediaData || !videoIn.append(sample) { notWritten += 1 }
         } else if output === audioOut, let writer, writer.status == .writing, let audioIn,
                   CMTimeCompare(pts, firstPts) >= 0, audioIn.isReadyForMoreMediaData {
             _ = audioIn.append(sample)
@@ -258,7 +271,7 @@ final class CameraTestRun: NSObject, AVCaptureVideoDataOutputSampleBufferDelegat
     /// A frame the camera dropped before it reached the app: skipped.
     func captureOutput(_ output: AVCaptureOutput, didDrop sample: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard output === videoOut, !over, partRunning else { return }
-        skipped += 1
+        dropped += 1
     }
 
     /// Part 1's MP4, with the settings a session's file gets (PhoneCamera.videoSettings).
