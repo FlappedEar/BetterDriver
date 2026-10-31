@@ -78,8 +78,12 @@ class DataVideoTest {
         assertEquals(1, session.paths.size)
         val durations = mapOf(session.paths[0] to 8_000_000L)
         val parts = session.parts(durations)
-        // No saved track: only the whole video, no laps.
-        assertEquals(1, parts.size)
+        // No saved track: the whole video, no laps; the composite laps are listed but cannot be made (FBBD-370).
+        assertEquals(3, parts.size)
+        val composites = listOf(DataVideoSession.RealisticOptimal, DataVideoSession.RawTheoretical)
+        assertEquals(composites, parts.drop(1).map { it.part })
+        assertTrue(parts.drop(1).all { it.composite && !it.enabled })
+        assertEquals("No raw theoretical best: the session has no counted laps at a saved track.", parts[2].note)
         assertEquals("Whole session", parts[0].name)
         assertEquals("8 s of video", parts[0].note)
         assertTrue(parts[0].enabled)
