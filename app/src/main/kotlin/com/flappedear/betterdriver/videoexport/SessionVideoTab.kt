@@ -67,14 +67,7 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
             "$title. Speed, lap time, delta to your best lap, G and the track map are drawn over the video " +
                 "on this phone.",
         )
-        when (val o = options) {
-            VideoLoad.Loading -> {
-                DimText("Reading laps and video…")
-                LinearProgressIndicator(Modifier.fillMaxWidth())
-            }
-            VideoLoad.Unreadable -> DimText("This session's video could not be read.", color = TrackTheme.colors.loss)
-            is VideoLoad.Ready -> PartList(o.options, picked) { picked = it }
-        }
+        Parts(options, picked) { picked = it }
         // A part to act on: read, and one picked.
         val part = picked.takeIf { ready != null }
         if (part != null && isSingleLap(part)) HandleRow(handle) { handle = it }
@@ -90,6 +83,19 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
             },
             onWatch = { if (part != null) onWatch(part, handleFor(part, handle)) },
         )
+    }
+}
+
+/** The parts to pick from once read; while reading, or when the video cannot be read, says so. */
+@Composable
+private fun Parts(options: VideoLoad, picked: VideoPart?, onPick: (VideoPart) -> Unit) {
+    when (options) {
+        VideoLoad.Loading -> {
+            DimText("Reading laps and video…")
+            LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        VideoLoad.Unreadable -> DimText("This session's video could not be read.", color = TrackTheme.colors.loss)
+        is VideoLoad.Ready -> PartList(options.options, picked, onPick)
     }
 }
 
