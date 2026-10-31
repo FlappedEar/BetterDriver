@@ -71,6 +71,7 @@ import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.Sessions
+import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
@@ -82,6 +83,7 @@ import com.flappedear.betterdriver.timing.track.TrackStore
 import com.flappedear.betterdriver.timing.track.findSessionLoop
 import com.flappedear.betterdriver.timing.track.proposeTrack
 import com.flappedear.betterdriver.tracks.Tracks
+import com.flappedear.betterdriver.videoexport.SessionVideoTab
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -336,6 +338,16 @@ internal fun SessionAnalysisRoute(
                 optimalVideo = optimalVideoSlot(id, done?.loaded?.analysis, done?.lapVideo),
                 // Progression over every session at the track (FBBD-181).
                 onProgression = trackId?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },
+                // The Video tab, only for a session with video (FBBD-392), as on iOS.
+                video = if (id in sessions.withVideo) {
+                    {
+                        SessionVideoTab(id, listed?.let(::sessionTitle).orEmpty()) { part, handle ->
+                            nav.navigate(Routes.watchVideo(id, part, handle))
+                        }
+                    }
+                } else {
+                    null
+                },
             )
         }
     }

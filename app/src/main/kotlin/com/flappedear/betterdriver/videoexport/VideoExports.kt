@@ -108,15 +108,20 @@ class VideoExports private constructor(private val context: Context) {
 
     /**
      * What watching session [id]'s video in the app needs (FBBD-341), read off the main thread: the
-     * whole video's cuts and the overlay's data, as Video with data's "Whole session" has them. Null
-     * when it has no video or it cannot be read. Read on the export's io thread, after any reading
-     * already queued there.
+     * cuts of [part] and the overlay's data, as Video with data cuts them: the whole video, or a lap
+     * (FBBD-392) with [handleSeconds] before and after it. Null when it has no video, the part has
+     * none, or it cannot be read. Read on the export's io thread, after any reading already queued there.
      */
     @Suppress("TooGenericExceptionCaught")
-    fun watch(id: String, onReady: (WatchSource?) -> Unit) = io.execute {
+    fun watch(
+        id: String,
+        part: VideoPart = WholeVideo,
+        handleSeconds: Int = 0,
+        onReady: (WatchSource?) -> Unit,
+    ) = io.execute {
         val source = try {
             prepare(id)?.let { p ->
-                val cuts = p.cuts(WholeVideo)
+                val cuts = if (canWatch(part)) p.cuts(part, handleSeconds * MicrosPerSecond) else emptyList()
                 if (cuts.isEmpty()) {
                     null
                 } else {

@@ -2,10 +2,20 @@
 
 Tap a session in **Sessions** to open its lap analysis. Six tabs run along the top (the row
 scrolls sideways on a phone): **Summary**, **Compare**, **Map**, **Laps**, **Corners** and
-**Car**. On the iPhone and iPad a session with video has a seventh tab, **Video**, after **Car**
-(Watch video and Save video in one place); on Android these stay in the session's sheet. On a
+**Car**. A session with video has a seventh tab, **Video**, after **Car**, on Android, iPhone and
+iPad: see [the Video tab](#the-video-tab). On a
 tablet the session list stays beside the analysis, and turning the tablet keeps
 your tab, compared laps, map view, corner and scroll position.
+
+## The Video tab
+
+A session with video has a **Video** tab after **Car**. It lists the parts of
+[Video with data](export.md#video-with-data): the whole session, on Android the composite laps, and each lap,
+the best lap picked to start with; a lap the cameras missed cannot be picked. For a lap, pick the
+seconds of video before and after it (5 to 8). **Watch** plays the picked part on the phone with
+the data band over it (the whole session or a lap; a composite lap is only saved). **Save video**
+renders it to an MP4 where you choose, with a bar and **Cancel video** while it renders. **Watch
+video** and **Export ▾ › Video with data** in the session's sheet still work as before.
 
 ## Where the numbers come from
 
