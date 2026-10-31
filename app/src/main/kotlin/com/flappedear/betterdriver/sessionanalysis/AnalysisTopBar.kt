@@ -12,7 +12,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.flappedear.betterdriver.shell.HideSessionList
+import com.flappedear.betterdriver.shell.SessionListToggle
 import com.flappedear.betterdriver.shell.ShellIcons
+import com.flappedear.betterdriver.shell.ShowSessionList
 import com.flappedear.betterdriver.shell.ShellTopBar
 import java.time.Instant
 import java.time.ZoneId
@@ -23,17 +26,23 @@ import java.util.Locale
 /**
  * The bar over a session's analysis, as in the iOS app: the session's start time and its track for a
  * title, and a menu with the ways on from it, the track's progression (FBBD-181, when the session is
- * at a track) and the coach's cues (FBBD-99).
+ * at a track) and the coach's cues (FBBD-99). On a tablet [listToggle] hides the session list beside
+ * it, or shows it again, as the iPad's.
  */
 @Composable
 internal fun AnalysisTopBar(
     title: String,
     onBack: (() -> Unit)?,
+    listToggle: SessionListToggle? = null,
     onProgression: (() -> Unit)?,
     onCoachReview: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
-    ShellTopBar(title, onBack = onBack) {
+    ShellTopBar(
+        title,
+        onBack = onBack,
+        navigation = listToggle?.let { { SessionListButton(it) } },
+    ) {
         Box {
             IconButton(onClick = { open = true }) {
                 Icon(
@@ -61,6 +70,18 @@ internal fun AnalysisTopBar(
                 )
             }
         }
+    }
+}
+
+/** Hides the session list beside the analysis, or shows it again (Arek 2026-10-31). */
+@Composable
+private fun SessionListButton(toggle: SessionListToggle) {
+    IconButton(onClick = toggle.toggle) {
+        Icon(
+            ShellIcons.List,
+            contentDescription = if (toggle.hidden) ShowSessionList else HideSessionList,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

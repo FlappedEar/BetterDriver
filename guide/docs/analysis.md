@@ -4,7 +4,9 @@ Tap a session in **Sessions** to open its lap analysis. Six tabs run along the t
 scrolls sideways on a phone): **Summary**, **Compare**, **Map**, **Laps**, **Corners** and
 **Car**. A session with video has a seventh tab, **Video**, after **Car**, on Android, iPhone and
 iPad: see [the Video tab](#the-video-tab). On a
-tablet the session list stays beside the analysis, and turning the tablet keeps
+tablet the session list stays beside the analysis; the list button at the left of the
+analysis's bar hides the list, so the analysis takes the whole width, and brings it back
+(on an Android tablet held upright the analysis is on its own, with Back). Turning the tablet keeps
 your tab, compared laps, map view, corner and scroll position.
 
 ## The Video tab

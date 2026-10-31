@@ -77,6 +77,7 @@ import com.flappedear.betterdriver.recording.qualityReports
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
+import com.flappedear.betterdriver.shell.SessionListToggle
 import com.flappedear.betterdriver.shell.rememberAcrossTurns
 import com.flappedear.betterdriver.timing.circuits.CircuitList
 import com.flappedear.betterdriver.timing.track.Track
@@ -190,7 +191,8 @@ internal fun NavGraphBuilder.analysisDestination(nav: NavHostController, padding
  *
  * It fills its own screen, or the detail pane of Sessions on a tablet (FBBD-40); [layout] is the size
  * class of the space it has. [onBack] is its back button, none beside the session list. [corner]
- * (a CornerId) opens it on that corner's passes, as the progression does (FBBD-93).
+ * (a CornerId) opens it on that corner's passes, as the progression does (FBBD-93). [listToggle]
+ * hides or shows the session list beside it on a tablet.
  */
 @Suppress("LongMethod", "CyclomaticComplexMethod") // Loads, analyses and follows the coach picks: one flow, one place.
 @Composable
@@ -200,6 +202,7 @@ internal fun SessionAnalysisRoute(
     layout: LayoutSize,
     onBack: (() -> Unit)?,
     corner: String? = null,
+    listToggle: SessionListToggle? = null,
 ) {
     val context = LocalContext.current
     // Kept while the tablet turns, so the session is not read and analysed again (FBBD-323).
@@ -327,6 +330,7 @@ internal fun SessionAnalysisRoute(
                     AnalysisTopBar(
                         analysisTitle(listed?.info?.startUtcMillis, done?.loaded?.title ?: listed?.info?.track),
                         onBack = onBack,
+                        listToggle = listToggle,
                         // Also for a session at a track with no complete lap there.
                         onProgression = (trackId ?: (load as? Load.Failed)?.trackId)
                             ?.let { t -> { nav.navigate(Routes.trackProgression(t)) } },

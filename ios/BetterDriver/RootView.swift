@@ -1,13 +1,17 @@
 import SwiftUI
 
 /// Sessions, as Android's (FBBD-40): on the iPad the list stays beside the picked session's review,
-/// or beside a hint to pick one, the picked row marked; on the iPhone the list and the session take
-/// the screen in turn. Sessions arrive from Files, AirDrop or another app's Share sheet, or Import
-/// session in the list (UI-292 A).
+/// or beside a hint to pick one, the picked row marked; the list button over the session hides the
+/// list so the review takes the whole width, or shows it again (Arek 2026-10-31: the list was stuck
+/// beside the session), as on an Android tablet held sideways. On the iPhone the list and the session
+/// take the screen in turn. Sessions arrive from Files, AirDrop or another app's Share sheet, or
+/// Import session in the list (UI-292 A).
 struct RootView: View {
     @State private var model = SessionsModel.shared
     @State private var selection: String?
     @State private var columns: NavigationSplitViewVisibility = .all
+    /// The list beside a session hidden by its button; shown again once the session is closed.
+    @State private var listHidden = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
@@ -15,22 +19,34 @@ struct RootView: View {
             SessionsListView(model: model, selection: $selection)
                 // Android's list beside the analysis: two fifths, between a phone's width and a card's.
                 .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 440)
-                // The list never hides on the iPad, so no sidebar button (iPadOS 26 adds one here).
+                // The session's own button hides and shows the list, so no system sidebar button.
                 .toolbar(removing: .sidebarToggle)
         } detail: {
             NavigationStack {
-                if let id = selection, let session = model.row(id) {
-                    SessionView(session: session, revision: model.revision).id(id)
-                } else {
-                    PickSession()
+                Group {
+                    if let id = selection, let session = model.row(id) {
+                        SessionView(session: session, revision: model.revision).id(id)
+                    } else {
+                        PickSession()
+                    }
+                }
+                .toolbar {
+                    if sizeClass == .regular && selection != nil {
+                        ToolbarItem(placement: .topBarLeading) { listButton }
+                    }
                 }
             }
         }
         .navigationSplitViewStyle(.balanced)
-        // Turned or resized, the iPad keeps the list: only a collapsed split (iPhone) shows one at a time.
-        .onChange(of: columns) { _, now in
-            if sizeClass == .regular && now != .all { columns = .all }
+        .onChange(of: selection) { _, id in
+            if id == nil { listHidden = false }
+            showColumns()
         }
+        .onChange(of: listHidden) { showColumns() }
+        // Turned or resized, the iPad keeps what the list button picked: only a collapsed split
+        // (iPhone) shows one column at a time.
+        .onChange(of: columns) { showColumns() }
+        .onChange(of: sizeClass) { showColumns() }
         .onOpenURL { url in model.importFiles([url]) }
         .confirmationDialog(
             "This session is already here",
@@ -58,6 +74,27 @@ struct RootView: View {
         ) {
             Button("OK", role: .cancel) {}
         }
+    }
+}
+
+
+extension RootView {
+    /// The columns on the iPad: the list beside, unless it was hidden over a picked session.
+    fileprivate var wanted: NavigationSplitViewVisibility {
+        selection != nil && listHidden ? .detailOnly : .all
+    }
+
+    fileprivate func showColumns() {
+        guard sizeClass == .regular, columns != wanted else { return }
+        columns = wanted
+    }
+
+    /// Over the session: hides the list beside it, or shows it again, as Android's (same icon role).
+    fileprivate var listButton: some View {
+        Button { listHidden.toggle() } label: {
+            Label(listHidden ? "Show session list" : "Hide session list", systemImage: "sidebar.left")
+        }
+        .accessibilityIdentifier("toggleSessionList")
     }
 }
 

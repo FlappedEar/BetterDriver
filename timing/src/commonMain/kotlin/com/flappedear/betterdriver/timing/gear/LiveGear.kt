@@ -30,6 +30,7 @@ class LiveGear(private val nowMicros: () -> Long) : RecorderListener {
     private var lastKept = Long.MIN_VALUE
     private var sinceFit = 0
     private var failedFits = 0
+    private var tracker: GearTracker? = null
 
     /** The gearbox fitted from this session so far; null before the first fit or when none fits. */
     var gearbox: Gearbox? = null
@@ -55,6 +56,7 @@ class LiveGear(private val nowMicros: () -> Long) : RecorderListener {
                     rpm = v.value
                     rpmAt = set.tMicros
                     keep(set.tMicros)
+                    track(set.tMicros)
                 }
             }
         }
@@ -72,17 +74,33 @@ class LiveGear(private val nowMicros: () -> Long) : RecorderListener {
         if (readings.size > MaxReadings) readings.removeFirst()
         if (++sinceFit >= RefitEvery) {
             sinceFit = 0
-            // One ratio alone (a hybrid cruising steadily) is no gearbox; a fit that later readings
-            // disprove is dropped, so an engine without fixed gears loses the tile again.
-            val fit = fitGearbox(listOf(readings.toList()))?.takeIf { it.gears.size >= MinGears }
-            if (fit != null) {
-                gearbox = fit
-                failedFits = 0
-            } else if (drivenReadings() >= MinFitReadings) {
-                gearbox = null
-                failedFits++
-            }
+            refit()
         }
+    }
+
+    /**
+     * Fits the gearbox again from the readings kept. One ratio alone (a hybrid cruising steadily) is
+     * no gearbox; a fit that later readings disprove is dropped, so an engine without fixed gears
+     * loses the tile again.
+     */
+    private fun refit() {
+        val fit = fitGearbox(listOf(readings.toList()))?.takeIf { it.gears.size >= MinGears }
+        if (fit != null) {
+            gearbox = fit
+            tracker.let { if (it == null) tracker = GearTracker(fit) else it.refit(fit) }
+            failedFits = 0
+        } else if (drivenReadings() >= MinFitReadings) {
+            gearbox = null
+            tracker = null
+            failedFits++
+        }
+    }
+
+    /** Every engine speed reading with a road speed of the same moment moves the gear on ([GearTracker]). */
+    private fun track(t: Long) {
+        val s = speedMps ?: return
+        val r = rpm ?: return
+        if (abs(t - speedAt) <= PairWindowMicros) tracker?.next(t, r, s)
     }
 
     /** Readings fast enough for a gear: only fits with enough of them count as failed. */
@@ -90,18 +108,16 @@ class LiveGear(private val nowMicros: () -> Long) : RecorderListener {
         readings.count { it.speedMps >= MinGearSpeedMps && (it.rpm ?: 0.0) >= MinGearRpm }
 
     /**
-     * The gear now, 1 for first; null when engine speed and road speed fit no gear (a shift, the
-     * converter slipping, standing), when either is older than [FreshMicros], or before a gearbox fits.
+     * The gear now, 1 for first: held through the converter's slip and changed where engine speed
+     * steps to another gear ([GearTracker]). Null standing, when engine speed or road speed is older
+     * than [FreshMicros], before a gearbox fits, or before a reading has sat on a gear.
      */
     @JvmSynchronized
     @Suppress("ReturnCount")
     fun gear(): Int? {
-        val box = gearbox ?: return null
         val now = nowMicros()
-        val s = speedMps ?: return null
-        val r = rpm ?: return null
         if (now - speedAt > FreshMicros || now - rpmAt > FreshMicros) return null
-        return box.gearAt(r, s)
+        return tracker?.gear
     }
 
     /**

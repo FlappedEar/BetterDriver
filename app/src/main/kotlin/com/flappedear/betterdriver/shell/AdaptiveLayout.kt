@@ -22,7 +22,10 @@ enum class SessionsPanes {
     /** The list only: a phone, or nothing picked on a narrow tablet. */
     List,
 
-    /** The picked session's analysis on its own: a tablet turned upright while one was open. */
+    /**
+     * The picked session's analysis on its own: a tablet turned upright while one was open, or a
+     * tablet whose list beside it was hidden.
+     */
     Detail,
 
     /** The list beside the picked session's analysis, or beside a hint to pick one. */
@@ -30,10 +33,12 @@ enum class SessionsPanes {
 }
 
 /**
- * The panes of Sessions: two on a tablet, else the picked session's analysis when one is picked and
- * still listed (it stays picked when the tablet turns), else the list.
+ * The panes of Sessions: two on a tablet, unless the list beside a picked session was hidden
+ * ([listHidden], Arek 2026-10-31: the list was stuck beside the session); else the picked session's
+ * analysis when one is picked and still listed (it stays picked when the tablet turns), else the list.
  */
-fun sessionsPanes(size: LayoutSize, shown: String?): SessionsPanes = when {
+fun sessionsPanes(size: LayoutSize, shown: String?, listHidden: Boolean = false): SessionsPanes = when {
+    size.tablet && shown != null && listHidden -> SessionsPanes.Detail
     size.tablet -> SessionsPanes.ListAndDetail
     shown != null -> SessionsPanes.Detail
     else -> SessionsPanes.List
@@ -63,3 +68,13 @@ private const val MostCueColumns = 3
 private const val ListShare = 0.4f
 private const val MinListWidthDp = 320f
 private const val MaxListWidthDp = 412f
+
+/**
+ * The button over a session's analysis on a tablet that hides the session list beside it, or shows it
+ * again: [hidden] says which, [toggle] does it.
+ */
+data class SessionListToggle(val hidden: Boolean, val toggle: () -> Unit)
+
+/** The toggle's descriptions, which the tests look for. */
+const val HideSessionList = "Hide session list"
+const val ShowSessionList = "Show session list"
