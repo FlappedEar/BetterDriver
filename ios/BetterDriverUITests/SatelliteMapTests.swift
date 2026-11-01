@@ -62,7 +62,10 @@ final class SatelliteMapTests: XCTestCase {
         sleep(8)
         keep("Perfect lap in 3D, satellite")
         XCTAssertEqual(app.state, .runningForeground)
-        app.buttons["perfectLapBack"].firstMatch.tap()
+        // By its label: the player's own identifier on its stack is what the Back button reports too.
+        let back = app.buttons.matching(NSPredicate(format: "identifier == 'perfectLapBack' OR label == '‹ Back'")).firstMatch
+        XCTAssertTrue(back.waitForExistence(timeout: 10), "no Back on the 3D player")
+        back.tap()
         XCTAssertTrue(play.waitForExistence(timeout: 10), "the 3D player did not close")
         XCTAssertEqual(app.state, .runningForeground)
     }
