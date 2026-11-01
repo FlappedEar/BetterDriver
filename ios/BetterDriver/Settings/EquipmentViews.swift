@@ -112,7 +112,7 @@ struct EquipmentItemPage: View {
                     }
                     // Android's RaceBox diagnostics (FBBD-89) and OBD page (FBBD-261).
                     if item.modelName == ModelName.raceBox {
-                        NavigationLink { NotImplementedPage(title: "Diagnostics") } label: {
+                        NavigationLink { RaceBoxDiagnosticsPage(item: item) } label: {
                             ListRow("Diagnostics", value: "Live", chevron: true)
                         }
                         .buttonStyle(.plain)

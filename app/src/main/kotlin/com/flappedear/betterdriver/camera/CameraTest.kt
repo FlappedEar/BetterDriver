@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.camera.CameraTestState.Companion.PartMinutes
 import com.flappedear.betterdriver.camera.CameraTestState.Companion.Parts
 import com.flappedear.betterdriver.camera.CameraTestState.Status
 import com.flappedear.betterdriver.recorder.log.DebugLog
+import com.flappedear.betterdriver.recorder.video.CameraTestText
 import com.flappedear.betterdriver.setup.VideoSize
 import java.io.File
 
@@ -88,7 +89,7 @@ internal class CameraTest(private val context: Context, private val audio: Boole
     fun stop(reason: String) {
         if (over || stopReason != null) return
         stopReason = reason
-        DebugLog.i(Tag, "camera test: stopping, $reason")
+        DebugLog.i(Tag, CameraTestText.stopping(reason))
         main.removeCallbacks(endPart)
         recorder?.stop() ?: end(Status.Stopped, reason)
     }
@@ -101,11 +102,7 @@ internal class CameraTest(private val context: Context, private val audio: Boole
         frames = CameraFrames(t.fps)
         threadCpu.line(SystemClock.elapsedRealtime())
         val mux = n == 1
-        DebugLog.i(
-            Tag,
-            "camera test part $n of $Parts: ${t.label} ${if (mux) "with MP4" else "without MP4"}, " +
-                "${t.bitrate} bit/s, sound ${if (audio) "on" else "off"}, $PartMinutes min",
-        )
+        DebugLog.i(Tag, CameraTestText.partStarted(n, t.label, t.bitrate.toLong(), audio))
         val w = WideRecorder(context, cameraId, t, audio, realtime, Files(), Captures(), mux)
         try {
             w.start(nextFile())
@@ -142,11 +139,7 @@ internal class CameraTest(private val context: Context, private val audio: Boole
         recorder = null
         val result = frames?.total()
         results[part - 1] = result
-        DebugLog.i(
-            Tag,
-            "camera test part $part of $Parts ${if (part == 1) "with MP4" else "without MP4"}: " +
-                (result?.text ?: "no frames") + error?.let { " error=$it" }.orEmpty(),
-        )
+        DebugLog.i(Tag, CameraTestText.partEnded(part, result, error))
         val reason = stopReason
         when {
             error != null -> end(Status.Failed, "part $part: $error")
@@ -165,12 +158,7 @@ internal class CameraTest(private val context: Context, private val audio: Boole
         over = true
         main.removeCallbacksAndMessages(null)
         write(status, note)
-        DebugLog.i(
-            Tag,
-            "camera test ${status.name.lowercase()}: " + results.mapIndexed { i, r ->
-                "part ${i + 1} ${r?.text ?: "n/a"}"
-            }.joinToString(", ") + note?.let { ", $it" }.orEmpty(),
-        )
+        DebugLog.i(Tag, CameraTestText.ended(status.name, results[0], results[1], note))
         dir.deleteRecursively()
         ended()
     }
