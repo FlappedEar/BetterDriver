@@ -20,5 +20,10 @@ jobs:
             fetch "esri-$z-$x-$y.jpg" "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/$z/$y/$x"
             fetch "google-$z-$x-$y.jpg" "https://mt1.google.com/vt/lyrs=s&x=$x&y=$y&z=$z"
           done
+          for r in StandardResolution HighResolution; do
+            curl -s --max-time 30 -o "caps-$r.xml" "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/$r?SERVICE=WMTS&REQUEST=GetCapabilities" || true
+            echo "== $r layers/sets"; grep -o '<ows:Identifier>[^<]*</ows:Identifier>' "caps-$r.xml" | sort -u | head -80
+            grep -o 'template="[^"]*"' "caps-$r.xml" | sort -u | head
+          done
           ls -la
           for f in *.jpg; do echo "=====BEGIN $f"; base64 -i "$f" | fold -w 4000; echo "=====END $f"; done
