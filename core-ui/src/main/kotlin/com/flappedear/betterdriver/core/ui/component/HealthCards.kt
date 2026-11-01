@@ -154,8 +154,8 @@ fun HealthValue(
             }
         },
         modifier,
+        // Wraps rather than clips: corner names can be long.
         style = ValueStyle.copy(fontSize = size.value.sp),
-        maxLines = 1,
     )
 }
 

@@ -78,9 +78,13 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
         compose.waitForIdle()
-        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode().boundsInRoot
-        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode().boundsInRoot
-        check(next.bottom <= best.top) { "next session at $next, best lap at $best on $device" }
+        // Measured unclipped: on a phone on its side the pinned best lap is below the fold.
+        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
+        val nextBottom = next.positionInRoot.y + next.size.height
+        check(nextBottom <= best.positionInRoot.y) {
+            "next session ends at $nextBottom, best lap at ${best.positionInRoot.y} on $device"
+        }
         compose.onNodeWithTag(PrimaryFocusTag).assertIsDisplayed().assert(hasText("Corners 2–3"))
     }
 
