@@ -58,6 +58,7 @@ internal fun NoLaps(state: AnalysisState.Unavailable, onAction: () -> Unit, vide
             AnalysisTab.Summary -> {
                 message(width)
                 state.drive?.let { DriveCards(it, width) }
+                state.weather?.let { WeatherCard(it, width) }
                 state.gForces?.let { GForcesCard(it, width) }
                 state.acceleration?.let { AccelerationCard(it, width) }
                 state.quality?.let { QualityCard(it, width) }

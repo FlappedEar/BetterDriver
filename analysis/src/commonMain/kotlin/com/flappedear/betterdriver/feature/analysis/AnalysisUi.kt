@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.analysis.map.GgTrace
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.recorder.Confidence
 import com.flappedear.betterdriver.recorder.Provenance
+import com.flappedear.betterdriver.analysis.weather.WeatherUi
 import kotlin.math.roundToLong
 
 /** What the analysis screen shows while it loads, when it cannot, and when it can. */
@@ -41,6 +42,8 @@ sealed interface AnalysisState {
         /** The car's values and the heart rate over the whole drive (UI-162 A); null without any. */
         val car: CarUi? = null,
         val drive: DriveMap? = null,
+        /** The weather of the session (FBBD-403); null while it is read, or when there is none. */
+        val weather: WeatherUi? = null,
     ) : AnalysisState
 
     data class Ready(val ui: AnalysisUi) : AnalysisState
@@ -249,6 +252,8 @@ data class AnalysisUi(
     val acceleration: AccelerationUi? = null,
     /** The session's data quality (FBBD-183); null while it is worked out, or when it cannot be. */
     val quality: QualityUi? = null,
+    /** The weather of the session (FBBD-403); null while it is read, or when there is none. */
+    val weather: WeatherUi? = null,
     /** Where the channels the analysis read come from (FBBD-174). */
     val sources: AnalysisProvenance = AnalysisProvenance(),
     /** The whole session's G-G diagram; null without movement. */

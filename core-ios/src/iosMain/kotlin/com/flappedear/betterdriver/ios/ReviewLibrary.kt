@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.weather.WeatherUi
 import com.flappedear.betterdriver.analysis.coaching.CoachingHistoryStore
 import com.flappedear.betterdriver.analysis.laps.deriveSourceLapSession
 import com.flappedear.betterdriver.analysis.line.DayPlanStore
@@ -90,6 +91,14 @@ class ReviewLibrary(base: String) {
      * measured, with each failure, from the report kept beside it as on Android; null when there is none.
      */
     fun quality(id: String): QualityUi? = quality.card(id)
+
+    private val weather = SessionWeatherCards(sessionsRoot)
+
+    /**
+     * The Weather card of session [id] (FBBD-403), as Android's: kept by the recording, or fetched now
+     * when it is missing; null when there is none. Blocking: not on the main thread.
+     */
+    fun weather(id: String): WeatherUi? = weather.card(id)
 
     /** The coaching history (FBBD-180), kept as Android keeps it: one record per analysed session. */
     private val history = CoachingHistoryStore(coachingHistoryDir(base))
