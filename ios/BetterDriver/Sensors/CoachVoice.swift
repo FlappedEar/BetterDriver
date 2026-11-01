@@ -7,8 +7,22 @@ import BetterDriverCore
 /// still being said. Each phrase's start and end go back to the coach for its VOICE events. When the
 /// output changes mid-session (a headset connects or drops) it is logged as Android logs it, and
 /// [onDelay] hears the delay iOS now reports, 0 when none (FBBD-354, FBBD-355).
+///
+/// Pre-rendered (FBBD-48), as on Android: when Settings › Spoken coach › Voice playback says so, every
+/// word and number is rendered to clips at the start ([CueClipRenderer]) and a phrase is joined from them
+/// and played at once on an audio engine, without waiting for speech to be synthesised. A phrase the
+/// clips do not cover, or any phrase until they are ready, is said live.
 final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     private let synthesizer = AVSpeechSynthesizer()
+    private let clips: CueClipRenderer?
+    private let engine = AVAudioEngine()
+    private let player = AVAudioPlayerNode()
+    private var playerFormat: AVAudioFormat?
+    /// The clip phrase playing.
+    private var clip: (id: Int, speech: CoachSpeech)?
+    private var clipIds = 0
+    /// Held while the audio engine is set up, started or paused.
+    private let engineLock = NSLock()
     private let voice: AVSpeechSynthesisVoice?
     private let rate: Float
     private let pitch: Float
@@ -21,12 +35,15 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     var onDelay: ((Int, String) -> Void)?
 
     /// The voice, speed and pitch chosen in Settings › Spoken coach (FBBD-338), as Test voice says them.
-    init(settings: CoachSettings) {
+    /// [clipsDone] hears whether the pre-rendered clips are ready (FBBD-48), when they are pre-rendered.
+    init(settings: CoachSettings, clipsDone: ((Bool) -> Void)? = nil) {
         voice = CoachVoiceChoice.voice(settings)
         rate = CoachVoiceChoice.rate(settings)
         pitch = settings.speech.pitch
+        clips = settings.voice.name == "PreRendered" ? CueClipRenderer(settings: settings) : nil
         super.init()
         synthesizer.delegate = self
+        clips?.start(done: clipsDone)
         routeObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil
         ) { [weak self] note in self?.routeChanged(note) }
@@ -84,13 +101,20 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         onDelay?(Self.outputDelayMillis, type)
     }
 
+    /// Whether the pre-rendered clips are loaded, so phrases are played from them (FBBD-48).
+    var clipsReady: Bool { clips?.cache.ready ?? false }
+
+    /// Why the last clip phrase was said live instead, for the log and tests.
+    private(set) var clipError: String?
+
     var speaking: Bool {
         lock.lock()
         defer { lock.unlock() }
-        return playing > 0
+        return playing > 0 || clip != nil
     }
 
     func say(text: String, speech: CoachSpeech) -> Bool {
+        if let sound = clips?.cache.phrase(text: text), play(sound, speech) { return true }
         guard voice != nil else { return false }
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = voice
@@ -101,10 +125,103 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         playing += 1
         lock.unlock()
         try? AVAudioSession.sharedInstance().setActive(true)
-        // A new phrase replaces one still being said, as on Android (QUEUE_FLUSH).
+        // A new phrase replaces one still being said, as on Android (QUEUE_FLUSH). A cut clip's engine
+        // is paused, so the audio can go back to the other apps when the live phrase ends.
+        if cutClip() { pauseEngine() }
         if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
         synthesizer.speak(utterance)
         return true
+    }
+
+    /// Plays a phrase joined from clips (FBBD-48), cutting off one still being said; false when the
+    /// audio engine cannot start, so it is said live.
+    private func play(_ sound: CueClipSound, _ speech: CoachSpeech) -> Bool {
+        guard let format = AVAudioFormat(
+            commonFormat: .pcmFormatFloat32, sampleRate: Double(sound.sampleRate), channels: 1, interleaved: false
+        ) else { return false }
+        let samples = sound.samples
+        let frames = samples.count / MemoryLayout<Int16>.size
+        guard frames > 0, let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frames)),
+              let out = buffer.floatChannelData?[0] else { return false }
+        buffer.frameLength = AVAudioFrameCount(frames)
+        samples.withUnsafeBytes { raw in
+            for i in 0 ..< frames {
+                out[i] = Float(raw.loadUnaligned(fromByteOffset: i * 2, as: Int16.self)) / Float(Int16.max)
+            }
+        }
+        if synthesizer.isSpeaking { synthesizer.stopSpeaking(at: .immediate) }
+        cutClip()
+        try? AVAudioSession.sharedInstance().setActive(true)
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        if engine.attachedNodes.contains(player) == false { engine.attach(player) }
+        if playerFormat != format {
+            engine.disconnectNodeOutput(player)
+            engine.connect(player, to: engine.mainMixerNode, format: format)
+            playerFormat = format
+        }
+        if !engine.isRunning {
+            do { try engine.start() } catch {
+                clipError = error.localizedDescription
+                AppLog.w("Voice", "clip not played, said live: \(error.localizedDescription)")
+                return false
+            }
+        }
+        lock.lock()
+        clipIds += 1
+        let id = clipIds
+        clip = (id, speech)
+        lock.unlock()
+        player.scheduleBuffer(buffer, at: nil, options: .interrupts, completionCallbackType: .dataPlayedBack) {
+            [weak self] _ in self?.clipEnded(id)
+        }
+        player.play()
+        let (route, device) = Self.route()
+        speech.started(route: route, device: device, clip: true)
+        return true
+    }
+
+    /// Stops the clip phrase playing, if any: it ends as "stopped". True when there was one.
+    @discardableResult
+    private func cutClip() -> Bool {
+        lock.lock()
+        let cut = clip
+        clip = nil
+        lock.unlock()
+        guard let cut else { return false }
+        player.stop()
+        cut.speech.ended(end: "stopped")
+        return true
+    }
+
+    /// Pauses the clips' audio engine, which holds the audio session while it runs.
+    private func pauseEngine() {
+        engineLock.lock()
+        defer { engineLock.unlock() }
+        if engine.isRunning { engine.pause() }
+    }
+
+    /// A clip phrase played to its end (one cut off has ended already); the audio goes back to the
+    /// other apps when nothing else is said.
+    private func clipEnded(_ id: Int) {
+        lock.lock()
+        guard let ended = clip, ended.id == id else {
+            lock.unlock()
+            return
+        }
+        clip = nil
+        let quiet = playing == 0
+        lock.unlock()
+        ended.speech.ended(end: "done")
+        guard quiet else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.engineLock.lock()
+            defer { self.engineLock.unlock() }
+            guard !self.speaking else { return }
+            self.engine.pause()
+            try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        }
     }
 
     /// Stops speaking and gives the other apps' audio back; at the end of a recording.
@@ -112,7 +229,12 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         if let routeObserver { NotificationCenter.default.removeObserver(routeObserver) }
         routeObserver = nil
         onDelay = nil
+        clips?.stop()
         synthesizer.stopSpeaking(at: .immediate)
+        cutClip()
+        engineLock.lock()
+        engine.stop()
+        engineLock.unlock()
         // Off the main queue: deactivating blocks while audio (the camera's microphone too) is still
         // running, which held the screen when the recording ended. Tried again while the camera stops,
         // so other apps' sound is not left ducked.
@@ -154,7 +276,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didStart utterance: AVSpeechUtterance) {
         let (route, device) = Self.route()
-        take(utterance, remove: false)?.started(route: route, device: device)
+        take(utterance, remove: false)?.started(route: route, device: device, clip: false)
     }
 
     func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {

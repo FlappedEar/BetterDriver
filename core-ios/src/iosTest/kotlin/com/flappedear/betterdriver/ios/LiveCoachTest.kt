@@ -11,6 +11,7 @@ import com.flappedear.betterdriver.analysis.line.PlanPoint
 import com.flappedear.betterdriver.coach.CoachEvents
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.VoiceMode
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -58,9 +59,12 @@ class LiveCoachTest {
         /** The output type the phrases go to. */
         var device = "speaker"
 
+        /** Whether the phrases are said from pre-rendered clips (FBBD-48). */
+        var clip = false
+
         override fun say(text: String, speech: CoachSpeech): Boolean {
             said += text
-            speech.started(if (device == "speaker") "speaker" else "headset", device)
+            speech.started(if (device == "speaker") "speaker" else "headset", device, clip)
             speech.ended("done")
             return true
         }
@@ -148,6 +152,38 @@ class LiveCoachTest {
         } finally {
             IosLog.sink = null
         }
+    }
+
+    @Test
+    fun preRenderedCuesAreTimedAndLoggedOnTheClipPath() {
+        val logged = mutableListOf<String>()
+        IosLog.sink = { tag, message -> logged += "$tag: $message" }
+        try {
+            val speaker = Speaker().apply { clip = true }
+            val settings = coachSettings(polish = false, audioDelayMillis = 120).copy(voice = VoiceMode.PreRendered)
+            val session = coachedSession(settings, speaker)
+            session.stop()
+            val voice = SessionStore(sessions).read(session.id).events.filter { it.kind == CoachEvents.VOICE }
+            assertTrue(voice.isNotEmpty())
+            // As on Android (FBBD-48): said from clips, timed for the clip path's delay.
+            val all = voice.joinToString { it.text }
+            assertTrue(voice.all { "path=clip" in it.text && "timed_src=measured" in it.text }, all)
+            val started = logged.filter { Regex("""Voice: pre-rendered voice start \d+ ms""").matches(it) }
+            assertEquals(voice.size, started.size, logged.joinToString("\n"))
+        } finally {
+            IosLog.sink = null
+        }
+    }
+
+    @Test
+    fun aCueSaidLiveWhileTheClipsAreNotReadyIsMarkedAsAnotherPath() {
+        val settings = coachSettings(polish = false, audioDelayMillis = 120).copy(voice = VoiceMode.PreRendered)
+        val session = coachedSession(settings, Speaker())
+        session.stop()
+        val voice = SessionStore(sessions).read(session.id).events.filter { it.kind == CoachEvents.VOICE }
+        assertTrue(voice.isNotEmpty())
+        val all = voice.joinToString { it.text }
+        assertTrue(voice.all { "path=live" in it.text && "timed_src=other_path" in it.text }, all)
     }
 
     @Test

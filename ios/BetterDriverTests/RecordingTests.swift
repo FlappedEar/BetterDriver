@@ -80,7 +80,7 @@ final class RecordingTests: XCTestCase {
 
         func say(text: String, speech: CoachSpeech) -> Bool {
             said.append(text)
-            speech.started(route: "speaker", device: "Speaker")
+            speech.started(route: "speaker", device: "Speaker", clip: false)
             speech.ended(end: "done")
             return true
         }
