@@ -5,7 +5,7 @@ import SwiftUI
 /// analysis: the button with what the video will leave out or why it cannot be made beside it, then the
 /// video's progress with Stop, then how it ended. The button opens the sheet that offers both composite
 /// laps (the realistic optimal first) with their parts; Export saves the MP4 and hands it to Files, as
-/// the Video tab does. The parts are looked for on the session's video off the main queue; the texts are
+/// the Video tab does, and leaving the Summary stops it. The parts are looked for on the session's video off the main queue; the texts are
 /// the shared core's (CompositeLapChoice).
 struct LapTimesOptimalVideo: View {
     let sessionId: String
@@ -46,6 +46,9 @@ struct LapTimesOptimalVideo: View {
             if let failure { DimText(failure, color: TrackColors.loss) }
         }
         .task(id: sessionId) { await load() }
+        // Leaving the Summary stops a video being made, as the Video tab does: its Files sheet would
+        // have nowhere to open.
+        .onDisappear { job?.cancel() }
         .sheet(isPresented: $open) {
             LapTimesOptimalVideoSheet(choice: choice) { part in
                 open = false
