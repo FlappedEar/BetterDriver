@@ -15,8 +15,8 @@ import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupFormatException
+import com.flappedear.betterdriver.setup.SessionEquipment
 import com.flappedear.betterdriver.setup.SetupJson
-import com.flappedear.betterdriver.setup.TcpAddress
 import com.flappedear.betterdriver.setup.TileIds
 import com.flappedear.betterdriver.setup.TrackScreens
 import com.flappedear.betterdriver.shell.ObdAdapterLabel
@@ -102,12 +102,11 @@ private fun sessionSetup(context: Context): Setup? {
  * A Wi-Fi adapter is not tried while the phone has no Wi-Fi.
  */
 internal fun obdTargets(context: Context, adapters: List<Equipment>): List<ObdTarget> {
-    val bluetooth = adapters.filter { it.model == EquipmentModel.OBD_BLUETOOTH && it.address != null }.map {
+    // Which ones: the shared rule iOS uses too (FBBD-349).
+    val bluetooth = SessionEquipment.obdBluetooth(adapters).map {
         bluetoothObdTarget(context, it.advertisedName ?: it.name, it.address.orEmpty())
     }
-    val wifiAt = adapters.filter { it.model == EquipmentModel.OBD_WIFI }.mapNotNull { e ->
-        e.address?.let { TcpAddress.parse(it) }?.let { e.name to it }
-    }
+    val wifiAt = SessionEquipment.obdWifi(adapters).map { it.adapter.name to it.at }
     val network = if (wifiAt.isEmpty()) null else wifi(context)
     if (network == null) return bluetooth
     val gateway = context.getSystemService(ConnectivityManager::class.java)?.getLinkProperties(network)?.routes

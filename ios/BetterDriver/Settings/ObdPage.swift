@@ -3,9 +3,9 @@ import SwiftUI
 
 /// The car data page's connection (FBBD-261, UI-104 B), as the Android app's rememberCarLink: while a
 /// session records it shows the recorder's OBD connection; otherwise, while the page is shown, it
-/// opens its own to the listed adapters and the Wi-Fi one, reading every channel the car has and
-/// nothing recorded, and lets go as soon as a session starts (the adapter takes one connection at a
-/// time). Scan car (FBBD-344, UI-303 B) stores what the car offers with the next session's car.
+/// opens its own to the adapters listed in Settings › Equipment (none listed, none: FBBD-349), reading
+/// every channel the car has and nothing recorded, and lets go as soon as a session starts (the adapter
+/// takes one connection at a time). Scan car (FBBD-344, UI-303 B) stores what the car offers with the next session's car.
 @MainActor
 final class ObdPageModel: ObservableObject {
     @Published private(set) var status: ObdStatus?
@@ -13,6 +13,8 @@ final class ObdPageModel: ObservableObject {
     @Published private(set) var scanning = false
     @Published private(set) var scanNote: String?
     private var link: ObdLink?
+    /// The listed adapters [link] was opened to: a change in Equipment opens a new one, as on Android.
+    private var linkedTo: [String] = []
     private var timer: Timer?
     private weak var recorder: RecordingController?
 
@@ -54,14 +56,23 @@ final class ObdPageModel: ObservableObject {
             scanning = false
             return
         }
-        if link == nil {
-            let setup = SettingsModel.shared.setup
-            let listed = RecordingController.listed(setup.active().carData, ModelName.obdBluetooth)
-            let page = ObdLink(sink: NoSamples.shared, listed: listed, setup: setup, page: true)
+        let setup = SettingsModel.shared.setup
+        let adapters = setup.active().carData.map { "\($0.id) \($0.address ?? "")" }
+        if let open = link, adapters != linkedTo {
+            open.stop()
+            link = nil
+        }
+        if link == nil, ObdLink.anyListed(setup) {
+            let page = ObdLink(sink: NoSamples.shared, setup: setup, page: true)
             link = page
+            linkedTo = adapters
             page.start()
         }
-        guard let link else { return }
+        guard let link else {
+            status = nil
+            scanning = false
+            return
+        }
         status = link.status()
         if let record = link.takeScan(), let carId = SettingsModel.shared.setup.active().car?.id {
             AppLog.i("Car", "scan stored: \(record.supported.count) PIDs, \(record.canIds.count) CAN ids")
@@ -95,11 +106,18 @@ struct ObdContent: View {
     var showsScan = true
 
     var body: some View {
-        // iOS also tries the Wi-Fi adapter when none is listed (FBBD-333), so the page always connects.
+        // Only listed adapters read the car (FBBD-349), as on Android: with none, the page says so.
         let adapter = settings.setup.active().carData.first
-        let name = adapter?.name ?? "Wi-Fi adapter"
-        let wifi = adapter == nil || adapter?.modelName == ModelName.obdWifi
-        if let status = model.status {
+        let name = adapter?.name ?? "OBD adapter"
+        let wifi = adapter?.modelName == ModelName.obdWifi
+        if adapter == nil {
+            header(ready: false, title: "No adapter added", detail: "Settings › Equipment › Add equipment")
+            DimText(
+                "Only adapters added as equipment read the car. A Bluetooth LE adapter is found by the search " +
+                    "there; a Wi-Fi adapter is added under Add without Bluetooth."
+            )
+            .accessibilityIdentifier("obdNoAdapter")
+        } else if let status = model.status {
             header(
                 ready: status.state == ObdLinkState.connected,
                 title: ObdPageText.shared.title(recording: model.recording, status: status),

@@ -290,7 +290,8 @@ private fun Drive(
                     phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
                         ?.videoMode
                         ?.takeIf { prefs.cameraGranted() },
-                    sensors = active.sensors.mapNotNull { s ->
+                    // The listed strap, as on iOS (FBBD-349).
+                    sensors = listOfNotNull(active.heartRateStrap).mapNotNull { s ->
                         s.address?.let { SensorRef(it, s.advertisedName ?: s.name) }
                     },
                 )
