@@ -356,7 +356,9 @@ private fun SessionsRoute(nav: NavHostController, sessions: Sessions, repo: Setu
             layout = layout,
             shown = shown,
             onClose = { picked = null },
-            detail = { id, pane, onBack -> SessionAnalysisRoute(nav, id, pane, onBack) },
+            detail = { id, pane, onBack, listToggle ->
+                SessionAnalysisRoute(nav, id, pane, onBack, listToggle = listToggle)
+            },
         ) { listModifier ->
             SessionsScreen(
                 modifier = listModifier,

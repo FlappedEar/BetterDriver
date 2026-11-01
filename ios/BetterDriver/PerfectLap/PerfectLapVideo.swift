@@ -48,6 +48,8 @@ enum PerfectLapVideo {
         writer.add(input)
         guard writer.startWriting() else { throw writer.error ?? Failure.encoder("the video could not be written") }
         writer.startSession(atSourceTime: .zero)
+        // The drawn road, no satellite photo: Apple's MapKit terms allow its map data to be shown in the
+        // app, not kept in a file of our own, so a saved video has no Apple imagery (Android's has MapTiler's).
         let painter = PerfectLapPainter(scene: scene)
         painter.distance = distance
         let frames = Int((scene.durationSeconds * Double(fps)).rounded(.up)) + 1

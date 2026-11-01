@@ -24,6 +24,22 @@ struct FoundRaceBoxDevice: Identifiable, Equatable {
 
 private let uartService = CBUUID(string: RaceBoxIds.shared.UART_SERVICE)
 private let uartTx = CBUUID(string: RaceBoxIds.shared.UART_TX)
+private let uartRx = CBUUID(string: RaceBoxIds.shared.UART_RX)
+private let deviceInfoService = CBUUID(string: RaceBoxDeviceInfoIds.shared.SERVICE)
+private let deviceInfoIds = RaceBoxDeviceInfoIds.shared.ALL.map { CBUUID(string: $0) }
+
+/// What the RaceBox diagnostics screen (FBBD-371) takes from the link on top of a recording's, as the
+/// Android link's LinkProbe: the notification bytes, the link's state, signal and packet size, the
+/// Device Information strings, and the read-only queries to send once those are read. Every call
+/// comes on the link's queue.
+protocol RaceBoxLinkProbe: AnyObject {
+    func data(_ value: Data)
+    func state(_ state: LinkState)
+    func link(rssi: Int?, mtu: Int?)
+    func deviceInfo(id: String, value: String)
+    /// Read-only queries only (FBBD-89): never a command that changes the RaceBox.
+    func queries() -> [Data]
+}
 
 /// Finds RaceBoxes nearby by their advertised name, as the Android app's scanner does (FBBD-332).
 final class RaceBoxScanner: NSObject, CBCentralManagerDelegate {
@@ -76,11 +92,16 @@ final class RaceBoxScanner: NSObject, CBCentralManagerDelegate {
 /// setup times, a restart after 3 s without data, no quiet wait, and the same "Link" log lines. iOS
 /// chooses the MTU and the connection interval itself, so the Android link's MTU request and fast
 /// link have nothing to do here. All CoreBluetooth work runs on one serial queue.
+///
+/// With a [RaceBoxLinkProbe] in place of a recording (the diagnostics screen, FBBD-371) the link also
+/// reads the Device Information strings, reads the signal once a second and sends the probe's
+/// read-only queries; without one it does exactly what a recording needs and nothing more.
 final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegate, NotifyLinkIo {
     private let queue = DispatchQueue(label: "racebox.link", qos: .userInitiated)
     private var central: CBCentralManager!
     private let deviceId: UUID
-    private let session: RaceBoxSession
+    private let session: RaceBoxSession?
+    private let probe: RaceBoxLinkProbe?
     private let onState: (RaceBoxLinkState) -> Void
     private var core: NotifyLinkCore?
     private var peripheral: CBPeripheral?
@@ -88,15 +109,29 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
     private var running = false
     /// A connection the core asked for is open; callbacks of one it closed are left out.
     private var connectionOpen = false
+    // The probe's steps on the open connection: the UART's write side, notifications on, the
+    // Device Information strings still to read (nil until known), the queries sent.
+    private var rx: CBCharacteristic?
+    private var notifying = false
+    private var infoLeft: Int?
+    private var queriesSent = false
 
-    /// [sink] is the recording; [onState] runs on the main queue.
-    init(deviceId: UUID, deviceName: String, sink: SampleSink, onState: @escaping (RaceBoxLinkState) -> Void) {
+    /// [sink] is the recording; [calibration] the one saved for this RaceBox (FBBD-89), applied to
+    /// its motion sensors; [onState] runs on the main queue.
+    init(
+        deviceId: UUID,
+        deviceName: String,
+        sink: SampleSink,
+        calibration: ImuCalibration? = nil,
+        onState: @escaping (RaceBoxLinkState) -> Void
+    ) {
         self.deviceId = deviceId
         self.onState = onState
+        probe = nil
         session = RaceBoxSession(
             sink: sink,
             isMicro: deviceName.hasPrefix(RaceBoxIds.shared.MICRO_PREFIX),
-            calibration: nil,
+            calibration: calibration,
             log: { line in AppLog.i("RaceBox", line) },
             // iOS chooses the connection interval itself; there is no faster link to ask for.
             onSlowLink: { _ in }
@@ -104,20 +139,31 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         super.init()
     }
 
+    /// The diagnostics screen's link (FBBD-371): no recording, everything to [probe].
+    init(deviceId: UUID, probe: RaceBoxLinkProbe, onState: @escaping (RaceBoxLinkState) -> Void) {
+        self.deviceId = deviceId
+        self.onState = onState
+        self.probe = probe
+        session = nil
+        super.init()
+    }
+
     func start() {
         queue.async {
             guard !self.running else { return }
             self.running = true
-            self.session.start()
+            self.session?.start()
             let address = self.deviceId.uuidString
             let session = self.session
+            let probe = self.probe
             let onState = self.onState
             self.core = NotifyLinkCore(
                 address: address,
                 io: self,
                 now: { KotlinLong(value: Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000)) },
                 onState: { state in
-                    session.linkChanged(address: address, s: state)
+                    session?.linkChanged(address: address, s: state)
+                    probe?.state(state)
                     let shown = RaceBoxLink.shown(state)
                     DispatchQueue.main.async { onState(shown) }
                 },
@@ -131,7 +177,11 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             // Once a second, as Android's watchdog: the core's rate, silence and setup checks.
             let timer = DispatchSource.makeTimerSource(queue: self.queue)
             timer.schedule(deadline: .now() + 1, repeating: 1)
-            timer.setEventHandler { [weak self] in self?.core?.tick() }
+            timer.setEventHandler { [weak self] in
+                self?.core?.tick()
+                // The diagnostics screen's signal line, as Android's probe reads it.
+                if self?.probe != nil, let p = self?.peripheral, p.state == .connected { p.readRSSI() }
+            }
             timer.resume()
             self.watch = timer
         }
@@ -184,6 +234,10 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         guard central.state == .poweredOn else { return "Bluetooth off" }
         guard let p = peripheral else { return "RaceBox not known to this phone" }
         p.delegate = self
+        rx = nil
+        notifying = false
+        infoLeft = nil
+        queriesSent = false
         // A pending connect waits for the RaceBox; the core gives it up after the plan's setup time.
         central.connect(p)
         connectionOpen = true
@@ -231,7 +285,13 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         guard connectionOpen else { return }
         core?.connected()
         core?.reached(next: .services)
-        peripheral.discoverServices([uartService])
+        guard let probe else {
+            peripheral.discoverServices([uartService])
+            return
+        }
+        // iOS chose the packet size; the ATT payload plus its 3-byte header, as Android's MTU.
+        probe.link(rssi: nil, mtu: peripheral.maximumWriteValueLength(for: .withoutResponse) + 3)
+        peripheral.discoverServices([uartService, deviceInfoService])
     }
 
     func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
@@ -253,11 +313,29 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
             core.failed(reason: "service \(RaceBoxIds.shared.UART_SERVICE) not found")
             return
         }
-        peripheral.discoverCharacteristics([uartTx], for: service)
+        guard probe != nil else {
+            peripheral.discoverCharacteristics([uartTx], for: service)
+            return
+        }
+        peripheral.discoverCharacteristics([uartTx, uartRx], for: service)
+        if let info = peripheral.services?.first(where: { $0.uuid == deviceInfoService }) {
+            peripheral.discoverCharacteristics(deviceInfoIds, for: info)
+        } else {
+            infoLeft = 0
+        }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         guard connectionOpen, let core else { return }
+        if service.uuid == deviceInfoService {
+            // In the order of the list: the firmware comes before the queries that depend on it.
+            let found = deviceInfoIds.compactMap { id in service.characteristics?.first(where: { $0.uuid == id }) }
+            infoLeft = found.count
+            found.forEach { peripheral.readValue(for: $0) }
+            sendQueries(peripheral)
+            return
+        }
+        if probe != nil { rx = service.characteristics?.first(where: { $0.uuid == uartRx }) }
         guard let tx = service.characteristics?.first(where: { $0.uuid == uartTx }) else {
             core.failed(reason: "characteristic \(RaceBoxIds.shared.UART_TX) not found")
             return
@@ -278,12 +356,49 @@ final class RaceBoxLink: NSObject, CBCentralManagerDelegate, CBPeripheralDelegat
         } else {
             core.log(text: "notifications on, \(core.elapsed()) ms after connecting began")
             core.reached(next: .firstValue)
+            notifying = true
+            sendQueries(peripheral)
         }
     }
 
     func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
-        guard connectionOpen, characteristic.uuid == uartTx, let value = characteristic.value else { return }
+        guard connectionOpen else { return }
+        if characteristic.uuid != uartTx {
+            deviceInfoRead(peripheral, characteristic, error: error)
+            return
+        }
+        guard let value = characteristic.value else { return }
         core?.data()
-        session.feed(data: value)
+        if let session {
+            session.feed(data: value)
+        } else {
+            probe?.data(value)
+        }
+    }
+
+    func peripheral(_ peripheral: CBPeripheral, didReadRSSI RSSI: NSNumber, error: Error?) {
+        guard connectionOpen, error == nil else { return }
+        probe?.link(rssi: RSSI.intValue, mtu: nil)
+    }
+
+    /// One Device Information string read, or failed; once all are, the queries may go.
+    private func deviceInfoRead(_ peripheral: CBPeripheral, _ characteristic: CBCharacteristic, error: Error?) {
+        guard let probe, deviceInfoIds.contains(characteristic.uuid) else { return }
+        if error == nil, let value = characteristic.value,
+           let text = String(data: value, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines.union(.controlCharacters)),
+           !text.isEmpty {
+            probe.deviceInfo(id: characteristic.uuid.uuidString, value: text)
+        }
+        if let left = infoLeft { infoLeft = max(0, left - 1) }
+        sendQueries(peripheral)
+    }
+
+    /// The probe's read-only queries, once per connection: after notifications are on (the replies
+    /// come as notifications) and the Device Information strings are read (they decide which).
+    private func sendQueries(_ peripheral: CBPeripheral) {
+        guard let probe, notifying, infoLeft == 0, !queriesSent, let rx else { return }
+        queriesSent = true
+        let type: CBCharacteristicWriteType = rx.properties.contains(.writeWithoutResponse) ? .withoutResponse : .withResponse
+        for query in probe.queries() { peripheral.writeValue(query, for: rx, type: type) }
     }
 }

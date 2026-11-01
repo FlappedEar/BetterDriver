@@ -1,4 +1,5 @@
 import XCTest
+import BetterDriverCore
 @testable import BetterDriver
 
 /// The iOS log writes Android's line format (LogLine.kt), keeps lines in order, clears on request and
@@ -89,5 +90,25 @@ final class AppLogTests: XCTestCase {
         for name in ["device.txt", "oslog.txt", log.file.lastPathComponent] {
             XCTAssertNotNil(bytes.range(of: Data(name.utf8)), "no \(name) in the zip")
         }
+    }
+
+    /// The load line (FBBD-281): the process's counters read, and two samples a minute apart make the
+    /// shared LoadLine Android's log checks read.
+    func testTheLoadLineReadsTheProcess() {
+        let a = ProcessLoad.sample()
+        var x = 0.0
+        for i in 0..<2_000_000 { x += Double(i).squareRoot() }
+        XCTAssertGreaterThan(x, 0)
+        let b = ProcessLoad.sample()
+        XCTAssertGreaterThan(b.heapUsedBytes, 0)
+        XCTAssertGreaterThanOrEqual(b.heapMaxBytes, b.heapUsedBytes)
+        XCTAssertGreaterThan(b.threads, 0)
+        XCTAssertGreaterThanOrEqual(b.cpuMillis, a.cpuMillis)
+        let later = LoadSample(
+            uptimeMillis: a.uptimeMillis + 60_000, cpuMillis: a.cpuMillis + 6_000, gcCount: 0, gcMillis: 0,
+            allocatedBytes: 0, heapUsedBytes: b.heapUsedBytes, heapMaxBytes: b.heapMaxBytes, threads: b.threads
+        )
+        let line = LoadLine.companion.between(from: a, to: later)
+        XCTAssertEqual(line?.text().hasPrefix("load: cpu_pct=10.0 cpu_ms=6000 wall_ms=60000 gc=0"), true, line?.text() ?? "nil")
     }
 }

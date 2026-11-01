@@ -22,6 +22,12 @@ struct DiagnosticsPage: View {
                 .accessibilityIdentifier("diagnostics.share")
                 ListRow("Clear log") { if !busy { confirmClear = true } }
                     .accessibilityIdentifier("diagnostics.clear")
+                // The camera test (FBBD-278, UI-150 A on Android; iOS FBBD-371): its results go into this log.
+                NavigationLink { CameraTestPage() } label: {
+                    ListRow("Camera test", supporting: "1080p · 60, with and without MP4", chevron: true)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("diagnostics.cameraTest")
             }
             DimText("Kept until you clear it. After a drive, share it once: the app's checks are worked out from it.")
                 .padding(.horizontal, 4)

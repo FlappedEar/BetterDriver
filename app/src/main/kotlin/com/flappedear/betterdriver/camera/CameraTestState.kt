@@ -1,15 +1,13 @@
 package com.flappedear.betterdriver.camera
 
 import android.content.Context
+import com.flappedear.betterdriver.recorder.video.CameraTestPart
+import com.flappedear.betterdriver.recorder.video.CameraTestText
 import java.io.File
 import java.io.IOException
-import java.util.Locale
 
-/** One part of the camera test: the rate the camera delivered, and the share of frames it skipped. */
-data class TestPart(val fps: Double, val skippedPercent: Double) {
-    /** "camera 57.2 fps · skipped 3.1 %", as the test screen shows it (UI-152 A). */
-    val text: String get() = String.format(Locale.ROOT, "camera %.1f fps · skipped %.1f %%", fps, skippedPercent)
-}
+/** One part of the camera test, shared with iOS (FBBD-371): the camera's rate and the frames it skipped. */
+typealias TestPart = CameraTestPart
 
 /**
  * Where the camera test stands (FBBD-278, UI-150..152 A), written by [CameraTest] in the camera's
@@ -40,8 +38,8 @@ data class CameraTestState(
     }
 
     companion object {
-        const val Parts = 2
-        const val PartMinutes = 12
+        const val Parts = CameraTestText.PARTS
+        const val PartMinutes = CameraTestText.PART_MINUTES
         private const val FileName = "camera-test.txt"
 
         fun file(context: Context) = File(context.filesDir, FileName)

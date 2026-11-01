@@ -42,6 +42,8 @@ enum AppLog {
         )
         CrashLog.install(log: log)
         AppEvents.shared.start(log: log)
+        // The once-a-minute load line while a session records, as on Android (FBBD-281).
+        ProcessLoad.start(log: log)
     }
 
     private static let tag = "App"
