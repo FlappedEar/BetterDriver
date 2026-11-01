@@ -375,7 +375,9 @@ private fun SmokeRule.scrollStep(matcher: SemanticsMatcher, useUnmergedTree: Boo
                 )
             }
             .firstOrNull { (_, by) -> by != Offset.Zero }
-        scroll?.let { (container, by) -> container.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(by.x, by.y) }
+        scroll?.let { (container, by) ->
+            container.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(by.x, by.y)
+        }
         step = ScrollStep(inView = scroll == null && displayed, displayed = displayed, position = node.positionInRoot)
     }
     return step
@@ -389,21 +391,23 @@ private fun lacking(start: Float, end: Float, viewStart: Float, viewEnd: Float):
     else -> 0f
 }
 
-/** Whether the node is placed and at least part of it is on screen, as Compose's assertIsDisplayed checks. Main thread. */
+/**
+ * Whether the node is placed and at least part of it is on screen, as Compose's assertIsDisplayed
+ * checks. Main thread.
+ */
 private fun SemanticsNode.isDisplayedIn(view: View): Boolean {
-    if (!layoutInfo.isPlaced || !view.isShown) return false
     val bounds = boundsInRoot
-    if (bounds.width <= 0f || bounds.height <= 0f) return false
     val at = IntArray(2)
     view.getLocationInWindow(at)
     val visible = android.graphics.Rect()
-    if (!view.getGlobalVisibleRect(visible)) return false
-    return visible.intersects(
-        (bounds.left + at[0]).toInt(),
-        (bounds.top + at[1]).toInt(),
-        (bounds.right + at[0]).toInt(),
-        (bounds.bottom + at[1]).toInt(),
-    )
+    return layoutInfo.isPlaced && view.isShown && bounds.width > 0f && bounds.height > 0f &&
+        view.getGlobalVisibleRect(visible) &&
+        visible.intersects(
+            (bounds.left + at[0]).toInt(),
+            (bounds.top + at[1]).toInt(),
+            (bounds.right + at[0]).toInt(),
+            (bounds.bottom + at[1]).toInt(),
+        )
 }
 
 /** The node [index] of those matching [matcher] on screen now, with the view of its Compose root. Main thread. */
