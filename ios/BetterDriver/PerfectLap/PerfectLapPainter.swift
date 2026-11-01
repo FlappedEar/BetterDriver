@@ -5,7 +5,7 @@ import UIKit
 /// Draws the perfect lap in 3D at one moment (FBBD-308, FBBD-316), as Android's PerfectLapPainter:
 /// the shared scene (SceneFrame) gives every shape in screen pixels, this colours them and writes the
 /// corner, the speed, the lap clock and the best lap's gap over them. The player and the saved video
-/// both draw with it. [tiles] gives Apple's satellite photo under the road in the player (UI-201 B, as
+/// both draw with it. [tiles] gives the satellite photo under the road in the player (UI-201 B, as
 /// MapTilerGround on Android); without it the road is drawn (UI-201 A). [waitForTiles] reads or fetches
 /// each tile before drawing it; the player draws the tiles at hand.
 final class PerfectLapPainter {
@@ -16,6 +16,8 @@ final class PerfectLapPainter {
 
     /// How far the camera is from the car, times the normal distance: pinched in the player.
     var distance = 1.0
+    /// Satellite tiles in the last picture drawn: for the player's accessibility value and its UI test.
+    private(set) var lastPhotos = 0
 
     init(scene: PerfectLapScene, tiles: PerfectLapTiles? = nil, waitForTiles: Bool = false) {
         self.scene = scene
@@ -38,6 +40,7 @@ final class PerfectLapPainter {
         let shapes = frame.shapes
         for shape in shapes where Self.underMap(shape.paint) { fill(cg, shape) }
         let photos = photo(cg, frame.tiles)
+        lastPhotos = photos
         for shape in shapes where !Self.underMap(shape.paint) { fill(cg, shape) }
         UIGraphicsPushContext(cg)
         defer { UIGraphicsPopContext() }

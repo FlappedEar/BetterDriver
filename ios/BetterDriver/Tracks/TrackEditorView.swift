@@ -105,12 +105,16 @@ struct TrackEditorScreen: View {
 
 /// Track editor (FBBD-56 on Android, FBBD-336): phone, map on top and the lines below (UI-23 A);
 /// iPad, the map with a side panel (UI-25 A). Lines are placed from the recorded lap by default
-/// (UI-24 A), on Apple's satellite photo (UI-26 A) or Apple's map.
+/// (UI-24 A), on the best satellite photo at hand (UI-26 A, FBBD-411) or Apple's map.
 struct TrackEditorView: View {
     @ObservedObject var model: EditorModel
     let onClose: () -> Void
     @Environment(\.horizontalSizeClass) private var width
-    @State private var background = EditorBackground.satellite
+    @State private var background = EditorBackground.best
+    @ObservedObject private var satellite = SatelliteMaps.shared
+    /// The source whose key is being entered from the map menu.
+    @State private var keyFor: SatelliteSource?
+    @State private var keyText = ""
     @State private var leaving = false
     @State private var deleting = false
     @State private var naming = false
@@ -162,6 +166,39 @@ struct TrackEditorView: View {
         .alert(failed ?? "", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
             Button("OK", role: .cancel) {}
         }
+        .alert(keyFor.map { "\($0 == .google ? "Google" : "MapTiler") key" } ?? "",
+               isPresented: Binding(get: { keyFor != nil }, set: { if !$0 { keyFor = nil } })) {
+            TextField("Key", text: $keyText)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Save") {
+                if let source = keyFor {
+                    satellite.setKey(keyText, for: source)
+                    // The photo the key turns on, or the best left when it was removed.
+                    background = keyText.trimmingCharacters(in: .whitespaces).isEmpty || satellite.key(source) == nil
+                        ? .best : EditorBackground(source)
+                }
+                keyFor = nil
+            }
+            Button("Cancel", role: .cancel) { keyFor = nil }
+        } message: {
+            Text(keyFor == .google
+                ? "Turns on Google's satellite photo (Map Tiles API key). The key stays on this device."
+                : "Turns on MapTiler's satellite photo. The key stays on this device.")
+        }
+    }
+
+    /// Opens the key entry for [source] with its key so far.
+    private func editKey(_ source: SatelliteSource) {
+        keyText = satellite.key(source) ?? ""
+        keyFor = source
+    }
+
+    /// The credit the map's photo needs (Google's, MapTiler's): Apple's logo and Legal link are MapKit's own.
+    private var mapCredit: String? {
+        guard let source = background.satellite, source != .apple else { return nil }
+        _ = satellite.revision
+        return satellite.credit(source)
     }
 
     private func back() {
@@ -248,10 +285,22 @@ struct TrackEditorView: View {
                 // Apple's logo and Legal link are MapKit's own, bottom left.
                 HStack(alignment: .bottom) {
                     Spacer()
+                    if let credit = mapCredit {
+                        Text(credit)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Color(hex: 0xEEF2F4))
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Color.black.opacity(0.6), in: RoundedRectangle(cornerRadius: 6))
+                            .accessibilityIdentifier("mapCredit")
+                            .padding(.bottom, 12)
+                    }
                     Menu {
-                        ForEach(EditorBackground.allCases) { b in
+                        ForEach(EditorBackground.available) { b in
                             Button(b == background ? "✓ \(b.name)" : b.name) { background = b }
                         }
+                        Divider()
+                        Button(satellite.key(.google) == nil ? "Add Google key…" : "Change Google key…") { editKey(.google) }
+                        Button(satellite.key(.mapTiler) == nil ? "Add MapTiler key…" : "Change MapTiler key…") { editKey(.mapTiler) }
                     } label: {
                         Text("Map: \(background.name)")
                             .font(.system(size: 12))

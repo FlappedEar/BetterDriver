@@ -77,9 +77,26 @@ final class TracksTests: XCTestCase {
         XCTAssertEqual(try record(), 40_000)
     }
 
-    func testTheEditorMapIsAppleMapsSatelliteFirst() {
-        XCTAssertEqual(EditorBackground.allCases, [.satellite, .standard])
+    func testTheEditorMapIsTheBestSatellitePhotoFirst() {
+        // No key on a fresh simulator: Apple's photo, then the plain map (FBBD-381).
+        let maps = SatelliteMaps.shared
+        maps.setKey("", for: .google)
+        maps.setKey("", for: .mapTiler)
+        XCTAssertEqual(EditorBackground.available, [.satellite, .standard])
+        XCTAssertEqual(EditorBackground.best, .satellite)
         XCTAssertTrue(EditorBackground.satellite.configuration is MKImageryMapConfiguration)
         XCTAssertTrue(EditorBackground.standard.configuration is MKStandardMapConfiguration)
+        // With keys: Google's, then MapTiler's, then Apple's (FBBD-411); a blank key removes it.
+        maps.setKey(" m1 ", for: .mapTiler)
+        XCTAssertEqual(maps.key(.mapTiler), "m1")
+        XCTAssertEqual(EditorBackground.available, [.mapTilerSatellite, .satellite, .standard])
+        maps.setKey("g1", for: .google)
+        XCTAssertEqual(EditorBackground.available, [.googleSatellite, .mapTilerSatellite, .satellite, .standard])
+        XCTAssertEqual(EditorBackground.best, .googleSatellite)
+        XCTAssertEqual(maps.credit(.google), "Google Maps")
+        maps.setKey("  ", for: .google)
+        maps.setKey("", for: .mapTiler)
+        XCTAssertNil(maps.key(.google))
+        XCTAssertEqual(EditorBackground.best, .satellite)
     }
 }
