@@ -45,6 +45,10 @@ struct SessionsListView: View {
                         SessionRowView(
                             session: session,
                             cameras: model.cameraLines[session.id] ?? [],
+                            onCamera: model.onCamera[session.id] ?? [],
+                            download: model.goProDownload?.sessionId == session.id ? model.goProDownload : nil,
+                            canDownload: model.canDownload,
+                            onDownload: { model.downloadCameraFiles(sessionId: session.id, camera: $0) },
                             problems: model.goProProblems[session.id] ?? [],
                             facts: model.rowFacts[session.id],
                             actions: AnyView(rowActions(session))
@@ -202,6 +206,11 @@ struct SessionsListView: View {
 private struct SessionRowView: View {
     let session: SessionRow
     let cameras: [SessionCameraLine]
+    /// Open GoPro cameras still holding this session's files (UI-31), and the download running here.
+    let onCamera: [CameraOnCamera]
+    let download: SessionsModel.CameraDownload?
+    let canDownload: Bool
+    let onDownload: (CameraOnCamera) -> Void
     let problems: [String]
     /// Its detail line and best lap, once read.
     let facts: SessionRowFacts?
@@ -240,6 +249,28 @@ private struct SessionRowView: View {
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("cameraLine")
+            }
+            // Android's UI-31 A: video still on the camera offers Download; while it comes, file N and GB.
+            ForEach(onCamera, id: \.sourceId) { camera in
+                if let download, download.sourceId == camera.sourceId {
+                    CameraDownloadLine(name: camera.name, download: download)
+                } else {
+                    HStack(spacing: 8) {
+                        Circle().fill(Palette.warning).frame(width: 8, height: 8)
+                        Text("\(camera.name) · video on the camera")
+                            .font(.subheadline)
+                            .foregroundStyle(Palette.onBackground)
+                            .accessibilityIdentifier("cameraOnCamera")
+                        Spacer()
+                        if camera.address != nil {
+                            Button("Download") { onDownload(camera) }
+                                .buttonStyle(.bordered)
+                                .tint(Palette.accent)
+                                .disabled(!canDownload)
+                                .accessibilityIdentifier("goProDownload")
+                        }
+                    }
+                }
             }
             ForEach(problems.prefix(3), id: \.self) { problem in
                 Text(problem)
@@ -315,6 +346,40 @@ private struct ImportCard: View {
             text += left < 60 ? " · under 1 min left" : " · about \(Int((left / 60).rounded())) min left"
         }
         return text
+    }
+}
+
+/// An Open GoPro camera's files coming over its Wi-Fi, as Android's GoPro line shows it (UI-31 A).
+private struct CameraDownloadLine: View {
+    let name: String
+    let download: SessionsModel.CameraDownload
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Circle().fill(Palette.warning).frame(width: 8, height: 8)
+                Text("\(name) · downloading file \(download.index)")
+                    .font(.subheadline)
+                    .foregroundStyle(Palette.onBackground)
+                Spacer()
+                if download.total > 0 {
+                    Text(String(format: "%.1f / %.1f GB", Double(download.bytes) / 1e9, Double(download.total) / 1e9))
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                }
+            }
+            if download.total > 0 {
+                ProgressView(value: min(1, Double(download.bytes) / Double(download.total)))
+                    .tint(Palette.accent)
+            } else {
+                ProgressView().tint(Palette.accent)
+            }
+            Text("Keep the camera on and close to the phone.")
+                .font(.caption)
+                .foregroundStyle(Palette.onSurfaceVariant)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("cameraDownload")
     }
 }
 

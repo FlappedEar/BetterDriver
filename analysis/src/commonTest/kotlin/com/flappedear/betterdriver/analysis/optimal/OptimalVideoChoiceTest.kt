@@ -53,4 +53,22 @@ class OptimalVideoChoiceTest {
         assertEquals("This session has no video.", noVideo.unavailable)
         assertEquals(listOf(PartOnVideo.None, PartOnVideo.None), noVideo.parts.map { it.video })
     }
+
+    @Test
+    fun theButtonUnderTheLapTimesSaysTheSameOnBothApps() {
+        assertEquals("Finding the parts on video…", optimalVideoNote(null))
+        val plan = optimalClipPlan(lap, clips, lengths, originMicros = 0L)
+        val realistic = OptimalFilm(OptimalKind.RealisticOptimal, OptimalLapResult(lap), plan)
+        val raw = OptimalFilm(OptimalKind.RawTheoreticalBest, OptimalLapResult(lap), plan)
+        val options = compositeOptions(OptimalVideo(realistic, raw))
+        assertTrue(options.enabled)
+        assertEquals(OptimalKind.RealisticOptimal, options.preselected.kind)
+        assertEquals("Every part on video, from laps 1 and 2", optimalVideoNote(options))
+        val noVideo = compositeOptions(optimalVideo(null, null, 0L, lengths))
+        assertFalse(noVideo.enabled)
+        assertEquals(noVideo.realistic.unavailable, optimalVideoNote(noVideo))
+        val unreadable = unreadableCompositeOptions()
+        assertEquals(UnreadableVideoText, optimalVideoNote(unreadable))
+        assertEquals(OptimalKind.RawTheoreticalBest, unreadable.of(OptimalKind.RawTheoreticalBest).kind)
+    }
 }

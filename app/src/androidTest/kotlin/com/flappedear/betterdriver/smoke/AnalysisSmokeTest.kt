@@ -19,6 +19,7 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalVideoLabel
 import com.flappedear.betterdriver.feature.analysis.CornerTracesTag
 import com.flappedear.betterdriver.feature.analysis.EveryPassText
 import com.flappedear.betterdriver.feature.analysis.EveryPassTitle
@@ -27,7 +28,6 @@ import com.flappedear.betterdriver.feature.analysis.NotMeasuredMark
 import com.flappedear.betterdriver.feature.analysis.ProgressionCornersTag
 import com.flappedear.betterdriver.feature.analysis.ProgressionLinkText
 import com.flappedear.betterdriver.feature.analysis.ProvenanceLegendTag
-import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TestRule

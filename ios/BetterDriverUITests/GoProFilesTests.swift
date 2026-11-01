@@ -51,6 +51,37 @@ final class GoProFilesTests: XCTestCase {
         XCTAssertFalse(add.exists, "Add is still offered")
     }
 
+    /// The download after the drive (UI-31 A): an Open GoPro camera that recorded with a session still
+    /// holds its files; Download fetches them over the camera's Wi-Fi and lines them up by GPS. With
+    /// -demoGoProDownload a made-up camera stands in for the Bluetooth and Wi-Fi the simulator lacks.
+    func testAnOpenGoProsFilesAreDownloadedAndLinedUpByGps() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoGoProDownload"]
+        app.launch()
+        openTab("Sessions")
+        let download = app.buttons["goProDownload"].firstMatch
+        XCTAssertTrue(download.waitForExistence(timeout: 180), "no Download for the video on the camera")
+        let onCamera = app.descendants(matching: .any).matching(identifier: "cameraOnCamera").firstMatch
+        XCTAssertTrue(onCamera.label.contains("GoPro Demo · video on the camera"), onCamera.label)
+        keep("Video on the camera")
+        download.tap()
+
+        let line = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'cameraLine' AND label CONTAINS 'GoPro Demo'")).firstMatch
+        let problem = app.descendants(matching: .any).matching(identifier: "cameraProblem").firstMatch
+        if !line.waitForExistence(timeout: 300) {
+            let state = app.state
+            XCTAssertEqual(state, .runningForeground, "the app stopped or hung while downloading")
+            keep("GoPro not downloaded")
+            XCTFail("the GoPro's file was not downloaded: \(problem.exists ? problem.label : "no problem shown")")
+            return
+        }
+        XCTAssertFalse(problem.exists, problem.exists ? problem.label : "")
+        XCTAssertTrue(line.label.contains("1 clip lined up"), line.label)
+        XCTAssertTrue(line.label.contains("by GPS"), line.label)
+        XCTAssertFalse(app.buttons["goProDownload"].exists, "Download is still offered")
+        keep("GoPro downloaded")
+    }
+
     func testAGoProStartedByHandIsAddedInSettings() throws {
         try XCTSkipIf(UIDevice.current.userInterfaceIdiom != .phone, "Settings is a tab on the iPhone")
         app.launchArguments = ["-freshInstall"]

@@ -150,6 +150,14 @@ jobs:
           echo "id=$team" >> "$GITHUB_OUTPUT"
           # Development certificates earlier runners made (their keys are gone) fill the account's limit.
           ASC_KEY_PATH="$key" python3 ios/ci/asc.py ci-certs
+          # Hotspot Configuration on the App ID, to join a GoPro's Wi-Fi (FBBD-343). When it cannot be
+          # turned on the app is signed without it, and only the GoPro download is affected.
+          if ASC_KEY_PATH="$key" python3 ios/ci/asc.py capability "$BUNDLE_ID" HOT_SPOT; then
+            echo "entitlements=Support/BetterDriver.entitlements" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::Hotspot Configuration is off for $BUNDLE_ID: this build cannot join a GoPro's Wi-Fi"
+            echo "entitlements=" >> "$GITHUB_OUTPUT"
+          fi
       - name: Archive (signed)
         if: steps.signing.outputs.ready == 'true'
         shell: bash
@@ -163,6 +171,7 @@ jobs:
             -authenticationKeyID "${{ secrets.ASC_KEY_ID }}" \
             -authenticationKeyIssuerID "${{ secrets.ASC_ISSUER_ID }}" \
             DEVELOPMENT_TEAM="${{ steps.team.outputs.id }}" \
+            CODE_SIGN_ENTITLEMENTS="${{ steps.team.outputs.entitlements }}" \
             CURRENT_PROJECT_VERSION="${{ steps.version.outputs.build }}" 2>&1 | tail -n 60
       - name: Archive (unsigned check)
         if: steps.signing.outputs.ready != 'true'

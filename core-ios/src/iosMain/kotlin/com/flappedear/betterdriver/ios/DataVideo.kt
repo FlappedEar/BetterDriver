@@ -4,9 +4,11 @@ package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.optimal.CompositeOptions
 import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.OptimalVideo
+import com.flappedear.betterdriver.analysis.optimal.compositeOptions
 import com.flappedear.betterdriver.analysis.optimal.optimalOptionText
 import com.flappedear.betterdriver.analysis.optimal.optimalVideo
 import com.flappedear.betterdriver.analysis.recorded.measuredG
@@ -14,6 +16,7 @@ import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.analysis.review.indexedClips
 import com.flappedear.betterdriver.analysis.review.trackFor
 import com.flappedear.betterdriver.format.formatLapTime
+import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recorder.video.CameraIds
 import com.flappedear.betterdriver.recorder.video.VideoClip
@@ -66,22 +69,39 @@ class DataVideo(private val sessionsRoot: String, private val tracksRoot: String
         val channels = data.channels.values
         // One lap's video shows that lap only (FBBD-346): its overlay data is made when the lap is picked.
         val hotlap = { lap: Int -> OverlayData(sets, laps, measured, hotlap = lap, channels = channels) }
-        // The composite laps need the lap analysis, named by the track's corners (FBBD-172) as Android's
-        // export names them; made when first asked for. A session the analysis cannot handle only
-        // leaves them out.
-        val analysis = {
-            runCatching {
-                laps?.track?.let { analyzeSession(telemetrySessionOf(data, it), identity = it.identity) }
-            }.getOrNull()
-        }
+        // The composite laps need the lap analysis, made when first asked for.
+        val analysis = { analyse(data, laps) }
         val origin = sets.firstOrNull()?.tMicros ?: 0L
         return DataVideoSession(
             id, OverlayData(sets, laps, measured, channels = channels), hotlap, laps, clips, dir, analysis, origin,
         )
     }
 
+    /**
+     * The composite laps under the lap times (FBBD-163, FBBD-178; iOS FBBD-370) of session [id] when
+     * [open] found no video: why neither can be filmed, as Android says it. Analyses the session: not
+     * on the main thread.
+     */
+    @Throws(Exception::class)
+    fun compositeOptionsWithoutVideo(id: String): CompositeOptions {
+        val data = store.read(id)
+        val sets = data.sampleSets.sortedBy { it.tMicros }
+        val laps = runCatching {
+            trackFor(data, TrackLibrary(tracksRoot, sessionsRoot).list())?.let { replayLaps(id, sets, it) }
+        }.getOrNull()
+        return compositeOptions(optimalVideo(analyse(data, laps), null, sets.firstOrNull()?.tMicros ?: 0L) { null })
+    }
+
     private companion object {
         const val ClipIndexFile = "clips.json"
+
+        /**
+         * The lap analysis the composite laps are cut from, named by the track's corners (FBBD-172) as
+         * Android's export names them. A session the analysis cannot handle only leaves them out.
+         */
+        fun analyse(data: SessionData, laps: SessionLaps?): SessionAnalysis? = runCatching {
+            laps?.track?.let { analyzeSession(telemetrySessionOf(data, it), identity = it.identity) }
+        }.getOrNull()
     }
 }
 
@@ -130,7 +150,7 @@ class DataVideoSession internal constructor(
     private var compositeCache: Pair<Map<String, Long>, OptimalVideo>? = null
 
     /** The composite laps (FBBD-163, FBBD-178) on this session's video, as Android's export finds them. */
-    private fun composites(durations: Map<String, Long>): OptimalVideo = lock.withLock {
+    internal fun composites(durations: Map<String, Long>): OptimalVideo = lock.withLock {
         compositeCache?.takeIf { it.first == durations }?.second
             ?: runCatching { optimalVideo(analysed, clips, originMicros) { durations[path(it)] } }
                 .getOrDefault(OptimalVideo.None)

@@ -153,37 +153,44 @@ private struct SummaryConfidence: View {
 }
 
 /// The three lap times, never one name for two of them (FBBD-178): the best actual lap and the
-/// realistic optimal side by side, the raw theoretical best under them, smaller.
+/// realistic optimal side by side, the raw theoretical best under them, smaller; under them the
+/// realistic optimal's video, as on Android (FBBD-163, iOS FBBD-370).
 struct SummaryTimesCard: View {
     let ui: AnalysisUi
+    let sessionId: String
 
     var body: some View {
         Card {
-            HStack(alignment: .top, spacing: 16) {
+            // SwiftUI gives the group's identifier to each of its texts (ScreenLayoutTests reads them);
+            // the video row under them keeps its own.
+            Group {
+                HStack(alignment: .top, spacing: 16) {
+                    SummaryFigure(
+                        label: ProvenanceMarkKt.BestActualLapLabel,
+                        value: SummaryTextKt.bestLapText(ui: ui),
+                        detail: "Lap \(ui.bestLapNumber)",
+                        color: Palette.best
+                    )
+                    SummaryFigure(
+                        label: ProvenanceMarkKt.RealisticOptimalLabel,
+                        value: SummaryTextKt.realisticLapText(ui: ui),
+                        detail: SummaryTextKt.realisticDetail(ui: ui),
+                        color: ui.realisticGainSeconds != nil && !ui.gainConfidence.doubtful ? Palette.gain : Palette.onBackground
+                    )
+                }
                 SummaryFigure(
-                    label: ProvenanceMarkKt.BestActualLapLabel,
-                    value: SummaryTextKt.bestLapText(ui: ui),
-                    detail: "Lap \(ui.bestLapNumber)",
-                    color: Palette.best
+                    label: ProvenanceMarkKt.RawTheoreticalBestLabel,
+                    value: SummaryTextKt.theoreticalLapText(ui: ui),
+                    detail: SummaryTextKt.theoreticalDetail(ui: ui),
+                    color: Palette.onSurfaceVariant,
+                    size: 20
                 )
-                SummaryFigure(
-                    label: ProvenanceMarkKt.RealisticOptimalLabel,
-                    value: SummaryTextKt.realisticLapText(ui: ui),
-                    detail: SummaryTextKt.realisticDetail(ui: ui),
-                    color: ui.realisticGainSeconds != nil && !ui.gainConfidence.doubtful ? Palette.gain : Palette.onBackground
-                )
+                if ui.gainSeconds != nil { SummaryConfidence(confidence: ui.gainConfidence, about: "Time to gain") }
+                if ui.theoreticalMillis != nil { Dim(ProvenanceMarkKt.ProvenanceLegendText) }
             }
-            SummaryFigure(
-                label: ProvenanceMarkKt.RawTheoreticalBestLabel,
-                value: SummaryTextKt.theoreticalLapText(ui: ui),
-                detail: SummaryTextKt.theoreticalDetail(ui: ui),
-                color: Palette.onSurfaceVariant,
-                size: 20
-            )
-            if ui.gainSeconds != nil { SummaryConfidence(confidence: ui.gainConfidence, about: "Time to gain") }
-            if ui.theoreticalMillis != nil { Dim(ProvenanceMarkKt.ProvenanceLegendText) }
+            .accessibilityIdentifier("lapTimes")
+            LapTimesOptimalVideo(sessionId: sessionId)
         }
-        .accessibilityIdentifier("lapTimes")
     }
 }
 

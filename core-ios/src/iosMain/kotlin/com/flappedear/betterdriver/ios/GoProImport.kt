@@ -284,7 +284,7 @@ private fun move(from: String, to: String) {
 }
 
 /** The phone's UTC offset at [utcMillis], in milliseconds, for a camera clock read as local time. */
-private fun localOffsetMillis(utcMillis: Long): Long {
+internal fun localOffsetMillis(utcMillis: Long): Long {
     val at = NSDate.dateWithTimeIntervalSince1970(utcMillis.toDouble() / MillisPerSecond)
     return NSTimeZone.localTimeZone.secondsFromGMTForDate(at) * MillisPerSecond
 }
@@ -337,7 +337,7 @@ private inline fun <T> platform.Foundation.NSLock.withLock(block: () -> T): T {
 }
 
 /** Placing in the app's continuous log, in the words of Android's check log. */
-private object IosPlacementLog : PlacementLog {
+internal object IosPlacementLog : PlacementLog {
     override fun line(text: String, warning: Boolean) = logInfo(GoProTag, text)
 
     override fun placed(sessionId: String, sourceId: String, clip: VideoClip, probes: List<Probe>) {

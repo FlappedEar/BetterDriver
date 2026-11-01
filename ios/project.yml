@@ -61,6 +61,8 @@ targets:
         # Standard HTTPS/TLS only, so TestFlight builds skip the export-compliance question.
         INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
         CODE_SIGN_STYLE: Automatic
+        # Hotspot Configuration, to join a GoPro's Wi-Fi for its video (FBBD-343).
+        CODE_SIGN_ENTITLEMENTS: Support/BetterDriver.entitlements
         # Your team for device runs (generate.sh: BETTERDRIVER_TEAM); CI passes its own.
         DEVELOPMENT_TEAM: ${BETTERDRIVER_TEAM}
         # Load every Objective-C class of the static Kotlin framework, so the hosted unit tests

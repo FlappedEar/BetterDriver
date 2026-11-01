@@ -132,6 +132,12 @@ final class RecordingController: ObservableObject {
 
     func start(_ receiver: Receiver) {
         guard session == nil else { return }
+        // A GoPro download holds the phone on the camera's Wi-Fi and its Bluetooth (FBBD-343): a
+        // session waits for it, as a download waits for a session.
+        if SessionsModel.shared.goProDownload != nil {
+            error = "A GoPro download is running. Start again when it has finished (Sessions)."
+            return
+        }
         error = nil
         let info = SessionInfo(
             startUtcMillis: Int64(Date().timeIntervalSince1970 * 1_000),
