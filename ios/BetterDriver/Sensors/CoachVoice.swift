@@ -35,14 +35,15 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     var onDelay: ((Int, String) -> Void)?
 
     /// The voice, speed and pitch chosen in Settings › Spoken coach (FBBD-338), as Test voice says them.
-    init(settings: CoachSettings) {
+    /// [clipsDone] hears whether the pre-rendered clips are ready (FBBD-48), when they are pre-rendered.
+    init(settings: CoachSettings, clipsDone: ((Bool) -> Void)? = nil) {
         voice = CoachVoiceChoice.voice(settings)
         rate = CoachVoiceChoice.rate(settings)
         pitch = settings.speech.pitch
         clips = settings.voice.name == "PreRendered" ? CueClipRenderer(settings: settings) : nil
         super.init()
         synthesizer.delegate = self
-        clips?.start()
+        clips?.start(done: clipsDone)
         routeObserver = NotificationCenter.default.addObserver(
             forName: AVAudioSession.routeChangeNotification, object: nil, queue: nil
         ) { [weak self] note in self?.routeChanged(note) }
@@ -103,6 +104,9 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
     /// Whether the pre-rendered clips are loaded, so phrases are played from them (FBBD-48).
     var clipsReady: Bool { clips?.cache.ready ?? false }
 
+    /// Why the last clip phrase was said live instead, for the log and tests.
+    private(set) var clipError: String?
+
     var speaking: Bool {
         lock.lock()
         defer { lock.unlock() }
@@ -158,6 +162,7 @@ final class CoachVoice: NSObject, CoachSpeaker, AVSpeechSynthesizerDelegate {
         }
         if !engine.isRunning {
             do { try engine.start() } catch {
+                clipError = error.localizedDescription
                 AppLog.w("Voice", "clip not played, said live: \(error.localizedDescription)")
                 return false
             }

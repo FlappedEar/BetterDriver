@@ -52,16 +52,23 @@ final class CueClipTests: XCTestCase {
 
     func testTheCoachsVoicePlaysACueFromClips() {
         _ = readyClips()
-        let voice = CoachVoice(settings: preRendered())
+        // The clips are already rendered with this voice: the coach's voice loads them from the cache.
+        let loaded = expectation(description: "the voice's clips loaded")
+        var ok = false
+        let voice = CoachVoice(settings: preRendered()) { ready in
+            ok = ready
+            loaded.fulfill()
+        }
         defer { voice.shutdown() }
-        let ready = expectation(for: NSPredicate { _, _ in voice.clipsReady }, evaluatedWith: nil)
-        wait(for: [ready], timeout: 30)
+        wait(for: [loaded], timeout: 30)
+        XCTAssertTrue(ok, "clips loaded from the cache")
+        XCTAssertTrue(voice.clipsReady)
         let speech = Heard()
         speech.done = expectation(description: "played")
         XCTAssertTrue(voice.say(text: Phrases.shared.lapTime(millis: 65_400, best: true), speech: speech))
         XCTAssertTrue(voice.speaking)
         wait(for: [speech.done!], timeout: 10)
-        XCTAssertEqual(speech.clip, true, "said from clips, not live")
+        XCTAssertEqual(speech.clip, true, "said from clips, not live: \(voice.clipError ?? "no engine error")")
         XCTAssertEqual(speech.end, "done")
     }
 
