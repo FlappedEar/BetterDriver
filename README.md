@@ -34,11 +34,12 @@ tracked in Jira project FBBD.
 | `videosync` | Video clips on session time, MP4 and GPMF reading, GoPro GPS alignment and Open GoPro control, shared by both apps |
 | `racebox` | RaceBox message decoding, device session and receiver clock |
 | `heartrate` | Heart-rate strap decoding and the session's heart-rate state |
+| `tpms` | The FlappedEar TPMS bridge's tyre pressures and temperatures, decoded into session channels |
 | `core-ios` | Packs the shared modules as an XCFramework for the iOS app, with its bridges |
 | `ios/` | The iPhone and iPad app (SwiftUI, XcodeGen); see [ios/README.md](ios/README.md) |
 
 The modules `shared`, `analysis`, `coach`, `heartrate`, `obd`, `racebox`, `recorder`, `setup`,
-`timing`, `transfer` and `videosync` are Kotlin Multiplatform: a JVM target for Android and iOS
+`timing`, `tpms`, `transfer` and `videosync` are Kotlin Multiplatform: a JVM target for Android and iOS
 targets. Logic both apps need goes into their `commonMain` (epic FBBD-355).
 
 `tools/` holds the scripts that make test fixtures (mock session, review fixtures, Circuit Tools

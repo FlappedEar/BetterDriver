@@ -79,6 +79,13 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     HEART_RATE(EquipmentKind.SENSOR, "Heart-rate monitor"),
 
     /**
+     * The FlappedEar TPMS bridge (RCTPMS, FBBD-224): an ESP32 that hears the four BLE tyre sensors
+     * and passes their pressures and temperatures on as a RaceChrono DIY device (service 0x1FF8,
+     * advertised as "RC TPMS ..."). Found by a scan; recorded with every session while listed.
+     */
+    TPMS_BRIDGE(EquipmentKind.SENSOR, "Tyre pressure bridge"),
+
+    /**
      * An ELM327 or STN OBD-II adapter over Bluetooth (FBBD-121, UI-105 C), such as the Vgate vLinker
      * MC+: paired in Android's Bluetooth settings (Classic, over the serial port profile) or found by
      * a scan (Bluetooth LE). Only listed adapters are used.
@@ -126,7 +133,7 @@ enum class EquipmentModel(val kind: EquipmentKind, val label: String) {
     /** True for models paired over Bluetooth, which need an address. */
     val paired: Boolean
         get() = this in setOf(
-            RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, VBOX_SPORT, DRAGY, GOPRO, HEART_RATE, OBD_BLUETOOTH,
+            RACEBOX, NMEA_GNSS, LNS_GNSS, DIY_GNSS, VBOX_SPORT, DRAGY, GOPRO, HEART_RATE, TPMS_BRIDGE, OBD_BLUETOOTH,
         )
 
     /** True for models reached at an address: a Bluetooth one, or a Wi-Fi device's "host:port". */
@@ -474,6 +481,9 @@ data class ActiveSession(
 
     /** The heart-rate strap the session records, null with none listed ([SessionEquipment]). */
     val heartRateStrap: Equipment? get() = SessionEquipment.heartRateStrap(sensors)
+
+    /** The tyre pressure bridge recorded with this session, if one is listed (FBBD-224). */
+    val tpmsBridge: Equipment? get() = SessionEquipment.tpmsBridge(sensors)
 }
 
 /**

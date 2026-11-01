@@ -51,6 +51,17 @@ class SessionEquipmentTest {
     }
 
     @Test
+    fun theListedTyrePressureBridgeRecordsAndSurvivesTheSetupFile() {
+        assertNull(listed.active().tpmsBridge)
+        val withBridge = listed.addEquipment(EquipmentModel.TPMS_BRIDGE, "RC TPMS AMOLED", "AA:BB:CC:DD:EE:FF", ::id)
+        val active = SetupJson.decode(SetupJson.encode(withBridge)).active()
+        assertEquals("RC TPMS AMOLED", active.tpmsBridge?.name)
+        // The strap is still the strap: the bridge is a sensor of its own model.
+        assertEquals("Polar H10 1234", active.heartRateStrap?.name)
+        assertNull(active.copy(sensors = emptyList()).tpmsBridge)
+    }
+
+    @Test
     fun aWifiAdapterWithAnUnusableAddressIsLeftOut() {
         val bad = Equipment("x", EquipmentModel.OBD_WIFI, "Wi-Fi OBD-II adapter", "no port")
         assertTrue(SessionEquipment.obdWifi(listOf(bad)).isEmpty())

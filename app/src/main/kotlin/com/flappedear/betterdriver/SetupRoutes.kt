@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.core.ble.FoundBleDevice
 import com.flappedear.betterdriver.core.ble.diy.scanDiyDevices
 import com.flappedear.betterdriver.core.ble.dragy.scanDragys
 import com.flappedear.betterdriver.core.ble.hr.scanHeartRateMonitors
+import com.flappedear.betterdriver.core.ble.tpms.scanTpmsBridges
 import com.flappedear.betterdriver.core.ble.lns.scanLnsDevices
 import com.flappedear.betterdriver.core.ble.nmea.bondedSppDevices
 import com.flappedear.betterdriver.core.ble.obd.pairedObdAdapters
@@ -257,7 +258,8 @@ private fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
 /**
  * What a scan hears nearby while [searching]: RaceBoxes, Open GoPro cameras, Bluetooth LE GPS
  * receivers (FBBD-114), RaceChrono DIY devices (FBBD-118), Dragys (FBBD-117), heart-rate
- * monitors (FBBD-119) and Bluetooth LE OBD-II adapters (FBBD-121). Each scanner emits only once it
+ * monitors (FBBD-119), the tyre pressure bridge (FBBD-224) and Bluetooth LE OBD-II adapters
+ * (FBBD-121). Each scanner emits only once it
  * hears its own kind, so each starts empty: a RaceBox shows even with no GoPro nearby.
  */
 @Composable
@@ -275,6 +277,7 @@ internal fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
                 scanLnsDevices(context).map { found -> found.map { nearby(EquipmentModel.LNS_GNSS, it) } },
                 scanHeartRateMonitors(context).map { found -> found.map { nearby(EquipmentModel.HEART_RATE, it) } },
                 scanDiyDevices(context).map { found -> found.map { nearby(EquipmentModel.DIY_GNSS, it) } },
+                scanTpmsBridges(context).map { found -> found.map { nearby(EquipmentModel.TPMS_BRIDGE, it) } },
                 scanDragys(context).map { found ->
                     found.map { nearby(EquipmentModel.DRAGY, FoundBleDevice(it.name, it.address, it.rssi)) }
                 },
@@ -282,7 +285,7 @@ internal fun rememberNearby(searching: Boolean): State<List<NearbyDevice>> {
                     found.map { nearby(EquipmentModel.OBD_BLUETOOTH, it) }
                 },
             )
-            // Seven scans: more than combine's typed overloads take, so the lists are combined as one.
+            // Eight scans: more than combine's typed overloads take, so the lists are combined as one.
             combine(scans.map { it.onStart { emit(emptyList()) } }) { lists -> lists.flatMap { it } }
         } else {
             flowOf(emptyList())

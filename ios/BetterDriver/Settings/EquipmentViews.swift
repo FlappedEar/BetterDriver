@@ -64,6 +64,8 @@ private func modelNote(_ model: String) -> String {
         "Records position and speed from this phone's own GPS, about one position a second, for each session " +
             "it is chosen for. A RaceBox gives 25 and exact lap times."
     case ModelName.heartRate: "Records your heart rate with every session while it is listed."
+    case ModelName.tpmsBridge:
+        "Records the four tyres' pressures and temperatures with every session while it is listed."
     case ModelName.obdBluetooth, ModelName.obdWifi:
         "Reads the car in every session while it is listed. The Car page shows its values."
     case ModelName.phoneCamera: "Records video with each session it is turned on for."
@@ -421,13 +423,14 @@ struct NearbyDevice {
 
     var note: String? {
         if model == ModelName.obdBluetooth { return "OBD-II adapter · Bluetooth LE" }
+        if model == ModelName.tpmsBridge { return "Tyre pressure bridge" }
         return model == ModelName.heartRate ? "Heart-rate monitor" : nil
     }
 }
 
 /// Listens for RaceBoxes, Open GoPro cameras (service 0xFEA6, as Android's GoProScanner), heart-rate
-/// monitors (service 0x180D) and OBD-II adapters (by name, as Android's ObdAdapterNames) while Add
-/// equipment is open.
+/// monitors (service 0x180D), the TPMS bridge (service 0x1FF8 named "RC TPMS ...", FBBD-224) and OBD-II
+/// adapters (by name, as Android's ObdAdapterNames) while Add equipment is open.
 @MainActor
 final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate {
     @Published private(set) var found: [String: NearbyDevice] = [:]
@@ -437,6 +440,7 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
     private var wanted = false
 
     private static let heartRate = CBUUID(string: "180D")
+    private static let diy = CBUUID(string: TpmsIds.shared.SERVICE)
     private static let goPro = CBUUID(string: GoProUuids.shared.CONTROL_SERVICE)
     private static let obdParts = [
         "obd", "elm327", "vlink", "v-link", "vgate", "icar", "konnwei", "viecar", "veepeak", "carista",
@@ -481,6 +485,8 @@ final class NearbyScanner: NSObject, ObservableObject, CBCentralManagerDelegate 
             model = ModelName.goPro
         } else if services.contains(NearbyScanner.heartRate) {
             model = ModelName.heartRate
+        } else if services.contains(NearbyScanner.diy) && TpmsIds.shared.isBridge(name: name) {
+            model = ModelName.tpmsBridge
         } else if NearbyScanner.obdParts.contains(where: { name.lowercased().contains($0) }) {
             model = ModelName.obdBluetooth
         } else {

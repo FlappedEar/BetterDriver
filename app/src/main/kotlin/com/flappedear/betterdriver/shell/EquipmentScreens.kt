@@ -49,6 +49,7 @@ internal fun kindLabel(e: Equipment): String = when (e.kind) {
 
 
 /** What a model does, under its details. */
+@Suppress("CyclomaticComplexMethod") // One branch per equipment model.
 private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.RACEBOX -> "Records position, speed and G for each session it is chosen for."
     EquipmentModel.NMEA_GNSS, EquipmentModel.LNS_GNSS, EquipmentModel.DIY_GNSS ->
@@ -61,6 +62,8 @@ private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.TCP_GNSS ->
         "Connects over Wi-Fi to the address below. Records position and speed, and G from a RaceChrono DIY device."
     EquipmentModel.HEART_RATE -> "Records your heart rate with every session while it is listed."
+    EquipmentModel.TPMS_BRIDGE ->
+        "Records the four tyres' pressures and temperatures with every session while it is listed."
     EquipmentModel.OBD_BLUETOOTH, EquipmentModel.OBD_WIFI ->
         "Reads the car in every session while it is listed. The OBD-II page shows its values."
     EquipmentModel.DEMO_GNSS ->
