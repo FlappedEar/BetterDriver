@@ -13,6 +13,18 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.27.0
+
+- iPhone: only the OBD-II adapters and the heart-rate strap listed in **Settings › Equipment**
+  record. One removed there is not used again. The Wi-Fi OBD-II adapter is added under
+  **Add without Bluetooth**, as on Android.
+- iPhone: a GoPro's clips download over its Wi-Fi after the drive and line up by its GPS, as
+  on Android. See [Equipment](equipment.md).
+- iPhone and iPad: **Realistic optimal video** under the lap times in the Summary, as on
+  Android.
+- iPhone: the coach can speak its cues from clips made at the start of a coached session
+  (**Settings › Spoken coach › Voice playback: Pre-rendered**), as on Android.
+
 ## 1.26.0
 
 - iPhone and iPad: **Back up** and **Restore** in **Settings › App**, **Import** in Tracks and
