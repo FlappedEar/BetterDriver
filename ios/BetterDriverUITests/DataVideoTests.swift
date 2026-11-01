@@ -140,12 +140,23 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(raw.label.hasPrefix("Raw theoretical best"), raw.label)
         keep("Video tab composite laps")
         XCTAssertTrue(raw.isEnabled, "the raw theoretical best is not on video: \(raw.label)")
+        // The best lap is picked when the tab opens, so Watch and Save are already on: wait until the
+        // raw theoretical best is the picked row (tapped again once if the first tap did not take,
+        // as on the iPad job), then until Watch has turned off, rather than reading it at once.
+        let picked = NSPredicate(format: "isSelected == true")
         raw.tap()
+        if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: picked, object: raw)], timeout: 5) != .completed {
+            raw.tap()
+        }
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: picked, object: raw)], timeout: 15), .completed,
+            "the raw theoretical best was not picked"
+        )
         let watch = app.buttons["dataVideoWatch"].firstMatch
         let save = app.buttons["dataVideoSave"].firstMatch
-        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: save)
-        waitForExpectations(timeout: 30)
-        XCTAssertFalse(watch.isEnabled, "a composite lap is saved only, as on Android")
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == false"), object: watch)
+        XCTAssertEqual(XCTWaiter.wait(for: [off], timeout: 15), .completed, "a composite lap is saved only, as on Android")
+        XCTAssertTrue(save.isEnabled, "no Save video for the composite lap")
         XCTAssertFalse(app.buttons["dataVideoHandle6"].exists, "a composite lap has no handle")
         save.tap()
         let saved = app.descendants(matching: .any)["dataVideoSaved"].firstMatch
