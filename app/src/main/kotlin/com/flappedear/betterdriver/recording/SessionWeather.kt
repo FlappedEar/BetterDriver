@@ -2,12 +2,25 @@ package com.flappedear.betterdriver.recording
 
 import android.content.Context
 import com.flappedear.betterdriver.analysis.weather.SessionWeatherFiles
+import com.flappedear.betterdriver.analysis.weather.SessionWeatherListener
 import com.flappedear.betterdriver.analysis.weather.WeatherHttp
 import com.flappedear.betterdriver.analysis.weather.WeatherUi
+import com.flappedear.betterdriver.recorder.Recording
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.Executor
+
+/**
+ * The weather at the track while [recording] runs (FBBD-403), fetched on [fetch] at the first fix and
+ * every 15 minutes into the session's folder, where the summary and the coach read it; the recording
+ * never waits for it.
+ */
+internal fun recordingWeather(recording: Recording, fetch: Executor) = SessionWeatherListener(
+    recording.id, recording.dir.path, recording.info.startUtcMillis, AndroidWeatherHttp, fetch::execute,
+    System::currentTimeMillis,
+)
 
 /**
  * The weather service over the phone's network (FBBD-403): one HTTPS GET, the body of a 200 answer,

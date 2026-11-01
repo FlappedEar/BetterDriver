@@ -11,7 +11,6 @@ import android.os.IBinder
 import android.os.Looper
 import androidx.core.app.ServiceCompat
 import com.flappedear.betterdriver.analysis.quality.logQuality
-import com.flappedear.betterdriver.analysis.weather.SessionWeatherListener
 import com.flappedear.betterdriver.coach.CoachLink
 import com.flappedear.betterdriver.coach.CoachStatus
 import com.flappedear.betterdriver.coach.Verbosity
@@ -298,7 +297,7 @@ class RecorderService : Service() {
                 } else {
                     CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
                 }
-                listOfNotNull(coach, weatherOf(recording, info.startUtcMillis)).forEach(recording.listeners::add)
+                listOfNotNull(coach, recordingWeather(recording, weatherFetch)).forEach(recording.listeners::add)
                 // Ends the recording here only when its writer has stopped, also for stops the recorder makes
                 // itself (storage full, write error), with the writer's reason (Audit A03).
                 val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
@@ -324,15 +323,6 @@ class RecorderService : Service() {
             if (active == null) main.post { endForeground() }
         }
     }
-
-    /**
-     * The weather at the track (FBBD-403), fetched at the first fix and every 15 minutes into the
-     * session's folder, where the summary and the coach read it; the recording never waits for it.
-     */
-    private fun weatherOf(recording: Recording, startUtcMillis: Long) = SessionWeatherListener(
-        recording.id, recording.dir.path, startUtcMillis, AndroidWeatherHttp, weatherFetch::execute,
-        System::currentTimeMillis,
-    )
 
     /**
      * The start failed after [recording] began (audit 30 Oct BD-03): until now its writer went on with
