@@ -30,6 +30,8 @@ The full notes of every release are on
 - Spoken coach: on a first visit to a track it asks only for what was already driven, a cue cut
   off before its end earns no praise, and cue timing follows the speech rate setting.
 - Android video: the last file's sound now runs to the moment you stop recording.
+- iPhone and iPad: sharper satellite photos under the track editor and the 3D lap (Google or
+  MapTiler when a key is entered, else Apple), with the photo's credit on the map.
 - iPhone: sensors and GPS no longer wait for the disk while recording, and phone video is
   written in 2 s pieces, so a file cut off by a killed app still plays.
 
