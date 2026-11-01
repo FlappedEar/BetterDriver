@@ -260,8 +260,13 @@ class ReviewSyncTest {
         /** Places along lap A the chart is tapped at (FBBD-24: 5 landmarks or more). */
         val ScrubFractions = listOf(0.1, 0.3, 0.5, 0.7, 0.9)
 
-        /** Untimed seeks before them, between them so none lands where a timed one does. */
-        val WarmUpFractions = listOf(0.2, 0.4, 0.6, 0.8, 0.95)
+        /**
+         * Untimed seeks before them, between them so none lands where a timed one does. They go back a
+         * long way once too (0.95 to 0.15), as the first timed seek does (0.95 to 0.1): with only forward
+         * warm-up seeks, that first long seek back ran its path cold and took 320 ms against the 300 ms
+         * limit while the others took 146–246 ms (FBBD-422).
+         */
+        val WarmUpFractions = listOf(0.2, 0.4, 0.95, 0.15, 0.6, 0.8, 0.95)
 
         /** Where playback starts: far enough from the end that both laps still run after every stop. */
         const val PlayFrom = 0.15
