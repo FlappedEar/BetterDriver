@@ -88,8 +88,8 @@ struct DataVideoPanel: View {
                     .buttonStyle(.borderedProminent)
                     .tint(Palette.accent)
                     .foregroundStyle(Palette.onAccent)
-                    // A composite lap is only saved, as on Android: its overlay is the composite's own.
-                    .disabled(picked == nil || progress != nil || isComposite)
+                    // A composite lap plays with its own overlay too (the composition Save video writes).
+                    .disabled(picked == nil || progress != nil)
                     .accessibilityIdentifier("dataVideoWatch")
             }
         }
@@ -101,11 +101,6 @@ struct DataVideoPanel: View {
         .sheet(item: $saved) { file in
             SaveToFiles(url: file.url) { saved = nil }
         }
-    }
-
-    /// The picked part is a composite lap.
-    private var isComposite: Bool {
-        picked.map { DataVideoSession.companion.isComposite(part: $0) } ?? false
     }
 
     private var list: some View {
