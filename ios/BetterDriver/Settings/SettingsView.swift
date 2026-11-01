@@ -149,8 +149,8 @@ struct AppPage: View {
                 ListRow("Version", value: AppInfo.version)
                 // Back up and Restore (FBBD-372), where Android has them.
                 BackupRows()
-                NavigationLink { NotImplementedPage(title: "Set up") } label: { ListRow("Run setup again", chevron: true) }
-                    .buttonStyle(.plain)
+                ListRow("Run setup again", chevron: true) { FirstRunGate.shared.runAgain() }
+                    .accessibilityIdentifier("runSetupAgain")
                 NavigationLink { AboutPage() } label: { ListRow("About and credits", chevron: true) }
                     .buttonStyle(.plain)
             }

@@ -11,6 +11,8 @@ struct AppShell: View {
     // its state observe it themselves.
     private let recorder = RecordingController.shared
     private let settings = SettingsModel.shared
+    /// The first-run checklist over the tabs (FBBD-371), as Android's Setup start screen.
+    @ObservedObject private var firstRun = FirstRunGate.shared
 
     var body: some View {
         // parity-list:top-level
@@ -31,5 +33,12 @@ struct AppShell: View {
         // A backup or track file opened from Files or AirDrop asks here (FBBD-372).
         .modifier(BackupPrompts())
         .modifier(TrackImportPrompts())
+        .fullScreenCover(isPresented: $firstRun.showing) {
+            FirstRunPage { firstRun.done() }
+                .environmentObject(recorder)
+                .environmentObject(settings)
+                .preferredColorScheme(.dark)
+                .tint(Palette.accent)
+        }
     }
 }

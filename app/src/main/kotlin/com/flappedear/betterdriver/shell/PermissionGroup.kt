@@ -1,28 +1,33 @@
 package com.flappedear.betterdriver.shell
 
+import com.flappedear.betterdriver.setup.PermissionLine
+
 /**
  * What stops working when a permission is denied (FBBD-35), one line per group as Android's own
  * permission screen groups them. Plain strings, so this stays testable without Android: they are
  * the values of the Manifest.permission constants.
  */
-enum class PermissionGroup(val title: String, val effect: String, val permissions: Set<String>) {
+enum class PermissionGroup(val line: PermissionLine, val permissions: Set<String>) {
     Location(
-        "Location",
-        "no GNSS from the phone; Bluetooth GPS receivers also need it",
+        PermissionLine.LOCATION,
         setOf("android.permission.ACCESS_FINE_LOCATION", "android.permission.ACCESS_COARSE_LOCATION"),
     ),
     NearbyDevices(
-        "Nearby devices",
-        "no RaceBox, GoPro or Bluetooth receivers",
+        PermissionLine.NEARBY_DEVICES,
         setOf("android.permission.BLUETOOTH_SCAN", "android.permission.BLUETOOTH_CONNECT"),
     ),
-    Camera("Camera", "no phone video", setOf("android.permission.CAMERA")),
-    Microphone("Microphone", "video without sound", setOf("android.permission.RECORD_AUDIO")),
-    Notifications("Notifications", "no recording notification", setOf("android.permission.POST_NOTIFICATIONS")),
+    Camera(PermissionLine.CAMERA, setOf("android.permission.CAMERA")),
+    Microphone(PermissionLine.MICROPHONE, setOf("android.permission.RECORD_AUDIO")),
+    Notifications(PermissionLine.NOTIFICATIONS, setOf("android.permission.POST_NOTIFICATIONS")),
+    ;
+
+    /** The texts are the shared ones (FBBD-371), so iOS says the same. */
+    val title: String get() = line.title
+    val effect: String get() = line.effect
 }
 
 /** "Camera off: no phone video". */
-fun PermissionGroup.deniedLine(): String = "$title off: $effect"
+fun PermissionGroup.deniedLine(): String = line.deniedLine
 
 /**
  * The groups with at least one of [denied] in them, in the order of [PermissionGroup], each once.

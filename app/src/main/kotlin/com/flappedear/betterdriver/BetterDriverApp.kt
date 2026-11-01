@@ -53,6 +53,7 @@ import com.flappedear.betterdriver.sessionanalysis.analysisDestination
 import com.flappedear.betterdriver.sessionanalysis.progressionDestination
 import com.flappedear.betterdriver.sessionanalysis.trackDayDestination
 import com.flappedear.betterdriver.setup.EquipmentModel
+import com.flappedear.betterdriver.setup.FirstRunSetup
 import com.flappedear.betterdriver.setup.TrackChannel
 import com.flappedear.betterdriver.setup.channelsFor
 import com.flappedear.betterdriver.shell.AboutScreen
@@ -120,8 +121,8 @@ fun BetterDriverApp(recorder: RecorderClient, sessions: Sessions) {
     val start = remember {
         when {
             tablet -> Routes.Sessions
-            prefs.setupDone && prefs.hasRequiredPermissions() -> Routes.Drive
-            else -> Routes.Setup
+            FirstRunSetup.opensOnSetup(tablet, prefs.setupDone, prefs.hasRequiredPermissions()) -> Routes.Setup
+            else -> Routes.Drive
         }
     }
     FollowRecording(nav, recorder, sessions)
