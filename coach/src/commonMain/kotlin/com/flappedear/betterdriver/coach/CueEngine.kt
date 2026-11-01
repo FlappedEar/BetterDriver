@@ -403,9 +403,14 @@ private class SpeechTiming(
         return if (span < MinAccelSpanMicros) 0.0 else gain.coerceIn(0.0, MaxAccelMps2)
     }
 
-    /** From asking for [text] until it has been heard. */
+    /**
+     * From asking for [text] until it has been heard. The phrase's length is for the normal speech rate;
+     * said faster or slower ([Speech.rate], FBBD-406) it takes that much less or more time. Both languages
+     * use the same time per word: no measurement says Polish is slower yet (FBBD-406, unvalidated).
+     */
     fun needMicros(text: String) =
-        latencyMicros + audioDelayMillis * MicrosPerMilli + phrases.durationMicros(text)
+        latencyMicros + audioDelayMillis * MicrosPerMilli +
+            (phrases.durationMicros(text) / settings.speech.rate).toLong()
 
     /** Free to speak: not braking and nothing still being said. */
     fun free(now: Long): Boolean {
@@ -535,6 +540,16 @@ class CueEngine(
     private var book: CornerBook? = earlier?.takeIf { it.fits(track) }?.let { r ->
         identified(r.map(), laps.frame, identity).let { m -> CornerBook(m, r.targets, picked(m), aims = r.aims) }
     }
+    /**
+     * Without an earlier reference, this session's clean timed laps while the corners still come from
+     * them (FBBD-409): until the learning laps are done, a faster lap sets them again. Empty otherwise.
+     */
+    private val learningFrom = mutableListOf<TracedLap>()
+
+    /** The lap the corners were last set again from (FBBD-409); 0 when never. */
+    var relearnedFrom = 0
+        private set
+
     /** The car's gears from the sessions (FBBD-326), to read the gear of a pass. */
     private val gearbox = earlier?.gearbox
     private val learningLaps =
@@ -658,12 +673,7 @@ class CueEngine(
         // A lap with a GNSS gap (audit A11) is timed and said, but sets no corners and no targets.
         val clean = lap.countsForBest
         val traced = laps.finished.lastOrNull { it.lap.number == lap.number }
-        val b = book
-        if (b == null && clean && traced != null) {
-            book = cornersFrom(traced, picked) { identified(it, laps.frame, identity) }
-        } else if (b != null && clean) {
-            b.onTimedLap(lapPasses)
-        }
+        if (clean) book = bookAfter(traced)
         lapPasses.clear()
         // A praise still waiting when a cooling-down lap ends goes with the rest of that lap's speech.
         val cooled = inLap.cruising
@@ -679,6 +689,44 @@ class CueEngine(
         plan = null
         openCues.clear()
         saidOnLap = 0
+    }
+
+    /**
+     * At a track without an earlier reference (FBBD-409): while the learning laps are not done, a clean
+     * lap faster than every one before sets the corners again, as the driver learns the track, and
+     * this session's clean laps are measured on them. Null when the corners stay as they are; after
+     * the learning laps they never change, so cues and their results stay comparable.
+     */
+    @Suppress("ReturnCount") // Each early return keeps the corners as they are.
+    private fun relearned(traced: TracedLap?): CornerBook? {
+        if (learningFrom.isEmpty() || traced == null) return null
+        if (timedLaps >= learningLaps) {
+            learningFrom.clear()
+            return null
+        }
+        val faster = learningFrom.all { traced.lap.timeMicros < it.lap.timeMicros }
+        learningFrom += traced
+        if (!faster) return null
+        val nb = cornersFrom(traced, picked) { identified(it, laps.frame, identity) } ?: return null
+        val passes = learningFrom.flatMap { nb.map.passes(it.trace, it.lap.number) }
+        nb.onTimedLap(passes)
+        passes.forEach { nb.onPass(it, cruising = false) }
+        relearnedFrom = traced.lap.number
+        return nb
+    }
+
+    /**
+     * The corners after clean lap [traced]: set from it when there are none yet, else set again while
+     * learning a new track ([relearned]), else the same, with the lap's passes as targets where faster.
+     */
+    private fun bookAfter(traced: TracedLap?): CornerBook? {
+        val b = book
+        if (b == null) {
+            val first = traced?.let { t -> cornersFrom(t, picked) { identified(it, laps.frame, identity) } }
+            if (first != null && traced != null) learningFrom += traced
+            return first
+        }
+        return relearned(traced) ?: b.also { it.onTimedLap(lapPasses) }
     }
 
     /** A timed lap is done; its time is said if [say] (not after an in-lap). */
@@ -737,6 +785,14 @@ class CueEngine(
         if (openCues[corner]?.seq == cue.seq) openCues.remove(corner)
         plan?.takeIf { it.corner == corner && it.lap == cue.lap }?.let { plan = Plan(corner, it.lap, null) }
         book?.cuedOnLap?.let { if (it[corner - 1] == cue.lap) it[corner - 1] = NeverCued }
+    }
+
+    /**
+     * The sound of cue [seq] did not play to its end (cut off, an error; FBBD-416): like a cue not said,
+     * nothing is measured against it, so no result, praise or coaching credit comes from it.
+     */
+    fun unheard(seq: Int) {
+        openCues.values.firstOrNull { it.seq == seq }?.let(::unsaid)
     }
 
     /** At most one cue for this fix, with the car [along] the reference path. */

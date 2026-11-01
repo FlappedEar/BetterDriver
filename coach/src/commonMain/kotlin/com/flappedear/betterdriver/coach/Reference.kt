@@ -151,10 +151,12 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
 private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: PlannedTargets): List<CornerPass> =
     plan.targets.flatMap { p ->
         val numbers = map.corners.filter { it.cornerId == p.cornerId }.map { it.number }.toSet()
+        // The analysis and the coach number laps each their own way, so the plan's lap is the session's
+        // lap with its time. Two laps that close are no identity (FBBD-405): no aim, rather than a guess.
         val lap = timed.filter { it.first == p.sessionId }
             .map { it.second }
             .filter { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) <= SameLapSeconds }
-            .minByOrNull { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) }
+            .singleOrNull()
         if (numbers.isEmpty() || lap == null) {
             emptyList()
         } else {

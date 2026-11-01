@@ -123,6 +123,29 @@ class LibraryTest {
     }
 
     @Test
+    fun `a first day at a track has every session within 12 hours, and the plan aims at driven targets only`() {
+        val store = SessionStore(File(tmp, "sessions"))
+        var plan: PlannedTargets? = PlannedTargets("p1", listOf(PlannedTarget("c1", "p1", 61.0, 10, 0.2, gear = 2)))
+        val library = CoachLibrary(store, File(tmp, "coach"), plans = { plan }) { listOf(track) }
+        val start = 1_800_000_000_000L
+        val hour = 60 * 60 * 1_000L
+        val first = record(store, track, List(2) { SimCircuit.Pace() }, start)
+        val ended = start + assertNotNull(store.list().single { it.id == first }.durationMicros) / 1_000
+        val ref = assertNotNull(library.reference(track))
+        assertTrue(library.firstDay(ref, ended + hour))
+        // Beyond-best steps (FBBD-415) are left out on request; the gear stays.
+        val driven = assertNotNull(library.reference(track, drivenOnly = true))
+        assertEquals(assertNotNull(plan).drivenOnly().key, driven.planKey)
+        assertFalse(assertNotNull(plan).drivenOnly().beyondBest)
+        assertEquals(2, assertNotNull(plan).drivenOnly().targets.single().gear)
+        // A session from an earlier day: no longer the first day there.
+        record(store, track, List(2) { SimCircuit.Pace() }, ended + 2 * hour)
+        val both = assertNotNull(library.reference(track))
+        assertFalse(library.firstDay(both, ended + 13 * hour))
+        plan = null
+    }
+
+    @Test
     fun `a session not yet recovered ended at its last sample`() {
         val store = SessionStore(File(tmp, "sessions"))
         val library = CoachLibrary(store, File(tmp, "coach")) { listOf(track) }

@@ -40,6 +40,12 @@ interface CoachReferenceSource {
 
     /** Whether a session [reference] was built from ended shortly before [nowUtcMillis] (FBBD-190). */
     fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long): Boolean
+
+    /**
+     * Whether every session [reference] was built from ended within [SameDayMillis] before
+     * [nowUtcMillis]: the driver's first day at the track (FBBD-415). False when unknown.
+     */
+    fun firstDay(reference: CoachReference, nowUtcMillis: Long): Boolean = false
 }
 
 /**
@@ -153,7 +159,8 @@ class CoachRun(
     fun start(track: Track?) {
         val coached = track?.takeIf { coaches(it) && settings.verbosity >= Verbosity.Focus }
         val line = coached?.let(stores::linePlan)
-        val reference = coached?.let { references.reference(it, sessionId, line?.let(::plannedTargets)) }
+        val planned = line?.let(::plannedTargets)
+        val reference = coached?.let { drivenOnFirstDay(it, planned, references.reference(it, sessionId, planned)) }
         // Back out after a break the same day (FBBD-190): the coach only warms up before cueing.
         val sameDay = reference != null && references.drivenSameDay(reference, nowUtcMillis())
         // The corners picked in the lap analysis (FBBD-148), read once per session like the settings.
@@ -179,6 +186,18 @@ class CoachRun(
             report(now(), CoachEvents.FOCUS, CoachEvents.focusText(focus.sessionId, corners))
         }
         updateStatus(c.status)
+    }
+
+    /**
+     * [reference], or on a first day at [track] (FBBD-415) the reference aimed at [planned]'s driven
+     * targets only: no braking point beyond his best is asked for there.
+     */
+    private fun drivenOnFirstDay(track: Track, planned: PlannedTargets?, reference: CoachReference?): CoachReference? {
+        if (reference == null || planned?.beyondBest != true || !references.firstDay(reference, nowUtcMillis())) {
+            return reference
+        }
+        logInfo(Tag, "first day at ${track.name}: no braking points beyond his best this session")
+        return references.reference(track, sessionId, planned.drivenOnly())
     }
 
     private fun logStart(track: Track?, reference: CoachReference?, focusCorners: Int) {
@@ -250,7 +269,13 @@ class CoachRun(
         }
 
         override fun ended(tMicros: Long, end: String) = post {
-            ask.seq?.let { report(tMicros, CoachEvents.VOICE_END, CoachEvents.voiceEndText(it, end)) }
+            val seq = ask.seq ?: return@post
+            report(tMicros, CoachEvents.VOICE_END, CoachEvents.voiceEndText(seq, end))
+            // Cut off or failed (FBBD-416): not heard, so nothing it asked for is judged.
+            if (end != CoachEvents.VoiceDone) {
+                coach?.unheard(seq)
+                report(tMicros, CoachEvents.PROBLEM, CoachEvents.cutOffText(seq, end))
+            }
         }
     }
 
