@@ -27,6 +27,7 @@ The full notes of every release are on
   [Spoken coach](coach.md).
 - Spoken coach: on a first visit to a track it asks only for what was already driven, a cue cut
   off before its end earns no praise, and cue timing follows the speech rate setting.
+- Android video: the last file's sound now runs to the moment you stop recording.
 - iPhone: sensors and GPS no longer wait for the disk while recording, and phone video is
   written in 2 s pieces, so a file cut off by a killed app still plays.
 
