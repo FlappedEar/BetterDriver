@@ -158,6 +158,8 @@ private fun Ready(
                 Summary(ui, width, optimalVideo)
                 // Heart rate under the lap times, only when the session recorded it (UI-107 A, UI-109).
                 ui.heartRate?.let { HeartRateCard(it, width) }
+                // The conditions the lap times were driven in (FBBD-403), under them, with the last time here.
+                ui.weather?.let { WeatherCard(it, width) }
                 // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
                 // so the next focus and the best lap both stay on the first screen of a phone on its side.
                 CoachingHistory(ui.coaching, ui.lastFocusWonBackSeconds, width)
@@ -271,7 +273,7 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composab
 }
 
 @Composable
-private fun Figure(
+internal fun Figure(
     label: String,
     value: String,
     detail: String,

@@ -308,6 +308,8 @@ class LiveSession private constructor(
                     skipsWithoutFix = receiver.startsWith(RaceBoxIds.MICRO_PREFIX),
                 ),
                 HeartRateLog(recording.id),
+                // The weather at the track (FBBD-403): at the first fix and every 15 minutes, as on Android.
+                recordingWeather(recording.id, recording.dir, info.startUtcMillis),
             )
             lateinit var session: LiveSession
             val timing = SessionTiming({ TrackFiles.read(tracksDir) }, circuits, onLap = { lap, predicted ->

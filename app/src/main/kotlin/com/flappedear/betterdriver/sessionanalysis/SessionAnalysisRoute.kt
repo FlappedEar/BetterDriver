@@ -56,12 +56,14 @@ import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.feature.analysis.CarUi
 import com.flappedear.betterdriver.feature.analysis.LineState
 import com.flappedear.betterdriver.feature.analysis.LocalPerfectLapGround
+import com.flappedear.betterdriver.analysis.weather.WeatherUi
 import com.flappedear.betterdriver.feature.analysis.QualityUi
 import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.mapUi
 import com.flappedear.betterdriver.feature.analysis.qualityUi
+import com.flappedear.betterdriver.feature.analysis.withWeather
 import com.flappedear.betterdriver.feature.analysis.wholeDriveCar
 import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.feature.analysis.withHeartRate
@@ -74,6 +76,7 @@ import com.flappedear.betterdriver.recorder.store.SessionStore
 import com.flappedear.betterdriver.recording.Sessions
 import com.flappedear.betterdriver.recording.sessionTitle
 import com.flappedear.betterdriver.recording.qualityReports
+import com.flappedear.betterdriver.recording.sessionWeather
 import com.flappedear.betterdriver.recording.sessionsDir
 import com.flappedear.betterdriver.recording.tracksDir
 import com.flappedear.betterdriver.sharing.AppDataGate
@@ -154,6 +157,8 @@ private class AnalysisValues {
     var state by mutableStateOf<AnalysisState>(AnalysisState.Loading)
     var quality by mutableStateOf<QualityUi?>(null)
     var qualityRead = false
+    var weather by mutableStateOf<WeatherUi?>(null)
+    var weatherRead = false
     var line by mutableStateOf<LineState>(LineState.Reading)
     var coaching by mutableStateOf(SessionCoaching())
     var coachingKept = false
@@ -213,6 +218,7 @@ internal fun SessionAnalysisRoute(
     var analysed by kept::analysed
     var state by kept::state
     var quality by kept::quality
+    var weather by kept::weather
     var line by kept::line
     var coaching by kept::coaching
     var proof by kept::proof
@@ -243,6 +249,12 @@ internal fun SessionAnalysisRoute(
         if (kept.qualityRead) return@LaunchedEffect
         quality = withContext(Dispatchers.IO) { qualityReports(context).load(id)?.let(::qualityUi) }
         kept.qualityRead = true
+    }
+    // The session's weather (FBBD-403): kept by the recording, or fetched now when it is missing.
+    LaunchedEffect(id) {
+        if (kept.weatherRead) return@LaunchedEffect
+        weather = withContext(Dispatchers.IO) { sessionWeather(context).load(id) }
+        kept.weatherRead = true
     }
     // The earlier sessions at the track are read after the analysis shows, so they never delay it.
     LaunchedEffect(load) {
@@ -305,10 +317,11 @@ internal fun SessionAnalysisRoute(
     }
     LaunchedEffect(trackId) { trackId?.let(coachPicks::load) }
     // The coach picks and the data quality are applied to the analysed screen, so neither analyses again.
-    LaunchedEffect(analysed, picks, quality, verbosity, coaching, proof) {
+    LaunchedEffect(analysed, picks, quality, weather, verbosity, coaching, proof) {
         val l = load as? Load.Done
         val picked = if (l == null) analysed else withContext(Dispatchers.Default) { withPicks(analysed, l, picks) }
-        state = picked.withQuality(quality).withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching, proof)
+        state = picked.withQuality(quality).withWeather(weather)
+            .withCoachFocus(l?.loaded?.track, verbosity).withCoaching(coaching, proof)
     }
     val done = load as? Load.Done
     // The session as Sessions lists it, for the title: its start and track, read or not.

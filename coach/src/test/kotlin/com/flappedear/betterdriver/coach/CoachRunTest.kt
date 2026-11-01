@@ -2,6 +2,8 @@
 
 package com.flappedear.betterdriver.coach
 
+import com.flappedear.betterdriver.analysis.weather.SessionWeather
+import com.flappedear.betterdriver.analysis.weather.WeatherReading
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.timing.track.Track
 import org.junit.jupiter.api.AfterEach
@@ -13,6 +15,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /** The coach run both apps use (FBBD-357): what it logs and reports, from the session's start to its cues. */
+private const val QuarterMillis = 15 * 60_000L
+
 class CoachRunTest {
     @TempDir
     lateinit var tmp: File
@@ -123,5 +127,28 @@ class CoachRunTest {
         run.failed(IllegalStateException("broken"))
         assertEquals(CoachEvents.PROBLEM to "error java.lang.IllegalStateException: broken", events.last())
         assertTrue(logged.any { it == "CoachService: coach failed" }, logged.joinToString("\n"))
+    }
+
+    @Test
+    fun `on a wet track by the weather the coach says lap times only`() {
+        // Rain in the quarter hours before the session clock's UTC time (0 here), as the recording keeps it.
+        val dir = File(tmp, "sessions/s1").apply { mkdirs() }
+        val rain = listOf(-QuarterMillis, 0L).map { WeatherReading(it, airC = 9.0, precipitationMm = 0.6) }
+        File(dir, SessionWeather.FileName).writeText(
+            SessionWeather(latitude = 1.0, longitude = 1.0, fetchedUtcMillis = 0, fromUtcMillis = -QuarterMillis,
+                toUtcMillis = 0, readings = rain).toJson(),
+        )
+        val run = run(CoachSettings(Verbosity.Full))
+        run.begin("live", "speaker")
+        run.start(track)
+        run.drive(sim.drive(List(5) { early2 }).fixes)
+        assertTrue(CoachEvents.CONDITIONS to "surface=wet air_c=9.0" in events, events.joinToString())
+        val quiet = events.filter { it.first == CoachEvents.QUIET }
+        assertTrue(quiet.any { it.second.endsWith("reason=wet_track") }, events.joinToString())
+        val cues = events.filter { it.first == CoachEvents.CUE }.map { it.second }
+        assertTrue(cues.isNotEmpty(), "lap times are still said")
+        assertTrue(cues.all { "kind=LapTime" in it }, cues.joinToString("\n"))
+        assertEquals("Wet track · lap times only", run.status.text)
+        assertTrue("CoachService: track wet by the weather: lap times only" in logged, logged.joinToString("\n"))
     }
 }

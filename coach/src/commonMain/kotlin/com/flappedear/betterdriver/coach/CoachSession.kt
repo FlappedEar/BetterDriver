@@ -71,10 +71,19 @@ class CoachSession(
     /** The lap the coach went quiet on, so its end on that same lap is logged as a resume (FBBD-254). */
     private var quietLap = 0
 
-    /** The last cue said; until there is one, whether the coach is learning or on. */
+    /**
+     * The track is damp or wet by the weather (FBBD-403): no corner cues, which come from dry laps,
+     * until it is dry again; lap times are still said.
+     */
+    fun conditions(wet: Boolean) {
+        engine?.wet = wet
+    }
+
+    /** The last cue said; until there is one, whether the coach is learning or on. Wet: lap times only. */
     val status: CoachStatus
         get() {
             val e = engine ?: return CoachStatus.None
+            if (e.wet) return CoachStatus(null, "Wet track · lap times only", dim = true)
             return line ?: when (val p = e.phase) {
                 is CoachPhase.Learning -> CoachStatus(null, "Coach learning · ${p.done} of ${p.needed} laps")
                 CoachPhase.Coaching -> CoachStatus(null, "Coach on")

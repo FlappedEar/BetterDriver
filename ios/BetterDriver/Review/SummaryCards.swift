@@ -545,3 +545,48 @@ struct SummaryQualityCard: View {
         }
     }
 }
+
+/// The session's weather (FBBD-403), as Android's Weather card: the air and the track surface, the
+/// wind, then how it compares with the last session at the same place, so a lap time is read with the
+/// conditions it was driven in, and the credit the data's licence asks for. Kept by the recording, or
+/// fetched the first time the session is opened, so the card comes in on its own; none without weather.
+struct SummaryWeatherCard: View {
+    let sessionId: String
+    @State private var ui: WeatherUi?
+
+    var body: some View {
+        // Always there, so its .task runs while it shows nothing (as SummaryQualityCard).
+        VStack(spacing: 0) {
+            if let ui {
+                Card {
+                    SectionTitle(ui.sky.map { "Weather · \($0)" } ?? "Weather")
+                    HStack(alignment: .top, spacing: 16) {
+                        SummaryFigure(
+                            label: "Air",
+                            value: ui.air ?? "–",
+                            detail: ui.humidity.map { "\($0) humidity" } ?? "",
+                            color: Palette.onBackground,
+                            size: 22
+                        )
+                        SummaryFigure(
+                            label: "Track",
+                            value: ui.surface.map { String($0.split(separator: ":").first ?? Substring($0)) } ?? "–",
+                            detail: "by the rain",
+                            color: ui.wet ? Palette.loss : Palette.onBackground,
+                            size: 22
+                        )
+                    }
+                    if let wind = ui.wind { Dim("Wind \(wind)") }
+                    if let surface = ui.surface, surface.contains(":") { Dim(surface, color: Palette.loss) }
+                    if let versus = ui.versus { Dim(versus, color: Palette.onBackground) }
+                    Dim(ui.credit)
+                }
+                .accessibilityIdentifier("weather")
+            }
+        }
+        .task(id: sessionId) {
+            let id = sessionId
+            ui = await Task.detached(priority: .utility) { ReviewBridge.weather(id: id) }.value
+        }
+    }
+}

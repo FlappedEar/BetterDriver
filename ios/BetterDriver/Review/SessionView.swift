@@ -231,6 +231,8 @@ private struct SummaryTab: View {
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
                 SummaryTimesCard(ui: ui, sessionId: sessionId)
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
+                // The conditions the lap times were driven in (FBBD-403), under them as on Android.
+                SummaryWeatherCard(sessionId: sessionId)
                 // What came of the last focus (FBBD-180, FBBD-364): the loop closed, under the lap times as on Android.
                 CoachingHistoryCard(summary: summary)
                 // This session against the earlier ones at its track (FBBD-122), as Android under the lap times.
@@ -247,6 +249,7 @@ private struct SummaryTab: View {
                 }
                 // Where the car went all the same, as Android's no-laps analysis (FBBD-342).
                 if let drive = summary.drive { DriveCards(drive: drive) }
+                SummaryWeatherCard(sessionId: sessionId)
             } else {
                 // Laps, but none counts (out laps, cuts): their times all the same.
                 Card {
@@ -255,6 +258,7 @@ private struct SummaryTab: View {
                         Figure(label: "Laps", value: "\(summary.laps.count)")
                     }
                 }
+                SummaryWeatherCard(sessionId: sessionId)
             }
             if let g = summary.whole.gForces { SummaryGForcesCard(trace: g) }
             if let runs = summary.whole.acceleration { SummaryAccelerationCard(ui: runs) }
