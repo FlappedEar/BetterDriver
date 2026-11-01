@@ -1,23 +1,22 @@
 import AppKit
 import MapKit
 
-// Temporary probe: Apple's satellite picture of Silesia Ring, printed as base64 JPEG.
-let center = CLLocationCoordinate2D(latitude: 50.5272, longitude: 18.0960)
-func snap(_ meters: Double, _ px: CGFloat, _ name: String) {
-    let o = MKMapSnapshotter.Options()
-    o.region = MKCoordinateRegion(center: center, latitudinalMeters: meters, longitudinalMeters: meters)
-    o.size = CGSize(width: px, height: px)
-    o.preferredConfiguration = MKImageryMapConfiguration()
-    var done = false
-    MKMapSnapshotter(options: o).start { s, e in
-        if let s, let tiff = s.image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
-           let jpg = rep.representation(using: .jpeg, properties: [.compressionFactor: 0.7]) {
-            try? jpg.write(to: URL(fileURLWithPath: name))
-            print("ok \(name) \(jpg.count)")
-        } else { print("fail \(name) \(String(describing: e))") }
-        done = true
-    }
-    while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }
+// Temporary probe: Apple's satellite picture over z/x0..x1/y0..y1 tiles, one PNG pixel-aligned with them.
+let a = CommandLine.arguments.dropFirst().map { Int($0)! }
+let (z, x0, y0, nx, ny) = (a[0], a[1], a[2], a[3], a[4])
+let tile = MKMapSize.world.width / Double(1 << z)
+let o = MKMapSnapshotter.Options()
+o.mapRect = MKMapRect(x: Double(x0) * tile, y: Double(y0) * tile, width: Double(nx) * tile, height: Double(ny) * tile)
+o.size = CGSize(width: nx * 256, height: ny * 256)
+o.scale = 1
+o.preferredConfiguration = MKImageryMapConfiguration()
+var done = false
+MKMapSnapshotter(options: o).start { s, e in
+    if let s, let tiff = s.image.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff),
+       let png = rep.representation(using: .png, properties: [:]) {
+        try? png.write(to: URL(fileURLWithPath: "apple.png"))
+        print("apple ok \(rep.pixelsWide)x\(rep.pixelsHigh)")
+    } else { print("apple fail \(String(describing: e))") }
+    done = true
 }
-snap(1400, 800, "apple-wide.jpg")
-snap(250, 800, "apple-close.jpg")
+while !done { RunLoop.main.run(until: Date().addingTimeInterval(0.1)) }

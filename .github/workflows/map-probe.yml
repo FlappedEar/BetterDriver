@@ -9,21 +9,13 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Snapshots
+      - name: Compare
         run: |
           cd .github/probe
-          swift snap.swift || true
-          # Web Mercator tiles round Silesia Ring at z16 and z18 from other providers, for comparison only.
-          fetch() { curl -s --max-time 20 -A "Mozilla/5.0" -o "$1" "$2" || true; }
-          for t in "17 72124 44152" "17 72123 44152" "17 72124 44151" "17 72123 44151" "19 288498 176608"; do
-            set -- $t; z=$1; x=$2; y=$3
-            fetch "esri-$z-$x-$y.jpg" "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/$z/$y/$x"
-            fetch "google-$z-$x-$y.jpg" "https://mt1.google.com/vt/lyrs=s&x=$x&y=$y&z=$z"
+          pip3 install --break-system-packages -q pillow || pip3 install -q pillow
+          swift snap.swift 18 144244 88300 9 7 || true
+          python3 compare.py ../../app/src/main/assets/demo/silesia-ring.replay
+          for r in StandardResolution; do
+            curl -s --max-time 30 -o caps.xml "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/$r?SERVICE=WMTS&REQUEST=GetCapabilities" || true
+            grep -o '<ows:Identifier>[^<]*</ows:Identifier>' caps.xml | sort -u | grep -v ':[0-9]*<' | head -20
           done
-          for r in StandardResolution HighResolution; do
-            curl -s --max-time 30 -o "caps-$r.xml" "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/$r?SERVICE=WMTS&REQUEST=GetCapabilities" || true
-            echo "== $r layers/sets"; grep -o '<ows:Identifier>[^<]*</ows:Identifier>' "caps-$r.xml" | sort -u | head -80
-            grep -o 'template="[^"]*"' "caps-$r.xml" | sort -u | head
-          done
-          ls -la
-          for f in *.jpg; do echo "=====BEGIN $f"; base64 -i "$f" | fold -w 4000; echo "=====END $f"; done
