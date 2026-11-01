@@ -18,8 +18,12 @@ import java.util.concurrent.Executor
  * never waits for it.
  */
 internal fun recordingWeather(recording: Recording, fetch: Executor) = SessionWeatherListener(
-    recording.id, recording.dir.path, recording.info.startUtcMillis, AndroidWeatherHttp, fetch::execute,
-    System::currentTimeMillis,
+    id = recording.id,
+    dir = recording.dir.path,
+    startUtcMillis = recording.info.startUtcMillis,
+    http = AndroidWeatherHttp,
+    background = { work -> fetch.execute { work() } },
+    nowUtcMillis = System::currentTimeMillis,
 )
 
 /**
