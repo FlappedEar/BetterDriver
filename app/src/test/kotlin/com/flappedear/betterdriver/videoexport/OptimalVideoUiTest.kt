@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.videoexport
 
+import com.flappedear.betterdriver.analysis.optimal.CompositeOptions
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.OptimalLap
 import com.flappedear.betterdriver.analysis.optimal.OptimalLapResult

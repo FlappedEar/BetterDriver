@@ -11,12 +11,12 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.flappedear.betterdriver.analysis.SessionAnalysis
-import com.flappedear.betterdriver.analysis.optimal.OptimalKind
-import com.flappedear.betterdriver.analysis.optimal.optimalOption
+import com.flappedear.betterdriver.analysis.optimal.CompositeOptions
+import com.flappedear.betterdriver.analysis.optimal.compositeOptions
+import com.flappedear.betterdriver.analysis.optimal.unreadableCompositeOptions
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recording.RecorderClient
-import com.flappedear.betterdriver.videoexport.CompositeOptions
 import com.flappedear.betterdriver.videoexport.OptimalVideoAction
 import com.flappedear.betterdriver.videoexport.OptimalVideoSheet
 import com.flappedear.betterdriver.videoexport.RealisticOptimalLap
@@ -86,13 +86,10 @@ internal fun optimalVideoSlot(
 private fun compositeOptionsOf(analysis: SessionAnalysis, lapVideo: LapVideo?): CompositeOptions = try {
     val video = lapVideo?.video
     val durations: (VideoClip) -> Long? = video?.let(::fileDurations) ?: { null }
-    val films = optimalVideo(analysis, video, lapVideo?.originMicros ?: 0L, durations)
-    CompositeOptions(films.realistic.option, films.raw.option)
+    compositeOptions(optimalVideo(analysis, video, lapVideo?.originMicros ?: 0L, durations))
 } catch (e: Exception) {
     DebugLog.w("SessionAnalysis", "finding the composite laps on video failed", e)
-    fun unreadable(kind: OptimalKind) =
-        optimalOption(kind, null, null).copy(unavailable = "The session's video could not be read.")
-    CompositeOptions(unreadable(OptimalKind.RealisticOptimal), unreadable(OptimalKind.RawTheoreticalBest))
+    unreadableCompositeOptions()
 }
 
 private const val Mp4MimeType = "video/mp4"
