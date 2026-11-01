@@ -61,9 +61,10 @@ data class CoachReference(
          * 2: two targets per corner (FBBD-177). 3: passes carry their line at the apex and their
          * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). 5: passes carry their time to
          * the apex (UI-170 B). 6: aims carry the plan's gear and the reference the gearbox (FBBD-326).
-         * An older file is rebuilt from the sessions.
+         * 7: a plan lap that two laps match in time gives no aim (FBBD-405). An older file is rebuilt
+         * from the sessions.
          */
-        const val Version = 6
+        const val Version = 7
     }
 }
 
@@ -151,10 +152,12 @@ fun buildReference(track: Track, sessions: List<SessionLaps>, plan: PlannedTarge
 private fun aims(map: CornerMap, timed: List<Pair<String, TracedLap>>, plan: PlannedTargets): List<CornerPass> =
     plan.targets.flatMap { p ->
         val numbers = map.corners.filter { it.cornerId == p.cornerId }.map { it.number }.toSet()
+        // The analysis and the coach number laps each their own way, so the plan's lap is the session's
+        // lap with its time. Two laps that close are no identity (FBBD-405): no aim, rather than a guess.
         val lap = timed.filter { it.first == p.sessionId }
             .map { it.second }
             .filter { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) <= SameLapSeconds }
-            .minByOrNull { abs(it.lap.timeMicros / MicrosPerSecond - p.lapSeconds) }
+            .singleOrNull()
         if (numbers.isEmpty() || lap == null) {
             emptyList()
         } else {

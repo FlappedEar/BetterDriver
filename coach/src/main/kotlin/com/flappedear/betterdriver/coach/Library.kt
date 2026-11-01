@@ -63,6 +63,7 @@ private fun lastSampleMicros(dir: File): Long? = try {
  * Run it off the main thread; it reads whole sessions. The coach and the UI process can both use it:
  * a lock file in [dir] keeps them from working on the same files at once.
  */
+@Suppress("TooManyFunctions") // The reference's sources, building and age, one function each.
 class CoachLibrary(
     private val sessions: SessionStore,
     private val dir: File,
@@ -74,12 +75,13 @@ class CoachLibrary(
 
     /**
      * The reference for [track], rebuilt first if sessions, lines or the line plan changed since it was saved.
-     * Sessions still recording, and [exclude], are left out.
+     * Sessions still recording, and [exclude], are left out. [drivenOnly]: aimed at the line plan's
+     * driven targets only, without its braking points beyond his best (FBBD-415).
      */
-    fun reference(track: Track, exclude: String? = null): CoachReference? = locked {
+    fun reference(track: Track, exclude: String? = null, drivenOnly: Boolean = false): CoachReference? = locked {
         val saved = tracks().filter { it.id != track.id } + track
         val found = match(saved) { false }
-        build(track, found, exclude)
+        build(track, found, exclude, drivenOnly = drivenOnly)
     }
 
     /**
@@ -90,6 +92,16 @@ class CoachLibrary(
         val ids = reference.sessions.toSet()
         val ended = sessions.list().filter { it.id in ids }.maxOfOrNull(::endedUtcMillis)
         return ended != null && nowUtcMillis - ended in 0..SameDayMillis
+    }
+
+    /**
+     * Whether every session [reference] was built from ended within [SameDayMillis] before
+     * [nowUtcMillis]: the driver's first day at the track (FBBD-415).
+     */
+    fun firstDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
+        val ids = reference.sessions.toSet()
+        val ended = sessions.list().filter { it.id in ids }.map(::endedUtcMillis)
+        return ended.isNotEmpty() && ended.all { nowUtcMillis - it in 0..SameDayMillis }
     }
 
     /**
@@ -206,11 +218,17 @@ class CoachLibrary(
      * lines changed. When [stop] says so between sessions, nothing is saved and the reference as it
      * was is returned.
      */
-    private fun build(track: Track, found: Found, exclude: String?, stop: () -> Boolean = { false }): CoachReference? {
+    private fun build(
+        track: Track,
+        found: Found,
+        exclude: String?,
+        stop: () -> Boolean = { false },
+        drivenOnly: Boolean = false,
+    ): CoachReference? {
         val usable = sessions.list().filter { it.state != SessionState.RECORDING && it.id != exclude }
         val here = usable.filter { found.trackOf[it.id] == track.id }.map { it.id }
         val current = references.get(track.id)
-        val plan = plans(track.id)
+        val plan = plans(track.id)?.let { if (drivenOnly) it.drivenOnly() else it }
         val upToDate = current != null && current.fits(track) && current.sessions.toSet() == here.toSet() &&
             current.planKey == plan?.key
         val laps = if (upToDate) null else lapsAt(track, here, found, stop)

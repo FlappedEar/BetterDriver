@@ -174,6 +174,12 @@ object CoachEvents {
     /** The text of a [VOICE_END] event: cue [seq]'s sound [end]ed: "done", "stopped" (cut off) or "error". */
     fun voiceEndText(seq: Int, end: String) = "seq=$seq end=$end"
 
+    /** How a cue's sound ends when it played to its end; anything else ("stopped", "error") was not heard. */
+    const val VoiceDone = "done"
+
+    /** [PROBLEM] text of cue [seq] whose sound did not play to its end ([end]), FBBD-416. */
+    fun cutOffText(seq: Int, end: String) = "cut off seq=$seq end=$end"
+
     fun resultText(r: CueResult): String = buildString {
         append("seq=").append(r.cue.seq)
         append(" corner=").append(r.after.corner)

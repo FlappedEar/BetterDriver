@@ -112,12 +112,16 @@ class CoachService : Service() {
         a.run = CoachRun(
             id, set, CoachFolders.under(coachDir(this).path, sessionsDir(this).path),
             object : CoachReferenceSource {
-                // The library aims each track's reference at its line plan itself.
+                // The library aims each track's reference at its line plan itself; a plan the coach
+                // stripped of braking points beyond his best (first day there, FBBD-415) is passed on.
                 override fun reference(track: Track, exclude: String, plan: PlannedTargets?) =
-                    library.reference(track, exclude)
+                    library.reference(track, exclude, drivenOnly = plan?.beyondBest == false)
 
                 override fun drivenSameDay(reference: CoachReference, nowUtcMillis: Long) =
                     library.drivenSameDay(reference, nowUtcMillis)
+
+                override fun firstDay(reference: CoachReference, nowUtcMillis: Long) =
+                    library.firstDay(reference, nowUtcMillis)
             },
             // A sound of an earlier recording, heard late, is not this one's.
             Speaker(a), a::now, System::currentTimeMillis, { r -> handler.post { if (active === a) r() } },

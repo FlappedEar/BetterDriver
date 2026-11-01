@@ -69,13 +69,16 @@ data class CueReview(val cues: List<ReviewedCue>, val problems: Int) {
          */
         fun count(events: List<RecorderEvent>): Int = events.count { it.kind == CoachEvents.CUE }
 
-        /** The cue number of a "late seq=…" or "no voice seq=…" problem; null for any other problem. */
+        /**
+         * The cue number of a "late seq=…", "no voice seq=…" or "cut off seq=…" (FBBD-416) problem; null
+         * for any other problem.
+         */
         private fun unsaidSeq(text: String): Int? {
             val rest = UnsaidPrefixes.firstOrNull { text.startsWith(it) }?.let { text.removePrefix(it) }
             return rest?.substringBefore(' ')?.removePrefix("seq=")?.toIntOrNull()
         }
 
-        private val UnsaidPrefixes = listOf("late ", "no voice ")
+        private val UnsaidPrefixes = listOf("late ", "no voice ", "cut off ")
     }
 }
 
