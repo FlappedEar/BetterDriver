@@ -48,3 +48,8 @@ tasks.named<Test>("jvmTest") {
 tasks.register("test") {
     dependsOn("jvmTest")
 }
+
+// A failed iOS test shows its assertion message in the CI log; the report itself is not readable from the cloud.
+tasks.withType<org.jetbrains.kotlin.gradle.targets.native.tasks.KotlinNativeTest>().configureEach {
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+}

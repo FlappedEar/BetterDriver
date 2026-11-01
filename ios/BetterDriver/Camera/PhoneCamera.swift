@@ -233,6 +233,8 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
         do {
             try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
             let w = try AVAssetWriter(outputURL: dir.appendingPathComponent(name), fileType: .mp4)
+            // An app killed before finishWriting answers (FBBD-350) keeps a file that plays up to its last fragment.
+            w.movieFragmentInterval = Self.fragmentInterval
             // Settings the writer refuses would also throw in the input: no video then, never a crash.
             let settings = videoSettings(for: frame)
             guard w.canApply(outputSettings: settings, forMediaType: .video) else { throw CameraError.notSupported }
@@ -271,6 +273,10 @@ final class PhoneCamera: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
             status("Camera error", ok: false)
         }
     }
+
+    /// How often the file is written as a playable fragment: a file cut off by a killed app or a crash
+    /// during its finish loses at most this much at its end, instead of all of it (no MP4 index).
+    static let fragmentInterval = CMTime(value: 2, timescale: 1)
 
     /// The file's video settings, made from the frame's size and the mode's rate: H.264, or HEVC when
     /// the phone records this mode only in HEVC (a 4K or 10-bit format). Not the output's recommended

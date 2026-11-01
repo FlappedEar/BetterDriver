@@ -100,6 +100,9 @@ class LiveSession private constructor(
     /** Why it ended, once it has: "user", "storage_full" or "error". */
     val endReason: String? get() = recording.endReason
 
+    /** How the recorder's writer kept up (FBBD-350 R2), for the app log at the stop. */
+    val writerText: String get() = recording.writerText
+
     override fun nowMicros(): Long = recording.nowMicros()
 
     override fun defineChannel(def: ChannelDef) {
@@ -231,6 +234,9 @@ class LiveSession private constructor(
             }
         }
     }
+
+    /** Waits until the recorder has written everything handed in so far, for tests. */
+    internal fun awaitWritten() = recording.awaitWritten()
 
     /** Waits for the quality report the end of the recording logs, for tests. */
     internal fun awaitQuality() = quality.awaitLogged()
