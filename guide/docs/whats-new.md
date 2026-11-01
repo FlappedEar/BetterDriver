@@ -25,6 +25,8 @@ The full notes of every release are on
 - Each session keeps the weather at the track (Open-Meteo): a **Weather** card in the Summary
   with "last time here"; on a damp or wet track the coach says lap times only. See
   [Spoken coach](coach.md).
+- Spoken coach: on a first visit to a track it asks only for what was already driven, a cue cut
+  off before its end earns no praise, and cue timing follows the speech rate setting.
 - iPhone: sensors and GPS no longer wait for the disk while recording, and phone video is
   written in 2 s pieces, so a file cut off by a killed app still plays.
 
