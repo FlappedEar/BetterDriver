@@ -28,9 +28,9 @@ class AboutUiTest {
     }
 
     @Test
-    fun `both bundled fonts are under the OFL`() {
+    fun `every bundled font is under the OFL`() {
         val fonts = section("Fonts")
-        assertEquals(listOf("Barlow", "Saira Semi Condensed"), fonts.map { it.name })
+        assertEquals(listOf("Barlow", "Saira Semi Condensed", "Inter"), fonts.map { it.name })
         assertTrue(fonts.all { it.license == "SIL Open Font License 1.1" })
     }
 

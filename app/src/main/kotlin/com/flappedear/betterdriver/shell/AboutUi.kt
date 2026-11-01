@@ -93,6 +93,7 @@ fun aboutSections(): List<CreditSection> = listOf(
         listOf(
             Credit("Barlow", "Copyright 2017 The Barlow Project Authors", Ofl, "https://github.com/jpt/barlow"),
             Credit("Saira Semi Condensed", "Copyright 2016 The Saira Project Authors", Ofl, OflUrl),
+            Credit("Inter", "Copyright 2016 The Inter Project Authors", Ofl, "https://github.com/rsms/inter"),
         ),
     ),
     CreditSection(

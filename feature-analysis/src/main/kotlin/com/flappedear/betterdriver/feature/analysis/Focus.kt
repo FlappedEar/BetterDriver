@@ -20,7 +20,9 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.core.ui.component.NumberText
+import com.flappedear.betterdriver.core.ui.component.HealthCard
+import com.flappedear.betterdriver.core.ui.component.HealthIcon
+import com.flappedear.betterdriver.core.ui.component.HealthValue
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 
@@ -29,6 +31,9 @@ const val NextSessionTag = "next-session"
 
 /** Its primary focus, for tests. */
 const val PrimaryFocusTag = "next-session-primary"
+
+/** The card's heading (UI-307 A). */
+const val NextSessionTitle = "Next session"
 
 /** The link to Where to find time on the card, for tests. */
 const val WhereToFindTimeTag = "next-session-line"
@@ -57,8 +62,8 @@ internal fun Focus(
 ) {
     val primary = ui.focus.firstOrNull { it.primary } ?: ui.focus.firstOrNull()
     val secondary = ui.focus.filter { it !== primary }
-    Card(modifier.testTag(NextSessionTag)) {
-        TrackLabel("Next session · work on")
+    // A card with an amber heading, as Apple Health (UI-307 A): the time to find large, the corner under it.
+    HealthCard(modifier.testTag(NextSessionTag), title = NextSessionTitle, icon = HealthIcon.Coach) {
         if (primary == null) {
             Dim("Nothing clear enough to work on from this session's laps.")
         } else if (layout.sideBySide && secondary.isNotEmpty()) {
@@ -113,21 +118,10 @@ private fun Primary(row: FocusRow, onCompare: (Int) -> Unit, modifier: Modifier)
             .padding(vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                row.name,
-                Modifier.weight(1f),
-                color = c.text,
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.SemiBold,
-            )
-            row.timeText(::focusSeconds)?.let { time ->
-                Column(horizontalAlignment = Alignment.End) {
-                    NumberText(time, size = 24.dp, color = if (row.timeDoubtful) c.textDim else c.gain)
-                    Dim("a lap")
-                }
-            }
+        row.timeText(::focusSeconds)?.let { time ->
+            HealthValue(time, unit = "a lap", color = if (row.timeDoubtful) c.textDim else c.gain)
         }
+        Text(row.name, color = c.text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         Text(row.what.ifEmpty { row.observation }, color = c.text, style = MaterialTheme.typography.bodyLarge)
         if (row.what.isNotEmpty()) Dim(row.observation)
         if (row.confidence.doubtful) ConfidenceNote(row.confidence)

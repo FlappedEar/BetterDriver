@@ -1,18 +1,25 @@
 package com.flappedear.betterdriver.feature.analysis
 
 import androidx.compose.foundation.layout.Row
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.progressBestText
 import com.flappedear.betterdriver.analysis.summary.quicker
 import com.flappedear.betterdriver.analysis.summary.slower
+import com.flappedear.betterdriver.analysis.summary.typicalLapHighlight
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.component.CompareBar
+import com.flappedear.betterdriver.core.ui.component.CompareBars
+import com.flappedear.betterdriver.core.ui.component.HealthCard
+import com.flappedear.betterdriver.core.ui.component.HealthIcon
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.format.formatDelta
 import com.flappedear.betterdriver.format.formatLapTime
@@ -38,8 +45,19 @@ const val TypicalLapTag = "typical-lap"
 @Composable
 internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgression: (() -> Unit)? = null) {
     val c = TrackTheme.colors
-    Card(modifier) {
-        TrackLabel("Against earlier sessions here")
+    // The Highlights card (UI-307 A): one sentence on the typical lap and two bars to compare, then the detail.
+    val highlight = typicalLapHighlight(progress)
+    HealthCard(modifier, title = if (highlight != null) "Typical lap" else EarlierTitle, icon = HealthIcon.Laps) {
+        if (highlight != null) {
+            Text(
+                highlight,
+                color = c.text,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+            )
+            TypicalLapBars(progress)
+            TrackLabel(EarlierTitle)
+        }
         val earlierBest = progress.earlierBestSeconds
         val delta = progress.bestDeltaSeconds
         when {
@@ -92,6 +110,32 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
         }
     }
 }
+
+private const val EarlierTitle = "Against earlier sessions here"
+
+/** This session's typical lap against the session before's, as two bars, the longer lap the longer bar. */
+@Composable
+private fun TypicalLapBars(progress: SessionProgress) {
+    val now = progress.lapMedianSeconds ?: return
+    val before = progress.previousMedianSeconds ?: return
+    // From 90 % of the quicker lap, so a second in a lap of eighty shows.
+    val floor = minOf(now, before) * BarFloorShare
+    val top = maxOf(now, before) - floor
+    fun share(v: Double) = ((v - floor) / top).toFloat()
+    CompareBars(
+        listOf(
+            CompareBar("This session", lapText(now), share(now), MaterialTheme.colorScheme.primary),
+            CompareBar(progress.previousLabel.orEmpty(), lapText(before), share(before), BeforeBarColor),
+        ),
+    )
+}
+
+private fun lapText(seconds: Double) = formatLapTime((seconds * MillisPerSecond).roundToLong())
+
+private const val BarFloorShare = 0.9
+
+/** The earlier session's bar: Apple's grey. */
+private val BeforeBarColor = Color(0xFF636366)
 
 /** At most this many corners or straights in each of the quicker and slower lists. */
 private const val ChangeRows = 3

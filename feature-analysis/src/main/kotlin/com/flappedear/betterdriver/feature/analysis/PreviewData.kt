@@ -174,6 +174,7 @@ internal val PreviewUi = AnalysisUi(
         previousLabel = "11 Oct 2026, 11:40",
         previousBestSeconds = 81.62,
         previousSpreadSeconds = 0.71,
+        previousMedianSeconds = 82.38,
         changes = listOf(
             SegmentChange("s2", "Corners 2–3", TrackSegmentType.Corner, 3.61, 3.83, 0.06, 0.11),
             SegmentChange("s5", "Corner 4", TrackSegmentType.Corner, 5.27, 5.18, 0.09, 0.05),

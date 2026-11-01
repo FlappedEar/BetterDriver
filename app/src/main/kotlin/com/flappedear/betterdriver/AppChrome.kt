@@ -1,17 +1,21 @@
 package com.flappedear.betterdriver
 
 import androidx.activity.compose.LocalActivity
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.calculateEndPadding
 import androidx.compose.material3.Badge
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
+import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.ExperimentalMaterial3WindowSizeClassApi
 import androidx.compose.material3.windowsizeclass.WindowHeightSizeClass
@@ -20,6 +24,7 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -86,21 +91,38 @@ internal fun withoutStart(padding: PaddingValues): PaddingValues {
     )
 }
 
-/** [updateDot]: a quiet dot on Settings when a newer version waits (FBBD-74). */
+/**
+ * [updateDot]: a quiet dot on Settings when a newer version waits (FBBD-74). The bar as in the
+ * Health-like look (UI-307 A): the card grey, slightly see-through, a thin line on top, and the
+ * selected item in amber without a pill behind it.
+ */
 @Composable
 internal fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean) {
-    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-        // An upright tablet has the bar too, still without Drive.
-        topLevelItems(isTabletDevice()).forEach { item ->
-            NavigationBarItem(
-                selected = sectionOf(route) == item.route,
-                onClick = { openTopLevel(nav, item.route) },
-                icon = { TopLevelIcon(item, updateDot) },
-                label = { Text(item.label) },
-            )
+    Column {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+        NavigationBar(containerColor = BarColor) {
+            // An upright tablet has the bar too, still without Drive.
+            topLevelItems(isTabletDevice()).forEach { item ->
+                NavigationBarItem(
+                    selected = sectionOf(route) == item.route,
+                    onClick = { openTopLevel(nav, item.route) },
+                    icon = { TopLevelIcon(item, updateDot) },
+                    label = { Text(item.label) },
+                    colors = NavigationBarItemDefaults.colors(
+                        selectedIconColor = MaterialTheme.colorScheme.primary,
+                        selectedTextColor = MaterialTheme.colorScheme.primary,
+                        indicatorColor = Color.Transparent,
+                        unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                )
+            }
         }
     }
 }
+
+/** The bar's grey (UI-307 A): the cards' #1C1C1E at 94 %. */
+private val BarColor = Color(0xF01C1C1E)
 
 /**
  * The bottom bar's items down the side of a tablet (FBBD-40), centred within reach of a thumb. A
@@ -108,7 +130,7 @@ internal fun BottomBar(nav: NavHostController, route: String, updateDot: Boolean
  */
 @Composable
 internal fun SideRail(nav: NavHostController, route: String, updateDot: Boolean) {
-    NavigationRail(containerColor = MaterialTheme.colorScheme.surface) {
+    NavigationRail(containerColor = BarColor) {
         Spacer(Modifier.weight(1f))
         topLevelItems(tabletDevice = true).forEach { item ->
             NavigationRailItem(
@@ -116,6 +138,13 @@ internal fun SideRail(nav: NavHostController, route: String, updateDot: Boolean)
                 onClick = { openTopLevel(nav, item.route) },
                 icon = { TopLevelIcon(item, updateDot) },
                 label = { Text(item.label) },
+                colors = NavigationRailItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = Color.Transparent,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
             )
         }
         Spacer(Modifier.weight(1f))
