@@ -13,6 +13,14 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.26.0
+
+- iPhone and iPad: **Back up** and **Restore** in **Settings › App**, **Import** in Tracks and
+  **Share** in the track editor. The files open on the Android app too, and Android's backups
+  open on the iPhone.
+- iPhone: the first-run setup checklist with Android's four steps (permissions, GNSS receiver,
+  cameras, car) and **Settings › App › Run setup again**. The iPad opens on **Sessions**.
+
 ## 1.25.0
 
 - On a tablet (Android and iPad) a list button at the left of the session's bar hides the
