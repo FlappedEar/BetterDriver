@@ -13,6 +13,21 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.28.0
+
+- Video tab: the realistic optimal and the raw theoretical best can be watched, not only saved,
+  on Android, iPhone and iPad. See [Lap analysis](analysis.md).
+- Tablets (Android and iPad) only review sessions: the tabs are **Sessions** and **Settings**.
+  Recording, equipment, the track screen, video and spoken-coach settings are on the phone.
+- Tyre pressures and temperatures from the FlappedEar TPMS bridge: add **Tyre pressure bridge**
+  under Equipment, and every session records each tyre, on Android and the iPhone. See
+  [Equipment](equipment.md).
+- Each session keeps the weather at the track (Open-Meteo): a **Weather** card in the Summary
+  with "last time here"; on a damp or wet track the coach says lap times only. See
+  [Spoken coach](coach.md).
+- iPhone: sensors and GPS no longer wait for the disk while recording, and phone video is
+  written in 2 s pieces, so a file cut off by a killed app still plays.
+
 ## 1.27.0
 
 - iPhone: only the OBD-II adapters and the heart-rate strap listed in **Settings › Equipment**
