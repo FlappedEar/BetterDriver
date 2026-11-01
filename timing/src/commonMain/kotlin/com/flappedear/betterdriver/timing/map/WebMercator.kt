@@ -163,15 +163,24 @@ object GoogleMapTiles {
     /** [SESSION_REQUEST] for Swift, which reaches functions of an object more surely than its constants. */
     fun sessionRequest(): String = SESSION_REQUEST
 
-    /** The copyright of the photos in the area between [north], [south], [east] and [west] at [zoom]. */
-    fun viewportUrl(
-        key: String,
-        session: String,
-        zoom: Int,
-        north: Double,
-        south: Double,
-        east: Double,
-        west: Double,
-    ): String = "$HOST/tile/v1/viewport?session=$session&key=$key&zoom=$zoom" +
-        "&north=$north&south=$south&east=$east&west=$west"
+    /** Tiles across and down of the area whose photos' copyright is asked for at once. */
+    const val VIEWPORT_TILES = 16
+
+    /**
+     * The copyright of the photos round tile ([x], [y]) at zoom [z]: the square of [VIEWPORT_TILES]
+     * tiles across and down that holds it. [viewportArea] names that square.
+     */
+    fun viewportUrl(key: String, session: String, z: Int, x: Int, y: Int): String {
+        val x0 = viewportArea(x)
+        val y0 = viewportArea(y)
+        val nw = WebMercator.toGeo(corner(x0, y0), z.toDouble())
+        val se = WebMercator.toGeo(corner(x0 + VIEWPORT_TILES, y0 + VIEWPORT_TILES), z.toDouble())
+        return "$HOST/tile/v1/viewport?session=$session&key=$key&zoom=$z" +
+            "&north=${nw.lat}&south=${se.lat}&east=${se.lon}&west=${nw.lon}"
+    }
+
+    /** The first tile, across or down, of the viewport square that holds tile [t]. */
+    fun viewportArea(t: Int): Int = t / VIEWPORT_TILES * VIEWPORT_TILES
+
+    private fun corner(x: Int, y: Int) = WorldPx(x.toDouble() * TileSize, y.toDouble() * TileSize)
 }

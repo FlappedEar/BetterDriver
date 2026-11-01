@@ -27,11 +27,12 @@ class GoogleMapTilesTest {
     }
 
     @Test
-    fun theViewportAddressNamesTheArea() {
-        assertEquals(
-            "https://tile.googleapis.com/tile/v1/viewport?session=s&key=k&zoom=17" +
-                "&north=50.6&south=50.5&east=18.2&west=18.0",
-            GoogleMapTiles.viewportUrl("k", "s", 17, 50.6, 50.5, 18.2, 18.0),
-        )
+    fun theViewportAddressNamesTheSquareOfTilesRoundTheTile() {
+        // Zoom 4 has 16 × 16 tiles: any tile's square is the whole Web Mercator world.
+        val url = GoogleMapTiles.viewportUrl("k", "s", 4, 9, 5)
+        val start = "https://tile.googleapis.com/tile/v1/viewport?session=s&key=k&zoom=4&north=85.0511"
+        assertTrue(url.startsWith(start), url)
+        assertTrue("&south=-85.0511" in url && "&east=180.0" in url && "&west=-180.0" in url, url)
+        assertEquals(144_240, GoogleMapTiles.viewportArea(144_248))
     }
 }

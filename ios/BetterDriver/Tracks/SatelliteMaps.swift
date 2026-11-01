@@ -173,22 +173,16 @@ final class SatelliteMaps: ObservableObject {
         return token
     }
 
-    /// Asks once per area of 16 × 16 tiles whose photos those are, for the credit.
+    /// Asks once per square of tiles (GoogleMapTiles.viewportUrl) whose photos those are, for the credit.
     private func noteCopyright(z: Int32, x: Int32, y: Int32) {
-        let area = "\(z)/\(x / 16)/\(y / 16)"
+        let tiles = GoogleMapTiles.shared
+        let area = "\(z)/\(tiles.viewportArea(t: x))/\(tiles.viewportArea(t: y))"
         lock.lock()
         let known = copyrights[area] != nil
         if !known { copyrights[area] = "" }
         lock.unlock()
         guard !known, let key = key(.google), let token = googleSession(key: key) else { return }
-        let n = Double(1 << z)
-        func lon(_ x: Double) -> Double { x / n * 360 - 180 }
-        func lat(_ y: Double) -> Double { atan(sinh(Double.pi * (1 - 2 * y / n))) * 180 / Double.pi }
-        let x0 = Double(x / 16 * 16), y0 = Double(y / 16 * 16)
-        let address = GoogleMapTiles.shared.viewportUrl(
-            key: key, session: token, zoom: z,
-            north: lat(y0), south: lat(y0 + 16), east: lon(x0 + 16), west: lon(x0)
-        )
+        let address = GoogleMapTiles.shared.viewportUrl(key: key, session: token, z: z, x: x, y: y)
         guard let url = URL(string: address), let data = get(URLRequest(url: url)),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let text = json["copyright"] as? String else { return }
