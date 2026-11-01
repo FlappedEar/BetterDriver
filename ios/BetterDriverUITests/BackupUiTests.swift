@@ -24,12 +24,7 @@ final class BackupUiTests: XCTestCase {
     func testBackUpAsksAboutSessionsAndRestoreIsThere() {
         app.launchArguments = ["-freshInstall"]
         app.launch()
-        openSettings()
-        let appTopic = app.buttons["settings.app"].firstMatch
-        XCTAssertTrue(appTopic.waitForExistence(timeout: 10), "no App in Settings")
-        // As Share log's Diagnostics: the topic can be below the fold.
-        for _ in 0..<3 where !appTopic.isHittable { app.swipeUp() }
-        appTopic.tap()
+        openSettings(showing: "settings.app").tap()
         let backUp = element("backUp")
         XCTAssertTrue(backUp.waitForExistence(timeout: 10), "no Back up in Settings › App")
         for _ in 0..<3 where !backUp.isHittable { app.swipeUp() }
@@ -50,10 +45,7 @@ final class BackupUiTests: XCTestCase {
     func testTracksImportAndTheEditorsShareAreThere() {
         app.launchArguments = ["-freshInstall", "-demoSessions"]
         app.launch()
-        openSettings()
-        let tracks = app.buttons["settings.tracks"].firstMatch
-        XCTAssertTrue(tracks.waitForExistence(timeout: 10), "no Tracks in Settings")
-        tracks.tap()
+        openSettings(showing: "settings.tracks").tap()
         XCTAssertTrue(element("importTrack").waitForExistence(timeout: 10), "no Import in Tracks")
         let row = app.buttons.matching(identifier: "trackRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 60), "no saved demo track")
@@ -70,11 +62,18 @@ final class BackupUiTests: XCTestCase {
         app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
-    private func openSettings() {
-        let bottom = app.tabBars.buttons["Settings"]
-        let settings = bottom.waitForExistence(timeout: 30) ? bottom : app.buttons["Settings"].firstMatch
-        XCTAssertTrue(settings.waitForExistence(timeout: 30), "no Settings tab")
-        settings.tap()
+    /// Settings: in the tab bar at the bottom, or on an iPad in the bar at the top (as TrackCornersTests).
+    /// Tapped again if [topic] has not shown, as the iPad's top bar can take the first tap as focus.
+    private func openSettings(showing topic: String) -> XCUIElement {
+        let target = element(topic)
+        for _ in 0..<3 {
+            let bottom = app.tabBars.buttons["Settings"]
+            if bottom.waitForExistence(timeout: 5) { bottom.tap() } else { app.buttons["Settings"].firstMatch.tap() }
+            if target.waitForExistence(timeout: 10) { break }
+        }
+        XCTAssertTrue(target.exists, "no \(topic) in Settings")
+        for _ in 0..<3 where !target.isHittable { app.swipeUp() }
+        return target
     }
 
     /// The system share sheet over the app, which keeps running (as ShareEntryPointsTests checks it).
