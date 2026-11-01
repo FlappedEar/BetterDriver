@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.core.ble.RaceBoxSource
 import com.flappedear.betterdriver.core.ble.diy.DiyBleSource
 import com.flappedear.betterdriver.core.ble.dragy.DragySource
 import com.flappedear.betterdriver.core.ble.hr.HeartRateSource
+import com.flappedear.betterdriver.core.ble.tpms.TpmsSource
 import com.flappedear.betterdriver.core.ble.lns.LnsSource
 import com.flappedear.betterdriver.core.ble.nmea.NmeaSource
 import com.flappedear.betterdriver.core.ble.nmea.TcpNetwork
@@ -98,14 +99,27 @@ data class GnssRef(
     }
 }
 
-/** A sensor recorded alongside the receiver: a heart-rate monitor by address and name (FBBD-119). */
-data class SensorRef(val address: String, val name: String) {
-    /** One line for an intent extra or a preference: address, a tab, then the name. */
-    fun encode(): String = "$address\t$name"
+/** What a [SensorRef] is: a heart-rate monitor (FBBD-119) or the tyre pressure bridge (FBBD-224). */
+enum class SensorKind { HEART_RATE, TPMS }
+
+/** A sensor recorded alongside the receiver, by address and name. */
+data class SensorRef(val address: String, val name: String, val kind: SensorKind = SensorKind.HEART_RATE) {
+    /**
+     * One line for an intent extra or a preference: address, a tab, then the name; a bridge adds a
+     * tab and "tpms". A line without a kind, as written before FBBD-224, is a heart-rate monitor.
+     */
+    fun encode(): String = if (kind == SensorKind.TPMS) "$address\t$name\t$TpmsTag" else "$address\t$name"
 
     companion object {
-        fun decode(line: String): SensorRef? =
-            line.split('\t', limit = 2).takeIf { it.size == 2 && it[0].isNotBlank() }?.let { SensorRef(it[0], it[1]) }
+        private const val TpmsTag = "tpms"
+
+        fun decode(line: String): SensorRef? {
+            val parts = line.split('\t')
+            if (parts.size < 2 || parts[0].isBlank()) return null
+            val tpms = parts.size > 2 && parts.last() == TpmsTag
+            val name = (if (tpms) parts.subList(1, parts.size - 1) else parts.drop(1)).joinToString("\t")
+            return SensorRef(parts[0], name, if (tpms) SensorKind.TPMS else SensorKind.HEART_RATE)
+        }
     }
 }
 
@@ -181,7 +195,11 @@ internal object Sources {
                 ),
             )
         }
-        return listOf(receiver) + phone + obd + sensors.take(1).map { HeartRateSource(app, it.address, it.name) }
+        val strap = sensors.filter { it.kind == SensorKind.HEART_RATE }.take(1)
+            .map { HeartRateSource(app, it.address, it.name) }
+        // The tyre pressure bridge (FBBD-224); its channels have fixed ids too, so one bridge.
+        val tyres = sensors.filter { it.kind == SensorKind.TPMS }.take(1).map { TpmsSource(app, it.address, it.name) }
+        return listOf(receiver) + phone + obd + strap + tyres
     }
 }
 

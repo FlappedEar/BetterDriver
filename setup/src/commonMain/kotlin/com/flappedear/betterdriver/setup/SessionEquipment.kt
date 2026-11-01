@@ -4,8 +4,8 @@ package com.flappedear.betterdriver.setup
 data class WifiObd(val adapter: Equipment, val at: TcpAddress)
 
 /**
- * Which OBD-II adapters and which heart-rate strap a session uses (FBBD-121 UI-105 C, FBBD-119,
- * FBBD-349): only the ones listed in Settings › Equipment, on Android and on iOS. Nothing listed,
+ * Which OBD-II adapters, heart-rate strap and tyre pressure bridge a session uses (FBBD-121 UI-105 C,
+ * FBBD-119, FBBD-349, FBBD-224): only the ones listed in Settings › Equipment, on Android and on iOS. Nothing listed,
  * nothing used: no adapter used before, nearby or remembered is tried, so an item removed from
  * Equipment stops recording from the next session on.
  */
@@ -26,4 +26,11 @@ object SessionEquipment {
      */
     fun heartRateStrap(sensors: List<Equipment>): Equipment? =
         sensors.firstOrNull { it.model == EquipmentModel.HEART_RATE && !it.address.isNullOrBlank() }
+
+    /**
+     * The tyre pressure bridge recorded (FBBD-224): the first listed one with an address. Its eight
+     * channels have fixed ids, as heart rate's; null when none is listed.
+     */
+    fun tpmsBridge(sensors: List<Equipment>): Equipment? =
+        sensors.firstOrNull { it.model == EquipmentModel.TPMS_BRIDGE && !it.address.isNullOrBlank() }
 }
