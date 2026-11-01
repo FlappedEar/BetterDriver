@@ -261,7 +261,7 @@ class RecorderTest {
         val data = store.read(rec.id)
         assertEquals("user", data.end?.reason)
         assertEquals(0L, data.truncatedBytes + data.skippedBytes, "torn or skipped bytes")
-        assertEquals(SessionState.FINISHED, store.state(rec.id))
+        assertEquals(SessionState.FINISHED, store.list().single().state)
         val written = data.sampleSets.groupBy { (it.tMicros / 1_000_000_000L).toInt() }
         repeat(sources) { s ->
             val got = written[s].orEmpty().map { (it.tMicros % 1_000_000_000L).toInt() }
