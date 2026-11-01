@@ -110,7 +110,9 @@ final class SatelliteMapTests: XCTestCase {
         let play = app.buttons["perfectLapButton"].firstMatch
         XCTAssertTrue(play.waitForExistence(timeout: 120), "no perfect lap in 3D")
         play.tap()
-        let picture = app.descendants(matching: .any).matching(identifier: "perfectLapPicture").firstMatch
+        // By its label too: the player's identifier on its stack replaces the picture's own (as for Back).
+        let picture = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'perfectLapPicture' OR label == 'Perfect lap picture'")).firstMatch
         XCTAssertTrue(picture.waitForExistence(timeout: 30), "no 3D picture")
         let google = NSPredicate(format: "value CONTAINS 'Google Maps'")
         expectation(for: google, evaluatedWith: picture)
