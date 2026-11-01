@@ -44,13 +44,14 @@ internal fun lastTimeHere(
     track: String?,
     zone: ZoneId = ZoneId.systemDefault(),
 ): LastTimeHere? {
-    if (track.isNullOrBlank()) return null
     val timed = sessions.filter {
-        it.state != SessionState.RECORDING && it.info.track == track && facts[it.id]?.bestMillis != null
+        !track.isNullOrBlank() && it.state != SessionState.RECORDING && it.info.track == track &&
+            facts[it.id]?.bestMillis != null
     }
-    val (day, list) = byDay(timed, zone).firstOrNull() ?: return null
-    val bests = list.sortedBy { it.info.startUtcMillis }.mapNotNull { facts[it.id]?.bestMillis }
-    return LastTimeHere(day, bests.min(), bests)
+    return byDay(timed, zone).firstOrNull()?.let { (day, list) ->
+        val bests = list.sortedBy { it.info.startUtcMillis }.mapNotNull { facts[it.id]?.bestMillis }
+        LastTimeHere(day, bests.min(), bests)
+    }
 }
 
 /** "1.53 s a lap to find": the focus's time, to the hundredth. */

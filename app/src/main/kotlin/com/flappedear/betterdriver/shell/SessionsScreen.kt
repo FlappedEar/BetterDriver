@@ -151,7 +151,7 @@ fun SessionsScreen(
                                     onAnalyse = { onAnalyse(s) },
                                     onActions = { actionsFor = s.id },
                                     modifier = Modifier.weight(1f),
-                                    title = if (oneTrack) cardTitle(s) else rowTitle(s),
+                                    title = rowTitle(s, withTrack = !oneTrack),
                                 )
                             }
                             if (pair.size < CardsPerRow) Spacer(Modifier.weight(1f))
@@ -244,10 +244,10 @@ private val TimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault(
 /** The test tag of the Sessions row of session [id]: tests find a row by it, not by its time text. */
 internal fun sessionRowTag(id: String) = "session-row-$id"
 
-/** "16:23 · Silesia Ring": when the session started, and where. */
-internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault()): String {
+/** "16:23 · Silesia Ring": when the session started, and where ([withTrack]; "16:23" without). */
+internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault(), withTrack: Boolean = true): String {
     val time = TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
-    return listOf(time, s.info.track).filter { it.isNotBlank() }.joinToString(" · ")
+    return listOf(time, s.info.track.takeIf { withTrack }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
 }
 
 /** "Corolla · 22 min · 14 laps · Video · OBD · HR": the car, how long, and what was recorded (shared with iOS). */
@@ -277,10 +277,6 @@ private fun rowStatus(
 private const val CardsPerRow = 2
 private val CardGap = 8.dp
 
-/** "16:23": when the session started, for its card under the day's heading. */
-internal fun cardTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault()): String =
-    TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
-
 /**
  * One session as a card (UI-308 A): its [title] (start time, and track when the day had more than
  * one) in amber with ⋮, its best lap large in purple, then the car, how long, its laps and what was
@@ -298,7 +294,7 @@ private fun SessionRow(
     onAnalyse: () -> Unit,
     onActions: () -> Unit,
     modifier: Modifier = Modifier,
-    title: String = cardTitle(s),
+    title: String = rowTitle(s, withTrack = false),
 ) {
     val c = TrackTheme.colors
     // The card whose analysis shows beside the list on a tablet is outlined (FBBD-40).

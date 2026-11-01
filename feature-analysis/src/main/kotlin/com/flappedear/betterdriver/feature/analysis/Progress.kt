@@ -48,36 +48,8 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
     // The Highlights card (UI-307 A): one sentence on the typical lap and two bars to compare, then the detail.
     val highlight = typicalLapHighlight(progress)
     HealthCard(modifier, title = if (highlight != null) "Typical lap" else EarlierTitle, icon = HealthIcon.Laps) {
-        if (highlight != null) {
-            Text(
-                highlight,
-                color = c.text,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-            )
-            TypicalLapBars(progress)
-            TrackLabel(EarlierTitle)
-        }
-        val earlierBest = progress.earlierBestSeconds
-        val delta = progress.bestDeltaSeconds
-        when {
-            progress.earlierSessions == 0 || earlierBest == null || delta == null -> Dim(progressBestText(progress))
-            else -> {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        progressBestText(progress),
-                        Modifier.weight(1f),
-                        color = c.text,
-                    )
-                    Text(
-                        formatDelta(delta),
-                        color = if (isDeltaGain(delta)) c.gain else c.loss,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                }
-                Dim("Was ${formatLapTime((earlierBest * MillisPerSecond).roundToLong())}, ${progress.earlierBestLabel}")
-            }
-        }
+        if (highlight != null) Highlight(highlight, progress)
+        EarlierBest(progress)
         // How consistent the session was (FBBD-175): its typical (median) lap and the spread around it.
         progress.lapMedianSeconds?.let {
             Text(
@@ -112,6 +84,45 @@ internal fun Progress(progress: SessionProgress, modifier: Modifier, onProgressi
 }
 
 private const val EarlierTitle = "Against earlier sessions here"
+
+/** This session's best lap against the earlier sessions' best, and when that was set. */
+@Composable
+private fun EarlierBest(progress: SessionProgress) {
+    val c = TrackTheme.colors
+    val earlierBest = progress.earlierBestSeconds
+    val delta = progress.bestDeltaSeconds
+    when {
+        progress.earlierSessions == 0 || earlierBest == null || delta == null -> Dim(progressBestText(progress))
+        else -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    progressBestText(progress),
+                    Modifier.weight(1f),
+                    color = c.text,
+                )
+                Text(
+                    formatDelta(delta),
+                    color = if (isDeltaGain(delta)) c.gain else c.loss,
+                    fontWeight = FontWeight.SemiBold,
+                )
+            }
+            Dim("Was ${formatLapTime((earlierBest * MillisPerSecond).roundToLong())}, ${progress.earlierBestLabel}")
+        }
+    }
+}
+
+/** The highlight in one sentence, its two bars, and the heading of the detail under them. */
+@Composable
+private fun Highlight(text: String, progress: SessionProgress) {
+    Text(
+        text,
+        color = TrackTheme.colors.text,
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+    )
+    TypicalLapBars(progress)
+    TrackLabel(EarlierTitle)
+}
 
 /** This session's typical lap against the session before's, as two bars, the longer lap the longer bar. */
 @Composable

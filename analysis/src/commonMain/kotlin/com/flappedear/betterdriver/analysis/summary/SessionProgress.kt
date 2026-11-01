@@ -105,8 +105,9 @@ fun summarizeProgress(current: LapSession, earlier: List<EarlierSession>): Sessi
  * typical lap in both sessions.
  */
 fun typicalLapHighlight(progress: SessionProgress): String? {
-    val delta = progress.typicalDeltaSeconds ?: return null
-    val before = progress.previousLabel ?: return null
+    val delta = progress.typicalDeltaSeconds
+    val before = progress.previousLabel
+    if (delta == null || before == null) return null
     val tenths = (abs(delta) * Tenths).roundToLong()
     val amount = "${tenths / Tenths.toLong()}.${tenths % Tenths.toLong()} s"
     return when {
