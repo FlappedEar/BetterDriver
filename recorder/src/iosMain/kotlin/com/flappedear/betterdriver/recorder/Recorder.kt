@@ -206,8 +206,8 @@ class Recording internal constructor(
     }
 
     private fun stopNow(reason: String): Boolean {
-        if (endReason != null) return false
-        write(takeAll())
+        if (endReason == null) write(takeAll())
+        // A write failure while the queue was written has already ended it.
         if (endReason != null) return false
         finish(reason)
         return true
