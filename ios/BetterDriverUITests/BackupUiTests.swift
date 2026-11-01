@@ -27,18 +27,23 @@ final class BackupUiTests: XCTestCase {
         openSettings()
         let appTopic = app.buttons["settings.app"].firstMatch
         XCTAssertTrue(appTopic.waitForExistence(timeout: 10), "no App in Settings")
+        // As Share log's Diagnostics: the topic can be below the fold.
+        for _ in 0..<3 where !appTopic.isHittable { app.swipeUp() }
         appTopic.tap()
-        let backUp = app.buttons["backUp"].firstMatch
+        let backUp = element("backUp")
         XCTAssertTrue(backUp.waitForExistence(timeout: 10), "no Back up in Settings › App")
-        XCTAssertTrue(app.buttons["restore"].firstMatch.exists, "no Restore in Settings › App")
+        for _ in 0..<3 where !backUp.isHittable { app.swipeUp() }
+        XCTAssertTrue(element("restore").exists, "no Restore in Settings › App")
         keep("Settings App, Back up and Restore")
         backUp.tap()
-        XCTAssertTrue(app.switches["includeSessions"].firstMatch.waitForExistence(timeout: 10), "no Include sessions")
-        XCTAssertTrue(app.staticTexts["No sessions yet"].waitForExistence(timeout: 30), "sessions not counted")
-        XCTAssertTrue(app.buttons["chooseFile"].firstMatch.exists, "no Choose file")
+        XCTAssertTrue(element("includeSessions").waitForExistence(timeout: 10), "no Include sessions")
+        // The count is part of the switch's label.
+        let counted = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'No sessions yet'"))
+        XCTAssertTrue(counted.firstMatch.waitForExistence(timeout: 30), "sessions not counted")
+        XCTAssertTrue(element("chooseFile").exists, "no Choose file")
         keep("Back up dialog")
         app.buttons["Cancel"].firstMatch.tap()
-        XCTAssertTrue(backUp.waitForExistence(timeout: 10))
+        XCTAssertTrue(element("backUp").waitForExistence(timeout: 10))
         XCTAssertEqual(app.state, .runningForeground)
     }
 
@@ -49,7 +54,7 @@ final class BackupUiTests: XCTestCase {
         let tracks = app.buttons["settings.tracks"].firstMatch
         XCTAssertTrue(tracks.waitForExistence(timeout: 10), "no Tracks in Settings")
         tracks.tap()
-        XCTAssertTrue(app.buttons["importTrack"].firstMatch.waitForExistence(timeout: 10), "no Import in Tracks")
+        XCTAssertTrue(element("importTrack").waitForExistence(timeout: 10), "no Import in Tracks")
         let row = app.buttons.matching(identifier: "trackRow").firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 60), "no saved demo track")
         keep("Tracks with Import")
@@ -58,6 +63,11 @@ final class BackupUiTests: XCTestCase {
         XCTAssertTrue(share.waitForExistence(timeout: 60), "no Share in the track editor")
         share.tap()
         assertShareSheet("Share track")
+    }
+
+    /// The element with [id], whatever kind SwiftUI makes it on this device.
+    private func element(_ id: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: id).firstMatch
     }
 
     private func openSettings() {
