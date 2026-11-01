@@ -31,6 +31,8 @@ def get(url):
 URLS = {
     "esri": lambda x, y: f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{Z}/{y}/{x}",
     "google": lambda x, y: f"https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={Z}",
+    "gugik-high": lambda x, y: ("https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/HighResolution?SERVICE=WMTS&REQUEST=GetTile"
+        f"&VERSION=1.0.0&LAYER=ORTOFOTOMAPA&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{Z}&TILEROW={y}&TILECOL={x}"),
     "gugik-wmts": lambda x, y: ("https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetTile"
         f"&VERSION=1.0.0&LAYER=ORTOFOTOMAPA&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{Z}&TILEROW={y}&TILECOL={x}"),
     #"gugik-wms": lambda x, y: ("https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0"
@@ -61,21 +63,33 @@ def grey(img, x, y):
     r, g, b = img.getpixel((int(x), int(y)))
     return max(r, g, b) - min(r, g, b) < 22 and g <= max(r, b) + 6
 
+def lum(img, x, y):
+    if not (0 <= x < img.width and 0 <= y < img.height):
+        return None
+    r, g, b = img.getpixel((int(x), int(y)))
+    return 0.3 * r + 0.59 * g + 0.11 * b, max(r, g, b) - min(r, g, b)
+
 def score(name, img):
-    on = off = n = 0
+    """Track contrast: how different the lap's own pixels are from those 15 m and 40 m aside, in
+    standard deviations of the picture, for brightness and colour saturation. Asphalt that is there
+    differs; a field before the track was built does not. Sharpness: Laplacian spread / picture spread."""
+    import statistics as st
     mpp = 2 * math.pi * 6378137 * math.cos(math.radians(50.527)) / (256 * 2 ** Z)
-    side = 40 / mpp
+    on, a15, a40 = [], [], []
     for k in range(1, len(pts)):
-        x, y = px(*pts[k])
-        px0, py0 = px(*pts[k - 1])
-        dx, dy = x - px0, y - py0
-        d = math.hypot(dx, dy) or 1
-        a, b = grey(img, x, y), grey(img, x - dy / d * side, y + dx / d * side)
-        if a is None or b is None:
-            continue
-        n += 1; on += a; off += b
-    sharp = ImageStat.Stat(img.convert("L").filter(ImageFilter.FIND_EDGES)).var[0]
-    print(f"RESULT {name}: lap on grey {100*on/max(n,1):.0f}%  control 40 m aside {100*off/max(n,1):.0f}%  edge variance {sharp:.0f}  (n={n})")
+        x, y = px(*pts[k]); x0, y0 = px(*pts[k - 1])
+        dx, dy = x - x0, y - y0; d = math.hypot(dx, dy) or 1
+        nx, ny = -dy / d, dx / d
+        v = [lum(img, x, y), lum(img, x + nx * 15 / mpp, y + ny * 15 / mpp), lum(img, x - nx * 40 / mpp, y - ny * 40 / mpp)]
+        if None in v: continue
+        on.append(v[0]); a15.append(v[1]); a40.append(v[2])
+    L = [p[0] for p in on + a15 + a40]; S = [p[1] for p in on + a15 + a40]
+    sl, ss = st.pstdev(L) or 1, st.pstdev(S) or 1
+    def c(a, b, i, s): return (st.mean(q[i] for q in b) - st.mean(q[i] for q in a)) / s
+    g = img.convert("L")
+    lap = g.filter(ImageFilter.Kernel((3, 3), [0, 1, 0, 1, -4, 1, 0, 1, 0], 1, 128))
+    sharp = ImageStat.Stat(lap).stddev[0] / (ImageStat.Stat(g).stddev[0] or 1)
+    print(f"RESULT {name}: sat contrast 15m {c(on, a15, 1, ss):+.2f} 40m {c(on, a40, 1, ss):+.2f} | lum contrast 15m {c(on, a15, 0, sl):+.2f} 40m {c(on, a40, 0, sl):+.2f} | sharpness {sharp:.3f} (n={len(on)})")
 
 def shift(a, b):
     """Best (dx, dy) in pixels moving b onto a, from edge maps, within +-48 px."""
