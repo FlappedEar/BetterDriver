@@ -171,12 +171,17 @@ private fun Picture(w: WatchPlayer, painter: TechHudPainter, moment: HudMoment?,
                 onRelease = { v -> w.player.clearVideoSurfaceView(v) },
                 modifier = Modifier.fillMaxSize(),
             )
-            Canvas(Modifier.fillMaxSize().semantics { contentDescription = overlayDescription(moment?.frame, moment?.optimal) }) {
+            val described = Modifier.semantics {
+                contentDescription = overlayDescription(moment?.frame, moment?.optimal)
+            }
+            Canvas(Modifier.fillMaxSize().then(described)) {
                 val width = size.width.roundToInt()
                 val height = size.height.roundToInt()
                 if (moment == null || width <= 0 || height <= 0) return@Canvas
                 val l = painter.layout(width, height)
-                drawIntoCanvas { c -> painter.draw(c.nativeCanvas, l, moment.sessionMicros, moment.frame, moment.optimal) }
+                drawIntoCanvas { c ->
+                    painter.draw(c.nativeCanvas, l, moment.sessionMicros, moment.frame, moment.optimal)
+                }
             }
         }
     }

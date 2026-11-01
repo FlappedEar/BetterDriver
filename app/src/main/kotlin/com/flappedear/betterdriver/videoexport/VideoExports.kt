@@ -111,7 +111,8 @@ class VideoExports private constructor(private val context: Context) {
      * What watching session [id]'s video in the app needs (FBBD-341), read off the main thread: the
      * cuts of [part] and the overlay's data, as Video with data cuts them: the whole video, a lap
      * (FBBD-392) with [handleSeconds] before and after it, or a composite lap (FBBD-178, FBBD-402).
-     * Null when it has no video, the part has none, or it cannot be read. Read on the export's io thread, after any reading already queued there.
+     * Null when it has no video, the part has none, or it cannot be read. Read on the export's io
+     * thread, after any reading already queued there.
      */
     @Suppress("TooGenericExceptionCaught")
     fun watch(
