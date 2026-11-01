@@ -81,9 +81,11 @@ def score(name, img):
     for yy in range(0, small.height, 2):
         print("  " + "".join(" .:-=+*#%@"[min(9, (255 - small.getpixel((xx, yy))) // 26)] for xx in range(small.width)))
 
-for name in URLS:
-    img = mosaic(name)
-    if img: score(name, img)
+if len(sys.argv) < 3:
+    for name in URLS:
+        img = mosaic(name)
+        if img: score(name, img)
+    sys.exit(0)
 try:
     score("apple", Image.open("apple.png").convert("RGB").resize((NX * 256, NY * 256)))
 except Exception as e:

@@ -5,17 +5,24 @@ on:
 permissions:
   contents: read
 jobs:
-  probe:
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare web providers
+        run: |
+          cd .github/probe
+          pip3 install -q pillow
+          python3 compare.py ../../app/src/main/assets/demo/silesia-ring.replay
+          curl -s --max-time 30 -o caps.xml "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetCapabilities" || true
+          grep -o '<ows:Identifier>[^<]*</ows:Identifier>' caps.xml | sort -u | grep -v ':[0-9]*<' | head -20
+  apple:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Compare
+      - name: Compare Apple
         run: |
           cd .github/probe
           pip3 install --break-system-packages -q pillow || pip3 install -q pillow
           swift snap.swift 18 144244 88300 9 7 || true
-          python3 compare.py ../../app/src/main/assets/demo/silesia-ring.replay
-          for r in StandardResolution; do
-            curl -s --max-time 30 -o caps.xml "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/$r?SERVICE=WMTS&REQUEST=GetCapabilities" || true
-            grep -o '<ows:Identifier>[^<]*</ows:Identifier>' caps.xml | sort -u | grep -v ':[0-9]*<' | head -20
-          done
+          python3 compare.py ../../app/src/main/assets/demo/silesia-ring.replay apple
