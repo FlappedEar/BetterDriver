@@ -28,15 +28,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.optimal.CompositeLapVideoAbout
+import com.flappedear.betterdriver.analysis.optimal.CompositeLapVideoTitle
+import com.flappedear.betterdriver.analysis.optimal.CompositeOptions
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
 import com.flappedear.betterdriver.analysis.optimal.OptimalOption
 import com.flappedear.betterdriver.analysis.optimal.OptimalPartRow
 import com.flappedear.betterdriver.analysis.optimal.PartOnVideo
+import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalVideoLabel
 import com.flappedear.betterdriver.analysis.optimal.missingText
 import com.flappedear.betterdriver.analysis.optimal.optimalOptionText
 import com.flappedear.betterdriver.analysis.optimal.optimalPartText
+import com.flappedear.betterdriver.analysis.optimal.optimalVideoNote
 import com.flappedear.betterdriver.core.ui.TrackTheme
-import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.VideoExportLine
@@ -46,20 +50,6 @@ internal fun videoBlocked(recording: Boolean, busy: Boolean): String? = when {
     recording -> "Not while a session is recording"
     busy -> "Another video is being made"
     else -> null
-}
-
-/**
- * The two composite laps of a session as the lap analysis offers them (FBBD-178): the [realistic]
- * optimal, filmed by default, and the [raw] theoretical best.
- */
-data class CompositeOptions(val realistic: OptimalOption, val raw: OptimalOption) {
-    /** Some composite lap can be filmed. */
-    val enabled: Boolean get() = realistic.enabled || raw.enabled
-
-    /** The one the sheet starts on: the realistic optimal, unless only the raw theoretical best can be made. */
-    val preselected: OptimalOption get() = if (realistic.enabled || !raw.enabled) realistic else raw
-
-    fun of(kind: OptimalKind): OptimalOption = if (kind == OptimalKind.RealisticOptimal) realistic else raw
 }
 
 /**
@@ -84,19 +74,10 @@ internal fun OptimalVideoAction(
         FilledTonalButton(onClick = onOpen, enabled = options?.enabled == true && !rendering) {
             Text(RealisticOptimalVideoLabel)
         }
-        val o = options?.realistic
-        val note = when {
-            o == null -> "Finding the parts on video…"
-            !o.enabled -> o.unavailable.orEmpty()
-            else -> missingText(o) ?: "Every part on video, from ${lapsText(o.laps)}"
-        }
-        DimText(note, Modifier.weight(1f))
+        DimText(optimalVideoNote(options), Modifier.weight(1f))
     }
     VideoExportLine(state, rendering, onCancel)
 }
-
-/** The lap analysis's button for the composite video: the realistic optimal is the default. */
-const val RealisticOptimalVideoLabel = "Realistic optimal video"
 
 /**
  * What a composite lap's video is made of, before it is made (FBBD-163, FBBD-178): the realistic
@@ -122,17 +103,13 @@ internal fun OptimalVideoSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "Composite lap video",
+                CompositeLapVideoTitle,
                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
             )
             for (o in listOf(options.realistic, options.raw)) {
                 KindRow(o, selected = o.kind == kind) { kind = o.kind }
             }
-            DimText(
-                "Each corner and straight from the lap shown, joined into one video. The overlay shows the " +
-                    "lap each part comes from, the running time, the gain on your best actual lap, speed, G " +
-                    "and the track map. It takes a while; you can leave the app meanwhile.",
-            )
+            DimText(CompositeLapVideoAbout)
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = PartsMaxHeight)) {
                 items(option.parts) { PartLine(it) }
             }

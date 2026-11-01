@@ -229,7 +229,7 @@ private struct SummaryTab: View {
         CardColumn {
             if let ui = screen, !summary.laps.isEmpty {
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
-                SummaryTimesCard(ui: ui)
+                SummaryTimesCard(ui: ui, sessionId: sessionId)
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
                 // What came of the last focus (FBBD-180, FBBD-364): the loop closed, under the lap times as on Android.
                 CoachingHistoryCard(summary: summary)

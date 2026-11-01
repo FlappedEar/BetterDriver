@@ -18,13 +18,13 @@ import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.flappedear.betterdriver.analysis.analyzeSession
+import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalVideoLabel
 import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
 import com.flappedear.betterdriver.recorder.video.VideoTimeline
 import com.flappedear.betterdriver.review.indexedClips
 import com.flappedear.betterdriver.review.sessionVideo
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.replayLaps
-import com.flappedear.betterdriver.videoexport.RealisticOptimalVideoLabel
 import com.flappedear.betterdriver.videoexport.VideoExportEnd
 import com.flappedear.betterdriver.videoexport.VideoExports
 import com.flappedear.betterdriver.videoexport.fileDurations
