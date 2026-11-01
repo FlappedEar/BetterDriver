@@ -22,6 +22,8 @@ The full notes of every release are on
   on Android. See [Equipment](equipment.md).
 - iPhone and iPad: **Realistic optimal video** under the lap times in the Summary, as on
   Android.
+- iPhone: the coach can speak its cues from clips made at the start of a coached session
+  (**Settings › Spoken coach › Voice playback: Pre-rendered**), as on Android.
 
 ## 1.26.0
 
