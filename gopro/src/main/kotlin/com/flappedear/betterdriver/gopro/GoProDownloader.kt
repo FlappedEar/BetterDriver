@@ -1,15 +1,13 @@
 package com.flappedear.betterdriver.gopro
 
 import com.flappedear.betterdriver.recorder.store.SessionData
-import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import com.flappedear.betterdriver.video.VideoSourceKind
+import com.flappedear.betterdriver.video.mp4.Mp4Reader
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.IOException
-import java.time.Instant
 
 /** Joins the camera's Wi-Fi network; on Android this is a WifiNetworkSpecifier request. */
 interface WifiJoiner {
@@ -20,14 +18,9 @@ interface WifiJoiner {
 }
 
 /**
- * Downloads the files one Open GoPro camera recorded with a session and aligns them (FBBD-22).
- *
- * Over BLE it turns on the camera's access point and reads its SSID and password
- * (https://gopro.github.io/OpenGoPro/tutorials/connect-wifi); it then joins that network, lists
- * the camera's media, downloads the files recorded between the start and stop acknowledgements
- * into `<session>/video`, and imports them. Afterwards it leaves the network and turns the access
- * point off. The app must not call this while a session is recording: the Wi-Fi join and large
- * downloads have no place next to a live recording.
+ * Downloads the files one Open GoPro camera recorded with a session and aligns them (FBBD-22): the
+ * shared [GoProDownload] (also the iPhone's, FBBD-343) on java.io files in `<session>/video`, over
+ * the network [WifiJoiner] joins.
  */
 class GoProDownloader(
     private val link: GoProLink,
@@ -41,8 +34,7 @@ class GoProDownloader(
 
     /**
      * Downloads the recordings of camera [sourceId], or of every camera when null (sessions from
-     * builds with one GoPro). Several cameras name their files alike (GX010001.MP4), so a file is
-     * saved as `<sourceId>-<name>` unless it is from such an older session.
+     * builds with one GoPro); see [GoProDownload.run].
      */
     suspend fun download(
         sessionDir: File,
@@ -50,90 +42,66 @@ class GoProDownloader(
         sourceId: String? = null,
         onProgress: (Progress) -> Unit = {},
     ): Result {
-        val videoDir = File(sessionDir, "video")
-        val store = GoProRecordings(videoDir)
-        val pending = store.all().filter { !it.downloaded && (sourceId == null || it.sourceId == sourceId) }
-        if (pending.isEmpty()) return Result(emptyList(), emptyList())
-        val client = GoProClient(link, scope)
-        val downloaded = mutableListOf<String>()
-        val problems = mutableListOf<String>()
-        try {
-            withTimeoutOrNull(ConnectTimeoutMillis) { link.connect() } ?: throw GoProException("GoPro not found")
-            client.send(OpenGoPro.wifiAp(true))
-            val ssid = client.read(GoProUuids.WIFI_AP_SSID).decodeToString()
-            val password = client.read(GoProUuids.WIFI_AP_PASSWORD).decodeToString()
-            val http = wifi.join(ssid, password)
-            val media = withContext(Dispatchers.IO) { http.mediaList() }
-            for (recording in pending) {
-                val files = GoProMedia.filesFor(recording, media)
-                if (files.isEmpty()) {
-                    problems += "No GoPro files found for the recording started at " +
-                        Instant.ofEpochMilli(recording.startAckUtcMillis)
-                    continue
-                }
-                val local = files.map { f ->
-                    val target = File(videoDir, localName(recording.sourceId, f.name))
-                    if (!(target.isFile && target.length() == f.size)) {
-                        withContext(Dispatchers.IO) {
-                            http.download(f, target) { bytes, total -> onProgress(Progress(f.name, bytes, total)) }
-                        }
-                    }
-                    downloaded += f.name
-                    target
-                }
-                val result = withContext(Dispatchers.Default) {
-                    val source = GoProImporter.Source(VideoSourceKind.GOPRO, recording.sourceId)
-                    importer.import(sessionDir, session, local, source, recording)
-                }
-                problems += result.problems
-                // Done only when every file is in the session (audit BD-06): otherwise a later run
-                // tries again, downloading anew a file that is not a readable MP4, whatever its length.
-                val placed = result.clips.map { it.fileName }.toSet()
-                val missing = local.filter { it.name !in placed }
-                withContext(Dispatchers.IO) { missing.filterNot(::readable).forEach { it.delete() } }
-                if (missing.isEmpty()) store.put(recording.copy(downloaded = true))
+        val host = Host(sessionDir, session)
+        val result = GoProDownload(link, scope, host).run(sourceId) {
+            onProgress(Progress(it.file, it.bytes, it.total))
+        }
+        return Result(result.downloaded, result.problems)
+    }
+
+    @Suppress("TooManyFunctions") // One per GoProDownloadHost step.
+    private inner class Host(private val sessionDir: File, private val session: SessionData) : GoProDownloadHost {
+        private val videoDir = File(sessionDir, "video")
+        private val store = GoProRecordings(videoDir)
+        private var http: GoProHttp? = null
+
+        private fun file(name: String) = File(videoDir, name)
+
+        override suspend fun join(ssid: String, password: String) {
+            http = wifi.join(ssid, password)
+        }
+
+        override suspend fun leave() = wifi.leave()
+
+        override suspend fun mediaList(): List<MediaFile> = withContext(Dispatchers.IO) { client().mediaList() }
+
+        override fun size(localName: String): Long? = file(localName).takeIf { it.isFile }?.length()
+
+        override suspend fun download(file: MediaFile, localName: String, onProgress: (Long, Long) -> Unit) =
+            withContext(Dispatchers.IO) { client().download(file, file(localName), onProgress) }
+
+        override suspend fun import(recording: GoProRecording, localNames: List<String>): Placement =
+            withContext(Dispatchers.Default) {
+                val source = GoProImporter.Source(VideoSourceKind.GOPRO, recording.sourceId)
+                val result = importer.import(sessionDir, session, localNames.map(::file), source, recording)
+                Placement(result.clips, result.problems)
             }
-        } catch (e: IOException) {
-            problems += "GoPro download stopped: ${e.message}"
-        } finally {
-            cleanUp(client)
-        }
-        return Result(downloaded, problems)
-    }
 
-    /** [file]'s MP4 index reads: it was downloaded whole, though it may still fall outside the session. */
-    private fun readable(file: File): Boolean = try {
-        Mp4Reader.read(file)
-        true
-    } catch (_: IOException) {
-        false
-    }
+        override suspend fun readable(localName: String): Boolean = withContext(Dispatchers.IO) {
+            try {
+                Mp4Reader.read(file(localName))
+                true
+            } catch (_: IOException) {
+                false
+            }
+        }
 
-    @Suppress("TooGenericExceptionCaught", "SwallowedException") // Best effort: the files are already safe.
-    private suspend fun cleanUp(client: GoProClient) {
-        try {
-            wifi.leave()
-        } catch (_: Exception) {
+        override fun delete(localName: String) {
+            file(localName).delete()
         }
-        try {
-            client.send(OpenGoPro.wifiAp(false))
-        } catch (_: Exception) {
-        }
-        try {
-            link.disconnect()
-        } catch (_: Exception) {
-        }
-        client.close()
+
+        override fun recordings(): List<GoProRecording> = store.all()
+
+        override fun putRecording(recording: GoProRecording) = store.put(recording)
+
+        private fun client() = http ?: throw IOException("not on the GoPro's Wi-Fi")
     }
 
     companion object {
-        private const val ConnectTimeoutMillis = 20_000L
-
         /** The single HERO11 of builds before FBBD-105; its files kept their own names. */
-        const val LegacySourceId = "gopro_hero11"
+        const val LegacySourceId = GoProDownload.LegacySourceId
 
         /** The name a camera's file is saved under in the session. */
-        fun localName(sourceId: String, name: String): String =
-            if (sourceId == LegacySourceId) name else "$sourceId-$name"
+        fun localName(sourceId: String, name: String): String = GoProDownload.localName(sourceId, name)
     }
 }
