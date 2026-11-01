@@ -13,6 +13,21 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.25.0
+
+- On a tablet (Android and iPad) a list button at the left of the session's bar hides the
+  session list so the analysis takes the whole width, and shows it again. See
+  [Lap analysis](analysis.md).
+- The **Gear** tile and the video's gear stay on the gear through the torque converter's slip
+  and change where the RPM steps, so they no longer show a dash for seconds under braking and
+  back on the throttle. See [Track screen](track-screen.md).
+- iPhone and iPad: the realistic optimal and the raw theoretical best can be saved as video from
+  the **Video** tab, as on Android.
+- iPhone and iPad: the track editor opens on Apple Maps satellite imagery (Satellite/Map switch)
+  and the perfect lap in 3D shows the satellite photo under the road.
+- iPhone: RaceBox diagnostics and the camera test in **Settings › Diagnostics**, as on Android,
+  and the log has the once-a-minute load line while recording.
+
 ## 1.24.0
 
 - An Android session with video gets a **Video** tab after **Car**, as on the iPhone and iPad:
