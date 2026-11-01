@@ -1,0 +1,24 @@
+name: Map probe (temporary)
+on:
+  pull_request:
+    paths: ['.github/probe/**', '.github/workflows/map-probe.yml']
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Snapshots
+        run: |
+          cd .github/probe
+          swift snap.swift || true
+          # Web Mercator tiles round Silesia Ring at z16 and z18 from other providers, for comparison only.
+          fetch() { curl -s --max-time 20 -A "Mozilla/5.0" -o "$1" "$2" || true; }
+          for t in "17 72124 44152" "17 72123 44152" "17 72124 44151" "17 72123 44151" "19 288498 176608"; do
+            set -- $t; z=$1; x=$2; y=$3
+            fetch "esri-$z-$x-$y.jpg" "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/$z/$y/$x"
+            fetch "google-$z-$x-$y.jpg" "https://mt1.google.com/vt/lyrs=s&x=$x&y=$y&z=$z"
+          done
+          ls -la
+          for f in *.jpg; do echo "=====BEGIN $f"; base64 -i "$f" | fold -w 4000; echo "=====END $f"; done
