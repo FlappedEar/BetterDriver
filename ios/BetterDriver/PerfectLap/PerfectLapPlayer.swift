@@ -23,7 +23,7 @@ struct PerfectLapPlayer: View {
     init(scene: PerfectLapScene, startCorner: Int = 0, onClose: @escaping () -> Void) {
         self.scene = scene
         self.onClose = onClose
-        // Apple's satellite photo under the road (UI-201 B), else the drawn road where a tile is not at hand.
+        // The satellite photo under the road (UI-201 B, FBBD-411), else the drawn road where a tile is not at hand.
         let tiles = PerfectLapTiles.make()
         self.tiles = tiles
         painter = PerfectLapPainter(scene: scene, tiles: tiles)
@@ -78,6 +78,11 @@ struct PerfectLapPlayer: View {
                         .onEnded { _ in pinchFrom = nil }
                 )
                 .onTapGesture(count: 2) { distance = 1 }
+                // Which photo the picture shows: read by the UI tests (FBBD-411).
+                .accessibilityElement()
+                .accessibilityLabel("Perfect lap picture")
+                .accessibilityValue(tilesLoaded >= 0 && painter.lastPhotos > 0 ? (tiles?.attribution ?? "") : "drawn road")
+                .accessibilityIdentifier("perfectLapPicture")
                 .onReceive(tiles?.$loaded.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { tilesLoaded = $0 }
                 PlayerBar(scene: scene, clock: clock).padding(12)
             }

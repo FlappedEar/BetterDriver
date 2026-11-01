@@ -70,6 +70,57 @@ final class SatelliteMapTests: XCTestCase {
         XCTAssertEqual(app.state, .runningForeground)
     }
 
+    /// Google's photo (FBBD-411), with the app's stub Google (-stubSatellite: tiles in two colours with
+    /// their address on them, no network): the editor opens on it with its credit, and the perfect lap
+    /// in 3D draws its tiles under the road with Google's name on the picture.
+    func testWithAGoogleKeyTheEditorAndThe3dLapShowGooglesTiles() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-stubSatellite"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
+
+        openTracks()
+        let track = app.buttons.matching(identifier: "trackRow")
+            .matching(NSPredicate(format: "label CONTAINS 'Jastrz'")).firstMatch
+        XCTAssertTrue(track.waitForExistence(timeout: 30), "no Jastrząb track")
+        track.tap()
+        let picker = app.buttons["mapPicker"].firstMatch
+        XCTAssertTrue(picker.waitForExistence(timeout: 60), "no track editor")
+        XCTAssertTrue(picker.label.contains("Satellite (Google)"), "the editor does not open on Google: \(picker.label)")
+        let credit = app.staticTexts["mapCredit"].firstMatch
+        XCTAssertTrue(credit.waitForExistence(timeout: 10), "no credit on Google's photo")
+        XCTAssertTrue(credit.label.contains("Google Maps"), "credit: \(credit.label)")
+        sleep(3)
+        keep("Track editor, Google satellite (stub)")
+        pick("Satellite", on: picker)
+        XCTAssertFalse(picker.label.contains("Google"), "Apple's photo was not picked: \(picker.label)")
+        XCTAssertFalse(credit.exists, "Google's credit stays on Apple's photo")
+        app.buttons["editorBack"].firstMatch.tap()
+        XCTAssertTrue(track.waitForExistence(timeout: 10), "the editor did not close")
+
+        openSessions()
+        XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 30), "no demo sessions")
+        rows.element(boundBy: 1).tap()
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
+        app.buttons["tabMap"].firstMatch.tap()
+        let line = app.buttons["mapViewLine"].firstMatch
+        XCTAssertTrue(line.waitForExistence(timeout: 30), "no Map tab")
+        line.tap()
+        let play = app.buttons["perfectLapButton"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 120), "no perfect lap in 3D")
+        play.tap()
+        // By its label too: the player's identifier on its stack replaces the picture's own (as for Back).
+        let picture = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'perfectLapPicture' OR label == 'Perfect lap picture'")).firstMatch
+        XCTAssertTrue(picture.waitForExistence(timeout: 30), "no 3D picture")
+        let google = NSPredicate(format: "value CONTAINS 'Google Maps'")
+        expectation(for: google, evaluatedWith: picture)
+        waitForExpectations(timeout: 60)
+        keep("Perfect lap in 3D, Google satellite (stub)")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
     /// Picks [name] from the editor's map menu.
     private func pick(_ name: String, on picker: XCUIElement) {
         let item = app.descendants(matching: .any)

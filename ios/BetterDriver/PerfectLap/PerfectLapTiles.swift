@@ -3,17 +3,19 @@ import Combine
 import MapKit
 import UIKit
 
-/// Apple's satellite photo under the perfect lap in 3D (FBBD-316, UI-201 B), in place of Android's
-/// MapTilerGround: every map on iOS is Apple's, so no key is needed. The scene asks for Web Mercator
-/// tiles; MapKit's map points are the same projection, so each block of 4 × 4 tiles is one
-/// MKMapSnapshotter picture cut into its tiles.
+/// The satellite photo under the perfect lap in 3D (FBBD-316, UI-201 B), as Android's MapTilerGround,
+/// from the best source with what it needs (FBBD-411, SatelliteMaps): Google's or MapTiler's tiles once
+/// their key is entered, else Apple's. The scene asks for Web Mercator tiles. Google and MapTiler serve
+/// them as they are; MapKit's map points are the same projection, so for Apple each block of 4 × 4
+/// tiles is one MKMapSnapshotter picture cut into its tiles.
 ///
-/// Apple's terms let map data be kept only for a while, to make the app faster, so the tiles live in
-/// memory while the player or the video is open, never on disk. Without signal a snapshot fails, no
-/// tile is drawn and the road is drawn instead (UI-201 A), as on Android without a key.
+/// Apple's and Google's terms let map data be kept only for a while, to make the app faster, so the
+/// tiles live in memory while the player is open, never in a file of ours. Without signal a fetch
+/// fails, no tile is drawn and the road is drawn instead (UI-201 A), as on Android without a key.
 final class PerfectLapTiles: ObservableObject {
-    /// Shown on the picture whenever a tile is: the snapshots' own logo is cut off with their edges.
-    let attribution = "Apple Maps"
+    let source: SatelliteSource
+    /// Shown on the picture whenever a tile is: the photo's owners (Apple's logo is cut off its snapshots).
+    var attribution: String { SatelliteMaps.shared.credit(source) }
     /// Goes up each time a block of tiles arrives, so the paused picture is drawn again. Main queue.
     @Published private(set) var loaded = 0
 
@@ -25,8 +27,8 @@ final class PerfectLapTiles: ObservableObject {
     private var failedUntil: [String: Date] = [:]
     private var failuresInARow = 0
     private var offlineUntil = Date.distantPast
-    /// At most two snapshots at once.
-    private let slots = DispatchSemaphore(value: 2)
+    /// At most two snapshots, or four tiles, at once.
+    private let slots: DispatchSemaphore
 
     private static let retryAfter: TimeInterval = 600
     /// Tiles a block has across and down.
@@ -37,9 +39,11 @@ final class PerfectLapTiles: ObservableObject {
     /// Map round each block, cut off afterwards: Apple's logo and Legal link sit at a snapshot's edge.
     private static let marginPoints: CGFloat = 64
 
-    static func make() -> PerfectLapTiles? { PerfectLapTiles() }
+    static func make() -> PerfectLapTiles? { PerfectLapTiles(source: SatelliteMaps.shared.best) }
 
-    private init() {
+    private init(source: SatelliteSource) {
+        self.source = source
+        slots = DispatchSemaphore(value: source == .apple ? 2 : 4)
         // About 128 decoded tiles of 1 MB: the ones within reach of the camera.
         images.totalCostLimit = 128 << 20
     }
@@ -47,7 +51,7 @@ final class PerfectLapTiles: ObservableObject {
     /// The tile if it is at hand; otherwise nil, and its block is fetched for a later frame.
     func tile(z: Int32, x: Int32, y: Int32) -> CGImage? {
         if let image = images.object(forKey: Self.key(z, x, y) as NSString) { return image }
-        let block = Self.blockKey(z, x, y)
+        let block = groupKey(z, x, y)
         lock.lock()
         let start = pending.insert(block).inserted
         lock.unlock()
@@ -70,14 +74,19 @@ final class PerfectLapTiles: ObservableObject {
         let key = Self.key(z, x, y)
         if let image = images.object(forKey: key as NSString) { return image }
         guard !Thread.isMainThread, z >= 0, z <= 22 else { return nil }
-        let block = Self.blockKey(z, x, y)
+        let block = groupKey(z, x, y)
         let now = Date()
         lock.lock()
         let skip = offlineUntil > now || (failedUntil[block].map { $0 > now } ?? false)
         lock.unlock()
         if skip { return nil }
-        let bx = x >= 0 ? x / Self.block : -1, by = y >= 0 ? y / Self.block : -1
-        let ok = fetch(z: z, bx: bx, by: by)
+        let ok: Bool
+        if source == .apple {
+            let bx = x >= 0 ? x / Self.block : -1, by = y >= 0 ? y / Self.block : -1
+            ok = fetch(z: z, bx: bx, by: by)
+        } else {
+            ok = fetchTile(z: z, x: x, y: y)
+        }
         if !Task.isCancelled {
             lock.lock()
             if ok {
@@ -90,6 +99,22 @@ final class PerfectLapTiles: ObservableObject {
             lock.unlock()
         }
         return images.object(forKey: key as NSString)
+    }
+
+    /// Fetches one tile of Google's or MapTiler's; false when it did not come.
+    private func fetchTile(z: Int32, x: Int32, y: Int32) -> Bool {
+        let tiles = Int32(1) << z
+        guard x >= 0, y >= 0, x < tiles, y < tiles else { return false }
+        slots.wait()
+        defer { slots.signal() }
+        guard let image = SatelliteMaps.shared.tile(source, z: z, x: x, y: y) else { return false }
+        images.setObject(image, forKey: Self.key(z, x, y) as NSString, cost: image.bytesPerRow * image.height)
+        return true
+    }
+
+    /// What is fetched at once: Apple's block of tiles, or one tile.
+    private func groupKey(_ z: Int32, _ x: Int32, _ y: Int32) -> String {
+        source == .apple ? Self.blockKey(z, x, y) : Self.key(z, x, y)
     }
 
     /// Takes the snapshot of block ([bx], [by]) at zoom [z] and keeps its tiles; false when none came.
