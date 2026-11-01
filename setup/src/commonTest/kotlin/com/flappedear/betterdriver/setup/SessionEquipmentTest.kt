@@ -45,7 +45,8 @@ class SessionEquipmentTest {
 
     @Test
     fun theFirstListedStrapRecords() {
-        val two = listed.addEquipment(EquipmentModel.HEART_RATE, "Garmin HRM", "6F1A2B3C-0000-4000-8000-000000000003", ::id)
+        val second = "6F1A2B3C-0000-4000-8000-000000000003"
+        val two = listed.addEquipment(EquipmentModel.HEART_RATE, "Garmin HRM", second, ::id)
         assertEquals("Polar H10 1234", two.active().heartRateStrap?.name)
     }
 
