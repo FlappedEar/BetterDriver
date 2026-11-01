@@ -34,7 +34,8 @@ private func voices(_ l: CoachLanguage) -> [AVSpeechSynthesisVoice] {
 
 /// Spoken coach settings (FBBD-98, UI-64 B), as the Android page: how much it says, the headset delay
 /// used when it cannot be measured, learning laps, and the voice: language, voice, speed and pitch
-/// (UI-90 A, UI-91 B), with Test voice. Each change is saved at once and applies from the next session.
+/// (UI-90 A, UI-91 B), with Test voice, and under Advanced live or pre-rendered playback (FBBD-48).
+/// Each change is saved at once and applies from the next session.
 struct CoachSettingsPage: View {
     @EnvironmentObject private var settings: SettingsModel
     @State private var delay: Double = 0
@@ -67,6 +68,8 @@ struct CoachSettingsPage: View {
                     Button("Test voice") { tester.say(s) }.tint(Palette.accent)
                 }
             }
+            ShellLabel("Advanced")
+            ShellCard { voicePlayback(s) }
         }
         .onAppear {
             delay = Double(s.audioDelayMillis) / 1_000
@@ -143,6 +146,21 @@ struct CoachSettingsPage: View {
             settings.updateCoach { SettingsCore.shared.withPitch(s: $0, pitch: Float(pitch)) }
         }
         DimText("Speed 0.8× to 1.5×, pitch 0.7× to 1.3×.")
+    }
+
+    /// Live or pre-rendered (FBBD-48), as Android's Voice playback.
+    @ViewBuilder
+    private func voicePlayback(_ s: CoachSettings) -> some View {
+        Text("Voice playback").foregroundStyle(Palette.onBackground)
+        ForEach(SettingsCore.shared.voiceModes, id: \.name) { v in
+            radio(v.name == "Live" ? "Live" : "Pre-rendered", on: s.voice == v) {
+                settings.updateCoach { SettingsCore.shared.withVoiceMode(s: $0, v: v) }
+            }
+        }
+        DimText(
+            "Pre-rendered says each word and number from clips made at the start of a coached session, so a " +
+                "cue starts sooner but sounds more clipped. Until the clips are ready it uses the live voice."
+        )
     }
 
     private func speechSlider(
