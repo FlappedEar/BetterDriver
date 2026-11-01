@@ -13,6 +13,28 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.28.0
+
+- Android: a new look outside the car (dark cards, amber headings, Inter font). A session's
+  Summary opens with **Pinned** and **Highlights**, then the lap times. The track screen is unchanged.
+- Video tab: the realistic optimal and the raw theoretical best can be watched, not only saved,
+  on Android, iPhone and iPad. See [Lap analysis](analysis.md).
+- Tablets (Android and iPad) only review sessions: the tabs are **Sessions** and **Settings**.
+  Recording, equipment, the track screen, video and spoken-coach settings are on the phone.
+- Tyre pressures and temperatures from the FlappedEar TPMS bridge: add **Tyre pressure bridge**
+  under Equipment, and every session records each tyre, on Android and the iPhone. See
+  [Equipment](equipment.md).
+- Each session keeps the weather at the track (Open-Meteo): a **Weather** card in the Summary
+  with "last time here"; on a damp or wet track the coach says lap times only. See
+  [Spoken coach](coach.md).
+- Spoken coach: on a first visit to a track it asks only for what was already driven, a cue cut
+  off before its end earns no praise, and cue timing follows the speech rate setting.
+- Android video: the last file's sound now runs to the moment you stop recording.
+- iPhone and iPad: sharper satellite photos under the track editor and the 3D lap (Google or
+  MapTiler when a key is entered, else Apple), with the photo's credit on the map.
+- iPhone: sensors and GPS no longer wait for the disk while recording, and phone video is
+  written in 2 s pieces, so a file cut off by a killed app still plays.
+
 ## 1.27.0
 
 - iPhone: only the OBD-II adapters and the heart-rate strap listed in **Settings › Equipment**
