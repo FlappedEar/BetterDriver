@@ -8,6 +8,8 @@ struct BetterDriverApp: App {
 
     init() {
         UITestMode.resetIfAsked()
+        // Before anything reads the data: a restore stopped after its commit is finished (FBBD-372).
+        BackupBridge.finishOrClear()
     }
 
     var body: some Scene {

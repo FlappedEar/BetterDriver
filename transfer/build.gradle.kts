@@ -27,15 +27,14 @@ kotlin {
         commonMain.dependencies {
             api(project(":recorder"))
             api(project(":timing"))
+            // Equipment and cars in a backup (FBBD-372).
+            api(project(":setup"))
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
         }
         jvmMain {
             kotlin.srcDir("src/main/kotlin")
-            dependencies {
-                api(project(":setup"))
-            }
         }
         jvmTest {
             kotlin.srcDir("src/test/kotlin")

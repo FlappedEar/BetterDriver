@@ -114,6 +114,12 @@ final class SettingsModel: ObservableObject {
         save { try SettingsModel.coachStore(base).write(settings: next) }
     }
 
+    /// Reads setup.json and the coach settings again, after a restore changed them (FBBD-372).
+    func reload() {
+        setup = SettingsModel.loadSetup(base: base)
+        coach = SettingsModel.coachStore(base).read()
+    }
+
     /// A new item's id, as Android gives them.
     static func newId() -> String { UUID().uuidString.lowercased() }
 

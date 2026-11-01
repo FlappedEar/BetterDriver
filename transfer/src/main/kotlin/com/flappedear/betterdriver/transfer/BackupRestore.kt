@@ -1,8 +1,6 @@
 package com.flappedear.betterdriver.transfer
 
 import com.flappedear.betterdriver.recorder.store.SessionFiles
-import com.flappedear.betterdriver.setup.CarProfile
-import com.flappedear.betterdriver.setup.Equipment
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupJson
 import com.flappedear.betterdriver.timing.track.Track
@@ -10,83 +8,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
-
-/** How a backup is brought back (FBBD-156). */
-enum class RestoreMode {
-    /** Keeps what is here and adds from the backup: newer tracks, missing equipment, cars and sessions. */
-    MERGE,
-
-    /** Tracks, equipment and cars, settings, coach files and calibrations become the backup's. */
-    REPLACE,
-}
-
-/** What a restore changed, for the message after it. */
-data class RestoreResult(
-    val tracksAdded: Int = 0,
-    val tracksUpdated: Int = 0,
-    val equipmentAdded: Int = 0,
-    val carsAdded: Int = 0,
-    val sessionsAdded: Int = 0,
-    /** Sessions in the backup that were already here: those here are kept. */
-    val sessionsKept: Int = 0,
-    /** Coach and calibration files added or replaced. */
-    val filesRestored: Int = 0,
-    val prefsChanged: Boolean = false,
-)
-
-/** The merge rules, on their own so they are easy to test. */
-object RestoreRules {
-    /** A track from the backup wins over the one here when its revision, then its update time, is higher. */
-    fun newer(incoming: Track, here: Track): Boolean = incoming.revision > here.revision ||
-        incoming.revision == here.revision && incoming.updatedUtcMillis > here.updatedUtcMillis
-
-    /**
-     * The setup here with the backup's equipment and cars that are missing added. An item is
-     * already here when it has the same id, or is the same device: same model and address, or a
-     * model listed once at most (the phone camera, which a fresh install already lists). The next
-     * session's choice here is kept unless no receiver or car was chosen; ids that no longer resolve
-     * drop out.
-     */
-    fun mergeSetup(here: Setup, incoming: Setup): Setup {
-        val sameAs = HashMap<String, String>() // backup id -> id here
-        val added = incoming.equipment.filter { e ->
-            val match = here.equipment.firstOrNull { it.id == e.id || sameDevice(it, e) }
-            if (match != null) sameAs[e.id] = match.id
-            match == null
-        }
-        val cars = here.cars + incoming.cars.filter { c -> here.cars.none { it.id == c.id } }
-        val equipment = here.equipment + added
-        // A fresh install has the phone camera on and nothing else chosen.
-        val chosen = here.session.gnssId != null || here.session.carId != null
-        val session = if (chosen) {
-            here.session
-        } else {
-            incoming.session.copy(
-                gnssId = incoming.session.gnssId?.let { sameAs[it] ?: it },
-                cameraIds = incoming.session.cameraIds.map { sameAs[it] ?: it }.distinct(),
-            )
-        }
-        return Setup(
-            equipment = equipment,
-            cars = cars,
-            session = session.copy(
-                carId = session.carId?.takeIf { id -> cars.any { it.id == id } },
-                gnssId = session.gnssId?.takeIf { id -> equipment.any { it.id == id } },
-                cameraIds = session.cameraIds.filter { id -> equipment.any { it.id == id } },
-            ),
-        )
-    }
-
-    /** As Setup.addEquipment matches a device already listed. */
-    private fun sameDevice(a: Equipment, b: Equipment) =
-        a.model == b.model && (a.model.single || a.address != null && a.address == b.address)
-
-    /** Preferences here win; the backup only fills in what is absent. */
-    fun mergePrefs(here: Map<String, Any>, incoming: Map<String, Any>): Map<String, Any> = incoming + here
-
-    internal fun carsAdded(here: Setup?, result: Setup): List<CarProfile> =
-        result.cars.filter { c -> here?.cars?.none { it.id == c.id } ?: true }
-}
 
 /**
  * Restores a backup over the app's data in [root] (its files folder), atomically (FBBD-156).
@@ -307,7 +228,7 @@ class BackupRestore(private val root: File, private val staging: File) {
             val target = File(sessions, s.name)
             if (target.exists()) s.deleteRecursively() else move(s, target)
         }
-        if (prefsFile.isFile) writePrefs(prefsFile.inputStream().use(BackupPrefs::decode))
+        if (prefsFile.isFile) writePrefs(prefsFile.inputStream().use(::jvmPrefs))
         commitFile.delete()
         SessionFiles.syncDir(work)
         work.deleteRecursively()

@@ -49,6 +49,9 @@ expect object CoreFiles {
 
     /** Deletes [path] with everything in it; returns whether nothing is left there. */
     fun deleteRecursively(path: String): Boolean
+
+    /** Makes folder [path] and the folders above it; returns whether it is a folder now. */
+    fun mkdirs(path: String): Boolean
 }
 
 /** The files in folder [dir] whose names end with [suffix], by name. */

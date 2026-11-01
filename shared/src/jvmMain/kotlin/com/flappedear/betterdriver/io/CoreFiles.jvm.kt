@@ -57,4 +57,10 @@ actual object CoreFiles {
         f.deleteRecursively()
         return !f.exists()
     }
+
+    actual fun mkdirs(path: String): Boolean {
+        val f = File(path)
+        f.mkdirs()
+        return f.isDirectory
+    }
 }
