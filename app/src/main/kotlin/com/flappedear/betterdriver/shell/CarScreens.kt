@@ -67,7 +67,8 @@ data class CarPageActions(
  * since the adapter reads the car it is plugged into; then the driver's own parameters, then what the
  * car offers at its OBD port (the PIDs it reports, the CAN ids heard), from the last scan. Scan car
  * ([scan]) runs one only when tapped (UI-303 B). Another car offers to become the next session's.
- * [CarPageActions.onBack] is null on the Car destination of the bottom bar (UI-136 B).
+ * [CarPageActions.onBack] is null on the Car destination of the bottom bar (UI-136 B). On a tablet,
+ * which only reviews ([records] false), the page is the car's name and notes.
  */
 @Composable
 fun CarPage(
@@ -76,6 +77,7 @@ fun CarPage(
     obd: ObdView?,
     actions: CarPageActions = CarPageActions(),
     scan: CarScanState = CarScanState(),
+    records: Boolean = true,
 ) {
     Column(Modifier.fillMaxSize()) {
         ShellTopBar(car.name, onBack = actions.onBack) { TextButton(onClick = actions.onEdit) { Text("Edit") } }
@@ -83,8 +85,12 @@ fun CarPage(
             Modifier.verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            val line = listOf(car.notes, if (chosen) "next session" else "").filter { it.isNotBlank() }
+            val line = listOf(car.notes, if (chosen && records) "next session" else "").filter { it.isNotBlank() }
             if (line.isNotEmpty()) DimText(line.joinToString(" · "))
+            if (!records) {
+                DimText(TabletCarNote)
+                return@Column
+            }
             if (chosen && obd != null) {
                 ObdContent(obd)
             } else {
@@ -118,6 +124,11 @@ fun CarPage(
         }
     }
 }
+
+/** A tablet's car page: the phone that records reads the car. */
+internal const val TabletCarNote =
+    "The phone that records reads this car: its adapter, live values and parameters are set up there. " +
+        "Here its sessions are reviewed, with every value recorded."
 
 /**
  * A scan of what the car offers (UI-303 B): running, why the last one failed, and how to start one

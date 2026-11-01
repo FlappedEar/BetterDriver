@@ -68,7 +68,7 @@ struct CarHome: View {
 /// A car's page (UI-133 B, FBBD-344 UI-300 A), titled with its name; Edit opens its name and notes. On
 /// one page: the next session's car shows the adapter's state and live values; then the driver's own
 /// parameters, then what the car offers at its OBD port from the last scan. Another car offers to
-/// become the next session's.
+/// become the next session's. A tablet only reviews: the page is the car's name and notes.
 struct CarPage: View {
     let id: String
     let showsBack: Bool
@@ -80,43 +80,15 @@ struct CarPage: View {
     var body: some View {
         let setup = settings.setup
         if let car = setup.car(id: id) {
-            let chosen = setup.session.carId == car.id
+            let chosen = setup.session.carId == car.id && !Device.isTablet
             ShellPage(title: car.name, large: !showsBack) {
                 let line = [car.notes, chosen ? "next session" : ""].filter { !$0.isEmpty }
                 if !line.isEmpty { DimText(line.joined(separator: " · ")) }
-                if chosen {
-                    ObdContent(model: obd, showsScan: false)
+                if Device.isTablet {
+                    DimText(CarPage.tabletNote)
                 } else {
-                    DimText("Live values show on the next session's car: the adapter reads the car it is plugged into.")
-                    ShellTonalButton(text: "Use for the next session") { settings.update { $0.chooseCar(id: car.id) } }
+                    recordingContent(chosen: chosen)
                 }
-                ShellLabel("Your parameters")
-                ShellCard {
-                    let readings = chosen ? obd.status?.readings ?? [] : []
-                    ForEach(Array(car.parameters.enumerated()), id: \.element.key) { i, p in
-                        let reading = readings.first { $0.id == OwnChannels.shared.id(key: p.key) }
-                        NavigationLink { ParameterSteps(carId: car.id, key: p.key, start: ParameterDraft.companion.of(p: p)) } label: {
-                            ListRow(
-                                p.name, value: reading.map { ObdPageText.shared.value(reading: $0) } ?? (p.unit.isEmpty ? "–" : p.unit),
-                                divider: i > 0,
-                                supporting: CarPageCore.shared.parameterSource(p: p), chevron: true
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    NavigationLink { ParameterSteps(carId: car.id, key: nil, start: ParameterDraft.companion.empty()) } label: {
-                        AddRowLabel(text: "Add parameter", divider: !car.parameters.isEmpty)
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("addParameter")
-                }
-                if car.parameters.isEmpty {
-                    DimText(
-                        "A value the app does not read: a CAN id or an OBD request with a formula. Recorded in every "
-                            + "session with this car and in its VBO export."
-                    )
-                }
-                CarOffers(carId: car.id, chosen: chosen, obd: obd)
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -129,6 +101,53 @@ struct CarPage: View {
             .onChange(of: chosen) { _, now in if now { obd.appear(recorder) } else { obd.disappear() } }
         }
     }
+
+    /// The recording phone's part: the adapter's live values, the driver's own parameters and what the
+    /// car offers at its OBD port. (By id: setup's and obd's CarProfile share a name in Swift.)
+    @ViewBuilder
+    private func recordingContent(chosen: Bool) -> some View {
+        if let car = settings.setup.car(id: id) {
+            if chosen {
+                ObdContent(model: obd, showsScan: false)
+            } else {
+                DimText("Live values show on the next session's car: the adapter reads the car it is plugged into.")
+                ShellTonalButton(text: "Use for the next session") { settings.update { $0.chooseCar(id: car.id) } }
+            }
+            ShellLabel("Your parameters")
+            ShellCard {
+                let readings = chosen ? obd.status?.readings ?? [] : []
+                ForEach(Array(car.parameters.enumerated()), id: \.element.key) { i, p in
+                    let reading = readings.first { $0.id == OwnChannels.shared.id(key: p.key) }
+                    NavigationLink { ParameterSteps(carId: car.id, key: p.key, start: ParameterDraft.companion.of(p: p)) } label: {
+                        ListRow(
+                            p.name, value: reading.map { ObdPageText.shared.value(reading: $0) } ?? (p.unit.isEmpty ? "–" : p.unit),
+                            divider: i > 0,
+                            supporting: CarPageCore.shared.parameterSource(p: p), chevron: true
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+                NavigationLink { ParameterSteps(carId: car.id, key: nil, start: ParameterDraft.companion.empty()) } label: {
+                    AddRowLabel(text: "Add parameter", divider: !car.parameters.isEmpty)
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("addParameter")
+            }
+            if car.parameters.isEmpty {
+                DimText(
+                    "A value the app does not read: a CAN id or an OBD request with a formula. Recorded in every "
+                        + "session with this car and in its VBO export."
+                )
+            }
+            CarOffers(carId: car.id, chosen: chosen, obd: obd)
+        }
+    }
+}
+
+extension CarPage {
+    /// A tablet's car page: the phone that records reads the car (as Android's TabletCarNote).
+    static let tabletNote = "The phone that records reads this car: its adapter, live values and parameters are set "
+        + "up there. Here its sessions are reviewed, with every value recorded."
 }
 
 /// What the car offers at its OBD port (FBBD-344): the PIDs and CAN ids of the last scan, and Scan car

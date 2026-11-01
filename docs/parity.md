@@ -132,5 +132,5 @@ FBBD issue lets an iOS screen that still differs go unmarked until it is changed
 ## Screens
 | Screen | List | Order (Android) | iOS | Jira |
 |---|---|---|---|---|
-| Top-level navigation (phone bottom bar, tablet rail; tablets have no Drive) | `list:top-level` | Drive, Sessions, Car, Settings | ✅ one tab bar on iPhone and iPad; iPad without Drive, as Android tablets | FBBD-394 |
+| Top-level navigation (phone bottom bar, tablet rail; tablets only review: no Drive, no Car, and Settings without Equipment, Track screen, Video and Spoken coach, shared analysis ReviewOnlyDevice) | `list:top-level` | Drive, Sessions, Car, Settings | ✅ one tab bar on iPhone and iPad; iPad as Android tablets (Sessions, Settings) | FBBD-394 |
 | Session tabs | `list:session-tabs` | Summary, Compare, Map, Laps, Corners, Car, Video | ✅ same tabs; Video after Car only for a session with video, on both (FBBD-392) | FBBD-110, FBBD-392 |

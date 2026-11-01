@@ -91,6 +91,14 @@ final class IPadLayoutTests: XCTestCase {
         let settings = app.tabBars.buttons["Settings"].exists ? app.tabBars.buttons["Settings"] : app.buttons["Settings"].firstMatch
         XCTAssertTrue(settings.waitForExistence(timeout: 10), "no Settings tab")
         settings.tap()
+        // Only review on a tablet (ReviewOnlyDevice, Arek 2026-11-01): no Car tab with live OBD-II values,
+        // and none of what sets up a recording in Settings.
+        XCTAssertTrue(app.buttons["settings.diagnostics"].firstMatch.waitForExistence(timeout: 10), "no Diagnostics")
+        XCTAssertTrue(app.buttons["settings.cars"].firstMatch.exists, "no Cars")
+        for topic in ["equipment", "trackScreen", "video", "coach"] {
+            XCTAssertFalse(app.buttons["settings.\(topic)"].firstMatch.exists, "\(topic) in the iPad's Settings")
+        }
+        XCTAssertFalse(app.buttons["Car"].exists, "a Car tab on the iPad")
         keep("Settings, \(name)")
     }
 

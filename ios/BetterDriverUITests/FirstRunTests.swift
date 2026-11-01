@@ -95,7 +95,8 @@ final class FirstRunTests: XCTestCase {
         XCTAssertFalse(app.staticTexts["setup.summary"].waitForExistence(timeout: 3), "no checklist on the iPad")
     }
 
-    func testRunSetupAgainShowsTheChecklist() {
+    func testRunSetupAgainShowsTheChecklist() throws {
+        try XCTSkipIf(!phone, "the iPad only reviews: no setup to run again")
         app.launchArguments = ["-uiTest", "-uiTestReset"]
         app.launch()
         tab("Settings").tap()
