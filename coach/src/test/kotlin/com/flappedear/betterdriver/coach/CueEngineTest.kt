@@ -103,6 +103,39 @@ class CueEngineTest {
     }
 
     @Test
+    fun `a cue whose sound was cut off gets no result`() {
+        val paces = listOf(early2, early2, early2, early2, steady, steady)
+        val engine = CueEngine(track, CoachSettings(Verbosity.Focus), reference())
+        val results = mutableListOf<CueResult>()
+        var cued = 0
+        sim.drive(paces).fixes.forEach { f ->
+            val u = engine.update(f)
+            // Every corner cue is cut off as it plays (FBBD-416): nothing it asked for is judged.
+            u.cues.filter { it.kind == CueKind.Corner }.forEach {
+                cued++
+                engine.unheard(it.seq)
+            }
+            results += u.results
+        }
+        assertTrue(cued > 0)
+        assertTrue(results.isEmpty(), "results: ${results.map { it.cue.text }}")
+    }
+
+    @Test
+    fun `at a new track a faster learning lap sets the corners again, not after the learning laps`() {
+        val slow = SimCircuit.Pace(earlierM = List(4) { 15.0 })
+        // No earlier reference (FBBD-409): the first clean timed lap sets the corners, a faster one
+        // during the learning laps sets them again.
+        val learning = CueEngine(track, CoachSettings(Verbosity.Focus))
+        run(learning, sim.drive(listOf(slow, steady, steady, steady)))
+        assertTrue(learning.relearnedFrom in 3..4, "set again from lap ${learning.relearnedFrom}")
+        // Once the learning laps are done the corners stay, so cues and results stay comparable.
+        val done = CueEngine(track, CoachSettings(Verbosity.Focus))
+        run(done, sim.drive(listOf(slow, slow, slow, slow, steady)))
+        assertEquals(0, done.relearnedFrom)
+    }
+
+    @Test
     fun `in Polish the same cues are said in Polish, still before the braking zone`() {
         val paces = listOf(early2, early2, early2, early2, steady, steady)
         val drive = sim.drive(paces)

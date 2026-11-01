@@ -21,6 +21,20 @@ fun plannedTargets(plan: LinePlan) = PlannedTargets(
 )
 
 /**
+ * The same targets with no braking point beyond his best (FBBD-415): only what he has driven. Those
+ * steps are experimental targets, never demonstrated; at a track he visits for the first time the
+ * coach does not ask for them.
+ */
+fun PlannedTargets.drivenOnly(): PlannedTargets = PlannedTargets(
+    sessionId,
+    targets.map { PlannedTarget(it.cornerId, it.sessionId, it.lapSeconds, gear = it.gear) },
+    gearbox,
+)
+
+/** Whether any target asks for a braking point beyond his best (FBBD-312). */
+val PlannedTargets.beyondBest: Boolean get() = targets.any { it.brakeLaterMeters > 0 }
+
+/**
  * The focus of a line plan (FBBD-306): its corners as coach picks, most time to find first, and the
  * time to find in each by CornerId; made from session [sessionId].
  */

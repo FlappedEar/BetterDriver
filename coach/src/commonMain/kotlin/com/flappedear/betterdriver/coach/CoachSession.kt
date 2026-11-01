@@ -96,6 +96,11 @@ class CoachSession(
         engine?.audioDelayMillis = millis
     }
 
+    /** Cue [seq]'s sound did not play to its end (FBBD-416): no result is measured against it. */
+    fun unheard(seq: Int) {
+        engine?.unheard(seq)
+    }
+
     fun onFix(fix: CoachFix, nowMicros: Long, voiceFree: Boolean = true, say: (String) -> Boolean): CoachOutput {
         val e = engine ?: return CoachOutput(emptyList(), status)
         val u = e.update(fix, voiceFree)

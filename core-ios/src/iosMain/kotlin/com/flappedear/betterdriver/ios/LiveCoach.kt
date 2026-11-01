@@ -258,6 +258,14 @@ internal class IosCoachLibrary(sessionsDir: String, referencesDir: String) : Coa
         return ended != null && nowUtcMillis - ended in 0..SameDayMillis
     }
 
+    /** Whether every session [reference] was built from ended within 12 hours before [nowUtcMillis] (FBBD-415). */
+    override fun firstDay(reference: CoachReference, nowUtcMillis: Long): Boolean {
+        val ids = reference.sessions.toSet()
+        val ended = sessions.list().filter { it.id in ids }
+            .map { it.info.startUtcMillis + (it.durationMicros ?: 0L) / MicrosPerMilli }
+        return ended.isNotEmpty() && ended.all { nowUtcMillis - it in 0..SameDayMillis }
+    }
+
     /** The saved track session [s] recorded it was at, from its events; null if none or unreadable. */
     // A damaged session is skipped, never a reason to stop coaching.
     @Suppress("TooGenericExceptionCaught")
