@@ -23,6 +23,7 @@ post-release PR, or with the next PR). A new page gets a row; a deleted page los
 | 36372481 | iOS / iPadOS app plan | 1.26.0 |
 | 39682049 | Android and iOS feature parity | 1.26.0 |
 | 12779559 | Architecture | 1.26.0 |
+| 42369289 | Coach algorithm (how the live coach decides what to say) | 1.26.0 |
 | 12615683 | Recorder: crash-safe session format and VBO export | 1.26.0 |
 | 12910622 | RaceBox Micro BLE protocol | 1.26.0 |
 | 14417921 | VBO video format (Circuit Tools) | 1.26.0 |
