@@ -173,7 +173,8 @@ final class SatelliteMaps: ObservableObject {
         return token
     }
 
-    /// Asks once per square of tiles (GoogleMapTiles.viewportUrl) whose photos those are, for the credit.
+    /// Asks once per square of tiles (GoogleMapTiles.viewportUrl) whose photos those are, for the credit;
+    /// again after a failure.
     private func noteCopyright(z: Int32, x: Int32, y: Int32) {
         let tiles = GoogleMapTiles.shared
         let area = "\(z)/\(tiles.viewportArea(t: x))/\(tiles.viewportArea(t: y))"
@@ -181,11 +182,18 @@ final class SatelliteMaps: ObservableObject {
         let known = copyrights[area] != nil
         if !known { copyrights[area] = "" }
         lock.unlock()
-        guard !known, let key = key(.google), let token = googleSession(key: key) else { return }
-        let address = GoogleMapTiles.shared.viewportUrl(key: key, session: token, z: z, x: x, y: y)
-        guard let url = URL(string: address), let data = get(URLRequest(url: url)),
+        if known { return }
+        guard let key = key(.google), let token = googleSession(key: key),
+              let url = URL(string: tiles.viewportUrl(key: key, session: token, z: z, x: x, y: y)),
+              let data = get(URLRequest(url: url)),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let text = json["copyright"] as? String else { return }
+              let text = json["copyright"] as? String else {
+            // Asked again with the next tile of the area, once there is signal.
+            lock.lock()
+            copyrights[area] = nil
+            lock.unlock()
+            return
+        }
         lock.lock()
         copyrights[area] = text
         lock.unlock()
