@@ -676,7 +676,7 @@ private fun answerChallenge(
 
 @Suppress("DEPRECATION") // The pre-Android 13 characteristic write.
 @SuppressLint("MissingPermission")
-private fun writeWithResponse(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray): Boolean =
+internal fun writeWithResponse(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray): Boolean =
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         g.writeCharacteristic(ch, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) == BluetoothStatusCodes.SUCCESS
     } else {

@@ -27,14 +27,26 @@ private const val MtuAnswerMs = 2_000L
 
 /**
  * What a [GattNotifyLink] subscribes to: the [characteristic] of [service], notified by the device.
- * [threadName] names the link's thread in traces. A link silent for [silenceTimeoutMs] is restarted.
+ * [threadName] names the link's thread in traces. A link silent for [silenceTimeoutMs] is restarted;
+ * one that sends nothing within [setupTimeoutMs] of connecting is set up again. [afterSubscribe] is
+ * written, with a response, once notifications are on, on every connection (the TPMS bridge's
+ * filter, FBBD-224).
  */
 data class GattNotifySpec(
     val service: UUID,
     val characteristic: UUID,
     val threadName: String,
     val silenceTimeoutMs: Long = 5_000L,
+    val setupTimeoutMs: Long = NotifyLinkCore.SetupTimeoutMs,
+    val afterSubscribe: GattWrite? = null,
 )
+
+/** A [value] written to [characteristic] of the link's service. */
+class GattWrite(val characteristic: UUID, value: ByteArray) {
+    private val bytes = value.copyOf()
+
+    val value: ByteArray get() = bytes.copyOf()
+}
 
 /** A link that streams one device's notifications until stopped: [GattNotifyLink], or a simulated device in tests. */
 interface NotifyLink {
@@ -87,6 +99,8 @@ class GattNotifyLink(
             onState(s)
         },
         spec.silenceTimeoutMs,
+        spec.setupTimeoutMs,
+        maxOf(spec.setupTimeoutMs, NotifyLinkCore.BackgroundSetupTimeoutMs),
     )
 
     // Touched only on [thread].
@@ -220,6 +234,16 @@ class GattNotifyLink(
             g.writeDescriptor(cccd)
         }
 
+    /** Starts [write] on [g]; null when it started, else why not. */
+    private fun writeAfterSubscribe(g: BluetoothGatt, write: GattWrite): String? {
+        val ch = g.getService(spec.service)?.getCharacteristic(write.characteristic)
+        return when {
+            ch == null -> "characteristic ${write.characteristic} not found"
+            !writeWithResponse(g, ch, write.value) -> "write ${write.characteristic} failed"
+            else -> null
+        }
+    }
+
     /** A notification of [g], on the binder thread: given on at once, counted on the link's thread. */
     private fun data(g: BluetoothGatt, value: ByteArray) {
         onData(value)
@@ -278,11 +302,27 @@ class GattNotifyLink(
             handler.post {
                 if (g != gatt) return@post
                 core.log("notifications on, status $status, ${core.elapsed()} ms after connecting began")
-                if (status == BluetoothGatt.GATT_SUCCESS) {
+                val write = spec.afterSubscribe
+                if (status == BluetoothGatt.GATT_SUCCESS && write != null) {
+                    writeAfterSubscribe(g, write)?.let(core::failed)
+                } else if (status == BluetoothGatt.GATT_SUCCESS) {
                     core.reached(NotifyStep.FIRST_VALUE)
                 } else {
                     // 5 or 15: the device wants pairing first; the bond state says whether it happened.
                     core.failed("enable notifications status $status, ${bondName(g.device)}")
+                }
+            }
+        }
+
+        // Only the spec's write after subscribing; this link makes no other writes.
+        override fun onCharacteristicWrite(g: BluetoothGatt, ch: BluetoothGattCharacteristic, status: Int) {
+            handler.post {
+                if (g != gatt || ch.uuid != spec.afterSubscribe?.characteristic) return@post
+                core.log("${ch.uuid} written, status $status, ${core.elapsed()} ms after connecting began")
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    core.reached(NotifyStep.FIRST_VALUE)
+                } else {
+                    core.failed("write ${ch.uuid} status $status")
                 }
             }
         }

@@ -148,6 +148,37 @@ class OverlaysExportTest {
     }
 
     @Test
+    fun `the TPMS bridge's tyres reach Overlays as tyre_pressure and tyre_temp columns`() {
+        // core-ble TpmsChannels (FBBD-224): ids 800 to 807, bar and °C, about once a second.
+        val wheels = listOf("fl", "fr", "rl", "rr")
+        val pressures = wheels.mapIndexed { i, w -> ChannelDef(800 + i, "tyre_pressure_$w", "bar", "tpms", 2) }
+        val temps = wheels.mapIndexed { i, w -> ChannelDef(804 + i, "tyre_temp_$w", "°C", "tpms", 0) }
+        val base = circle(accelerometer = true)
+        val tyres = (0 until base.sampleSets.last().tMicros.toInt() / 1_000_000).map { s ->
+            SampleSet(
+                s * 1_000_000L + 20_000L,
+                pressures.mapIndexed { i, c -> ChannelValue(c.id, 2.10 + 0.01 * i + 0.001 * s) } +
+                    temps.mapIndexed { i, c -> ChannelValue(c.id, 30.0 + i) },
+            )
+        }
+        val channels = base.info.channels + pressures + temps
+        val data = base.copy(
+            info = base.info.copy(channels = channels),
+            channels = channels.associateBy { it.id },
+            sampleSets = (base.sampleSets + tyres).sortedBy { it.tMicros },
+        )
+        val vbo = export(data)
+        val names = (pressures + temps).map { it.name }
+        assertTrue(vbo.names.containsAll(names), "${vbo.names}")
+        assertEquals(List(4) { "bar" } + List(4) { "°C" }, vbo.units(*names.toTypedArray()))
+        // Held between readings: every row has the latest pressure, never a blank.
+        val rr = vbo.column("tyre_pressure_rr")
+        assertTrue(rr.all { it in 2.12..2.30 }, "$rr")
+        assertEquals(List(rr.size) { 33.0 }, vbo.column("tyre_temp_rr"))
+        assertTrue(vbo.rows.all { it.size == vbo.names.size })
+    }
+
+    @Test
     fun `every row has a value in every column and nothing names RaceBox`() {
         val vbo = export(circle(accelerometer = true))
         assertTrue(vbo.rows.all { it.size == vbo.names.size })

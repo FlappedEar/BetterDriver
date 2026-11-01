@@ -40,6 +40,7 @@ import com.flappedear.betterdriver.gopro.GoPros
 import com.flappedear.betterdriver.gopro.rememberGoProFilePicker
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recording.GnssSound
+import com.flappedear.betterdriver.recording.SensorKind
 import com.flappedear.betterdriver.recording.SensorRef
 import com.flappedear.betterdriver.recording.gnssRefOf
 import com.flappedear.betterdriver.recording.RecorderClient
@@ -292,10 +293,15 @@ private fun Drive(
                     phoneVideo = active.cameras.firstOrNull { it.model == EquipmentModel.PHONE_CAMERA }
                         ?.videoMode
                         ?.takeIf { prefs.cameraGranted() },
-                    // The listed strap, as on iOS (FBBD-349).
-                    sensors = listOfNotNull(active.heartRateStrap).mapNotNull { s ->
-                        s.address?.let { SensorRef(it, s.advertisedName ?: s.name) }
-                    },
+                    // The listed strap, as on iOS (FBBD-349), and the tyre pressure bridge (FBBD-224).
+                    sensors = listOfNotNull(
+                        active.heartRateStrap?.let { s ->
+                            s.address?.let { SensorRef(it, s.advertisedName ?: s.name) }
+                        },
+                        active.tpmsBridge?.let { s ->
+                            s.address?.let { SensorRef(it, s.advertisedName ?: s.name, SensorKind.TPMS) }
+                        },
+                    ),
                 )
                 nav.navigate(Routes.Track)
             }

@@ -21,7 +21,7 @@ Tap an item to rename it, choose its **Video** mode, open RaceBox **Diagnostics*
 **Add equipment** groups what can be added:
 
 - **Found nearby**: Bluetooth LE devices heard now, such as a RaceBox, an Open GoPro camera, a
-  Bluetooth LE OBD-II adapter or a heart-rate strap. Tap **Add**.
+  Bluetooth LE OBD-II adapter, a heart-rate strap or the tyre pressure bridge. Tap **Add**.
 - **Paired Bluetooth devices**: Bluetooth Classic devices already paired in Android's Bluetooth
   settings (GPS receivers, VBOX Sport, OBD-II adapters). Pair them there first.
 - **Add without Bluetooth**: the phone's own GPS, a Wi-Fi receiver, the Wi-Fi OBD-II adapter,
@@ -61,6 +61,15 @@ Turn cameras on or off for a session with **Change** on the Drive screen.
 **Heart-rate monitor**: any standard Bluetooth heart-rate strap. Its heart rate shows on the track
 screen and in the analysis. A strap that is not worn at the start of a session is switched off
 for that session, so it never shows a made-up heart rate.
+
+**Tyre pressure bridge**: the FlappedEar TPMS bridge
+([RCTPMS](https://github.com/FlappedEar/RCTPMS)), which hears the four Bluetooth tyre sensors and
+shows up nearby as "RC TPMS ...". While it is listed, every session records each tyre's pressure
+(bar) and temperature (°C) about once a second, on Android and on the iPhone. The values go into
+the VBO export as `tyre_pressure_fl` to `tyre_pressure_rr` and `tyre_temp_fl` to `tyre_temp_rr`,
+and the video's Tyres widget shows them. A wheel whose reading has not changed for 5 minutes
+(a sensor that went quiet) is left out until it changes again. If the bridge drops, the session
+and the GPS go on and the tyres come back when it reconnects.
 
 ## OBD-II adapters
 

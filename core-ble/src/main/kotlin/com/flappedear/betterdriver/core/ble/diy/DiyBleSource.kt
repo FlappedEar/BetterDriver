@@ -7,14 +7,18 @@ import com.flappedear.betterdriver.core.ble.LinkState
 import com.flappedear.betterdriver.core.ble.advertisesService
 import com.flappedear.betterdriver.core.ble.linkEvents
 import com.flappedear.betterdriver.core.ble.scanBleDevices
+import com.flappedear.betterdriver.core.ble.tpms.TpmsIds
 import com.flappedear.betterdriver.recorder.DataSource
 import com.flappedear.betterdriver.recorder.SampleSink
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 
-/** RaceChrono DIY devices in range that advertise service 0x1FF8, strongest first (FBBD-118). */
+/**
+ * RaceChrono DIY devices in range that advertise service 0x1FF8, strongest first (FBBD-118). The
+ * TPMS bridge uses the same service and is listed as a bridge instead ([TpmsIds.isBridge], FBBD-224).
+ */
 fun scanDiyDevices(context: Context): Flow<List<FoundBleDevice>> =
-    scanBleDevices(context) { _, uuids -> advertisesService(uuids, DiyGatt.SERVICE) }
+    scanBleDevices(context) { name, uuids -> advertisesService(uuids, DiyGatt.SERVICE) && !TpmsIds.isBridge(name) }
 
 /**
  * A RaceChrono DIY BLE GPS device (service 0x1FF8, https://github.com/aollin/racechrono-ble-diy-device)

@@ -178,6 +178,7 @@ enum ModelName {
     static let phoneGps = "PHONE_GPS"
     static let phoneCamera = "PHONE_CAMERA"
     static let heartRate = "HEART_RATE"
+    static let tpmsBridge = "TPMS_BRIDGE"
     static let obdBluetooth = "OBD_BLUETOOTH"
     static let obdWifi = "OBD_WIFI"
     static let goPro = "GOPRO"

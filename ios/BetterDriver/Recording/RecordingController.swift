@@ -89,6 +89,7 @@ final class RecordingController: ObservableObject {
     private var goPros: OpenGoPros?
     private var obd: ObdLink?
     private var heartRate: HeartRateStrapLink?
+    private var tyres: TpmsBridgeLink?
     private var voice: CoachVoice?
     /// The track screen's frames while recording (FBBD-376).
     private var frames: FrameMeter?
@@ -230,6 +231,12 @@ final class RecordingController: ObservableObject {
             heartRate = strap
             strap.start()
         }
+        // The listed tyre pressure bridge, as on Android (FBBD-224).
+        if let listed = Self.bridge(active) {
+            let bridge = TpmsBridgeLink(sink: live, listed: listed)
+            tyres = bridge
+            bridge.start()
+        }
         startCoach(live, SettingsModel.shared.coach)
         if phoneCamera {
             let cam = PhoneCamera(log: PhoneVideoLog(session: live), mode: phoneVideoMode) { [weak self] in self?.cameraStatus = $0 }
@@ -254,6 +261,12 @@ final class RecordingController: ObservableObject {
     /// The strap the session records: the shared rule's (FBBD-349), by the iPhone's identifier for it.
     static func strap(_ active: ActiveSession) -> (id: UUID, name: String)? {
         guard let item = active.heartRateStrap, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
+        return (id, item.name)
+    }
+
+    /// The tyre pressure bridge the session records (FBBD-224), by the iPhone's identifier for it.
+    static func bridge(_ active: ActiveSession) -> (id: UUID, name: String)? {
+        guard let item = active.tpmsBridge, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
         return (id, item.name)
     }
 
@@ -318,6 +331,7 @@ final class RecordingController: ObservableObject {
         camera?.stop()
         obd?.stop()
         heartRate?.stop()
+        tyres?.stop()
         frames?.stop()
         // Set Shutter off goes out before the session closes, so a camera that answers at once has its
         // stop in the session's events, as its start (audit 30 Oct BD-05).
@@ -354,6 +368,7 @@ final class RecordingController: ObservableObject {
         goPros = nil
         obd = nil
         heartRate = nil
+        tyres = nil
         session = nil
         lastGnss = nil
         AppLog.session = nil
@@ -389,6 +404,7 @@ final class RecordingController: ObservableObject {
             imu?.stop()
             obd?.stop()
             heartRate?.stop()
+            tyres?.stop()
             end()
             error = reason == "storage_full" ? "Recording stopped: storage full" : "Recording stopped: write error"
             return
