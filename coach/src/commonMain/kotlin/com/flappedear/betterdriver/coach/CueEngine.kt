@@ -709,7 +709,8 @@ class CueEngine(
         if (!faster) return null
         val nb = cornersFrom(traced, picked) { identified(it, laps.frame, identity) } ?: return null
         val passes = learningFrom.flatMap { nb.map.passes(it.trace, it.lap.number) }
-        nb.onTimedLap(passes)
+        // The new book already holds [traced]'s passes as targets: each pass counts once (FBBD-177).
+        nb.onTimedLap(passes.filter { it.lap != traced.lap.number })
         passes.forEach { nb.onPass(it, cruising = false) }
         relearnedFrom = traced.lap.number
         return nb

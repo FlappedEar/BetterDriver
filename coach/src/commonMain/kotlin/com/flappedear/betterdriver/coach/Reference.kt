@@ -61,9 +61,10 @@ data class CoachReference(
          * 2: two targets per corner (FBBD-177). 3: passes carry their line at the apex and their
          * throttle point (FBBD-307). 4: the line plan's aims (FBBD-307). 5: passes carry their time to
          * the apex (UI-170 B). 6: aims carry the plan's gear and the reference the gearbox (FBBD-326).
-         * An older file is rebuilt from the sessions.
+         * 7: a plan lap that two laps match in time gives no aim (FBBD-405). An older file is rebuilt
+         * from the sessions.
          */
-        const val Version = 6
+        const val Version = 7
     }
 }
 
