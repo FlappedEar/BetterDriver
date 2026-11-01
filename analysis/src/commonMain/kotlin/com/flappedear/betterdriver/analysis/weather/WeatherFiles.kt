@@ -97,10 +97,18 @@ internal fun fetchInto(
             logLine(CoreLog.LevelInfo, Tag, "weather of $id not fetched: no answer", session = id)
             return null
         }
-        val readings = OpenMeteo.readings(body)
         // A live fetch also brings the forecast of the hours to come: only what has been is kept.
         val until = minOf(toUtcMillis, nowUtcMillis)
-        val weather = merged(readWeather(dir), latitude, longitude, readings, fromUtcMillis, until, nowUtcMillis)
+        // Only the quarter hours the answer has values for count as fetched, so a gap in the model's
+        // data is asked for again at the next opening instead of being taken as done.
+        val readings = OpenMeteo.readings(body).filter { it.utcMillis in fromUtcMillis - QuarterMillis..until }
+        val last = readings.maxOfOrNull { it.utcMillis }
+        if (last == null) {
+            logLine(CoreLog.LevelInfo, Tag, "weather of $id not fetched: no values for the session", session = id)
+            return null
+        }
+        val covered = minOf(until, last + QuarterMillis)
+        val weather = merged(readWeather(dir), latitude, longitude, readings, fromUtcMillis, covered, nowUtcMillis)
         CoreFiles.writeTextAtomically(CoreFiles.join(dir, SessionWeather.FileName), weather.toJson())
         val now = weather.at(until)
         logLine(

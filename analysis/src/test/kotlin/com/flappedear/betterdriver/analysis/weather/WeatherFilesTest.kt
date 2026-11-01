@@ -87,6 +87,21 @@ class WeatherFilesTest {
     }
 
     @Test
+    fun anAnswerWithoutValuesIsNotTakenAsTheWeather() {
+        val store = SessionStore(tmp)
+        val id = track.record(store, null, 1, today)
+        var calls = 0
+        var clock = today + MillisPerHour
+        val empty = WeatherHttp { calls++; """{"minutely_15":{"time":[],"temperature_2m":[]}}""" }
+        val files = SessionWeatherFiles(tmp.path, empty) { clock }
+        assertNull(files.load(id))
+        assertTrue(!File(tmp, "$id/${SessionWeather.FileName}").exists(), "nothing kept")
+        clock += SessionWeatherFiles.RetryAfterMillis
+        files.load(id)
+        assertEquals(2, calls, "asked again later")
+    }
+
+    @Test
     fun whileRecordingAtTheFirstFixThenEveryQuarterHour() {
         val dir = File(tmp, "s1").apply { mkdirs() }
         var clock = today

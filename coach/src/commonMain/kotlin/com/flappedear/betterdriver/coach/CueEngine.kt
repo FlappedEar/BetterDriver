@@ -831,7 +831,8 @@ class CueEngine(
      */
     @Suppress("ReturnCount") // Each early return is a reason to say nothing on this fix.
     private fun speakPlan(now: Long, along: Double?): Cue? {
-        if (!planPending) return null
+        // A wet track (FBBD-403): no corner plan either; it is said once the track is dry.
+        if (!planPending || wet) return null
         val b = book
         if (settings.verbosity < Verbosity.Focus || focus.isEmpty() || b == null) {
             planPending = false
