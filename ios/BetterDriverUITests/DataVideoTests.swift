@@ -118,6 +118,48 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(watch.waitForExistence(timeout: 30), "not back in the Video tab")
     }
 
+    /// The composite laps' video (FBBD-370), as Android's Video tab: with all of the session on video the
+    /// realistic optimal and the raw theoretical best are offered after the whole session; a composite
+    /// lap is saved only (Watch stays off, no handle) and is written as BetterDriver-<id>-raw-theoretical.mp4.
+    func testTheCompositeLapIsSavedFromTheVideoTab() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideoLong", "-noFilesSheet"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 180), "no demo sessions")
+        rows.element(boundBy: 0).tap()
+        let tab = app.buttons["tabVideo"].firstMatch
+        XCTAssertTrue(tab.waitForExistence(timeout: 60), "no Video tab")
+        tab.tap()
+
+        let realistic = app.buttons["dataVideoPart-1"].firstMatch
+        let raw = app.buttons["dataVideoPart-2"].firstMatch
+        XCTAssertTrue(raw.waitForExistence(timeout: 180), "no composite laps in the Video tab")
+        XCTAssertTrue(realistic.exists, "no realistic optimal in the Video tab")
+        XCTAssertTrue(realistic.label.hasPrefix("Realistic optimal"), realistic.label)
+        XCTAssertTrue(raw.label.hasPrefix("Raw theoretical best"), raw.label)
+        keep("Video tab composite laps")
+        XCTAssertTrue(raw.isEnabled, "the raw theoretical best is not on video: \(raw.label)")
+        raw.tap()
+        let watch = app.buttons["dataVideoWatch"].firstMatch
+        let save = app.buttons["dataVideoSave"].firstMatch
+        expectation(for: NSPredicate(format: "isEnabled == true"), evaluatedWith: save)
+        waitForExpectations(timeout: 30)
+        XCTAssertFalse(watch.isEnabled, "a composite lap is saved only, as on Android")
+        XCTAssertFalse(app.buttons["dataVideoHandle6"].exists, "a composite lap has no handle")
+        save.tap()
+        let saved = app.descendants(matching: .any)["dataVideoSaved"].firstMatch
+        let failed = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'The video was not saved'")).firstMatch
+        let done = XCTWaiter.wait(
+            for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == true"), object: saved)], timeout: 300
+        )
+        XCTAssertFalse(failed.exists, failed.exists ? failed.label : "")
+        XCTAssertEqual(done, .completed, "the composite lap's video was not saved")
+        XCTAssertTrue(saved.label.hasSuffix("-raw-theoretical.mp4"), saved.label)
+        keep("Composite lap saved")
+        XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
+    }
+
     /// The Sessions tab: in the tab bar at the bottom, or on an iPad with iOS 18 in the bar at the top.
     private func openSessions() {
         let bottom = app.tabBars.buttons["Sessions"]

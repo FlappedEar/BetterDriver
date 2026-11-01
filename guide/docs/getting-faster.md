@@ -38,7 +38,8 @@ lap, following the car from behind and above, with your best lap as a ghost.
 - Play and pause, full or half speed, jump to a corner.
 - Pinch to move the camera nearer or farther (0.5 to 3 times); double tap puts it back.
 - With a MapTiler key (see [Tracks](drive.md#satellite-map)) the ground is the satellite photo,
-  else the drawn track.
+  else the drawn track. On iPhone and iPad the player shows Apple Maps satellite imagery with no
+  key; the saved video there keeps the drawn track (Apple's terms do not allow storing their imagery).
 - **Save video** writes a 1920×1080, 30 fps MP4 to *Movies/BetterDriver*; **Send** shares it.
 
 ## Next session: did it work?

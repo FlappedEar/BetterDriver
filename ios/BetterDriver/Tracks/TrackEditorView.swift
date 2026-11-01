@@ -105,23 +105,19 @@ struct TrackEditorScreen: View {
 
 /// Track editor (FBBD-56 on Android, FBBD-336): phone, map on top and the lines below (UI-23 A);
 /// iPad, the map with a side panel (UI-25 A). Lines are placed from the recorded lap by default
-/// (UI-24 A), on a satellite background once a MapTiler key is entered (UI-26 A).
+/// (UI-24 A), on Apple's satellite photo (UI-26 A) or Apple's map.
 struct TrackEditorView: View {
     @ObservedObject var model: EditorModel
     let onClose: () -> Void
     @Environment(\.horizontalSizeClass) private var width
-    @State private var sources = MapTiles.sources()
-    @State private var picked: String?
+    @State private var background = EditorBackground.satellite
     @State private var leaving = false
     @State private var deleting = false
     @State private var naming = false
-    @State private var editingKey = false
     @State private var nameText = ""
-    @State private var keyText = ""
     @State private var failed: String?
 
     private var editor: TrackEditor { model.editor }
-    private var source: TileSource { sources.first { $0.id == picked } ?? sources[0] }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -163,27 +159,9 @@ struct TrackEditorView: View {
                 .disabled(!TracksModel.library.validName(name: nameText))
             Button("Cancel", role: .cancel) {}
         }
-        .alert("MapTiler key", isPresented: $editingKey) {
-            TextField("Key", text: $keyText)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("Save") { useKey(keyText) }
-            if MapTiles.mapTilerKey != nil {
-                Button("Remove", role: .destructive) { useKey(nil) }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Turns on MapTiler's satellite map. The key stays on this device.")
-        }
         .alert(failed ?? "", isPresented: Binding(get: { failed != nil }, set: { if !$0 { failed = nil } })) {
             Button("OK", role: .cancel) {}
         }
-    }
-
-    private func useKey(_ key: String?) {
-        MapTiles.mapTilerKey = key
-        sources = MapTiles.sources()
-        picked = nil
     }
 
     private func back() {
@@ -256,7 +234,7 @@ struct TrackEditorView: View {
 
     private var mapPane: some View {
         ZStack {
-            EditorMap(model: model, source: source)
+            EditorMap(model: model, background: background)
             VStack {
                 if let hint = editor.hint {
                     Text(hint)
@@ -267,24 +245,15 @@ struct TrackEditorView: View {
                         .padding(12)
                 }
                 Spacer()
+                // Apple's logo and Legal link are MapKit's own, bottom left.
                 HStack(alignment: .bottom) {
-                    Text(source.attribution)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color(hex: 0xEEF2F4))
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Color.black.opacity(0.5))
                     Spacer()
                     Menu {
-                        ForEach(sources, id: \.id) { s in
-                            Button(s.id == source.id ? "✓ \(s.name)" : s.name) { picked = s.id }
-                        }
-                        Divider()
-                        Button(MapTiles.mapTilerKey == nil ? "Add MapTiler key…" : "Change MapTiler key…") {
-                            keyText = MapTiles.mapTilerKey ?? ""
-                            editingKey = true
+                        ForEach(EditorBackground.allCases) { b in
+                            Button(b == background ? "✓ \(b.name)" : b.name) { background = b }
                         }
                     } label: {
-                        Text("Map: \(source.name)")
+                        Text("Map: \(background.name)")
                             .font(.system(size: 12))
                             .foregroundStyle(Color(hex: 0xEEF2F4))
                             .padding(.horizontal, 12).padding(.vertical, 8)

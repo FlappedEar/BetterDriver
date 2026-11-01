@@ -2,28 +2,27 @@
 
 package com.flappedear.betterdriver.core.ble
 
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
-import org.junit.Assert.assertArrayEquals
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertContentEquals
+import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
+/** The RaceBox diagnostics probe, shared by Android and iOS (FBBD-89, moved to common in FBBD-371). */
 class RaceBoxDiagnosticsTest {
     private fun hex(s: String) = s.split(' ').map { it.toInt(16).toByte() }.toByteArray()
 
     /** The example packet with its iTOW replaced. */
     private fun at(itow: Long) = RaceBoxTestData.microPacket {
-        ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(0, itow.toInt())
+        for (i in 0 until 4) it[i] = (itow shr (8 * i)).toByte()
     }
 
     @Test
     fun `queries match the document's request packets`() {
         // p. 11: "B5 62 FF 22 00 00 21 62".
-        assertArrayEquals(hex("B5 62 FF 22 00 00 21 62"), RaceBoxMessages.recordingStatusQuery())
-        assertArrayEquals(ubxPacket(0xFF, 0x27, ByteArray(0)), RaceBoxMessages.gnssConfigQuery())
+        assertContentEquals(hex("B5 62 FF 22 00 00 21 62"), RaceBoxMessages.recordingStatusQuery())
+        assertContentEquals(ubxPacket(0xFF, 0x27, ByteArray(0)), RaceBoxMessages.gnssConfigQuery())
     }
 
     @Test

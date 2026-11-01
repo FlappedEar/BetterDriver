@@ -79,8 +79,9 @@ rest), the gear, or heart rate.
 
 **Gear** is in the car's group of the list, after RPM. The app works it out from RPM and speed:
 in each gear the engine turns at a fixed speed per km/h, so after about a minute of driving with
-RPM the session knows the car's gears (the FR-S's 6-speed automatic). It shows a dash during a
-shift, while the converter slips, and before the gears are known. A car whose engine follows no
+RPM the session knows the car's gears (the FR-S's 6-speed automatic). The gear is held while the
+torque converter slips under braking or back on the throttle, and changes where the RPM steps to
+the next gear, about 0.2 s into the shift. It shows a dash standing and before the gears are known. A car whose engine follows no
 fixed gears, such as the Corolla hybrid, has no gear, so the tile is left out there.
 
 <figure markdown>

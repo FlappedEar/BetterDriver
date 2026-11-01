@@ -1,4 +1,5 @@
 import BetterDriverCore
+import Combine
 import QuartzCore
 import SwiftUI
 
@@ -14,12 +15,18 @@ struct PerfectLapPlayer: View {
     @StateObject private var clock: PlayClock
     @State private var distance = 1.0
     @State private var pinchFrom: Double?
+    /// Tiles arrived so far: read by the picture, so a paused picture is drawn again as they come.
+    @State private var tilesLoaded = 0
     private let painter: PerfectLapPainter
+    private let tiles: PerfectLapTiles?
 
     init(scene: PerfectLapScene, startCorner: Int = 0, onClose: @escaping () -> Void) {
         self.scene = scene
         self.onClose = onClose
-        painter = PerfectLapPainter(scene: scene)
+        // Apple's satellite photo under the road (UI-201 B), else the drawn road where a tile is not at hand.
+        let tiles = PerfectLapTiles.make()
+        self.tiles = tiles
+        painter = PerfectLapPainter(scene: scene, tiles: tiles)
         let corners = scene.corners
         let start = corners.indices.contains(startCorner) ? corners[startCorner].startSeconds : 0
         _clock = StateObject(wrappedValue: PlayClock(seconds: start, duration: scene.durationSeconds))
@@ -56,6 +63,7 @@ struct PerfectLapPlayer: View {
                 Canvas { ctx, size in
                     painter.distance = distance
                     let seconds = clock.seconds
+                    _ = tilesLoaded
                     ctx.withCGContext { cg in
                         painter.draw(cg, seconds: seconds, size: size, controlsHeight: Self.barHeight + 24)
                     }
@@ -70,6 +78,7 @@ struct PerfectLapPlayer: View {
                         .onEnded { _ in pinchFrom = nil }
                 )
                 .onTapGesture(count: 2) { distance = 1 }
+                .onReceive(tiles?.$loaded.eraseToAnyPublisher() ?? Empty().eraseToAnyPublisher()) { tilesLoaded = $0 }
                 PlayerBar(scene: scene, clock: clock).padding(12)
             }
             .frame(width: fit.width, height: fit.height)

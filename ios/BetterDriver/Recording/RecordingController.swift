@@ -172,7 +172,12 @@ final class RecordingController: ObservableObject {
         switch receiver {
         case .raceBox(let device):
             lastReceiverName = device.name
-            let link = RaceBoxLink(deviceId: device.id, deviceName: device.name, sink: live) { [weak self] state in
+            // The RaceBox's saved calibration (Settings › Equipment › Diagnostics, FBBD-89) for this session.
+            let calibration = RaceBoxCalibrationFiles.load(device.id)
+            AppLog.i("RaceBox", calibration == nil ? "no calibration saved" : "calibration applied")
+            let link = RaceBoxLink(
+                deviceId: device.id, deviceName: device.name, sink: live, calibration: calibration
+            ) { [weak self] state in
                 self?.raceBoxState = state
             }
             raceBox = link

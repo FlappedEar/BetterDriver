@@ -2,7 +2,8 @@ import XCTest
 
 /// The iPad's session page in portrait and landscape (Arek, TestFlight 1441): Summary's Also column
 /// and the Map tab's G-G card keep a readable width, the session list stays beside the session as
-/// on an Android tablet, and Settings is a tab. Screenshots of each stay in the test results.
+/// on an Android tablet held sideways and can be hidden and shown again (Arek 2026-10-31), and
+/// Settings is a tab. Screenshots of each stay in the test results.
 final class IPadLayoutTests: XCTestCase {
     private let app = XCUIApplication()
 
@@ -52,12 +53,29 @@ final class IPadLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(gg.frame.width, 200, "the G-G card is too narrow (\(gg.frame))")
         keep("Map, \(name)")
 
-        // As an Android tablet: the list stays beside the session, with Import session over it, and
-        // another session opens from it. Settings is a tab, with the app's log (no Drive: no recording).
+        // As an Android tablet held sideways: the list stays beside the session, with Import session
+        // over it, and the list button hides it, so the session takes its width, and shows it again
+        // (Arek 2026-10-31: the list was stuck beside the session).
         let add = app.buttons["importSessions"].firstMatch
+        let next = rows.element(boundBy: 1)
         let hittable = NSPredicate(format: "isHittable == true")
         expectation(for: hittable, evaluatedWith: add)
-        expectation(for: hittable, evaluatedWith: rows.element(boundBy: 1))
+        expectation(for: hittable, evaluatedWith: next)
+        waitForExpectations(timeout: 15)
+        let toggle = app.buttons["toggleSessionList"].firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "no list button over the session")
+        let besideX = toggle.frame.minX
+        toggle.tap()
+        // Gone or covered: a hidden column's rows may leave the tree, where isHittable would fail.
+        for _ in 0..<30 where next.exists && next.isHittable {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.5))
+        }
+        XCTAssertFalse(next.exists && next.isHittable, "the list is still beside the session")
+        XCTAssertTrue(gg.exists, "the session closed with the list")
+        XCTAssertLessThan(toggle.frame.minX, besideX - 200, "the session did not take the list's width")
+        keep("Session without the list, \(name)")
+        toggle.tap()
+        expectation(for: hittable, evaluatedWith: next)
         waitForExpectations(timeout: 15)
         XCTAssertFalse(app.buttons["Drive"].exists, "a Drive tab on the iPad")
         // Android's row: time and track, then the laps and the rest from the shared core.

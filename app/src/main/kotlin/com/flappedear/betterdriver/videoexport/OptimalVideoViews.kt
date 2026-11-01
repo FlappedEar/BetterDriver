@@ -29,6 +29,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
+import com.flappedear.betterdriver.analysis.optimal.OptimalOption
+import com.flappedear.betterdriver.analysis.optimal.OptimalPartRow
+import com.flappedear.betterdriver.analysis.optimal.PartOnVideo
+import com.flappedear.betterdriver.analysis.optimal.missingText
+import com.flappedear.betterdriver.analysis.optimal.optimalOptionText
+import com.flappedear.betterdriver.analysis.optimal.optimalPartText
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.feature.analysis.lapsText
 import com.flappedear.betterdriver.sharing.TransferState

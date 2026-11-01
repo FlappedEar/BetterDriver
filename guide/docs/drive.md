@@ -74,3 +74,7 @@ Without a key the editor shows OpenStreetMap. To see satellite imagery, tap **Ma
 right of the map, choose **Add MapTiler key…** and paste your own [MapTiler](https://www.maptiler.com/)
 key. The key stays on the device; add it once on the phone and once on the tablet. The same key
 draws the ground under the [perfect lap in 3D](getting-faster.md#perfect-lap-in-3d).
+
+On iPhone and iPad the editor opens on Apple Maps satellite imagery, no key needed. **Map** at the
+bottom right switches between **Satellite** and **Map**. At a circuit without signal only what
+the device loaded recently shows; lines are still placed on the recorded lap.

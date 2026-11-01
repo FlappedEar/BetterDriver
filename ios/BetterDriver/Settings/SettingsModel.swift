@@ -52,6 +52,17 @@ final class SettingsModel: ObservableObject {
                 )
             }
         }
+        // A RaceBox that is never there, for the diagnostics screen's test (FBBD-371).
+        if ProcessInfo.processInfo.arguments.contains("-raceBoxListed"),
+           !setup.equipment.contains(where: { $0.modelName == ModelName.raceBox }),
+           let raceBox = SettingsCore.shared.model(name: ModelName.raceBox) {
+            update {
+                SettingsCore.shared.addEquipment(
+                    setup: $0, model: raceBox, name: "RaceBox Micro 0000000000",
+                    address: "00000000-0000-0000-0000-000000000371", id: "test-racebox"
+                )
+            }
+        }
         #endif
         // Once, also over a setup.json from a build before this move (TestFlight 1.15.0): after it,
         // Settings › Equipment is the one list, so an item removed there stays removed.

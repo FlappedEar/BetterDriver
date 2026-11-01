@@ -61,6 +61,13 @@ internal object ShellIcons {
             "l6.59 6.59a.996.996 0 1 0 1.41-1.41L7.83 13H19c.55 0 1-.45 1-1s-.45-1-1-1z",
     )
 
+    /** menu: the session list beside a session on a tablet, hidden or shown. */
+    val List = icon(
+        "List",
+        "M4 18h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1s.45 1 1 1zm0-5h16c.55 0 1-.45 1-1s-.45-1-1-1H4" +
+            "c-.55 0-1 .45-1 1s.45 1 1 1zM3 7c0 .55.45 1 1 1h16c.55 0 1-.45 1-1s-.45-1-1-1H4c-.55 0-1 .45-1 1z",
+    )
+
     /** chevron_right */
     val Chevron = icon(
         "Chevron",
