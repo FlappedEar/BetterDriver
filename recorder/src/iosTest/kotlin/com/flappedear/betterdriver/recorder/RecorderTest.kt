@@ -175,14 +175,30 @@ class RecorderTest {
         assertTrue(rec.writerText.endsWith("dropped=0"), rec.writerText)
     }
 
+    /** A long backlog is still fsynced on time, not only when the writer catches up. */
+    @Test
+    fun aBacklogIsSyncedWhileItIsWritten() {
+        val rec = Recorder(store, RecorderConfig(syncIntervalMs = 50)).start(info)
+        // 50 frames at 20 ms each: a backlog of about a second.
+        rec.writeDelayMicrosForTest = 20_000
+        repeat(50) { rec.submit(set(it)) }
+        assertTrue(rec.stop())
+        assertTrue(rec.syncsForTest >= 10, "fsyncs during a 1 s backlog with a 50 ms interval: ${rec.syncsForTest}")
+        assertEquals((0 until 50).map(::set), store.read(rec.id).sampleSets)
+    }
+
     /** A queue the writer cannot keep up with drops records and says so, as Android's writer. */
     @Test
     fun aFullQueueDropsRecordsAndCountsThem() {
         val rec = Recorder(store, RecorderConfig(queueCapacity = 5)).start(info)
         rec.writeDelayMicrosForTest = 50_000
         repeat(100) { rec.submit(set(it)) }
+        // A definition is never dropped, also on a full queue.
+        val rpm = ChannelDef(40, "obd_rpm", "rpm", "obd", 0)
+        rec.defineChannel(rpm)
         assertTrue(rec.stop())
         val data = store.read(rec.id)
+        assertEquals(rpm, data.channels[40])
         val kept = data.sampleSets
         assertTrue(kept.size in 1 until 100, "kept ${kept.size}")
         // What is kept is in order, each set whole.

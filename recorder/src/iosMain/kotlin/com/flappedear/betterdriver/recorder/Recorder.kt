@@ -119,6 +119,7 @@ class Recording internal constructor(
     private var storageWarned = false
     private var rotate = true
     private var reportedDrops = 0L
+    private var syncs = 0
     private val stats = WriterStats()
 
     /** Why it ended, once it has: "user" or another stop reason, "storage_full" or "error". Read without waiting. */
@@ -212,6 +213,9 @@ class Recording internal constructor(
     /** Waits until the writer has written everything handed in so far (not its fsync); for tests and checks. */
     fun awaitWritten() = dispatch_sync(writer) {}
 
+    /** Tests only: fsyncs of written data so far. */
+    internal val syncsForTest: Int get() = onFiles { syncs }
+
     /** Tests only: records waiting for the writer. */
     internal val queuedForTest: Int get() = intake { queue.size }
 
@@ -262,7 +266,8 @@ class Recording internal constructor(
         val wake = intake {
             when {
                 !accepting -> false
-                queue.size >= config.queueCapacity -> {
+                // A definition is never dropped: the samples after it need it to be read back.
+                queue.size >= config.queueCapacity && record !is Record.Channel -> {
                     dropped++
                     false
                 }
@@ -278,20 +283,24 @@ class Recording internal constructor(
         if (wake) dispatch_async(writer) { drain() }
     }
 
-    /** The writer: writes queued records until the queue is empty. */
+    /**
+     * The writer: writes queued records until the queue is empty. Each batch is taken under the file
+     * lock, so a stop never overtakes a batch already taken from the queue.
+     */
     private fun drain() {
         while (true) {
-            val batch = intake {
-                if (queue.isEmpty()) drainScheduled = false
-                takeQueued()
-            }
-            if (batch.isEmpty()) return
-            onFiles {
-                if (endReason == null) {
+            val more = onFiles {
+                val batch = intake {
+                    if (queue.isEmpty()) drainScheduled = false
+                    takeQueued()
+                }
+                if (batch.isNotEmpty() && endReason == null) {
                     write(batch)
                     afterBatch()
                 }
+                batch.isNotEmpty()
             }
+            if (!more) return
         }
     }
 
@@ -303,15 +312,19 @@ class Recording internal constructor(
 
     private fun takeAll(): List<Queued> = intake { takeQueued() }
 
-    /** Writes [batch] in order; a failure ends the recording and the rest is not written. */
+    /**
+     * Writes [batch] in order; a failure or a storage stop ends the recording and the rest is not
+     * written. The fsync and the free-space check stay on time between records, also in a long backlog.
+     */
     private fun write(batch: List<Queued>) {
         if (batch.isEmpty()) return
         val begun = nowMicros()
         for (q in batch) {
             if (endReason != null || killedForTest) return
-            stats.waited(begun - q.atMicros)
+            stats.waited(nowMicros() - q.atMicros)
             val record = q.record
             if (record is Record.Channel) define(record.def) else append(record)
+            if (endReason == null) maintain()
         }
         stats.wrote(nowMicros() - begun)
     }
@@ -323,10 +336,15 @@ class Recording internal constructor(
         remember(def)
     }
 
-    /** After each batch: the queue's drops, free space, and the fsync when it is due. */
+    /** After each batch: the queue's drops, then free space and the fsync. */
     private fun afterBatch() {
         if (endReason != null) return
         reportDrops()
+        if (endReason == null) maintain()
+    }
+
+    /** Free space (checked now and then) and the fsync when it is due. */
+    private fun maintain() {
         val now = elapsedMs()
         if (storageExhausted(now)) {
             finish(STORAGE_FULL)
@@ -390,7 +408,10 @@ class Recording internal constructor(
     }
 
     private fun sync() {
-        if (dirty && fd >= 0) PosixFiles.sync(fd, path)
+        if (dirty && fd >= 0) {
+            PosixFiles.sync(fd, path)
+            syncs++
+        }
         dirty = false
         lastSyncMs = elapsedMs()
     }
