@@ -23,7 +23,6 @@ import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.posix.memcpy
-import kotlin.math.abs
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -175,8 +174,9 @@ class GoProDownloadsTest {
         val clip = ClipIndex("$sessions/$id/video").clips().single()
         assertEquals("gopro-cam1-GX010042.MP4", clip.fileName)
         assertEquals(VideoSourceKind.GOPRO, clip.kind)
-        assertEquals(AlignmentMethod.GPS_MATCH, clip.alignment.method)
-        assertTrue(abs(clip.sessionOffsetUs - 30_000_000) <= 100_000, "offset ${clip.sessionOffsetUs}")
+        // GPS UTC on both sides (the made-up file carries GPS9 times): 30 s into the session, as recorded.
+        assertEquals(AlignmentMethod.GPS_UTC, clip.alignment.method)
+        assertEquals(30_000_000L, clip.sessionOffsetUs)
         val left = files.contentsOfDirectoryAtPath("$sessions/$id/video", null)?.filterIsInstance<String>().orEmpty()
         assertTrue(left.none { it.endsWith(".part") }, "$left")
         // Done: the card offers Download no more, and the line says the clip is lined up.
