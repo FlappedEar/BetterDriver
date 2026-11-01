@@ -1,5 +1,6 @@
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.recorder.log.IosLog
 import platform.Foundation.NSLock
 
 /**
