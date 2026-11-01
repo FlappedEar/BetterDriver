@@ -460,6 +460,8 @@ extension ReviewBridge {
         if arguments.contains("-demoNoTrack") { try? FileManager.default.removeItem(at: base.appendingPathComponent("tracks")) }
         // Phone video in the demo sessions, for Video with data (FBBD-152).
         if arguments.contains("-demoVideo") { DataVideoDemo.add(sessionsRoot: library.sessionsRoot) }
+        // All of each demo on video, for the composite laps' video (FBBD-370).
+        if arguments.contains("-demoVideoLong") { DataVideoDemo.add(sessionsRoot: library.sessionsRoot, long: true) }
         #endif
     }
 }

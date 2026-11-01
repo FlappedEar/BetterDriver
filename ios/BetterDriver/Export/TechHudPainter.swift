@@ -14,7 +14,8 @@ final class TechHudPainter: @unchecked Sendable {
     private let lock = NSLock()
     private var shaped: (size: CGSize, hud: HudGeometry)?
 
-    /// [part]: 0 for the whole video, else the lap whose video this is (FBBD-346).
+    /// [part]: 0 for the whole video, a composite lap (below 0, FBBD-370), else the lap whose video this
+    /// is (FBBD-346).
     init(session: DataVideoSession, cuts: [DataVideoCut], part: Int32) {
         self.session = session
         self.cuts = cuts
@@ -26,10 +27,14 @@ final class TechHudPainter: @unchecked Sendable {
     /// The HUD for the frame at [outputMicros] of the video on a picture of [size], in Core Image's
     /// coordinates (origin bottom left); nil outside the cuts. Only the strips with widgets are drawn.
     func overlay(at outputMicros: Int64, size: CGSize) -> CIImage? {
-        guard size.width >= 1, size.height >= 1,
-              let cut = cuts.last(where: { $0.outputStartMicros <= outputMicros }) ?? cuts.first else { return nil }
+        guard size.width >= 1, size.height >= 1, !cuts.isEmpty else { return nil }
+        let index = cuts.lastIndex(where: { $0.outputStartMicros <= outputMicros }) ?? 0
+        let cut = cuts[index]
         let sessionMicros = cut.sessionStartMicros + (outputMicros - cut.outputStartMicros)
-        let moment = session.moment(sessionMicros: sessionMicros, part: part)
+        // A composite lap's tile names the lap each piece comes from over the theoretical lap's time.
+        let moment = DataVideoSession.companion.isComposite(part: part)
+            ? session.compositeMoment(sessionMicros: sessionMicros, part: part, cut: Int32(index))
+            : session.moment(sessionMicros: sessionMicros, part: part)
         let hud = geometry(size)
         let format = UIGraphicsImageRendererFormat()
         format.scale = 1
@@ -181,9 +186,15 @@ final class TechHudPainter: @unchecked Sendable {
         panel(cg, b, s)
         let p = pad(s)
         let h = b.height
-        textTop(m.lapCaption, semibold(h * 0.1), Hud.dim, x: b.left + p, top: b.top + p * 1.2, kern: h * 0.012)
-        let numberFont = bold(h * 0.15)
-        textTop(m.lapNumber, numberFont, Hud.amber, x: b.right - p * 1.4 - width(m.lapNumber, numberFont), top: b.top + p)
+        let captionFont = semibold(h * 0.1)
+        let kern = h * 0.012
+        // A composite lap's caption, as much of it as fits (as Android's lapCaption); else "LAP" or "RUN".
+        let caption = m.captions.first { width($0, captionFont, kern) <= b.width - 2 * p } ?? m.captions.last ?? ""
+        textTop(caption, captionFont, Hud.dim, x: b.left + p, top: b.top + p * 1.2, kern: kern)
+        if !m.composite {
+            let numberFont = bold(h * 0.15)
+            textTop(m.lapNumber, numberFont, Hud.amber, x: b.right - p * 1.4 - width(m.lapNumber, numberFont), top: b.top + p)
+        }
 
         let timeFont = bold(min(h * 0.3, (b.width - 2 * p) / 4.6))
         textMiddle(m.lapTimeText, timeFont, m.lapFinished ? Hud.green : Hud.text, x: b.left + p, centerY: b.centerY + h * 0.03)

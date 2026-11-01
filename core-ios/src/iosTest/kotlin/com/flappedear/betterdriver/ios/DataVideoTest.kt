@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.SessionInfo
@@ -18,7 +19,9 @@ import kotlinx.cinterop.addressOf
 import kotlinx.cinterop.usePinned
 import platform.Foundation.NSData
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSString
 import platform.Foundation.NSTemporaryDirectory
+import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUUID
 import platform.Foundation.create
 import platform.Foundation.writeToFile
@@ -75,8 +78,12 @@ class DataVideoTest {
         assertEquals(1, session.paths.size)
         val durations = mapOf(session.paths[0] to 8_000_000L)
         val parts = session.parts(durations)
-        // No saved track: only the whole video, no laps.
-        assertEquals(1, parts.size)
+        // No saved track: the whole video, no laps; the composite laps are listed but cannot be made (FBBD-370).
+        assertEquals(3, parts.size)
+        val composites = listOf(DataVideoSession.RealisticOptimal, DataVideoSession.RawTheoretical)
+        assertEquals(composites, parts.drop(1).map { it.part })
+        assertTrue(parts.drop(1).all { it.composite && !it.enabled })
+        assertEquals("No raw theoretical best: the session has no counted laps at a saved track.", parts[2].note)
         assertEquals("Whole session", parts[0].name)
         assertEquals("8 s of video", parts[0].note)
         assertTrue(parts[0].enabled)
@@ -146,5 +153,91 @@ class DataVideoTest {
         assertTrue(finished.lapFinished)
         assertEquals("RUN 3", finished.mapLap)
         assertEquals("18 min of video", wholeVideoText(18 * 60_000_000L))
+    }
+
+    /**
+     * The composite laps on the iPhone (FBBD-370), as Android's Video tab offers them: the built-in
+     * Jastrząb demo, all of it on video, offers the realistic optimal and the raw theoretical best after
+     * the whole session; each is cut from the laps its parts come from, its tile names the lap.
+     */
+    @Test
+    fun theCompositeLapsAreOfferedAndCutAsOnAndroid() {
+        val library = ReviewLibrary(base)
+        val id = library.addDemo(
+            "$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", DemoStartUtcMillis,
+        )
+        val dir = "${library.sessionsRoot}/$id/video"
+        NSFileManager.defaultManager.createDirectoryAtPath(dir, true, null, null)
+        write("$dir/phone_all.mp4", box("ftyp", 12) + box("mdat", 100) + box("moov", 20))
+        val index = """{"version":1,"clips":[{"fileName":"phone_all.mp4","kind":"PHONE","sourceId":"phone",""" +
+            """"sessionOffsetUs":0,"alignment":{"method":"CAPTURE_CLOCK","uncertaintyUs":0},""" +
+            """"durationUs":$AllDayMicros,"status":"LOCAL"}]}"""
+        NSString.create(string = index).writeToFile("$dir/clips.json", true, NSUTF8StringEncoding, null)
+
+        val session = assertNotNull(DataVideo(library.sessionsRoot, "$base/tracks").open(id))
+        val durations = mapOf(session.paths.single() to AllDayMicros)
+        val parts = session.parts(durations)
+        assertEquals(
+            listOf(DataVideoSession.WholeVideo, DataVideoSession.RealisticOptimal, DataVideoSession.RawTheoretical),
+            parts.take(3).map { it.part },
+        )
+        val (realistic, raw) = parts[1] to parts[2]
+        assertTrue(realistic.composite && raw.composite)
+        assertFalse(parts[0].composite || parts[3].composite)
+        assertTrue(realistic.name.startsWith("Realistic optimal"), realistic.name)
+        assertTrue(raw.name.startsWith("Raw theoretical best · 1:"), raw.name)
+        assertTrue(raw.enabled, raw.note)
+        assertTrue(raw.note.startsWith("Fastest of each corner from laps "), raw.note)
+        assertTrue(DataVideoSession.isComposite(DataVideoSession.RawTheoretical))
+        assertFalse(DataVideoSession.isComposite(DataVideoSession.WholeVideo) || DataVideoSession.isComposite(3))
+        assertEquals("BetterDriver-$id-realistic-optimal.mp4", session.fileName(DataVideoSession.RealisticOptimal))
+        assertEquals("BetterDriver-$id-raw-theoretical.mp4", session.fileName(DataVideoSession.RawTheoretical))
+
+        // The pieces follow each other in the film and come from the laps the parts were driven on.
+        val cuts = session.cuts(DataVideoSession.RawTheoretical, durations, 6)
+        assertTrue(cuts.size > 1)
+        var at = 0L
+        for (c in cuts) {
+            assertEquals(at, c.outputStartMicros)
+            at += c.toMicros - c.fromMicros
+        }
+        // A composite lap's film is about one lap long (the raw theoretical best, 108.2 s), whatever the handle.
+        assertTrue(at in 100_000_000L..115_000_000L, "film $at µs")
+        val first = session.compositeMoment(cuts[0].sessionStartMicros, DataVideoSession.RawTheoretical, 0)
+        assertTrue(first.composite)
+        assertTrue(first.captions.first().startsWith("RAW THEORETICAL · LAP "), first.captions.first())
+        assertTrue(first.captions.last().startsWith("LAP "), first.captions.last())
+        assertEquals("0:00.000", first.lapTimeText)
+        assertFalse(first.lapFinished)
+        // The whole session's tile is still the plain lap's.
+        val plain = session.moment(cuts[0].sessionStartMicros, DataVideoSession.WholeVideo)
+        assertFalse(plain.composite)
+        assertEquals(listOf("LAP"), plain.captions)
+    }
+
+    @Test
+    fun aCompositeTileShowsTheTheoreticalTimeAndItsGain() {
+        val lap = OverlayLap(5, LapKind.Timed, 30_000_000, 250_000, isBest = false)
+        val frame = OverlayFrame(100.0, lap, null, null)
+        val captions = listOf("REALISTIC OPTIMAL · LAP 5 · CORNER 3", "LAP 5 · CORNER 3", "LAP 5")
+        val text = OptimalOverlayText(captions, 42_500_000, -0.31)
+        val m = HudMoment(frame, emptyList(), emptyList(), 110_000_000, false).asComposite(text)
+        assertTrue(m.composite)
+        assertEquals(text.captions, m.captions)
+        assertEquals("0:42.500", m.lapTimeText)
+        assertEquals("-0.310", m.deltaText)
+        assertTrue(m.deltaAhead)
+        assertEquals("1:50.000", m.bestText)
+        assertEquals("LAP 5", m.mapLap)
+        val behind = HudMoment(frame, emptyList(), emptyList(), null, false).asComposite(text.copy(deltaSeconds = 0.2))
+        assertEquals("+0.200", behind.deltaText)
+        assertFalse(behind.deltaAhead)
+        val none = HudMoment(frame, emptyList(), emptyList(), null, false).asComposite(text.copy(deltaSeconds = null))
+        assertNull(none.deltaText)
+    }
+
+    private companion object {
+        const val DemoStartUtcMillis = 1_790_000_000_000L
+        const val AllDayMicros = 4L * 3_600_000_000L
     }
 }

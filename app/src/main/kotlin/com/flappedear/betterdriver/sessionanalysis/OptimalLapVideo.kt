@@ -12,6 +12,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import com.flappedear.betterdriver.analysis.SessionAnalysis
 import com.flappedear.betterdriver.analysis.optimal.OptimalKind
+import com.flappedear.betterdriver.analysis.optimal.optimalOption
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.video.VideoClip
 import com.flappedear.betterdriver.recording.RecorderClient
@@ -21,7 +22,6 @@ import com.flappedear.betterdriver.videoexport.OptimalVideoSheet
 import com.flappedear.betterdriver.videoexport.RealisticOptimalLap
 import com.flappedear.betterdriver.videoexport.VideoExports
 import com.flappedear.betterdriver.videoexport.fileDurations
-import com.flappedear.betterdriver.videoexport.optimalOption
 import com.flappedear.betterdriver.videoexport.optimalVideo
 import com.flappedear.betterdriver.videoexport.videoBlocked
 import com.flappedear.betterdriver.videoexport.videoExportFileName
