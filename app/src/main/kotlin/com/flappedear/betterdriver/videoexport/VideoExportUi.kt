@@ -22,12 +22,6 @@ const val DefaultLapHandleSeconds = 6
 /** Whether [part] is one lap (or run), the only part with handles. */
 fun isSingleLap(part: VideoPart): Boolean = part != WholeVideo && optimalKindOf(part) == null
 
-/**
- * Whether [part] can be watched in the app (FBBD-392): the whole video or a lap, cut from the recorded
- * clips as the export cuts it. A composite lap is only exported: its overlay is the optimal lap's own.
- */
-fun canWatch(part: VideoPart): Boolean = optimalKindOf(part) == null
-
 /** The handle seconds a watched or exported [part] gets: [seconds] for a lap, none otherwise. */
 fun handleFor(part: VideoPart, seconds: Int): Int = if (isSingleLap(part)) seconds else 0
 

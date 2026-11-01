@@ -109,9 +109,10 @@ class VideoExports private constructor(private val context: Context) {
 
     /**
      * What watching session [id]'s video in the app needs (FBBD-341), read off the main thread: the
-     * cuts of [part] and the overlay's data, as Video with data cuts them: the whole video, or a lap
-     * (FBBD-392) with [handleSeconds] before and after it. Null when it has no video, the part has
-     * none, or it cannot be read. Read on the export's io thread, after any reading already queued there.
+     * cuts of [part] and the overlay's data, as Video with data cuts them: the whole video, a lap
+     * (FBBD-392) with [handleSeconds] before and after it, or a composite lap (FBBD-178, FBBD-402).
+     * Null when it has no video, the part has none, or it cannot be read. Read on the export's io
+     * thread, after any reading already queued there.
      */
     @Suppress("TooGenericExceptionCaught")
     fun watch(
@@ -122,7 +123,7 @@ class VideoExports private constructor(private val context: Context) {
     ) = io.execute {
         val source = try {
             prepare(id)?.let { p ->
-                val cuts = if (canWatch(part)) p.cuts(part, handleSeconds * MicrosPerSecond) else emptyList()
+                val cuts = p.cuts(part, handleSeconds * MicrosPerSecond)
                 if (cuts.isEmpty()) {
                     null
                 } else {
@@ -134,7 +135,8 @@ class VideoExports private constructor(private val context: Context) {
                         hotlap = part.takeIf(::isSingleLap),
                         channels = p.data.channels.values,
                     )
-                    WatchSource(cuts, p.video, data)
+                    // A composite lap's cuts are its plan's, in the same order (Prepared.cuts).
+                    WatchSource(cuts, p.video, data, optimal = p.optimalPlan(part))
                 }
             }
         } catch (e: Exception) {

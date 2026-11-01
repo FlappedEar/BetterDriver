@@ -12,10 +12,10 @@ your tab, compared laps, map view, corner and scroll position.
 ## The Video tab
 
 A session with video has a **Video** tab after **Car**. It lists the parts of
-[Video with data](export.md#video-with-data): the whole session, on Android the composite laps, and each lap,
+[Video with data](export.md#video-with-data): the whole session, the composite laps (realistic optimal, raw theoretical best) and each lap,
 the best lap picked to start with; a lap the cameras missed cannot be picked. For a lap, pick the
 seconds of video before and after it (5 to 8). **Watch** plays the picked part on the phone with
-the data band over it (the whole session or a lap; a composite lap is only saved). **Save video**
+the data band over it; a composite lap plays with its own band, naming the lap each part comes from. **Save video**
 renders it to an MP4 where you choose, with a bar and **Cancel video** while it renders. **Watch
 video** and **Export ▾ › Video with data** in the session's sheet still work as before.
 
