@@ -325,6 +325,8 @@ final class RecordingController: ObservableObject {
         goPros = nil
         _ = live.stop()
         AppLog.i("Recording", "stop")
+        // How long records waited for the disk; a large wait or drops point at slow storage (FBBD-350 R2).
+        AppLog.i("Recording", live.writerText)
         end()
     }
 
