@@ -8,6 +8,7 @@ import com.flappedear.betterdriver.analysis.laps.rankLaps
 import com.flappedear.betterdriver.analysis.segments.summarizeConsistency
 import com.flappedear.betterdriver.analysis.summary.EarlierSession
 import com.flappedear.betterdriver.analysis.summary.summarizeProgress
+import com.flappedear.betterdriver.analysis.summary.typicalLapHighlight
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -82,5 +83,22 @@ class SessionProgressTest {
         val quicker = summarizeProgress(laps(80.5), listOf(EarlierSession("before", laps(81.0))))
         assertTrue(quicker.newBest)
         assertEquals(-0.5, quicker.bestDeltaSeconds)
+    }
+
+    /** The summary's highlight (UI-307 A): the typical lap against the session before, to a tenth. */
+    @Test
+    fun `the typical lap against the session before in one sentence`() {
+        val earlier = listOf(EarlierSession("14:37", laps(114.6, 114.2, 115.0)))
+        val quicker = summarizeProgress(laps(112.58, 112.2, 113.0), earlier)
+        assertEquals(114.6, quicker.previousMedianSeconds!!, 1e-9)
+        assertEquals(-2.02, quicker.typicalDeltaSeconds!!, 1e-9)
+        assertEquals("Your typical lap was 2.0 s faster than at 14:37.", typicalLapHighlight(quicker))
+        val slower = summarizeProgress(laps(115.0, 115.1, 115.3), earlier)
+        assertEquals("Your typical lap was 0.5 s slower than at 14:37.", typicalLapHighlight(slower))
+        val same = summarizeProgress(laps(114.62, 114.0, 115.2), earlier)
+        assertEquals("Your typical lap was the same as at 14:37.", typicalLapHighlight(same))
+        // Fewer than three counted laps before: no typical lap there, no sentence.
+        val short = summarizeProgress(laps(112.0, 112.5, 113.0), listOf(EarlierSession("a", laps(80.0))))
+        assertNull(typicalLapHighlight(short))
     }
 }

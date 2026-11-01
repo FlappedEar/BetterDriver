@@ -27,6 +27,16 @@ val LabelFont = FontFamily(
     Font(R.font.barlow_semibold, FontWeight.SemiBold),
 )
 
+/**
+ * Text on the screens outside the car (UI-307 A, Arek 2026-10-30: "Apple Health ma całkiem fajny
+ * design"): Inter, the closest free font to Apple's. The track screen keeps Saira and Barlow.
+ */
+val InterFont = FontFamily(
+    Font(R.font.inter_regular, FontWeight.Normal),
+    Font(R.font.inter_medium, FontWeight.Medium),
+    Font(R.font.inter_semibold, FontWeight.SemiBold),
+    Font(R.font.inter_bold, FontWeight.Bold),
+)
 
 /**
  * Text size that ignores the system font scale. The track screen is a fixed
@@ -63,23 +73,31 @@ fun textStyle(size: Dp, weight: FontWeight = FontWeight.SemiBold): TextStyle = T
     fontSize = size.fixedSp(),
 )
 
-/** Material typography for the non-track screens (settings, sessions, review). */
-val BetterDriverTypography: Typography = Typography().let { base ->
+/** Material typography of the track screen: Saira for display numbers, Barlow for the rest. */
+val TrackTypography: Typography = typography(display = NumberFont, text = LabelFont)
+
+/**
+ * Material typography for the non-track screens (settings, sessions, review): Inter throughout
+ * (UI-307 A), its digits tabular so times line up.
+ */
+val BetterDriverTypography: Typography = typography(display = InterFont, text = InterFont)
+
+private fun typography(display: FontFamily, text: FontFamily): Typography = Typography().let { base ->
     base.copy(
-        displayLarge = base.displayLarge.copy(fontFamily = NumberFont),
-        displayMedium = base.displayMedium.copy(fontFamily = NumberFont),
-        displaySmall = base.displaySmall.copy(fontFamily = NumberFont),
-        headlineLarge = base.headlineLarge.copy(fontFamily = LabelFont),
-        headlineMedium = base.headlineMedium.copy(fontFamily = LabelFont),
-        headlineSmall = base.headlineSmall.copy(fontFamily = LabelFont),
-        titleLarge = base.titleLarge.copy(fontFamily = LabelFont),
-        titleMedium = base.titleMedium.copy(fontFamily = LabelFont),
-        titleSmall = base.titleSmall.copy(fontFamily = LabelFont),
-        bodyLarge = base.bodyLarge.copy(fontFamily = LabelFont),
-        bodyMedium = base.bodyMedium.copy(fontFamily = LabelFont),
-        bodySmall = base.bodySmall.copy(fontFamily = LabelFont),
-        labelLarge = base.labelLarge.copy(fontFamily = LabelFont),
-        labelMedium = base.labelMedium.copy(fontFamily = LabelFont),
-        labelSmall = base.labelSmall.copy(fontFamily = LabelFont),
+        displayLarge = base.displayLarge.copy(fontFamily = display),
+        displayMedium = base.displayMedium.copy(fontFamily = display),
+        displaySmall = base.displaySmall.copy(fontFamily = display),
+        headlineLarge = base.headlineLarge.copy(fontFamily = text),
+        headlineMedium = base.headlineMedium.copy(fontFamily = text),
+        headlineSmall = base.headlineSmall.copy(fontFamily = text),
+        titleLarge = base.titleLarge.copy(fontFamily = text),
+        titleMedium = base.titleMedium.copy(fontFamily = text),
+        titleSmall = base.titleSmall.copy(fontFamily = text),
+        bodyLarge = base.bodyLarge.copy(fontFamily = text),
+        bodyMedium = base.bodyMedium.copy(fontFamily = text),
+        bodySmall = base.bodySmall.copy(fontFamily = text),
+        labelLarge = base.labelLarge.copy(fontFamily = text),
+        labelMedium = base.labelMedium.copy(fontFamily = text),
+        labelSmall = base.labelSmall.copy(fontFamily = text),
     )
 }

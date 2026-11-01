@@ -117,7 +117,7 @@ abstract class CornerLapsLayoutTest(private val device: String) {
         }
         compose.waitForIdle()
         val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
         val nextBottom = next.positionInRoot.y + next.size.height
         check(nextBottom <= best.positionInRoot.y) { "next session above the best lap on $device" }
         compose.onAllNodes(hasText(EveryPassText))[0].performScrollTo().performClick()

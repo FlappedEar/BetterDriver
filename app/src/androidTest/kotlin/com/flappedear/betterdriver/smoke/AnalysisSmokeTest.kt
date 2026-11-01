@@ -61,13 +61,14 @@ class AnalysisSmokeTest {
         app.openSession(SmokeFixtures.VideoCar)
         // The summary: best actual lap, realistic optimal, raw theoretical best (FBBD-178) and where time goes.
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        app.waitForText("REALISTIC OPTIMAL").assertIsDisplayed()
-        app.waitForText("RAW THEORETICAL BEST").assertIsDisplayed()
+        // Under the Pinned cards and Highlights, which arrive from background loads (UI-307 A).
+        app.scrollUntilShown(hasText("REALISTIC OPTIMAL"))
+        app.scrollUntilShown(hasText("RAW THEORETICAL BEST"))
         // The composite lap times are calculated, never shown as measured: marked, with the legend (FBBD-174).
         // A lap time is drawn glyph by glyph (NumberText) and read as one content description.
         val theoretical = hasContentDescription(NotMeasuredMark, substring = true) and
             hasContentDescription(":", substring = true)
-        app.waitFor(theoretical).assertIsDisplayed()
+        app.scrollUntilShown(theoretical)
         legend().performScrollTo().assertIsDisplayed()
         // The summary lays out again as its background cards (coaching history, progress) arrive, so
         // each card is scrolled to until it is shown (FBBD-208).
@@ -190,8 +191,7 @@ class AnalysisSmokeTest {
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
         // The session's phone video covers every part of the realistic optimal, so it can be made.
         app.waitForText("Every part on video", substring = true, timeoutMs = LoadTimeoutMs).performScrollTo()
-        app.waitFor(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled())
-            .performScrollTo()
+        app.scrollUntilShown(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled())
             .performClick()
 
         // The planner: the realistic optimal and the raw theoretical best, each part with its lap; Cancel
@@ -298,10 +298,10 @@ class AnalysisSmokeTest {
         app.openSession(SmokeFixtures.HillCar)
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
         // Standing starts up the hill: 0–100 km/h and more, the best first and the others on a tap.
-        app.waitForText("ACCELERATION").performScrollTo().assertIsDisplayed()
-        app.waitForText("0–100 km/h").performScrollTo().assertIsDisplayed()
+        app.scrollUntilShown(hasText("ACCELERATION"))
+        app.scrollUntilShown(hasText("0–100 km/h"))
         app.waitForText("1/4 mile").performScrollTo()
-        app.waitForText("1 more run").performScrollTo().performClick()
+        app.scrollUntilShown(hasText("1 more run")).performClick()
         app.waitForText("Every run")
 
         for (title in listOf("Compare", "Map", "Laps", "Corners")) app.openTab(title)

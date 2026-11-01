@@ -34,7 +34,7 @@ class ShellSmokeTest {
     @Test
     fun driveAsksForAReceiver() {
         // The seeded setup has no GNSS receiver: Start is off and Drive says how to add one.
-        app.waitForText("BetterDriver").assertIsDisplayed()
+        app.waitForText("Drive").assertIsDisplayed()
         app.waitForText("START").assertIsDisplayed()
         app.waitForText("Add a GNSS receiver to start").assertIsDisplayed()
         app.waitFor(tab("Drive")).assertIsDisplayed()
