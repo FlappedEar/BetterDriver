@@ -15,6 +15,8 @@ The full notes of every release are on
 
 ## 1.28.0
 
+- Android: a new look outside the car (dark cards, amber headings, Inter font). A session's
+  Summary opens with **Pinned** and **Highlights**, then the lap times. The track screen is unchanged.
 - Video tab: the realistic optimal and the raw theoretical best can be watched, not only saved,
   on Android, iPhone and iPad. See [Lap analysis](analysis.md).
 - Tablets (Android and iPad) only review sessions: the tabs are **Sessions** and **Settings**.
