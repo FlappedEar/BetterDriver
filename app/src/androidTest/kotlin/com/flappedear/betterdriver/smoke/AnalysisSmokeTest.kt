@@ -1,9 +1,7 @@
 package com.flappedear.betterdriver.smoke
 
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
-import androidx.compose.ui.test.SemanticsNodeInteraction
 import androidx.compose.ui.test.assertIsDisplayed
-import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.hasAnyAncestor
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
@@ -14,9 +12,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.isSelected
 import androidx.compose.ui.test.isToggleable
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.flappedear.betterdriver.analysis.optimal.RealisticOptimalVideoLabel
@@ -55,7 +51,7 @@ class AnalysisSmokeTest {
         app.waitForText("Compare laps").assertIsDisplayed()
         for (car in listOf(SmokeFixtures.VideoCar, SmokeFixtures.PlainCar, SmokeFixtures.HillCar)) {
             app.onNode(hasScrollToNodeAction()).performScrollToNode(hasText(car, substring = true))
-            app.onNodeWithText(car, substring = true, useUnmergedTree = true).assertIsDisplayed()
+            SmokeNode(app, hasText(car, substring = true), useUnmergedTree = true).assertIsDisplayed()
         }
     }
 
@@ -91,7 +87,7 @@ class AnalysisSmokeTest {
         app.waitForText("Time vs best").performScrollTo().performClick()
         app.waitForText("Time vs best: where this lap", substring = true)
         app.waitForText("Touch or drag along the line", substring = true).performScrollTo()
-        app.onNode(hasText("Speed") and hasClickAction()).performScrollTo().performClick()
+        SmokeNode(app, hasText("Speed") and hasClickAction()).performScrollTo().performClick()
 
         app.openTab("Laps")
         app.waitForText("LAPS · TAP ONE TO COMPARE").assertIsDisplayed()
@@ -109,7 +105,7 @@ class AnalysisSmokeTest {
         app.waitNamed("a marked corner value") {
             app.exists(inferred, useUnmergedTree = true)
         }
-        app.onAllNodes(inferred, useUnmergedTree = true)[0].performScrollTo().assertIsDisplayed()
+        SmokeNode(app, inferred, useUnmergedTree = true).performScrollTo().assertIsDisplayed()
         legend().performScrollTo().assertIsDisplayed()
         app.back()
         app.waitForText("Compare laps")
@@ -161,11 +157,10 @@ class AnalysisSmokeTest {
         app.waitForIdle()
 
         // Tick two laps and compare them in the lap review.
-        val boxes = app.onAllNodes(isToggleable())
-        boxes[0].performScrollTo().performClick()
-        boxes[1].performScrollTo().performClick()
+        SmokeNode(app, isToggleable(), index = 0).performScrollTo().performClick()
+        SmokeNode(app, isToggleable(), index = 1).performScrollTo().performClick()
         app.waitForText("against lap", substring = true)
-        app.onNode(hasText("Compare") and hasClickAction()).assertIsEnabled()
+        app.waitFor(hasText("Compare") and hasClickAction()).assertIsEnabled()
         // The lap review runs a frame loop, so the clock is advanced by hand while it shows.
         app.withManualClock {
             app.onNode(hasText("Compare") and hasClickAction()).performClick()
@@ -320,12 +315,12 @@ class AnalysisSmokeTest {
      * The first "≈" legend line (FBBD-174), looked up unmerged: in a corner card that opens Every pass,
      * the merged tree shows one clickable node without its children's tags.
      */
-    private fun legend(): SemanticsNodeInteraction {
+    private fun legend(): SmokeNode {
         val tag = hasTestTag(ProvenanceLegendTag)
         app.waitNamed("the provenance legend") {
             app.exists(tag, useUnmergedTree = true)
         }
-        return app.onAllNodes(tag, useUnmergedTree = true)[0]
+        return SmokeNode(app, tag, useUnmergedTree = true)
     }
 
     private companion object {

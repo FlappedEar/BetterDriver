@@ -102,6 +102,10 @@ internal class WideEncoder(
     private val videoDone = CountDownLatch(1)
     private val audioDone = CountDownLatch(if (pcm == null) 0 else 1)
 
+    /** Sound was read up to [soundEndNanos], the moment [stop] was called ([soundTail]). */
+    private val soundCaughtUp = CountDownLatch(if (pcm == null) 0 else 1)
+    @Volatile private var soundEndNanos = Long.MAX_VALUE
+
     private val video: MediaCodec
     private var audio: MediaCodec? = null
 
@@ -158,6 +162,7 @@ internal class WideEncoder(
                 audio?.release()
                 audio = null
                 synchronized(lock) { audioWanted = false }
+                soundCaughtUp.countDown()
                 audioDone.countDown()
             }
         }
@@ -174,6 +179,7 @@ internal class WideEncoder(
      * last file's stats ([Closed]); null when no file was ever opened.
      */
     fun stop(): Closed? {
+        soundTail()
         ending = true
         runCatching { video.signalEndOfInputStream() }
         runCatching { pcm?.stop() }
@@ -210,6 +216,18 @@ internal class WideEncoder(
         quitThreads()
         unused?.delete()
         return closed
+    }
+
+    /**
+     * Lets the sound catch up with the stop before its stream ends (FBBD-422): the microphone hands its
+     * samples over in chunks, behind real time, and a busy phone holds them back longer. Ending the
+     * sound at once cut the last file's sound short of its video by up to a tenth of a second.
+     */
+    private fun soundTail() {
+        soundEndNanos = clockNanos()
+        if (!soundCaughtUp.await(SoundTailMs, TimeUnit.MILLISECONDS)) {
+            DebugLog.w(Tag, "sound not caught up $SoundTailMs ms after the stop: its end is short")
+        }
     }
 
     private fun quitThreads() {
@@ -444,10 +462,12 @@ internal class WideEncoder(
             val read = if (ending) null else source.read(buffer)
             runCatching {
                 if (read == null) {
+                    soundCaughtUp.countDown()
                     codec.queueInputBuffer(index, 0, 0, lastUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                 } else {
                     lastUs = read.nanos / NanosPerMicro
                     codec.queueInputBuffer(index, 0, read.bytes, lastUs, 0)
+                    if (read.nanos >= soundEndNanos) soundCaughtUp.countDown()
                 }
             }
         }
@@ -459,6 +479,7 @@ internal class WideEncoder(
         override fun onError(codec: MediaCodec, e: MediaCodec.CodecException) {
             DebugLog.w(Tag, "AAC encoder error; the rest is silent", e)
             synchronized(lock) { giveUpSound() }
+            soundCaughtUp.countDown()
             audioDone.countDown()
         }
 
@@ -613,6 +634,9 @@ internal class WideEncoder(
         const val CutMarginBytes = 200_000_000L
         /** A codec at full load ends its stream within a few frames; ten seconds is far beyond that. */
         const val DrainSeconds = 10L
+
+        /** How long [stop] waits for the sound to reach the stop: far beyond the microphone's ~80 ms buffer. */
+        const val SoundTailMs = 1_000L
 
         /** Finishing a 3.8 GB MP4 writes its whole index; allow it far longer than draining the codecs. */
         const val CloseSeconds = 60L

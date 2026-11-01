@@ -8,16 +8,18 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.view.inspector.WindowInspector
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.platform.ViewRootForTest
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsNode
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
 import androidx.compose.ui.test.ComposeTimeoutException
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.SemanticsNodeInteraction
-import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.hasScrollToNodeAction
@@ -26,11 +28,10 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
-import androidx.compose.ui.test.onFirst
-import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.unit.toSize
 import androidx.test.espresso.Espresso
 import androidx.test.ext.junit.rules.ActivityScenarioRule
 import androidx.test.platform.app.InstrumentationRegistry
@@ -220,15 +221,15 @@ fun SmokeRule.waitForText(
     text: String,
     substring: Boolean = false,
     timeoutMs: Long = StepTimeoutMs,
-): SemanticsNodeInteraction {
+): SmokeNode {
     waitNamed("\"$text\"", timeoutMs) { showsText(text, substring) }
-    return onAllNodesWithText(text, substring = substring)[0]
+    return SmokeNode(this, hasText(text, substring = substring))
 }
 
 /** Waits until a node matching [matcher] exists and returns the first. */
-fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
+fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SmokeNode {
     waitNamed(matcher.description, timeoutMs) { exists(matcher) }
-    return onAllNodes(matcher)[0]
+    return SmokeNode(this, matcher)
 }
 
 /**
@@ -236,13 +237,186 @@ fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs
  * arrive from background loads can lay out again just after a scroll and push the node off screen, so
  * the scroll is repeated until the node is displayed.
  */
-fun SmokeRule.scrollUntilShown(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SemanticsNodeInteraction {
-    waitFor(matcher, timeoutMs)
-    waitNamed("${matcher.description} on screen", timeoutMs) {
-        runCatching { onAllNodes(matcher)[0].performScrollTo().assertIsDisplayed() }.isSuccess
+fun SmokeRule.scrollUntilShown(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SmokeNode =
+    waitFor(matcher, timeoutMs).performScrollTo(timeoutMs)
+
+/**
+ * The first node matching [matcher], looked up again for every step, and every step run on the main
+ * thread (FBBD-422), as [countNodes] does for the polls.
+ *
+ * Compose's own SemanticsNodeInteraction reads the node's semantics on the test thread. A screen that
+ * still lays out as its background loads finish (the analysis: progress, coaching history, data
+ * quality cards) draws on the main thread at the same time, and both use the owner's snapshot
+ * observer: "Detected multithreaded access to SnapshotStateObserver" in a draw pass, or later a
+ * Compose node detached twice when the activity ends ("Must run runDetachLifecycle() once"). Those
+ * failed AnalysisSmokeTest in a different test on each run (1.28.0 release PR #495).
+ *
+ * Each step also waits, up to its timeout, until it holds: a card that arrives above the node after
+ * a scroll moves it off screen again, and the step scrolls again rather than failing.
+ */
+class SmokeNode(
+    private val rule: SmokeRule,
+    private val matcher: SemanticsMatcher,
+    private val useUnmergedTree: Boolean = false,
+    /** Which of the matching nodes, in the order Compose lists them: the first by default. */
+    private val index: Int = 0,
+) {
+    private val what get() = if (index == 0) matcher.description else "${matcher.description} [$index]"
+
+    /** Scrolls every scrolling container around the node until it is in view, or as far as they go. */
+    fun performScrollTo(timeoutMs: Long = StepTimeoutMs): SmokeNode {
+        var last: Offset? = null
+        rule.waitNamed("$what scrolled into view", timeoutMs) {
+            val step = rule.scrollStep(matcher, useUnmergedTree, index)
+            // In view, or shown and the last scroll moved it no further (the end of the list).
+            val done = step.inView || (step.displayed && step.position != null && step.position == last)
+            last = step.position
+            done
+        }
+        return this
     }
-    return onAllNodes(matcher)[0]
+
+    /** Waits until the node is placed and at least part of it is on screen. */
+    fun assertIsDisplayed(timeoutMs: Long = StepTimeoutMs): SmokeNode =
+        waitUntilNode("$what displayed", timeoutMs) { node, view -> node.isDisplayedIn(view) }
+
+    fun assertIsEnabled(): SmokeNode =
+        waitUntilNode("$what enabled") { node, _ -> SemanticsProperties.Disabled !in node.config }
+
+    fun assertIsNotEnabled(): SmokeNode =
+        waitUntilNode("$what not enabled") { node, _ -> SemanticsProperties.Disabled in node.config }
+
+    fun assertIsSelected(): SmokeNode =
+        waitUntilNode("$what selected") { node, _ -> node.config.getOrNull(SemanticsProperties.Selected) == true }
+
+    /**
+     * Clicks the node through the click action of the node or of the nearest one around it that takes
+     * clicks, as a tap on it would reach, found and clicked in one go on the main thread. A disabled
+     * node is not clicked, as a tap does nothing there. A node with no click action anywhere around it
+     * is tapped by Compose's performClick.
+     */
+    fun performClick(): SmokeNode {
+        rule.waitForIdle()
+        var outcome = Click.NoNode
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            val found = findNode(matcher, useUnmergedTree, index) ?: return@runOnMainSync
+            val target = generateSequence(found.first) { it.parent }
+                .firstOrNull { SemanticsActions.OnClick in it.config }
+            outcome = when {
+                target == null -> Click.NoAction
+                SemanticsProperties.Disabled in target.config -> Click.Done
+                else -> {
+                    target.config.getOrNull(SemanticsActions.OnClick)?.action?.invoke()
+                    Click.Done
+                }
+            }
+        }
+        when (outcome) {
+            Click.NoNode -> throw AssertionError("no node matches $what")
+            Click.NoAction -> rule.onAllNodes(matcher, useUnmergedTree)[index].performClick()
+            Click.Done -> Unit
+        }
+        rule.waitForIdle()
+        return this
+    }
+
+    /** Scrolls this list to its item matching [item] (Compose's own: a list, by its scroll-to-index action). */
+    fun performScrollToNode(item: SemanticsMatcher): SmokeNode {
+        rule.onAllNodes(matcher, useUnmergedTree)[index].performScrollToNode(item)
+        return this
+    }
+
+    /** Types [text] in place of the field's text (Compose's own: a text field, on a screen at rest). */
+    fun performTextReplacement(text: String): SmokeNode {
+        rule.onAllNodes(matcher, useUnmergedTree)[index].performTextReplacement(text)
+        return this
+    }
+
+    private fun waitUntilNode(
+        what: String,
+        timeoutMs: Long = StepTimeoutMs,
+        holds: (SemanticsNode, View) -> Boolean,
+    ): SmokeNode {
+        rule.waitNamed(what, timeoutMs) {
+            rule.waitForIdle()
+            var ok = false
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                ok = findNode(matcher, useUnmergedTree, index)?.let { (node, view) -> holds(node, view) } == true
+            }
+            ok
+        }
+        return this
+    }
+
+    private enum class Click { NoNode, NoAction, Done }
 }
+
+/** One step of [SmokeNode.performScrollTo]: whether the node was in view, shown at all, and where it was. */
+private class ScrollStep(val inView: Boolean, val displayed: Boolean, val position: Offset?)
+
+/**
+ * Looks the node up on the main thread: when a scrolling container around it does not show all of it,
+ * scrolls the innermost such container by what it lacks, as Compose's performScrollTo does.
+ */
+private fun SmokeRule.scrollStep(matcher: SemanticsMatcher, useUnmergedTree: Boolean, index: Int): ScrollStep {
+    waitForIdle()
+    var step = ScrollStep(inView = false, displayed = false, position = null)
+    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+        val (node, view) = findNode(matcher, useUnmergedTree, index) ?: return@runOnMainSync
+        val displayed = node.isDisplayedIn(view)
+        val target = Rect(node.positionInRoot, node.size.toSize())
+        val scroll = generateSequence(node.parent) { it.parent }
+            .filter { SemanticsActions.ScrollBy in it.config }
+            .map { container ->
+                val viewport = container.boundsInRoot
+                container to Offset(
+                    lacking(target.left, target.right, viewport.left, viewport.right),
+                    lacking(target.top, target.bottom, viewport.top, viewport.bottom),
+                )
+            }
+            .firstOrNull { (_, by) -> by != Offset.Zero }
+        scroll?.let { (container, by) -> container.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(by.x, by.y) }
+        step = ScrollStep(inView = scroll == null && displayed, displayed = displayed, position = node.positionInRoot)
+    }
+    return step
+}
+
+/** How far to scroll so [start]..[end] shows in [viewStart]..[viewEnd]; its start first when it is larger. */
+private fun lacking(start: Float, end: Float, viewStart: Float, viewEnd: Float): Float = when {
+    start < viewStart && end > viewEnd -> 0f
+    end > viewEnd -> minOf(start - viewStart, end - viewEnd)
+    start < viewStart -> maxOf(start - viewStart, end - viewEnd)
+    else -> 0f
+}
+
+/** Whether the node is placed and at least part of it is on screen, as Compose's assertIsDisplayed checks. Main thread. */
+private fun SemanticsNode.isDisplayedIn(view: View): Boolean {
+    if (!layoutInfo.isPlaced || !view.isShown) return false
+    val bounds = boundsInRoot
+    if (bounds.width <= 0f || bounds.height <= 0f) return false
+    val at = IntArray(2)
+    view.getLocationInWindow(at)
+    val visible = android.graphics.Rect()
+    if (!view.getGlobalVisibleRect(visible)) return false
+    return visible.intersects(
+        (bounds.left + at[0]).toInt(),
+        (bounds.top + at[1]).toInt(),
+        (bounds.right + at[0]).toInt(),
+        (bounds.bottom + at[1]).toInt(),
+    )
+}
+
+/** The node [index] of those matching [matcher] on screen now, with the view of its Compose root. Main thread. */
+private fun findNode(matcher: SemanticsMatcher, useUnmergedTree: Boolean, index: Int): Pair<SemanticsNode, View>? =
+    composeRoots()
+        .asSequence()
+        .flatMap { root ->
+            root.semanticsOwner.getAllSemanticsNodes(mergingEnabled = !useUnmergedTree)
+                .asSequence()
+                .filter(matcher::matches)
+                .map { it to root.view }
+        }
+        .elementAtOrNull(index)
 
 /** Waits until no node shows [text]. */
 fun SmokeRule.waitUntilGone(text: String, substring: Boolean = false, timeoutMs: Long = StepTimeoutMs) {
@@ -282,7 +456,7 @@ fun SmokeRule.openSettingsTopic(title: String) {
 /** Opens the ⋮ sheet of the newest session in Sessions (UI-139 C), unless it is open already. */
 fun SmokeRule.openNewestSessionActions() {
     if (showsText("Export ▾")) return
-    onAllNodes(hasContentDescription(ActionsLabel)).onFirst().performClick()
+    SmokeNode(this, hasContentDescription(ActionsLabel)).performClick()
     waitForText("Export ▾")
 }
 
@@ -296,7 +470,7 @@ fun SmokeRule.openSessions() {
 fun SmokeRule.openSession(car: String) {
     onNode(hasScrollToNodeAction()).performScrollToNode(hasText(car, substring = true))
     // The card's detail line; a tap there opens the card.
-    onNodeWithText(car, substring = true, useUnmergedTree = true).performClick()
+    SmokeNode(this, hasText(car, substring = true), useUnmergedTree = true).performClick()
     waitFor(hasContentDescription(SessionMenu))
 }
 
@@ -306,7 +480,7 @@ fun SmokeRule.openSession(car: String) {
  */
 fun SmokeRule.openSessionRow(id: String) {
     onNode(hasScrollToNodeAction()).performScrollToNode(hasTestTag(sessionRowTag(id)))
-    onNode(hasTestTag(sessionRowTag(id))).performClick()
+    SmokeNode(this, hasTestTag(sessionRowTag(id))).performClick()
     waitFor(hasContentDescription(SessionMenu))
 }
 
