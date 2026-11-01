@@ -238,7 +238,7 @@ fun SmokeRule.waitFor(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs
  * the scroll is repeated until the node is displayed.
  */
 fun SmokeRule.scrollUntilShown(matcher: SemanticsMatcher, timeoutMs: Long = StepTimeoutMs): SmokeNode =
-    waitFor(matcher, timeoutMs).performScrollTo(timeoutMs)
+    waitFor(matcher, timeoutMs).performScrollTo(timeoutMs).assertIsDisplayed(timeoutMs)
 
 /**
  * The first node matching [matcher], looked up again for every step, and every step run on the main
@@ -263,22 +263,38 @@ class SmokeNode(
 ) {
     private val what get() = if (index == 0) matcher.description else "${matcher.description} [$index]"
 
-    /** Scrolls every scrolling container around the node until it is in view, or as far as they go. */
+    /** Set by [performScrollTo]: [assertIsDisplayed] then scrolls again while it waits. */
+    private var scrolled = false
+
+    /**
+     * Scrolls every scrolling container around the node until none lacks any of it, or as far as they
+     * go. As Compose's performScrollTo, this does not ask the node to be on screen: a button in a
+     * bottom sheet that is not fully up is in its own scrolling column's view but below the screen.
+     */
     fun performScrollTo(timeoutMs: Long = StepTimeoutMs): SmokeNode {
+        scrolled = true
         var last: Offset? = null
         rule.waitNamed("$what scrolled into view", timeoutMs) {
             val step = rule.scrollStep(matcher, useUnmergedTree, index)
-            // In view, or shown and the last scroll moved it no further (the end of the list).
-            val done = step.inView || (step.displayed && step.position != null && step.position == last)
+            // Nothing left to scroll, or the last scroll moved it no further (the end of the list).
+            val done = step.inView || (step.position != null && step.position == last)
             last = step.position
             done
         }
         return this
     }
 
-    /** Waits until the node is placed and at least part of it is on screen. */
-    fun assertIsDisplayed(timeoutMs: Long = StepTimeoutMs): SmokeNode =
-        waitUntilNode("$what displayed", timeoutMs) { node, view -> node.isDisplayedIn(view) }
+    /**
+     * Waits until the node is placed and at least part of it is on screen. After [performScrollTo],
+     * each try scrolls again first: a card that arrived above the node may have pushed it off screen.
+     */
+    fun assertIsDisplayed(timeoutMs: Long = StepTimeoutMs): SmokeNode {
+        rule.waitNamed("$what displayed", timeoutMs) {
+            val step = if (scrolled) rule.scrollStep(matcher, useUnmergedTree, index) else null
+            step?.displayed ?: holdsNow { node, view -> node.isDisplayedIn(view) }
+        }
+        return this
+    }
 
     fun assertIsEnabled(): SmokeNode =
         waitUntilNode("$what enabled") { node, _ -> SemanticsProperties.Disabled !in node.config }
@@ -337,21 +353,27 @@ class SmokeNode(
         timeoutMs: Long = StepTimeoutMs,
         holds: (SemanticsNode, View) -> Boolean,
     ): SmokeNode {
-        rule.waitNamed(what, timeoutMs) {
-            rule.waitForIdle()
-            var ok = false
-            InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                ok = findNode(matcher, useUnmergedTree, index)?.let { (node, view) -> holds(node, view) } == true
-            }
-            ok
-        }
+        rule.waitNamed(what, timeoutMs) { holdsNow(holds) }
         return this
+    }
+
+    /** Whether the node is there and [holds] for it now, looked at on the main thread. */
+    private fun holdsNow(holds: (SemanticsNode, View) -> Boolean): Boolean {
+        rule.waitForIdle()
+        var ok = false
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            ok = findNode(matcher, useUnmergedTree, index)?.let { (node, view) -> holds(node, view) } == true
+        }
+        return ok
     }
 
     private enum class Click { NoNode, NoAction, Done }
 }
 
-/** One step of [SmokeNode.performScrollTo]: whether the node was in view, shown at all, and where it was. */
+/**
+ * One step of [SmokeNode.performScrollTo]: whether no container around the node lacked any of it,
+ * whether it was then on screen, and where it was.
+ */
 private class ScrollStep(val inView: Boolean, val displayed: Boolean, val position: Offset?)
 
 /**
@@ -378,7 +400,7 @@ private fun SmokeRule.scrollStep(matcher: SemanticsMatcher, useUnmergedTree: Boo
         scroll?.let { (container, by) ->
             container.config.getOrNull(SemanticsActions.ScrollBy)?.action?.invoke(by.x, by.y)
         }
-        step = ScrollStep(inView = scroll == null && displayed, displayed = displayed, position = node.positionInRoot)
+        step = ScrollStep(inView = scroll == null, displayed = displayed, position = node.positionInRoot)
     }
     return step
 }
