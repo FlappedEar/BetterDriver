@@ -17,6 +17,7 @@ import com.flappedear.betterdriver.coach.CueSoundStart
 import com.flappedear.betterdriver.coach.PlannedTargets
 import com.flappedear.betterdriver.coach.SessionLaps
 import com.flappedear.betterdriver.coach.Verbosity
+import com.flappedear.betterdriver.coach.VoiceMode
 import com.flappedear.betterdriver.coach.buildReference
 import com.flappedear.betterdriver.coach.coachFixes
 import com.flappedear.betterdriver.coach.tracedLaps
@@ -47,8 +48,11 @@ interface CoachSpeaker {
 
 /** What became of one phrase; called from any thread. */
 interface CoachSpeech {
-    /** Its sound started, to [route] ("headset" or "speaker") on output type [device]. */
-    fun started(route: String, device: String)
+    /**
+     * Its sound started, to [route] ("headset" or "speaker") on output type [device], said [clip]: from
+     * pre-rendered clips (FBBD-48), else live.
+     */
+    fun started(route: String, device: String, clip: Boolean)
 
     /** Its sound ended: "done", "stopped" (cut off) or "error". */
     fun ended(end: String)
@@ -115,10 +119,20 @@ class LiveCoach internal constructor(
     /** Whether the coach speaks in this session: off in the settings, the line is left out (UI-142 B). */
     val on: Boolean = settings.verbosity != Verbosity.Off
 
+    /**
+     * The path most cues take, which they are timed for, as on Android: "clip" when they are said from
+     * pre-rendered clips (FBBD-48), else "live".
+     */
+    private val path = if (settings.voice == VoiceMode.PreRendered) ClipPath else LivePath
+
     init {
         queued {
-            if (outputDelayMillis > 0) run.delays.measured(Path, output, clamped(outputDelayMillis))
-            run.begin(Path, output)
+            // iOS reports one delay for the output, whichever way the sound is made: both paths have it.
+            if (outputDelayMillis > 0) {
+                run.delays.measured(LivePath, output, clamped(outputDelayMillis))
+                if (path == ClipPath) run.delays.measured(ClipPath, output, clamped(outputDelayMillis))
+            }
+            run.begin(path, output)
         }
     }
 
@@ -142,8 +156,13 @@ class LiveCoach internal constructor(
      * the one set.
      */
     fun audioDelay(millis: Int, measured: Boolean, output: String) = queued {
-        if (measured) run.delays.measured(Path, output, clamped(millis)) else run.delays.forget(output)
-        run.outputChanged(Path, output)
+        if (measured) {
+            run.delays.measured(LivePath, output, clamped(millis))
+            if (path == ClipPath) run.delays.measured(ClipPath, output, clamped(millis))
+        } else {
+            run.delays.forget(output)
+        }
+        run.outputChanged(path, output)
     }
 
     private fun clamped(millis: Int) = millis.coerceIn(0, CoachSettings.MaxAudioDelayMillis)
@@ -166,10 +185,11 @@ class LiveCoach internal constructor(
 
     /** One phrase's sound, on the session clock; its start is logged with Android's Voice line. */
     private inner class Speech(private val sound: CueSound, private val askedMicros: Long) : CoachSpeech {
-        override fun started(route: String, device: String) {
+        override fun started(route: String, device: String, clip: Boolean) {
             val at = now()
-            sound.started(CueSoundStart(at, Path, route, device))
-            logInfo(VoiceTag, "$Path voice start ${(at - askedMicros) / MicrosPerMilli} ms")
+            sound.started(CueSoundStart(at, if (clip) ClipPath else LivePath, route, device))
+            val said = if (clip) "pre-rendered" else LivePath
+            logInfo(VoiceTag, "$said voice start ${(at - askedMicros) / MicrosPerMilli} ms")
         }
 
         override fun ended(end: String) = sound.ended(now(), end)
@@ -179,8 +199,9 @@ class LiveCoach internal constructor(
     internal fun awaitIdle() = dispatch_sync(queue) {}
 
     private companion object {
-        /** iOS says every cue with live text-to-speech. */
-        const val Path = "live"
+        /** The paths a cue is said on, as Android names them (FBBD-48). */
+        const val LivePath = "live"
+        const val ClipPath = "clip"
 
         /** Android's tag for the voice's lines. */
         const val VoiceTag = "Voice"
