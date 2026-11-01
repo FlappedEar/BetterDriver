@@ -114,8 +114,7 @@ class LiveCoachTest {
 
     @Test
     fun aNewOutputMidSessionRetimesTheCuesAndEachCueIsInTheDebugLog() {
-        val logged = mutableListOf<String>()
-        IosLog.sink = { tag, message -> logged += "$tag: $message" }
+        val log = LogLines().capture()
         try {
             val info = SessionInfo(gnss.startUtcMillis, channels = GnssChannels.ALL)
             val session = LiveSession.start(sessions, tracks, CircuitList.Empty, info, receiverHasG = false)
@@ -137,6 +136,7 @@ class LiveCoachTest {
             session.awaitCoach()
             session.awaitCoach()
             session.stop()
+            val logged = log.all()
 
             val voice = SessionStore(sessions).read(session.id).events.filter { it.kind == CoachEvents.VOICE }
             assertTrue(voice.size >= 2, voice.joinToString { it.text })
@@ -156,13 +156,13 @@ class LiveCoachTest {
 
     @Test
     fun preRenderedCuesAreTimedAndLoggedOnTheClipPath() {
-        val logged = mutableListOf<String>()
-        IosLog.sink = { tag, message -> logged += "$tag: $message" }
+        val log = LogLines().capture()
         try {
             val speaker = Speaker().apply { clip = true }
             val settings = coachSettings(polish = false, audioDelayMillis = 120).copy(voice = VoiceMode.PreRendered)
             val session = coachedSession(settings, speaker)
             session.stop()
+            val logged = log.all()
             val voice = SessionStore(sessions).read(session.id).events.filter { it.kind == CoachEvents.VOICE }
             assertTrue(voice.isNotEmpty())
             // As on Android (FBBD-48): said from clips, timed for the clip path's delay.
