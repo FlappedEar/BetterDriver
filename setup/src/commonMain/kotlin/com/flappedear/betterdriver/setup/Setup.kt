@@ -465,6 +465,15 @@ data class ActiveSession(
     val manualCameras: List<Equipment> get() = cameras.filterNot { it.model.controlledByApp }
 
     fun uses(model: EquipmentModel): Boolean = gnss?.model == model || cameras.any { it.model == model }
+
+    /** The listed Bluetooth OBD-II adapters the session tries, in order ([SessionEquipment], FBBD-349). */
+    val obdBluetooth: List<Equipment> get() = SessionEquipment.obdBluetooth(carData)
+
+    /** The listed Wi-Fi OBD-II adapters, tried after the Bluetooth ones ([SessionEquipment]). */
+    val obdWifi: List<WifiObd> get() = SessionEquipment.obdWifi(carData)
+
+    /** The heart-rate strap the session records, null with none listed ([SessionEquipment]). */
+    val heartRateStrap: Equipment? get() = SessionEquipment.heartRateStrap(sensors)
 }
 
 /**

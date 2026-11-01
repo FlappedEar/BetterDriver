@@ -4,30 +4,12 @@ import BetterDriverCore
 private let heartRateService = CBUUID(string: HeartRateIds.shared.SERVICE)
 private let heartRateMeasurement = CBUUID(string: HeartRateIds.shared.MEASUREMENT)
 
-/// The strap the app records from, remembered as RaceBox's last receiver is: the Android app records
-/// the strap listed in its equipment, the iPhone the first one it found (FBBD-333).
-enum RememberedStrap {
-    private static let idKey = "heartRateStrapId"
-    private static let nameKey = "heartRateStrapName"
-
-    static var id: UUID? {
-        UserDefaults.standard.string(forKey: idKey).flatMap(UUID.init(uuidString:))
-    }
-
-    static var name: String { UserDefaults.standard.string(forKey: nameKey) ?? "" }
-
-    static func remember(id: UUID, name: String) {
-        UserDefaults.standard.set(id.uuidString, forKey: idKey)
-        UserDefaults.standard.set(name, forKey: nameKey)
-    }
-}
-
 /// A Bluetooth heart-rate strap in a recording on iOS (FBBD-333), the Android app's HeartRateSource:
 /// connects to the strap, turns on Heart Rate Measurement notifications and hands each one to the
 /// shared HeartRateSession, which records the heart rate, RR intervals and energy and logs connects
 /// and drops exactly as on Android. A strap with no plausible heart rate in the first 45 s of the
-/// session is off until it ends (FBBD-285). With no strap remembered yet, the first one advertising
-/// the Heart Rate Service in that time is used and remembered. The link's life cycle is the shared
+/// session is off until it ends (FBBD-285). Only the strap listed in Settings › Equipment records, by
+/// the shared rule Android uses (FBBD-349); no other strap nearby is used. The link's life cycle is the shared
 /// NotifyLinkCore, the one Android's GattNotifyLink runs (FBBD-358): the same retries, setup timeouts,
 /// quiet wait after 6 setups without data, 5 s silence restart and "Link" log lines. This class only
 /// turns CoreBluetooth's callbacks into the core's steps. All CoreBluetooth work runs on one serial queue.
@@ -48,12 +30,11 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
     private var notifications = 0
     private var rateSince = Date()
 
-    /// The strap listed in Settings › Equipment (FBBD-338), recorded as Android records it; without one
-    /// the strap found before, else the first one found.
-    private let listed: (id: UUID, name: String)?
+    /// The strap listed in Settings › Equipment (FBBD-338, FBBD-349), recorded as Android records it.
+    private let listed: (id: UUID, name: String)
 
-    /// [sink] is the recording; [listed] the strap in Settings, if any.
-    init(sink: SampleSink, listed: (id: UUID, name: String)? = nil) {
+    /// [sink] is the recording; [listed] the strap in Settings.
+    init(sink: SampleSink, listed: (id: UUID, name: String)) {
         self.sink = sink
         self.listed = listed
         super.init()
@@ -63,15 +44,9 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         queue.async {
             guard !self.running else { return }
             self.running = true
-            if let strap = self.listed {
-                AppLog.i("HeartRate", "strap \(strap.name) \(strap.id.uuidString) from Settings")
-                self.begin(id: strap.id, name: strap.name)
-            } else if let id = RememberedStrap.id {
-                AppLog.i("HeartRate", "strap \(RememberedStrap.name) \(id.uuidString) remembered")
-                self.begin(id: id, name: RememberedStrap.name)
-            } else {
-                AppLog.i("HeartRate", "no strap listed: the first one found in 45 s is used")
-            }
+            let strap = self.listed
+            AppLog.i("HeartRate", "strap \(strap.name) \(strap.id.uuidString) from Settings")
+            self.begin(id: strap.id, name: strap.name)
             self.central = CBCentralManager(delegate: self, queue: self.queue)
             // Once a second, as Android's watchdog: the core's rate, silence and setup checks, and the
             // 45 s start window (a strap that never answers sends no state changes on iOS).
@@ -216,14 +191,8 @@ final class HeartRateStrapLink: NSObject, CBCentralManagerDelegate, CBPeripheral
         rssi RSSI: NSNumber
     ) {
         guard running else { return }
-        if let id = deviceId {
-            guard peripheral.identifier == id else { return }
-        } else {
-            let name = advertisementData[CBAdvertisementDataLocalNameKey] as? String ?? peripheral.name ?? ""
-            AppLog.i("HeartRate", "found \(name) \(peripheral.identifier.uuidString), remembered")
-            RememberedStrap.remember(id: peripheral.identifier, name: name)
-            begin(id: peripheral.identifier, name: name)
-        }
+        // Only the listed strap; another one nearby is never used (FBBD-349).
+        guard peripheral.identifier == deviceId else { return }
         central.stopScan()
         self.peripheral = peripheral
         core?.start()

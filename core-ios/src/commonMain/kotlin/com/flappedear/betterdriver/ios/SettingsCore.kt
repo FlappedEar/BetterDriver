@@ -16,6 +16,7 @@ import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 import com.flappedear.betterdriver.setup.SetupFormatException
 import com.flappedear.betterdriver.setup.SetupJson
+import com.flappedear.betterdriver.setup.WifiObdAddress
 
 /**
  * The iPhone's Settings (FBBD-338) on the Android model: the same setup.json ([Setup], FBBD-83) and
@@ -46,15 +47,30 @@ object SettingsCore {
     // Equipment and cars.
 
     /**
-     * What Add equipment offers without a scan, in Android's order: the phone camera and the phone's
-     * GPS once, cameras run by hand (their files added after the session, FBBD-343) any number of times.
+     * What Add equipment offers without a scan, in Android's order: the phone camera, the phone's GPS
+     * and the Wi-Fi OBD-II adapter once, cameras run by hand (their files added after the session,
+     * FBBD-343) any number of times.
      */
     fun withoutBluetooth(setup: Setup): List<EquipmentModel> = buildList {
         if (setup.equipment.none { it.model == EquipmentModel.PHONE_CAMERA }) add(EquipmentModel.PHONE_CAMERA)
         add(EquipmentModel.GOPRO_FILES)
         add(EquipmentModel.CAMERA_FILES)
         if (setup.equipment.none { it.model == EquipmentModel.PHONE_GPS }) add(EquipmentModel.PHONE_GPS)
+        if (setup.equipment.none { it.model == EquipmentModel.OBD_WIFI }) add(EquipmentModel.OBD_WIFI)
     }
+
+    /**
+     * Before FBBD-349 the iPhone tried a Wi-Fi OBD-II adapter at [WifiObdAddress] in every session
+     * without it being listed. Now only listed adapters are used, as on Android, so a setup saved
+     * before gets that adapter listed once and keeps reading the car as before (Android's version 3
+     * upgrade did the same); one already listed is kept as it is. Arek can remove it.
+     */
+    fun withEarlierWifiObd(setup: Setup, id: String): Setup =
+        if (setup.equipment.any { it.model == EquipmentModel.OBD_WIFI }) {
+            setup
+        } else {
+            setup.addEquipment(EquipmentModel.OBD_WIFI, EquipmentModel.OBD_WIFI.label, WifiObdAddress, newId = { id })
+        }
 
     /**
      * What Add equipment offers under "Try the app" (UI-79 B), as on Android: the Demo track once
@@ -66,13 +82,18 @@ object SettingsCore {
     /** The model named [name] (its Kotlin name, "RACEBOX"), or null. */
     fun model(name: String): EquipmentModel? = EquipmentModel.entries.firstOrNull { it.name == name }
 
-    /** Adds an item; one that needs an address and has none changes nothing. */
-    fun addEquipment(setup: Setup, model: EquipmentModel, name: String, address: String?, id: String): Setup =
-        if (model.needsAddress && address.isNullOrBlank()) {
+    /**
+     * Adds an item; one that needs an address and has none changes nothing. The Wi-Fi OBD-II adapter
+     * without one is at [WifiObdAddress], as Android adds it.
+     */
+    fun addEquipment(setup: Setup, model: EquipmentModel, name: String, address: String?, id: String): Setup {
+        val at = if (model == EquipmentModel.OBD_WIFI && address.isNullOrBlank()) WifiObdAddress else address
+        return if (model.needsAddress && at.isNullOrBlank()) {
             setup
         } else {
-            setup.addEquipment(model, name, address, newId = { id })
+            setup.addEquipment(model, name, at, newId = { id })
         }
+    }
 
     /** Adds a GoPro started by hand, named after its generation as on Android ("GoPro HERO8 Black"). */
     fun addGoProFiles(setup: Setup, goPro: GoProModel, id: String): Setup {

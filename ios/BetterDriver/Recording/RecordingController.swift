@@ -210,20 +210,16 @@ final class RecordingController: ObservableObject {
         }
         // The link can end the session as it starts (phone GPS without location access).
         guard session != nil else { return }
-        let active = SettingsModel.shared.setup.active()
-        // OBD-II from the Bluetooth LE adapters in Settings (FBBD-333, FBBD-338), with none listed one
-        // nearby, and the Wi-Fi adapter. Not with the Demo track's made-up car, as on Android.
-        if receiver != .demoTrack {
-            let car = ObdLink(
-                sink: live, listed: Self.listed(active.carData, ModelName.obdBluetooth),
-                setup: SettingsModel.shared.setup, tiles: tileIds + secondTileIds
-            )
+        let active = setup.active()
+        // OBD-II from the adapters listed in Settings › Equipment only, Bluetooth LE then Wi-Fi, by the
+        // rule Android uses (FBBD-349): none listed, none read. Not with the Demo track's made-up car.
+        if receiver != .demoTrack, ObdLink.anyListed(setup) {
+            let car = ObdLink(sink: live, setup: setup, tiles: tileIds + secondTileIds)
             obd = car
             car.start()
         }
-        // The heart-rate strap records alongside whichever receiver, as on Android (FBBD-333); only a
-        // listed one.
-        if let listed = Self.listed(active.sensors, ModelName.heartRate).first {
+        // The listed heart-rate strap records alongside whichever receiver, as on Android (FBBD-349).
+        if let listed = Self.strap(active) {
             let strap = HeartRateStrapLink(sink: live, listed: listed)
             heartRate = strap
             strap.start()
@@ -246,15 +242,13 @@ final class RecordingController: ObservableObject {
         }
     }
 
-    /// Settings items of [model] that iOS reaches by their Bluetooth identifier.
     /// The session's OBD-II connection as the car data page shows it (FBBD-261), nil while none records.
     func obdStatus() -> ObdStatus? { obd?.status() }
 
-    static func listed(_ items: [Equipment], _ model: String) -> [(id: UUID, name: String)] {
-        items.compactMap { item in
-            guard item.modelName == model, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
-            return (id, item.name)
-        }
+    /// The strap the session records: the shared rule's (FBBD-349), by the iPhone's identifier for it.
+    static func strap(_ active: ActiveSession) -> (id: UUID, name: String)? {
+        guard let item = active.heartRateStrap, let id = item.address.flatMap(UUID.init(uuidString:)) else { return nil }
+        return (id, item.name)
     }
 
     /// The live coach (FBBD-333) as Settings › Spoken coach has it (FBBD-338), unless it is off; its cues

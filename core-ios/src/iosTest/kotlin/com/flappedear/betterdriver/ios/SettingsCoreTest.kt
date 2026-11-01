@@ -5,8 +5,10 @@ import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.setup.EquipmentModel
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertSame
+import kotlin.test.assertTrue
 
 /** What the iPhone's Settings calls (FBBD-338). */
 class SettingsCoreTest {
@@ -81,5 +83,23 @@ class SettingsCoreTest {
         val setup = SettingsCore.decodeSetup(v1)
         assertEquals("a", setup?.active()?.gnss?.id)
         assertEquals(listOf("d"), setup?.session?.cameraIds)
+    }
+
+    @Test
+    fun theWifiObdAdapterIsAddedOnceAtItsUsualAddress() {
+        val fresh = SettingsCore.freshSetup("cam")
+        assertTrue(EquipmentModel.OBD_WIFI in SettingsCore.withoutBluetooth(fresh))
+        val added = SettingsCore.addEquipment(fresh, EquipmentModel.OBD_WIFI, "Wi-Fi OBD-II adapter", null, "wifi")
+        assertEquals("192.168.0.10:35000", added.equipment("wifi")?.address)
+        assertEquals(listOf("wifi"), added.active().obdWifi.map { it.adapter.id })
+        assertFalse(EquipmentModel.OBD_WIFI in SettingsCore.withoutBluetooth(added))
+    }
+
+    @Test
+    fun anEarlierSetupGetsTheWifiAdapterOnceAndRemovedItIsNotUsed() {
+        val earlier = SettingsCore.withEarlierWifiObd(SettingsCore.freshSetup("cam"), "wifi")
+        assertEquals(1, earlier.active().obdWifi.size)
+        assertSame(earlier, SettingsCore.withEarlierWifiObd(earlier, "again"))
+        assertTrue(earlier.removeEquipment("wifi").active().obdWifi.isEmpty())
     }
 }

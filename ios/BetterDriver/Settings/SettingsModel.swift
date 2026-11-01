@@ -27,7 +27,8 @@ final class SettingsModel: ObservableObject {
     ) {
         self.base = base
         let hadCoach = FileManager.default.fileExists(atPath: SettingsModel.coachFile(base).path)
-        setup = SettingsModel.loadSetup(base: base)
+        let saved = SettingsModel.setupStore(base).load()
+        setup = saved ?? SettingsCore.shared.freshSetup(id: SettingsModel.newId())
         coach = SettingsModel.coachStore(base).read()
         fullBrightness = defaults.object(forKey: Keys.brightness) as? Bool ?? true
         gnssSound = defaults.bool(forKey: Keys.gnssSound)
@@ -69,6 +70,12 @@ final class SettingsModel: ObservableObject {
         if !defaults.bool(forKey: Keys.earlierChoicesMoved) {
             update { SettingsModel.earlierChoices($0, defaults) }
             defaults.set(true, forKey: Keys.earlierChoicesMoved)
+        }
+        // Once: a setup saved before FBBD-349, when every session also tried the Wi-Fi adapter unlisted,
+        // gets it listed, so car data keeps coming as before; removed in Equipment it is not used again.
+        if !defaults.bool(forKey: Keys.wifiObdListed) {
+            if saved != nil { update { SettingsCore.shared.withEarlierWifiObd(setup: $0, id: SettingsModel.newId()) } }
+            defaults.set(true, forKey: Keys.wifiObdListed)
         }
         if !hadCoach { updateCoach { SettingsModel.earlierLanguage($0, defaults) } }
     }
@@ -156,6 +163,7 @@ final class SettingsModel: ObservableObject {
         static let brightness = "trackFullBrightness"
         static let gnssSound = "trackGnssSound"
         static let earlierChoicesMoved = "earlierChoicesMoved"
+        static let wifiObdListed = "wifiObdListed"
     }
 }
 

@@ -313,6 +313,7 @@ struct AddEquipmentPage: View {
                                 add(m.name, name: m.label, address: nil)
                             }
                         }
+                        .accessibilityIdentifier("add.\(m.name)")
                     }
                 }
             }
@@ -350,6 +351,7 @@ struct AddEquipmentPage: View {
         case ModelName.goProFiles: "HERO8 or older, MAX"
         case ModelName.cameraFiles: "DJI Action, Insta360, Garmin and others"
         case ModelName.demoTrack: "Laps and coach cues on a made-up circuit"
+        case ModelName.obdWifi: "192.168.0.10 : 35000"
         default: "Built in"
         }
     }

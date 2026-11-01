@@ -10,20 +10,22 @@ private let setupTimeoutSeconds = 15.0
 /// exactly as on Android, over a Bluetooth LE ELM327 (the Vgate vLinker MC+) reached through
 /// CoreBluetooth, or over Wi-Fi to a Wi-Fi ELM327 at 192.168.0.10 port 35000 (the phone joined to its
 /// network), tried after the Bluetooth ones as on Android. iOS has no Bluetooth Classic serial profile
-/// for apps, so only LE Bluetooth adapters are used. A Bluetooth adapter is found by its name
-/// (ObdAdapterNames, as Android lists them) and remembered, so the one used last is tried first. All
-/// CoreBluetooth work runs on one serial queue.
+/// for apps, so only LE Bluetooth adapters are used. Only the adapters listed in Settings › Equipment
+/// are tried, chosen by the shared rule Android uses (SessionEquipment, FBBD-349): with none listed,
+/// none is read, and one removed there is not used again. All CoreBluetooth work runs on one serial queue.
 final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     /// Every CoreBluetooth call of this link and its ports runs here.
     fileprivate let queue = DispatchQueue(label: "obd.link", qos: .userInitiated)
     private var central: CBCentralManager!
     private var feed: ObdFeed!
     private var running = false
-    /// Adapters seen in this session, by identifier, and the port of the one connecting or open.
+    /// Listed adapters seen in this session, by identifier, and the port of the one connecting or open.
     private var seen: [UUID: CBPeripheral] = [:]
     /// Named Bluetooth devices nearby that are not OBD adapters, logged once each: when no adapter is
     /// found, the log shows whether the adapter was off, busy with another phone, or named otherwise.
     private var others: Set<String> = []
+    /// OBD adapters nearby that Settings › Equipment does not list, logged once each and never tried.
+    private var notListed: Set<UUID> = []
     private var port: ObdBlePortLink?
     /// When an adapter seen before, advertising again, last ended a retry delay early.
     private var seenRetryAt = Date.distantPast
@@ -31,23 +33,41 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     private var wifi: NWPathMonitor?
     private var onWifi: Bool?
 
-    private static let lastIdKey = "lastObdAdapterId"
-    private static let lastNameKey = "lastObdAdapterName"
+    /// A Bluetooth LE adapter listed in Settings › Equipment, by the iPhone's identifier for it.
+    typealias BleAdapter = (id: UUID, name: String)
+    /// A Wi-Fi adapter listed there, at its listed address.
+    typealias WifiAdapter = (host: String, port: Int32, name: String)
 
-    /// The adapters listed in Settings › Equipment (FBBD-338): only these are tried, as on Android. With
-    /// none listed, the one used last and any other found nearby.
-    private let listed: [(id: UUID, name: String)]
+    /// The Bluetooth LE adapters listed, in order: only these are tried.
+    private let listed: [BleAdapter]
+    /// The Wi-Fi adapters listed, tried after the Bluetooth ones.
+    private let wifiListed: [WifiAdapter]
 
-    /// [sink] is the recording; [listed] the Bluetooth LE adapters in Settings. With [setup], the
+    /// The adapters [setup] lists, by the shared rule (FBBD-349): what a session or the page connects to.
+    static func adapters(_ setup: Setup?) -> (bluetooth: [BleAdapter], wifi: [WifiAdapter]) {
+        guard let active = setup?.active() else { return ([], []) }
+        let bluetooth = active.obdBluetooth.compactMap { item -> BleAdapter? in
+            item.address.flatMap(UUID.init(uuidString:)).map { ($0, item.name) }
+        }
+        let wifi = active.obdWifi.map { WifiAdapter(host: $0.at.host, port: $0.at.port, name: $0.adapter.name) }
+        return (bluetooth, wifi)
+    }
+
+    /// Whether [setup] lists any adapter this phone can reach: without one no ObdLink starts.
+    static func anyListed(_ setup: Setup?) -> Bool {
+        let a = adapters(setup)
+        return !a.bluetooth.isEmpty || !a.wifi.isEmpty
+    }
+
+    /// [sink] is the recording; the adapters are the ones [setup] lists ([adapters]). With [setup], the
     /// session's car's own parameters and switched-on PIDs are read (FBBD-344), and [tiles] are its
     /// track screen. (The setup, not the car: setup's and obd's CarProfile share a name in Swift.)
     /// With [page] it is the car data page's own connection outside a session (FBBD-261, FBBD-344):
     /// every channel the car has, nothing recorded, and Scan car.
-    init(
-        sink: SampleSink, listed: [(id: UUID, name: String)] = [], setup: Setup? = nil, tiles: [String] = [],
-        page: Bool = false
-    ) {
-        self.listed = listed
+    init(sink: SampleSink, setup: Setup?, tiles: [String] = [], page: Bool = false) {
+        let adapters = Self.adapters(setup)
+        listed = adapters.bluetooth
+        wifiListed = adapters.wifi
         super.init()
         feed = ObdFeed(
             sink: sink, targets: { [weak self] in self?.targets() ?? [] }, listener: self,
@@ -94,8 +114,8 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
     private func targets() -> [ObdTarget] {
         queue.sync {
             guard running else { return [] }
-            let wifi: ObdTarget = IosWifiObdTarget(host: "192.168.0.10", port: 35000, name: "Wi-Fi adapter")
-            return bluetoothTargets() + [wifi]
+            let wifi: [ObdTarget] = wifiListed.map { IosWifiObdTarget(host: $0.host, port: $0.port, name: $0.name) }
+            return bluetoothTargets() + wifi
         }
     }
 
@@ -114,35 +134,25 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         monitor.start(queue: queue)
     }
 
-    /// Queue only. The Bluetooth adapters: those listed in Settings (FBBD-338); with none listed, the one
-    /// used last, then any other seen nearby.
+    /// Queue only. The Bluetooth adapters listed in Settings, in their order (FBBD-349): nothing else.
     private func bluetoothTargets() -> [ObdTarget] {
-        guard central?.state == .poweredOn else { return [] }
+        guard !listed.isEmpty, central?.state == .poweredOn else { return [] }
         var list: [CBPeripheral] = []
-        if !listed.isEmpty {
-            for item in listed {
-                if let known = seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
-                    list.append(known)
-                }
-            }
-        } else {
-            if let text = UserDefaults.standard.string(forKey: Self.lastIdKey), let id = UUID(uuidString: text),
-               let known = seen[id] ?? central.retrievePeripherals(withIdentifiers: [id]).first {
+        for item in listed {
+            if let known = seen[item.id] ?? central.retrievePeripherals(withIdentifiers: [item.id]).first {
                 list.append(known)
             }
-            list += seen.values.filter { p in !list.contains { $0.identifier == p.identifier } }
         }
-        // Keep looking while no adapter is open: the remembered one may be out of range and another near.
+        // Keep looking while no adapter is open: a listed one may be out of range now and back later.
         scan()
         return list.map { p in
-            let name = listed.first { $0.id == p.identifier }?.name
-                ?? p.name ?? UserDefaults.standard.string(forKey: Self.lastNameKey) ?? "OBD adapter"
+            let name = listed.first { $0.id == p.identifier }?.name ?? p.name ?? "OBD adapter"
             return IosBleObdTarget(name: name, identifier: p.identifier.uuidString, port: ObdBlePortLink(link: self, peripheral: p))
         }
     }
 
     private func scan() {
-        guard running, central.state == .poweredOn, !central.isScanning else { return }
+        guard running, !listed.isEmpty, central.state == .poweredOn, !central.isScanning else { return }
         central.scanForPeripherals(withServices: nil)
     }
 
@@ -170,8 +180,6 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
 
     fileprivate func ready(_ port: ObdBlePortLink) {
         log(text: "serial line ready: \(port.setupText)")
-        UserDefaults.standard.set(port.peripheral.identifier.uuidString, forKey: Self.lastIdKey)
-        if let name = port.peripheral.name { UserDefaults.standard.set(name, forKey: Self.lastNameKey) }
     }
 
     // MARK: CBCentralManagerDelegate
@@ -198,6 +206,13 @@ final class ObdLink: NSObject, CBCentralManagerDelegate, ObdFeedListener {
         guard ObdAdapterNames.shared.isCandidate(name: name, services: services) else {
             if let name, others.count < 30, others.insert(name).inserted {
                 log(text: "nearby, not an OBD adapter: \(name)\(advertised(services))")
+            }
+            return
+        }
+        // An adapter not in Settings › Equipment is never used (FBBD-349): said once, so the log shows it.
+        guard listed.contains(where: { $0.id == peripheral.identifier }) else {
+            if notListed.insert(peripheral.identifier).inserted {
+                log(text: "found \(name ?? "?") \(peripheral.identifier.uuidString)\(advertised(services)), not in Equipment")
             }
             return
         }
