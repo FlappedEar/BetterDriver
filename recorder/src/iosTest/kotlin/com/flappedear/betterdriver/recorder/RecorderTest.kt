@@ -9,6 +9,7 @@ import com.flappedear.betterdriver.recorder.store.SessionFileNames
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionStore
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLock
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSUUID
 import kotlin.test.AfterTest
@@ -124,6 +125,25 @@ class RecorderTest {
         assertEquals("user", data.end?.reason)
     }
 
+    /** A count several threads add to. */
+    private class Counter {
+        private val lock = NSLock()
+        private var n = 0
+
+        fun add() {
+            lock.lock()
+            n++
+            lock.unlock()
+        }
+
+        val value: Int get() {
+            lock.lock()
+            val v = n
+            lock.unlock()
+            return v
+        }
+    }
+
     /** Waits up to [ms] for [done], polling every 10 ms. */
     private fun waitFor(ms: Int, done: () -> Boolean): Boolean {
         repeat(ms / 10) {
@@ -220,17 +240,20 @@ class RecorderTest {
         rec.writeDelayMicrosForTest = 200
         val sources = 4
         val each = 400
+        val submitted = Counter()
         val group = dispatch_group_create()
         repeat(sources) { s ->
             dispatch_group_async(group, dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT.toLong(), 0u)) {
                 repeat(each) { i ->
+                    submitted.add()
                     val speed = ChannelValue(GnssChannels.SPEED_KMH.id, i.toDouble())
                     rec.submit(SampleSet(s * 1_000_000_000L + i, listOf(speed)))
                     usleep(500u)
                 }
             }
         }
-        usleep(80_000u)
+        // Stops once the sources are well under way, whatever the machine's speed.
+        assertTrue(waitFor(5_000) { submitted.value >= sources * 50 }, "sources started: ${submitted.value}")
         val stopping = TimeSource.Monotonic.markNow()
         assertTrue(rec.stop())
         val stopMs = stopping.elapsedNow().inWholeMilliseconds
