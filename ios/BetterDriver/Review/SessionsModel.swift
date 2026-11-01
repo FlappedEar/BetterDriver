@@ -1,6 +1,7 @@
 import BetterDriverCore
 import Foundation
 import Observation
+import UIKit
 
 /// The session list and the imports into it (FBBD-331, UI-292 A).
 @MainActor
@@ -48,6 +49,21 @@ final class SessionsModel {
     }
 
     private(set) var goProWork: GoProWork?
+
+    /// An Open GoPro camera's files of a session coming over its Wi-Fi (UI-31, FBBD-343).
+    struct CameraDownload: Equatable {
+        let sessionId: String
+        let sourceId: String
+        var index: Int32
+        var bytes: Int64
+        var total: Int64
+    }
+
+    private(set) var goProDownload: CameraDownload?
+    /// Each session's Open GoPro cameras that still hold its files: each offers Download, as on Android.
+    private(set) var onCamera: [String: [CameraOnCamera]] = [:]
+    /// The running download's camera links, kept until it ends.
+    private var downloadLinks: (IosGoProLink, IosGoProWifi)?
     /// Each session's lined-up camera clips, one line per camera, as Android's session card shows them.
     private(set) var cameraLines: [String: [SessionCameraLine]] = [:]
     /// Each session's detail line and best lap, as Android's row (UI-139 C); read after the list.
@@ -78,6 +94,9 @@ final class SessionsModel {
         }
         #endif
         reload()
+        #if DEBUG
+        prepareDemoDownload()
+        #endif
         // A track edited on the Tracks screen (FBBD-336): an open review reads its session again.
         NotificationCenter.default.addObserver(forName: .tracksChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -100,6 +119,9 @@ final class SessionsModel {
         cameraLines = Dictionary(uniqueKeysWithValues: sessions.map { s in
             (s.id, GoProCore.shared.lines(setup: setup, sessionsRoot: root, sessionId: s.id))
         })
+        onCamera = Dictionary(uniqueKeysWithValues: sessions.map { s in
+            (s.id, GoProDownloads.companion.onCamera(setup: setup, sessionsRoot: root, sessionId: s.id))
+        })
         Task {
             rowFacts = await Task.detached(priority: .utility) { ReviewBridge.sessionRows() }.value
         }
@@ -107,7 +129,7 @@ final class SessionsModel {
 
     /// The listed cameras started by hand without video in [session] yet: each offers Add, as on Android.
     func addableCameras(_ session: SessionRow) -> [ListedCamera] {
-        guard goProWork == nil else { return [] }
+        guard goProWork == nil, goProDownload == nil else { return [] }
         return GoProCore.shared.addable(
             setup: SettingsModel.shared.setup, sessionsRoot: ReviewBridge.library.sessionsRoot, sessionId: session.id
         )
@@ -140,6 +162,92 @@ final class SessionsModel {
             reload()
         }
     }
+
+    /// False while a session records or camera files are being copied or downloaded: nothing else
+    /// starts then, as on Android.
+    var canDownload: Bool {
+        goProWork == nil && goProDownload == nil && !RecordingController.shared.isRecording
+    }
+
+    /// Downloads the files [camera] recorded with [sessionId] over its Wi-Fi and lines them up (UI-31):
+    /// the shared Kotlin download over the camera's Bluetooth and Wi-Fi. The screen stays on meanwhile.
+    func downloadCameraFiles(sessionId: String, camera: CameraOnCamera) {
+        guard canDownload, let address = camera.address else { return }
+        let links: (IosGoProLink, IosGoProWifi)
+        if let demo = demoCamera(sessionId: sessionId) {
+            links = demo
+        } else {
+            links = (GoProBleLink(address: address), GoProWifi())
+        }
+        downloadLinks = links
+        goProDownload = CameraDownload(sessionId: sessionId, sourceId: camera.sourceId, index: 1, bytes: 0, total: 0)
+        goProProblems[sessionId] = nil
+        UIApplication.shared.isIdleTimerDisabled = true
+        AppLog.i("GoPro", "download \(camera.sourceId) of \(sessionId)")
+        GoProDownloads(sessionsRoot: ReviewBridge.library.sessionsRoot).download(
+            sessionId: sessionId, sourceId: camera.sourceId, link: links.0, wifi: links.1,
+            onProgress: { [weak self] p in
+                self?.goProDownload = CameraDownload(
+                    sessionId: sessionId, sourceId: p.sourceId, index: p.index, bytes: p.bytes, total: p.total
+                )
+            },
+            done: { [weak self] problems in
+                guard let self else { return }
+                UIApplication.shared.isIdleTimerDisabled = RecordingController.shared.isRecording
+                self.downloadLinks = nil
+                self.goProDownload = nil
+                if !problems.isEmpty { self.goProProblems[sessionId] = problems }
+                self.revision += 1
+                self.reload()
+            }
+        )
+    }
+
+    /// The UI tests' camera (FBBD-343), in debug builds only: with -demoGoProDownload a made-up Open
+    /// GoPro whose card holds a file riding along [sessionId]; nil when not testing.
+    private func demoCamera(sessionId: String) -> (IosGoProLink, IosGoProWifi)? {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-demoGoProDownload") else { return nil }
+        let demo = DemoOpenGoPro(cardFolder: Self.demoCard(sessionId))
+        return (demo.link, demo.wifi)
+        #else
+        return nil
+        #endif
+    }
+
+    #if DEBUG
+    private static func demoCard(_ sessionId: String) -> String {
+        FileManager.default.temporaryDirectory.appendingPathComponent("demo-gopro-card-\(sessionId)").path
+    }
+
+    /// With -demoGoProDownload: an Open GoPro camera in the equipment list, and the newest session's
+    /// files left on it as a camera turned on for that session would have (FBBD-343).
+    private func prepareDemoDownload() {
+        guard ProcessInfo.processInfo.arguments.contains("-demoGoProDownload"), let newest = sessions.first,
+              onCamera[newest.id]?.isEmpty ?? true else { return }
+        let id = "demo-open-gopro"
+        if !SettingsModel.shared.setup.equipment.contains(where: { $0.id == id }) {
+            SettingsModel.shared.update {
+                SettingsCore.shared.addOpenGoPro(
+                    setup: $0, name: "GoPro Demo", address: "00000000-0000-0000-0000-000000000042",
+                    goPro: .hero11Black, id: id
+                )
+            }
+        }
+        let root = ReviewBridge.library.sessionsRoot
+        let sessionId = newest.id
+        let card = Self.demoCard(sessionId)
+        Task {
+            let failure = await Task.detached(priority: .userInitiated) {
+                DemoOpenGoPro.companion.prepare(
+                    sessionsRoot: root, sessionId: sessionId, sourceId: "gopro-\(id)", cardFolder: card
+                )
+            }.value
+            if let failure { goProProblems[sessionId] = ["The test GoPro could not be made: \(failure)"] }
+            reload()
+        }
+    }
+    #endif
 
     /// The UI tests' stand-in for Files (FBBD-343), in debug builds only: a made-up GoPro file riding
     /// along a minute of [sessionId] from 30 s, added as if picked. False when not testing.

@@ -1,6 +1,6 @@
 package com.flappedear.betterdriver.gopro
 
-import org.junit.jupiter.api.Test
+import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class GoProMediaTest {
@@ -17,7 +17,7 @@ class GoProMediaTest {
     """.trimIndent()
 
     @Test
-    fun `parses the media list with string numbers`() {
+    fun parsesTheMediaListWithStringNumbers() {
         val files = GoProMedia.parseList(list)
         assertEquals(5, files.size)
         assertEquals("100GOPRO/GX010042.MP4", files[1].path)
@@ -27,7 +27,7 @@ class GoProMediaTest {
     }
 
     @Test
-    fun `picks every chapter of the recording made during the session, camera clock in local time`() {
+    fun picksEveryChapterOfTheRecordingMadeDuringTheSessionWithTheCameraClockInLocalTime() {
         val recording = GoProRecording("g", startAckSessionUs = 0, startAckUtcMillis = start,
             stopAckUtcMillis = start + 1_200_000, cameraUtcOffsetMinutes = 120)
         val picked = GoProMedia.filesFor(recording, GoProMedia.parseList(list))
@@ -35,7 +35,7 @@ class GoProMediaTest {
     }
 
     @Test
-    fun `also matches a camera clock in UTC`() {
+    fun alsoMatchesACameraClockInUtc() {
         val utcList = list.replace("${start / 1000 + 7200 + 2}", "${start / 1000 + 2}")
         val recording = GoProRecording("g", startAckSessionUs = 0, startAckUtcMillis = start,
             stopAckUtcMillis = start + 60_000, cameraUtcOffsetMinutes = 120)

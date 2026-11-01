@@ -3,6 +3,9 @@
 
     asc.py team BUNDLE_ID NAME   registers BUNDLE_ID if missing, prints the team id (seedId)
     asc.py ci-certs              revokes the development certificates earlier runs made
+    asc.py capability BUNDLE_ID TYPE
+                                 turns capability TYPE (such as HOT_SPOT) on for BUNDLE_ID if it
+                                 is off; exits 1 when it cannot, so the caller can sign without it
 
 Each signed archive on a fresh runner makes a new development certificate through the
 API key ("Created via API") and loses its private key with the runner. They pile up to
@@ -71,9 +74,32 @@ def ci_certs():
             print(f"kept {label}")
 
 
+def capability(bundle_id, kind):
+    """Turns capability [kind] on for [bundle_id]; prints what it did. Hotspot Configuration (HOT_SPOT)
+    lets the app join a GoPro's Wi-Fi (FBBD-343)."""
+    q = urllib.parse.urlencode({"filter[identifier]": bundle_id})
+    found = [b for b in call("GET", f"/bundleIds?{q}")["data"] if b["attributes"]["identifier"] == bundle_id]
+    if not found:
+        sys.exit(f"no bundle id {bundle_id}")
+    bid = found[0]["id"]
+    have = call("GET", f"/bundleIds/{bid}/bundleIdCapabilities")["data"]
+    if any(c["attributes"].get("capabilityType") == kind for c in have):
+        print(f"{bundle_id} has {kind}")
+        return
+    body = {"data": {
+        "type": "bundleIdCapabilities",
+        "attributes": {"capabilityType": kind},
+        "relationships": {"bundleId": {"data": {"type": "bundleIds", "id": bid}}},
+    }}
+    call("POST", "/bundleIdCapabilities", body)
+    print(f"turned {kind} on for {bundle_id}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 4 and sys.argv[1] == "team":
         team(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 4 and sys.argv[1] == "capability":
+        capability(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 2 and sys.argv[1] == "ci-certs":
         ci_certs()
     else:

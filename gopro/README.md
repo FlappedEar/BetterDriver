@@ -38,7 +38,8 @@ reports failures through `state`.
 
 ## Download and alignment
 
-After the session, `GoProDownloader` turns on the camera's access point over BLE,
+After the session, `GoProDownloader` (on Android; the steps are the shared `GoProDownload` in
+`:videosync`, which the iPhone app runs too, FBBD-343) turns on the camera's access point over BLE,
 reads its SSID and password, joins it (`WifiJoiner`, Android in the app), lists the
 media at `http://10.5.5.9:8080/gopro/media/list`, downloads every chapter of the
 recording made between the start and stop acknowledgements into `<session>/video`,

@@ -18,8 +18,9 @@ version number. Session files (`.bdsession`) move between the two in both direct
 - OBD-II over Bluetooth LE (for example the Vgate vLinker MC+ or a Konnwei adapter) and over
   Wi-Fi, the FR-S CAN channels, the car page with **Scan car** and your own parameters.
 - A Bluetooth heart-rate strap.
-- The phone camera, always recorded in landscape; GoPro files lined up by the GoPro's GPS, and
-  GoPro start and stop with the session.
+- The phone camera, always recorded in landscape; GoPro files lined up by the GoPro's GPS,
+  GoPro start and stop with the session, and **Download** of a GoPro's clips over its Wi-Fi after
+  the drive (iOS asks once to join the camera's network).
 - Lap analysis with every tab, Where to find time and coach corner flags, Compare laps from any
   sessions, Every pass, Progression, Coach review, track day, the perfect lap in 3D, Watch video,
   Video with data, VBO, CSV and GPX export, and the track editor with corner corrections and
@@ -36,7 +37,6 @@ version number. Session files (`.bdsession`) move between the two in both direct
 | Bluetooth Classic receivers and OBD-II adapters | iOS does not allow them |
 | Backup and restore; sharing tracks between devices | [Export and sharing](export.md#backup) |
 | The optimal-lap composite video | [Export and sharing](export.md) |
-| GoPro download over Wi-Fi | [Equipment](equipment.md) |
 | RaceBox diagnostics, the camera test and **Run setup again** (shown as "Not implemented yet") | [Settings](settings.md) |
 | In-app updates | TestFlight updates the app instead |
 
