@@ -18,6 +18,10 @@ The full notes of every release are on
 - iPhone: only the OBD-II adapters and the heart-rate strap listed in **Settings › Equipment**
   record. One removed there is not used again. The Wi-Fi OBD-II adapter is added under
   **Add without Bluetooth**, as on Android.
+- iPhone: a GoPro's clips download over its Wi-Fi after the drive and line up by its GPS, as
+  on Android. See [Equipment](equipment.md).
+- iPhone and iPad: **Realistic optimal video** under the lap times in the Summary, as on
+  Android.
 
 ## 1.26.0
 
