@@ -24,7 +24,7 @@ struct LapTimesOptimalVideo: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 12) {
-                Button(OptimalVideoButtonKt.RealisticOptimalVideoLabel) { open = true }
+                Button(CompositeOptionsKt.RealisticOptimalVideoLabel) { open = true }
                     .buttonStyle(.bordered)
                     .tint(Palette.accent)
                     .disabled(!choice.enabled || progress != nil)
@@ -67,7 +67,7 @@ struct LapTimesOptimalVideo: View {
                 let (s, d) = opened
                 session = s
                 durations = d
-                let options = await Task.detached(priority: .utility) { s.compositeOptions(durations: d) }.value
+                let options = await Task.detached(priority: .utility) { CompositeLapChoiceKt.compositeOptionsOf(session: s, durations: d) }.value
                 choice = CompositeLapChoice(options: options)
             } else {
                 let options = try await Task.detached(priority: .utility) { () -> CompositeOptions in
@@ -77,7 +77,7 @@ struct LapTimesOptimalVideo: View {
                 choice = CompositeLapChoice(options: options)
             }
         } catch {
-            choice = CompositeLapChoice(options: OptimalVideoButtonKt.unreadableCompositeOptions())
+            choice = CompositeLapChoice(options: CompositeOptionsKt.unreadableCompositeOptions())
         }
     }
 
@@ -129,11 +129,11 @@ struct LapTimesOptimalVideoSheet: View {
     var body: some View {
         let kind = choice.kinds.first { $0.part == picked } ?? choice.kinds.first
         VStack(alignment: .leading, spacing: 8) {
-            Text(OptimalVideoButtonKt.CompositeLapVideoTitle)
+            Text(CompositeOptionsKt.CompositeLapVideoTitle)
                 .font(.headline)
                 .foregroundStyle(Palette.onBackground)
             ForEach(choice.kinds, id: \.part) { k in kindRow(k) }
-            DimText(OptimalVideoButtonKt.CompositeLapVideoAbout)
+            DimText(CompositeOptionsKt.CompositeLapVideoAbout)
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array((kind?.parts ?? []).enumerated()), id: \.offset) { _, p in partRow(p) }

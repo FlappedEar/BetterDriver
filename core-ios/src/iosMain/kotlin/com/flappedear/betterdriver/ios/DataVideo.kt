@@ -146,18 +146,11 @@ class DataVideoSession internal constructor(
     /** The session's lap analysis, made once: the composite laps are cut from it. */
     private val analysed: SessionAnalysis? by lazy { analysis() }
 
-    /**
-     * The composite laps as the lap analysis offers them under the lap times (FBBD-370, as Android's):
-     * [durations] as for [parts]. Analyses the session the first time: not on the main thread.
-     */
-    fun compositeOptions(durations: Map<String, Long>): CompositeOptions =
-        composites(durations).let { CompositeOptions(it.realistic.option, it.raw.option) }
-
     /** The composite laps on the video, for the file lengths they were planned with. */
     private var compositeCache: Pair<Map<String, Long>, OptimalVideo>? = null
 
     /** The composite laps (FBBD-163, FBBD-178) on this session's video, as Android's export finds them. */
-    private fun composites(durations: Map<String, Long>): OptimalVideo = lock.withLock {
+    internal fun composites(durations: Map<String, Long>): OptimalVideo = lock.withLock {
         compositeCache?.takeIf { it.first == durations }?.second
             ?: runCatching { optimalVideo(analysed, clips, originMicros) { durations[path(it)] } }
                 .getOrDefault(OptimalVideo.None)

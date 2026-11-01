@@ -3,6 +3,7 @@ package com.flappedear.betterdriver.ios
 import com.flappedear.betterdriver.analysis.optimal.CompositeOptions
 import com.flappedear.betterdriver.analysis.optimal.OptimalOption
 import com.flappedear.betterdriver.analysis.optimal.PartOnVideo
+import com.flappedear.betterdriver.analysis.optimal.compositeOptions
 import com.flappedear.betterdriver.analysis.optimal.missingText
 import com.flappedear.betterdriver.analysis.optimal.optimalOptionText
 import com.flappedear.betterdriver.analysis.optimal.optimalPartText
@@ -35,9 +36,17 @@ class CompositeLapChoice(options: CompositeOptions?) {
             CompositePartLine(p.name, detail, video, p.video == PartOnVideo.None)
         }
         val part = DataVideoSession.partOf(o.kind)
-        return CompositeKindLine(part, name, note, o.enabled, o.unavailable, missingText(o), parts)
+        return CompositeKindLine(part, name, note, o.unavailable, missingText(o), parts)
     }
 }
+
+/**
+ * The composite laps of [session] as the lap analysis offers them under the lap times (FBBD-370, as
+ * Android's): [durations] as for DataVideoSession.parts. Analyses the session the first time: not on
+ * the main thread.
+ */
+fun compositeOptionsOf(session: DataVideoSession, durations: Map<String, Long>): CompositeOptions =
+    compositeOptions(session.composites(durations))
 
 /**
  * One composite lap in the sheet: its video [part], "Realistic optimal · 1:39.43" ([name]) over
@@ -47,11 +56,13 @@ class CompositeKindLine(
     val part: Int,
     val name: String,
     val note: String,
-    val enabled: Boolean,
     val unavailable: String?,
     val missing: String?,
     val parts: List<CompositePartLine>,
-)
+) {
+    /** It can be filmed. */
+    val enabled: Boolean get() = unavailable == null
+}
 
 /** "Corner 3   Lap 5 · 0:05.12   No video": [video] is null when the part is whole on video. */
 class CompositePartLine(val name: String, val detail: String, val video: String?, val noVideo: Boolean)
