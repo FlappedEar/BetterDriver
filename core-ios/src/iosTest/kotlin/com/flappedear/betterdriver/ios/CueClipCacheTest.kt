@@ -50,8 +50,7 @@ class CueClipCacheTest {
 
     @Test
     fun clipsAreRenderedOnceAndReusedForTheSameVoice() {
-        val logged = mutableListOf<String>()
-        IosLog.sink = { tag, message -> logged += "$tag: $message" }
+        val log = LogLines().capture()
         val first = CueClipCache(base, CoachLanguage.English, "Daniel|1.0|1.0")
         assertFalse(first.ready)
         assertNull(first.phrase("Best lap, 1 05 point 4"), "said live until the clips are ready")
@@ -60,6 +59,7 @@ class CueClipCacheTest {
 
         val again = CueClipCache(base, CoachLanguage.English, "Daniel|1.0|1.0")
         assertEquals(0, renderAll(again), "the same voice renders nothing")
+        val logged = log.all()
         // Android's lines (FBBD-48), so one set of checks reads both logs.
         val n = CueClips.vocabulary.size
         assertTrue("CueClips: preparing $n cue clips (en)" in logged, logged.joinToString("\n"))
@@ -92,8 +92,7 @@ class CueClipCacheTest {
 
     @Test
     fun aClipThatCannotBeRenderedLeavesTheLiveVoice() {
-        val logged = mutableListOf<String>()
-        IosLog.sink = { tag, message -> logged += "$tag: $message" }
+        val log = LogLines().capture()
         val cache = CueClipCache(base, CoachLanguage.English, "v")
         val keys = cache.begin()
         assertFalse(cache.rendered(keys.first(), NSData(), 22_050), "an empty render is not kept")
@@ -101,6 +100,7 @@ class CueClipCacheTest {
         assertFalse(cache.finish())
         assertFalse(cache.ready)
         assertNull(cache.phrase("Best lap, 1 05 point 4"))
+        val logged = log.all()
         val unavailable = "CueClips: pre-rendered voice unavailable, using live text-to-speech: 1 clips unreadable"
         assertTrue(unavailable in logged, logged.joinToString("\n"))
         // Next time only the missing clip is rendered.

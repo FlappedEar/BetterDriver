@@ -283,7 +283,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      AVD_KEY: avd-34-google_apis-x86_64-pixel_6-v1
+      # Four cores (FBBD-422): on the default two, the start-up's coach voice, recorder and software
+      # rendering took up to three quarters of both, and its frame time p95 swung from 20 to 100 ms
+      # on the same code. Its own AVD, as the core count is set when the AVD is made.
+      AVD_KEY: avd-34-google_apis-x86_64-pixel_6-4cores-v1
       APK_BUILD_IN_BACKGROUND: 1
     steps:
       - uses: actions/checkout@v4
@@ -329,6 +332,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           ram-size: 4096M
+          cores: 4
           force-avd-creation: false
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: false
@@ -341,6 +345,7 @@ jobs:
           arch: x86_64
           profile: pixel_6
           ram-size: 4096M
+          cores: 4
           force-avd-creation: false
           emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           disable-animations: true
