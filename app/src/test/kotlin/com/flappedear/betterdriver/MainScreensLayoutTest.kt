@@ -47,7 +47,10 @@ import com.flappedear.betterdriver.shell.AppNavigation
 import com.flappedear.betterdriver.shell.CarPage
 import com.flappedear.betterdriver.shell.CarPidsPage
 import com.flappedear.betterdriver.shell.CarScanState
+import com.flappedear.betterdriver.shell.DriveFocus
+import com.flappedear.betterdriver.shell.DrivePinned
 import com.flappedear.betterdriver.shell.HomeScreen
+import com.flappedear.betterdriver.shell.LastTimeHere
 import com.flappedear.betterdriver.shell.ObdAdapterLabel
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
@@ -108,6 +111,11 @@ abstract class MainScreensLayoutTest(private val device: String) {
             actions = SessionCardActions(),
             onStart = {},
             onAddReceiver = {},
+            // Both Pinned cards (UI-308 A).
+            pinned = DrivePinned(
+                DriveFocus(listOf("Corners 2–3", "Corner 1", "Corner 7"), 1.53),
+                LastTimeHere(java.time.LocalDate.of(2026, 8, 29), 109_910, listOf(138_640, 124_060, 109_910, 111_240)),
+            ),
         )
     }
 

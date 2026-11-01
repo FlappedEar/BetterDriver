@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -15,10 +17,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
@@ -31,6 +32,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.contentDescription
@@ -40,7 +42,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.review.sessionRowDetail
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
-import com.flappedear.betterdriver.core.ui.NumberFont
+import com.flappedear.betterdriver.core.ui.component.HealthCardShape
+import com.flappedear.betterdriver.core.ui.component.HealthDetail
+import com.flappedear.betterdriver.core.ui.component.HealthIcon
+import com.flappedear.betterdriver.core.ui.component.HealthValue
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.ImportOrigin
@@ -88,6 +93,7 @@ import java.util.Locale
  *
  * On a tablet the list sits beside the lap analysis of the session [selectedId], whose row is outlined (FBBD-40).
  */
+@Suppress("LongMethod") // The list and its sheet; the rows are their own composables.
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SessionsScreen(
@@ -124,20 +130,32 @@ fun SessionsScreen(
         } else {
             LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                 byDay(sessions).forEach { (day, list) ->
-                    item(key = "day-$day") { DayHeading(day, list, onTrackDay) }
-                    items(list, key = { it.id }) { s ->
-                        SessionRow(
-                            s,
-                            facts[s.id],
-                            video = s.id in withVideo,
-                            // With its sheet open, the sheet says it: a text shows once.
-                            status = rowStatus(s, exports[s.id], goPro, deleting, transfer, videoExport)
-                                .takeUnless { actionsFor == s.id },
-                            selected = s.id == selectedId,
-                            opens = opensAnalysis(s, deleting.states[s.id]),
-                            onAnalyse = { onAnalyse(s) },
-                            onActions = { actionsFor = s.id },
-                        )
+                    item(key = "day-$day") { DayHeading(day, list, onTrackDay, facts) }
+                    // Two session cards a row (UI-308 A); the track on each when the day had more than one.
+                    val oneTrack = list.map { it.info.track }.filter { it.isNotBlank() }.distinct().size <= 1
+                    items(list.chunked(CardsPerRow), key = { "row-" + it.first().id }) { pair ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(bottom = CardGap),
+                            horizontalArrangement = Arrangement.spacedBy(CardGap),
+                        ) {
+                            pair.forEach { s ->
+                                SessionRow(
+                                    s,
+                                    facts[s.id],
+                                    video = s.id in withVideo,
+                                    // With its sheet open, the sheet says it: a text shows once.
+                                    status = rowStatus(s, exports[s.id], goPro, deleting, transfer, videoExport)
+                                        .takeUnless { actionsFor == s.id },
+                                    selected = s.id == selectedId,
+                                    opens = opensAnalysis(s, deleting.states[s.id]),
+                                    onAnalyse = { onAnalyse(s) },
+                                    onActions = { actionsFor = s.id },
+                                    modifier = Modifier.weight(1f),
+                                    title = if (oneTrack) cardTitle(s) else rowTitle(s),
+                                )
+                            }
+                            if (pair.size < CardsPerRow) Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -256,6 +274,18 @@ private fun rowStatus(
     else -> cardStatus(deleting.states[s.id], export).first.ifEmpty { null }
 }
 
+private const val CardsPerRow = 2
+private val CardGap = 8.dp
+
+/** "16:23": when the session started, for its card under the day's heading. */
+internal fun cardTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault()): String =
+    TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
+
+/**
+ * One session as a card (UI-308 A): its [title] (start time, and track when the day had more than
+ * one) in amber with ⋮, its best lap large in purple, then the car, how long, its laps and what was
+ * recorded, and what runs for it. A tap opens lap analysis; ⋮ opens a sheet with everything else.
+ */
 @Suppress("LongParameterList")
 @Composable
 private fun SessionRow(
@@ -267,45 +297,35 @@ private fun SessionRow(
     opens: Boolean,
     onAnalyse: () -> Unit,
     onActions: () -> Unit,
+    modifier: Modifier = Modifier,
+    title: String = cardTitle(s),
 ) {
     val c = TrackTheme.colors
-    // The row whose analysis shows beside the list on a tablet is outlined (FBBD-40).
+    // The card whose analysis shows beside the list on a tablet is outlined (FBBD-40).
     val outline = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent
     Column(
-        Modifier
-            .fillMaxWidth()
-            .border(2.dp, outline, RowShape)
+        modifier
+            .clip(HealthCardShape)
+            .background(MaterialTheme.colorScheme.surface)
+            .border(2.dp, outline, HealthCardShape)
             .clickable(enabled = opens, onClickLabel = "Lap analysis", onClick = onAnalyse)
-            .testTag(sessionRowTag(s.id)),
+            .testTag(sessionRowTag(s.id))
+            .padding(start = 12.dp, bottom = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp),
     ) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline)
-        Row(
-            Modifier.padding(start = 4.dp, top = 10.dp, bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(rowTitle(s), style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold))
-                val detail = rowDetail(s, facts, video)
-                if (detail.isNotEmpty()) DimText(detail)
-                ImportedLine(s.info)
-                when (s.state) {
-                    SessionState.RECORDING -> DimText("Recording", color = c.loss)
-                    SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
-                    SessionState.FINISHED -> Unit
-                }
-                status?.let { DimText(it) }
-            }
-            facts?.bestMillis?.let { best ->
-                Text(
-                    formatLapTime(best),
-                    color = c.best,
-                    style = MaterialTheme.typography.bodyLarge.copy(
-                        fontFamily = NumberFont,
-                        fontWeight = FontWeight.SemiBold,
-                    ),
-                )
-            }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                HealthIcon.Laps.vector,
+                contentDescription = null,
+                modifier = Modifier.size(18.dp),
+                tint = MaterialTheme.colorScheme.primary,
+            )
+            Text(
+                title,
+                Modifier.weight(1f).padding(start = 6.dp),
+                color = MaterialTheme.colorScheme.primary,
+                style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+            )
             IconButton(onClick = onActions, modifier = Modifier.semantics { contentDescription = ActionsLabel }) {
                 Text(
                     "⋮",
@@ -314,10 +334,20 @@ private fun SessionRow(
                 )
             }
         }
+        Column(Modifier.padding(end = 12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            facts?.bestMillis?.let { HealthValue(formatLapTime(it), color = c.best, size = 22.dp) }
+            val detail = rowDetail(s, facts, video)
+            if (detail.isNotEmpty()) HealthDetail(detail)
+            ImportedLine(s.info)
+            when (s.state) {
+                SessionState.RECORDING -> DimText("Recording", color = c.loss)
+                SessionState.RECOVERED, SessionState.INTERRUPTED -> DimText("Recovered", color = c.warning)
+                SessionState.FINISHED -> Unit
+            }
+            status?.let { DimText(it) }
+        }
     }
 }
-
-private val RowShape = RoundedCornerShape(8.dp)
 
 /** What TalkBack and the tests call a row's ⋮. */
 const val ActionsLabel = "Session actions"
