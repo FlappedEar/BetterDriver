@@ -198,13 +198,19 @@ class Recording internal constructor(
      * fsync and finished.properties; what comes after is not taken. Returns when that is on disk.
      * False if it had already ended.
      */
-    fun stop(reason: String = "user"): Boolean = onFiles {
-        if (endReason != null) return@onFiles false
+    fun stop(reason: String = "user"): Boolean {
+        // Intake closes first, before waiting for the file lock: a writer busy with a backlog would
+        // otherwise keep taking new records, and the stop would wait for the sources to go quiet.
         intake { accepting = false }
+        return onFiles { stopNow(reason) }
+    }
+
+    private fun stopNow(reason: String): Boolean {
+        if (endReason != null) return false
         write(takeAll())
-        if (endReason != null) return@onFiles false
+        if (endReason != null) return false
         finish(reason)
-        true
+        return true
     }
 
     /** Tests only: whether written data still waits for its fsync. */

@@ -231,19 +231,21 @@ class RecorderTest {
             }
         }
         usleep(80_000u)
+        val stopping = TimeSource.Monotonic.markNow()
         assertTrue(rec.stop())
+        val stopMs = stopping.elapsedNow().inWholeMilliseconds
         dispatch_group_wait(group, DISPATCH_TIME_FOREVER)
         val data = store.read(rec.id)
         assertEquals("user", data.end?.reason)
-        assertEquals(0L, data.truncatedBytes + data.skippedBytes)
+        assertEquals(0L, data.truncatedBytes + data.skippedBytes, "torn or skipped bytes")
         assertEquals(SessionState.FINISHED, store.state(rec.id))
         val written = data.sampleSets.groupBy { (it.tMicros / 1_000_000_000L).toInt() }
         repeat(sources) { s ->
             val got = written[s].orEmpty().map { (it.tMicros % 1_000_000_000L).toInt() }
             assertEquals((0 until got.size).toList(), got, "source $s: an unbroken run from its first set")
-            assertTrue(got.size < each, "source $s was still submitting at the stop")
+            assertTrue(got.size < each, "source $s was still submitting at the stop: ${got.size} sets, stop $stopMs ms")
         }
-        assertTrue(data.sampleSets.isNotEmpty())
+        assertTrue(data.sampleSets.isNotEmpty(), "no sets before the stop")
     }
 
     /**
