@@ -1,6 +1,7 @@
 Barlow: Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)
 Saira Semi Condensed: Copyright 2016 The Saira Project Authors
 Chakra Petch: Copyright 2018 The Chakra Petch Project Authors (https://github.com/m4rc1e/Chakra-Petch.git)
+Inter: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter), Inter 4.001 from Google Fonts
 
 ===== Barlow (OFL 1.1) =====
 Copyright 2017 The Barlow Project Authors (https://github.com/jpt/barlow)

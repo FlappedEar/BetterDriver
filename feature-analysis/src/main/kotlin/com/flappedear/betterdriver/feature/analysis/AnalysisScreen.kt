@@ -49,7 +49,16 @@ import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.component.HealthCard
+import com.flappedear.betterdriver.core.ui.component.HealthCardShape
+import com.flappedear.betterdriver.core.ui.component.HealthDetail
+import com.flappedear.betterdriver.core.ui.component.HealthIcon
+import com.flappedear.betterdriver.core.ui.component.HealthValue
+import com.flappedear.betterdriver.core.ui.component.HealthValueRow
+import com.flappedear.betterdriver.core.ui.component.MiniBars
+import com.flappedear.betterdriver.core.ui.component.MiniLine
 import com.flappedear.betterdriver.core.ui.component.NumberText
+import com.flappedear.betterdriver.core.ui.component.SectionTitle
 import com.flappedear.betterdriver.core.ui.component.TrackLabel
 import com.flappedear.betterdriver.format.formatDelta
 import com.flappedear.betterdriver.format.formatLapTime
@@ -153,17 +162,23 @@ private fun Ready(
         val wide = Modifier.widthIn(max = 1200.dp).fillMaxWidth()
         when (shown) {
             AnalysisTab.Summary -> {
+                // As Apple Health (UI-307 A): Pinned, then Highlights, then the rest.
+                SectionTitle(PinnedTitle, width)
                 // What to work on next comes first (FBBD-20): the answer the session is analysed for.
                 Focus(ui, compare, layout, width, whereToFindTime)
-                Summary(ui, width, optimalVideo)
-                // Heart rate under the lap times, only when the session recorded it (UI-107 A, UI-109).
-                ui.heartRate?.let { HeartRateCard(it, width) }
+                BestLapCard(ui, width)
+                // Heart rate under the best lap, only when the session recorded it (UI-107 A, UI-109).
+                ui.heartRate?.let { HeartRateCard(it, ui.laps, width) }
+                ui.progress?.let {
+                    SectionTitle(HighlightsTitle, width)
+                    Progress(it, width, onProgression)
+                }
+                LapTimes(ui, width, optimalVideo)
                 // The conditions the lap times were driven in (FBBD-403), under them, with the last time here.
                 ui.weather?.let { WeatherCard(it, width) }
                 // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
                 // so the next focus and the best lap both stay on the first screen of a phone on its side.
                 CoachingHistory(ui.coaching, ui.lastFocusWonBackSeconds, width)
-                ui.progress?.let { Progress(it, width, onProgression) }
                 if (ui.gains.isNotEmpty() || ui.losses.isNotEmpty()) TimeGoes(ui, compare, onCoachPick, width)
                 ui.gForces?.let { GForcesCard(it, width) }
                 ui.acceleration?.let { AccelerationCard(it, width) }
@@ -232,12 +247,37 @@ internal fun TabPage(tab: Int, content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
+/** The summary's section titles (UI-307 A). */
+const val PinnedTitle = "Pinned"
+const val HighlightsTitle = "Highlights"
+
+/**
+ * The best actual lap, pinned (UI-307 A): its time large in purple, the realistic optimal under it,
+ * and every counted lap as a tiny bar, the best tallest. The other two lap times are in [LapTimes].
+ */
 @Composable
-private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composable () -> Unit)? = null) {
+private fun BestLapCard(ui: AnalysisUi, modifier: Modifier) {
+    val c = TrackTheme.colors
+    val counted = ui.laps.filter { it.deltaSeconds != null }.map { it.millis / MillisPerSecond }
+    HealthCard(modifier, title = BestActualLapLabel, icon = HealthIcon.Laps, trailing = "Lap ${ui.bestLapNumber}") {
+        HealthValueRow(chart = { MiniBars(counted, MaterialTheme.colorScheme.primary, c.best) }) {
+            HealthValue(formatLapTime(ui.bestLapMillis), color = c.best)
+            if (ui.realisticMillis != null) {
+                HealthDetail("${RealisticOptimalLabel.lowercase()} ${realisticText(ui, ::formatLapTime)}")
+            }
+        }
+    }
+}
+
+/**
+ * The three lap times side by side, never one name for two of them (FBBD-178): the best actual lap
+ * and the realistic optimal, the raw theoretical best under them, smaller, with how sure the time to
+ * gain is and the optimal lap's video.
+ */
+@Composable
+private fun LapTimes(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composable () -> Unit)? = null) {
     val c = TrackTheme.colors
     Card(modifier) {
-        // The three lap times, never one name for two of them (FBBD-178): the best actual lap and the
-        // realistic optimal side by side, the raw theoretical best under them, smaller.
         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Figure(
                 BestActualLapLabel,
@@ -271,6 +311,8 @@ private fun Summary(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composab
         optimalVideo?.invoke()
     }
 }
+
+private const val MillisPerSecond = 1000.0
 
 @Composable
 internal fun Figure(
@@ -374,21 +416,23 @@ private fun inBand(band: CornerBand, meters: Double) = if (band.endMeters >= ban
     meters >= band.startMeters || meters <= band.endMeters
 }
 
-/** The session's heart rate (FBBD-225, UI-107 A): average, highest and lowest. */
+/**
+ * The session's heart rate (FBBD-225, UI-107 A), pinned as a card (UI-307 A): the average large,
+ * lowest to highest and the strap under it, and each lap's average as a tiny line.
+ */
 @Composable
-private fun HeartRateCard(hr: HeartRateUi, modifier: Modifier) {
-    Card(modifier) {
-        TrackLabel(hr.device?.let { "Heart rate · $it" } ?: "Heart rate")
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            Figure("Average", "${hr.averageBpm}", "bpm", TrackTheme.colors.text, Modifier.weight(1f), HeartRateSize)
-            Figure("Max", "${hr.maxBpm}", "bpm", TrackTheme.colors.text, Modifier.weight(1f), HeartRateSize)
-            Figure("Min", "${hr.minBpm}", "bpm", TrackTheme.colors.text, Modifier.weight(1f), HeartRateSize)
+private fun HeartRateCard(hr: HeartRateUi, laps: List<LapRow>, modifier: Modifier) {
+    val byLap = laps.mapNotNull { it.heartRate?.averageBpm?.toDouble() }
+    HealthCard(modifier, title = HeartRateTitle, icon = HealthIcon.Heart, trailing = "${hr.minutes} min") {
+        HealthValueRow(chart = { MiniLine(byLap, MaterialTheme.colorScheme.primary) }) {
+            HealthValue("${hr.averageBpm}", unit = "bpm avg")
+            HealthDetail(listOfNotNull("${hr.minBpm} – ${hr.maxBpm}", hr.device).joinToString(" · "))
         }
-        Dim("Whole session, ${hr.minutes} min")
     }
 }
 
-private val HeartRateSize = 22.dp
+/** The heart rate card's heading. */
+const val HeartRateTitle = "Heart rate"
 
 /** Wide enough for "188 · 199". */
 private val LapHeartRateWidth = 76.dp
@@ -507,8 +551,8 @@ internal fun Card(modifier: Modifier = Modifier, content: @Composable ColumnScop
     Column(
         modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(16.dp))
-            .padding(horizontal = 16.dp, vertical = 14.dp),
+            .background(MaterialTheme.colorScheme.surface, HealthCardShape)
+            .padding(horizontal = 14.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
         content = content,
     )

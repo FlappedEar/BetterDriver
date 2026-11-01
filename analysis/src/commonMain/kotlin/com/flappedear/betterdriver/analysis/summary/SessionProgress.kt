@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.analysis.summary
 
 import com.flappedear.betterdriver.analysis.laps.LapSession
 import com.flappedear.betterdriver.analysis.segments.summarizeConsistency
+import kotlin.math.abs
 import kotlin.math.roundToLong
 
 // The lap-level part of FlappedEar Telemetry day/session_summary.dart (Apache 2.0): a session's
@@ -38,6 +39,8 @@ data class SessionProgress(
     val previousLabel: String? = null,
     val previousBestSeconds: Double? = null,
     val previousSpreadSeconds: Double? = null,
+    /** The previous session's typical (median) lap; null below three counted laps there. */
+    val previousMedianSeconds: Double? = null,
     /** Each segment's typical time against the session before, in track order. */
     val changes: List<SegmentChange> = emptyList(),
 ) {
@@ -58,6 +61,14 @@ data class SessionProgress(
             val now = lapSpreadSeconds ?: return null
             val before = previousSpreadSeconds ?: return null
             return now - before
+        }
+
+    /** Typical lap minus the previous session's, rounded to the millisecond: negative is quicker. */
+    val typicalDeltaSeconds: Double?
+        get() {
+            val now = lapMedianSeconds ?: return null
+            val before = previousMedianSeconds ?: return null
+            return ((now - before) * MillisPerSecond).roundToLong() / MillisPerSecond
         }
 }
 
@@ -84,8 +95,29 @@ fun summarizeProgress(current: LapSession, earlier: List<EarlierSession>): Sessi
         previousLabel = previous?.label,
         previousBestSeconds = previous?.laps?.best(),
         previousSpreadSeconds = previous?.laps?.spread(),
+        previousMedianSeconds = previous?.laps?.consistency()?.median,
     )
 }
+
+/**
+ * The summary's highlight (UI-307 A): the typical lap against the session before, in one sentence,
+ * the same on Android and iOS. "Your typical lap was 2.0 s faster than at 14:37." Null without a
+ * typical lap in both sessions.
+ */
+fun typicalLapHighlight(progress: SessionProgress): String? {
+    val delta = progress.typicalDeltaSeconds
+    val before = progress.previousLabel
+    if (delta == null || before == null) return null
+    val tenths = (abs(delta) * Tenths).roundToLong()
+    val amount = "${tenths / Tenths.toLong()}.${tenths % Tenths.toLong()} s"
+    return when {
+        tenths == 0L -> "Your typical lap was the same as at $before."
+        delta < 0 -> "Your typical lap was $amount faster than at $before."
+        else -> "Your typical lap was $amount slower than at $before."
+    }
+}
+
+private const val Tenths = 10.0
 
 /**
  * The best lap against the earlier sessions here, in words, the same on Android and iOS. With

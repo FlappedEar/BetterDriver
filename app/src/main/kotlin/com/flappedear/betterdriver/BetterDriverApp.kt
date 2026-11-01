@@ -172,7 +172,7 @@ private fun AppNavHost(
             Box(Modifier.padding(padding)) { Setup(nav, prefs, repo) }
         }
         composable(Routes.Drive) {
-            Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, tracks) }
+            Box(Modifier.padding(padding)) { Drive(nav, prefs, repo, recorder, tracks, sessions) }
         }
         composable(Routes.Sessions) {
             Box(Modifier.padding(padding)) { SessionsRoute(nav, sessions, repo, layout) }
@@ -256,11 +256,13 @@ private fun Drive(
     repo: SetupRepo,
     recorder: RecorderClient,
     tracks: Tracks,
+    sessions: Sessions,
 ) {
     LaunchedEffect(Unit) { tracks.locate() }
     // Starting counts too: the recorder and the cameras are already on their way.
     val recording = recorder.state.recording || recorder.state.starting
     HomeScreen(
+        pinned = rememberDrivePinned(tracks.here, sessions),
         // While recording, the card shows what the running session uses, not later Settings changes.
         setup = if (recording) repo.forSession() else repo.setup,
         recording = recording,

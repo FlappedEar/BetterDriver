@@ -6,8 +6,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -17,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
@@ -38,20 +35,30 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.NumberFont
+import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.component.HealthCard
+import com.flappedear.betterdriver.core.ui.component.HealthDetail
+import com.flappedear.betterdriver.core.ui.component.HealthIcon
+import com.flappedear.betterdriver.core.ui.component.HealthValue
+import com.flappedear.betterdriver.core.ui.component.HealthValueRow
+import com.flappedear.betterdriver.core.ui.component.MiniBars
+import com.flappedear.betterdriver.core.ui.component.SectionTitle
+import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.setup.EquipmentKind
 import com.flappedear.betterdriver.setup.EquipmentModel
 import com.flappedear.betterdriver.setup.GoProModel
 import com.flappedear.betterdriver.setup.Setup
 
 /**
- * Drive (UI-130 C, UI-131 A, UI-132 B): what this session uses as chips on top, one big START ring
- * in the accent colour (UI-144 B, "start even bigger"), and the session's choice in one line under
- * it. Change opens a sheet with the car, the receiver and a switch per camera. The last session is
- * not on Drive (FBBD-276); it is the first row in Sessions. Without a GNSS receiver START is greyed
- * out and a card offers to add one (UI-37 option B), so nothing is recorded from made-up positions.
- * While a session starts or records ([recording]), START goes back to it and the choice is locked,
- * because the running session has already started what it uses. The page scrolls when the font is
- * large or the window is short.
+ * Drive (UI-130 C, UI-131 A, UI-132 B; cards since UI-308 A): a large title, one START ring in the
+ * accent colour, then Pinned cards in the session summary's style: what to work on next time here
+ * and how the last day here went ([pinned], each only with data), and the devices this session uses
+ * with Change, which opens a sheet with the car, the receiver and a switch per camera. The last
+ * session is not on Drive (FBBD-276); it is the first row in Sessions. Without a GNSS receiver START
+ * is greyed out and a card offers to add one (UI-37 option B), so nothing is recorded from made-up
+ * positions. While a session starts or records ([recording]), START goes back to it and the choice is
+ * locked, because the running session has already started what it uses. The page scrolls when the
+ * font is large or the window is short.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,27 +71,24 @@ fun HomeScreen(
     onAddReceiver: () -> Unit,
     modifier: Modifier = Modifier,
     cameraAllowed: Boolean = true,
+    pinned: DrivePinned = DrivePinned(),
 ) {
     val canStart = recording || setup.active().gnss != null
     var choosing by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxSize()) {
-        ShellTopBar("BetterDriver")
+        ShellTopBar("Drive")
         Column(
             Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            DeviceChips(setup)
-            Spacer(Modifier.size(8.dp))
             StartButton(
                 if (canStart) trackName ?: "No track detected" else "No GNSS receiver",
                 enabled = canStart,
                 onStart = onStart,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(vertical = 4.dp),
             )
-            Spacer(Modifier.size(8.dp))
-            ChoiceLine(setup, recording, cameraAllowed, onChange = { choosing = true })
             if (!canStart) {
-                ShellCard {
+                HealthCard {
                     Text(
                         "Add a GNSS receiver to start",
                         style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
@@ -93,6 +97,10 @@ fun HomeScreen(
                     FilledTonalButton(onClick = onAddReceiver) { Text("Add receiver") }
                 }
             }
+            SectionTitle("Pinned", Modifier.padding(top = 4.dp))
+            pinned.focus?.let { NextSessionHere(it, trackName) }
+            pinned.lastTime?.let { LastTimeHereCard(it) }
+            ThisSession(setup, recording, cameraAllowed, onChange = { choosing = true })
             Spacer(Modifier.size(4.dp))
         }
     }
@@ -105,51 +113,53 @@ fun HomeScreen(
     }
 }
 
-/**
- * The devices this session uses, one chip each: the receiver, the OBD-II adapters, the sensors and
- * the cameras turned on. A chip names a device; it does not say whether it answers.
- */
-@OptIn(ExperimentalLayoutApi::class)
+/** "Next session here": the corners the last session here left to work on, and their time a lap. */
 @Composable
-private fun DeviceChips(setup: Setup) {
+private fun NextSessionHere(focus: DriveFocus, trackName: String?) {
+    HealthCard(title = "Next session here", icon = HealthIcon.Coach, trailing = trackName) {
+        HealthValue(focus.corners.joinToString(" · "), size = 22.dp)
+        val first = focus.corners.first()
+        HealthDetail(listOfNotNull(focus.secondsToFind?.let(::focusTimeText), "$first first").joinToString(" · "))
+    }
+}
+
+/** "Last time here": the last day's best lap in purple, and each session's best as a bar. */
+@Composable
+private fun LastTimeHereCard(last: LastTimeHere) {
+    val c = TrackTheme.colors
+    HealthCard(title = "Last time here", icon = HealthIcon.Laps, trailing = dayLabel(last.day)) {
+        HealthValueRow(
+            chart = { MiniBars(last.sessionBests.map { it.toDouble() }, MaterialTheme.colorScheme.primary, c.best) },
+        ) {
+            HealthValue(formatLapTime(last.bestMillis), color = c.best)
+            val n = last.sessionBests.size
+            HealthDetail("best · $n session${if (n == 1) "" else "s"}")
+        }
+    }
+}
+
+/**
+ * The devices this session uses (UI-308 A): how many, their names, the car and the cameras, with
+ * Change. A card names devices; it does not say whether they answer.
+ */
+@Composable
+private fun ThisSession(setup: Setup, recording: Boolean, cameraAllowed: Boolean, onChange: () -> Unit) {
     val active = setup.active()
     val names = listOfNotNull(active.gnss?.name) +
         active.carData.map { it.name } +
         active.sensors.map { it.name } +
         active.cameras.map { it.name }
-    if (names.isEmpty()) return
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        names.forEach { name ->
-            Text(
-                name,
-                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                modifier = Modifier
-                    .border(1.dp, MaterialTheme.colorScheme.outline, ChipShape)
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-            )
-        }
-    }
-}
-
-private val ChipShape = RoundedCornerShape(16.dp)
-
-/** "Corolla · RaceBox Micro 3241" over "2 of 3 cameras on", and Change (UI-130 C, UI-132 B). */
-@Composable
-private fun ChoiceLine(setup: Setup, recording: Boolean, cameraAllowed: Boolean, onChange: () -> Unit) {
-    val active = setup.active()
     val car = active.car?.name ?: if (setup.cars.isEmpty()) "No car added" else "No car"
-    val gnss = active.gnss?.name ?: "No GNSS receiver"
-    ShellCard {
+    HealthCard(title = "This session", icon = HealthIcon.Device, trailing = car) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    "$car · $gnss",
-                    style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                )
-                DimText(camerasLine(setup))
+                HealthValue("${names.size}", unit = if (names.size == 1) "device" else "devices")
+                if (names.isNotEmpty()) HealthDetail(names.joinToString(" · "))
+                HealthDetail(camerasLine(setup))
             }
             if (!recording) TextButton(onClick = onChange) { Text("Change") }
         }
+        if (active.gnss == null) HealthDetail("No GNSS receiver")
         if (!cameraAllowed && active.uses(EquipmentModel.PHONE_CAMERA)) {
             DimText(
                 "The phone camera won't record without camera access. " +
@@ -179,8 +189,8 @@ private fun StartButton(label: String, enabled: Boolean, onStart: () -> Unit, mo
     Box(
         modifier
             .size(StartSize)
-            .border(12.dp, if (enabled) scheme.primary.copy(alpha = 0.25f) else fill, CircleShape)
-            .padding(12.dp)
+            .border(8.dp, if (enabled) scheme.primary.copy(alpha = 0.25f) else fill, CircleShape)
+            .padding(8.dp)
             .background(fill, CircleShape)
             .clickable(enabled = enabled, role = Role.Button, onClickLabel = "Start session", onClick = onStart),
         contentAlignment = Alignment.Center,
@@ -203,8 +213,8 @@ private fun StartButton(label: String, enabled: Boolean, onStart: () -> Unit, mo
     }
 }
 
-/** Arek's note on UI-130 C: "start even bigger" than the 190 dp ring before. */
-private val StartSize = 250.dp
+/** The ring as in the picked mockup (UI-308 A), with the Pinned cards under it on one screen. */
+private val StartSize = 170.dp
 
 @Preview(widthDp = 411, heightDp = 860)
 @Composable

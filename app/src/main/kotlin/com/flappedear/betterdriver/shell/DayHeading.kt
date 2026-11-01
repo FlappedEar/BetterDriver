@@ -1,50 +1,78 @@
 package com.flappedear.betterdriver.shell
 
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.component.HealthCard
+import com.flappedear.betterdriver.core.ui.component.HealthDetail
+import com.flappedear.betterdriver.core.ui.component.HealthIcon
+import com.flappedear.betterdriver.core.ui.component.HealthValue
+import com.flappedear.betterdriver.core.ui.component.HealthValueRow
+import com.flappedear.betterdriver.core.ui.component.MiniBars
+import com.flappedear.betterdriver.core.ui.component.SectionTitle
+import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
 import java.time.LocalDate
 
 /**
- * A day's heading: "Today", "Yesterday" or "Fri 29 Aug", and for each track driven at least twice
- * that day a "Track day ›" link to the whole day (FBBD-315, UI-210 B).
+ * A day's heading (UI-308 A): "Today", "Yesterday" or "Fri 29 Aug", with the track when the day had
+ * one, as a section title; then, for each track driven at least twice that day, a Track day card
+ * (FBBD-315): the day's best lap in purple and each session's best as a bar ([facts]). The card
+ * opens the whole day.
  */
 @Composable
-internal fun DayHeading(day: LocalDate, list: List<SessionSummary>, onTrackDay: (List<String>) -> Unit) {
+internal fun DayHeading(
+    day: LocalDate,
+    list: List<SessionSummary>,
+    onTrackDay: (List<String>) -> Unit,
+    facts: Map<String, SessionFacts> = emptyMap(),
+) {
     val days = trackDays(list)
-    Column(Modifier.padding(top = 12.dp, start = 4.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            val one = days.singleOrNull()
-            SectionLabel(
-                if (one != null) "${dayLabel(day)} · ${one.track}" else dayLabel(day),
-                Modifier.weight(1f),
-            )
-            if (one != null) TrackDayLink("Track day ›", one.ids, onTrackDay)
-        }
-        if (days.size > 1) {
-            days.forEach { TrackDayLink("Track day at ${it.track} ›", it.ids, onTrackDay) }
-        }
+    val tracks = list.map { it.info.track }.filter { it.isNotBlank() }.distinct()
+    Column(Modifier.padding(top = 16.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SectionTitle(tracks.singleOrNull()?.let { "${dayLabel(day)} · $it" } ?: dayLabel(day))
+        days.forEach { TrackDayCard(it, facts, named = tracks.size > 1, onTrackDay) }
     }
 }
 
 @Composable
-private fun TrackDayLink(text: String, ids: List<String>, onTrackDay: (List<String>) -> Unit) {
-    TextButton(onClick = { onTrackDay(ids) }, modifier = Modifier.testTag(TrackDayLinkTag)) {
-        Text(text, color = MaterialTheme.colorScheme.primary)
+private fun TrackDayCard(
+    day: TrackDayLinkUi,
+    facts: Map<String, SessionFacts>,
+    named: Boolean,
+    onTrackDay: (List<String>) -> Unit,
+) {
+    val c = TrackTheme.colors
+    val bests = day.ids.mapNotNull { facts[it]?.bestMillis }
+    HealthCard(
+        Modifier.testTag(TrackDayLinkTag),
+        title = if (named) "Track day · ${day.track}" else "Track day",
+        icon = HealthIcon.Laps,
+        trailing = "${day.ids.size} sessions",
+        onClick = { onTrackDay(day.ids) },
+        onClickLabel = "Track day",
+    ) {
+        HealthValueRow(
+            chart = { MiniBars(bests.map { it.toDouble() }, MaterialTheme.colorScheme.primary, c.best) },
+        ) {
+            if (bests.isEmpty()) {
+                HealthDetail("The whole day at ${day.track}")
+            } else {
+                HealthValue(formatLapTime(bests.min()), color = c.best)
+                HealthDetail("best of the day")
+            }
+        }
     }
 }
 
-/** The test tag of a day heading's "Track day ›" link. */
+/** The test tag of a day's Track day card. */
 internal const val TrackDayLinkTag = "track-day-link"
 
 /** One track driven more than once on one day: its name and its sessions, oldest first. */

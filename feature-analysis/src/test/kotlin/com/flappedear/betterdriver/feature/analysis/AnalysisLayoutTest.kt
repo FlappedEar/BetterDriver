@@ -78,9 +78,13 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
         compose.waitForIdle()
-        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode().boundsInRoot
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode().boundsInRoot
-        check(next.bottom <= best.top) { "next session at $next, best lap at $best on $device" }
+        // Measured unclipped: on a phone on its side the pinned best lap is below the fold.
+        val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
+        val nextBottom = next.positionInRoot.y + next.size.height
+        check(nextBottom <= best.positionInRoot.y) {
+            "next session ends at $nextBottom, best lap at ${best.positionInRoot.y} on $device"
+        }
         compose.onNodeWithTag(PrimaryFocusTag).assertIsDisplayed().assert(hasText("Corners 2–3"))
     }
 
@@ -95,7 +99,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.waitForIdle()
         fun top(node: SemanticsNode) = node.positionInRoot.y
         val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
         val history = compose.onNodeWithTag(CoachingHistoryTag).fetchSemanticsNode()
         val nextBottom = top(next) + next.size.height
         check(nextBottom <= top(best) && top(best) < top(history)) {
@@ -124,7 +128,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         }
         compose.waitForIdle()
         val next = compose.onNodeWithTag(NextSessionTag).fetchSemanticsNode()
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
         val link = compose.onNodeWithTag(ProgressionLinkTag).fetchSemanticsNode()
         val nextBottom = next.positionInRoot.y + next.size.height
         check(nextBottom <= best.positionInRoot.y && best.positionInRoot.y < link.positionInRoot.y) {
@@ -143,7 +147,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
         compose.waitForIdle()
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
         val typical = compose.onNodeWithTag(TypicalLapTag).assert(hasText("Typical lap 1:21.74")).fetchSemanticsNode()
         check(best.positionInRoot.y < typical.positionInRoot.y) { "typical lap above the best lap on $device" }
         compose.onAllNodes(hasText("Lap spread 0.42 s")).assertCountEquals(1)
@@ -228,8 +232,9 @@ abstract class AnalysisLayoutTest(private val device: String) {
         compose.edgeToEdge()
         compose.setContent { AppScreen { Analysis() } }
         compose.waitForIdle()
-        val best = compose.onAllNodes(hasText("BEST ACTUAL LAP"))[0].fetchSemanticsNode()
-        val hr = compose.onNode(hasText("HEART RATE · POLAR H10 1234")).fetchSemanticsNode()
+        val best = compose.onAllNodes(hasText(BestActualLapLabel))[0].fetchSemanticsNode()
+        val hr = compose.onNode(hasText(HeartRateTitle)).fetchSemanticsNode()
+        compose.onNode(hasText("96 – 161 · Polar H10 1234")).assertExists()
         check(best.positionInRoot.y < hr.positionInRoot.y) {
             "best lap at ${best.positionInRoot.y}, heart rate at ${hr.positionInRoot.y} on $device"
         }
@@ -249,7 +254,7 @@ abstract class AnalysisLayoutTest(private val device: String) {
             AppScreen { AnalysisScreen(AnalysisState.Ready(ui), onCompare = {}, layout = deviceLayout()) }
         }
         compose.waitForIdle()
-        compose.onAllNodes(hasText("HEART RATE", substring = true)).assertCountEquals(0)
+        compose.onAllNodes(hasText(HeartRateTitle, substring = true)).assertCountEquals(0)
         tab(AnalysisTab.Laps).performClick()
         compose.waitForIdle()
         compose.onAllNodes(hasText("BPM", substring = true)).assertCountEquals(0)

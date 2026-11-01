@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -26,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.flappedear.betterdriver.core.ui.TrackTheme
+import com.flappedear.betterdriver.core.ui.component.LargeTitle
 
 @Composable
 internal fun StatusDot(state: DeviceState, modifier: Modifier = Modifier) {
@@ -37,7 +39,11 @@ internal fun StatusDot(state: DeviceState, modifier: Modifier = Modifier) {
     Box(modifier.size(10.dp).background(color, CircleShape))
 }
 
-/** Screen title row, with an optional back button, or another button in its place ([navigation]). */
+/**
+ * Screen title row, with an optional back button, or another button in its place ([navigation]).
+ * A top-level screen, with neither, has a large bold title (UI-307 A, as Apple Health); a screen
+ * one level down keeps the compact bar with its back button.
+ */
 @Composable
 internal fun ShellTopBar(
     title: String,
@@ -45,14 +51,23 @@ internal fun ShellTopBar(
     navigation: (@Composable () -> Unit)? = null,
     actions: @Composable RowScope.() -> Unit = {},
 ) {
+    if (onBack == null && navigation == null) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(start = 20.dp, end = 8.dp, top = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            LargeTitle(title, Modifier.weight(1f))
+            actions()
+        }
+        return
+    }
     Row(
-        Modifier.fillMaxWidth().height(56.dp)
-            .padding(horizontal = if (onBack == null && navigation == null) 20.dp else 4.dp),
+        Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (onBack != null) {
             IconButton(onClick = onBack) {
-                Icon(ShellIcons.Back, contentDescription = "Back", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Icon(ShellIcons.Back, contentDescription = "Back", tint = MaterialTheme.colorScheme.primary)
             }
         } else {
             navigation?.invoke()
