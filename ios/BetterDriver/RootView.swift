@@ -47,7 +47,8 @@ struct RootView: View {
         // (iPhone) shows one column at a time.
         .onChange(of: columns) { showColumns() }
         .onChange(of: sizeClass) { showColumns() }
-        .onOpenURL { url in model.importFiles([url]) }
+        // Track files and backups have their own flows (FBBD-372); the rest are sessions.
+        .onOpenURL { url in if !IncomingRoute.take(url) { model.importFiles([url]) } }
         .confirmationDialog(
             "This session is already here",
             isPresented: Binding(get: { model.duplicate != nil }, set: { if !$0 { model.resolveDuplicate(replace: false) } }),

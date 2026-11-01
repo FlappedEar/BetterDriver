@@ -215,6 +215,10 @@ struct TrackEditorView: View {
             } else {
                 if editor.isStored {
                     Button("Delete") { deleting = true }.foregroundStyle(TrackColors.loss)
+                    // A saved track as one file to the other device (FBBD-80, UI-56 B, FBBD-372).
+                    Button("Share") { failed = TrackImportModel.share(editor.track.id) }
+                        .disabled(editor.changed)
+                        .accessibilityIdentifier("shareTrack")
                 }
                 Button("Save") {
                     model.save { ok in if !ok { failed = "The track could not be saved." } }

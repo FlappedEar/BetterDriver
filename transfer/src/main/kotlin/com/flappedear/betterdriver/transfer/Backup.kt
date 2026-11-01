@@ -17,27 +17,6 @@ import java.io.OutputStream
 import java.util.Properties
 import java.util.UUID
 
-/** File name extension of a backup (FBBD-156). */
-const val BackupExtension = "bdbackup"
-
-/** What a backup holds, read from the file itself after every entry was checked. */
-data class BackupSummary(
-    val createdUtcMillis: Long,
-    /** The version of the app that wrote it, as it showed it in Settings. */
-    val appVersion: String,
-    val tracks: Int,
-    val equipment: Int,
-    val cars: Int,
-    val sessions: Int,
-    val calibrations: Int,
-    /** Coach settings, references and the rest of the coach's files. */
-    val coachFiles: Int,
-    /** Whether it holds the app's preferences. */
-    val prefs: Boolean,
-    /** Whether "Include sessions" was on when it was written. */
-    val withSessions: Boolean,
-)
-
 /** A backup unpacked into a staging folder and checked, not yet applied; see [BackupRestore]. */
 class UnpackedBackup internal constructor(
     val summary: BackupSummary,
@@ -66,37 +45,37 @@ class UnpackedBackup internal constructor(
 @Suppress("TooManyFunctions") // Writing, reading and checking one format, in small steps.
 object Backup {
     internal val Magic = BundleFormat.BackupMagic
-    internal const val Format = "betterdriver-backup"
-    internal const val Version = 1
-    internal const val ManifestEntry = "manifest.properties"
-    internal const val PrefsEntry = "prefs/app.properties"
+    // The format is shared with the iOS app (BackupFormat, FBBD-372); these are its names here.
+    internal const val Format = BackupFormat.Format
+    internal const val Version = BackupFormat.Version
+    internal const val ManifestEntry = BackupFormat.ManifestEntry
+    internal const val PrefsEntry = BackupFormat.PrefsEntry
 
-    internal const val Tracks = "tracks"
-    internal const val SetupFile = "setup.json"
-    internal const val Coach = "coach"
-    private const val CoachSettingsFile = "settings.properties"
-    internal const val Calibrations = "imu-calibration"
-    internal const val Sessions = "sessions"
+    internal const val Tracks = BackupFormat.Tracks
+    internal const val SetupFile = BackupFormat.SetupFile
+    internal const val Coach = BackupFormat.Coach
+    private const val CoachSettingsFile = BackupFormat.CoachSettingsFile
+    internal const val Calibrations = BackupFormat.Calibrations
+    internal const val Sessions = BackupFormat.Sessions
 
     /** As TrackStore names its files. */
-    internal const val TrackSuffix = ".track.json"
+    internal const val TrackSuffix = BackupFormat.TrackSuffix
 
     /** Folders and files a restore swaps whole; sessions are added one by one. */
-    internal val SwappedAreas = listOf(Tracks, SetupFile, Coach, Calibrations)
-    private val DirAreas = listOf(Tracks, Coach, Calibrations, Sessions)
-    private const val MaxSmallEntry = 4L shl 20
-    internal const val MaxTrackBytes = 1L shl 20
-    internal const val MaxSetupBytes = 4L shl 20
+    internal val SwappedAreas = BackupFormat.SwappedAreas
+    private const val MaxSmallEntry = BackupFormat.MaxSmallEntry
+    internal const val MaxTrackBytes = BackupFormat.MaxTrackBytes
+    internal const val MaxSetupBytes = BackupFormat.MaxSetupBytes
     internal const val MaxMetaBytes = SessionLimits.MaxMetaBytes
 
     /** Coach settings and cue counts (properties), read whole at every start (audit BD-03). */
-    internal const val MaxCoachPropertiesBytes = 1L shl 20
+    internal const val MaxCoachPropertiesBytes = BackupFormat.MaxCoachPropertiesBytes
 
     /** The coach's other files (references, picks, line and day plans, history), each read whole. */
-    internal const val MaxCoachFileBytes = 8L shl 20
+    internal const val MaxCoachFileBytes = BackupFormat.MaxCoachFileBytes
 
     /** A RaceBox motion-sensor calibration: a few numbers. */
-    internal const val MaxCalibrationBytes = 64L shl 10
+    internal const val MaxCalibrationBytes = BackupFormat.MaxCalibrationBytes
 
     /** The files a backup of [root] (the app's files folder) holds, by entry path. */
     fun contents(root: File, includeSessions: Boolean): List<Pair<String, File>> = buildList {
@@ -175,9 +154,9 @@ object Backup {
                     }
                     path == PrefsEntry -> {
                         if (size > MaxSmallEntry) throw BundleFormatException("preferences too large")
-                        prefs = BackupPrefs.decode(contents)
+                        prefs = jvmPrefs(contents)
                     }
-                    path == SetupFile || DirAreas.any { path.startsWith("$it/") } -> {
+                    BackupFormat.isData(path) -> {
                         checkSize(path, size)
                         SessionBundle.copyTo(File(dir, path), contents, onBytes)
                     }
@@ -207,15 +186,7 @@ object Backup {
     }
 
     /** The most an entry at [path] may hold; null for one the app streams (session video is never in). */
-    internal fun maxBytes(path: String): Long? = when {
-        path == SetupFile -> MaxSetupBytes
-        path.startsWith("$Tracks/") -> MaxTrackBytes
-        path.startsWith("$Coach/") && path.endsWith(".properties") -> MaxCoachPropertiesBytes
-        path.startsWith("$Coach/") -> MaxCoachFileBytes
-        path.startsWith("$Calibrations/") -> MaxCalibrationBytes
-        path.startsWith("$Sessions/") -> SessionLimits.maxBytes(path.substringAfter('/').substringAfter('/'))
-        else -> null
-    }
+    internal fun maxBytes(path: String): Long? = BackupFormat.maxBytes(path)
 
     private fun fits(entry: Pair<String, File>): Boolean =
         entry.second.length() <= (maxBytes(entry.first) ?: Long.MAX_VALUE)
@@ -287,7 +258,7 @@ object Backup {
     }
 
     /** As TrackStore accepts them. */
-    private fun validTrackId(id: String) = id.isNotBlank() && id.all { it.isLetterOrDigit() || it in "-_" }
+    private fun validTrackId(id: String) = BackupFormat.validTrackId(id)
 
     /** Every file under [root]/[area] that would travel in a bundle, by entry path. */
     internal fun filesUnder(root: File, area: String): List<Pair<String, File>> {
@@ -315,46 +286,9 @@ object Backup {
             .toList()
 }
 
-/**
- * The app's preferences in a backup: a properties file with "b:", "i:", "l:", "f:" or "s:" before
- * each value for its type. Other types (string sets) are not kept; a type a newer app adds is skipped.
- */
-internal object BackupPrefs {
-    fun encode(prefs: Map<String, Any?>): ByteArray {
-        val p = Properties()
-        for ((key, value) in prefs) {
-            val text = when (value) {
-                is Boolean -> "b:$value"
-                is Int -> "i:$value"
-                is Long -> "l:$value"
-                is Float -> "f:$value"
-                is String -> "s:$value"
-                else -> null
-            }
-            text?.let { p.setProperty(key, it) }
-        }
-        return ByteArrayOutputStream().also { p.store(it, null) }.toByteArray()
-    }
-
-    fun decode(input: InputStream): Map<String, Any> {
-        val p = Properties().apply { load(input) }
-        return p.stringPropertyNames().mapNotNull { key -> value(p.getProperty(key))?.let { key to it } }.toMap()
-    }
-
-    /** [prefs] as a backup would bring them back. */
-    fun kept(prefs: Map<String, Any?>): Map<String, Any> = decode(encode(prefs).inputStream())
-
-    private fun value(text: String): Any? {
-        val v = text.substringAfter(':')
-        return when (text.substringBefore(':', "")) {
-            "b" -> v.toBooleanStrictOrNull() ?: bad(text)
-            "i" -> v.toIntOrNull() ?: bad(text)
-            "l" -> v.toLongOrNull() ?: bad(text)
-            "f" -> v.toFloatOrNull() ?: bad(text)
-            "s" -> v
-            else -> null
-        }
-    }
-
-    private fun bad(text: String): Nothing = throw BundleFormatException("bad preference value $text")
+/** The backup's preferences (shared [BackupPrefs]) from [input], refused as the JVM reader refuses a bad entry. */
+internal fun jvmPrefs(input: InputStream): Map<String, Any> = try {
+    BackupPrefs.decode(input.readBytes())
+} catch (e: BundleDamagedException) {
+    throw BundleFormatException(e.message ?: "bad preferences", e)
 }

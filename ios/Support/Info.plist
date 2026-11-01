@@ -29,6 +29,31 @@
 				<string>com.flappedear.betterdriver.session</string>
 			</array>
 		</dict>
+		<!-- Backups and track files from the Android app or another iPhone (FBBD-372). -->
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>BetterDriver backup</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.flappedear.betterdriver.backup</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>BetterDriver track</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.flappedear.betterdriver.track</string>
+			</array>
+		</dict>
 		<!-- Sessions from other apps become sessions here, as on Android (FBBD-164). -->
 		<dict>
 			<key>CFBundleTypeName</key>
@@ -92,6 +117,40 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>bdsession</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.flappedear.betterdriver.backup</string>
+			<key>UTTypeDescription</key>
+			<string>BetterDriver backup</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>bdbackup</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.flappedear.betterdriver.track</string>
+			<key>UTTypeDescription</key>
+			<string>BetterDriver track</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>bdtrack</string>
 				</array>
 			</dict>
 		</dict>

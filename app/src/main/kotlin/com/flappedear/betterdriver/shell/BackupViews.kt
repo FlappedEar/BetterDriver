@@ -30,6 +30,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.flappedear.betterdriver.sharing.TransferState
 import com.flappedear.betterdriver.transfer.BackupSummary
+import com.flappedear.betterdriver.transfer.BackupTexts
 
 /**
  * Back up and Restore in Settings › App (FBBD-156): two rows like the others in the card, and the
@@ -56,10 +57,7 @@ internal fun BackupDialog(
         title = { Text("Back up") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text(
-                    "Tracks, equipment and cars, app and coach settings, coach references and sensor " +
-                        "calibrations go into one file. Keep it off the phone, on Drive or a computer.",
-                )
+                Text(BackupTexts.WhatGoesIn)
                 Row(
                     Modifier
                         .fillMaxWidth()
@@ -102,11 +100,7 @@ internal fun RestoreSheet(summary: BackupSummary, onMerge: () -> Unit, onReplace
                     ListRow(label, value, divider = i > 0)
                 }
             }
-            DimText(
-                "Merge keeps everything on this device and adds what it lacks: newer tracks, other " +
-                    "equipment, cars and sessions, and settings not set here. Replace makes tracks, " +
-                    "equipment, cars and settings the backup's. Sessions here are always kept.",
-            )
+            DimText(BackupTexts.MergeOrReplace)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = { confirming = true }, modifier = Modifier.weight(1f)) {
                     Text("Replace…")
@@ -120,11 +114,7 @@ internal fun RestoreSheet(summary: BackupSummary, onMerge: () -> Unit, onReplace
             onDismissRequest = { confirming = false },
             title = { Text("Replace with the backup?") },
             text = {
-                Text(
-                    "Tracks, equipment and cars, app and coach settings, coach references and sensor " +
-                        "calibrations on this device are replaced by the backup's. Sessions here are kept. " +
-                        "This cannot be undone.",
-                )
+                Text(BackupTexts.ReplaceWarning)
             },
             confirmButton = {
                 TextButton(onClick = {

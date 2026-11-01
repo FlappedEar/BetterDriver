@@ -8,6 +8,8 @@ struct BetterDriverApp: App {
 
     init() {
         UITestMode.resetIfAsked()
+        // Before anything reads the data: a restore stopped after its commit is finished (FBBD-372).
+        BackupBridge.finishOrClear()
         // Before Settings reads setup.json: an install from before the checklist counts as set up.
         FirstRunGate.shared.decideAtLaunch()
     }
