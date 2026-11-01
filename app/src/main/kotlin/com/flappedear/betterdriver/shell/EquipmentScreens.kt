@@ -49,6 +49,7 @@ internal fun kindLabel(e: Equipment): String = when (e.kind) {
 
 
 /** What a model does, under its details. */
+@Suppress("CyclomaticComplexMethod") // One branch per equipment model.
 private fun modelNote(model: EquipmentModel): String = when (model) {
     EquipmentModel.RACEBOX -> "Records position, speed and G for each session it is chosen for."
     EquipmentModel.NMEA_GNSS, EquipmentModel.LNS_GNSS, EquipmentModel.DIY_GNSS ->

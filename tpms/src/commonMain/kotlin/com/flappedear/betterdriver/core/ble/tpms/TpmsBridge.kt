@@ -85,7 +85,6 @@ data class TpmsValue(val wheel: Int, val pressure: Boolean, val value: Double) {
 }
 
 private const val PidBytes = 4
-private const val PressureBytes = PidBytes + 2
 private const val TempBytes = PidBytes + 1
 private const val FirstPressurePid = 1L
 private const val LastPressurePid = 4L
@@ -102,20 +101,21 @@ private const val ByteBits = 8
  * in °C (the bridge sends 0 for anything below). Null for any other PID or a short value.
  */
 fun parseTpmsValue(bytes: ByteArray): TpmsValue? {
-    if (bytes.size < TempBytes) return null
-    var pid = 0L
-    for (i in 0 until PidBytes) pid = pid or ((bytes[i].toLong() and ByteMask.toLong()) shl (ByteBits * i))
-    return when (pid) {
-        in FirstPressurePid..LastPressurePid -> {
-            if (bytes.size < PressureBytes) return null
-            val high = bytes[PidBytes].toInt() and ByteMask
-            val centibar = (high shl ByteBits) or (bytes[PidBytes + 1].toInt() and ByteMask)
+    var pid = -1L
+    if (bytes.size >= TempBytes) {
+        pid = 0L
+        for (i in 0 until PidBytes) pid = pid or ((bytes[i].toLong() and ByteMask.toLong()) shl (ByteBits * i))
+    }
+    val first = bytes.getOrNull(PidBytes)?.toInt()?.and(ByteMask)
+    val second = bytes.getOrNull(PidBytes + 1)?.toInt()?.and(ByteMask)
+    return when {
+        first == null -> null
+        pid in FirstPressurePid..LastPressurePid && second != null -> {
+            val centibar = (first shl ByteBits) or second
             TpmsValue((pid - FirstPressurePid).toInt(), pressure = true, value = centibar / CentibarPerBar)
         }
-        in FirstTempPid..LastTempPid -> {
-            val celsius = (bytes[PidBytes].toInt() and ByteMask).toDouble()
-            TpmsValue((pid - FirstTempPid).toInt(), pressure = false, value = celsius)
-        }
+        pid in FirstTempPid..LastTempPid ->
+            TpmsValue((pid - FirstTempPid).toInt(), pressure = false, value = first.toDouble())
         else -> null
     }
 }
