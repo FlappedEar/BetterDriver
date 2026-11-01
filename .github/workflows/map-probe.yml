@@ -12,10 +12,10 @@ jobs:
       - name: Compare web providers
         run: |
           cd .github/probe
-          pip3 install -q pillow
+          pip3 install -q pillow numpy
           python3 compare.py ../../app/src/main/assets/demo/silesia-ring.replay
           curl -s --max-time 30 -o caps.xml "https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetCapabilities" || true
-          grep -o '<ows:Identifier>[^<]*</ows:Identifier>' caps.xml | sort -u | grep -v ':[0-9]*<' | head -20
+          python3 -c "import re;s=open('caps.xml').read();[print(m) for m in re.findall(r'<TileMatrix>.{0,40}EPSG:3857:1[78]<.*?</TileMatrix>', s, re.S)[:2]]; print(re.findall(r'<ows:SupportedCRS>[^<]*', s)[:5])"
   apple:
     runs-on: macos-15
     steps:
@@ -23,6 +23,6 @@ jobs:
       - name: Compare Apple
         run: |
           cd .github/probe
-          pip3 install --break-system-packages -q pillow || pip3 install -q pillow
+          pip3 install --break-system-packages -q pillow || pip3 install -q pillow numpy
           swift snap.swift 18 144244 88300 9 7 || true
           python3 compare.py ../../app/src/main/assets/demo/silesia-ring.replay apple

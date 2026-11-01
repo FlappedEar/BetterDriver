@@ -33,8 +33,8 @@ URLS = {
     "google": lambda x, y: f"https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={Z}",
     "gugik-wmts": lambda x, y: ("https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMTS/StandardResolution?SERVICE=WMTS&REQUEST=GetTile"
         f"&VERSION=1.0.0&LAYER=ORTOFOTOMAPA&STYLE=default&FORMAT=image/jpeg&TILEMATRIXSET=EPSG:3857&TILEMATRIX=EPSG:3857:{Z}&TILEROW={y}&TILECOL={x}"),
-    "gugik-wms": lambda x, y: ("https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0"
-        "&LAYERS=Raster&STYLES=&CRS=EPSG:3857&BBOX=%f,%f,%f,%f&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg" % merc_bounds(x, y)),
+    #"gugik-wms": lambda x, y: ("https://mapy.geoportal.gov.pl/wss/service/PZGIK/ORTO/WMS/StandardResolution?SERVICE=WMS&REQUEST=GetMap&VERSION=1.3.0"
+        #"&LAYERS=Raster&STYLES=&CRS=EPSG:3857&BBOX=%f,%f,%f,%f&WIDTH=256&HEIGHT=256&FORMAT=image/jpeg" % merc_bounds(x, y)),
 }
 
 def mosaic(name):
@@ -76,15 +76,31 @@ def score(name, img):
         n += 1; on += a; off += b
     sharp = ImageStat.Stat(img.convert("L").filter(ImageFilter.FIND_EDGES)).var[0]
     print(f"RESULT {name}: lap on grey {100*on/max(n,1):.0f}%  control 40 m aside {100*off/max(n,1):.0f}%  edge variance {sharp:.0f}  (n={n})")
-    small = img.resize((NX * 16, NY * 16)).convert("L")
-    # Coarse picture of the area, 1 char = 16 px, dark = asphalt.
-    for yy in range(0, small.height, 2):
-        print("  " + "".join(" .:-=+*#%@"[min(9, (255 - small.getpixel((xx, yy))) // 26)] for xx in range(small.width)))
+
+def shift(a, b):
+    """Best (dx, dy) in pixels moving b onto a, from edge maps, within +-48 px."""
+    import numpy as np
+    ea = np.asarray(a.convert("L").filter(ImageFilter.FIND_EDGES), dtype=float)
+    eb = np.asarray(b.convert("L").filter(ImageFilter.FIND_EDGES), dtype=float)
+    ea -= ea.mean(); eb -= eb.mean()
+    best = (-1e18, 0, 0)
+    m = 48
+    for dy in range(-m, m + 1, 2):
+        for dx in range(-m, m + 1, 2):
+            pa = ea[m:-m, m:-m]
+            pb = eb[m + dy:eb.shape[0] - m + dy, m + dx:eb.shape[1] - m + dx]
+            c = float((pa * pb).sum())
+            if c > best[0]: best = (c, dx, dy)
+    return best[1], best[2]
 
 if len(sys.argv) < 3:
+    imgs = {}
     for name in URLS:
         img = mosaic(name)
-        if img: score(name, img)
+        if img:
+            score(name, img); imgs[name] = img
+    for name in imgs:
+        if name != "google": print(f"RESULT shift {name} vs google: {shift(imgs['google'], imgs[name])} px")
     sys.exit(0)
 try:
     score("apple", Image.open("apple.png").convert("RGB").resize((NX * 256, NY * 256)))
