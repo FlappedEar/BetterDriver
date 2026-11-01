@@ -11,7 +11,6 @@ import androidx.compose.ui.test.hasClickAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isEnabled
 import androidx.compose.ui.test.performClick
-import androidx.compose.ui.test.performScrollTo
 import androidx.test.espresso.intent.Intents
 import androidx.test.espresso.intent.Intents.intending
 import androidx.test.espresso.intent.matcher.IntentMatchers.hasAction
@@ -81,8 +80,7 @@ class OptimalLapRenderTest {
         app.openSessions()
         app.openSession(ReviewFixtures.SyncCarA)
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs)
-        app.waitFor(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled(), LoadTimeoutMs)
-            .performScrollTo()
+        app.scrollUntilShown(hasText(RealisticOptimalVideoLabel) and hasClickAction() and isEnabled(), LoadTimeoutMs)
             .performClick()
         app.waitFor(hasText("Export") and hasClickAction() and isEnabled(), LoadTimeoutMs).performClick()
         app.waitNamed("the optimal lap video to render", RenderTimeoutMs) { ended(id) }

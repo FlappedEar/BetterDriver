@@ -35,8 +35,9 @@ class StoredDataSmokeTest {
         app.openSessions()
         app.openSession(SmokeFixtures.OldCar)
         app.waitForText("BEST ACTUAL LAP", timeoutMs = LoadTimeoutMs).assertIsDisplayed()
-        app.waitForText("REALISTIC OPTIMAL").assertIsDisplayed()
-        app.waitForText("RAW THEORETICAL BEST").assertIsDisplayed()
+        // Under the Pinned cards and Highlights, which arrive from background loads (UI-307 A).
+        app.scrollUntilShown(hasText("REALISTIC OPTIMAL"))
+        app.scrollUntilShown(hasText("RAW THEORETICAL BEST"))
         app.openTab("Laps")
         app.waitForText("Lap 2")
         app.back()
