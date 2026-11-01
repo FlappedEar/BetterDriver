@@ -23,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.review.ReviewOnlyDevice
 import com.flappedear.betterdriver.coach.CoachSettings
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.feature.track.TrackBrightness
@@ -74,6 +75,7 @@ fun SettingsScreen(
     onOpenObd: () -> Unit = {},
     reach: Map<String, Reach> = emptyMap(),
     trackLayout: @Composable () -> Unit = {},
+    tablet: Boolean = false,
 ) {
     Column(modifier.fillMaxSize()) {
         ShellTopBar(topic?.title ?: "Settings", onBack = onBack)
@@ -84,7 +86,9 @@ fun SettingsScreen(
             when (topic) {
                 null -> ShellCard {
                     val freeGb = rememberFreeGb()
-                    SettingsTopic.entries.forEachIndexed { i, t ->
+                    // A tablet only reviews: none of what sets up a recording (ReviewOnlyDevice).
+                    val shown = SettingsTopic.entries.filter { ReviewOnlyDevice.showsSetting(it.title, tablet) }
+                    shown.forEachIndexed { i, t ->
                         val summary = topicSummary(t, setup, trackCount, trackScreen, coach, version, freeGb)
                         ListRow(t.title, divider = i > 0, supporting = summary, onClick = { onOpenTopic(t) }) {
                             Chevron()
@@ -103,7 +107,7 @@ fun SettingsScreen(
                 }
                 SettingsTopic.Video -> VideoPage(setup, onChooseVideo)
                 SettingsTopic.App ->
-                    AppPage(version, onRunSetup, updateRow, backupRows, coach, onOpenCoach, onOpenAbout)
+                    AppPage(version, onRunSetup, updateRow, backupRows, coach, onOpenCoach, onOpenAbout, tablet)
                 // Settings › Diagnostics: the app's one log, to share after a drive or clear (FBBD-183).
                 SettingsTopic.Diagnostics -> ShellCard { debugRows() }
                 // Their own pages, opened by onOpenTopic.
@@ -175,16 +179,20 @@ private fun AppPage(
     coach: CoachSettings,
     onOpenCoach: () -> Unit,
     onOpenAbout: () -> Unit,
+    tablet: Boolean,
 ) {
     ShellCard {
         ListRow("Theme", "Always dark", divider = false)
-        ListRow("Track screen colours", "Green / red")
-        ListRow("Spoken coach", coachLabel(coach), onClick = onOpenCoach)
+        // The track screen, the coach and the first-run setup are the recording phone's.
+        if (!tablet) {
+            ListRow("Track screen colours", "Green / red")
+            ListRow("Spoken coach", coachLabel(coach), onClick = onOpenCoach)
+        }
         PermissionRows()
         ListRow("Version", version)
         updateRow()
         backupRows()
-        ListRow("Run setup again", onClick = onRunSetup)
+        if (!tablet) ListRow("Run setup again", onClick = onRunSetup)
         ListRow("About and credits", onClick = onOpenAbout)
     }
 }

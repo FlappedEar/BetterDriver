@@ -74,7 +74,7 @@ fun SessionVideoTab(sessionId: String, title: String, onWatch: (VideoPart, Int) 
         VideoExportLine(exports.states[sessionId], rendering) { exports.cancel(sessionId) }
         VideoTabButtons(
             canSave = part != null && !busy,
-            canWatchPart = part != null && canWatch(part),
+            canWatchPart = part != null,
             onSave = {
                 if (part != null) {
                     saving = "$part:${handleFor(part, handle)}"

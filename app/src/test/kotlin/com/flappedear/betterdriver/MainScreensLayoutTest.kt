@@ -152,6 +152,17 @@ abstract class MainScreensLayoutTest(private val device: String) {
     }
 
     @Test
+    fun carPageForReview() = checkScreen("car_review_only", Routes.Car) {
+        // A tablet only reviews (ReviewOnlyDevice): the car's name and notes, no adapter or parameters.
+        CarPage(
+            car = CarProfile("c", "Track car", "2013 Scion FR-S"),
+            chosen = true,
+            obd = null,
+            records = false,
+        )
+    }
+
+    @Test
     fun carPageWithParameters() = checkScreen("car_parameters", Routes.Car) {
         // FBBD-344, UI-300 A: own parameters and a scan, on a phone.
         CarPage(

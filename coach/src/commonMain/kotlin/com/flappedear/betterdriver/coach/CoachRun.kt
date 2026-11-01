@@ -3,6 +3,10 @@ package com.flappedear.betterdriver.coach
 import com.flappedear.betterdriver.analysis.line.DayPlanStore
 import com.flappedear.betterdriver.analysis.line.LinePlan
 import com.flappedear.betterdriver.analysis.line.LinePlanStore
+import com.flappedear.betterdriver.analysis.weather.Surface
+import com.flappedear.betterdriver.analysis.weather.readWeather
+import com.flappedear.betterdriver.analysis.weather.surfaceAt
+import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.io.CoreFiles
 import com.flappedear.betterdriver.recorder.log.CoreLog
 import com.flappedear.betterdriver.recorder.log.logInfo
@@ -194,9 +198,38 @@ class CoachRun(
         )
     }
 
+    /** When the session's weather was last read, on the session clock; null before the first read. */
+    private var weatherReadMicros: Long? = null
+
+    /** The surface the coach went by at the last read (FBBD-403); null while the weather is not known. */
+    private var surface: Surface? = null
+
+    /**
+     * The weather the recording keeps in the session's folder (FBBD-403), read once a minute: on a damp
+     * or wet track the coach stops its corner cues, which come from dry laps, and says lap times only.
+     */
+    @Suppress("ReturnCount") // Each early return leaves the coach as it is: not due, no weather, no change.
+    private fun checkWeather(c: CoachSession) {
+        val t = now()
+        val last = weatherReadMicros
+        if (last != null && t - last < WeatherReadMicros) return
+        weatherReadMicros = t
+        val weather = readWeather(CoreFiles.join(folders.sessions, sessionId)) ?: return
+        val utc = nowUtcMillis()
+        val now = weather.surfaceAt(utc) ?: return
+        if (now == surface) return
+        surface = now
+        c.conditions(wet = now != Surface.Dry)
+        val air = weather.at(utc)?.airC?.let { fixed(it, 1) } ?: "na"
+        report(t, CoachEvents.CONDITIONS, "surface=${now.text} air_c=$air")
+        val cues = if (now == Surface.Dry) "corner cues on" else "lap times only"
+        logInfo(Tag, "track ${now.text} by the weather: $cues")
+    }
+
     /** A fix of the recording; its cue, if any, is said now. */
     fun fix(fix: CoachFix) {
         val c = coach ?: return
+        if (on) checkWeather(c)
         var asked: Asked? = null
         // Nothing is said over a phrase still playing (FBBD-253): the cue waits while it still fits.
         val out = c.onFix(fix, now(), voiceFree = !voice.speaking) { text ->
@@ -263,6 +296,9 @@ class CoachRun(
 
         /** timed_src of a cue said on another path (live, clip) than it was timed for (FBBD-255). */
         const val OtherPath = "other_path"
+
+        /** How often the session's weather is read: it changes every 15 minutes at most. */
+        const val WeatherReadMicros = 60_000_000L
     }
 }
 

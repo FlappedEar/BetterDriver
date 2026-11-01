@@ -474,6 +474,7 @@ private fun Settings(
             nav.navigate(Routes.Setup) { popUpTo(Routes.Drive) { inclusive = true } }
         },
         onBack = onBack,
+        tablet = isTabletDevice(),
         trackCount = tracks.list.size,
         onChooseVideo = { cam, mode -> repo.update { it.chooseVideo(cam.id, mode) } },
         coach = coach.settings,

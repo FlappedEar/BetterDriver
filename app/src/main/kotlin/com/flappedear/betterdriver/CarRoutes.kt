@@ -111,12 +111,15 @@ private fun CarRoute(nav: NavHostController, repo: SetupRepo, id: String?) {
         return
     }
     val chosen = car.id == nextId
-    // Only the next session's car connects: the adapter reads the car it is plugged into.
-    val link = if (chosen) rememberCarLink(recorder, car) else null
+    // Only the next session's car connects: the adapter reads the car it is plugged into. A tablet
+    // only reviews and connects to nothing (ReviewOnlyDevice).
+    val tablet = isTabletDevice()
+    val link = if (chosen && !tablet) rememberCarLink(recorder, car) else null
     CarPage(
         car = car,
         chosen = chosen,
         obd = link?.view,
+        records = !tablet,
         actions = CarPageActions(
             onEdit = { nav.navigate(Routes.car(car.id)) },
             onChoose = { repo.update { it.chooseCar(car.id) } },

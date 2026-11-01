@@ -174,6 +174,8 @@ private fun Ready(
                     Progress(it, width, onProgression)
                 }
                 LapTimes(ui, width, optimalVideo)
+                // The conditions the lap times were driven in (FBBD-403), under them, with the last time here.
+                ui.weather?.let { WeatherCard(it, width) }
                 // Then what came of the last focus (FBBD-180): the loop closed. Under the lap times,
                 // so the next focus and the best lap both stay on the first screen of a phone on its side.
                 CoachingHistory(ui.coaching, ui.lastFocusWonBackSeconds, width)
@@ -313,7 +315,7 @@ private fun LapTimes(ui: AnalysisUi, modifier: Modifier, optimalVideo: (@Composa
 private const val MillisPerSecond = 1000.0
 
 @Composable
-private fun Figure(
+internal fun Figure(
     label: String,
     value: String,
     detail: String,

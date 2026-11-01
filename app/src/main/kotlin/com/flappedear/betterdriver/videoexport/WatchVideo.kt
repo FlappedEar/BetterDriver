@@ -51,6 +51,8 @@ import androidx.media3.common.VideoSize
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.SeekParameters
+import com.flappedear.betterdriver.analysis.optimal.OptimalClipPlan
+import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.feature.review.SessionVideo
 import com.flappedear.betterdriver.format.formatRunningTime
@@ -70,15 +72,26 @@ import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 /**
- * A session's whole video, to watch in the app (FBBD-341): every clip back to back, as Video with
- * data's "Whole session" cuts it, and the data the overlay draws. Made by [VideoExports.watch].
+ * A session's video to watch in the app (FBBD-341): every clip back to back, as Video with data
+ * cuts it, and the data the overlay draws. A composite lap's ([optimal], its plan, whose cuts are
+ * [cuts] in the same order) overlay names the lap each part comes from over the composite's running
+ * time, as its saved video does (FBBD-163, FBBD-178). Made by [VideoExports.watch].
  */
 class WatchSource internal constructor(
     val cuts: List<VideoCut>,
     val video: SessionVideo,
     val data: OverlayData,
+    val optimal: OptimalClipPlan? = null,
 ) {
     val totalMicros: Long = cuts.totalMicros()
+
+    /** What the overlay shows at [at]; null before the first cut or past the last. */
+    internal fun momentAt(at: CutPosition): HudMoment? {
+        val sessionMicros = cuts.sessionMicrosAt(at) ?: return null
+        val composite = optimal?.cuts?.getOrNull(at.index)
+            ?.let { optimal.overlayAt(it, sessionMicros, runs = data.pointToPoint) }
+        return HudMoment(sessionMicros, data.at(sessionMicros), composite)
+    }
 }
 
 /** What the watch screen shows: the source being read, the source, or that it has no video to play. */
@@ -142,7 +155,7 @@ private fun ColumnScope.Watch(source: WatchSource) {
     }
     val fonts = remember(context) { HudFonts.load(context) }
     val painter = remember(source) { TechHudPainter(fonts, source.data) }
-    val moment = source.cuts.sessionMicrosAt(w.at)?.let { HudMoment(it, source.data.at(it)) }
+    val moment = source.momentAt(w.at)
     Picture(w, painter, moment, Modifier.weight(1f, fill = false))
     Transport(w, source.totalMicros)
 }
@@ -158,12 +171,17 @@ private fun Picture(w: WatchPlayer, painter: TechHudPainter, moment: HudMoment?,
                 onRelease = { v -> w.player.clearVideoSurfaceView(v) },
                 modifier = Modifier.fillMaxSize(),
             )
-            Canvas(Modifier.fillMaxSize().semantics { contentDescription = overlayDescription(moment?.frame) }) {
+            val described = Modifier.semantics {
+                contentDescription = overlayDescription(moment?.frame, moment?.optimal)
+            }
+            Canvas(Modifier.fillMaxSize().then(described)) {
                 val width = size.width.roundToInt()
                 val height = size.height.roundToInt()
                 if (moment == null || width <= 0 || height <= 0) return@Canvas
                 val l = painter.layout(width, height)
-                drawIntoCanvas { c -> painter.draw(c.nativeCanvas, l, moment.sessionMicros, moment.frame) }
+                drawIntoCanvas { c ->
+                    painter.draw(c.nativeCanvas, l, moment.sessionMicros, moment.frame, moment.optimal)
+                }
             }
         }
     }
@@ -293,11 +311,19 @@ private class WatchPlayer(context: Context, private val source: WatchSource) : P
     }
 }
 
-/** What the overlay shows, in words, for TalkBack and the emulator tests: "Data: 54 km/h, lap 3 1:23.4". */
-internal fun overlayDescription(frame: OverlayFrame?): String {
+/**
+ * What the overlay shows, in words, for TalkBack and the emulator tests: "Data: 54 km/h, lap 3 1:23.4";
+ * on a composite lap ([optimal]), its caption and running time in place of the lap's:
+ * "Data: 54 km/h, REALISTIC OPTIMAL · LAP 2 · CORNER 1 0:12.3".
+ */
+internal fun overlayDescription(frame: OverlayFrame?, optimal: OptimalOverlayText? = null): String {
     if (frame == null) return "Data: none"
     val speed = frame.speedKmh?.let { "${it.roundToInt()} km/h" } ?: "no speed"
-    val lap = frame.lap?.let { ", lap ${it.number} ${formatRunningTime(it.lapMicros / MicrosPerMilli)}" }.orEmpty()
+    val lap = if (optimal != null) {
+        ", ${optimal.captions.first()} ${formatRunningTime(optimal.theoreticalMicros / MicrosPerMilli)}"
+    } else {
+        frame.lap?.let { ", lap ${it.number} ${formatRunningTime(it.lapMicros / MicrosPerMilli)}" }.orEmpty()
+    }
     return "Data: $speed$lap"
 }
 

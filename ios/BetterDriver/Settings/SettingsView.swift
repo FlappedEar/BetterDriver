@@ -14,6 +14,17 @@ enum SettingsTopic: String, CaseIterable, Identifiable {
     case diagnostics = "Diagnostics"
 
     var id: String { rawValue }
+
+    /// The topics this device shows: a tablet only reviews, so none of what sets up a recording
+    /// (the shared ReviewOnlyDevice, as Android).
+    static var shown: [SettingsTopic] {
+        allCases.filter { ReviewOnlyDevice.shared.showsSetting(title: $0.rawValue, tablet: Device.isTablet) }
+    }
+}
+
+/// The device the app runs on: a tablet reviews, the phone records (Arek, 2026-10-30).
+enum Device {
+    static var isTablet: Bool { UIDevice.current.userInterfaceIdiom != .phone }
 }
 
 /// The Settings tab (FBBD-338), the Android app's Settings page.
@@ -24,7 +35,7 @@ struct SettingsView: View {
         NavigationStack {
             ShellPage(title: "Settings", large: true) {
                 ShellCard {
-                    ForEach(Array(SettingsTopic.allCases.enumerated()), id: \.element) { i, topic in
+                    ForEach(Array(SettingsTopic.shown.enumerated()), id: \.element) { i, topic in
                         NavigationLink(value: topic) {
                             ListRow(topic.rawValue, divider: i > 0, supporting: summary(topic), chevron: true)
                         }
@@ -141,16 +152,21 @@ struct AppPage: View {
         ShellPage(title: "App") {
             ShellCard {
                 ListRow("Theme", value: "Always dark", divider: false)
-                ListRow("Track screen colours", value: "Green / red")
-                NavigationLink(value: SettingsTopic.coach) {
-                    ListRow("Spoken coach", value: coachLabel(settings.coach), chevron: true)
+                // The track screen, the coach and the first-run setup are the recording phone's.
+                if !Device.isTablet {
+                    ListRow("Track screen colours", value: "Green / red")
+                    NavigationLink(value: SettingsTopic.coach) {
+                        ListRow("Spoken coach", value: coachLabel(settings.coach), chevron: true)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
                 ListRow("Version", value: AppInfo.version)
                 // Back up and Restore (FBBD-372), where Android has them.
                 BackupRows()
-                ListRow("Run setup again", chevron: true) { FirstRunGate.shared.runAgain() }
-                    .accessibilityIdentifier("runSetupAgain")
+                if !Device.isTablet {
+                    ListRow("Run setup again", chevron: true) { FirstRunGate.shared.runAgain() }
+                        .accessibilityIdentifier("runSetupAgain")
+                }
                 NavigationLink { AboutPage() } label: { ListRow("About and credits", chevron: true) }
                     .buttonStyle(.plain)
             }

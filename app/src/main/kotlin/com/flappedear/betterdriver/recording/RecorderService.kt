@@ -158,6 +158,9 @@ class RecorderService : Service() {
 
     /** Starts and stops run here, off the main thread: both touch the disk and stop can wait for the writer. */
     private val control = Executors.newSingleThreadExecutor { Thread(it, "recorder-control") }
+
+    /** Weather fetches (FBBD-403), off the recorder's threads: a slow network never holds a sample. */
+    private val weatherFetch = Executors.newSingleThreadExecutor { Thread(it, "recorder-weather") }
     private lateinit var store: SessionStore
     private lateinit var cpu: CpuLock
 
@@ -294,7 +297,7 @@ class RecorderService : Service() {
                 } else {
                     CoachLink(this, recording.id, recording.startNanos, timing, clients.messenger, fixAgeFor(gnss))
                 }
-                coach?.let(recording.listeners::add)
+                listOfNotNull(coach, recordingWeather(recording, weatherFetch)).forEach(recording.listeners::add)
                 // Ends the recording here only when its writer has stopped, also for stops the recorder makes
                 // itself (storage full, write error), with the writer's reason (Audit A03).
                 val end = RecordingEnd(recording) { reason -> main.post { onEnded(recording, reason) } }
@@ -409,6 +412,7 @@ class RecorderService : Service() {
         active = null
         cpu.release()
         control.shutdown()
+        weatherFetch.shutdown()
         super.onDestroy()
     }
 

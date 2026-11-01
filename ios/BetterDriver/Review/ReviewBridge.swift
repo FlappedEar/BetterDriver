@@ -172,6 +172,12 @@ enum ReviewBridge {
         library.quality(id: id)
     }
 
+    /// The session's Weather card (FBBD-403), as Android's; nil when it has none. May fetch the weather
+    /// the first time: not on the main thread.
+    static func weather(id: String) -> WeatherUi? {
+        library.weather(id: id)
+    }
+
     /// Each session's row as Android's (UI-139 C): its detail line and best lap. Reads sessions: not on the main thread.
     static func sessionRows() -> [String: SessionRowFacts] {
         library.sessionRows()

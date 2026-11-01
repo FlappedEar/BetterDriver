@@ -120,8 +120,9 @@ final class DataVideoTests: XCTestCase {
 
     /// The composite laps' video (FBBD-370), as Android's Video tab: with all of the session on video the
     /// realistic optimal and the raw theoretical best are offered after the whole session; a composite
-    /// lap is saved only (Watch stays off, no handle) and is written as BetterDriver-<id>-raw-theoretical.mp4.
-    func testTheCompositeLapIsSavedFromTheVideoTab() {
+    /// lap has no handle, is written as BetterDriver-<id>-raw-theoretical.mp4 and is watched in the app
+    /// (Arek, 2026-11-01: it could not be watched).
+    func testTheCompositeLapIsSavedAndWatchedFromTheVideoTab() {
         app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideoLong", "-noFilesSheet"]
         app.launch()
         openSessions()
@@ -140,9 +141,9 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(raw.label.hasPrefix("Raw theoretical best"), raw.label)
         keep("Video tab composite laps")
         XCTAssertTrue(raw.isEnabled, "the raw theoretical best is not on video: \(raw.label)")
-        // The best lap is picked when the tab opens, so Watch and Save are already on: wait until the
-        // raw theoretical best is the picked row (tapped again once if the first tap did not take,
-        // as on the iPad job), then until Watch has turned off, rather than reading it at once.
+        // The best lap is picked when the tab opens: wait until the raw theoretical best is the picked
+        // row (tapped again once if the first tap did not take, as on the iPad job), then until its
+        // handle row has gone, rather than reading it at once.
         let picked = NSPredicate(format: "isSelected == true")
         raw.tap()
         if XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: picked, object: raw)], timeout: 5) != .completed {
@@ -154,10 +155,12 @@ final class DataVideoTests: XCTestCase {
         )
         let watch = app.buttons["dataVideoWatch"].firstMatch
         let save = app.buttons["dataVideoSave"].firstMatch
-        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == false"), object: watch)
-        XCTAssertEqual(XCTWaiter.wait(for: [off], timeout: 15), .completed, "a composite lap is saved only, as on Android")
+        let noHandle = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: app.buttons["dataVideoHandle6"].firstMatch
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [noHandle], timeout: 15), .completed, "a composite lap has no handle")
         XCTAssertTrue(save.isEnabled, "no Save video for the composite lap")
-        XCTAssertFalse(app.buttons["dataVideoHandle6"].exists, "a composite lap has no handle")
+        XCTAssertTrue(watch.isEnabled, "no Watch for the composite lap")
         save.tap()
         let saved = app.descendants(matching: .any)["dataVideoSaved"].firstMatch
         let failed = app.staticTexts.containing(NSPredicate(format: "label BEGINSWITH 'The video was not saved'")).firstMatch
@@ -169,6 +172,19 @@ final class DataVideoTests: XCTestCase {
         XCTAssertTrue(saved.label.hasSuffix("-raw-theoretical.mp4"), saved.label)
         keep("Composite lap saved")
         XCTAssertEqual(app.state, .runningForeground, "the app stopped while saving")
+
+        // Watched in the app, with the composite's own overlay (the same composition as the saved file).
+        let on = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: watch)
+        XCTAssertEqual(XCTWaiter.wait(for: [on], timeout: 30), .completed, "Watch did not come back after saving")
+        watch.tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 60),
+            "the composite lap did not play"
+        )
+        sleep(2)
+        keep("Composite lap playing")
+        app.buttons["dataVideoClose"].firstMatch.tap()
+        XCTAssertTrue(watch.waitForExistence(timeout: 30), "not back in the Video tab")
     }
 
     /// The composite lap's video under the lap times (FBBD-370), as Android's lap analysis: "Realistic

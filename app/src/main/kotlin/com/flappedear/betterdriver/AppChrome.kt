@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.navigation.NavHostController
+import com.flappedear.betterdriver.analysis.review.ReviewOnlyDevice
 import com.flappedear.betterdriver.core.ui.layout.HeightClass
 import com.flappedear.betterdriver.core.ui.layout.LayoutSize
 import com.flappedear.betterdriver.core.ui.layout.WidthClass
@@ -46,9 +47,9 @@ private val TopLevelItems = listOf(
     TopLevelItem(Routes.Settings, "Settings", ShellIcons.Settings),
 )
 
-/** The bar's items: a tablet only reviews, so without Drive (Arek, 2026-10-30: no recording on tablets). */
+/** The bar's items: a tablet only reviews, so without Drive and Car (the shared [ReviewOnlyDevice]). */
 private fun topLevelItems(tabletDevice: Boolean) =
-    if (tabletDevice) TopLevelItems.filter { it.route != Routes.Drive } else TopLevelItems
+    TopLevelItems.filter { ReviewOnlyDevice.showsTopLevel(it.label, tabletDevice) }
 
 /**
  * A tablet whichever way it is held or split: its smallest width is a tablet's (600 dp, Android's

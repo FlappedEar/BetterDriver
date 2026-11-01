@@ -36,13 +36,9 @@ class VideoExportUiTest {
         assertEquals("BetterDriver-abc-video.mp4", videoExportFileName("abc", WholeVideo, pointToPoint = true))
     }
 
-    /** The Video tab (FBBD-392) watches the whole video or a lap; a composite lap is only exported. */
+    /** The Video tab (FBBD-392) gives a lap its handle; the whole video and a composite lap get none. */
     @Test
     fun theVideoTabWatchesTheWholeVideoOrALapWithItsHandle() {
-        assertTrue(canWatch(WholeVideo))
-        assertTrue(canWatch(3))
-        assertFalse(canWatch(videoPartOf(OptimalKind.RealisticOptimal)))
-        assertFalse(canWatch(videoPartOf(OptimalKind.RawTheoreticalBest)))
         assertEquals(7, handleFor(3, 7))
         assertEquals(0, handleFor(WholeVideo, 7))
         assertEquals(0, handleFor(videoPartOf(OptimalKind.RealisticOptimal), 7))

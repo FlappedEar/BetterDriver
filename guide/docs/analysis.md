@@ -12,10 +12,10 @@ your tab, compared laps, map view, corner and scroll position.
 ## The Video tab
 
 A session with video has a **Video** tab after **Car**. It lists the parts of
-[Video with data](export.md#video-with-data): the whole session, on Android the composite laps, and each lap,
+[Video with data](export.md#video-with-data): the whole session, the composite laps (realistic optimal, raw theoretical best) and each lap,
 the best lap picked to start with; a lap the cameras missed cannot be picked. For a lap, pick the
 seconds of video before and after it (5 to 8). **Watch** plays the picked part on the phone with
-the data band over it (the whole session or a lap; a composite lap is only saved). **Save video**
+the data band over it; a composite lap plays with its own band, naming the lap each part comes from. **Save video**
 renders it to an MP4 where you choose, with a bar and **Cancel video** while it renders. **Watch
 video** and **Export ▾ › Video with data** in the session's sheet still work as before.
 
@@ -59,6 +59,13 @@ The Summary opens with what to do next and what came of last time:
 - **Where time goes**: the corners where the most time was lost, and on which lap each corner's
   best was set.
 - **Heart rate** (when a strap was worn): average, highest and lowest.
+- **Weather**: the air temperature, the track (dry, damp or wet from the rain of the two hours
+  before), the wind and gusts, and how it compares with the last time at the same place ("Last
+  time here (12 Oct): 14 °C, dry. Today 6 °C colder, wet."), so a lap time is read with the
+  conditions it was driven in. The phone fetches it from Open-Meteo (modelled values every 15
+  minutes) at the first fix and every 15 minutes while recording; a session recorded offline,
+  imported or older gets it when it is opened. Only the place rounded to about 1 km and the date
+  are sent. Same card on Android, iPhone and iPad.
 - **G-forces · whole session**: the G-G diagram and peaks.
 - **Data quality**: GNSS rate, gaps, video coverage and the other recording checks, and where each
   channel came from. With OBD-II, its own part: link drops, the longest gap and the time without

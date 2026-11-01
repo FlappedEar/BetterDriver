@@ -591,14 +591,22 @@ class CueEngine(
 
     /**
      * Why the coach says nothing about corners now (FBBD-202): [CoachEvents.PIT_LANE] after a lap that
-     * ended in the pit lane, [CoachEvents.COOLING_DOWN] once the car lifted off to cool down; else null.
+     * ended in the pit lane, [CoachEvents.COOLING_DOWN] once the car lifted off to cool down,
+     * [CoachEvents.WET_TRACK] while the track is [wet] (FBBD-403); else null.
      */
     val quietReason: String?
         get() = when {
             inLap.inPitLane -> CoachEvents.PIT_LANE
             inLap.cruising -> CoachEvents.COOLING_DOWN
+            wet -> CoachEvents.WET_TRACK
             else -> null
         }
+
+    /**
+     * The weather says the track is damp or wet (FBBD-403): the reference's braking points and apex
+     * speeds come from dry laps, so no corner cue asks for them; lap times are still said.
+     */
+    var wet = false
 
     /** The lap being driven, as live timing numbers it. */
     val lapNumber: Int get() = laps.timer.lapNumber
@@ -744,6 +752,8 @@ class CueEngine(
     private fun speak(now: Long, along: Double): Cue? {
         // Cooling down: no advice, but the time of the lap just driven is still said.
         if (inLap.cruising) return speakLapTime(now, null, anywhere = true)
+        // A wet track: the dry reference's targets are not for now (FBBD-403); only the lap time.
+        if (wet) return speakLapTime(now, null, anywhere = true)
         val b = book ?: return null
         val next = b.next(along) ?: return null
         val lap = laps.timer.lapNumber
@@ -821,7 +831,8 @@ class CueEngine(
      */
     @Suppress("ReturnCount") // Each early return is a reason to say nothing on this fix.
     private fun speakPlan(now: Long, along: Double?): Cue? {
-        if (!planPending) return null
+        // A wet track (FBBD-403): no corner plan either; it is said once the track is dry.
+        if (!planPending || wet) return null
         val b = book
         if (settings.verbosity < Verbosity.Focus || focus.isEmpty() || b == null) {
             planPending = false

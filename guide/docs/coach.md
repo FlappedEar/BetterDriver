@@ -52,6 +52,11 @@ confidence the coach speaks without numbers ("Turn 3, brake a little later"). It
 cool-down lap, in the pit lane and on the in-lap, and comes back as soon as two corners in a row
 are again near your pace.
 
+**Wet track**: when the weather the recording fetched says the track is damp or wet (rain in the
+last two hours), the coach stops its braking and speed cues, which come from your dry laps, and
+says lap times only; the track screen's coach line shows "Wet track · lap times only". It comes
+back when the weather says dry again.
+
 ## After a cue: did it work?
 
 The coach line on the track screen shows what came of a cue: green "Apex 1.8 m tighter ✓ ·

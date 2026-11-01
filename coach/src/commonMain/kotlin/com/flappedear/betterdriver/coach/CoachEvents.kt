@@ -53,11 +53,21 @@ object CoachEvents {
 
     /**
      * The coach went quiet for the rest of a lap (FBBD-202): text "lap=<n> reason=<[COOLING_DOWN] or
-     * [PIT_LANE]>". So a log shows which laps it took as cool-down, not only that it said nothing (FBBD-244).
+     * [PIT_LANE] or [WET_TRACK]>". So a log shows which laps it took as cool-down, not only that it
+     * said nothing (FBBD-244).
      */
     const val QUIET = "coach_quiet"
     const val COOLING_DOWN = "cooling_down"
     const val PIT_LANE = "pit_lane"
+
+    /** The weather says the track is damp or wet (FBBD-403): no corner cues from the dry reference. */
+    const val WET_TRACK = "wet_track"
+
+    /**
+     * The weather the coach goes by changed (FBBD-403): text "surface=<dry|damp|wet> air_c=<n>", from the
+     * session's weather.json, so a log shows why the coach went quiet or came back.
+     */
+    const val CONDITIONS = "coach_conditions"
 
     fun quietText(lap: Int, reason: String) = "lap=$lap reason=$reason"
 
