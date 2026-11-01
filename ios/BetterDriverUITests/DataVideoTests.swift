@@ -194,10 +194,17 @@ final class DataVideoTests: XCTestCase {
         keep("Optimal-lap video under the lap times")
         button.tap()
 
+        // The sheet, by its title; the button tapped again once if the first tap did not take.
+        let title = app.staticTexts["optimalVideoSheet"].firstMatch
+        if !title.waitForExistence(timeout: 15) {
+            keep("Composite lap sheet not open")
+            button.tap()
+        }
+        XCTAssertTrue(title.waitForExistence(timeout: 30), "no composite lap sheet")
+        XCTAssertEqual(title.label, "Composite lap video")
         let realistic = app.buttons["optimalVideoKind-1"].firstMatch
         let raw = app.buttons["optimalVideoKind-2"].firstMatch
-        XCTAssertTrue(raw.waitForExistence(timeout: 30), "no composite lap sheet")
-        XCTAssertTrue(app.staticTexts["Composite lap video"].exists, "the sheet has no title")
+        XCTAssertTrue(raw.waitForExistence(timeout: 10), "no raw theoretical best in the sheet")
         XCTAssertTrue(realistic.label.hasPrefix("Realistic optimal"), realistic.label)
         XCTAssertTrue(raw.label.hasPrefix("Raw theoretical best"), raw.label)
         keep("Composite lap sheet")

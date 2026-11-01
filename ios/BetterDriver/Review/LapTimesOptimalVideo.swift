@@ -29,6 +29,15 @@ struct LapTimesOptimalVideo: View {
                     .tint(Palette.accent)
                     .disabled(!choice.enabled || progress != nil)
                     .accessibilityIdentifier("optimalVideoButton")
+                    // The sheet hangs on the button, the Files sheet on the row: one sheet per view.
+                    .sheet(isPresented: $open) {
+                        LapTimesOptimalVideoSheet(choice: choice) { part in
+                            open = false
+                            save(part)
+                        } onCancel: {
+                            open = false
+                        }
+                    }
                 DimText(choice.note)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("optimalVideoNote")
@@ -49,14 +58,6 @@ struct LapTimesOptimalVideo: View {
         // Leaving the Summary stops a video being made, as the Video tab does: its Files sheet would
         // have nowhere to open.
         .onDisappear { job?.cancel() }
-        .sheet(isPresented: $open) {
-            LapTimesOptimalVideoSheet(choice: choice) { part in
-                open = false
-                save(part)
-            } onCancel: {
-                open = false
-            }
-        }
         .sheet(item: $saved) { file in
             SaveToFiles(url: file.url) { saved = nil }
         }
@@ -135,6 +136,7 @@ struct LapTimesOptimalVideoSheet: View {
             Text(CompositeOptionsKt.CompositeLapVideoTitle)
                 .font(.headline)
                 .foregroundStyle(Palette.onBackground)
+                .accessibilityIdentifier("optimalVideoSheet")
             ForEach(choice.kinds, id: \.part) { k in kindRow(k) }
             DimText(CompositeOptionsKt.CompositeLapVideoAbout)
             ScrollView {
@@ -160,7 +162,6 @@ struct LapTimesOptimalVideoSheet: View {
         .background(Palette.background)
         .presentationDetents([.medium, .large])
         .onAppear { picked = choice.preselected }
-        .accessibilityIdentifier("optimalVideoSheet")
     }
 
     private func kindRow(_ k: CompositeKindLine) -> some View {
