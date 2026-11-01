@@ -101,6 +101,9 @@ class TileSource(
  *   (@2x) images. It needs Arek's MapTiler key, entered on the phone: the key is never in the
  *   repository or the APK.
  * - OpenStreetMap's street map, until a key is entered.
+ * - Google's satellite map (Map Tiles API, FBBD-411): checked 2026-11-01 under the Silesia Ring lap,
+ *   the only source of those tried whose photo shows the track (Apple's, Esri's and GUGiK's predate
+ *   it). It needs Arek's Google key, entered on the device, and a session ([GoogleMapTiles]).
  * GUGiK's orthophoto WMS was dropped: Arek found it far too slow (2026-10-16).
  */
 object TileSources {
@@ -122,9 +125,53 @@ object TileSources {
         imagePx = 2 * TileSize,
     ) { z, x, y -> "$MapTilerSatellite/$z/$x/$y@2x.jpg?key=$key" }
 
+    /**
+     * Google's satellite map with the key [key] and a [session] from [GoogleMapTiles.createSessionUrl].
+     * Google's terms allow no store of its tiles beyond what their HTTP headers say, so they are not
+     * kept on disk.
+     */
+    fun googleSatellite(key: String, session: String): TileSource = TileSource(
+        id = "google-satellite",
+        name = "Satellite (Google)",
+        attribution = "Google Maps",
+        maxZoom = 22,
+        imagePx = 2 * TileSize,
+    ) { z, x, y -> "${GoogleMapTiles.HOST}/v1/2dtiles/$z/$x/$y?session=$session&key=$key" }
+
     /** The backgrounds, best first: MapTiler's satellite when [mapTilerKey] is set, then the street map. */
     fun available(mapTilerKey: String? = null): List<TileSource> = listOfNotNull(
         mapTilerKey?.trim()?.takeIf { it.isNotEmpty() }?.let(::mapTiler),
         OpenStreetMap,
     )
+}
+
+/**
+ * Google's Map Tiles API (FBBD-411): a tile request needs a session, made once with a POST of
+ * [SESSION_REQUEST] to [createSessionUrl]; the answer's "session" goes into every tile's address
+ * ([TileSources.googleSatellite]) until its "expiry" (seconds since 1970). The picture's credit
+ * is "Google Maps" with the copyright text from [viewportUrl] for the area shown.
+ */
+object GoogleMapTiles {
+    const val HOST = "https://tile.googleapis.com"
+
+    /** A satellite map without labels, in 512 px tiles (as MapTiler's @2x ones). */
+    const val SESSION_REQUEST =
+        """{"mapType":"satellite","language":"en-GB","region":"PL","scale":"scaleFactor2x","highDpi":true}"""
+
+    fun createSessionUrl(key: String): String = "$HOST/v1/createSession?key=$key"
+
+    /** [SESSION_REQUEST] for Swift, which reaches functions of an object more surely than its constants. */
+    fun sessionRequest(): String = SESSION_REQUEST
+
+    /** The copyright of the photos in the area between [north], [south], [east] and [west] at [zoom]. */
+    fun viewportUrl(
+        key: String,
+        session: String,
+        zoom: Int,
+        north: Double,
+        south: Double,
+        east: Double,
+        west: Double,
+    ): String = "$HOST/tile/v1/viewport?session=$session&key=$key&zoom=$zoom" +
+        "&north=$north&south=$south&east=$east&west=$west"
 }

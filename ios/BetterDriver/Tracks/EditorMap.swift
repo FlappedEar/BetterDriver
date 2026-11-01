@@ -15,7 +15,7 @@ enum EditorColors {
     static let straight = UIColor(red: 0xC9 / 255, green: 0xD3 / 255, blue: 0xDA / 255, alpha: 0x99 / 255)
 }
 
-/// The editor's map (UI-23, UI-24), as EditorMap on Android: Apple's satellite photo or map, the
+/// The editor's map (UI-23, UI-24), as EditorMap on Android: a satellite photo (FBBD-411) or Apple's map, the
 /// recorded lap, every line with its direction arrow, and the selected line with its two draggable ends;
 /// with no line selected, the track's corners and straights, the one being corrected with its draggable
 /// ends (FBBD-366). A tap places the selected line, else picks the corner there; pinch and drag move the map.
@@ -69,7 +69,16 @@ struct EditorMap: UIViewRepresentable {
         func show(_ background: EditorBackground, on map: MKMapView) {
             if shown == background { return }
             map.preferredConfiguration = background.configuration
+            map.removeOverlays(map.overlays.filter { $0 is EditorTileOverlay })
+            if let source = background.satellite, source != .apple {
+                map.addOverlay(EditorTileOverlay(source: source), level: .aboveLabels)
+            }
             shown = background
+        }
+
+        func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            if let tiles = overlay as? MKTileOverlay { return MKTileOverlayRenderer(tileOverlay: tiles) }
+            return MKOverlayRenderer(overlay: overlay)
         }
 
         /// Fits the map to the recorded lap, else the start/finish line, else the track's area.
