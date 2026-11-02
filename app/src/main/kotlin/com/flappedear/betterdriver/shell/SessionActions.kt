@@ -22,6 +22,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.review.sessionDeleteText
+import com.flappedear.betterdriver.analysis.review.sessionSizeText
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.recorder.store.SessionState
 import com.flappedear.betterdriver.recorder.store.SessionSummary
@@ -30,7 +32,6 @@ import com.flappedear.betterdriver.recording.ExportFormat
 import com.flappedear.betterdriver.recording.ExportState
 import com.flappedear.betterdriver.recording.sessionDetail
 import com.flappedear.betterdriver.recording.sessionTitle
-import java.util.Locale
 
 /**
  * Everything a session offers, in the sheet its ⋮ opens (UI-139 C): its GoPro video, the coach's
@@ -194,24 +195,12 @@ private fun DeleteDialog(
     )
 }
 
-/** The delete question's text: what goes and how much space it frees. */
-internal fun deleteText(title: String, bytes: Long?, video: Boolean): String {
-    val what = if (video) "its data and video" else "its data"
-    val size = bytes?.let { " (${sizeText(it)})" }.orEmpty()
-    return "$title: $what$size will be removed from this phone. " +
-        "Files still on a GoPro stay there. This can't be undone."
-}
+/** The delete question's text: what goes and how much space it frees (shared with iOS, FBBD-360). */
+internal fun deleteText(title: String, bytes: Long?, video: Boolean): String =
+    sessionDeleteText(title, bytes, video, device = "phone")
 
-/** "820 KB", "350 MB", "2.4 GB". */
-internal fun sizeText(bytes: Long): String = when {
-    bytes >= GB -> String.format(Locale.ROOT, "%.1f GB", bytes / GB.toDouble())
-    bytes >= MB -> "${bytes / MB} MB"
-    else -> "${maxOf(1, bytes / KB)} KB"
-}
-
-private const val KB = 1_000L
-private const val MB = 1_000_000L
-private const val GB = 1_000_000_000L
+/** "820 KB", "350 MB", "2.4 GB" (shared with iOS). */
+internal fun sizeText(bytes: Long): String = sessionSizeText(bytes)
 
 @Composable
 private fun GoProSection(s: SessionSummary, export: ExportState?, goPro: GoProCardState, sharing: Boolean) {
