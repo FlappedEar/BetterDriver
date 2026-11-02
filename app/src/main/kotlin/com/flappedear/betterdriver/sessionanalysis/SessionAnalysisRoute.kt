@@ -44,6 +44,7 @@ import com.flappedear.betterdriver.coach.CoachPicksRepo
 import com.flappedear.betterdriver.coach.CoachPrefs
 import com.flappedear.betterdriver.coach.CoachReferences
 import com.flappedear.betterdriver.coach.CornerPick
+import com.flappedear.betterdriver.coach.coachCandidates
 import com.flappedear.betterdriver.coach.coaches
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.coach.linePlanStore
@@ -431,15 +432,6 @@ private fun toggleCoachPick(load: Load?, picks: CoachPicksRepo, corner: String) 
     done.coachCandidates[corner]?.let { picks.toggle(done.loaded.track.id, it) }
 }
 
-/**
- * Each corner of [analysis] as a coach pick: its line on the fastest lap, and its CornerId in the
- * track's corner identity (FBBD-172) when the analysis's corners are the track's.
- */
-private fun coachCandidates(analysis: SessionAnalysis, sessionId: String): Map<String, CornerPick> =
-    flaggableCorners(analysis).associate {
-        it.id to CornerPick(it.name, it.lats, it.lons, sessionId, it.cornerId, it.identityRevision)
-    }
-
 // A damaged session or track file says so instead of crashing the app.
 @Suppress("TooGenericExceptionCaught", "ReturnCount")
 private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, circuits: CircuitList): Load {
@@ -493,7 +485,7 @@ private fun loadSession(sessions: SessionStore, tracks: TrackStore, id: String, 
         session, analysis, data.info.startUtcMillis, track, saved, whole, coached, originOf(data.info), strap,
     )
     // No corners to pick where the coach does not run (point-to-point tracks, FBBD-155).
-    val candidates = if (coaches(track)) coachCandidates(analysis, id) else emptyMap()
+    val candidates = if (coaches(track)) coachCandidates(flaggableCorners(analysis), id) else emptyMap()
     return Load.Done(loaded, candidates, lapVideo(sessions, data, track))
 }
 

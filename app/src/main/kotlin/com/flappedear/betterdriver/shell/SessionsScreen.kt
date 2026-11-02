@@ -40,7 +40,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.flappedear.betterdriver.analysis.review.sessionDayLabel
 import com.flappedear.betterdriver.analysis.review.sessionRowDetail
+import com.flappedear.betterdriver.analysis.review.sessionRowTitle
 import com.flappedear.betterdriver.core.ui.BetterDriverTheme
 import com.flappedear.betterdriver.core.ui.component.HealthCardShape
 import com.flappedear.betterdriver.core.ui.component.HealthDetail
@@ -129,10 +131,13 @@ fun SessionsScreen(
             Box(Modifier.padding(horizontal = 16.dp)) { ShellCard { DimText("No sessions yet") } }
         } else {
             LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
-                byDay(sessions).forEach { (day, list) ->
-                    item(key = "day-$day") { DayHeading(day, list, onTrackDay, facts) }
+                val byId = sessions.associateBy { it.id }
+                // The days, their headings and whether a card names its track come from the shared core (FBBD-360).
+                sessionDays(sessions).forEach { day ->
+                    val list = day.ids.map(byId::getValue)
+                    item(key = "day-${day.localDay}") { DayHeading(day, list, onTrackDay, facts) }
                     // Two session cards a row (UI-308 A); the track on each when the day had more than one.
-                    val oneTrack = list.map { it.info.track }.filter { it.isNotBlank() }.distinct().size <= 1
+                    val oneTrack = !day.trackOnRows
                     items(list.chunked(CardsPerRow), key = { "row-" + it.first().id }) { pair ->
                         Row(
                             Modifier.fillMaxWidth().padding(bottom = CardGap),
@@ -231,14 +236,11 @@ internal fun byDay(
 ): List<Pair<LocalDate, List<SessionSummary>>> =
     sessions.groupBy { Instant.ofEpochMilli(it.info.startUtcMillis).atZone(zone).toLocalDate() }.toList()
 
-/** "Today", "Yesterday", else "Sun 19 Oct". */
-internal fun dayLabel(day: LocalDate, today: LocalDate = LocalDate.now()): String = when (day) {
-    today -> "Today"
-    today.minusDays(1) -> "Yesterday"
-    else -> DayFormat.format(day)
-}
+/** "Today", "Yesterday", else "Sun 19 Oct" (shared with iOS, FBBD-360). */
+internal fun dayLabel(day: LocalDate, today: LocalDate = LocalDate.now()): String =
+    sessionDayLabel(day.toEpochDay(), today.toEpochDay()) { DayFormat.format(LocalDate.ofEpochDay(it)) }
 
-private val DayFormat = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())
+internal val DayFormat = DateTimeFormatter.ofPattern("EEE d MMM", Locale.getDefault())
 private val TimeFormat = DateTimeFormatter.ofPattern("HH:mm", Locale.getDefault())
 
 /** The test tag of the Sessions row of session [id]: tests find a row by it, not by its time text. */
@@ -247,7 +249,7 @@ internal fun sessionRowTag(id: String) = "session-row-$id"
 /** "16:23 · Silesia Ring": when the session started, and where ([withTrack]; "16:23" without). */
 internal fun rowTitle(s: SessionSummary, zone: ZoneId = ZoneId.systemDefault(), withTrack: Boolean = true): String {
     val time = TimeFormat.format(Instant.ofEpochMilli(s.info.startUtcMillis).atZone(zone))
-    return listOf(time, s.info.track.takeIf { withTrack }.orEmpty()).filter { it.isNotBlank() }.joinToString(" · ")
+    return sessionRowTitle(time, s.info.track, withTrack)
 }
 
 /** "Corolla · 22 min · 14 laps · Video · OBD · HR": the car, how long, and what was recorded (shared with iOS). */
