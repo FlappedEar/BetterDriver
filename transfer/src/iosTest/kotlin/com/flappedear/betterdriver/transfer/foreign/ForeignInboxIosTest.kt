@@ -74,7 +74,7 @@ class ForeignInboxIosTest {
     }
 
     @Test
-    fun `the same file imported again is refused and the list keeps one session (FBBD-427)`() {
+    fun `the same file imported again is refused and the list keeps one session`() {
         val path = write(SyntheticCircle.vbo().encodeToByteArray(), "circle.vbo")
         val made = inbox.importFile(path, "circle.vbo", listOf(SyntheticCircle.track), CircuitList.Empty)
         val refused = assertFailsWith<ImportFormatException> {
