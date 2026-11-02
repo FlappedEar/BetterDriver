@@ -144,6 +144,7 @@ internal object RecorderProtocol {
     private const val OBD_UNITS = "obd.units"
     private const val OBD_VALUES = "obd.values"
     private const val OBD_HZ = "obd.hz"
+    private const val OBD_ADAPTER = "obd.adapter"
 
     private const val HR_LINK = "hr.link"
     private const val HR_BPM = "hr.bpm"
@@ -270,6 +271,7 @@ internal object RecorderProtocol {
         putStringArray(OBD_UNITS, s.readings.map { it.unit }.toTypedArray())
         putDoubleArray(OBD_VALUES, s.readings.map { it.value }.toDoubleArray())
         putDoubleArray(OBD_HZ, s.readings.map { it.hz }.toDoubleArray())
+        putString(OBD_ADAPTER, s.adapter)
     }
 
     fun putHeartRate(b: Bundle, s: HeartRateStatus) = b.apply {
@@ -295,7 +297,7 @@ internal object RecorderProtocol {
         val hz = b.getDoubleArray(OBD_HZ) ?: DoubleArray(0)
         val n = minOf(ids.size, names.size, units.size, values.size, hz.size)
         val readings = (0 until n).map { ObdReading(ids[it], names[it], units[it], values[it], hz[it]) }
-        return ObdStatus(state, b.getString(OBD_DETAIL).orEmpty(), readings)
+        return ObdStatus(state, b.getString(OBD_DETAIL).orEmpty(), readings, adapter = b.getString(OBD_ADAPTER))
     }
 
     /** Live timing from a [MSG_STATE] bundle, or null when the recording is not being timed. */

@@ -108,8 +108,11 @@ struct EquipmentItemPage: View {
                     } else {
                         ListRow("Model", value: item.modelLabel)
                     }
-                    if item.modelName == ModelName.tcpGnss {
-                        ListRow("Wi-Fi", value: item.address ?? "")
+                    // A Wi-Fi adapter's or GPS receiver's address is "host:port", as Android's item page
+                    // shows it (FBBD-423, FBBD-374).
+                    if let address = item.address,
+                       item.modelName == ModelName.obdWifi || item.modelName == ModelName.tcpGnss {
+                        ListRow("Address", value: address)
                     } else if item.address != nil {
                         ListRow("Bluetooth", value: "Bluetooth LE")
                     }
