@@ -15,20 +15,22 @@ struct AppShell: View {
     @ObservedObject private var firstRun = FirstRunGate.shared
 
     var body: some View {
+        // The bar's icons are Android's (ShellIcons, Material Round): sports_score, history,
+        // directions_car, settings, as SF Symbols.
         // parity-list:top-level
         TabView {
             if UIDevice.current.userInterfaceIdiom == .phone {
                 DriveView()
-                    .tabItem { Label("Drive", systemImage: "steeringwheel") }
+                    .tabItem { Label("Drive", systemImage: "flag.checkered") }
             }
             RootView()
-                .tabItem { Label("Sessions", systemImage: "list.bullet.rectangle") }
+                .tabItem { Label("Sessions", systemImage: "clock.arrow.circlepath") }
             if UIDevice.current.userInterfaceIdiom == .phone {
                 CarHome()
-                    .tabItem { Label("Car", systemImage: "car") }
+                    .tabItem { Label("Car", systemImage: "car.fill") }
             }
             SettingsView()
-                .tabItem { Label("Settings", systemImage: "gearshape") }
+                .tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .environmentObject(recorder)
         .environmentObject(settings)

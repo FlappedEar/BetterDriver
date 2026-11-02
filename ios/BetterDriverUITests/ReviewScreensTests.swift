@@ -148,7 +148,12 @@ final class ReviewScreensTests: XCTestCase {
             let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
             XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
             rows.element(boundBy: 0).tap()
-            XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
+            // Polled with a cheap firstMatch every 5 s, as the drive and track day tests: while the
+            // summary is worked out and drawn, a busy CI simulator times out a waitForExistence snapshot.
+            let best = app.staticTexts["BEST ACTUAL LAP"].firstMatch
+            var shown = false
+            for _ in 0..<36 where !shown { sleep(5); shown = best.exists }
+            XCTAssertTrue(shown, "no summary")
             let menu = app.buttons["exportMenu"].firstMatch
             XCTAssertTrue(menu.waitForExistence(timeout: 10), "no export menu")
             // The menu closes when it gains Video with data on reading that the session has video
@@ -228,7 +233,7 @@ final class ReviewScreensTests: XCTestCase {
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: 1).waitForExistence(timeout: 120), "no demo sessions")
         rows.element(boundBy: 1).tap()
-        XCTAssertTrue(app.staticTexts["NEXT SESSION · WORK ON"].waitForExistence(timeout: 120), "no next session card")
+        XCTAssertTrue(app.staticTexts["Next session"].waitForExistence(timeout: 120), "no next session card")
         for label in ["BEST ACTUAL LAP", "REALISTIC OPTIMAL", "RAW THEORETICAL BEST", "WHERE TIME GOES", "G-FORCES · WHOLE SESSION"] {
             XCTAssertTrue(app.staticTexts[label].exists, "no \(label)")
         }

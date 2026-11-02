@@ -10,12 +10,14 @@ struct RootView: View {
     @State private var model = SessionsModel.shared
     @State private var selection: String?
     @State private var columns: NavigationSplitViewVisibility = .all
+    /// The column an iPhone shows: a session card picked (UI-308 A) opens its review, Back the list.
+    @State private var compactColumn: NavigationSplitViewColumn = .sidebar
     /// The list beside a session hidden by its button; shown again once the session is closed.
     @State private var listHidden = false
     @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columns) {
+        NavigationSplitView(columnVisibility: $columns, preferredCompactColumn: $compactColumn) {
             SessionsListView(model: model, selection: $selection)
                 // Android's list beside the analysis: two fifths, between a phone's width and a card's.
                 .navigationSplitViewColumnWidth(min: 320, ideal: 380, max: 440)
@@ -40,7 +42,13 @@ struct RootView: View {
         .navigationSplitViewStyle(.balanced)
         .onChange(of: selection) { _, id in
             if id == nil { listHidden = false }
+            // The cards pick by a tap, not as list rows, so the iPhone is told to show the review.
+            compactColumn = id != nil ? .detail : .sidebar
             showColumns()
+        }
+        // Back on the iPhone: nothing picked, so the same card opens its review again.
+        .onChange(of: compactColumn) { _, column in
+            if sizeClass == .compact && column == .sidebar { selection = nil }
         }
         .onChange(of: listHidden) { showColumns() }
         // Turned or resized, the iPad keeps what the list button picked: only a collapsed split
