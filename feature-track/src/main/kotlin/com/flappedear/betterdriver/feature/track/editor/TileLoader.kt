@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import com.flappedear.betterdriver.timing.map.GoogleMapTiles
 import com.flappedear.betterdriver.timing.map.GoogleSession
+import com.flappedear.betterdriver.timing.map.GoogleTileBudget
+import com.flappedear.betterdriver.timing.map.GoogleTileDay
 import com.flappedear.betterdriver.timing.map.TileSource
 import com.flappedear.betterdriver.timing.map.TileSources
 import java.io.File
@@ -112,6 +114,11 @@ class TileLoader(
     private var sessionPending = false
     private var sessionTriedAt = 0L
 
+    /** Google tiles fetched today, against the daily cap (GoogleTileBudget); guarded by itself. */
+    private val budgetLock = Any()
+    private var budget: GoogleTileDay? = null
+    private val budgetFile = googleKeyFile?.resolveSibling("google-tiles-today.txt")
+
     /** Google's copyright text by viewport square ("z/x/y"); "" while it is asked for. io threads. */
     private val copyrights = ConcurrentHashMap<String, String>()
 
@@ -119,6 +126,7 @@ class TileLoader(
         io.execute {
             val key = readKey(keyFile)
             if (key != null) main.post { mapTilerKey = key }
+            synchronized(budgetLock) { budget = GoogleTileBudget.read(readText(budgetFile)) }
             val google = readKey(googleKeyFile)
             if (google != null) {
                 main.post {
@@ -182,17 +190,27 @@ class TileLoader(
 
     /**
      * Makes a Google session if there is a key and none is at hand or it expires within the hour;
-     * after a failure, not again for 30 s. Called often (the maps call it every 30 s). Main thread.
+     * after a failure, not again for 30 s. Nothing while today's Google tiles are used up, and the
+     * map comes back the next day. Called often (the maps call it every 30 s). Main thread.
      */
     fun ensureGoogle() {
         val key = googleKey ?: return
+        val spent = googleSpentToday()
         val now = SystemClock.elapsedRealtime()
         val s = session?.second
         val fresh = s != null && s.expirySeconds * MillisPerSecond - System.currentTimeMillis() > SessionMarginMs
-        val waiting = sessionTriedAt != 0L && now - sessionTriedAt < SessionRetryMs
-        if (fresh || sessionPending || waiting) return
+        // A new day after the cap was used: the session made before still serves.
+        val restore = fresh && google == null
+        if (restore && !spent && s != null) google = TileSources.googleSatellite(key, s.token)
+        val busy = sessionPending || (sessionTriedAt != 0L && now - sessionTriedAt < SessionRetryMs)
+        if (spent || fresh || busy) return
         sessionPending = true
         sessionTriedAt = now
+        makeSession(key)
+    }
+
+    /** Asks Google for a session with [key] on an io thread; Google's map follows once it is made. */
+    private fun makeSession(key: String) {
         val generation = keyGeneration
         io.execute {
             val made = try {
@@ -210,6 +228,31 @@ class TileLoader(
                 google = TileSources.googleSatellite(key, made.token)
             }
         }
+    }
+
+    /** True when today's Google tiles are used up (GoogleTileBudget). */
+    private fun googleSpentToday(): Boolean = synchronized(budgetLock) {
+        GoogleTileBudget.spent(budget, GoogleTileBudget.today(System.currentTimeMillis()))
+    }
+
+    /**
+     * Counts one Google tile against today's cap and keeps the count; false when the cap is used,
+     * and then Google's map is dropped until [ensureGoogle] finds a new day. io thread.
+     */
+    private fun takeGoogleTile(): Boolean {
+        val next = synchronized(budgetLock) {
+            GoogleTileBudget.take(budget, GoogleTileBudget.today(System.currentTimeMillis()))?.also { budget = it }
+        }
+        if (next == null) {
+            main.post { google = null }
+            return false
+        }
+        try {
+            budgetFile?.writeText(GoogleTileBudget.write(next))
+        } catch (_: IOException) {
+            // Counted for this run only.
+        }
+        return true
     }
 
     /** What the map must say while it shows [source]: for Google, also whose photos they are. Main thread. */
@@ -282,6 +325,7 @@ class TileLoader(
     // A failed download leaves nothing on disk and is retried later; it is never an error.
     @Suppress("ReturnCount")
     private fun download(source: TileSource, key: Key): ImageBitmap? {
+        if (source.id == GoogleId && !takeGoogleTile()) return null
         val bytes = try {
             fetch(source.url(key.z, key.x, key.y))
         } catch (_: IOException) {
@@ -394,6 +438,12 @@ class TileLoader(
 
 private const val GoogleId = "google-satellite"
 private const val MillisPerSecond = 1000L
+
+private fun readText(file: File?): String? = try {
+    file?.takeIf { it.isFile }?.readText()
+} catch (_: IOException) {
+    null
+}
 
 /** The key kept in [file], or null when there is none. */
 private fun readKey(file: File?): String? = try {
