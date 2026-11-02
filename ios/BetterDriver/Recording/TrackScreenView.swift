@@ -158,6 +158,10 @@ enum OrientationLock {
     static var mask = normal
 
     static func set(_ wanted: UIInterfaceOrientationMask) {
+        // The iPad is not turned (FBBD-435): with windowed apps (iPadOS 26 on) an asked orientation
+        // resizes the app's window instead, and the ask back to portrait left the whole app in a
+        // phone-sized window after the video. The video itself is drawn landscape either way.
+        if UIDevice.current.userInterfaceIdiom == .pad { return }
         mask = wanted == .portrait ? normal : wanted
         turn(wanted, retry: true)
     }
