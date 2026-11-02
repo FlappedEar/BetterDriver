@@ -41,6 +41,19 @@ final class PerfectLapTiles: ObservableObject {
 
     static func make() -> PerfectLapTiles? { PerfectLapTiles(source: SatelliteMaps.shared.best) }
 
+    /// The tiles a saved video keeps (FBBD-433, TileSources.forVideo): MapTiler's once its key is entered,
+    /// the one source whose terms allow its photo in a video; nil draws the road.
+    static func forVideo() -> PerfectLapTiles? { videoSource().map { PerfectLapTiles(source: $0) } }
+
+    /// The line under a saved video when it shows another ground than the player (TileSources.videoNote).
+    static func videoNote(shown: SatelliteSource?) -> String? {
+        TileSources.shared.videoNote(shownId: shown?.tileId, videoId: videoSource()?.tileId)
+    }
+
+    private static func videoSource() -> SatelliteSource? {
+        TileSources.shared.forVideo(mapTilerKey: SatelliteMaps.shared.key(.mapTiler)) == nil ? nil : .mapTiler
+    }
+
     private init(source: SatelliteSource) {
         self.source = source
         slots = DispatchSemaphore(value: source == .apple ? 2 : 4)

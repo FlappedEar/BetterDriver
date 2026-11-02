@@ -40,43 +40,32 @@ struct SessionsListView: View {
                     .listRowBackground(Palette.background)
             }
             ForEach(model.days) { day in
-                Section {
-                    ForEach(day.sessions) { session in
-                        SessionRowView(
-                            session: session,
-                            cameras: model.cameraLines[session.id] ?? [],
-                            onCamera: model.onCamera[session.id] ?? [],
-                            download: model.goProDownload?.sessionId == session.id ? model.goProDownload : nil,
-                            canDownload: model.canDownload,
-                            onDownload: { model.downloadCameraFiles(sessionId: session.id, camera: $0) },
-                            problems: model.goProProblems[session.id] ?? [],
-                            facts: model.rowFacts[session.id],
-                            actions: AnyView(rowActions(session))
-                        )
-                            .tag(session.id)
-                            // Android's session card buttons: Watch video (FBBD-341), Add for each camera started
-                            // by hand without video here yet (UI-32), Delete, Share, and the coach's review.
-                            .contextMenu { rowActions(session) }
-                            .listRowBackground(selection == session.id ? Palette.surfaceVariant : Palette.background)
+                // The day as a section title, with the track when the day had one, then a Track day card
+                // for each track driven twice that day (FBBD-315, UI-308 A), as Android's DayHeading.
+                let tracks = Self.tracks(of: day.sessions)
+                VStack(alignment: .leading, spacing: 8) {
+                    HealthSectionTitle(tracks.count == 1 ? "\(dayLabel(day.day)) · \(tracks[0])" : dayLabel(day.day))
+                    ForEach(TrackDayLink.of(day.sessions)) { link in
+                        trackDayCard(link, named: tracks.count > 1)
                     }
-                } header: {
-                    // Android's day heading: a "Track day ›" link for each track driven twice that day (FBBD-315).
-                    let links = TrackDayLink.of(day.sessions)
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack {
-                            Text(dayTitle(day.day, day.sessions))
-                                .font(.caption.weight(.semibold))
-                                .foregroundStyle(Palette.onSurfaceVariant)
-                            Spacer()
-                            if links.count == 1 { trackDayButton("Track day ›", links[0]) }
-                        }
-                        if links.count > 1 {
-                            ForEach(links) { trackDayButton("Track day at \($0.track) ›", $0) }
-                        }
+                }
+                .padding(.top, 8)
+                .listRowBackground(Palette.background)
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+                // Two session cards a row (UI-308 A); the track on each when the day had more than one.
+                ForEach(Self.pairs(day.sessions), id: \.first!.id) { pair in
+                    HStack(alignment: .top, spacing: 8) {
+                        ForEach(pair) { session in card(session, withTrack: tracks.count > 1) }
+                        if pair.count < 2 { Color.clear.frame(maxWidth: .infinity, maxHeight: 1) }
                     }
+                    .listRowBackground(Palette.background)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
                 }
             }
         }
+        .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Palette.background)
         .navigationTitle("Sessions")
@@ -171,11 +160,70 @@ struct SessionsListView: View {
         pickingCameraFiles = true
     }
 
-    private func trackDayButton(_ text: String, _ link: TrackDayLink) -> some View {
-        Button(text) { trackDay = link }
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Palette.accent)
-            .accessibilityIdentifier("trackDayLink")
+    /// One session as a card (UI-308 A), as Android's: a tap opens its review, ⋮ its actions.
+    private func card(_ session: SessionRow, withTrack: Bool) -> some View {
+        SessionsCard(
+            session: session,
+            withTrack: withTrack,
+            selected: selection == session.id,
+            cameras: model.cameraLines[session.id] ?? [],
+            onCamera: model.onCamera[session.id] ?? [],
+            download: model.goProDownload?.sessionId == session.id ? model.goProDownload : nil,
+            canDownload: model.canDownload,
+            onDownload: { model.downloadCameraFiles(sessionId: session.id, camera: $0) },
+            problems: model.goProProblems[session.id] ?? [],
+            facts: model.rowFacts[session.id],
+            open: { selection = session.id },
+            actions: AnyView(rowActions(session))
+        )
+        // Android's session card buttons: Watch video (FBBD-341), Add for each camera started by hand
+        // without video here yet (UI-32), Delete, Share, and the coach's review.
+        .contextMenu { rowActions(session) }
+    }
+
+    /// The Track day card (FBBD-315, UI-308 A): the day's best lap in purple and each session's best as a
+    /// bar; it opens the whole day.
+    private func trackDayCard(_ link: TrackDayLink, named: Bool) -> some View {
+        let bests = link.ids.compactMap { model.rowFacts[$0]?.bestMillis?.int64Value }
+        return Button { trackDay = link } label: {
+            HealthCard(
+                title: named ? "Track day · \(link.track)" : "Track day",
+                icon: .laps,
+                trailing: "\(link.ids.count) sessions",
+                opens: true
+            ) {
+                HealthValueRow {
+                    if let best = bests.min() {
+                        HealthValue(value: CoreBridge.lapTime(millis: best), color: Palette.best)
+                        HealthDetail("best of the day")
+                    } else {
+                        HealthDetail("The whole day at \(link.track)")
+                    }
+                } chart: {
+                    HealthMiniBars(values: bests.map { Double($0) })
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("trackDayLink")
+    }
+
+    /// The tracks a day's sessions were driven at, in name order.
+    private static func tracks(of sessions: [SessionRow]) -> [String] {
+        Array(Set(sessions.map(\.track).filter { !$0.isEmpty })).sorted()
+    }
+
+    /// The day's sessions two by two, newest first, as Android's rows of cards.
+    private static func pairs(_ sessions: [SessionRow]) -> [[SessionRow]] {
+        stride(from: 0, to: sessions.count, by: 2).map { Array(sessions[$0..<min($0 + 2, sessions.count)]) }
+    }
+
+    /// "Today", "Yesterday", else "Sun 19 Oct", as Android's day label.
+    private func dayLabel(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        return day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
     }
 
     /// Android's delete question (UI-48 A): the session, what goes and how much space it frees.
@@ -198,16 +246,16 @@ struct SessionsListView: View {
         default: return "\(max(1, bytes / 1_000)) KB"
         }
     }
-
-    private func dayTitle(_ day: Date, _ sessions: [SessionRow]) -> String {
-        let date = day.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
-        let tracks = Array(Set(sessions.map(\.track).filter { !$0.isEmpty })).sorted()
-        return tracks.isEmpty ? date : "\(date) · \(tracks.joined(separator: ", "))"
-    }
 }
 
-private struct SessionRowView: View {
+/// One session as a card (UI-308 A), as Android's SessionRow: its start time (and track when the day had
+/// more than one) in amber with ⋮, its best lap large in purple, then the car, how long, its laps and what
+/// was recorded, from the shared core. A tap opens its review; ⋮ opens its actions. The card whose review
+/// shows beside the list on an iPad is outlined. Its camera lines and downloads (UI-31, UI-32) follow.
+private struct SessionsCard: View {
     let session: SessionRow
+    let withTrack: Bool
+    let selected: Bool
     let cameras: [SessionCameraLine]
     /// Open GoPro cameras still holding this session's files (UI-31), and the download running here.
     let onCamera: [CameraOnCamera]
@@ -217,99 +265,132 @@ private struct SessionRowView: View {
     let problems: [String]
     /// Its detail line and best lap, once read.
     let facts: SessionRowFacts?
-    /// The row's ⋮ menu, as Android's session card.
+    let open: () -> Void
+    /// The card's ⋮ menu, as Android's session card.
     let actions: AnyView
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            // ⋮ beside the row, not inside it: the row is one element to tap, its menu another.
-            HStack(spacing: 4) {
-                times
-                Menu { actions } label: {
-                    Image(systemName: "ellipsis")
-                        .rotationEffect(.degrees(90))
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: open) { main }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityText)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityIdentifier("sessionRow")
+                // ⋮ over the card, not inside its button: the card is one element to tap, its menu another.
+                .overlay(alignment: .topTrailing) {
+                    Menu { actions } label: {
+                        Image(systemName: "ellipsis")
+                            .rotationEffect(.degrees(90))
+                            .frame(width: 32, height: 32)
+                            .contentShape(Rectangle())
+                    }
+                    .foregroundStyle(Palette.onSurfaceVariant)
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Session actions")
+                    .accessibilityIdentifier("sessionActions")
                 }
-                .foregroundStyle(Palette.onSurfaceVariant)
-                .buttonStyle(.borderless)
-                .accessibilityLabel("Session actions")
-                .accessibilityIdentifier("sessionActions")
+            extras
+        }
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
+        .padding(.bottom, 10)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Palette.surface, in: RoundedRectangle(cornerRadius: HealthStyle.cornerRadius))
+        .overlay(
+            RoundedRectangle(cornerRadius: HealthStyle.cornerRadius)
+                .stroke(selected ? Palette.accent : Color.clear, lineWidth: 2)
+        )
+    }
+
+    private var title: String {
+        [session.start.formatted(date: .omitted, time: .shortened), withTrack ? session.track : ""]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private var detail: String {
+        facts?.detail ?? session.durationSeconds.map { "\(Int($0 / 60)) min" } ?? ""
+    }
+
+    /// What VoiceOver and the tests read: the time and track (also when the card leaves the track to
+    /// the day's title), the best lap and the detail.
+    private var accessibilityText: String {
+        [session.start.formatted(date: .omitted, time: .shortened), session.track, facts?.best ?? "", detail]
+            .filter { !$0.isEmpty }.joined(separator: " · ")
+    }
+
+    private var main: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 6) {
+                Image(systemName: HealthIcon.laps.rawValue)
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 18, height: 18)
+                Text(title)
+                    .font(.system(size: 15, weight: .semibold).monospacedDigit())
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Room for ⋮, drawn over the card.
+                Color.clear.frame(width: 32, height: 32)
             }
-            // Android's GoPro lines (UI-31, UI-32): green when lined up by GPS, amber otherwise.
-            ForEach(cameras, id: \.sourceId) { line in
-                HStack(spacing: 8) {
+            .foregroundStyle(Palette.accent)
+            VStack(alignment: .leading, spacing: 2) {
+                if let best = facts?.best { HealthValue(value: best, color: Palette.best, size: 22) }
+                if !detail.isEmpty { HealthDetail(detail) }
+            }
+            .padding(.trailing, 8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    @ViewBuilder private var extras: some View {
+        // Android's GoPro lines (UI-31, UI-32): green when lined up by GPS, amber otherwise.
+        ForEach(cameras, id: \.sourceId) { line in
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
                     Circle()
                         .fill(line.byGps ? Palette.gain : Palette.warning)
                         .frame(width: 8, height: 8)
                     Text(line.text)
                         .font(.subheadline)
                         .foregroundStyle(Palette.onBackground)
-                    Spacer()
-                    Text(line.how)
-                        .font(.caption)
-                        .foregroundStyle(Palette.onSurfaceVariant)
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityIdentifier("cameraLine")
+                Text(line.how)
+                    .font(.caption)
+                    .foregroundStyle(Palette.onSurfaceVariant)
             }
-            // Android's UI-31 A: video still on the camera offers Download; while it comes, file N and GB.
-            ForEach(onCamera, id: \.sourceId) { camera in
-                if let download, download.sourceId == camera.sourceId {
-                    CameraDownloadLine(name: camera.name, download: download)
-                } else {
-                    HStack(spacing: 8) {
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("cameraLine")
+        }
+        // Android's UI-31 A: video still on the camera offers Download; while it comes, file N and GB.
+        ForEach(onCamera, id: \.sourceId) { camera in
+            if let download, download.sourceId == camera.sourceId {
+                CameraDownloadLine(name: camera.name, download: download)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
                         Circle().fill(Palette.warning).frame(width: 8, height: 8)
                         Text("\(camera.name) · video on the camera")
                             .font(.subheadline)
                             .foregroundStyle(Palette.onBackground)
                             .accessibilityIdentifier("cameraOnCamera")
-                        Spacer()
-                        if camera.address != nil {
-                            Button("Download") { onDownload(camera) }
-                                .buttonStyle(.bordered)
-                                .tint(Palette.accent)
-                                .disabled(!canDownload)
-                                .accessibilityIdentifier("goProDownload")
-                        }
+                    }
+                    if camera.address != nil {
+                        Button("Download") { onDownload(camera) }
+                            .buttonStyle(.bordered)
+                            .tint(Palette.accent)
+                            .disabled(!canDownload)
+                            .accessibilityIdentifier("goProDownload")
                     }
                 }
             }
-            ForEach(problems.prefix(3), id: \.self) { problem in
-                Text(problem)
-                    .font(.caption)
-                    .foregroundStyle(TrackColors.loss)
-                    .accessibilityIdentifier("cameraProblem")
-            }
         }
-    }
-
-    private var times: some View {
-        // Android's row (UI-139 C): "14:02 · Silesia Ring", the car, length and what was recorded under
-        // it, the best lap beside it, then ⋮. The words come from the shared core.
-        HStack(spacing: 8) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text([session.start.formatted(date: .omitted, time: .shortened), session.track]
-                    .filter { !$0.isEmpty }.joined(separator: " · "))
-                    .font(.body.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(Palette.onBackground)
-                let detail = facts?.detail ?? session.durationSeconds.map { "\(Int($0 / 60)) min" } ?? ""
-                if !detail.isEmpty {
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(Palette.onSurfaceVariant)
-                }
-            }
-            Spacer(minLength: 4)
-            if let best = facts?.best {
-                Text(best)
-                    .font(.body.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(Palette.best)
-            }
+        ForEach(problems.prefix(3), id: \.self) { problem in
+            Text(problem)
+                .font(.caption)
+                .foregroundStyle(TrackColors.loss)
+                .accessibilityIdentifier("cameraProblem")
         }
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("sessionRow")
     }
 }
 

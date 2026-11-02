@@ -1,10 +1,10 @@
 package com.flappedear.betterdriver.ios
 
 import com.flappedear.betterdriver.analysis.review.SessionFacts
+import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.review.recordedFacts
 import com.flappedear.betterdriver.analysis.review.sessionRowDetail
 import com.flappedear.betterdriver.analysis.review.trackFor
-import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.review.withLaps
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -14,10 +14,16 @@ import com.flappedear.betterdriver.timing.track.Track
 import platform.Foundation.NSLock
 
 /**
- * A session's row in Sessions, as Android's (UI-139 C): "Corolla · 22 min · 14 laps · OBD" and its best lap.
- * [video]: the row offers Watch video (FBBD-426), only with a whole video file to play.
+ * A session's card in Sessions, as Android's (UI-139 C, UI-308 A): "Corolla · 22 min · 14 laps · OBD",
+ * its best lap, and the best lap's time for the day's Track day card ([bestMillis]). [video]: the card
+ * offers Watch video (FBBD-426), only with a whole video file to play.
  */
-class SessionRowFacts(val detail: String, val best: String?, val video: Boolean = false)
+class SessionRowFacts(
+    val detail: String,
+    val best: String?,
+    val bestMillis: Long? = null,
+    val video: Boolean = false,
+)
 
 /**
  * Reads each listed session's [SessionFacts] with the shared core, as Android's ReviewLaps: its laps
@@ -35,7 +41,19 @@ internal class SessionRows(
     /** What a session's facts were read against: its length and every saved track's revision. */
     private data class Stamp(val durationMicros: Long?, val tracks: Map<String, Int>)
 
-    fun read(listed: List<StoredSession>): Map<String, SessionRowFacts> {
+    fun read(listed: List<StoredSession>): Map<String, SessionRowFacts> = facts(listed).let { all ->
+        listed.associate { s ->
+            val facts = all.getValue(s.id)
+            val video = hasVideo(s.id)
+            val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, video)
+            // A listed session is not recording: the recorder adds it once it ends.
+            val offers = offersVideo(video, recording = false)
+            s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), facts.bestMillis, offers)
+        }
+    }
+
+    /** Each of [listed]'s [SessionFacts], from the cache when its length and the tracks are unchanged. */
+    fun facts(listed: List<StoredSession>): Map<String, SessionFacts> {
         lock.lock()
         try {
             val saved = tracks().filter { it.timeable }
@@ -45,11 +63,7 @@ internal class SessionRows(
                 val stamp = Stamp(s.durationMicros, revisions)
                 val facts = cache[s.id]?.takeIf { it.first == stamp }?.second ?: facts(s, saved)
                 cache[s.id] = stamp to facts
-                val video = hasVideo(s.id)
-                val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, video)
-                // A listed session is not recording: the recorder adds it once it ends.
-                val offers = offersVideo(video, recording = false)
-                s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), offers)
+                s.id to facts
             }
         } finally {
             lock.unlock()
