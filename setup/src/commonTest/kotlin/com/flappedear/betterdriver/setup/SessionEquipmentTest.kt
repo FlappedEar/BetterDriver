@@ -92,7 +92,8 @@ class SessionEquipmentTest {
         assertEquals(EquipmentModel.OBD_WIFI, two.obdShownFor("Wi-Fi OBD-II adapter")?.model)
         // A name no listed item has (an unlisted adapter cannot connect) falls back to the first tried.
         assertEquals("vLinker MC+", two.obdShownFor("OBDII")?.name)
-        val advertised = Equipment("a", EquipmentModel.OBD_BLUETOOTH, "My vLinker", "AA:BB", advertisedName = "vLinker MC-123")
+        val advertised =
+            Equipment("a", EquipmentModel.OBD_BLUETOOTH, "My vLinker", "AA:BB", advertisedName = "vLinker MC-123")
         assertEquals("My vLinker", SessionEquipment.obdShown(listOf(advertised), "vLinker MC-123")?.name)
     }
 }
