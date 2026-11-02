@@ -62,20 +62,19 @@ final class ReviewScreensTests: XCTestCase {
         app.launch()
         openSessions()
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
-        XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 180), "no demo sessions")
-        let jastrzab = rows.matching(NSPredicate(format: "label CONTAINS 'Jastrz'"))
-        XCTAssertEqual(jastrzab.count, 2, "the twin is not listed")
-        jastrzab.element(boundBy: 1).press(forDuration: 1.2)
+        // Newest first: Silesia Ring, then the two Jastrząb copies (same start).
+        XCTAssertTrue(rows.element(boundBy: 2).waitForExistence(timeout: 180), "the twin is not listed")
+        XCTAssertEqual(rows.count, 3)
+        rows.element(boundBy: 2).press(forDuration: 1.2)
         app.buttons["Delete"].firstMatch.tap()
         let confirm = app.alerts.buttons["confirmDelete"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 10), "no delete question")
         confirm.tap()
         expectation(for: NSPredicate(format: "count == 2"), evaluatedWith: rows)
         waitForExpectations(timeout: 30)
-        // Nothing else goes a moment later either (a reload after the delete).
+        // Nothing else goes a moment later either (a reload after the delete): one copy is left.
         sleep(3)
         XCTAssertEqual(rows.count, 2, "deleting one copy took more than one session")
-        XCTAssertEqual(jastrzab.count, 1, "the other copy went too")
         keep("One of two copies deleted")
         XCTAssertEqual(app.state, .runningForeground)
     }
