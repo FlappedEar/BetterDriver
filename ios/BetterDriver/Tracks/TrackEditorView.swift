@@ -145,6 +145,10 @@ struct TrackEditorView: View {
         .background(Palette.background)
         .foregroundStyle(Palette.onBackground)
         .navigationBarHidden(true)
+        // Google's tiles for today used up while the map is open (FBBD-412): the next source shows.
+        .onChange(of: satellite.revision) {
+            if background == .googleSatellite, !satellite.available.contains(.google) { background = .best }
+        }
         .confirmationDialog("Discard changes?", isPresented: $leaving, titleVisibility: .visible) {
             Button("Discard", role: .destructive) { onClose() }
             Button("Keep editing", role: .cancel) {}

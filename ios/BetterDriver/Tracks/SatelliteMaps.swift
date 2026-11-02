@@ -122,14 +122,17 @@ final class SatelliteMaps: ObservableObject {
         let today = Self.today()
         lock.lock()
         let next = GoogleTileBudget.shared.take(day: tileDay, today: today)
-        if let next { tileDay = next }
+        if let next {
+            tileDay = next
+            // Kept under the lock, so an older count never overwrites a newer one.
+            try? GoogleTileBudget.shared.write(day: next).write(to: Self.budgetFile, atomically: true, encoding: .utf8)
+        }
         lock.unlock()
-        guard let next else {
-            // The menus and the pictures move to the next source.
+        if next == nil {
+            // The menus and the editor's map move to the next source.
             DispatchQueue.main.async { self.revision += 1 }
             return false
         }
-        try? GoogleTileBudget.shared.write(day: next).write(to: Self.budgetFile, atomically: true, encoding: .utf8)
         return true
     }
 

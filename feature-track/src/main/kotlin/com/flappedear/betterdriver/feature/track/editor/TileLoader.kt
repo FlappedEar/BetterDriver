@@ -253,18 +253,25 @@ class TileLoader(
      */
     private fun takeGoogleTile(): Boolean {
         val next = synchronized(budgetLock) {
-            GoogleTileBudget.take(budget, GoogleTileBudget.today(System.currentTimeMillis()))?.also { budget = it }
+            GoogleTileBudget.take(budget, GoogleTileBudget.today(System.currentTimeMillis()))?.also {
+                budget = it
+                // Kept under the lock and replaced whole, so an older count never overwrites a newer one.
+                keepBudget(it)
+            }
         }
-        if (next == null) {
-            main.post { google = null }
-            return false
-        }
+        if (next == null) main.post { google = null }
+        return next != null
+    }
+
+    private fun keepBudget(day: GoogleTileDay) {
+        val f = budgetFile ?: return
         try {
-            budgetFile?.writeText(GoogleTileBudget.write(next))
+            val tmp = File(f.path + ".tmp")
+            tmp.writeText(GoogleTileBudget.write(day))
+            if (!tmp.renameTo(f)) tmp.delete()
         } catch (_: IOException) {
             // Counted for this run only.
         }
-        return true
     }
 
     /** What the map must say while it shows [source]: for Google, also whose photos they are. Main thread. */
