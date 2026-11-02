@@ -19,6 +19,8 @@ The full notes of every release are on
   your own Google Map Tiles API key (**Map › Add Google key…**). See [Drive](drive.md#satellite-map).
 - The OBD page and Settings name the Bluetooth LE OBD-II adapter in use, not the Wi-Fi adapter
   listed before it. On the iPhone, the Wi-Fi adapter's page shows its address.
+- iPhone: the coach keeps each session's next focus for the next coached session at that track,
+  and accounts for how old each GPS fix is, as on Android.
 
 ## 1.28.0
 
