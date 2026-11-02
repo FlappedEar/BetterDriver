@@ -402,6 +402,15 @@ final class DataVideoTransport: ObservableObject {
                 }
             }
         }
+        if ticker == nil {
+            // The state line twice a second, for the UI tests (FBBD-435): whether the player's time moves.
+            ticker = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(500))
+                    self?.note("tick")
+                }
+            }
+        }
         if statusObserver == nil {
             // Why it waits instead of playing, in the app log (FBBD-435).
             statusObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
@@ -421,6 +430,8 @@ final class DataVideoTransport: ObservableObject {
     }
 
     func stop() {
+        ticker?.cancel()
+        ticker = nil
         settle?.cancel()
         settle = nil
         setPlaying(false)
@@ -510,10 +521,16 @@ final class DataVideoTransport: ObservableObject {
         @unknown default: "unknown"
         }
         let at = DataVideoMaker.micros(player.currentTime()) / 1_000
-        state = "\(event); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
+        let loaded = player.currentItem?.loadedTimeRanges.last.map { DataVideoMaker.micros($0.timeRangeValue.end) / 1_000 } ?? -1
+        let failure = player.currentItem?.error.map { "; error \($0.localizedDescription)" } ?? ""
+        state = "\(event); loaded to \(loaded) ms; follows \(follows)\(failure); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
     }
 
+    private var follows = 0
+    private var ticker: Task<Void, Never>?
+
     private func follow(_ t: CMTime) {
+        follows += 1
         // A seek under way or waiting: the bar stays where it was sent, not where the player was.
         guard !seeking, queued == nil, t.isNumeric else { return }
         micros = min(max(DataVideoMaker.micros(t), 0), totalMicros)

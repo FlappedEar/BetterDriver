@@ -222,6 +222,8 @@ jobs:
           if [ "${{ matrix.part }}" = 1 ]; then flag=-only-testing; else flag=-skip-testing; fi
           selection=()
           for t in $PART1; do selection+=("$flag:$t"); done
+          # FBBD-435 TEMPORARY evidence run: only the two failing tests (removed before merge).
+          if [ "${{ matrix.part }}" = 1 ]; then selection=(-only-testing:BetterDriverUITests/DataVideoTests/testTheSeekBarMovesTheVideo -only-testing:BetterDriverUITests/ReviewScreensTests/testASessionHasOneBackThatReturnsToTheList); else selection=(-only-testing:BetterDriverUITests/DataVideoTests/testWatchVideoFromTheSessionList); fi
           xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
           xcodebuild test-without-building \
             -xctestrun "$xctestrun" \

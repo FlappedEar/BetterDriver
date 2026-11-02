@@ -113,6 +113,10 @@ final class DataVideoTests: XCTestCase {
         assertLandscape()
         // It starts playing; stopped, the clock stays put.
         XCTAssertEqual(play.label, "Pause")
+        for second in 1...3 {
+            sleep(1)
+            print("SMOKE app: FBBD-435 playing from the start \(second) s: clock=\(clock.label) state=\(String(describing: clock.value))")
+        }
         play.tap()
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == 'Play'"), object: play)], timeout: 10), .completed, "Pause did not stop it")
         let total = seconds(clock.label, part: 1)
