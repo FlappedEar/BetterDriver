@@ -13,8 +13,10 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
-## 1.28.1
+## 1.29.0
 
+- Android: Google's satellite photo in the track editor and under the perfect lap in 3D, with
+  your own Google Map Tiles API key (**Map › Add Google key…**). See [Drive](drive.md#satellite-map).
 - The OBD page and Settings name the Bluetooth LE OBD-II adapter in use, not the Wi-Fi adapter
   listed before it. On the iPhone, the Wi-Fi adapter's page shows its address.
 
