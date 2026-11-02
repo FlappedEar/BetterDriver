@@ -31,6 +31,7 @@ import com.flappedear.betterdriver.recorder.RecordingEnd
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.fake.FakeGnssSource
 import com.flappedear.betterdriver.recorder.live.LiveFixAge
+import com.flappedear.betterdriver.recorder.live.receiverFixAge
 import com.flappedear.betterdriver.recorder.live.LiveTracker
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
@@ -110,9 +111,7 @@ private fun accelIdsFor(gnss: GnssRef): Pair<Int, Int>? = when (gnss.type) {
  */
 private fun fixAgeFor(gnss: GnssRef): LiveFixAge? {
     if (gnss.type == GnssType.PHONE) return null
-    return accelIdsFor(gnss)?.let { (x, y) ->
-        LiveFixAge(setOf(x, y)) { age -> DebugLog.i("RecorderService", "gnss fix age ${age.text}") }
-    }
+    return accelIdsFor(gnss)?.let { (x, y) -> receiverFixAge(x, y) }
 }
 
 private fun sensorsFrom(intent: Intent): List<SensorRef> =

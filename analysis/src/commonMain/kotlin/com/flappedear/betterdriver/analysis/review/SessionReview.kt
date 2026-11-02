@@ -9,29 +9,31 @@ import com.flappedear.betterdriver.analysis.coaching.keepCoachingHistory
 import com.flappedear.betterdriver.analysis.coaching.originOf
 import com.flappedear.betterdriver.analysis.compare.ChartPoint
 import com.flappedear.betterdriver.analysis.compare.compareLaps
+import com.flappedear.betterdriver.analysis.data.TelemetrySession
+import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
+import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
+import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
+import com.flappedear.betterdriver.analysis.line.LinePlan
+import com.flappedear.betterdriver.analysis.line.LineSession
+import com.flappedear.betterdriver.analysis.line.analyzeLine
+import com.flappedear.betterdriver.analysis.line.linePlan
+import com.flappedear.betterdriver.analysis.map.DriveMap
+import com.flappedear.betterdriver.analysis.map.GgTrace
+import com.flappedear.betterdriver.analysis.map.driveMap
+import com.flappedear.betterdriver.analysis.map.sessionGg
+import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
+import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
 import com.flappedear.betterdriver.analysis.segments.FlaggableCorner
 import com.flappedear.betterdriver.analysis.segments.TrackSegmentType
 import com.flappedear.betterdriver.analysis.segments.flaggableCorners as cornersToFlag
-import com.flappedear.betterdriver.analysis.data.TelemetrySession
-import com.flappedear.betterdriver.analysis.identity.analyzeKeepingIdentity
-import com.flappedear.betterdriver.analysis.line.LineSession
-import com.flappedear.betterdriver.analysis.line.analyzeLine
-import com.flappedear.betterdriver.analysis.line.LinePlan
-import com.flappedear.betterdriver.analysis.line.linePlan
-import com.flappedear.betterdriver.analysis.map.DriveMap
-import com.flappedear.betterdriver.analysis.map.driveMap
-import com.flappedear.betterdriver.analysis.map.GgTrace
-import com.flappedear.betterdriver.analysis.map.sessionGg
-import com.flappedear.betterdriver.analysis.runs.findAccelerationRuns
-import com.flappedear.betterdriver.analysis.recorded.telemetrySessionOf
-import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.analysis.summary.EarlierSessions
 import com.flappedear.betterdriver.analysis.summary.SessionProgress
 import com.flappedear.betterdriver.analysis.summary.progressAgainst
+import com.flappedear.betterdriver.feature.analysis.AccelerationUi
 import com.flappedear.betterdriver.feature.analysis.AnalysisUi
 import com.flappedear.betterdriver.feature.analysis.CornerLapsUi
-import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.LineUi
+import com.flappedear.betterdriver.feature.analysis.accelerationUi
 import com.flappedear.betterdriver.feature.analysis.analysisUi
 import com.flappedear.betterdriver.feature.analysis.defaultComparedLap
 import com.flappedear.betterdriver.feature.analysis.lineUi
@@ -48,7 +50,6 @@ import com.flappedear.betterdriver.timing.live.Fix
 import com.flappedear.betterdriver.timing.live.toFix
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackRevision
-
 import com.flappedear.betterdriver.timing.track.trackAlong
 
 /** The saved track id a session's "track" event names ("saved <id> rev <n> <name>"), or null. */
@@ -169,6 +170,12 @@ class ReviewedSession internal constructor(
 
     /** The session's events (coach cues and focus among them); none when it was not read. */
     val events: List<RecorderEvent> get() = data?.events.orEmpty()
+
+    /** What the session recommends working on next (FBBD-20), as Android keeps it; null without laps. */
+    val focusPlan: NextSessionPlan? get() = analysis?.let { nextSessionPlan(it) }
+
+    /** When the session started, UTC; null when it was not read. */
+    val startUtcMillis: Long? get() = data?.info?.startUtcMillis
 
     /**
      * Keeps this session's record in the coaching history [store] (FBBD-180), as Android's analysis

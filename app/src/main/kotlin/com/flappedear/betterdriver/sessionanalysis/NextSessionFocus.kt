@@ -1,16 +1,12 @@
 package com.flappedear.betterdriver.sessionanalysis
 
 import com.flappedear.betterdriver.analysis.SessionAnalysis
-import com.flappedear.betterdriver.analysis.focus.NextSessionFocusAlgorithm
-import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
 import com.flappedear.betterdriver.analysis.focus.nextSessionPlan
 import com.flappedear.betterdriver.coach.CornerPick
-import com.flappedear.betterdriver.coach.FocusChangeRecord
-import com.flappedear.betterdriver.coach.FocusTarget
-import com.flappedear.betterdriver.coach.SessionFocusRecord
 import com.flappedear.betterdriver.coach.SessionFocusStore
 import com.flappedear.betterdriver.coach.Verbosity
 import com.flappedear.betterdriver.coach.coaches
+import com.flappedear.betterdriver.coach.focusRecord
 import com.flappedear.betterdriver.feature.analysis.AnalysisState
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.sharing.AppDataGate
@@ -46,47 +42,6 @@ internal fun keepSessionFocus(
 }
 
 private const val Tag = "SessionFocus"
-
-/**
- * What session [sessionId] at [trackId], started at [startUtcMillis], recommends working on next
- * (FBBD-20), as kept for the coach and the coaching history: each focus under its CornerId when the
- * analysis's corners are the track's, with its line from [corners] (the coach picks of the
- * analysis's corners, by segment id) so the coach can place it.
- */
-internal fun focusRecord(
-    trackId: String,
-    sessionId: String,
-    startUtcMillis: Long,
-    plan: NextSessionPlan,
-    corners: Map<String, CornerPick>,
-): SessionFocusRecord = SessionFocusRecord(
-    trackId = trackId,
-    sessionId = sessionId,
-    sessionStartUtcMillis = startUtcMillis,
-    algorithm = NextSessionFocusAlgorithm,
-    targets = plan.focuses.map { f ->
-        val line = corners[f.segmentId]
-        FocusTarget(
-            id = FocusTarget.idOf(sessionId, f.segmentId),
-            role = f.role.code,
-            segmentId = f.segmentId,
-            cornerId = f.segmentId.takeIf { plan.identityRevision != null },
-            identityRevision = plan.identityRevision,
-            name = f.name,
-            kind = f.area.kind.code,
-            confidence = f.confidence.level.name,
-            timeAvailableSeconds = f.timeAvailableSeconds,
-            timeConfidence = f.timeConfidence.name,
-            changes = f.changes.map {
-                FocusChangeRecord(it.metric.code, it.other, it.faster, it.unit, it.measured, it.confidence.name)
-            },
-            observation = f.area.observation,
-            what = f.what,
-            lats = line?.lats.orEmpty(),
-            lons = line?.lons.orEmpty(),
-        )
-    },
-)
 
 /**
  * [this] saying whether the spoken coach will work on the next-session focus first (FBBD-20): only

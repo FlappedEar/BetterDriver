@@ -3,7 +3,8 @@ import UIKit
 
 /// The Demo track on the iPhone (FBBD-373), as on Android (FBBD-233, FBBD-235): added in Settings ›
 /// Equipment under Try the app, Arek's Jastrząb laps picked in its Drives, then a recording on it times
-/// laps on the track screen and the session opens. Screenshots stay in the test results.
+/// laps on the track screen and the session opens, with the track screen's frame times within budget
+/// (FBBD-376). Screenshots stay in the test results.
 final class DemoTrackTests: XCTestCase {
     private let app = XCUIApplication()
 
@@ -98,7 +99,44 @@ final class DemoTrackTests: XCTestCase {
         row.tap()
         XCTAssertTrue(app.buttons["tabSummary"].waitForExistence(timeout: 60), "the session opens")
         keep("Session")
+        checkFrameTimes()
     }
+
+    /// The track screen's frame times on the simulator, from the session's shared quality report, as
+    /// Android's ReplayDriveTest gates them on the emulator (FBBD-376, FBBD-266): the p95 after the first
+    /// 90 s within [drivingFramesMillis], the first 90 s within [startUpFramesMillis].
+    private func checkFrameTimes() {
+        let line = app.staticTexts["qualityChecks"]
+        XCTAssertTrue(line.waitForExistence(timeout: 90), "no quality report for the session")
+        var checks: [String: (verdict: String, value: Double?)] = [:]
+        for item in line.label.components(separatedBy: "; ") {
+            let parts = item.split(separator: "=", maxSplits: 1).map(String.init)
+            guard parts.count == 2 else { continue }
+            let rest = parts[1].split(separator: " ", maxSplits: 1).map(String.init)
+            guard let verdict = rest.first else { continue }
+            checks[parts[0]] = (verdict, rest.count > 1 ? Double(rest[1]) : nil)
+        }
+        let driving = checks["ui.frame_p95"]
+        print("FBBD-376 frame times: ui.frame_p95=\(String(describing: driving)) ui.frame_p95_start=\(String(describing: checks["ui.frame_p95_start"]))")
+        XCTAssertNotNil(driving?.value, "no frame times while driving: \(line.label)")
+        if let p95 = driving?.value {
+            XCTAssertLessThanOrEqual(p95, drivingFramesMillis, "Frame time p95 (FBBD-266): \(p95) ms")
+        }
+        let startUp = checks["ui.frame_p95_start"]?.value
+        XCTAssertNotNil(startUp, "no frame times from the first 90 s: \(line.label)")
+        if let startUp {
+            XCTAssertLessThanOrEqual(startUp, startUpFramesMillis, "Frame time p95, first 90 s (FBBD-266): \(startUp) ms")
+        }
+    }
+
+    /// The limit after the first 90 s on the simulator: two frames at 60 Hz. The CI's macOS runners draw
+    /// the simulator without a GPU (20 ms p95 on 2 Nov 2026, the phone's 16 ms check FAIL), so this
+    /// catches a track screen that does twice the work, while the phone is judged against 16 ms from its logs.
+    private let drivingFramesMillis = 33.0
+
+    /// The first 90 s's limit on the simulator, as on Android's emulator: the app warms up there while
+    /// the recorder, coach and voice start; the phone is judged against 16 ms from its logs.
+    private let startUpFramesMillis = 50.0
 
     /// By id, or by its label if a parent's id ever covers the row's own.
     private func element(_ id: String, labelStart: String) -> XCUIElement {

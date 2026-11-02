@@ -20,9 +20,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
 import com.flappedear.betterdriver.Routes
 import com.flappedear.betterdriver.analysis.coaching.SessionCoachingRecord
+import com.flappedear.betterdriver.analysis.progression.AddResult
 import com.flappedear.betterdriver.analysis.progression.CornerMapping
 import com.flappedear.betterdriver.analysis.progression.ProgressionDay
 import com.flappedear.betterdriver.analysis.progression.ProgressionGrouping
+import com.flappedear.betterdriver.analysis.progression.addNewest
 import com.flappedear.betterdriver.analysis.progression.systemDayZone
 import com.flappedear.betterdriver.coach.coachingHistoryStore
 import com.flappedear.betterdriver.feature.analysis.ProgressionActions

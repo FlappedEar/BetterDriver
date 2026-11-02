@@ -47,6 +47,14 @@ fun qualityUi(report: QualityReport): QualityUi {
     )
 }
 
+/**
+ * Every check of [report] as `id=VERDICT value`, joined by "; ", for the UI tests that gate a check
+ * on the device as Android's ReplayDriveTest does from the log (FBBD-376); the value is "-" when not
+ * measured. Not shown to the driver.
+ */
+fun qualityChecks(report: QualityReport): String =
+    report.metrics.joinToString("; ") { "${it.id}=${it.verdict.name} ${it.value?.toString() ?: "-"}" }
+
 private const val WholeFrom = 100.0
 
 /** [value] in [unit]: metres to the centimetre, a count whole, others to a tenth below 100. */

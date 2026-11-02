@@ -172,6 +172,12 @@ enum ReviewBridge {
         library.quality(id: id)
     }
 
+    /// Every check of the session's report as `id=VERDICT value`, for the UI tests' gates (FBBD-376).
+    /// Not on the main thread, as quality(id:).
+    static func qualityChecks(id: String) -> String? {
+        library.qualityChecks(id: id)
+    }
+
     /// The session's Weather card (FBBD-403), as Android's; nil when it has none. May fetch the weather
     /// the first time: not on the main thread.
     static func weather(id: String) -> WeatherUi? {
