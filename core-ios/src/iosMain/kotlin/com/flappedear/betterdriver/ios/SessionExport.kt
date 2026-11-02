@@ -259,24 +259,29 @@ internal class VideoPresence(private val store: SessionStore) {
     private val known = HashMap<String, Pair<String, Boolean>>()
 
     fun has(id: String): Boolean {
-        val dir = "${store.dir(id)}/${VideoFiles.DIR}"
-        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null)
-            ?.filterIsInstance<String>().orEmpty().filter { it != ClipIndexFile }.sorted()
-        if (names.isEmpty()) return false
-        val key = names.joinToString("|") { "$it:${sizeOf("$dir/$it")}" }
+        val key = filesKey(id) ?: return false
         lock.lock()
         val cached = known[id]?.takeIf { it.first == key }?.second
         lock.unlock()
-        if (cached != null) return cached
-        val has = try {
-            wholeVideoClips(store, id).isNotEmpty()
-        } catch (_: Exception) {
-            false
+        return cached ?: read(id).also { has ->
+            lock.lock()
+            known[id] = key to has
+            lock.unlock()
         }
-        lock.lock()
-        known[id] = key to has
-        lock.unlock()
-        return has
+    }
+
+    /** The session's video files with their sizes, "name:size|…"; null when it has none. */
+    private fun filesKey(id: String): String? {
+        val dir = "${store.dir(id)}/${VideoFiles.DIR}"
+        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null)
+            ?.filterIsInstance<String>().orEmpty().filter { it != ClipIndexFile }.sorted()
+        return names.takeIf { it.isNotEmpty() }?.joinToString("|") { "$it:${sizeOf("$dir/$it")}" }
+    }
+
+    private fun read(id: String): Boolean = try {
+        wholeVideoClips(store, id).isNotEmpty()
+    } catch (_: Exception) {
+        false
     }
 
     private fun sizeOf(path: String): Long = try {
