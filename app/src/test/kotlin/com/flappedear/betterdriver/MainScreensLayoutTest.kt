@@ -114,7 +114,11 @@ abstract class MainScreensLayoutTest(private val device: String) {
             // Both Pinned cards (UI-308 A).
             pinned = DrivePinned(
                 DriveFocus(listOf("Corners 2–3", "Corner 1", "Corner 7"), 1.53),
-                LastTimeHere(java.time.LocalDate.of(2026, 8, 29).toEpochDay(), 109_910, listOf(138_640, 124_060, 109_910, 111_240)),
+                LastTimeHere(
+                    java.time.LocalDate.of(2026, 8, 29).toEpochDay(),
+                    109_910,
+                    listOf(138_640, 124_060, 109_910, 111_240),
+                ),
             ),
         )
     }
