@@ -378,14 +378,10 @@ class ReviewLibrary(base: String) {
         }
     }
 
-    // A whole video file to play, as the Video tab and the export check (FBBD-426).
-    private val rows = SessionRows(store, ::tracks) { id ->
-        try {
-            wholeVideoClips(store, id).isNotEmpty()
-        } catch (_: Exception) {
-            false
-        }
-    }
+    // A whole video file to play, as the Video tab and the export check (FBBD-426); remembered until
+    // the session's video files change, as every reload asks.
+    private val videoPresence = VideoPresence(store)
+    private val rows = SessionRows(store, ::tracks, videoPresence::has)
 
     /** Each listed session's row, as Android's (UI-139 C): its detail line and best lap. Off the main thread. */
     fun sessionRows(): Map<String, SessionRowFacts> = rows.read(sessions())

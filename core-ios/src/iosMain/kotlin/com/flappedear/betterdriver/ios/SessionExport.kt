@@ -26,6 +26,7 @@ import kotlinx.cinterop.usePinned
 import platform.Foundation.NSDate
 import platform.Foundation.NSDateFormatter
 import platform.Foundation.NSFileManager
+import platform.Foundation.NSLock
 import platform.Foundation.NSLocale
 import platform.Foundation.NSString
 import platform.Foundation.NSTimeZone
@@ -245,6 +246,44 @@ internal fun wholeVideoClips(store: SessionStore, id: String): List<VideoClip> {
     val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
     val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
     return present.filter { it.camera == camera }
+}
+
+/**
+ * Whether each session has a whole video file ([wholeVideoClips]), remembered until the files in its
+ * video folder change (their names and sizes): the session list asks on every reload, and finding a
+ * session's clips reads its recording for the video events. A session with no file in its video
+ * folder is answered without reading anything. Thread-safe.
+ */
+internal class VideoPresence(private val store: SessionStore) {
+    private val lock = NSLock()
+    private val known = HashMap<String, Pair<String, Boolean>>()
+
+    fun has(id: String): Boolean {
+        val dir = "${store.dir(id)}/${VideoFiles.DIR}"
+        val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null)
+            ?.filterIsInstance<String>().orEmpty().filter { it != ClipIndexFile }.sorted()
+        if (names.isEmpty()) return false
+        val key = names.joinToString("|") { "$it:${sizeOf("$dir/$it")}" }
+        lock.lock()
+        val cached = known[id]?.takeIf { it.first == key }?.second
+        lock.unlock()
+        if (cached != null) return cached
+        val has = try {
+            wholeVideoClips(store, id).isNotEmpty()
+        } catch (_: Exception) {
+            false
+        }
+        lock.lock()
+        known[id] = key to has
+        lock.unlock()
+        return has
+    }
+
+    private fun sizeOf(path: String): Long = try {
+        PosixMp4Source(path).use { it.length }
+    } catch (_: IoProblem) {
+        -1L
+    }
 }
 
 /** MP4 files as the recorder leaves them. */

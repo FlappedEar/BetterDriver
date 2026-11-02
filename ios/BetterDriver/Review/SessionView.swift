@@ -53,6 +53,9 @@ struct SessionView: View {
     /// The player came from the sheet, so closing it opens the sheet again; from the Video tab it returns there.
     @State private var fromSheet = false
     @State private var hasVideo = false
+    /// Counts the session changes, so [hasVideo] is read again after each: a phone video finishing
+    /// after the session was opened turns its video entry points on (FBBD-426).
+    @State private var videoCheck = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -94,7 +97,8 @@ struct SessionView: View {
         .fullScreenCover(item: $everyPass) { EveryPassScreen(link: $0) }
         .sheet(isPresented: $progression) { ProgressionSheet(sessionId: session.id) }
         .task(id: "\(session.id)#\(revision)") { await load() }
-        .task(id: session.id) {
+        .onReceive(NotificationCenter.default.publisher(for: .sessionsChanged)) { _ in videoCheck += 1 }
+        .task(id: "\(session.id)#\(videoCheck)") {
             let id = session.id
             // Video entry points only with a whole video to play (FBBD-426), the shared core's rule.
             hasVideo = await Task.detached {
