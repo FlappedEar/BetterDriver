@@ -70,7 +70,11 @@ concurrency:
 jobs:
   build:
     name: iOS build
-    runs-on: macos-15
+    # FBBD-434: the repository variable IOS_RUNNER (a JSON label list, e.g. ["self-hosted","bd-mac"])
+    # moves the job to Arek's Mac mini; unset it to fall back to GitHub's runners. Pull requests
+    # from forks always run on GitHub's runners: the repository is public, and a self-hosted
+    # runner must never run code from outside.
+    runs-on: ${{ (vars.IOS_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.IOS_RUNNER) || 'macos-15' }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -78,19 +82,24 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
+      # A self-hosted Mac keeps ~/.gradle and ~/.konan between runs: restoring GitHub's cache
+      # over them only costs time.
       - uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-disabled: ${{ runner.environment == 'self-hosted' }}
       # The Kotlin/Native compiler and its iOS toolchain (~1 GB) are downloaded once per Kotlin version.
       - uses: actions/cache@v4
+        if: runner.environment != 'self-hosted'
         with:
           path: ~/.konan
           key: konan-${{ runner.os }}-${{ hashFiles('gradle/libs.versions.toml') }}
       - name: Tools
         run: |
           xcodebuild -version
-          brew install xcodegen
+          command -v xcodegen || brew install xcodegen
       - name: Pick a simulator
         id: sim
-        run: python3 .github/scripts/ios-simulator.py iPhone >> "$GITHUB_OUTPUT"
+        run: python3 .github/scripts/ios-simulator.py iPhone ${{ runner.environment == 'self-hosted' && '--private' || '' }} >> "$GITHUB_OUTPUT"
       - name: Simulator
         run: echo "${{ steps.sim.outputs.name }}"
       # Only the simulator slice of the core: the tests never run on a device (ios-release.yml
@@ -137,11 +146,18 @@ jobs:
             build/xcodebuild-build.log
             */build/reports/tests
           if-no-files-found: ignore
+      # The job's own simulator on a self-hosted Mac (FBBD-434).
+      - name: Delete the job's simulator
+        if: always() && runner.environment == 'self-hosted' && steps.sim.outputs.udid != ''
+        run: |
+          xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
+          xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 
   test:
     name: iOS tests (${{ matrix.device }} ${{ matrix.part }})
     needs: build
-    runs-on: macos-15
+    # Same runner choice as the build job (FBBD-434).
+    runs-on: ${{ (vars.IOS_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.IOS_RUNNER) || 'macos-15' }}
     # The slowest half took ~17 min on the iPad (PR #456): room for a slow runner.
     timeout-minutes: 60
     strategy:
@@ -163,7 +179,7 @@ jobs:
           sparse-checkout: .github
       - name: Pick a simulator
         id: sim
-        run: python3 .github/scripts/ios-simulator.py ${{ matrix.device }} >> "$GITHUB_OUTPUT"
+        run: python3 .github/scripts/ios-simulator.py ${{ matrix.device }} ${{ runner.environment == 'self-hosted' && '--private' || '' }} >> "$GITHUB_OUTPUT"
       # Boots while the build downloads.
       - name: Boot ${{ steps.sim.outputs.name }}
         run: nohup xcrun simctl bootstatus "${{ steps.sim.outputs.udid }}" -b > /dev/null 2>&1 &
@@ -221,6 +237,12 @@ jobs:
             build/ios-tests.xcresult
             build/xcodebuild.log
           if-no-files-found: ignore
+      # The job's own simulator on a self-hosted Mac (FBBD-434).
+      - name: Delete the job's simulator
+        if: always() && runner.environment == 'self-hosted' && steps.sim.outputs.udid != ''
+        run: |
+          xcrun simctl shutdown "${{ steps.sim.outputs.udid }}" || true
+          xcrun simctl delete "${{ steps.sim.outputs.udid }}" || true
 
   passed:
     name: iOS app
