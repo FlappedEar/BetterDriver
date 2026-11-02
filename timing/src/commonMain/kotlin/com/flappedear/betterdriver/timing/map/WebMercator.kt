@@ -159,6 +159,8 @@ object TileSources {
         OpenStreetMap,
     )
 
+    private const val MapTilerHint = "With a MapTiler key (track editor › Map) it shows MapTiler's photo."
+
     /** The id iOS gives Apple's satellite map (MapKit), for [videoNote]. */
     const val APPLE_ID = "apple"
 
@@ -177,17 +179,16 @@ object TileSources {
      * null for the drawn road. Null when both are the same.
      */
     fun videoNote(shownId: String?, videoId: String?): String? {
-        if (shownId == null || shownId == videoId) return null
         val owner = when (shownId) {
+            null, videoId, OpenStreetMap.id -> null
             APPLE_ID -> "Apple's"
-            OpenStreetMap.id -> return null
             else -> "Google's"
         }
         val why = "$owner terms let its photo be shown in the app, not kept in a video."
-        return if (videoId != null) {
-            "The video shows MapTiler's photo: $why"
-        } else {
-            "The video shows the drawn road: $why With a MapTiler key (track editor › Map) it shows MapTiler's photo."
+        return when {
+            owner == null -> null
+            videoId != null -> "The video shows MapTiler's photo: $why"
+            else -> "The video shows the drawn road: $why $MapTilerHint"
         }
     }
 }
