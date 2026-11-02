@@ -34,6 +34,7 @@ on:
       - "gradle.properties"
       - ".github/workflows/ios.yml"
       - ".github/scripts/ios-simulator.py"
+      - ".github/ios-runner.json"
   push:
     branches: [main]
     paths:
@@ -58,6 +59,7 @@ on:
       - "gradle.properties"
       - ".github/workflows/ios.yml"
       - ".github/scripts/ios-simulator.py"
+      - ".github/ios-runner.json"
   workflow_dispatch:
 
 permissions:
@@ -68,13 +70,34 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # FBBD-434: which machine runs the iOS jobs. .github/ios-runner.json holds the runner labels:
+  # "macos-15" (GitHub's runners) or ["self-hosted","bd-mac"] (Arek's Mac mini). Pull requests from
+  # forks always get GitHub's runners: the repository is public, and a self-hosted runner must never
+  # run code from outside.
+  runner:
+    name: iOS runner
+    runs-on: ubuntu-latest
+    outputs:
+      labels: ${{ steps.pick.outputs.labels }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: .github
+      - name: Pick the runner
+        id: pick
+        env:
+          FORK: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
+        run: |
+          labels=$(python3 -c 'import json; print(json.dumps(json.load(open(".github/ios-runner.json"))))')
+          if [ "$FORK" = true ]; then labels='"macos-15"'; fi
+          echo "iOS jobs run on: $labels"
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
+
   build:
     name: iOS build
-    # FBBD-434: the repository variable IOS_RUNNER (a JSON label list, e.g. ["self-hosted","bd-mac"])
-    # moves the job to Arek's Mac mini; unset it to fall back to GitHub's runners. Pull requests
-    # from forks always run on GitHub's runners: the repository is public, and a self-hosted
-    # runner must never run code from outside.
-    runs-on: ${{ (vars.IOS_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.IOS_RUNNER) || 'macos-15' }}
+    needs: runner
+    # FBBD-434: GitHub's macos-15 or Arek's Mac mini, as the runner job picks.
+    runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -155,9 +178,9 @@ jobs:
 
   test:
     name: iOS tests (${{ matrix.device }} ${{ matrix.part }})
-    needs: build
-    # Same runner choice as the build job (FBBD-434).
-    runs-on: ${{ (vars.IOS_RUNNER != '' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)) && fromJSON(vars.IOS_RUNNER) || 'macos-15' }}
+    needs: [runner, build]
+    # Same runner as the build job (FBBD-434).
+    runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     # The slowest half took ~17 min on the iPad (PR #456): room for a slow runner.
     timeout-minutes: 60
     strategy:
@@ -246,11 +269,11 @@ jobs:
 
   passed:
     name: iOS app
-    needs: [build, test]
+    needs: [runner, build, test]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Every iOS job passed
         run: |
-          echo "build: ${{ needs.build.result }}, tests: ${{ needs.test.result }}"
-          [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]
+          echo "runner: ${{ needs.runner.result }}, build: ${{ needs.build.result }}, tests: ${{ needs.test.result }}"
+          [ "${{ needs.runner.result }}" = success ] && [ "${{ needs.build.result }}" = success ] && [ "${{ needs.test.result }}" = success ]

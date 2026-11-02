@@ -10,10 +10,10 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 
 ## How the workflow picks the runner
 
-* Repository variable `IOS_RUNNER` (Settings > Secrets and variables > Actions > Variables):
-  a JSON list of runner labels, `["self-hosted","bd-mac"]`. When it is set, `ios.yml`'s build and
-  test jobs run on the Mac. Delete the variable to go back to GitHub's `macos-15` runners
-  (for example while the Mac is away or off: jobs otherwise wait for it up to 24 h).
+* `.github/ios-runner.json` holds the runner labels for `ios.yml`'s build and test jobs:
+  `"macos-15"` (GitHub's runners) or `["self-hosted","bd-mac"]` (the Mac mini). Claude changes it
+  by pull request; going back to GitHub's runners (Mac away or off: jobs otherwise wait for it up
+  to 24 h) is a one-line change. The job "iOS runner" reads it.
 * Pull requests from forks always run on GitHub's runners. The repository is public, and GitHub
   advises against self-hosted runners for public repositories because anyone can open a pull
   request ([secure use](https://docs.github.com/en/actions/reference/security/secure-use)).
@@ -23,30 +23,49 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 * `ios-release.yml` (TestFlight) stays on GitHub's runners: the signing key and App Store
   Connect secrets never reach the Mac.
 
-## Setup on the Mac mini (once)
+## Setup on the Mac mini (once, in Terminal)
 
-1. **Separate user.** System Settings > Users & Groups > Add User: Standard (not admin), name `ci`.
-   The runner runs as this user, so CI code cannot read Arek's files or keychain.
-2. **Xcode.** As the admin user: the same Xcode as GitHub's `macos-15` image (Xcode 26) with the
-   newest iOS simulator runtime; then `sudo xcodebuild -license accept` and
-   `sudo xcodebuild -runFirstLaunch`.
-3. **Tools.** As the admin user: `brew install xcodegen` (the `ci` user cannot run Homebrew).
-4. **No sleep.** System Settings > Energy: prevent automatic sleeping.
-5. **Runners.** Log in as `ci`. On GitHub: FlappedEar/BetterDriver > Settings > Actions >
-   Runners > New self-hosted runner > macOS, ARM64. Run the download commands it shows in
-   `~/actions-runner-1`, then the `config.sh` command it shows with
-   `--name mac-mini-1 --labels bd-mac --unattended` appended. Repeat in `~/actions-runner-2` with
-   `--name mac-mini-2` (a new token from the same page). In each folder:
-   `./svc.sh install && ./svc.sh start`. Keep the `ci` user logged in (fast user switching) so
-   the simulators have a session.
-6. **Fork approval.** FlappedEar/BetterDriver > Settings > Actions > General > section on fork
-   pull request workflows from outside collaborators: require approval for all outside
-   collaborators.
-7. **Switch on.** Settings > Secrets and variables > Actions > Variables > New repository
-   variable: `IOS_RUNNER` = `["self-hosted","bd-mac"]`.
+### A. As Arek (admin)
 
-The first run downloads the Kotlin/Native toolchain (~1 GB) and fills the Gradle cache; later
-runs reuse them.
+```sh
+xcodebuild -version                 # Xcode 26.x expected; else install Xcode 26 from the App Store
+xcrun simctl list runtimes          # an iOS 26.x runtime expected; else: xcodebuild -downloadPlatform iOS
+sudo xcodebuild -license accept
+sudo xcodebuild -runFirstLaunch
+brew --version || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install xcodegen
+sudo pmset -a sleep 0 disksleep 0   # the Mac never sleeps (screen may)
+sudo sysadminctl -addUser ci -fullName "CI runner" -password -   # standard user, asks for its password
+```
+
+Then log in as `ci` once in the GUI (fast user switching: menu bar > Control Center > user) and
+keep that session open; switch back to Arek's account as usual. After a restart, log in as `ci`
+again.
+
+### B. As `ci` (Terminal inside the `ci` session)
+
+```sh
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile && source ~/.zprofile
+mkdir ~/actions-runner-1 && cd ~/actions-runner-1
+```
+
+On GitHub, FlappedEar/BetterDriver > Settings > Actions > Runners > New self-hosted runner >
+macOS, ARM64: run its "Download" commands (curl + tar, without the `mkdir`/`cd`), then:
+
+```sh
+./config.sh --url https://github.com/FlappedEar/BetterDriver --token <TOKEN FROM THAT PAGE> \
+  --name mac-mini-1 --labels bd-mac --unattended
+./svc.sh install && ./svc.sh start
+mkdir ~/actions-runner-2 && cd ~/actions-runner-2
+tar xzf ~/actions-runner-1/actions-runner-osx-arm64-*.tar.gz
+./config.sh --url https://github.com/FlappedEar/BetterDriver --token <NEW TOKEN: reload the page> \
+  --name mac-mini-2 --labels bd-mac --unattended
+./svc.sh install && ./svc.sh start
+```
+
+The Runners page then lists `mac-mini-1` and `mac-mini-2` as Idle. Claude switches
+`.github/ios-runner.json` to `["self-hosted","bd-mac"]` and measures the first run. The first run
+downloads the Kotlin/Native toolchain (~1 GB) and fills the Gradle cache; later runs reuse them.
 
 ## Spare PC (Android): not used, on purpose
 
