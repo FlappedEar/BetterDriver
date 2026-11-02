@@ -2,6 +2,7 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.coach.SessionFocusStore
 import com.flappedear.betterdriver.feature.analysis.TrackDayState
 import com.flappedear.betterdriver.format.fixed
 import com.flappedear.betterdriver.recorder.store.DeleteResult
@@ -67,6 +68,25 @@ class DemoSessionsTest {
     fun aSessionWithLapsHasNoDriveCard() {
         val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
         assertEquals(null, library.review(id).drive)
+    }
+
+    /**
+     * Opening a session keeps what it recommends working on next, as Android's analysis does
+     * (FBBD-424): the next coached session at the track reads it, and it goes with the session.
+     */
+    @Test
+    fun anOpenedSessionKeepsItsNextSessionFocusForTheCoach() {
+        val id = library.addDemo("$DemoAssetsDir/jastrzab.replay", "$DemoAssetsDir/jastrzab.track.json", StartUtcMillis)
+        library.review(id)
+        val focus = SessionFocusStore("$base/coach/focus")
+        val record = assertNotNull(focus.latest("jastrzab"), "no next-session focus kept")
+        assertEquals(id, record.sessionId)
+        assertEquals(StartUtcMillis, record.sessionStartUtcMillis)
+        assertTrue(record.targets.isNotEmpty(), "23 laps of Jastrząb leave something to work on")
+        // The coach places a focus by its line, as on Android.
+        assertTrue(record.picks().isNotEmpty(), "no focus the coach can place")
+        assertEquals(DeleteResult.DELETED, library.delete(id))
+        assertEquals(null, focus.latest("jastrzab"))
     }
 
     @Test
