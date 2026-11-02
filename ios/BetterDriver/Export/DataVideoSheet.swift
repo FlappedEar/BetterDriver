@@ -356,6 +356,9 @@ final class DataVideoTransport: ObservableObject {
     private var endObserver: NSObjectProtocol?
     private var rateObserver: NSKeyValueObservation?
     private var statusObserver: NSKeyValueObservation?
+    private var itemObserver: NSKeyValueObservation?
+    /// The last failure of a video, for the UI test (FBBD-435).
+    static var failure = ""
     /// The screen was kept on here, and is let go here.
     private var keptAwake = false
 
@@ -402,6 +405,16 @@ final class DataVideoTransport: ObservableObject {
                 }
             }
         }
+        if itemObserver == nil {
+            // The item failed: why, in the app log (FBBD-435).
+            itemObserver = player.currentItem?.observe(\.status, options: [.initial, .new]) { item, _ in
+                guard item.status == .failed else { return }
+                let why = item.error.map { DataVideoTransport.describe($0) } ?? "no error"
+                let events = item.errorLog()?.events.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" }.joined(separator: " | ") ?? ""
+                AppLog.e("WatchVideo", "the video failed: \(why) \(events)")
+                Task { @MainActor in DataVideoTransport.failure = "\(why) \(events)" }
+            }
+        }
         if ticker == nil {
             // The state line twice a second, for the UI tests (FBBD-435): whether the player's time moves.
             ticker = Task { @MainActor [weak self] in
@@ -443,6 +456,8 @@ final class DataVideoTransport: ObservableObject {
         rateObserver = nil
         statusObserver?.invalidate()
         statusObserver = nil
+        itemObserver?.invalidate()
+        itemObserver = nil
     }
 
     func playPause() {
@@ -522,11 +537,20 @@ final class DataVideoTransport: ObservableObject {
         }
         let at = DataVideoMaker.micros(player.currentTime()) / 1_000
         let loaded = player.currentItem?.loadedTimeRanges.last.map { DataVideoMaker.micros($0.timeRangeValue.end) / 1_000 } ?? -1
-        let failure = player.currentItem?.error.map { "; error \($0.localizedDescription)" } ?? ""
-        state = "\(event); loaded to \(loaded) ms; follows \(follows)\(failure); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
+        let failure = player.currentItem?.error.map { "; error \(Self.describe($0))" } ?? ""
+        state = "\(event)\(Self.failure.isEmpty ? "" : "; failed: \(Self.failure)"); loaded to \(loaded) ms; follows \(follows)\(failure); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
     }
 
     private var follows = 0
+
+    /// The error with its domain, code and the errors under it (FBBD-435: "could not be completed" alone says nothing).
+    nonisolated static func describe(_ error: Error) -> String {
+        let e = error as NSError
+        var text = "\(e.domain) \(e.code) \(e.localizedDescription)"
+        if let reason = e.localizedFailureReason { text += " (\(reason))" }
+        if let under = e.userInfo[NSUnderlyingErrorKey] as? Error { text += " <- " + describe(under) }
+        return text
+    }
     private var ticker: Task<Void, Never>?
 
     private func follow(_ t: CMTime) {
