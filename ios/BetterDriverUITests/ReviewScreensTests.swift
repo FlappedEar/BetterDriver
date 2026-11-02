@@ -109,8 +109,8 @@ final class ReviewScreensTests: XCTestCase {
         }
         // On the iPad the list stays beside the session, as on an Android tablet (FBBD-40).
         let back = NSPredicate(format: "isHittable == true")
-        expectation(for: back, evaluatedWith: rows.element(boundBy: 0))
-        waitForExpectations(timeout: 15)
+        let listed = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: back, object: rows.element(boundBy: 0))], timeout: 15)
+        XCTAssertEqual(listed, .completed, "the list is not beside the session")
     }
 
     func testASessionWithNoTrackShowsItsDriveOnTheMap() {
