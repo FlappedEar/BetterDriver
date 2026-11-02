@@ -25,6 +25,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,6 +41,8 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -232,8 +235,8 @@ private fun EditorBar(
 private fun PlacingHint(state: TrackEditorState, modifier: Modifier = Modifier) {
     val text = when {
         state.method == PlaceMethod.FromLap && state.selectedLine == null ->
-            "Tap your lap (blue) where the line goes. It is placed square to the way you drove, 30 m wide."
-        state.method == PlaceMethod.FromLap -> "Drag the ends to the track edges. Tap the lap again to move the line."
+            "Tap your lap (blue) where the line goes. It is placed square to the way you drove, as wide as your passes there."
+        state.method == PlaceMethod.FromLap -> "Drag the ends to the track edges, or set the width with − and +. Tap the lap again to move the line."
         state.firstTap == null -> "Tap one edge of the track."
         else -> "Now tap the other edge."
     }
@@ -266,6 +269,7 @@ private fun ColumnScope.PlacingControls(state: TrackEditorState) {
     if (state.path == null) {
         DimLine("No session here yet, so lines are placed with two taps.")
     }
+    if (state.selectedLine != null) LineWidthRow(state)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = state::flip, enabled = state.selectedLine != null) { Text("Flip direction") }
         TextButton(onClick = state::remove) {
@@ -273,6 +277,21 @@ private fun ColumnScope.PlacingControls(state: TrackEditorState) {
         }
     }
     DimLine("The arrow shows the way you drive across the line. Crossings the other way never count.")
+}
+
+/** The selected line's width with − and + (FBBD-438). */
+@Composable
+private fun LineWidthRow(state: TrackEditorState) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text("Width", style = MaterialTheme.typography.bodyLarge)
+        OutlinedButton(onClick = { state.widen(-1) }) { Text("−") }
+        Text(
+            "${state.selectedWidthMeters} m",
+            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+            modifier = Modifier.semantics { contentDescription = "Line width ${state.selectedWidthMeters} m" },
+        )
+        OutlinedButton(onClick = { state.widen(1) }) { Text("+") }
+    }
 }
 
 @Composable

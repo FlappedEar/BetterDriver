@@ -6,9 +6,12 @@ import com.flappedear.betterdriver.timing.geo.LocalFrame
 import com.flappedear.betterdriver.timing.geo.Xy
 import com.flappedear.betterdriver.timing.live.Gate
 import com.flappedear.betterdriver.timing.track.DefaultLineWidthMeters
+import com.flappedear.betterdriver.timing.track.MaxLineWidthMeters
+import com.flappedear.betterdriver.timing.track.MinLineWidthMeters
 import com.flappedear.betterdriver.timing.track.Track
 import com.flappedear.betterdriver.timing.track.TrackLine
 import kotlin.math.atan2
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** One line of a track, as the editor lists them (UI-23). */
@@ -83,6 +86,28 @@ const val MaxTapOffPathMeters = 30.0
 private const val HeadingSpanMeters = 6.0
 
 /**
+ * Room a line fitted to the passes leaves on each side of the outermost pass, metres (FBBD-438):
+ * GNSS error and a wider line next time. On Arek's Jastrząb and Silesia sessions the racing laps
+ * cross start/finish within 6 m of each other, a sector line in a corner within 12 m.
+ */
+const val FittedLineMarginMeters = 4.0
+
+/** The narrowest line fitted to the passes, metres: about a Polish circuit's width (FBBD-438). */
+const val MinFittedLineWidthMeters = 12.0
+
+/** Width steps of the editor's − and + (FBBD-438), metres. */
+const val LineWidthStepMeters = 2.0
+
+/**
+ * [this] line [steps] widths of [LineWidthStepMeters] wider (narrower when negative), on whole
+ * steps and within [MinLineWidthMeters]..[MaxLineWidthMeters]; centre and direction kept (FBBD-438).
+ */
+fun TrackLine.widened(steps: Int): TrackLine {
+    val onStep = (widthMeters / LineWidthStepMeters).roundToInt() + steps
+    return withWidth((onStep * LineWidthStepMeters).coerceIn(MinLineWidthMeters, MaxLineWidthMeters))
+}
+
+/**
  * A recorded drive as a line on the map, used to place timing lines from the car's own path
  * (UI-24 option A). [points] are the fixes in order.
  */
@@ -116,8 +141,34 @@ class LapPath(val points: List<GeoPoint>) {
     }
 
     /** A line [widthMeters] wide across the path at the point nearest [tap], square to the car's travel. */
-    fun lineAt(tap: GeoPoint, widthMeters: Double = DefaultLineWidthMeters): TrackLine? =
+    fun lineAt(tap: GeoPoint, widthMeters: Double): TrackLine? =
         nearest(tap)?.let { TrackLine.across(it.point, it.headingDeg, widthMeters) }
+
+    /**
+     * A line across the path at the point nearest [tap], square to the car's travel and fitted to
+     * every pass of the drive there (FBBD-438): centred between the outermost passes within
+     * [DefaultLineWidthMeters] / 2 of the tapped one, [FittedLineMarginMeters] past each, at least
+     * [MinFittedLineWidthMeters] and at most [DefaultLineWidthMeters] wide. A pit lane further off
+     * than that, as at Silesia Ring, stays outside.
+     */
+    fun lineAt(tap: GeoPoint): TrackLine? {
+        val hit = nearest(tap) ?: return null
+        val probe = TrackLine.across(hit.point, hit.headingDeg, DefaultLineWidthMeters)
+        val gate = Gate(probe, frame)
+        val a = frame.toXy(probe.left)
+        val along = frame.toXy(probe.right) - a
+        val unit = along * (1.0 / along.length())
+        // Each forward pass as metres from the probe's left end.
+        val passes = (0 until xy.size - 1).mapNotNull { i ->
+            gate.crossing(xy[i], i.toLong(), xy[i + 1], (i + 1).toLong())?.let { (it.at - a).dot(unit) }
+        }
+        if (passes.isEmpty()) return TrackLine.across(hit.point, hit.headingDeg, MinFittedLineWidthMeters)
+        val lo = passes.min()
+        val hi = passes.max()
+        val width = (hi - lo + 2 * FittedLineMarginMeters).coerceIn(MinFittedLineWidthMeters, DefaultLineWidthMeters)
+        val middle = frame.toGeo(a + unit * ((lo + hi) / 2))
+        return TrackLine.across(middle, hit.headingDeg, width)
+    }
 
     /**
      * [line] turned so the car crosses it forwards along this path. Unchanged when the path crosses

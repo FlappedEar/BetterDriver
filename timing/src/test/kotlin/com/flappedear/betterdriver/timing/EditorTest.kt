@@ -4,6 +4,8 @@ package com.flappedear.betterdriver.timing
 
 import com.flappedear.betterdriver.recorder.fake.FakeGnss
 import com.flappedear.betterdriver.timing.edit.LapPath
+import com.flappedear.betterdriver.timing.edit.MinFittedLineWidthMeters
+import com.flappedear.betterdriver.timing.edit.widened
 import com.flappedear.betterdriver.timing.edit.LineRef
 import com.flappedear.betterdriver.timing.edit.line
 import com.flappedear.betterdriver.timing.edit.lineRefs
@@ -85,13 +87,52 @@ class EditorTest {
         // The path starts here, so the heading is taken over the path ahead only.
         assertEquals(0.0, (hit.headingDeg + 180) % 360 - 180, 1.5)
         val line = assertNotNull(path.lineAt(ring(0.0, gnss.radiusM + 8)))
-        assertEquals(30.0, distanceMeters(line.left, line.right), 0.01)
+        // Every pass of the ring runs on the same circle: the narrowest fitted line (FBBD-438).
+        assertEquals(MinFittedLineWidthMeters, distanceMeters(line.left, line.right), 0.05)
         // Left of a car heading north is west, towards the ring's centre.
         assertEquals(true, line.left.lon < line.right.lon)
         val laps = timeSession(track.copy(startFinish = line), fixes.asSequence()).laps
         assertEquals(3, laps.size)
         laps.drop(1).forEach { assertEquals(40_000L, it.timeMillis) }
     }
+
+    @Test
+    fun `a line is fitted between the outermost passes, a pit lane further off stays outside`() {
+        // Three passes north across y = 0 at x = 0, 6 and 10 m, and a pit lane pass at x = 24 m.
+        val frame = path.frame
+        fun pass(x: Double) = (-20..20).map { Xy(x, it.toDouble()) }
+        val drive = listOf(0.0, 6.0, 10.0, 24.0).flatMap(::pass).map(frame::toGeo)
+        val fitted = assertNotNull(LapPath(drive).lineAt(frame.toGeo(Xy(6.0, 0.0))))
+        // 0 to 10 m, 4 m more each side: 18 m wide, centred at x = 5 m; the pit lane is 24 - 5 = 19 m off.
+        assertEquals(18.0, fitted.widthMeters, 0.05)
+        val mid = frame.toXy(GeoPoint((fitted.left.lat + fitted.right.lat) / 2, (fitted.left.lon + fitted.right.lon) / 2))
+        assertEquals(5.0, mid.x, 0.05)
+        assertEquals(0.0, mid.y, 0.05)
+        // Heading north: left is west.
+        assertEquals(true, fitted.left.lon < fitted.right.lon)
+        // Passes 24 m apart, 12 m each side of the tapped one: at most 30 m.
+        val wide = listOf(-12.0, 0.0, 12.0).flatMap(::pass).map(frame::toGeo)
+        assertEquals(30.0, assertNotNull(LapPath(wide).lineAt(frame.toGeo(Xy(0.0, 0.0)))).widthMeters, 0.05)
+    }
+
+    @Test
+    fun `width is set in 2 m steps, centre and direction kept`() {
+        val line = assertNotNull(path.lineAt(ring(90.0), 30.0))
+        assertEquals(30.0, line.widthMeters, 0.01)
+        val narrower = line.widened(-5)
+        assertEquals(20.0, narrower.widthMeters, 0.01)
+        assertEquals(0.0, distanceMeters(midpoint(line), midpoint(narrower)), 0.01)
+        assertEquals(true, (line.left.lat - line.right.lat) * (narrower.left.lat - narrower.right.lat) > 0)
+        assertEquals(4.0, line.widened(-100).widthMeters, 0.01)
+        assertEquals(60.0, line.widened(100).widthMeters, 0.01)
+        // An odd width goes to the next step: 13 m + 1 step = 16 m (13 rounds to 14).
+        assertEquals(16.0, line.withWidth(13.0).widened(1).widthMeters, 0.01)
+        // Narrowed lines still time the laps.
+        val laps = timeSession(track.copy(startFinish = narrower), fixes.asSequence()).laps
+        assertEquals(3, laps.size)
+    }
+
+    private fun midpoint(l: TrackLine) = GeoPoint((l.left.lat + l.right.lat) / 2, (l.left.lon + l.right.lon) / 2)
 
     @Test
     fun `a tap far from the lap places nothing`() {
