@@ -399,7 +399,7 @@ final class DataVideoTransport: ObservableObject {
             // Why it waits instead of playing, in the app log (FBBD-435).
             statusObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
                 guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
-                let why = p.reasonToWaitBeforePlaying?.rawValue ?? "none"
+                let why = p.reasonForWaitingToPlay?.rawValue ?? "none"
                 let at = DataVideoMaker.micros(p.currentTime()) / 1_000
                 AppLog.i("WatchVideo", "waiting to play at \(at) ms: \(why)")
             }
@@ -457,12 +457,12 @@ final class DataVideoTransport: ObservableObject {
         let target = next.micros, exact = next.exact
         seeking = true
         let tolerance: CMTime = exact ? .zero : .positiveInfinity
-        let sent = AppLog.uptimeMicros()
+        let sent = DispatchTime.now().uptimeNanoseconds
         player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] done in
             Task { @MainActor in
                 guard let self else { return }
                 if exact {
-                    let took = (AppLog.uptimeMicros() - sent) / 1_000
+                    let took = (DispatchTime.now().uptimeNanoseconds - sent) / 1_000_000
                     AppLog.i("WatchVideo", "seek to \(target / 1_000) ms \(done ? "done" : "cut short") in \(took) ms, playing \(self.playing)")
                 }
                 self.seeking = false
