@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.analysis.quality.QualityReport
 import com.flappedear.betterdriver.analysis.quality.QualityReportFiles
 import com.flappedear.betterdriver.analysis.quality.logQuality
 import com.flappedear.betterdriver.feature.analysis.QualityUi
+import com.flappedear.betterdriver.feature.analysis.qualityChecks
 import com.flappedear.betterdriver.feature.analysis.qualityUi
 import platform.Foundation.NSDate
 import platform.Foundation.NSLock
@@ -37,6 +38,9 @@ class SessionQualityReports(sessionsDir: String, tracksDir: String) {
 
     /** The Data quality card of session [id] (FBBD-183), as Android's; null when there is no report. */
     fun card(id: String): QualityUi? = report(id)?.let(::qualityUi)
+
+    /** Every check of session [id] as the UI tests read it (FBBD-376); null when there is no report. */
+    fun checks(id: String): String? = report(id)?.let(::qualityChecks)
 
     /**
      * Writes the report of recording [id] into the log once it has stopped (FBBD-183), on a queue of

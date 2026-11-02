@@ -92,6 +92,9 @@ class ReviewLibrary(base: String) {
      */
     fun quality(id: String): QualityUi? = quality.card(id)
 
+    /** Every check of session [id] as `id=VERDICT value`, for the UI tests' gates (FBBD-376); null with no report. */
+    fun qualityChecks(id: String): String? = quality.checks(id)
+
     private val weather = SessionWeatherCards(sessionsRoot)
 
     /**

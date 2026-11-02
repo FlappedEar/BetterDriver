@@ -508,6 +508,7 @@ private struct SummaryRunTime: View {
 struct SummaryQualityCard: View {
     let sessionId: String
     @State private var ui: QualityUi?
+    @State private var checks: String?
 
     var body: some View {
         // A container that is always there, unlike a Group, which hands its .task to its children and
@@ -538,10 +539,21 @@ struct SummaryQualityCard: View {
                 }
                 .accessibilityIdentifier("dataQuality")
             }
+            // Under UI tests only: every check, so DemoTrackTests gates the frame times (FBBD-376).
+            if let checks {
+                Text(checks)
+                    .font(.system(size: 1))
+                    .foregroundStyle(.clear)
+                    .frame(height: 1)
+                    .accessibilityIdentifier("qualityChecks")
+            }
         }
         .task(id: sessionId) {
             let id = sessionId
             ui = await Task.detached(priority: .utility) { ReviewBridge.quality(id: id) }.value
+            if UITestMode.on {
+                checks = await Task.detached(priority: .utility) { ReviewBridge.qualityChecks(id: id) }.value
+            }
         }
     }
 }
