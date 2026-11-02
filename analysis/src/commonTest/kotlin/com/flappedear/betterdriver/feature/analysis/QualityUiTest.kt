@@ -61,7 +61,7 @@ class QualityUiTest {
     }
 
     @Test
-    fun `the checks line gives each check id, verdict and value for the UI tests`() {
+    fun `the checks line gives each check id verdict and value for the UI tests`() {
         val report = QualityReport(
             sessionId = "s",
             sessionState = "FINISHED",
