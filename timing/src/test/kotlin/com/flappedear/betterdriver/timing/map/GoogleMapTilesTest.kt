@@ -2,6 +2,7 @@ package com.flappedear.betterdriver.timing.map
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** Google's satellite tiles (FBBD-411): the addresses the app asks for. */
@@ -16,6 +17,40 @@ class GoogleMapTilesTest {
         )
         assertEquals(512, source.imagePx)
         assertEquals("Google Maps", source.attribution)
+        // Google's terms: its tiles are not kept on disk (FBBD-412).
+        assertEquals(false, source.stored)
+        assertEquals(true, TileSources.mapTiler("k").stored)
+    }
+
+    @Test
+    fun googlesSatelliteComesFirstOnceItHasASession() {
+        val google = TileSources.googleSatellite("k", "s")
+        assertEquals(
+            listOf("google-satellite", "maptiler-satellite", "osm"),
+            TileSources.available("m", google).map { it.id },
+        )
+        assertEquals(listOf("osm"), TileSources.available().map { it.id })
+    }
+
+    @Test
+    fun theSessionAndItsExpiryAreReadFromGooglesAnswer() {
+        val answer = """{"session":"abc","expiry":"1762041600","tileWidth":512,"imageFormat":"jpeg"}"""
+        assertEquals(GoogleSession("abc", 1_762_041_600L), GoogleMapTiles.parseSession(answer, 0))
+        assertEquals(GoogleSession("abc", 186_400L), GoogleMapTiles.parseSession("""{"session":"abc"}""", 100_000))
+        assertNull(GoogleMapTiles.parseSession("""{"error":{"code":403}}""", 0))
+        assertNull(GoogleMapTiles.parseSession("not json", 0))
+    }
+
+    @Test
+    fun theCreditNamesEachOwnerOnce() {
+        assertEquals("Google Maps", GoogleMapTiles.credit(emptyList()))
+        assertEquals("Google Maps", GoogleMapTiles.credit(listOf("")))
+        assertEquals(
+            "Google Maps · Airbus, Maxar Technologies",
+            GoogleMapTiles.credit(listOf("Maxar Technologies, Airbus", "Airbus")),
+        )
+        assertEquals("Airbus", GoogleMapTiles.parseCopyright("""{"copyright":"Airbus","maxZoom":21}"""))
+        assertNull(GoogleMapTiles.parseCopyright("{}"))
     }
 
     @Test

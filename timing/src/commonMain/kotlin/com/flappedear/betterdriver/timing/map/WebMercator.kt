@@ -4,7 +4,13 @@ package com.flappedear.betterdriver.timing.map
 
 import com.flappedear.betterdriver.math.toDegrees
 import com.flappedear.betterdriver.math.toRadians
+import com.flappedear.betterdriver.recorder.log.CoreLog
+import com.flappedear.betterdriver.recorder.log.logLine
 import com.flappedear.betterdriver.timing.geo.GeoPoint
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 import kotlin.math.PI
 import kotlin.math.atan
 import kotlin.math.cos
@@ -83,13 +89,17 @@ object WebMercator {
  * Where map tiles come from (UI-26). [url] gives the address of tile ([x], [y]) at zoom [z].
  * [attribution] must be shown on the map. [imagePx] is the edge of the image a tile comes as: a
  * 512 px tile is as sharp as four 256 px ones a zoom deeper, in a quarter of the requests.
+ * [stored] is false for a source whose terms allow no copy of its tiles on disk (Google's).
  */
-class TileSource(
+class TileSource
+@Suppress("LongParameterList") // What names, credits, fetches and keeps a tile source.
+constructor(
     val id: String,
     val name: String,
     val attribution: String,
     val maxZoom: Int,
     val imagePx: Int = TileSize,
+    val stored: Boolean = true,
     private val template: (z: Int, x: Int, y: Int) -> String,
 ) {
     fun url(z: Int, x: Int, y: Int): String = template(z, x, y)
@@ -136,10 +146,15 @@ object TileSources {
         attribution = "Google Maps",
         maxZoom = 22,
         imagePx = 2 * TileSize,
+        stored = false,
     ) { z, x, y -> "${GoogleMapTiles.HOST}/v1/2dtiles/$z/$x/$y?session=$session&key=$key" }
 
-    /** The backgrounds, best first: MapTiler's satellite when [mapTilerKey] is set, then the street map. */
-    fun available(mapTilerKey: String? = null): List<TileSource> = listOfNotNull(
+    /**
+     * The backgrounds, best first (FBBD-411, FBBD-412): Google's satellite once its session is made
+     * ([google]), MapTiler's when [mapTilerKey] is set, then the street map.
+     */
+    fun available(mapTilerKey: String? = null, google: TileSource? = null): List<TileSource> = listOfNotNull(
+        google,
         mapTilerKey?.trim()?.takeIf { it.isNotEmpty() }?.let(::mapTiler),
         OpenStreetMap,
     )
@@ -151,6 +166,7 @@ object TileSources {
  * ([TileSources.googleSatellite]) until its "expiry" (seconds since 1970). The picture's credit
  * is "Google Maps" with the copyright text from [viewportUrl] for the area shown.
  */
+@Suppress("TooManyFunctions") // Addresses, answers, credit and log lines of one API.
 object GoogleMapTiles {
     const val HOST = "https://tile.googleapis.com"
 
@@ -182,5 +198,45 @@ object GoogleMapTiles {
     /** The first tile, across or down, of the viewport square that holds tile [t]. */
     fun viewportArea(t: Int): Int = t / VIEWPORT_TILES * VIEWPORT_TILES
 
+    /** The picture's credit: "Google Maps" and the owners of the photos shown, each once. */
+    fun credit(owners: Collection<String>): String {
+        val names = owners.flatMap { it.split(",") }.map { it.trim() }.filter { it.isNotEmpty() }.distinct().sorted()
+        return if (names.isEmpty()) "Google Maps" else "Google Maps · ${names.joinToString(", ")}"
+    }
+
+    /**
+     * The session in createSession's answer [json], or null if it has none. Its "expiry" is seconds
+     * since 1970 as a string (two weeks ahead, per Google); a day after [nowSeconds] when it is missing.
+     */
+    fun parseSession(json: String, nowSeconds: Long): GoogleSession? {
+        val obj = jsonObject(json)
+        val token = obj?.text("session")?.takeIf { it.isNotEmpty() } ?: return null
+        val expiry = obj.text("expiry")?.toDoubleOrNull()?.toLong() ?: (nowSeconds + SessionFallbackSeconds)
+        return GoogleSession(token, expiry)
+    }
+
+    /** The "copyright" of a viewport answer [json], or null. */
+    fun parseCopyright(json: String): String? = jsonObject(json)?.text("copyright")
+
+    private const val SessionFallbackSeconds = 86_400L
+
+    /** The log tag of the Google map's lines, the same on both apps (FBBD-412). */
+    const val LOG_TAG = "MapTiles"
+
+    /** The continuous log's line for a session made, which a drive log shows (FBBD-412). */
+    fun logSessionMade(expirySeconds: Long) =
+        logLine(CoreLog.LevelInfo, LOG_TAG, "Google map session made, expires $expirySeconds")
+
+    /** The line for a session not made: [why] is the HTTP status (a wrong or limited key) or the lost signal. */
+    fun logSessionFailed(why: String) = logLine(CoreLog.LevelWarn, LOG_TAG, "Google map session failed: $why")
+
+    private fun jsonObject(json: String): JsonObject? =
+        runCatching { Json.parseToJsonElement(json) as? JsonObject }.getOrNull()
+
+    private fun JsonObject.text(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
+
     private fun corner(x: Int, y: Int) = WorldPx(x.toDouble() * TileSize, y.toDouble() * TileSize)
 }
+
+/** A Map Tiles API session: [token] goes into each tile's address until [expirySeconds] (since 1970). */
+data class GoogleSession(val token: String, val expirySeconds: Long)

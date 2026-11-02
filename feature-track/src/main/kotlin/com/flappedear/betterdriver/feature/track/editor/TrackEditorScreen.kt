@@ -163,9 +163,10 @@ private fun MapPane(
     modifier: Modifier,
     onCorrect: ((SegmentEdit) -> Unit)?,
 ) {
-    val sources = remember(tiles.mapTilerKey) { TileSources.available(tiles.mapTilerKey) }
+    KeepGoogleSession(tiles)
+    val sources = remember(tiles.mapTilerKey, tiles.google) { TileSources.available(tiles.mapTilerKey, tiles.google) }
     // The best background unless another was picked; a new key brings its satellite map in first.
-    var picked by remember(tiles.mapTilerKey) { mutableStateOf<String?>(null) }
+    var picked by remember(tiles.mapTilerKey, tiles.googleKey) { mutableStateOf<String?>(null) }
     val source = sources.firstOrNull { it.id == picked } ?: sources.first()
     val camera = remember { MapCamera(state.track.center, zoom = 16.0) }
     var fitted by remember { mutableStateOf(false) }

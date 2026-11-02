@@ -163,10 +163,15 @@ final class SatelliteMaps: ObservableObject {
         request.httpBody = GoogleMapTiles.shared.sessionRequest().data(using: .utf8)
         guard let data = get(request),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let token = json["session"] as? String else { return nil }
+              let token = json["session"] as? String else {
+            // The same line as Android's (FBBD-412).
+            GoogleMapTiles.shared.logSessionFailed(why: "no session (wrong key, limited key or no signal)")
+            return nil
+        }
         // "expiry" is seconds since 1970, as a string; two weeks per Google, one day if it is missing.
         let seconds = (json["expiry"] as? String).flatMap(Double.init) ?? (json["expiry"] as? Double)
         let expiry = seconds.map { Date(timeIntervalSince1970: $0) } ?? Date().addingTimeInterval(86400)
+        GoogleMapTiles.shared.logSessionMade(expirySeconds: Int64(expiry.timeIntervalSince1970))
         lock.lock()
         session = (token, expiry)
         lock.unlock()

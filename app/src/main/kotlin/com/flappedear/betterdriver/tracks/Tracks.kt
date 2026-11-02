@@ -116,12 +116,15 @@ class Tracks private constructor(private val context: Context) {
     /** Each session's first position, by id, so sessions elsewhere are read once. io thread only. */
     private val sessionStarts = HashMap<String, GeoPoint?>()
 
-    /** Map tiles for the editor, kept in app storage for use without signal (UI-26). */
+    /** Map tiles for the editor, kept in app storage for use without signal (UI-26); Google's in memory only. */
     val tiles by lazy {
         TileLoader(
             File(context.filesDir, "tiles"),
             "BetterDriver/${BuildConfig.VERSION_NAME} (+https://github.com/FlappedEar/BetterDriver)",
             File(context.filesDir, "maptiler.key"),
+            // The Google Map Tiles API key (FBBD-412), as on iOS: google-maps.key.
+            File(context.filesDir, "google-maps.key"),
+            googleKeyHeaders(context),
         )
     }
 

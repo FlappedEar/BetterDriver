@@ -20,6 +20,7 @@ class AboutUiTest {
     fun `map tiles carry exactly the attribution the map shows`() {
         assertEquals(
             listOf(
+                TileSources.googleSatellite("", "").attribution,
                 TileSources.mapTiler("").attribution,
                 TileSources.OpenStreetMap.attribution,
             ),

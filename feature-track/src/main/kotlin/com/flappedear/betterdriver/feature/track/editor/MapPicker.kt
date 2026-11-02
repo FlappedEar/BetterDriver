@@ -14,6 +14,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -24,13 +25,35 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.flappedear.betterdriver.timing.map.TileSource
+import kotlinx.coroutines.delay
 
 /** Test tag of the map background button. */
 const val MapPickerTag = "map-picker"
 
+/** How often a map on screen checks its Google session (made, or renewed before it expires). */
+private const val SessionCheckMs = 30_000L
+
+/**
+ * Keeps [tiles]' Google session made while this is on screen and a Google key is set (FBBD-412):
+ * at once, after a lost signal, and before the two-week session expires.
+ */
+@Composable
+fun KeepGoogleSession(tiles: TileLoader) {
+    val key = tiles.googleKey
+    LaunchedEffect(key) {
+        while (key != null) {
+            tiles.ensureGoogle()
+            delay(SessionCheckMs)
+        }
+    }
+}
+
+/** Which key the key dialog edits. */
+private enum class KeyKind { Google, MapTiler }
+
 /**
  * The map background button (FBBD-230): shows the background in use and lets Arek pick another one
- * for this place, or enter the MapTiler key that turns on MapTiler's satellite map.
+ * for this place, or enter the Google key (FBBD-412) or MapTiler key that turns on that satellite map.
  */
 @Composable
 internal fun MapPicker(
@@ -41,7 +64,7 @@ internal fun MapPicker(
     modifier: Modifier = Modifier,
 ) {
     var open by remember { mutableStateOf(false) }
-    var editingKey by remember { mutableStateOf(false) }
+    var editingKey by remember { mutableStateOf<KeyKind?>(null) }
     Box(modifier) {
         Surface(
             onClick = { open = true },
@@ -68,38 +91,85 @@ internal fun MapPicker(
             }
             HorizontalDivider()
             DropdownMenuItem(
+                text = { Text(if (tiles.googleKey == null) "Add Google key…" else "Change Google key…") },
+                onClick = {
+                    open = false
+                    editingKey = KeyKind.Google
+                },
+            )
+            DropdownMenuItem(
                 text = { Text(if (tiles.mapTilerKey == null) "Add MapTiler key…" else "Change MapTiler key…") },
                 onClick = {
                     open = false
-                    editingKey = true
+                    editingKey = KeyKind.MapTiler
                 },
             )
         }
     }
-    if (editingKey) {
-        MapTilerKeyDialog(
+    editingKey?.let { kind -> KeyDialogFor(kind, tiles) { editingKey = null } }
+}
+
+/** The dialog that enters, changes or removes the [kind] key; [onDone] closes it. */
+@Composable
+private fun KeyDialogFor(kind: KeyKind, tiles: TileLoader, onDone: () -> Unit) {
+    when (kind) {
+        KeyKind.Google -> KeyDialog(
+            title = "Google key",
+            about = googleKeyNote(tiles.headers),
+            current = tiles.googleKey.orEmpty(),
+            onSave = {
+                tiles.updateGoogleKey(it)
+                onDone()
+            },
+            onDismiss = onDone,
+        )
+        KeyKind.MapTiler -> KeyDialog(
+            title = "MapTiler key",
+            about = "Turns on MapTiler's satellite map. The key stays on this device.",
             current = tiles.mapTilerKey.orEmpty(),
             onSave = {
                 tiles.updateMapTilerKey(it)
-                editingKey = false
+                onDone()
             },
-            onDismiss = { editingKey = false },
+            onDismiss = onDone,
         )
     }
 }
 
+/**
+ * What the Google key dialog says: the key turns on Google's satellite map, and the app's package
+ * and certificate a key limited to Android apps needs (from the request [headers]).
+ */
+internal fun googleKeyNote(headers: Map<String, String>): String {
+    val pkg = headers[AndroidPackageHeader]
+    val cert = headers[AndroidCertHeader]?.chunked(2)?.joinToString(":")
+    val limit = if (pkg != null && cert != null) {
+        " Limit the key to the Map Tiles API and to Android apps: package $pkg, SHA-1 $cert."
+    } else {
+        ""
+    }
+    return "Turns on Google's satellite map (a Map Tiles API key). The key stays on this device.$limit"
+}
+
+/** The headers a Google key limited to Android apps checks: the app's package and its signing certificate's SHA-1. */
+const val AndroidPackageHeader = "X-Android-Package"
+const val AndroidCertHeader = "X-Android-Cert"
+
 @Composable
-private fun MapTilerKeyDialog(current: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
+private fun KeyDialog(
+    title: String,
+    about: String,
+    current: String,
+    onSave: (String) -> Unit,
+    onDismiss: () -> Unit,
+) {
     var text by remember { mutableStateOf(current) }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("MapTiler key") },
+        title = { Text(title) },
         text = {
             Column {
-                Text(
-                    "Turns on MapTiler's satellite map. The key stays on this device.",
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Text(about, style = MaterialTheme.typography.bodyMedium)
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
