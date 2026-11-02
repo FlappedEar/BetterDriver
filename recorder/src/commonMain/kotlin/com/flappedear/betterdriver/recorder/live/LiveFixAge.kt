@@ -3,7 +3,9 @@ package com.flappedear.betterdriver.recorder.live
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.SampleSet
 import com.flappedear.betterdriver.recorder.store.FixAge
+import com.flappedear.betterdriver.recorder.log.logInfo
 import com.flappedear.betterdriver.recorder.store.gnssFixAge
+import kotlin.concurrent.Volatile
 
 /** The last this long of driving is measured. */
 private const val WindowMicros = 180_000_000L
@@ -18,7 +20,7 @@ private const val EveryMicros = 30_000_000L
  * a measurement succeeds (at least a minute of driving), then the latest one that did. [onChange] is
  * told each new outcome: a new age, or a new reason there is none ("on time", too little driving),
  * so the log shows a receiver whose fix is on time as well as one whose fix is late. Feed it from
- * one thread.
+ * one thread. Shared by the Android recorder service and the iPhone's LiveSession (FBBD-408).
  */
 class LiveFixAge(private val accelIds: Set<Int>, private val onChange: (FixAge) -> Unit = {}) {
     @Volatile
@@ -54,3 +56,11 @@ class LiveFixAge(private val accelIds: Set<Int>, private val onChange: (FixAge) 
         }
     }
 }
+
+/**
+ * The fix age of a receiver whose fixes come with its own acceleration [accelX] and [accelY] (a
+ * RaceBox, an NMEA receiver with acceleration), each new outcome logged with the tag
+ * "RecorderService" as the Android recorder always logged it, on both platforms (FBBD-229, FBBD-408).
+ */
+fun receiverFixAge(accelX: Int, accelY: Int): LiveFixAge =
+    LiveFixAge(setOf(accelX, accelY)) { age -> logInfo("RecorderService", "gnss fix age ${age.text}") }

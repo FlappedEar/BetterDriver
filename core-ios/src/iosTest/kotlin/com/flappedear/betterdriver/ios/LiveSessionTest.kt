@@ -2,6 +2,8 @@
 
 package com.flappedear.betterdriver.ios
 
+import com.flappedear.betterdriver.core.ble.RaceBoxChannels
+import com.flappedear.betterdriver.recorder.ChannelValue
 import com.flappedear.betterdriver.recorder.EventKinds
 import com.flappedear.betterdriver.recorder.RecorderConfig
 import com.flappedear.betterdriver.recorder.GnssChannels
@@ -31,6 +33,8 @@ import platform.Foundation.create
 import platform.Foundation.writeToFile
 import kotlin.math.PI
 import kotlin.math.abs
+import kotlin.math.cos
+import kotlin.math.sin
 import kotlin.test.AfterTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -257,5 +261,39 @@ class LiveSessionTest {
     fun anUnreadableCircuitListIsEmpty() {
         assertEquals(CircuitList.Empty, TrackFiles.circuits("{"))
         assertEquals(CircuitList.Empty, TrackFiles.circuits(null))
+    }
+
+    /**
+     * FBBD-408: with a RaceBox the session measures how old its fixes are, as Android's recorder does
+     * for its CoachLink, so the coach's cues allow for it; the phone's GPS gives none.
+     */
+    @Test
+    fun aRaceBoxFixAgeIsMeasuredForTheCoach() {
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = true)
+        RaceBoxChannels.ALL.forEach(session::defineChannel)
+        for (i in 0 until 25 * 200) {
+            val t = 1.0 + i * 0.04
+            val speed = 20.0 + 8.0 * sin(2 * PI * (t - 0.8) / 20.0)
+            val accel = 8.0 * 2 * PI / 20.0 * cos(2 * PI * t / 20.0) / StandardGravity
+            session.submit(
+                SampleSet(
+                    (t * 1_000_000).toLong(),
+                    listOf(
+                        ChannelValue(GnssChannels.SPEED_KMH.id, speed * 3.6),
+                        ChannelValue(RaceBoxChannels.ACCEL_X.id, accel + 0.02 * sin(i * 1.7)),
+                    ),
+                ),
+            )
+        }
+        assertTrue(abs(session.fixAgeMicros - 800_000) <= 40_000, "fix age ${session.fixAgeMicros} µs, expected 0.8 s")
+        session.stop()
+    }
+
+    @Test
+    fun thePhonesGpsHasNoFixAge() {
+        val session = LiveSession.start(sessions, tracks, circuits, info, receiverHasG = false)
+        for (n in 0L..(25 * 100)) session.submit(SampleSet(n * 40_000, gnss.fix(n)))
+        assertEquals(0L, session.fixAgeMicros)
+        session.stop()
     }
 }
