@@ -22,7 +22,9 @@ import com.flappedear.betterdriver.recorder.SampleSink
 import com.flappedear.betterdriver.recorder.SessionInfo
 import com.flappedear.betterdriver.recorder.live.GnssState
 import com.flappedear.betterdriver.recorder.live.LiveSnapshot
+import com.flappedear.betterdriver.recorder.live.LiveFixAge
 import com.flappedear.betterdriver.recorder.live.LiveTracker
+import com.flappedear.betterdriver.recorder.live.receiverFixAge
 import com.flappedear.betterdriver.recorder.log.FrameStretch
 import com.flappedear.betterdriver.recorder.log.GnssSecondLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLog
@@ -84,6 +86,13 @@ class LiveSession private constructor(
     /** Reads each fix with the last pedal, wheel and engine speed, as Android's CoachLink; under the lock. */
     private var coachReader = CoachFixReader(null)
 
+    /**
+     * How old the RaceBox's fixes are when they arrive (FBBD-229, FBBD-408), so the coach's cues allow
+     * for it as Android's CoachLink does; from the RaceBox's own acceleration, so none with the phone's
+     * GPS. Under the lock.
+     */
+    private var fixAge: LiveFixAge? = null
+
     /** The gear for the Gear tile (FBBD-397), fitted from this session's engine and road speed; under the lock. */
     private val gear = LiveGear(recording::nowMicros)
 
@@ -111,6 +120,9 @@ class LiveSession private constructor(
             tracker.onChannel(def)
             gear.onChannel(def)
             coachChannel(def)
+            if (def.id == RaceBoxChannels.ACCEL_X.id && fixAge == null) {
+                fixAge = receiverFixAge(RaceBoxChannels.ACCEL_X.id, RaceBoxChannels.ACCEL_Y.id)
+            }
         }
     }
 
@@ -135,7 +147,9 @@ class LiveSession private constructor(
             gear.onSamples(set)
             timing.onSamples(set)
             // Read before the coach starts, so the pedal value is there for its first fix.
-            val fix = coachReader.read(set)
+            fixAge?.add(set)
+            val age = fixAge?.micros ?: 0L
+            val fix = coachReader.read(set)?.let { if (age > 0L) it.copy(ageMicros = age) else it }
             coach?.onFix(fix, timing.detection)
         }
     }
@@ -172,6 +186,9 @@ class LiveSession private constructor(
     fun audioDelay(millis: Int, measured: Boolean, output: String) {
         guarded { coach }?.audioDelay(millis, measured, output)
     }
+
+    /** The RaceBox fix age the coach allows for now (FBBD-408), 0 until measured; for tests. */
+    internal val fixAgeMicros: Long get() = guarded { fixAge?.micros ?: 0L }
 
     /** Waits for the coach's queued work, for tests. */
     internal fun awaitCoach() = guarded { coach }?.awaitIdle()

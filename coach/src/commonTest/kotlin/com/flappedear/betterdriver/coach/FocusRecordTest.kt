@@ -1,4 +1,4 @@
-package com.flappedear.betterdriver.sessionanalysis
+package com.flappedear.betterdriver.coach
 
 import com.flappedear.betterdriver.analysis.confidence.Graded
 import com.flappedear.betterdriver.analysis.focus.FocusArea
@@ -9,15 +9,13 @@ import com.flappedear.betterdriver.analysis.focus.FocusRole
 import com.flappedear.betterdriver.analysis.focus.NextFocus
 import com.flappedear.betterdriver.analysis.focus.NextSessionFocusAlgorithm
 import com.flappedear.betterdriver.analysis.focus.NextSessionPlan
-import com.flappedear.betterdriver.coach.CornerPick
-import com.flappedear.betterdriver.coach.FocusChangeRecord
 import com.flappedear.betterdriver.recorder.Confidence
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
-import org.junit.Assert.assertTrue
-import org.junit.Test
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
-/** The next-session focus as kept for the coach and the coaching history (FBBD-20). */
+/** The next-session focus as kept for the coach and the coaching history (FBBD-20), on Android and iOS (FBBD-424). */
 class FocusRecordTest {
     private fun focus(id: String, role: FocusRole, seconds: Double?, changes: List<FocusChange> = emptyList()) =
         NextFocus(
@@ -48,7 +46,7 @@ class FocusRecordTest {
     private val line = CornerPick("Corner c4", listOf(50.0, 50.0001), listOf(19.0, 19.0001), "s1")
 
     @Test
-    fun `each focus is kept under its CornerId, primary first, with its evidence and line`() {
+    fun `each focus is kept under its CornerId primary first with its evidence and line`() {
         val later = FocusChange(FocusMetric.BrakingPoint, 120.0, 128.0, "m")
         val plan = NextSessionPlan(
             primary = focus("c4", FocusRole.Primary, 0.18, listOf(later)),
@@ -67,7 +65,7 @@ class FocusRecordTest {
         assertEquals(listOf("HIGH", "MEDIUM"), record.targets.map { it.confidence })
         assertEquals(listOf("repeatedLoss", "repeatedLoss"), record.targets.map { it.kind })
         val primary = record.targets[0]
-        assertEquals(0.18, primary.timeAvailableSeconds!!, 1e-9)
+        assertEquals(0.18, primary.timeAvailableSeconds!!, absoluteTolerance = 1e-9)
         assertEquals(listOf(FocusChangeRecord("brakingPoint", 120.0, 128.0, "m", true, "HIGH")), primary.changes)
         assertEquals(listOf("HIGH", "MEDIUM"), record.targets.map { it.timeConfidence })
         assertEquals(line.lats, primary.lats)
@@ -77,7 +75,7 @@ class FocusRecordTest {
     }
 
     @Test
-    fun `without the track's corner identity a focus keeps the analysis's own id only`() {
+    fun `without the tracks corner identity a focus keeps the analysiss own id only`() {
         val plan = NextSessionPlan(primary = focus("s3", FocusRole.Primary, 0.2))
         val target = focusRecord("t", "s1", 0L, plan, emptyMap()).targets.single()
         assertEquals("s3", target.segmentId)

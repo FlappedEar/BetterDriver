@@ -24,6 +24,7 @@ import com.flappedear.betterdriver.recording.obdWatch
 import com.flappedear.betterdriver.setup.CarParameter
 import com.flappedear.betterdriver.setup.CarProfile
 import com.flappedear.betterdriver.setup.Equipment
+import com.flappedear.betterdriver.setup.SessionEquipment
 import com.flappedear.betterdriver.shell.ObdScreen
 import com.flappedear.betterdriver.shell.ObdView
 import com.flappedear.betterdriver.shell.SetupRepo
@@ -70,7 +71,8 @@ internal fun rememberCarLink(
     val recording = recorder.state.recording || recorder.state.starting
     val repo = SetupRepo.get(context)
     val carData = (if (recording) repo.forSession() else repo.setup).active().carData
-    val adapter = remember(carData) { obdAdapterLabel(context, carData.firstOrNull()) }
+    var using by remember { mutableStateOf<String?>(null) }
+    val adapter = remember(carData, using) { obdAdapterLabel(context, SessionEquipment.obdShown(carData, using)) }
     val profile by rememberUpdatedState(ownProfile(car?.let { c -> draft?.let { c.withParameter(it) } ?: c }))
     val run = remember { ScanRun() }
     val link = rememberPageLink(recording, carData, { profile }, run.asked::get)
@@ -82,6 +84,8 @@ internal fun rememberCarLink(
     LaunchedEffect(link, recording, adapter, carId) {
         while (true) {
             val status = if (link != null) link.status() else recorder.state.obd
+            // The page names the adapter the connection uses (FBBD-423); a new name relabels it.
+            using = status?.adapter
             view = ObdView(recording, status, adapter)
             run.check(status) { scan -> if (carId != null) saveScan(repo, carId, scan) }
             delay(RefreshMs)
