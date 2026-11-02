@@ -128,11 +128,13 @@ final class DataVideoTests: XCTestCase {
         let sought = seconds(clock.label, part: 0)
         XCTAssertLessThanOrEqual(abs(Double(sought) - wanted), 1.5, "the video went back after the seek: \(clock.label)")
 
-        // Plays on from there.
+        // Plays on from there. The clock shows whole seconds and a loaded simulator can take over a second
+        // to start the player (TestFlight 1512's gate saw 0:06 after 2 s from a seek to 6.x s), so wait for
+        // the clock to pass the seek point instead of a fixed 2 s; a player stuck at the seek still fails.
         play.tap()
-        sleep(2)
+        let playedOn = waitFor(timeout: 15) { self.seconds(clock.label, part: 0) > sought }
         play.tap()
-        XCTAssertGreaterThan(seconds(clock.label, part: 0), sought, "it did not play on from the seek: \(clock.label)")
+        XCTAssertTrue(playedOn, "it did not play on from the seek: \(clock.label), sought \(sought) s")
 
         // Close is clear of the transport (it sat on AirPlay in AVKit's controls on a Mac).
         let close = app.buttons["dataVideoClose"].firstMatch
