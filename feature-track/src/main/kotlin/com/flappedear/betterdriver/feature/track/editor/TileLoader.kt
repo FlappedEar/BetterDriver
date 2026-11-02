@@ -11,7 +11,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import com.flappedear.betterdriver.timing.map.GoogleMapTiles
+import com.flappedear.betterdriver.timing.map.GoogleSession
 import com.flappedear.betterdriver.timing.map.TileSource
+import com.flappedear.betterdriver.timing.map.TileSources
 import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -34,6 +37,10 @@ private const val LoadRetryAfterMs = 10 * 60_000L
 private const val MaxDownloadBytes = 4 * 1024 * 1024
 private const val HttpOk = 200
 
+/** A Google session is made again this long before it expires, or this long after one could not be made. */
+private const val SessionMarginMs = 60 * 60_000L
+private const val SessionRetryMs = 30_000L
+
 /** Tiles on disk are trimmed back to this, oldest first (checked once per loader). */
 private const val DiskLimitBytes = 300L * 1024 * 1024
 
@@ -45,11 +52,19 @@ private const val DiskLimitBytes = 300L * 1024 * 1024
  *
  * [get] is called while drawing; [loaded] goes up when a tile arrives, so maps that read it redraw.
  *
- * [keyFile] keeps the MapTiler key Arek enters on the map (FBBD-230): on the phone only, never in
- * the repository or the APK.
+ * [keyFile] keeps the MapTiler key Arek enters on the map (FBBD-230), [googleKeyFile] his Google
+ * Map Tiles API key (FBBD-412): on the phone only, never in the repository or the APK. [headers]
+ * go with every request to Google: the app's package and signing certificate, which a Google key
+ * limited to Android apps checks. Google's tiles are never written to disk (its terms); the others are.
  */
 @Suppress("TooManyFunctions") // Memory, disk and network for the editor's map and the perfect lap's (FBBD-316).
-class TileLoader(private val cacheDir: File, private val userAgent: String, private val keyFile: File? = null) {
+class TileLoader(
+    private val cacheDir: File,
+    private val userAgent: String,
+    private val keyFile: File? = null,
+    private val googleKeyFile: File? = null,
+    val headers: Map<String, String> = emptyMap(),
+) {
 
     private data class Key(val source: String, val z: Int, val x: Int, val y: Int)
 
@@ -80,10 +95,37 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
     var mapTilerKey by mutableStateOf<String?>(null)
         private set
 
+    /** The Google key, or null until one is entered. Main thread. */
+    var googleKey by mutableStateOf<String?>(null)
+        private set
+
+    /** Google's satellite map, once a session is made with [googleKey]; null before. Main thread. */
+    var google by mutableStateOf<TileSource?>(null)
+        private set
+
+    /** "Google Maps" and the owners of the Google photos fetched so far. Main thread. */
+    var googleCredit by mutableStateOf(GoogleMapTiles.credit(emptyList()))
+        private set
+
+    /** The Google session and the key it was made with; read by io threads for the credit. */
+    @Volatile private var session: Pair<String, GoogleSession>? = null
+    private var sessionPending = false
+    private var sessionTriedAt = 0L
+
+    /** Google's copyright text by viewport square ("z/x/y"); "" while it is asked for. io threads. */
+    private val copyrights = ConcurrentHashMap<String, String>()
+
     init {
         io.execute {
             val key = readKey(keyFile)
             if (key != null) main.post { mapTilerKey = key }
+            val google = readKey(googleKeyFile)
+            if (google != null) {
+                main.post {
+                    googleKey = google
+                    ensureGoogle()
+                }
+            }
             // GUGiK orthophoto tiles from before FBBD-230, no longer shown.
             File(cacheDir, "gugik-orto").deleteRecursively()
             trimDisk()
@@ -113,6 +155,65 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         }
     }
 
+    /** Keeps [key] for Google's satellite map; a blank key removes it. Main thread. */
+    fun updateGoogleKey(key: String) {
+        val value = key.trim().takeIf { it.isNotEmpty() }
+        googleKey = value
+        google = null
+        session = null
+        sessionTriedAt = 0L
+        copyrights.clear()
+        googleCredit = GoogleMapTiles.credit(emptyList())
+        keyGeneration++
+        failedAt.clear()
+        pending.clear()
+        ensureGoogle()
+        val f = googleKeyFile ?: return
+        io.execute {
+            try {
+                if (value == null) f.delete() else f.apply { parentFile?.mkdirs() }.writeText(value)
+            } catch (_: IOException) {
+                // Kept for this run only; entered again after a restart.
+            }
+        }
+    }
+
+    /**
+     * Makes a Google session if there is a key and none is at hand or it expires within the hour;
+     * after a failure, not again for 30 s. Called often (the maps call it every 30 s). Main thread.
+     */
+    fun ensureGoogle() {
+        val key = googleKey ?: return
+        val now = SystemClock.elapsedRealtime()
+        val s = session?.second
+        val fresh = s != null && s.expirySeconds * MillisPerSecond - System.currentTimeMillis() > SessionMarginMs
+        val waiting = sessionTriedAt != 0L && now - sessionTriedAt < SessionRetryMs
+        if (fresh || sessionPending || waiting) return
+        sessionPending = true
+        sessionTriedAt = now
+        val generation = keyGeneration
+        io.execute {
+            val made = try {
+                post(GoogleMapTiles.createSessionUrl(key), GoogleMapTiles.SESSION_REQUEST)
+                    ?.let { GoogleMapTiles.parseSession(it, System.currentTimeMillis() / MillisPerSecond) }
+            } catch (e: IOException) {
+                GoogleMapTiles.logSessionFailed("no connection (${e.javaClass.simpleName})")
+                null
+            }
+            if (made != null) GoogleMapTiles.logSessionMade(made.expirySeconds)
+            main.post {
+                sessionPending = false
+                if (generation != keyGeneration || made == null) return@post
+                session = key to made
+                google = TileSources.googleSatellite(key, made.token)
+            }
+        }
+    }
+
+    /** What the map must say while it shows [source]: for Google, also whose photos they are. Main thread. */
+    fun credit(source: TileSource): String =
+        if (source.id == GoogleId) googleCredit else source.attribution
+
     /** The tile if it is in memory; otherwise null, and it is loaded from disk or the network. Main thread. */
     fun get(source: TileSource, z: Int, x: Int, y: Int): ImageBitmap? {
         val key = Key(source.id, z, x, y)
@@ -127,7 +228,7 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
      */
     fun load(source: TileSource, z: Int, x: Int, y: Int): ImageBitmap? {
         val key = Key(source.id, z, x, y)
-        return memory.get(key) ?: (readCached(key) ?: loadDownload(source, key))?.also { memory.put(key, it) }
+        return memory.get(key) ?: (readCached(source, key) ?: loadDownload(source, key))?.also { memory.put(key, it) }
     }
 
     /**
@@ -152,7 +253,7 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         if (!pending.add(key)) return
         val generation = keyGeneration
         io.execute {
-            val image = readCached(key) ?: download(source, key)
+            val image = readCached(source, key) ?: download(source, key)
             main.post {
                 // After a key change the new request owns the entry: this one only adds a tile it got.
                 val current = generation == keyGeneration
@@ -171,9 +272,8 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
 
     private fun file(key: Key) = File(cacheDir, "${key.source}/${key.z}/${key.x}/${key.y}.tile")
 
-    private fun readCached(key: Key): ImageBitmap? {
-        val f = file(key)
-        if (!f.isFile) return null
+    private fun readCached(source: TileSource, key: Key): ImageBitmap? {
+        val f = file(key).takeIf { source.stored && it.isFile } ?: return null
         return BitmapFactory.decodeFile(f.path)?.asImageBitmap()
     }
 
@@ -188,6 +288,8 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         } ?: return null
         // A WMS reports errors as XML with status 200: only real images are kept.
         val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return null
+        if (source.id == GoogleId) noteCopyright(key)
+        if (!source.stored) return bitmap.asImageBitmap()
         try {
             val f = file(key)
             f.parentFile?.mkdirs()
@@ -200,11 +302,64 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         return bitmap.asImageBitmap()
     }
 
-    private fun fetch(url: String): ByteArray? {
+    /**
+     * Asks Google once per viewport square whose photos those are, for the credit; again after a
+     * failure. io thread.
+     */
+    private fun noteCopyright(key: Key) {
+        val area = "${key.z}/${GoogleMapTiles.viewportArea(key.x)}/${GoogleMapTiles.viewportArea(key.y)}"
+        if (copyrights.putIfAbsent(area, "") != null) return
+        val text = session?.let { (apiKey, made) ->
+            try {
+                fetch(GoogleMapTiles.viewportUrl(apiKey, made.token, key.z, key.x, key.y))
+                    ?.decodeToString()?.let(GoogleMapTiles::parseCopyright)
+            } catch (_: IOException) {
+                null
+            }
+        }
+        if (text == null) {
+            copyrights.remove(area)
+        } else {
+            copyrights[area] = text
+            val credit = GoogleMapTiles.credit(copyrights.values)
+            main.post { googleCredit = credit }
+        }
+    }
+
+    /** POSTs [body] as JSON to [url]; the answer, or null unless it is 200. io thread. */
+    private fun post(url: String, body: String): String? {
+        val conn = open(url)
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        return try {
+            conn.outputStream.use { it.write(body.encodeToByteArray()) }
+            if (conn.responseCode != HttpOk) {
+                // 400 or 403: the key is wrong, or limited to another app or API.
+                GoogleMapTiles.logSessionFailed("HTTP ${conn.responseCode}")
+                null
+            } else {
+                conn.inputStream.use { it.readNBytesCompat(MaxDownloadBytes) }.decodeToString()
+            }
+        } finally {
+            conn.disconnect()
+        }
+    }
+
+    private fun open(url: String): HttpURLConnection {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.connectTimeout = TimeoutMs
         conn.readTimeout = TimeoutMs
         conn.setRequestProperty("User-Agent", userAgent)
+        // Only Google checks them; the other tile servers are not told the app's certificate.
+        if (url.startsWith(GoogleMapTiles.HOST)) {
+            headers.forEach { (name, value) -> conn.setRequestProperty(name, value) }
+        }
+        return conn
+    }
+
+    private fun fetch(url: String): ByteArray? {
+        val conn = open(url)
         return try {
             if (conn.responseCode != HttpOk) {
                 null
@@ -234,6 +389,9 @@ class TileLoader(private val cacheDir: File, private val userAgent: String, priv
         io.shutdownNow()
     }
 }
+
+private const val GoogleId = "google-satellite"
+private const val MillisPerSecond = 1000L
 
 /** The key kept in [file], or null when there is none. */
 private fun readKey(file: File?): String? = try {
