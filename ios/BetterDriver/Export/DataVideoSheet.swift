@@ -405,16 +405,7 @@ final class DataVideoTransport: ObservableObject {
                 }
             }
         }
-        if itemObserver == nil {
-            // The item failed: why, in the app log (FBBD-435).
-            itemObserver = player.currentItem?.observe(\.status, options: [.initial, .new]) { item, _ in
-                guard item.status == .failed else { return }
-                let why = item.error.map { DataVideoTransport.describe($0) } ?? "no error"
-                let events = item.errorLog()?.events.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" }.joined(separator: " | ") ?? ""
-                AppLog.e("WatchVideo", "the video failed: \(why) \(events)")
-                Task { @MainActor in DataVideoTransport.failure = "\(why) \(events)" }
-            }
-        }
+        if itemObserver == nil, let item = player.currentItem { watch(item) }
         if ticker == nil {
             // The state line twice a second, for the UI tests (FBBD-435): whether the player's time moves.
             ticker = Task { @MainActor [weak self] in
@@ -435,6 +426,49 @@ final class DataVideoTransport: ObservableObject {
             }
         }
         setPlaying(true)
+    }
+
+    /// A failed item is noted in the app log and made again where it was, up to three times (FBBD-435:
+    /// the simulators failed the item at once with -11800 / -12784, and the clock never moved).
+    private func watch(_ item: AVPlayerItem) {
+        itemObserver?.invalidate()
+        itemObserver = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
+            guard item.status == .failed else { return }
+            let why = item.error.map { DataVideoTransport.describe($0) } ?? "no error"
+            let events = item.errorLog()?.events.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" }.joined(separator: " | ") ?? ""
+            AppLog.e("WatchVideo", "the video failed: \(why) \(events)")
+            Task { @MainActor in
+                DataVideoTransport.failure = "\(why) \(events)"
+                self?.remake(item)
+            }
+        }
+    }
+
+    private var remade = 0
+
+    private func remake(_ failed: AVPlayerItem) {
+        guard failed === player.currentItem, remade < 3, timeObserver != nil else { return }
+        remade += 1
+        let item = AVPlayerItem(asset: failed.asset)
+        // The last try leaves the overlay out: the video without the data beats a frozen picture, and
+        // the log then says whether the overlay was what failed.
+        item.videoComposition = remade < 3 ? failed.videoComposition : nil
+        AppLog.w("WatchVideo", "making the video again (\(remade)\(remade < 3 ? "" : ", without the overlay")) at \(micros / 1_000) ms")
+        player.replaceCurrentItem(with: item)
+        watch(item)
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.micros = self.totalMicros
+                self.setPlaying(false)
+            }
+        }
+        seek(fraction: totalMicros > 0 ? Double(micros) / Double(totalMicros) : 0, exact: true)
+        if playing { player.playImmediately(atRate: 1) }
+        note("remade \(remade)")
     }
 
     /// Stops it where it is (the app left the screen), as Android's on pause.
@@ -538,7 +572,7 @@ final class DataVideoTransport: ObservableObject {
         let at = DataVideoMaker.micros(player.currentTime()) / 1_000
         let loaded = player.currentItem?.loadedTimeRanges.last.map { DataVideoMaker.micros($0.timeRangeValue.end) / 1_000 } ?? -1
         let failure = player.currentItem?.error.map { "; error \(Self.describe($0))" } ?? ""
-        state = "\(event)\(Self.failure.isEmpty ? "" : "; failed: \(Self.failure)"); loaded to \(loaded) ms; follows \(follows)\(failure); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
+        state = "\(event); remade \(remade)\(Self.failure.isEmpty ? "" : "; failed: \(Self.failure)"); loaded to \(loaded) ms; follows \(follows)\(failure); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
     }
 
     private var follows = 0
