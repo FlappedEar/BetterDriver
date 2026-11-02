@@ -43,7 +43,9 @@ struct PerfectLapPlayer: View {
                         .foregroundStyle(Palette.onSurfaceVariant)
                 }
                 Spacer()
-                SaveVideoButton(scene: scene, distance: distance) { clock.playing = false }
+                SaveVideoButton(
+                    scene: scene, distance: distance, note: PerfectLapTiles.videoNote(shown: tiles?.source)
+                ) { clock.playing = false }
             }
             picture
         }
@@ -194,6 +196,8 @@ private struct PlayerBar: View {
 private struct SaveVideoButton: View {
     let scene: PerfectLapScene
     let distance: Double
+    /// Why the saved video's ground is not the player's (FBBD-433); nil when it is the same.
+    let note: String?
     let pause: () -> Void
 
     @State private var progress: Double?
@@ -224,6 +228,12 @@ private struct SaveVideoButton: View {
                 Text("The video was not saved: \(failure)").font(.footnote).foregroundStyle(TrackColors.loss)
             } else if saved != nil {
                 Text("Saved in the app. Send it to keep it.").font(.footnote).foregroundStyle(Palette.onSurfaceVariant)
+                if let note {
+                    Text(note).font(.footnote).foregroundStyle(Palette.onSurfaceVariant)
+                        .multilineTextAlignment(.trailing)
+                        .frame(maxWidth: 320, alignment: .trailing)
+                        .accessibilityIdentifier("videoGroundNote")
+                }
             }
         }
     }
