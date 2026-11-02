@@ -147,11 +147,6 @@ class SessionExport(
     }
 
     private fun baseName(id: String) = "BetterDriver-$id"
-
-    private companion object {
-        /** The session's clip index in its video folder (Android's VideoIndex). */
-        const val ClipIndexFile = "clips.json"
-    }
 }
 
 /**
@@ -240,7 +235,7 @@ private class TextFile(private val path: String) : Appendable, AutoCloseable {
  */
 internal fun wholeVideoClips(store: SessionStore, id: String): List<VideoClip> {
     val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
-    val index = NSString.stringWithContentsOfFile("$videoDir/$ClipIndex", NSUTF8StringEncoding, null)
+    val index = NSString.stringWithContentsOfFile("$videoDir/$SessionClipIndexFile", NSUTF8StringEncoding, null)
         ?.let(::indexedClips).orEmpty()
     val timeline = VideoTimeline.from(store.read(id, samples = false).events, index)
     val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
@@ -274,7 +269,7 @@ internal class VideoPresence(private val store: SessionStore) {
     private fun filesKey(id: String): String? {
         val dir = "${store.dir(id)}/${VideoFiles.DIR}"
         val names = NSFileManager.defaultManager.contentsOfDirectoryAtPath(dir, null)
-            ?.filterIsInstance<String>().orEmpty().filter { it != ClipIndex }.sorted()
+            ?.filterIsInstance<String>().orEmpty().filter { it != SessionClipIndexFile }.sorted()
         return names.takeIf { it.isNotEmpty() }?.joinToString("|") { "$it:${sizeOf("$dir/$it")}" }
     }
 
@@ -305,5 +300,5 @@ internal object Mp4Files {
     }
 }
 
-/** A session's clip index in its video folder (Android's VideoIndex), for the top-level helpers here. */
-private const val ClipIndex = "clips.json"
+/** A session's clip index in its video folder (Android's VideoIndex). */
+private const val SessionClipIndexFile = "clips.json"
