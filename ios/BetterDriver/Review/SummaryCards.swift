@@ -234,7 +234,7 @@ struct SummaryBestLapCard: View {
 /// average as a tiny line.
 struct SummaryHeartRateCard: View {
     let hr: HeartRateUi
-    let laps: [LapRow]
+    let laps: [BetterDriverCore.LapRow]
 
     var body: some View {
         let byLap = laps.compactMap { $0.heartRate.map { Double($0.averageBpm) } }
