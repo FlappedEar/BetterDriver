@@ -219,11 +219,19 @@ final class SatelliteMaps: ObservableObject {
     private func get(_ request: URLRequest) -> Data? {
         var got: Data?
         let done = DispatchSemaphore(value: 0)
-        http.dataTask(with: request) { data, response, _ in
+        let task = http.dataTask(with: request) { data, response, _ in
             if let r = response as? HTTPURLResponse, (200 ..< 300).contains(r.statusCode) { got = data }
             done.signal()
-        }.resume()
-        done.wait()
+        }
+        task.resume()
+        // Waits in short steps, so Stop on the perfect-lap video (a cancelled task) ends the fetch.
+        while done.wait(timeout: .now() + 0.2) == .timedOut {
+            if Task.isCancelled {
+                task.cancel()
+                done.wait()
+                return nil
+            }
+        }
         return got
     }
 
