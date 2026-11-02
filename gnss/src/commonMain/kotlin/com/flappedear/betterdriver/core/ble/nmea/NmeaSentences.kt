@@ -2,8 +2,9 @@
 
 package com.flappedear.betterdriver.core.ble.nmea
 
-import java.time.DateTimeException
-import java.time.LocalDate
+import com.flappedear.betterdriver.core.ble.utcEpochMillis
+import kotlin.math.floor
+import kotlin.math.roundToLong
 
 /**
  * The sentences the recorder uses, with the fields it needs. Any talker is accepted (GP GPS,
@@ -64,6 +65,7 @@ data class Gsa(
 private const val KmhPerKnot = 1.852
 private const val MinutesPerDegree = 60.0
 private const val MsPerSecond = 1_000.0
+private const val MsPerDay = 86_400_000L
 
 /**
  * Parses the body of a checked sentence (between `$` and `*`), or returns null for sentences the
@@ -124,33 +126,29 @@ private val DatePattern = Regex("""(\d\d)(\d\d)(\d\d)""")
 private val HemisphereSign = mapOf("N" to 1.0, "E" to 1.0, "S" to -1.0, "W" to -1.0)
 
 /** `hhmmss` with any number of decimals, or null if empty or out of range. */
-internal fun timeOfDay(s: String): Long? {
+fun timeOfDay(s: String): Long? {
     val (h, m, sec) = TimeOfDayPattern.matchEntire(s)?.destructured ?: return null
     val hours = h.toInt()
     val minutes = m.toInt()
     val seconds = sec.toDouble()
     // Second 60 is a leap second.
     val inRange = hours < 24 && minutes < 60 && seconds < 61.0
-    return if (inRange) (hours * 3_600L + minutes * 60L) * 1_000L + Math.round(seconds * MsPerSecond) else null
+    return if (inRange) (hours * 3_600L + minutes * 60L) * 1_000L + (seconds * MsPerSecond).roundToLong() else null
 }
 
 /** `ddmm.mmmm` / `dddmm.mmmm` with its hemisphere letter, as signed degrees, or null. */
-internal fun coordinate(value: String, hemisphere: String, limit: Double): Double? {
+fun coordinate(value: String, hemisphere: String, limit: Double): Double? {
     val v = value.toDoubleOrNull()
     val sign = HemisphereSign[hemisphere]
     if (v == null || sign == null || v < 0.0) return null
-    val degrees = Math.floor(v / 100.0)
+    val degrees = floor(v / 100.0)
     val minutes = v - degrees * 100.0
     val deg = degrees + minutes / MinutesPerDegree
     return if (minutes < MinutesPerDegree && deg <= limit) sign * deg else null
 }
 
 /** `ddmmyy` as days since 1970-01-01. Two-digit years are 20yy; receivers here are all younger. */
-internal fun date(s: String): Long? {
+fun date(s: String): Long? {
     val (d, m, y) = DatePattern.matchEntire(s)?.destructured ?: return null
-    return try {
-        LocalDate.of(2000 + y.toInt(), m.toInt(), d.toInt()).toEpochDay()
-    } catch (_: DateTimeException) {
-        null
-    }
+    return utcEpochMillis(2000 + y.toInt(), m.toInt(), d.toInt(), 0, 0, 0)?.let { it / MsPerDay }
 }

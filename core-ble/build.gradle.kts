@@ -31,6 +31,8 @@ dependencies {
     api(project(":heartrate"))
     // The TPMS bridge decoder and session, shared with the iOS app (FBBD-224).
     api(project(":tpms"))
+    // NMEA, LNS and RaceChrono DIY decoding, shared with the iOS app (FBBD-374).
+    api(project(":gnss"))
     // ObdSource drives the ELM327 reader and decodes PIDs (FBBD-15).
     implementation(project(":obd"))
     // The scanner and link state are Flows.
