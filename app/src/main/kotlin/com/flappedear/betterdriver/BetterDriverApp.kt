@@ -453,7 +453,8 @@ private fun Settings(
     val updates = remember(context) { AppUpdates.get(context) }
     val updatesBlocked = updatesBlocked(RecorderClient.get(context), Sessions.get(context))
     val coach = remember(context) { CoachPrefs.get(context) }
-    val firstAdapter = repo.setup.active().carData.firstOrNull()
+    val recordingObd = RecorderClient.get(context).state.obd
+    val firstAdapter = repo.setup.active().obdShownFor(recordingObd?.adapter)
     val obdAdapter = remember(firstAdapter) { obdAdapterLabel(context, firstAdapter) }
     SettingsScreen(
         updateRow = { UpdateRow(updates, updatesBlocked) },
@@ -491,7 +492,7 @@ private fun Settings(
             prefs.updateGnssSound(p.gnssSound)
         },
         onOpenAbout = { nav.navigate(Routes.About) },
-        obdRow = obdRowValue(RecorderClient.get(context).state.obd, obdAdapter),
+        obdRow = obdRowValue(recordingObd, obdAdapter),
         onOpenObd = { nav.navigate(Routes.Obd) },
         reach = if (topic == SettingsTopic.Equipment) rememberEquipmentReach(prefs, repo) else emptyMap(),
         trackLayout = { SettingsTrackLayout(repo, coach.settings.verbosity != Verbosity.Off) },

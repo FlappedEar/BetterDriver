@@ -19,13 +19,15 @@ data class ObdReading(val id: String, val name: String, val unit: String, val va
 
 /**
  * One look at an OBD-II connection: its state, a line about it, and every value the car sends; [scan]
- * is what the last scan found the car offers (FBBD-344), kept across reconnects.
+ * is what the last scan found the car offers (FBBD-344), kept across reconnects; [adapter] is the
+ * name of the adapter connecting or connected, null while searching, so the page names it (FBBD-423).
  */
 data class ObdStatus(
     val state: ObdLinkState,
     val detail: String,
     val readings: List<ObdReading> = emptyList(),
     val scan: CarScan? = null,
+    val adapter: String? = null,
 )
 
 /**
@@ -101,7 +103,7 @@ class ObdStatusTracker(private val windowMs: Long = DEFAULT_WINDOW_MS) {
             times.evict(nowMs)
             ObdReading(c.id, c.name, c.unit, v, times.size * MsPerSecond / span.toDouble())
         }
-        ObdStatus(state, detail, readings, scan)
+        ObdStatus(state, detail, readings, scan, adapterName)
     }
 
     private fun ArrayDeque<Long>.evict(nowMs: Long) {

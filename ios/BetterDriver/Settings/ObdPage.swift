@@ -107,7 +107,7 @@ struct ObdContent: View {
 
     var body: some View {
         // Only listed adapters read the car (FBBD-349), as on Android: with none, the page says so.
-        let adapter = settings.setup.active().carData.first
+        let adapter = settings.setup.active().obdShownFor(adapter: model.status?.adapter)
         let name = adapter?.name ?? "OBD adapter"
         let wifi = adapter?.modelName == ModelName.obdWifi
         if adapter == nil {

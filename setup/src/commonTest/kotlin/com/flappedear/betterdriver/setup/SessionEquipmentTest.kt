@@ -66,4 +66,33 @@ class SessionEquipmentTest {
         val bad = Equipment("x", EquipmentModel.OBD_WIFI, "Wi-Fi OBD-II adapter", "no port")
         assertTrue(SessionEquipment.obdWifi(listOf(bad)).isEmpty())
     }
+
+    @Test
+    fun theBluetoothAdapterIsShownWhenTheEarlierWifiOneIsListedFirst() {
+        // FBBD-423: the Wi-Fi adapter listed for an earlier setup comes before the vLinker added later.
+        val wifiFirst = Setup.fresh(::id)
+            .addEquipment(EquipmentModel.OBD_WIFI, "Wi-Fi OBD-II adapter", WifiObdAddress, ::id)
+            .addEquipment(EquipmentModel.OBD_BLUETOOTH, "vLinker MC+", "6F1A2B3C-0000-4000-8000-000000000002", ::id)
+        assertEquals(EquipmentModel.OBD_WIFI, wifiFirst.active().carData.first().model)
+        assertEquals("vLinker MC+", wifiFirst.active().obdShownFor(null)?.name)
+        val onlyWifi = wifiFirst.removeEquipment(wifiFirst.active().obdBluetooth.single().id)
+        assertEquals(EquipmentModel.OBD_WIFI, onlyWifi.active().obdShownFor(null)?.model)
+        assertNull(SessionEquipment.obdShown(emptyList()))
+    }
+
+    @Test
+    fun theAdapterInUseIsShown() {
+        // Two Bluetooth adapters listed; the second one answered, so the page names it.
+        val two = Setup.fresh(::id)
+            .addEquipment(EquipmentModel.OBD_WIFI, "Wi-Fi OBD-II adapter", WifiObdAddress, ::id)
+            .addEquipment(EquipmentModel.OBD_BLUETOOTH, "vLinker MC+", "6F1A2B3C-0000-4000-8000-000000000002", ::id)
+            .addEquipment(EquipmentModel.OBD_BLUETOOTH, "KONNWEI", "6F1A2B3C-0000-4000-8000-000000000004", ::id)
+            .active()
+        assertEquals("KONNWEI", two.obdShownFor("KONNWEI")?.name)
+        assertEquals(EquipmentModel.OBD_WIFI, two.obdShownFor("Wi-Fi OBD-II adapter")?.model)
+        // A name no listed item has (an unlisted adapter cannot connect) falls back to the first tried.
+        assertEquals("vLinker MC+", two.obdShownFor("OBDII")?.name)
+        val advertised = Equipment("a", EquipmentModel.OBD_BLUETOOTH, "My vLinker", "AA:BB", advertisedName = "vLinker MC-123")
+        assertEquals("My vLinker", SessionEquipment.obdShown(listOf(advertised), "vLinker MC-123")?.name)
+    }
 }
