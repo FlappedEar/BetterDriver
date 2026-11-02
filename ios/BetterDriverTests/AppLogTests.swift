@@ -111,4 +111,33 @@ final class AppLogTests: XCTestCase {
         let line = LoadLine.companion.between(from: a, to: later)
         XCTAssertEqual(line?.text().hasPrefix("load: cpu_pct=10.0 cpu_ms=6000 wall_ms=60000 gc=0"), true, line?.text() ?? "nil")
     }
+
+    // FBBD-430: the background line names files the app holds open and which carry a lock.
+    func testOpenFilesFindsAHeldLock() throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let lockPath = dir.appendingPathComponent("held.lock").path
+        let freePath = dir.appendingPathComponent("free.txt").path
+        let held = open(lockPath, O_WRONLY | O_CREAT, 0o644)
+        let free = open(freePath, O_WRONLY | O_CREAT, 0o644)
+        defer { close(held); close(free) }
+        XCTAssertEqual(flock(held, LOCK_EX), 0)
+        let entries = OpenFiles.list()
+        let lock = entries.first { $0.path.hasSuffix("/held.lock") }
+        let plain = entries.first { $0.path.hasSuffix("/free.txt") }
+        XCTAssertEqual(lock?.locked, true)
+        XCTAssertEqual(plain?.locked, false)
+        // The probe let go of free.txt: a lock on it is still free to take.
+        XCTAssertEqual(flock(free, LOCK_EX | LOCK_NB), 0)
+        XCTAssertEqual(OpenFiles.list(probe: false).first { $0.path.hasSuffix("/held.lock") }?.locked, false)
+    }
+
+    func testOpenFilesLineHidesTheHomeAndPutsLocksFirst() {
+        let line = OpenFiles.line(
+            [OpenFiles.Entry(path: "/home/u/Library/a.log", locked: false),
+             OpenFiles.Entry(path: "/home/u/Library/b.lock", locked: true),
+             OpenFiles.Entry(path: "/tmp/c", locked: false)],
+            home: "/home/u"
+        )
+        XCTAssertEqual(line, "3 open files, 1 locked: ~/Library/b.lock (locked), ~/Library/a.log, /tmp/c")
+    }
 }

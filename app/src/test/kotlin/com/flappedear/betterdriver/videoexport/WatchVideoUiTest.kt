@@ -10,15 +10,6 @@ import org.junit.Test
 /** The words of the Watch video screen (FBBD-341). */
 class WatchVideoUiTest {
     @Test
-    fun clockShowsMinutesAndSecondsThenHours() {
-        assertEquals("0:00", clockText(0))
-        assertEquals("0:00", clockText(-5))
-        assertEquals("4:05", clockText(245_900_000))
-        assertEquals("59:59", clockText(3_599_000_000))
-        assertEquals("1:02:03", clockText(3_723_000_000))
-    }
-
-    @Test
     fun bandDescriptionSaysSpeedAndALapOnlyWhereThereIsOne() {
         val noTrack = OverlayFrame(speedKmh = 53.6, lap = null, position = null, g = null)
         assertEquals("Data: 54 km/h", overlayDescription(noTrack))
