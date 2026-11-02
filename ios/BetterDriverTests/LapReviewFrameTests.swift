@@ -15,7 +15,11 @@ final class LapReviewFrameTests: XCTestCase {
         LapReviewProbe.reset()
         let st = ReviewTransport(review: review)
         let host = UIHostingController(rootView: NavigationStack { LapVideoView(transport: st) })
-        let window = UIWindow(frame: UIScreen.main.bounds)
+        // On the host app's scene: a window without one is never put on screen, so nothing draws.
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map { UIWindow(windowScene: $0) } ?? UIWindow(frame: UIScreen.main.bounds)
+        window.frame = scene?.coordinateSpace.bounds ?? UIScreen.main.bounds
+        window.windowLevel = .alert + 1
         window.rootViewController = host
         window.makeKeyAndVisible()
         defer { window.isHidden = true }
