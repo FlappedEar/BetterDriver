@@ -53,8 +53,12 @@ class ConfidenceRealTest {
     private val store by lazy { SessionStore(File(tmp, "sessions")) }
     private val track = RealCorpus.silesiaTrack()
 
-    private fun session(name: String): SessionData =
-        store.read(RealCorpus.import(store, File(tmp, "staging-$name"), name, listOf(track)).id)
+    /** Ids of the sessions imported so far: each file once, as the app refuses a drive twice (FBBD-427). */
+    private val imported = mutableMapOf<String, String>()
+
+    private fun session(name: String): SessionData = store.read(
+        imported.getOrPut(name) { RealCorpus.import(store, File(tmp, "staging-$name"), name, listOf(track)).id },
+    )
 
     private fun analyse(data: SessionData): SessionAnalysis = analyzeSession(telemetrySessionOf(data, track))
 
