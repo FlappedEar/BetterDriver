@@ -106,7 +106,10 @@ struct EquipmentItemPage: View {
                     } else {
                         ListRow("Model", value: item.modelLabel)
                     }
-                    if item.address != nil {
+                    // A Wi-Fi adapter's address is "host:port", as Android's item page shows it (FBBD-423).
+                    if let address = item.address, item.modelName == ModelName.obdWifi {
+                        ListRow("Address", value: address)
+                    } else if item.address != nil {
                         ListRow("Bluetooth", value: "Bluetooth LE")
                     }
                     if let mode = item.videoMode {

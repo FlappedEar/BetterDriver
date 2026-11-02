@@ -15,6 +15,7 @@ class ObdStatusTrackerTest {
         val t = ObdStatusTracker(windowMs = 5_000)
         t.connecting("vLinker MC+")
         assertEquals(ObdLinkState.Connecting, t.snapshot(0).state)
+        assertEquals("vLinker MC+", t.snapshot(0).adapter)
         t.ready("ELM327 v1.5", "A6", "12.4V", listOf(rpm, fuel), nowMs = 1_000)
         // RPM every 100 ms for 5 s; fuel level once.
         for (i in 1..50) t.value(rpm, 800.0 + i, 1_000L + i * 100)
@@ -26,6 +27,10 @@ class ObdStatusTrackerTest {
         assertEquals(850.0, s.readings[0].value)
         assertEquals(10.0, s.readings[0].hz, 0.01)
         assertEquals(0.2, s.readings[1].hz, 0.01)
+        // The page names the adapter in use (FBBD-423); none while searching again.
+        assertEquals("vLinker MC+", s.adapter)
+        t.ended("link lost")
+        assertEquals(null, t.snapshot(7_000).adapter)
     }
 
     @Test

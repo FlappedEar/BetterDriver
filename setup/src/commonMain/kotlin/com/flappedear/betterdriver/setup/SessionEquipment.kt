@@ -21,6 +21,17 @@ object SessionEquipment {
         }
 
     /**
+     * The adapter the OBD page and the Settings row name (FBBD-423): the listed one the connection
+     * is [using] (the connecting or connected adapter's name, by its name or the name it advertises),
+     * else the one tried first: the first Bluetooth one, then the first Wi-Fi one, then the first
+     * listed car data item. Not simply the first listed: the Wi-Fi adapter listed for setups saved
+     * before adapters were equipment would name a Bluetooth adapter's connection as Wi-Fi.
+     */
+    fun obdShown(carData: List<Equipment>, using: String? = null): Equipment? =
+        using?.let { name -> carData.firstOrNull { it.name == name || it.advertisedName == name } }
+            ?: obdBluetooth(carData).firstOrNull() ?: obdWifi(carData).firstOrNull()?.adapter ?: carData.firstOrNull()
+
+    /**
      * The strap recorded: the first listed heart-rate monitor with an address. Heart rate has fixed
      * channel ids, so a second strap would merge into the same stream; null when none is listed.
      */
