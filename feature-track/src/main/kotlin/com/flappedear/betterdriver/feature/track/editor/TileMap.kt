@@ -136,7 +136,7 @@ fun TileMap(
             overlay { camera.toScreen(it, size) }
         }
         Text(
-            source.attribution,
+            tiles.credit(source),
             fontSize = 10.sp,
             color = Color(0xFFEEF2F4),
             modifier = Modifier
