@@ -317,6 +317,9 @@ struct DataVideoPlayerPage: View {
             .accessibilityValue(wide ? "landscape" : "portrait")
             .accessibilityIdentifier("dataVideoClose")
         }
+        // The exact seek after the bar was still: the bar follows the video again, also when the end of
+        // the drag never came (FBBD-435).
+        .onChange(of: transport.settled) { dragging = nil }
         .onAppear { transport.start() }
         .onDisappear { transport.stop() }
         // Never plays unseen: home, the lock button or another app stops it, as on Android.
@@ -337,10 +340,15 @@ final class DataVideoTransport: ObservableObject {
     @Published private(set) var micros: Int64 = 0
 
     private var seeking = false
+    /// The exact seek after a loose one, once the bar is still.
+    private var settle: Task<Void, Never>?
+    /// Counts the exact seeks made by [settle]: the page lets go of its drag place on each.
+    @Published private(set) var settled = 0
     private var queued: (micros: Int64, exact: Bool)?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
     private var rateObserver: NSKeyValueObservation?
+    private var statusObserver: NSKeyValueObservation?
     /// The screen was kept on here, and is let go here.
     private var keptAwake = false
 
@@ -348,6 +356,10 @@ final class DataVideoTransport: ObservableObject {
         let item = AVPlayerItem(asset: playback.asset)
         item.videoComposition = playback.overlay
         player.replaceCurrentItem(with: item)
+        // The video is in files on the phone, nothing to buffer: play at once from wherever it was sent.
+        // Waiting to "minimize stalls" held it up to a minute after seeking back on iOS 27 (FBBD-435,
+        // Arek 2026-11-02).
+        player.automaticallyWaitsToMinimizeStalling = false
         totalMicros = max(0, DataVideoMaker.micros(playback.asset.duration))
     }
 
@@ -372,12 +384,24 @@ final class DataVideoTransport: ObservableObject {
         }
         if rateObserver == nil {
             // iOS stopped it (an interruption, the app left): Play/Pause and the screen follow.
+            // Not while a seek is under way: iOS 27 drops the rate to 0 during a seek (FBBD-435, Arek
+            // 2026-11-02: on an iPhone it stopped after seeking back), which is not a stop.
             rateObserver = player.observe(\.rate, options: [.new]) { [weak self] p, _ in
                 let stopped = p.rate == 0
                 Task { @MainActor in
-                    guard let self, stopped, self.playing, self.player.rate == 0 else { return }
+                    guard let self, stopped, self.playing, !self.seeking, self.queued == nil,
+                          self.player.rate == 0 else { return }
                     self.setPlaying(false)
                 }
+            }
+        }
+        if statusObserver == nil {
+            // Why it waits instead of playing, in the app log (FBBD-435).
+            statusObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
+                guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
+                let why = p.reasonToWaitBeforePlaying?.rawValue ?? "none"
+                let at = DataVideoMaker.micros(p.currentTime()) / 1_000
+                AppLog.i("WatchVideo", "waiting to play at \(at) ms: \(why)")
             }
         }
         setPlaying(true)
@@ -389,6 +413,8 @@ final class DataVideoTransport: ObservableObject {
     }
 
     func stop() {
+        settle?.cancel()
+        settle = nil
         setPlaying(false)
         if let timeObserver { player.removeTimeObserver(timeObserver) }
         timeObserver = nil
@@ -396,6 +422,8 @@ final class DataVideoTransport: ObservableObject {
         endObserver = nil
         rateObserver?.invalidate()
         rateObserver = nil
+        statusObserver?.invalidate()
+        statusObserver = nil
     }
 
     func playPause() {
@@ -404,10 +432,22 @@ final class DataVideoTransport: ObservableObject {
     }
 
     /// Goes to [fraction] of the whole video: to the nearest key frame while dragging, exactly when let go.
+    /// A loose seek is followed by an exact one once the bar has been still for a moment, so the video
+    /// lands where the bar is even when the bar's end of a drag never comes (FBBD-435: on iOS 27 the
+    /// clock stayed on the drag's place).
     func seek(fraction: Double, exact: Bool) {
         let target = Int64((min(max(fraction, 0), 1) * Double(totalMicros)).rounded())
         micros = target
         queued = (target, exact)
+        settle?.cancel()
+        if !exact {
+            settle = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(400))
+                guard let self, !Task.isCancelled else { return }
+                self.seek(fraction: fraction, exact: true)
+                self.settled += 1
+            }
+        }
         if !seeking { nextSeek() }
     }
 
@@ -417,14 +457,21 @@ final class DataVideoTransport: ObservableObject {
         let target = next.micros, exact = next.exact
         seeking = true
         let tolerance: CMTime = exact ? .zero : .positiveInfinity
-        player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+        let sent = AppLog.uptimeMicros()
+        player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] done in
             Task { @MainActor in
                 guard let self else { return }
+                if exact {
+                    let took = (AppLog.uptimeMicros() - sent) / 1_000
+                    AppLog.i("WatchVideo", "seek to \(target / 1_000) ms \(done ? "done" : "cut short") in \(took) ms, playing \(self.playing)")
+                }
                 self.seeking = false
                 if self.queued != nil {
                     self.nextSeek()
-                } else if exact {
-                    self.follow(self.player.currentTime())
+                } else {
+                    // Plays on from there: iOS 27 can leave it stopped after a seek (FBBD-435).
+                    if self.playing && self.player.rate == 0 { self.player.playImmediately(atRate: 1) }
+                    if exact { self.follow(self.player.currentTime()) }
                 }
             }
         }
