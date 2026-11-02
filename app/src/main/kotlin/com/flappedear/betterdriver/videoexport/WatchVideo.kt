@@ -56,6 +56,7 @@ import com.flappedear.betterdriver.analysis.optimal.OptimalOverlayText
 import com.flappedear.betterdriver.core.ui.TrackTheme
 import com.flappedear.betterdriver.feature.review.SessionVideo
 import com.flappedear.betterdriver.format.formatRunningTime
+import com.flappedear.betterdriver.format.formatVideoClock
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.shell.DimText
 import com.flappedear.betterdriver.shell.ShellTopBar
@@ -67,7 +68,6 @@ import com.flappedear.betterdriver.timing.overlay.outputMicrosAt
 import com.flappedear.betterdriver.timing.overlay.positionAt
 import com.flappedear.betterdriver.timing.overlay.sessionMicrosAt
 import com.flappedear.betterdriver.timing.overlay.totalMicros
-import java.util.Locale
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -197,7 +197,7 @@ private fun Transport(w: WatchPlayer, totalMicros: Long) {
             Text(if (w.playing) "Pause" else "Play")
         }
         Text(
-            "${clockText(shown)} / ${clockText(totalMicros)}",
+            "${formatVideoClock(shown)} / ${formatVideoClock(totalMicros)}",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -327,23 +327,6 @@ internal fun overlayDescription(frame: OverlayFrame?, optimal: OptimalOverlayTex
     return "Data: $speed$lap"
 }
 
-/** "4:05", "1:02:03": where the video is, to the second. */
-internal fun clockText(micros: Long): String {
-    val s = (micros.coerceAtLeast(0) / MicrosPerSecond).toInt()
-    val h = s / SecondsPerHour
-    val m = s / SecondsPerMinute % MinutesPerHour
-    val sec = s % SecondsPerMinute
-    return if (h > 0) {
-        String.format(Locale.ROOT, "%d:%02d:%02d", h, m, sec)
-    } else {
-        String.format(Locale.ROOT, "%d:%02d", m, sec)
-    }
-}
-
 private const val Tag = "WatchVideo"
 private const val DefaultAspect = 16f / 9f
 private const val MicrosPerMilli = 1_000L
-private const val MicrosPerSecond = 1_000_000L
-private const val SecondsPerMinute = 60
-private const val MinutesPerHour = 60
-private const val SecondsPerHour = 3_600

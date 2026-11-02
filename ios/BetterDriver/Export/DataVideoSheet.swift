@@ -1,4 +1,5 @@
-import AVKit
+import AVFoundation
+import UIKit
 import BetterDriverCore
 import SwiftUI
 
@@ -235,16 +236,29 @@ struct DataVideoPlayback: Identifiable {
     let durations: [String: KotlinLong]
 }
 
-/// The video with data, full screen in landscape (the video's shape), with the system's player controls.
+/// The video with data, full screen in landscape (the video's shape), with Android's transport under it
+/// (WatchVideo.kt): Play/Pause, where it is of how long, and the seek bar (FBBD-428). AVKit's own
+/// controls are not used: in the iPad app on a Mac their bar did not seek and Close sat on AirPlay.
 struct DataVideoPlayerPage: View {
     let playback: DataVideoPlayback
     let onClose: () -> Void
 
-    @State private var player = AVPlayer()
+    @StateObject private var transport: DataVideoTransport
     /// Whether the page shows wider than tall, for the UI test.
     @State private var wide = false
+    /// The seek bar's place while a finger or the pointer holds it.
+    @State private var dragging: Double?
+    @Environment(\.scenePhase) private var phase
+
+    init(playback: DataVideoPlayback, onClose: @escaping () -> Void) {
+        self.playback = playback
+        self.onClose = onClose
+        _transport = StateObject(wrappedValue: DataVideoTransport(playback: playback))
+    }
 
     var body: some View {
+        let total = transport.totalMicros
+        let shown = dragging.map { Int64(($0 * Double(total)).rounded()) } ?? transport.micros
         ZStack(alignment: .topLeading) {
             Color.black.ignoresSafeArea()
                 .background(GeometryReader { g in
@@ -252,11 +266,46 @@ struct DataVideoPlayerPage: View {
                         .onAppear { wide = g.size.width > g.size.height }
                         .onChange(of: g.size) { _, size in wide = size.width > size.height }
                 })
-            VideoPlayer(player: player)
-                .ignoresSafeArea(edges: .bottom)
-                // The video's own shape with its overlay, for the UI test: always landscape.
-                .accessibilityValue(playback.overlay.renderSize.width > playback.overlay.renderSize.height ? "wide" : "tall")
-                .accessibilityIdentifier("dataVideoPlayer")
+            VStack(spacing: 4) {
+                DataVideoPicture(player: transport.player)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // The video's own shape with its overlay, for the UI test: always landscape.
+                    .accessibilityElement()
+                    .accessibilityValue(playback.overlay.renderSize.width > playback.overlay.renderSize.height ? "wide" : "tall")
+                    .accessibilityIdentifier("dataVideoPlayer")
+                HStack(spacing: 12) {
+                    Button(transport.playing ? "Pause" : "Play") { transport.playPause() }
+                        .buttonStyle(.bordered)
+                        .tint(Palette.accent)
+                        .frame(width: 104)
+                        .accessibilityIdentifier("dataVideoPlay")
+                    Text("\(TimeFormatKt.formatVideoClock(micros: shown)) / \(TimeFormatKt.formatVideoClock(micros: total))")
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(Palette.onSurfaceVariant)
+                        .accessibilityIdentifier("dataVideoClock")
+                    Spacer(minLength: 0)
+                }
+                Slider(
+                    value: Binding(
+                        get: { dragging ?? (total > 0 ? min(max(Double(transport.micros) / Double(total), 0), 1) : 0) },
+                        set: { v in
+                            dragging = v
+                            transport.seek(fraction: v, exact: false)
+                        }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        if !editing, let v = dragging {
+                            transport.seek(fraction: v, exact: true)
+                            dragging = nil
+                        }
+                    }
+                )
+                .tint(Palette.accent)
+                .accessibilityIdentifier("dataVideoSeek")
+            }
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
             Button { onClose() } label: {
                 Image(systemName: "xmark.circle.fill")
                     .font(.title)
@@ -268,14 +317,156 @@ struct DataVideoPlayerPage: View {
             .accessibilityValue(wide ? "landscape" : "portrait")
             .accessibilityIdentifier("dataVideoClose")
         }
-        .onAppear {
-            let item = AVPlayerItem(asset: playback.asset)
-            item.videoComposition = playback.overlay
-            player.replaceCurrentItem(with: item)
-            player.play()
-        }
-        .onDisappear { player.pause() }
+        .onAppear { transport.start() }
+        .onDisappear { transport.stop() }
+        // Never plays unseen: home, the lock button or another app stops it, as on Android.
+        .onChange(of: phase) { _, p in if p != .active { transport.pause() } }
         .landscape()
+    }
+}
+
+/// The player of a [DataVideoPlayback], as Android's WatchPlayer: [micros] is where it is, followed while
+/// it plays and set on every seek. Seeks go one at a time, the newest waiting for the one under way, so a
+/// drag never piles them up: loose to the nearest key frame while dragging, exact when let go.
+@MainActor
+final class DataVideoTransport: ObservableObject {
+    let player = AVPlayer()
+    let totalMicros: Int64
+    /// It plays, or will as soon as it can: Play/Pause follows this.
+    @Published private(set) var playing = false
+    @Published private(set) var micros: Int64 = 0
+
+    private var seeking = false
+    private var queued: (micros: Int64, exact: Bool)?
+    private var timeObserver: Any?
+    private var endObserver: NSObjectProtocol?
+    private var rateObserver: NSKeyValueObservation?
+    /// The screen was kept on here, and is let go here.
+    private var keptAwake = false
+
+    init(playback: DataVideoPlayback) {
+        let item = AVPlayerItem(asset: playback.asset)
+        item.videoComposition = playback.overlay
+        player.replaceCurrentItem(with: item)
+        totalMicros = max(0, DataVideoMaker.micros(playback.asset.duration))
+    }
+
+    func start() {
+        if timeObserver == nil {
+            timeObserver = player.addPeriodicTimeObserver(
+                forInterval: CMTime(value: 1, timescale: 30), queue: .main
+            ) { [weak self] t in
+                MainActor.assumeIsolated { self?.follow(t) }
+            }
+        }
+        if endObserver == nil {
+            endObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main
+            ) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.micros = self.totalMicros
+                    self.setPlaying(false)
+                }
+            }
+        }
+        if rateObserver == nil {
+            // iOS stopped it (an interruption, the app left): Play/Pause and the screen follow.
+            rateObserver = player.observe(\.rate, options: [.new]) { [weak self] p, _ in
+                let stopped = p.rate == 0
+                Task { @MainActor in
+                    guard let self, stopped, self.playing, self.player.rate == 0 else { return }
+                    self.setPlaying(false)
+                }
+            }
+        }
+        setPlaying(true)
+    }
+
+    /// Stops it where it is (the app left the screen), as Android's on pause.
+    func pause() {
+        if playing { setPlaying(false) }
+    }
+
+    func stop() {
+        setPlaying(false)
+        if let timeObserver { player.removeTimeObserver(timeObserver) }
+        timeObserver = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
+        rateObserver?.invalidate()
+        rateObserver = nil
+    }
+
+    func playPause() {
+        if !playing && micros >= totalMicros && totalMicros > 0 { seek(fraction: 0, exact: true) }
+        setPlaying(!playing)
+    }
+
+    /// Goes to [fraction] of the whole video: to the nearest key frame while dragging, exactly when let go.
+    func seek(fraction: Double, exact: Bool) {
+        let target = Int64((min(max(fraction, 0), 1) * Double(totalMicros)).rounded())
+        micros = target
+        queued = (target, exact)
+        if !seeking { nextSeek() }
+    }
+
+    private func nextSeek() {
+        guard let next = queued else { return }
+        queued = nil
+        let target = next.micros, exact = next.exact
+        seeking = true
+        let tolerance: CMTime = exact ? .zero : .positiveInfinity
+        player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.seeking = false
+                if self.queued != nil {
+                    self.nextSeek()
+                } else if exact {
+                    self.follow(self.player.currentTime())
+                }
+            }
+        }
+    }
+
+    private func follow(_ t: CMTime) {
+        // A seek under way or waiting: the bar stays where it was sent, not where the player was.
+        guard !seeking, queued == nil, t.isNumeric else { return }
+        micros = min(max(DataVideoMaker.micros(t), 0), totalMicros)
+    }
+
+    private func setPlaying(_ on: Bool) {
+        playing = on
+        if on { player.play() } else { player.pause() }
+        // The screen stays on while it plays, as on Android (AVKit's controls did this before).
+        if on && !UIApplication.shared.isIdleTimerDisabled {
+            UIApplication.shared.isIdleTimerDisabled = true
+            keptAwake = true
+        } else if !on && keptAwake {
+            UIApplication.shared.isIdleTimerDisabled = false
+            keptAwake = false
+        }
+    }
+}
+
+/// The picture, letterboxed in the space it gets.
+private struct DataVideoPicture: UIViewRepresentable {
+    let player: AVPlayer
+
+    func makeUIView(context: Context) -> PictureView {
+        let v = PictureView()
+        v.playerLayer.player = player
+        v.playerLayer.videoGravity = .resizeAspect
+        v.backgroundColor = .black
+        return v
+    }
+
+    func updateUIView(_ uiView: PictureView, context: Context) {}
+
+    final class PictureView: UIView {
+        override static var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
     }
 }
 
