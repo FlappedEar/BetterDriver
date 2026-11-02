@@ -48,7 +48,13 @@ A runner on Arek's Mac mini has no such queue and keeps the Gradle and Kotlin/Na
 The first run downloads the Kotlin/Native toolchain (~1 GB) and fills the Gradle cache; later
 runs reuse them.
 
-## Spare PC (Android)
+## Spare PC (Android): not used, on purpose
 
-Not set up yet. Android CI has no queue (13.6-24 min, jobs start at once), so the gain is
-smaller: more cores and warm caches. The emulator jobs need KVM, so the PC needs native Linux.
+Checked 2026-11-02 for Arek's spare PC (AMD Ryzen 7 8845HS, 8 cores / 16 threads, Windows 11).
+Android CI has no queue (13.6-24 min, every job starts at once on its own 4-vCPU runner), and its
+critical path is the emulator jobs, not compiling: "Replay drive" replays a 10-minute drive in
+real time (`replay-drive.sh`, `REPLAY_MINUTES=10`), and the smoke tests take about 12-16 min on
+the emulator. A PC cannot shorten real time, and one PC running the 7 jobs of a run (3 of them
+emulators) would have fewer cores than GitHub gives the run in parallel. Expected gain: a few
+minutes at most (low confidence), against an extra machine exposed to a public repository's
+pull requests. Revisit if GitHub's Linux runners start queueing.
