@@ -9,7 +9,9 @@ import com.flappedear.betterdriver.timing.live.LapKind
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import com.flappedear.betterdriver.timing.replay.TracePoint
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 
@@ -86,6 +88,25 @@ class ComparisonTest {
         // 200 ms ahead: slow down by a fifth until it is back.
         assertEquals(0.8f, followStep(1_200, 1_000, 1.0, playing = true).speed, 1e-6f)
         assertEquals(1.2f, followStep(800, 1_000, 1.0, playing = true).speed, 1e-6f)
+    }
+
+    @Test
+    fun theDriftCorrectionMovesInStepsSoTheRateIsNotSetEveryFrame() {
+        // FBBD-429: drift that creeps by a few ms a frame keeps the same speed, so the player's
+        // rate is not set again on every display frame.
+        val speeds = (100..140).map { followStep(1_000 + it.toLong(), 1_000, 1.0, playing = true).speed }.distinct()
+        assertEquals(listOf(0.9f, 0.88f, 0.86f), speeds.map { Math.round(it * 100) / 100f })
+        speeds.forEach { assertEquals(0f, (it * 100 - Math.round(it * 100)), 1e-4f) }
+        // Just outside the deadband it still corrects, the smallest step.
+        assertEquals(0.96f, followStep(1_031, 1_000, 1.0, playing = true).speed, 1e-6f)
+        assertEquals(1.04f, followStep(969, 1_000, 1.0, playing = true).speed, 1e-6f)
+        // At half speed the steps scale with it.
+        assertEquals(0.4f, followStep(1_200, 1_000, 0.5, playing = true).speed, 1e-6f)
+        // A new rate at most every half second, except when it starts playing or the speed changes.
+        assertTrue(rateChangeDue(null, 0.9f, 0))
+        assertFalse(rateChangeDue(1f, 0.9f, MinRateGapMillis - 1))
+        assertTrue(rateChangeDue(1f, 0.9f, MinRateGapMillis))
+        assertFalse(rateChangeDue(0.9f, 0.9f, 10_000))
     }
 
     @Test

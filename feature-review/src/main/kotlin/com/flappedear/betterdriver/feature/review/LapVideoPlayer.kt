@@ -54,6 +54,9 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
     private var lastSeekMillis: Long? = null
     private var lastSeekNanos = 0L
     private var speed = 1f
+    /** When [speed] was last set, and the review speed it was set for (FBBD-429). */
+    private var speedSetNanos = 0L
+    private var lastRate = Double.NaN
     private var exact = true
     /** It played and has not been sent to its exact frame since it stopped (FBBD-214). */
     private var stopping = false
@@ -116,9 +119,13 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
                 stopping = false
             }
         }
-        if (step.speed != speed) {
+        // Started, or a new review speed: at once; a drift correction at most every half second.
+        val fresh = rate != lastRate || !player.playWhenReady
+        lastRate = rate
+        if (rateChangeDue(if (fresh) null else speed, step.speed, (nowNanos - speedSetNanos) / NanosPerMilli)) {
+            if (step.speed != speed) player.setPlaybackSpeed(step.speed)
             speed = step.speed
-            player.setPlaybackSpeed(speed)
+            speedSetNanos = nowNanos
         }
         if (player.playWhenReady != playing) player.playWhenReady = playing
         return pending
@@ -142,6 +149,7 @@ internal class LapVideoPlayer(context: Context, muted: Boolean, lane: Int) {
         const val DefaultAspect = 16f / 9f
         const val PlayingSeekGapNanos = 300_000_000L
         const val ScrubSeekGapNanos = 50_000_000L
+        const val NanosPerMilli = 1_000_000L
     }
 }
 
