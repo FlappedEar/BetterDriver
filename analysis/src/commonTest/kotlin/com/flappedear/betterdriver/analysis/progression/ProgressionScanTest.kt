@@ -29,7 +29,7 @@ class ProgressionScanTest {
     }
 
     @Test
-    fun `sessions without a current record are added, newest first, never twice, at most twenty`() {
+    fun `sessions without a current record are added newest first never twice at most twenty`() {
         val sessions = (1..30).map { "s$it" }
         val (analysed, added) = goThrough(sessions, current = setOf("s1", "s3"), tried = setOf("s2"))
         assertEquals(MaxProgressionAdds, added)
@@ -54,7 +54,7 @@ class ProgressionScanTest {
     }
 
     @Test
-    fun `the scan stops after so many of the track sessions, current or added`() {
+    fun `the scan stops after so many of the track sessions current or added`() {
         val kept = (1..MaxProgressionScan).map { "k$it" }
         assertEquals(emptyList<String>(), goThrough(kept + "old", current = kept.toSet()).first)
         assertEquals(listOf("old"), goThrough(kept.drop(1) + "old", current = kept.toSet()).first)
@@ -70,7 +70,7 @@ class ProgressionScanTest {
     }
 
     @Test
-    fun `how many more may be added is told before each, and none at the end`() {
+    fun `how many more may be added is told before each and none at the end`() {
         val heard = mutableListOf<Int>()
         addNewest(listOf("a", "b", "c"), { it == "b" }, { false }, { Added }, left = { heard += it })
         assertEquals(listOf(2, 1, 0), heard)
