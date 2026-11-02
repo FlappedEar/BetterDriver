@@ -137,8 +137,12 @@ internal fun PerfectLapPlayer(scene: PerfectLapScene, startCorner: Int, onClose:
                     Dim("${lineLapTime(scene.perfectSeconds)} · your best lap ${lineLapTime(scene.bestSeconds)}")
                 }
                 // Its own painter, fetching its map tiles itself: the player keeps drawing with the other.
-                val videoPainter = remember(painter, ground) { painter.copy(ground?.let { g -> g::load }) }
-                SaveVideo(scene, videoPainter, distance) { playing = false }
+                // Its ground is the one whose terms allow it in a video (FBBD-433), with its own credit.
+                val videoPainter = remember(painter, ground) {
+                    val video = ground?.video
+                    painter.copy(video?.let { g -> g::load }, video?.attribution)
+                }
+                SaveVideo(scene, videoPainter, distance, ground?.videoNote) { playing = false }
             }
             val zoom = Zoom(distance) { distance = it }
             Picture(painter, ground, seconds, zoom, Modifier.weight(1f).fillMaxWidth()) { bar ->
@@ -305,7 +309,13 @@ private fun CornerTicks(scene: PerfectLapScene, at: Int) {
 
 /** Save video in the header (UI-204 A), with its progress, and Send once saved. [pause] stops the player first. */
 @Composable
-private fun SaveVideo(scene: PerfectLapScene, painter: PerfectLapPainter, distance: Double, pause: () -> Unit) {
+private fun SaveVideo(
+    scene: PerfectLapScene,
+    painter: PerfectLapPainter,
+    distance: Double,
+    note: String?,
+    pause: () -> Unit,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var saving by remember { mutableStateOf<Saving>(Saving.Idle) }
@@ -339,8 +349,11 @@ private fun SaveVideo(scene: PerfectLapScene, painter: PerfectLapPainter, distan
             }
         }
         when (val s = saving) {
-            is Saving.Saved ->
+            is Saving.Saved -> {
                 Dim(if (s.video.inMovies) "Saved to Movies/BetterDriver." else "Saved in the app. Send it to keep it.")
+                // Why the video's ground is not the player's (FBBD-433).
+                note?.let { Dim(it, Modifier.widthIn(max = 320.dp)) }
+            }
             is Saving.Failed -> Dim("The video was not saved: ${s.why}", color = TrackTheme.colors.loss)
             else -> Unit
         }

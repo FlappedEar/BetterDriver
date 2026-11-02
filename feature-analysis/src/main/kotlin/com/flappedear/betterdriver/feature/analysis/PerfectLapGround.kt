@@ -20,6 +20,15 @@ interface PerfectLapGround {
 
     /** The tile, read from disk or fetched first if needed; null without one. Not on the main thread: for the video. */
     fun load(z: Int, x: Int, y: Int): Bitmap?
+
+    /**
+     * The ground a saved video keeps, from a source whose terms allow its photo in a video
+     * (FBBD-433, TileSources.forVideo); null draws the road in the video.
+     */
+    val video: PerfectLapGround? get() = this
+
+    /** The line under a saved video when its ground is not the player's (TileSources.videoNote). */
+    val videoNote: String? get() = null
 }
 
 /** The satellite photo the app gives the perfect lap in 3D; null draws the road instead. */

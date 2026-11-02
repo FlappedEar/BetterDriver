@@ -21,6 +21,15 @@ enum SatelliteSource: String, CaseIterable {
         case .apple: "Satellite"
         }
     }
+
+    /// The shared core's id of this source (TileSource.id; "apple" for MapKit), for TileSources.videoNote.
+    var tileId: String {
+        switch self {
+        case .google: TileSources.shared.googleSatellite(key: "", session: "").id
+        case .mapTiler: TileSources.shared.mapTiler(key: "").id
+        case .apple: "apple"
+        }
+    }
 }
 
 /// The keys, the Google session and the tiles of the satellite sources that come as Web Mercator tiles

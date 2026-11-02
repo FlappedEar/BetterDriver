@@ -48,10 +48,11 @@ enum PerfectLapVideo {
         writer.add(input)
         guard writer.startWriting() else { throw writer.error ?? Failure.encoder("the video could not be written") }
         writer.startSession(atSourceTime: .zero)
-        // The drawn road, no satellite photo: Apple's MapKit terms and Google's Map Tiles policies allow their
-        // photos to be shown in the app, not kept in a file of our own, so a saved video has none (Android's
-        // has MapTiler's).
-        let painter = PerfectLapPainter(scene: scene)
+        // MapTiler's photo, whose terms allow it in a video with its credit on screen (FBBD-433, as Android's),
+        // each tile fetched before its frame is drawn; Apple's MapKit terms and Google's Map Tiles policies
+        // allow their photos to be shown in the app, not kept in a file of ours, so without a MapTiler key
+        // the road is drawn.
+        let painter = PerfectLapPainter(scene: scene, tiles: PerfectLapTiles.forVideo(), waitForTiles: true)
         painter.distance = distance
         let frames = Int((scene.durationSeconds * Double(fps)).rounded(.up)) + 1
         do {

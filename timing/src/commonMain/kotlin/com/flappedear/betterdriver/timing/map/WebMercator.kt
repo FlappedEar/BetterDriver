@@ -158,6 +158,38 @@ object TileSources {
         mapTilerKey?.trim()?.takeIf { it.isNotEmpty() }?.let(::mapTiler),
         OpenStreetMap,
     )
+
+    /** The id iOS gives Apple's satellite map (MapKit), for [videoNote]. */
+    const val APPLE_ID = "apple"
+
+    /**
+     * The satellite photo a saved video may keep (FBBD-433): MapTiler's, whose terms allow its maps
+     * in videos with its credit on screen (MapTiler Cloud terms 5.4, checked 2026-11-02). Google's
+     * Map Tiles API policies allow no stored copy and no offline use of its tiles, and Apple's MapKit
+     * maps are for the app, so a video over either takes MapTiler's photo, or draws the road without
+     * a MapTiler key. The player keeps showing the best photo.
+     */
+    fun forVideo(mapTilerKey: String?): TileSource? = mapTilerKey?.trim()?.takeIf { it.isNotEmpty() }?.let(::mapTiler)
+
+    /**
+     * The line under a saved video when it shows another ground than the player (FBBD-433): [shownId]
+     * is the player's source ([TileSource.id], or [APPLE_ID]), [videoId] the video's ([forVideo]),
+     * null for the drawn road. Null when both are the same.
+     */
+    fun videoNote(shownId: String?, videoId: String?): String? {
+        if (shownId == null || shownId == videoId) return null
+        val owner = when (shownId) {
+            APPLE_ID -> "Apple's"
+            OpenStreetMap.id -> return null
+            else -> "Google's"
+        }
+        val why = "$owner terms let its photo be shown in the app, not kept in a video."
+        return if (videoId != null) {
+            "The video shows MapTiler's photo: $why"
+        } else {
+            "The video shows the drawn road: $why With a MapTiler key (track editor › Map) it shows MapTiler's photo."
+        }
+    }
 }
 
 /**
