@@ -7,6 +7,7 @@ import com.flappedear.betterdriver.io.IOException
 import com.flappedear.betterdriver.io.parseProperties
 import com.flappedear.betterdriver.io.writeProperties
 import com.flappedear.betterdriver.recorder.SessionInfo
+import com.flappedear.betterdriver.recorder.video.VideoFiles
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
@@ -110,6 +111,16 @@ class SessionFolders(val root: String) {
                 null
             }
         }
+
+    /**
+     * Deletes the extra copies of drives stored more than once (FBBD-427), as [SessionCopies.extras]
+     * names them: only imported copies without video, always keeping one copy of each drive.
+     * Run at app start. Returns the ids deleted.
+     */
+    fun removeCopies(): List<String> =
+        SessionCopies.extras(list()) { CoreFiles.isDirectory(CoreFiles.join(it.dir, VideoFiles.DIR)) }
+            .filter { delete(it.id) == DeleteResult.DELETED }
+            .map { it.id }
 
     /**
      * Reads the session in [dir], in any state, including one being recorded (up to its last write).

@@ -73,4 +73,11 @@ class SessionStore(val root: String) {
 
     /** Deletes session [id] with everything in its directory. A session being recorded is refused. */
     fun delete(id: String): DeleteResult = folders.delete(id)
+
+    /** Deletes extra imported copies of a drive stored more than once, keeping one (FBBD-427). Returns their ids. */
+    fun removeCopies(): List<String> = folders.removeCopies()
+
+    /** The session here that one starting at [startUtcMillis] and lasting [durationMicros] repeats (FBBD-427). */
+    fun copyOf(startUtcMillis: Long, durationMicros: Long?): StoredSession? =
+        SessionCopies.copyOf(folders.list(), startUtcMillis, durationMicros)
 }

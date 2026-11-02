@@ -87,4 +87,11 @@ class SessionStore(
      * With them, a receiver's GNSS values are put back at the time of their fix ([withGnssAtFixTime]).
      */
     fun read(dir: File, samples: Boolean = true): SessionData = folders.read(dir.path, samples)
+
+    /** Deletes extra imported copies of a drive stored more than once, keeping one (FBBD-427). Returns their ids. */
+    fun removeCopies(): List<String> = folders.removeCopies()
+
+    /** The session here that one starting at [startUtcMillis] and lasting [durationMicros] repeats (FBBD-427). */
+    fun copyOf(startUtcMillis: Long, durationMicros: Long?): StoredSession? =
+        SessionCopies.copyOf(folders.list(), startUtcMillis, durationMicros)
 }

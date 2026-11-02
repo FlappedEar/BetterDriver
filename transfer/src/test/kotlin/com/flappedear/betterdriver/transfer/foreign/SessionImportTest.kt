@@ -4,6 +4,7 @@ package com.flappedear.betterdriver.transfer.foreign
 
 import com.flappedear.betterdriver.recorder.GnssChannels
 import com.flappedear.betterdriver.recorder.Provenance
+import com.flappedear.betterdriver.recorder.store.DeleteResult
 import com.flappedear.betterdriver.recorder.store.SessionData
 import com.flappedear.betterdriver.recorder.store.SessionFiles
 import com.flappedear.betterdriver.recorder.store.SessionState
@@ -296,10 +297,41 @@ class SessionImportTest {
     @Test
     fun `each import gets its own session id`() {
         val a = import(fixture("racelogic-25hz.vbo"))
+        store.delete(a.id)
         val b = import(fixture("racelogic-25hz.vbo"))
         assertNotEquals(a.id, b.id)
-        assertEquals(setOf(a.id, b.id), store.list().map { it.id }.toSet())
+        assertEquals(listOf(b.id), store.list().map { it.id })
         assertTrue(a.id.startsWith("20261012-104200-"), a.id)
+    }
+
+    @Test
+    fun `the same file imported again is refused and the list keeps one session (FBBD-427)`() {
+        val a = import(fixture("racelogic-25hz.vbo"))
+        val refused = assertFailsWith<ImportFormatException> { import(fixture("racelogic-25hz.vbo"), "again.vbo") }
+        assertEquals(ForeignImport.AlreadyHere, refused.message)
+        assertEquals(listOf(a.id), store.list().map { it.id })
+        assertTrue(staging.listFiles().orEmpty().isEmpty(), "staging cleaned up")
+        // Another drive still comes in.
+        import(fixture("racechrono-v3.csv"))
+        assertEquals(2, store.list().size)
+    }
+
+    @Test
+    fun `copies imported before FBBD-427 are removed at start, keeping one, and delete takes one copy`() {
+        // Two copies of one drive as the old import left them: same start and length, own ids.
+        val a = import(fixture("racelogic-25hz.vbo"))
+        val copy = File(store.root, a.id.dropLast(8) + "copy0001")
+        store.dir(a.id).copyRecursively(copy)
+        File(copy, "meta.properties").let { it.writeText(it.readText().replace(a.id, copy.name)) }
+        assertEquals(2, store.list().size)
+        // Deleting one copy leaves the other.
+        assertEquals(DeleteResult.DELETED, store.delete(copy.name))
+        assertEquals(listOf(a.id), store.list().map { it.id })
+        // At start, the extra copy goes and one stays.
+        store.dir(a.id).copyRecursively(copy)
+        assertEquals(listOf(copy.name), store.removeCopies())
+        assertEquals(listOf(a.id), store.list().map { it.id })
+        assertEquals(emptyList(), store.removeCopies())
     }
 
     @Test
@@ -317,10 +349,12 @@ class SessionImportTest {
     fun `an imported session exports as VBO and that VBO imports again the same`() {
         val made = import(fixture("racelogic-25hz.vbo"))
         val out = ByteArrayOutputStream()
-        VboExporter.export(store.read(made.id), out)
+        val first = store.read(made.id)
+        VboExporter.export(first, out)
+        // The same drive is refused while it is here (FBBD-427).
+        store.delete(made.id)
         val again = import(out.toByteArray().inputStream(), "BetterDriver.vbo")
         assertEquals(made.points, again.points)
-        val first = store.read(made.id)
         val second = store.read(again.id)
         assertEquals(first.info.startUtcMillis, second.info.startUtcMillis)
         val lat1 = values(first, GnssChannels.LAT.id)

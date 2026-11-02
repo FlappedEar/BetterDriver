@@ -136,6 +136,12 @@ class Sessions private constructor(private val context: Context) {
             } catch (e: RuntimeException) {
                 DebugLog.w(Tag, "recovery failed", e)
             }
+            // A drive imported twice before FBBD-427 is listed once again; its extra imported copies go.
+            try {
+                store.removeCopies().forEach { DebugLog.i(Tag, "removed $it: a copy of a drive listed twice") }
+            } catch (e: RuntimeException) {
+                DebugLog.w(Tag, "removing copies failed", e)
+            }
             try {
                 publish()
             } finally {
