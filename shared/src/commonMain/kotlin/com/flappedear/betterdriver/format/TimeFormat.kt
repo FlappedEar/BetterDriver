@@ -13,6 +13,9 @@ private const val HundredthsPerMinute = 6_000L
 private const val TenthsPerSecond = 10L
 private const val TenthsPerMinute = 600L
 private const val SecondsPerMinute = 60L
+private const val MinutesPerHour = 60L
+private const val SecondsPerHour = 3_600L
+private const val MicrosPerSecond = 1_000_000L
 private const val MaxDeltaHundredths = 9_999L
 
 /**
@@ -35,6 +38,18 @@ fun formatRunningTime(millis: Long): String {
     val tenths = millis.coerceAtLeast(0) / MillisPerTenth
     val seconds = (tenths / TenthsPerSecond) % SecondsPerMinute
     return "${tenths / TenthsPerMinute}:${twoDigits(seconds)}.${tenths % TenthsPerSecond}"
+}
+
+/**
+ * Where a video is, to the second, as "4:05" or "1:02:03" (Watch video's clock, FBBD-341, FBBD-428).
+ * Seconds are truncated; negative input is treated as zero.
+ */
+fun formatVideoClock(micros: Long): String {
+    val s = micros.coerceAtLeast(0) / MicrosPerSecond
+    val h = s / SecondsPerHour
+    val m = s / SecondsPerMinute % MinutesPerHour
+    val sec = s % SecondsPerMinute
+    return if (h > 0) "$h:${twoDigits(m)}:${twoDigits(sec)}" else "$m:${twoDigits(sec)}"
 }
 
 /**

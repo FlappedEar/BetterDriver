@@ -92,6 +92,56 @@ final class DataVideoTests: XCTestCase {
         app.buttons["dataVideoClose"].firstMatch.tap()
     }
 
+    /// The seek bar moves the video (FBBD-428, Arek 2026-11-02: in the app on a Mac AVKit's bar did not
+    /// seek and Close sat on AirPlay): the app's own transport, as Android's Watch video. Dragging the bar
+    /// moves the clock, the video plays on from there, and Close is clear of the controls.
+    func testTheSeekBarMovesTheVideo() {
+        app.launchArguments = ["-freshInstall", "-demoSessions", "-demoVideo"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        rows.element(boundBy: 0).press(forDuration: 1.2)
+        app.buttons["Watch video"].firstMatch.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 60), "no player")
+        let play = app.buttons["dataVideoPlay"].firstMatch
+        let seek = app.sliders["dataVideoSeek"].firstMatch
+        let clock = app.staticTexts["dataVideoClock"].firstMatch
+        XCTAssertTrue(play.waitForExistence(timeout: 10), "no Play/Pause")
+        XCTAssertTrue(seek.exists, "no seek bar")
+        XCTAssertTrue(clock.exists, "no clock")
+        assertLandscape()
+        // It starts playing; stopped, the clock stays put.
+        XCTAssertEqual(play.label, "Pause")
+        play.tap()
+        XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == 'Play'"), object: play)], timeout: 10), .completed, "Pause did not stop it")
+        let total = seconds(clock.label, part: 1)
+        XCTAssertGreaterThanOrEqual(total, 4, "the demo video is too short: \(clock.label)")
+
+        seek.adjust(toNormalizedSliderPosition: 0.6)
+        let wanted = Double(total) * 0.6
+        let moved = waitFor(timeout: 20) { abs(Double(self.seconds(clock.label, part: 0)) - wanted) <= 1.5 }
+        XCTAssertTrue(moved, "the seek bar did not move the video: \(clock.label) of \(total) s, wanted about \(wanted) s")
+        // Left alone it stays there once the exact seek has landed: the player was sent there, not only the bar.
+        sleep(2)
+        keep("Seek bar moved")
+        let sought = seconds(clock.label, part: 0)
+        XCTAssertLessThanOrEqual(abs(Double(sought) - wanted), 1.5, "the video went back after the seek: \(clock.label)")
+
+        // Plays on from there.
+        play.tap()
+        sleep(2)
+        play.tap()
+        XCTAssertGreaterThan(seconds(clock.label, part: 0), sought, "it did not play on from the seek: \(clock.label)")
+
+        // Close is clear of the transport (it sat on AirPlay in AVKit's controls on a Mac).
+        let close = app.buttons["dataVideoClose"].firstMatch
+        XCTAssertFalse(close.frame.intersects(play.frame), "Close is on Play/Pause")
+        XCTAssertFalse(close.frame.intersects(seek.frame), "Close is on the seek bar")
+        XCTAssertEqual(app.state, .runningForeground, "the app stopped while seeking")
+        close.tap()
+    }
+
     /// A session with video has a Video tab (Arek, 2026-10-30): Watch plays it in landscape and
     /// closing the player comes back to the tab.
     func testTheVideoTabPlaysTheSessionsVideo() {
@@ -268,6 +318,22 @@ final class DataVideoTests: XCTestCase {
         let close = app.buttons["dataVideoClose"].firstMatch
         let turned = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == 'landscape'"), object: close)
         XCTAssertEqual(XCTWaiter.wait(for: [turned], timeout: 15), .completed, "the player is not in landscape")
+    }
+
+    /// Seconds of "4:05 / 10:00" ([part] 0: where it is, 1: how long).
+    private func seconds(_ clock: String, part: Int) -> Int {
+        let halves = clock.components(separatedBy: " / ")
+        guard halves.count == 2 else { return -1 }
+        return halves[part].split(separator: ":").reduce(0) { $0 * 60 + (Int($1) ?? 0) }
+    }
+
+    private func waitFor(timeout: TimeInterval, _ ok: () -> Bool) -> Bool {
+        let end = Date().addingTimeInterval(timeout)
+        while Date() < end {
+            if ok() { return true }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.25))
+        }
+        return ok()
     }
 
     private func keep(_ name: String) {
