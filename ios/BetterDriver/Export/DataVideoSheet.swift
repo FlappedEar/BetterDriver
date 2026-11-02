@@ -282,8 +282,6 @@ struct DataVideoPlayerPage: View {
                     Text("\(TimeFormatKt.formatVideoClock(micros: shown)) / \(TimeFormatKt.formatVideoClock(micros: total))")
                         .font(.body.monospacedDigit())
                         .foregroundStyle(Palette.onSurfaceVariant)
-                        // The player's state for the UI tests (FBBD-435): where it is and why it waits.
-                        .accessibilityValue(transport.state)
                         .accessibilityIdentifier("dataVideoClock")
                     Spacer(minLength: 0)
                 }
@@ -345,8 +343,6 @@ final class DataVideoTransport: ObservableObject {
     /// Counts the seeks sent: a seek whose end has not come after a second is given up on, so one lost
     /// completion never holds the clock and every later seek (FBBD-435).
     private var seekNumber = 0
-    /// What the player does, for the UI tests and the app log (FBBD-435).
-    @Published private(set) var state = ""
     /// The exact seek after a loose one, once the bar is still.
     private var settle: Task<Void, Never>?
     /// Counts the exact seeks made by [settle]: the page lets go of its drag place on each.
@@ -357,8 +353,6 @@ final class DataVideoTransport: ObservableObject {
     private var rateObserver: NSKeyValueObservation?
     private var statusObserver: NSKeyValueObservation?
     private var itemObserver: NSKeyValueObservation?
-    /// The last failure of a video, for the UI test (FBBD-435).
-    static var failure = ""
     /// The screen was kept on here, and is let go here.
     private var keptAwake = false
 
@@ -406,19 +400,9 @@ final class DataVideoTransport: ObservableObject {
             }
         }
         if itemObserver == nil, let item = player.currentItem { watch(item) }
-        if ticker == nil {
-            // The state line twice a second, for the UI tests (FBBD-435): whether the player's time moves.
-            ticker = Task { @MainActor [weak self] in
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: .milliseconds(500))
-                    self?.note("tick")
-                }
-            }
-        }
         if statusObserver == nil {
             // Why it waits instead of playing, in the app log (FBBD-435).
-            statusObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
-                Task { @MainActor in self?.note("status") }
+            statusObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
                 guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
                 let why = p.reasonForWaitingToPlay?.rawValue ?? "none"
                 let at = DataVideoMaker.micros(p.currentTime()) / 1_000
@@ -437,10 +421,7 @@ final class DataVideoTransport: ObservableObject {
             let why = item.error.map { DataVideoTransport.describe($0) } ?? "no error"
             let events = item.errorLog()?.events.map { "\($0.errorDomain) \($0.errorStatusCode) \($0.errorComment ?? "")" }.joined(separator: " | ") ?? ""
             AppLog.e("WatchVideo", "the video failed: \(why) \(events)")
-            Task { @MainActor in
-                DataVideoTransport.failure = "\(why) \(events)"
-                self?.remake(item)
-            }
+            Task { @MainActor in self?.remake(item) }
         }
     }
 
@@ -468,7 +449,6 @@ final class DataVideoTransport: ObservableObject {
         }
         seek(fraction: totalMicros > 0 ? Double(micros) / Double(totalMicros) : 0, exact: true)
         if playing { player.playImmediately(atRate: 1) }
-        note("remade \(remade)")
     }
 
     /// Stops it where it is (the app left the screen), as Android's on pause.
@@ -477,8 +457,6 @@ final class DataVideoTransport: ObservableObject {
     }
 
     func stop() {
-        ticker?.cancel()
-        ticker = nil
         settle?.cancel()
         settle = nil
         setPlaying(false)
@@ -528,7 +506,6 @@ final class DataVideoTransport: ObservableObject {
         let number = seekNumber
         let tolerance: CMTime = exact ? .zero : .positiveInfinity
         let sent = DispatchTime.now().uptimeNanoseconds
-        note("seeking to \(target / 1_000) ms")
         player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] done in
             Task { @MainActor in
                 guard let self else { return }
@@ -557,25 +534,8 @@ final class DataVideoTransport: ObservableObject {
             // Plays on from there: iOS 27 can leave it stopped after a seek (FBBD-435).
             if playing && player.rate == 0 { player.playImmediately(atRate: 1) }
             if exact { follow(player.currentTime()) }
-            note("seek ended")
         }
     }
-
-    /// The state line: the last event, the player's rate and status, and its time.
-    private func note(_ event: String) {
-        let status: String = switch player.timeControlStatus {
-        case .paused: "paused"
-        case .playing: "playing"
-        case .waitingToPlayAtSpecifiedRate: "waiting \(player.reasonForWaitingToPlay?.rawValue ?? "")"
-        @unknown default: "unknown"
-        }
-        let at = DataVideoMaker.micros(player.currentTime()) / 1_000
-        let loaded = player.currentItem?.loadedTimeRanges.last.map { DataVideoMaker.micros($0.timeRangeValue.end) / 1_000 } ?? -1
-        let failure = player.currentItem?.error.map { "; error \(Self.describe($0))" } ?? ""
-        state = "\(event); remade \(remade)\(Self.failure.isEmpty ? "" : "; failed: \(Self.failure)"); loaded to \(loaded) ms; follows \(follows)\(failure); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
-    }
-
-    private var follows = 0
 
     /// The error with its domain, code and the errors under it (FBBD-435: "could not be completed" alone says nothing).
     nonisolated static func describe(_ error: Error) -> String {
@@ -585,10 +545,8 @@ final class DataVideoTransport: ObservableObject {
         if let under = e.userInfo[NSUnderlyingErrorKey] as? Error { text += " <- " + describe(under) }
         return text
     }
-    private var ticker: Task<Void, Never>?
 
     private func follow(_ t: CMTime) {
-        follows += 1
         // A seek under way or waiting: the bar stays where it was sent, not where the player was.
         guard !seeking, queued == nil, t.isNumeric else { return }
         micros = min(max(DataVideoMaker.micros(t), 0), totalMicros)
@@ -597,7 +555,6 @@ final class DataVideoTransport: ObservableObject {
     private func setPlaying(_ on: Bool) {
         playing = on
         if on { player.play() } else { player.pause() }
-        note(on ? "play" : "pause")
         // The screen stays on while it plays, as on Android (AVKit's controls did this before).
         if on && !UIApplication.shared.isIdleTimerDisabled {
             UIApplication.shared.isIdleTimerDisabled = true

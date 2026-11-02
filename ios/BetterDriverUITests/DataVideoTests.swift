@@ -113,28 +113,14 @@ final class DataVideoTests: XCTestCase {
         assertLandscape()
         // It starts playing; stopped, the clock stays put.
         XCTAssertEqual(play.label, "Pause")
-        for second in 1...3 {
-            sleep(1)
-            print("SMOKE app: FBBD-435 playing from the start \(second) s: clock=\(clock.label) state=\(String(describing: clock.value))")
-        }
         play.tap()
         XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == 'Play'"), object: play)], timeout: 10), .completed, "Pause did not stop it")
         let total = seconds(clock.label, part: 1)
         XCTAssertGreaterThanOrEqual(total, 4, "the demo video is too short: \(clock.label)")
 
-        print("SMOKE app: FBBD-435 before adjust: seek value=\(String(describing: seek.value)) frame=\(seek.frame) clock=\(clock.label)\n\(seek.debugDescription)")
         seek.adjust(toNormalizedSliderPosition: 0.6)
-        print("SMOKE app: FBBD-435 after adjust: seek value=\(String(describing: seek.value)) clock=\(clock.label) state=\(String(describing: clock.value))")
         let wanted = Double(total) * 0.6
         let moved = waitFor(timeout: 20) { abs(Double(self.seconds(clock.label, part: 0)) - wanted) <= 1.5 }
-        print("SMOKE app: FBBD-435 20 s later: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label) state=\(String(describing: clock.value))")
-        if !moved {
-            // FBBD-435 evidence: a plain drag of the thumb from the start of the bar.
-            let from = seek.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
-            from.press(forDuration: 0.3, thenDragTo: seek.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.5)))
-            sleep(2)
-            print("SMOKE app: FBBD-435 after drag: seek value=\(String(describing: seek.value)) clock=\(clock.label)\n\(app.debugDescription)")
-        }
         XCTAssertTrue(moved, "the seek bar did not move the video: \(clock.label) of \(total) s, wanted about \(wanted) s")
         // Left alone it stays there once the exact seek has landed: the player was sent there, not only the bar.
         sleep(2)
@@ -145,9 +131,7 @@ final class DataVideoTests: XCTestCase {
         // Plays on from there.
         play.tap()
         sleep(2)
-        print("SMOKE app: FBBD-435 playing 2 s: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label) state=\(String(describing: clock.value))")
         play.tap()
-        print("SMOKE app: FBBD-435 paused: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label) state=\(String(describing: clock.value))")
         XCTAssertGreaterThan(seconds(clock.label, part: 0), sought, "it did not play on from the seek: \(clock.label)")
 
         // Close is clear of the transport (it sat on AirPlay in AVKit's controls on a Mac).

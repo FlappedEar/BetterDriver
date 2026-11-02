@@ -222,8 +222,6 @@ jobs:
           if [ "${{ matrix.part }}" = 1 ]; then flag=-only-testing; else flag=-skip-testing; fi
           selection=()
           for t in $PART1; do selection+=("$flag:$t"); done
-          # FBBD-435 TEMPORARY evidence run: only the two failing tests (removed before merge).
-          if [ "${{ matrix.part }}" = 1 ]; then selection=(-only-testing:BetterDriverUITests/DataVideoTests/testTheSeekBarMovesTheVideo -only-testing:BetterDriverUITests/ReviewScreensTests/testASessionHasOneBackThatReturnsToTheList); else selection=(-only-testing:BetterDriverUITests/DataVideoTests/testWatchVideoFromTheSessionList); fi
           xctestrun=$(ls build/dd/Build/Products/*.xctestrun | head -n 1)
           xcodebuild test-without-building \
             -xctestrun "$xctestrun" \
@@ -238,7 +236,6 @@ jobs:
           grep -E "error:|Test Case .*(passed|failed)|Executed [0-9]+ test|\*\* (TEST|BUILD) " build/xcodebuild.log || true
           xcrun xcresulttool get test-results summary --path build/ios-tests.xcresult > build/summary.json || true
           sed -n '/SMOKE app:/,/Test Case .*failed/p' build/xcodebuild.log | head -n 300 || true
-          grep -n -A300 "FBBD-435" build/xcodebuild.log | head -n 3000 || true
           python3 -c 'import json; d=json.load(open("build/summary.json")); print("RESULT", d.get("result"), d.get("passedTests"), "passed", d.get("failedTests"), "failed"); [print("FAILED", json.dumps(f)) for f in d.get("testFailures", [])]' || head -c 3000 build/summary.json
           exit $status
       # The UI tests' screenshots of the demo sessions' review (FBBD-331), one PNG per tab and device.
