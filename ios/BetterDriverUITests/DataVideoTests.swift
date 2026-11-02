@@ -120,10 +120,10 @@ final class DataVideoTests: XCTestCase {
 
         print("SMOKE app: FBBD-435 before adjust: seek value=\(String(describing: seek.value)) frame=\(seek.frame) clock=\(clock.label)\n\(seek.debugDescription)")
         seek.adjust(toNormalizedSliderPosition: 0.6)
-        print("SMOKE app: FBBD-435 after adjust: seek value=\(String(describing: seek.value)) clock=\(clock.label)")
+        print("SMOKE app: FBBD-435 after adjust: seek value=\(String(describing: seek.value)) clock=\(clock.label) state=\(String(describing: clock.value))")
         let wanted = Double(total) * 0.6
         let moved = waitFor(timeout: 20) { abs(Double(self.seconds(clock.label, part: 0)) - wanted) <= 1.5 }
-        print("SMOKE app: FBBD-435 20 s later: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label)")
+        print("SMOKE app: FBBD-435 20 s later: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label) state=\(String(describing: clock.value))")
         if !moved {
             // FBBD-435 evidence: a plain drag of the thumb from the start of the bar.
             let from = seek.coordinate(withNormalizedOffset: CGVector(dx: 0.02, dy: 0.5))
@@ -141,9 +141,9 @@ final class DataVideoTests: XCTestCase {
         // Plays on from there.
         play.tap()
         sleep(2)
-        print("SMOKE app: FBBD-435 playing 2 s: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label)")
+        print("SMOKE app: FBBD-435 playing 2 s: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label) state=\(String(describing: clock.value))")
         play.tap()
-        print("SMOKE app: FBBD-435 paused: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label)")
+        print("SMOKE app: FBBD-435 paused: seek value=\(String(describing: seek.value)) clock=\(clock.label) play=\(play.label) state=\(String(describing: clock.value))")
         XCTAssertGreaterThan(seconds(clock.label, part: 0), sought, "it did not play on from the seek: \(clock.label)")
 
         // Close is clear of the transport (it sat on AirPlay in AVKit's controls on a Mac).

@@ -282,6 +282,8 @@ struct DataVideoPlayerPage: View {
                     Text("\(TimeFormatKt.formatVideoClock(micros: shown)) / \(TimeFormatKt.formatVideoClock(micros: total))")
                         .font(.body.monospacedDigit())
                         .foregroundStyle(Palette.onSurfaceVariant)
+                        // The player's state for the UI tests (FBBD-435): where it is and why it waits.
+                        .accessibilityValue(transport.state)
                         .accessibilityIdentifier("dataVideoClock")
                     Spacer(minLength: 0)
                 }
@@ -340,6 +342,11 @@ final class DataVideoTransport: ObservableObject {
     @Published private(set) var micros: Int64 = 0
 
     private var seeking = false
+    /// Counts the seeks sent: a seek whose end has not come after a second is given up on, so one lost
+    /// completion never holds the clock and every later seek (FBBD-435).
+    private var seekNumber = 0
+    /// What the player does, for the UI tests and the app log (FBBD-435).
+    @Published private(set) var state = ""
     /// The exact seek after a loose one, once the bar is still.
     private var settle: Task<Void, Never>?
     /// Counts the exact seeks made by [settle]: the page lets go of its drag place on each.
@@ -397,7 +404,8 @@ final class DataVideoTransport: ObservableObject {
         }
         if statusObserver == nil {
             // Why it waits instead of playing, in the app log (FBBD-435).
-            statusObserver = player.observe(\.timeControlStatus, options: [.new]) { p, _ in
+            statusObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] p, _ in
+                Task { @MainActor in self?.note("status") }
                 guard p.timeControlStatus == .waitingToPlayAtSpecifiedRate else { return }
                 let why = p.reasonForWaitingToPlay?.rawValue ?? "none"
                 let at = DataVideoMaker.micros(p.currentTime()) / 1_000
@@ -456,25 +464,53 @@ final class DataVideoTransport: ObservableObject {
         queued = nil
         let target = next.micros, exact = next.exact
         seeking = true
+        seekNumber += 1
+        let number = seekNumber
         let tolerance: CMTime = exact ? .zero : .positiveInfinity
         let sent = DispatchTime.now().uptimeNanoseconds
+        note("seeking to \(target / 1_000) ms")
         player.seek(to: DataVideoMaker.cmTime(target), toleranceBefore: tolerance, toleranceAfter: tolerance) { [weak self] done in
             Task { @MainActor in
                 guard let self else { return }
-                if exact {
-                    let took = (DispatchTime.now().uptimeNanoseconds - sent) / 1_000_000
+                let took = (DispatchTime.now().uptimeNanoseconds - sent) / 1_000_000
+                if exact || took > 1_000 {
                     AppLog.i("WatchVideo", "seek to \(target / 1_000) ms \(done ? "done" : "cut short") in \(took) ms, playing \(self.playing)")
                 }
-                self.seeking = false
-                if self.queued != nil {
-                    self.nextSeek()
-                } else {
-                    // Plays on from there: iOS 27 can leave it stopped after a seek (FBBD-435).
-                    if self.playing && self.player.rate == 0 { self.player.playImmediately(atRate: 1) }
-                    if exact { self.follow(self.player.currentTime()) }
-                }
+                guard number == self.seekNumber, self.seeking else { return }
+                self.seekEnded(exact: exact)
             }
         }
+        // Its end not come after a second: on with the next one, and the clock follows the player again.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            guard let self, number == self.seekNumber, self.seeking else { return }
+            AppLog.w("WatchVideo", "seek to \(target / 1_000) ms not done after 1 s, going on")
+            self.seekEnded(exact: exact)
+        }
+    }
+
+    private func seekEnded(exact: Bool) {
+        seeking = false
+        if queued != nil {
+            nextSeek()
+        } else {
+            // Plays on from there: iOS 27 can leave it stopped after a seek (FBBD-435).
+            if playing && player.rate == 0 { player.playImmediately(atRate: 1) }
+            if exact { follow(player.currentTime()) }
+            note("seek ended")
+        }
+    }
+
+    /// The state line: the last event, the player's rate and status, and its time.
+    private func note(_ event: String) {
+        let status: String = switch player.timeControlStatus {
+        case .paused: "paused"
+        case .playing: "playing"
+        case .waitingToPlayAtSpecifiedRate: "waiting \(player.reasonForWaitingToPlay?.rawValue ?? "")"
+        @unknown default: "unknown"
+        }
+        let at = DataVideoMaker.micros(player.currentTime()) / 1_000
+        state = "\(event); rate \(player.rate); \(status); at \(at) ms; item \(player.currentItem?.status.rawValue ?? -1)"
     }
 
     private func follow(_ t: CMTime) {
@@ -486,6 +522,7 @@ final class DataVideoTransport: ObservableObject {
     private func setPlaying(_ on: Bool) {
         playing = on
         if on { player.play() } else { player.pause() }
+        note(on ? "play" : "pause")
         // The screen stays on while it plays, as on Android (AVKit's controls did this before).
         if on && !UIApplication.shared.isIdleTimerDisabled {
             UIApplication.shared.isIdleTimerDisabled = true
