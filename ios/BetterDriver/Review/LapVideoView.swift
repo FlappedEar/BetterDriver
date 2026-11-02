@@ -26,7 +26,10 @@ final class LapPlayer: ObservableObject {
     /// Where the player was last sent; nil when the next frame must be sought again whatever it is.
     private var lastSeekMillis: Int64?
     private var lastSeekTime: CFTimeInterval = 0
-    private var speed: Float = 1
+    /// The rate last set while playing, when, and the review speed it was for (FBBD-429).
+    private var rateSet: Float = 1
+    private var rateSetTime: CFTimeInterval = 0
+    private var lastRate = Double.nan
     private var exact = true
     /// It played and has not been sent to its exact frame since it stopped (FBBD-214).
     private var stopping = false
@@ -73,9 +76,22 @@ final class LapPlayer: ObservableObject {
             seek(ms, now: now)
             stopping = false
         }
-        speed = step.speed
+        // Started, or a new review speed: at once; a drift correction at most every half second.
+        // Every rate change restarts AVPlayer's audio, and one a display frame kept the players
+        // behind, pinned at the fastest correction, on the Mac (FBBD-429).
+        let fresh = !playingNow || rate != lastRate
+        lastRate = rate
         if playing {
-            if !playingNow || player.rate != speed { player.rate = speed }
+            let current = fresh ? nil : KotlinFloat(value: rateSet)
+            let since = Int64((now - rateSetTime) * 1000)
+            if LapFollowKt.rateChangeDue(currentSpeed: current, wantedSpeed: step.speed, sinceLastMillis: since) || player.rate == 0 {
+                if player.rate != step.speed {
+                    player.rate = step.speed
+                    LapReviewProbe.rateChanges += 1
+                }
+                rateSet = step.speed
+                rateSetTime = now
+            }
             playingNow = true
         } else if playingNow {
             pause()
@@ -110,7 +126,10 @@ final class ReviewTransport: ObservableObject {
     let review: LapVideoReview
     let a = LapPlayer(muted: false)
     let b = LapPlayer(muted: true)
-    @Published var cursor: Int64
+    /// The cursor, observed only by what draws it (FBBD-429).
+    let clock = ReviewClock()
+    /// The map line and chart traces, read from the core once.
+    private(set) lazy var geometry = ReviewGeometry(review)
     @Published private(set) var playing = false
     @Published private(set) var scrubbing = false
     @Published private(set) var speed = speeds[0]
@@ -120,7 +139,12 @@ final class ReviewTransport: ObservableObject {
 
     init(review: LapVideoReview) {
         self.review = review
-        cursor = 0
+    }
+
+    /// Time since the start line, the same for both laps.
+    var cursor: Int64 {
+        get { clock.micros }
+        set { if clock.micros != newValue { clock.micros = newValue } }
     }
 
     var traces: TraceComparison { review.traces }
@@ -166,6 +190,8 @@ final class ReviewTransport: ObservableObject {
     }
 
     private func frame(_ now: CFTimeInterval) {
+        let started = CACurrentMediaTime()
+        defer { LapReviewProbe.frame(work: CACurrentMediaTime() - started) }
         if playing && lastFrame != 0 {
             cursor = LapFollowKt.advance(
                 lapMicros: cursor, elapsedNanos: Int64((now - lastFrame) * 1e9), speed: speed, lengthMicros: lengthMicros
@@ -182,6 +208,99 @@ final class ReviewTransport: ObservableObject {
             link?.invalidate()
             link = nil
         }
+    }
+}
+
+/// The review cursor alone. A display frame changes it while the review moves, so only the readout,
+/// the map's cars and the chart's cursors observe it; the screen, the videos, the map line and the
+/// chart traces are not redrawn for it (FBBD-429).
+@MainActor
+final class ReviewClock: ObservableObject {
+    @Published var micros: Int64 = 0
+}
+
+/// What the lap review has done, for its frame-time test (FBBD-429), as Android's LapReviewProbe:
+/// display frames run and the time the frame loop took, player rate changes, how often the map line
+/// and chart traces were drawn and the screen re-run. A few counter writes a frame.
+enum LapReviewProbe {
+    static var frames = 0
+    static var workSeconds: CFTimeInterval = 0
+    static var maxWorkSeconds: CFTimeInterval = 0
+    static var rateChanges = 0
+    static var staticDraws = 0
+    static var screenBodies = 0
+    static var geometryBuilds = 0
+
+    static func frame(work: CFTimeInterval) {
+        frames += 1
+        workSeconds += work
+        maxWorkSeconds = max(maxWorkSeconds, work)
+    }
+
+    /// Counts a run of the screen's body; true, so it can sit in a view builder.
+    @discardableResult
+    static func screenRan() -> Bool {
+        screenBodies += 1
+        return true
+    }
+
+    static func reset() {
+        frames = 0
+        workSeconds = 0
+        maxWorkSeconds = 0
+        rateChanges = 0
+        staticDraws = 0
+        screenBodies = 0
+        geometryBuilds = 0
+    }
+}
+
+/// Lap A's line and the chart's traces as plain numbers, read across from the core once per review
+/// (FBBD-429): before, every display frame read all of them again (thousands of points) and drew them.
+final class ReviewGeometry {
+    /// Lap A's line, metres east and north.
+    let line: [CGPoint]
+    let minX: CGFloat, maxX: CGFloat, minY: CGFloat, maxY: CGFloat
+    /// Lap A's distance the chart spans, metres.
+    let length: Double
+    /// Distance (m) and delta (µs, B minus A) along lap A.
+    let deltas: [(meters: Double, micros: Double)]
+    /// Distance (m) and speed (km/h) along lap A, where there is one.
+    let speedA: [(meters: Double, kmh: Double)]
+    let speedB: [(meters: Double, kmh: Double)]
+    /// The delta axis's half-range (µs) and the speed axis's range (km/h).
+    let maxDelta: Double
+    let low: Double, high: Double
+
+    /// The delta axis spans at least ±0.5 s, so a near-equal pair does not look dramatic.
+    private static let minDeltaMicros = 500_000.0
+
+    init(_ review: LapVideoReview) {
+        LapReviewProbe.geometryBuilds += 1
+        line = review.a.trace.points.map { CGPoint(x: $0.xy.x, y: $0.xy.y) }
+        minX = line.map(\.x).min() ?? 0
+        maxX = line.map(\.x).max() ?? 1
+        minY = line.map(\.y).min() ?? 0
+        maxY = line.map(\.y).max() ?? 1
+        let series = review.traces.series
+        length = max(series.last?.distanceMeters ?? 1, 1)
+        deltas = series.map { (meters: $0.distanceMeters, micros: Double($0.deltaMicros)) }
+        speedA = series.compactMap { p in p.speedA.map { (meters: p.distanceMeters, kmh: $0.doubleValue) } }
+        speedB = series.compactMap { p in p.speedB.map { (meters: p.distanceMeters, kmh: $0.doubleValue) } }
+        maxDelta = max(deltas.map { abs($0.micros) }.max() ?? 0, Self.minDeltaMicros)
+        let all = speedA.map(\.kmh) + speedB.map(\.kmh)
+        low = all.min() ?? 0
+        let hi = all.max() ?? 1
+        high = hi > low ? hi : low + 1
+    }
+
+    /// Where a point of the line lands in [size], north up, one scale, 10 pt in from the edges.
+    func mapPoint(x: Double, y: Double, in size: CGSize) -> CGPoint {
+        let pad: CGFloat = 10
+        let w = max(maxX - minX, 1), h = max(maxY - minY, 1)
+        let k = min((size.width - 2 * pad) / w, (size.height - 2 * pad) / h)
+        let ox = (size.width - w * k) / 2, oy = (size.height - h * k) / 2
+        return CGPoint(x: ox + (CGFloat(x) - minX) * k, y: size.height - oy - (CGFloat(y) - minY) * k)
     }
 }
 
@@ -212,11 +331,17 @@ struct LapVideoView: View {
     private let startFraction: Double?
 
     init(review: LapVideoReview, startFraction: Double? = nil) {
-        _st = StateObject(wrappedValue: ReviewTransport(review: review))
+        self.init(transport: ReviewTransport(review: review), startFraction: startFraction)
+    }
+
+    /// On a transport made outside, which the frame-time test drives (FBBD-429).
+    init(transport: ReviewTransport, startFraction: Double? = nil) {
+        _st = StateObject(wrappedValue: transport)
         self.startFraction = startFraction
     }
 
     var body: some View {
+        let _ = LapReviewProbe.screenRan()
         let r = st.review
         VStack(alignment: .leading, spacing: 0) {
             Text("\(lapName(r.a))  vs  \(lapName(r.b))")
@@ -328,7 +453,7 @@ private struct TransportRow: View {
                 Button(speedLabels[speeds.firstIndex(of: st.speed) ?? 0]) { st.nextSpeed() }
                     .foregroundStyle(Palette.accent)
             }
-            Readout(st: st)
+            Readout(st: st, clock: st.clock)
         }
         .padding(.vertical, 8)
     }
@@ -336,10 +461,11 @@ private struct TransportRow: View {
 
 /// Both laps' clocks and speeds, and how far lap B is behind or ahead.
 private struct Readout: View {
-    @ObservedObject var st: ReviewTransport
+    let st: ReviewTransport
+    @ObservedObject var clock: ReviewClock
 
     var body: some View {
-        let t = st.cursor
+        let t = clock.micros
         let ta = st.traces.aMicros(micros: t)
         let tb = st.traces.bMicros(micros: t)
         let gap = Int(st.traces.gapMetersAt(micros: t).rounded())
@@ -376,101 +502,144 @@ private struct Clock: View {
 }
 
 /// Delta (top) and both laps' speeds (bottom) over lap A's distance, with each car's cursor.
-/// Delta below the zero line is time lap B gained.
+/// Delta below the zero line is time lap B gained. The traces are drawn once; only the cursors
+/// follow the review (FBBD-429).
 private struct DeltaChart: View {
-    @ObservedObject var st: ReviewTransport
-    /// Share of the height for the delta; the rest is speed.
-    private let deltaShare = 0.55
-    /// The delta axis spans at least ±0.5 s, so a near-equal pair does not look dramatic.
-    private let minDeltaMicros = 500_000.0
+    let st: ReviewTransport
 
     var body: some View {
-        let series = st.traces.series
-        let length = max(series.last?.distanceMeters ?? 1, 1)
-        let maxDelta = max(series.map { abs(Double($0.deltaMicros)) }.max() ?? 0, minDeltaMicros)
-        let speedsAll = series.flatMap { [$0.speedA?.doubleValue, $0.speedB?.doubleValue].compactMap { $0 } }
-        let lo = speedsAll.min() ?? 0
-        let hiRaw = speedsAll.max() ?? 1
-        let hi = hiRaw > lo ? hiRaw : lo + 1
-        let fa = st.traces.aFraction(micros: st.cursor)
-        let fb = st.traces.bFraction(micros: st.cursor)
-        GeometryReader { geo in
-            Canvas { ctx, size in
-                let split = size.height * deltaShare
-                let mid = (split - 4) / 2
-                func x(_ d: Double) -> CGFloat { CGFloat(d / length) * size.width }
-                ctx.stroke(line(0, mid, size.width, mid), with: .color(Palette.outline), lineWidth: 1)
-                var prev: CGPoint?
-                for p in series {
-                    let o = CGPoint(x: x(p.distanceMeters), y: mid - CGFloat(Double(p.deltaMicros) / maxDelta) * mid)
-                    if let prev { ctx.stroke(line(prev.x, prev.y, o.x, o.y), with: .color(p.deltaMicros < 0 ? Palette.gain : Palette.loss), lineWidth: 2) }
-                    prev = o
-                }
-                let top = split + 4
-                let h = size.height - top
-                func y(_ v: Double) -> CGFloat { top + h - CGFloat((v - lo) / (hi - lo)) * h }
-                var pa = Path(), pb = Path()
-                var startedA = false, startedB = false
-                for p in series {
-                    if let v = p.speedA?.doubleValue {
-                        let o = CGPoint(x: x(p.distanceMeters), y: y(v))
-                        if startedA { pa.addLine(to: o) } else { pa.move(to: o) }
-                        startedA = true
-                    }
-                    if let v = p.speedB?.doubleValue {
-                        let o = CGPoint(x: x(p.distanceMeters), y: y(v))
-                        if startedB { pb.addLine(to: o) } else { pb.move(to: o) }
-                        startedB = true
-                    }
-                }
-                ctx.stroke(pb, with: .color(LapColors.b), lineWidth: 2)
-                ctx.stroke(pa, with: .color(LapColors.a), lineWidth: 2)
-                let xb = CGFloat(min(max(fb, 0), 1)) * size.width
-                let xa = CGFloat(min(max(fa, 0), 1)) * size.width
-                ctx.stroke(line(xb, 0, xb, size.height), with: .color(LapColors.b), lineWidth: 2)
-                ctx.stroke(line(xa, 0, xa, size.height), with: .color(LapColors.a), lineWidth: 2)
+        GeometryReader { proxy in
+            ZStack {
+                ChartTraces(geometry: st.geometry).equatable()
+                ChartCursors(st: st, clock: st.clock)
             }
             .contentShape(Rectangle())
             .gesture(
                 DragGesture(minimumDistance: 0)
-                    .onChanged { st.scrub(to: $0.location.x / geo.size.width, ended: false) }
-                    .onEnded { st.scrub(to: $0.location.x / geo.size.width, ended: true) }
+                    .onChanged { st.scrub(to: $0.location.x / proxy.size.width, ended: false) }
+                    .onEnded { st.scrub(to: $0.location.x / proxy.size.width, ended: true) }
             )
             .accessibilityIdentifier("reviewChart")
         }
     }
+}
 
-    private func line(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> Path {
-        Path { $0.move(to: CGPoint(x: x0, y: y0)); $0.addLine(to: CGPoint(x: x1, y: y1)) }
+/// Share of the chart's height for the delta; the rest is speed.
+private let deltaShare = 0.55
+
+private func segment(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat) -> Path {
+    Path { $0.move(to: CGPoint(x: x0, y: y0)); $0.addLine(to: CGPoint(x: x1, y: y1)) }
+}
+
+/// The delta and speed traces; redrawn only when the review or the size changes.
+private struct ChartTraces: View, Equatable {
+    let geometry: ReviewGeometry
+
+    static func == (l: ChartTraces, r: ChartTraces) -> Bool { l.geometry === r.geometry }
+
+    var body: some View {
+        let g = geometry
+        Canvas { ctx, size in
+            LapReviewProbe.staticDraws += 1
+            let split = size.height * deltaShare
+            let mid = (split - 4) / 2
+            func x(_ d: Double) -> CGFloat { CGFloat(d / g.length) * size.width }
+            ctx.stroke(segment(0, mid, size.width, mid), with: .color(Palette.outline), lineWidth: 1)
+            // One path a colour, not a stroke a segment.
+            var gain = Path(), loss = Path()
+            var prev: CGPoint?
+            for p in g.deltas {
+                let o = CGPoint(x: x(p.meters), y: mid - CGFloat(p.micros / g.maxDelta) * mid)
+                if let q = prev {
+                    if p.micros < 0 {
+                        gain.move(to: q)
+                        gain.addLine(to: o)
+                    } else {
+                        loss.move(to: q)
+                        loss.addLine(to: o)
+                    }
+                }
+                prev = o
+            }
+            ctx.stroke(gain, with: .color(Palette.gain), lineWidth: 2)
+            ctx.stroke(loss, with: .color(Palette.loss), lineWidth: 2)
+            let top = split + 4
+            let h = size.height - top
+            func y(_ v: Double) -> CGFloat { top + h - CGFloat((v - g.low) / (g.high - g.low)) * h }
+            func trace(_ pts: [(meters: Double, kmh: Double)]) -> Path {
+                var path = Path()
+                for (i, p) in pts.enumerated() {
+                    let o = CGPoint(x: x(p.meters), y: y(p.kmh))
+                    if i == 0 { path.move(to: o) } else { path.addLine(to: o) }
+                }
+                return path
+            }
+            ctx.stroke(trace(g.speedB), with: .color(LapColors.b), lineWidth: 2)
+            ctx.stroke(trace(g.speedA), with: .color(LapColors.a), lineWidth: 2)
+        }
     }
 }
 
-/// Lap A's line with both cars on it, north up.
-private struct LapMapView: View {
-    @ObservedObject var st: ReviewTransport
+/// Each car's cursor on the chart, the only part redrawn each display frame.
+private struct ChartCursors: View {
+    let st: ReviewTransport
+    @ObservedObject var clock: ReviewClock
 
     var body: some View {
-        let points = st.review.a.trace.points.map { $0.xy }
-        let t = st.cursor
-        let pa = st.review.a.trace.at(lapMicros: st.traces.aMicros(micros: t)).xy
-        let pb = st.review.b.trace.at(lapMicros: st.traces.bMicros(micros: t)).xy
+        let fa = st.traces.aFraction(micros: clock.micros)
+        let fb = st.traces.bFraction(micros: clock.micros)
         Canvas { ctx, size in
-            guard let minX = points.map(\.x).min(), let maxX = points.map(\.x).max(),
-                  let minY = points.map(\.y).min(), let maxY = points.map(\.y).max() else { return }
-            let pad: CGFloat = 10
-            let w = CGFloat(max(maxX - minX, 1)), h = CGFloat(max(maxY - minY, 1))
-            let k = min((size.width - 2 * pad) / w, (size.height - 2 * pad) / h)
-            let ox = (size.width - w * k) / 2, oy = (size.height - h * k) / 2
-            func at(_ p: Xy) -> CGPoint {
-                CGPoint(x: ox + CGFloat(p.x - minX) * k, y: size.height - oy - CGFloat(p.y - minY) * k)
-            }
+            let xb = CGFloat(min(max(fb, 0), 1)) * size.width
+            let xa = CGFloat(min(max(fa, 0), 1)) * size.width
+            ctx.stroke(segment(xb, 0, xb, size.height), with: .color(LapColors.b), lineWidth: 2)
+            ctx.stroke(segment(xa, 0, xa, size.height), with: .color(LapColors.a), lineWidth: 2)
+        }
+    }
+}
+
+/// Lap A's line with both cars on it, north up. The line is drawn once; only the cars move.
+private struct LapMapView: View {
+    let st: ReviewTransport
+
+    var body: some View {
+        ZStack {
+            MapLine(geometry: st.geometry).equatable()
+            MapCars(st: st, clock: st.clock)
+        }
+    }
+}
+
+private struct MapLine: View, Equatable {
+    let geometry: ReviewGeometry
+
+    static func == (l: MapLine, r: MapLine) -> Bool { l.geometry === r.geometry }
+
+    var body: some View {
+        let g = geometry
+        Canvas { ctx, size in
+            LapReviewProbe.staticDraws += 1
             var path = Path()
-            for (i, p) in points.enumerated() {
-                if i == 0 { path.move(to: at(p)) } else { path.addLine(to: at(p)) }
+            for (i, p) in g.line.enumerated() {
+                let o = g.mapPoint(x: p.x, y: p.y, in: size)
+                if i == 0 { path.move(to: o) } else { path.addLine(to: o) }
             }
             ctx.stroke(path, with: .color(Palette.onSurfaceVariant.opacity(0.5)), lineWidth: 4)
+        }
+    }
+}
+
+private struct MapCars: View {
+    let st: ReviewTransport
+    @ObservedObject var clock: ReviewClock
+
+    var body: some View {
+        let t = clock.micros
+        let pa = st.review.a.trace.at(lapMicros: st.traces.aMicros(micros: t)).xy
+        let pb = st.review.b.trace.at(lapMicros: st.traces.bMicros(micros: t)).xy
+        let g = st.geometry
+        Canvas { ctx, size in
             for (p, c) in [(pb, LapColors.b), (pa, LapColors.a)] {
-                let o = at(p)
+                let o = g.mapPoint(x: p.x, y: p.y, in: size)
                 ctx.fill(Path(ellipseIn: CGRect(x: o.x - 6, y: o.y - 6, width: 12, height: 12)), with: .color(c))
             }
         }
