@@ -148,8 +148,8 @@ class LapPath(val points: List<GeoPoint>) {
      * A line across the path at the point nearest [tap], square to the car's travel and fitted to
      * every pass of the drive there (FBBD-438): centred between the outermost passes within
      * [DefaultLineWidthMeters] / 2 of the tapped one, [FittedLineMarginMeters] past each, at least
-     * [MinFittedLineWidthMeters] and at most [DefaultLineWidthMeters] wide. A pit lane further off
-     * than that, as at Silesia Ring, stays outside.
+     * [MinFittedLineWidthMeters] wide, and never past [DefaultLineWidthMeters] / 2 from the tapped
+     * pass. A pit lane further off than that, as at Silesia Ring, stays outside.
      */
     fun lineAt(tap: GeoPoint): TrackLine? {
         val hit = nearest(tap) ?: return null
@@ -162,12 +162,18 @@ class LapPath(val points: List<GeoPoint>) {
         val passes = (0 until xy.size - 1).mapNotNull { i ->
             gate.crossing(xy[i], i.toLong(), xy[i + 1], (i + 1).toLong())?.let { (it.at - a).dot(unit) }
         }
-        if (passes.isEmpty()) return TrackLine.across(hit.point, hit.headingDeg, MinFittedLineWidthMeters)
-        val lo = passes.min()
-        val hi = passes.max()
-        val width = (hi - lo + 2 * FittedLineMarginMeters).coerceIn(MinFittedLineWidthMeters, DefaultLineWidthMeters)
-        val middle = frame.toGeo(a + unit * ((lo + hi) / 2))
-        return TrackLine.across(middle, hit.headingDeg, width)
+        // The tapped pass always crosses the probe; [half] stands in should rounding miss it.
+        val half = DefaultLineWidthMeters / 2
+        // The margins never reach past the probe's ends, so a pit lane the probe misses stays missed.
+        var from = ((passes.minOrNull() ?: half) - FittedLineMarginMeters).coerceAtLeast(0.0)
+        var to = ((passes.maxOrNull() ?: half) + FittedLineMarginMeters).coerceAtMost(DefaultLineWidthMeters)
+        val short = MinFittedLineWidthMeters - (to - from)
+        if (short > 0) {
+            from = (from - short / 2).coerceIn(0.0, DefaultLineWidthMeters - MinFittedLineWidthMeters)
+            to = from + MinFittedLineWidthMeters
+        }
+        val middle = frame.toGeo(a + unit * ((from + to) / 2))
+        return TrackLine.across(middle, hit.headingDeg, to - from)
     }
 
     /**

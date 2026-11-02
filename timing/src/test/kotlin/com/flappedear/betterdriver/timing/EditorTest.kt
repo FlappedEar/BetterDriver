@@ -105,7 +105,7 @@ class EditorTest {
         val fitted = assertNotNull(LapPath(drive).lineAt(frame.toGeo(Xy(6.0, 0.0))))
         // 0 to 10 m, 4 m more each side: 18 m wide, centred at x = 5 m; the pit lane is 24 - 5 = 19 m off.
         assertEquals(18.0, fitted.widthMeters, 0.05)
-        val mid = frame.toXy(GeoPoint((fitted.left.lat + fitted.right.lat) / 2, (fitted.left.lon + fitted.right.lon) / 2))
+        val mid = frame.toXy(midpoint(fitted))
         assertEquals(5.0, mid.x, 0.05)
         assertEquals(0.0, mid.y, 0.05)
         // Heading north: left is west.
@@ -113,6 +113,19 @@ class EditorTest {
         // Passes 24 m apart, 12 m each side of the tapped one: at most 30 m.
         val wide = listOf(-12.0, 0.0, 12.0).flatMap(::pass).map(frame::toGeo)
         assertEquals(30.0, assertNotNull(LapPath(wide).lineAt(frame.toGeo(Xy(0.0, 0.0)))).widthMeters, 0.05)
+    }
+
+    @Test
+    fun `a fitted line never reaches past 15 m from the tapped pass`() {
+        // Passes at x = 0 (tapped) and 14 m, a pit lane pass at 17 m: the line stops at 15 m.
+        val frame = path.frame
+        fun pass(x: Double) = (-20..20).map { Xy(x, it.toDouble()) }
+        val drive = listOf(0.0, 14.0, 17.0).flatMap(::pass).map(frame::toGeo)
+        val fitted = assertNotNull(LapPath(drive).lineAt(frame.toGeo(Xy(0.0, 0.0))))
+        assertEquals(19.0, fitted.widthMeters, 0.05)
+        val ends = listOf(frame.toXy(fitted.left).x, frame.toXy(fitted.right).x).sorted()
+        assertEquals(-4.0, ends[0], 0.05)
+        assertEquals(15.0, ends[1], 0.05)
     }
 
     @Test

@@ -220,8 +220,10 @@ class TrackEditor(initial: Track, val sessions: List<EditorSession>, stored: Tra
         get() = when {
             selected == null -> null
             method == PlaceMethod.FromLap && selectedLine == null ->
-                "Tap your lap (blue) where the line goes. It is placed square to the way you drove, as wide as your passes there."
-            method == PlaceMethod.FromLap -> "Drag the ends to the track edges, or set the width with − and +. Tap the lap again to move the line."
+                "Tap your lap (blue) where the line goes. It is placed square to the way you drove, " +
+                    "as wide as your passes there."
+            method == PlaceMethod.FromLap ->
+                "Drag the ends to the track edges, or set the width with − and +. Tap the lap again to move the line."
             firstTap == null -> "Tap one edge of the track."
             else -> "Now tap the other edge."
         }

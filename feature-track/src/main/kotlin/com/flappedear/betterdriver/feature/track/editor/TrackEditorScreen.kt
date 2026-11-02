@@ -235,8 +235,10 @@ private fun EditorBar(
 private fun PlacingHint(state: TrackEditorState, modifier: Modifier = Modifier) {
     val text = when {
         state.method == PlaceMethod.FromLap && state.selectedLine == null ->
-            "Tap your lap (blue) where the line goes. It is placed square to the way you drove, as wide as your passes there."
-        state.method == PlaceMethod.FromLap -> "Drag the ends to the track edges, or set the width with − and +. Tap the lap again to move the line."
+            "Tap your lap (blue) where the line goes. It is placed square to the way you drove, " +
+                    "as wide as your passes there."
+        state.method == PlaceMethod.FromLap ->
+                "Drag the ends to the track edges, or set the width with − and +. Tap the lap again to move the line."
         state.firstTap == null -> "Tap one edge of the track."
         else -> "Now tap the other edge."
     }
