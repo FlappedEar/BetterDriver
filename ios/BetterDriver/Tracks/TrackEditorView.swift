@@ -145,6 +145,10 @@ struct TrackEditorView: View {
         .background(Palette.background)
         .foregroundStyle(Palette.onBackground)
         .navigationBarHidden(true)
+        // Google's tiles for today used up while the map is open (FBBD-412): the next source shows.
+        .onChange(of: satellite.revision) {
+            if background == .googleSatellite, !satellite.available.contains(.google) { background = .best }
+        }
         .confirmationDialog("Discard changes?", isPresented: $leaving, titleVisibility: .visible) {
             Button("Discard", role: .destructive) { onClose() }
             Button("Keep editing", role: .cancel) {}
@@ -339,6 +343,20 @@ struct TrackEditorView: View {
             }
             if editor.path == nil {
                 DimLine("No session here yet, so lines are placed with two taps.")
+            }
+            if editor.selectedLine != nil {
+                HStack(spacing: 12) {
+                    Text("Width")
+                    Button("−") { model.act { $0.widen(steps: -1) } }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Narrower")
+                    Text("\(editor.selectedWidthMeters) m")
+                        .fontWeight(.semibold)
+                        .accessibilityLabel("Line width \(editor.selectedWidthMeters) m")
+                    Button("+") { model.act { $0.widen(steps: 1) } }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Wider")
+                }
             }
             HStack(spacing: 16) {
                 Button("Flip direction") { model.act { $0.flip() } }

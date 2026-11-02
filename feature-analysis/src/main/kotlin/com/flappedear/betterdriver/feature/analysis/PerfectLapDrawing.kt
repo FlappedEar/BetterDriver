@@ -100,8 +100,8 @@ internal class PerfectLapPainter(
     @Volatile
     var distance = 1.0
 
-    /** Another painter of the same, for drawing on another thread, taking its tiles from [tiles]. */
-    fun copy(tiles: TileSource3d? = this.tiles) =
+    /** Another painter of the same, for another thread: its tiles from [tiles], credited as [attribution]. */
+    fun copy(tiles: TileSource3d? = this.tiles, attribution: String? = this.attribution) =
         PerfectLapPainter(scene, palette, tiles, attribution).also { it.distance = distance }
 
     /**

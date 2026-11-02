@@ -6,6 +6,8 @@ import com.flappedear.betterdriver.timing.map.TileSources
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -38,10 +40,28 @@ class SatelliteGroundTest {
     }
 
     @Test
-    fun `a saved video over Google's photo draws the road, as Google's terms keep no copy`() {
+    fun `a saved video over Google's photo draws the road without a MapTiler key, as Google's terms keep no copy`() {
         val google = TileSources.googleSatellite("k", "s")
         val ground = SatelliteGround(loader, google, loader.credit(google))
         assertEquals("Google Maps", ground.attribution)
         assertNull(ground.load(18, 144_248, 88_303))
+        assertNull(ground.video)
+        assertEquals(TileSources.videoNote(google.id, null), ground.videoNote)
+    }
+
+    @Test
+    fun `a saved video over Google's photo takes MapTiler's with its credit once its key is entered`() {
+        val google = TileSources.googleSatellite("k", "s")
+        val ground = SatelliteGround(loader, google, loader.credit(google), TileSources.forVideo("m"))
+        assertEquals(TileSources.mapTiler("").attribution, ground.video?.attribution)
+        assertTrue(ground.videoNote.orEmpty().startsWith("The video shows MapTiler's photo"))
+    }
+
+    @Test
+    fun `over MapTiler's photo the video keeps the player's ground and says nothing`() {
+        val mapTiler = TileSources.mapTiler("m")
+        val ground = SatelliteGround(loader, mapTiler)
+        assertSame(ground, ground.video)
+        assertNull(ground.videoNote)
     }
 }

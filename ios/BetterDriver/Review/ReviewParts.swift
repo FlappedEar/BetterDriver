@@ -1,16 +1,16 @@
 import SwiftUI
 import BetterDriverCore
 
-/// Android's analysis card: the surface colour, rounded, its rows 8 apart.
+/// Android's analysis card: the card grey, 12 point corners as the Health-like cards (UI-307 A), its rows 8 apart.
 struct Card<Content: View>: View {
     @ViewBuilder let content: Content
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 14)
-            .background(Palette.surface, in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(Palette.surface, in: RoundedRectangle(cornerRadius: HealthStyle.cornerRadius))
     }
 }
 

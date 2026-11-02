@@ -12,6 +12,8 @@ struct BetterDriverApp: App {
         BackupBridge.finishOrClear()
         // Before Settings reads setup.json: an install from before the checklist counts as set up.
         FirstRunGate.shared.decideAtLaunch()
+        // The Health-like bars (UI-307 A, FBBD-421), before the first screen draws them.
+        HealthStyle.applyBars()
     }
 
     var body: some Scene {

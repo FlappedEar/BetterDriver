@@ -44,6 +44,12 @@ object ForeignImport {
     /** The end reason of an imported session. */
     const val EndReason = "imported"
 
+    /**
+     * Why a file is not imported when its drive is already a session here (FBBD-427): the same file
+     * imported again, or the same drive from another file, would list it twice.
+     */
+    const val AlreadyHere = "this drive is already in Sessions. Delete it there first to import it again."
+
     /** Source of the channels an import adds. */
     const val Source = "import"
 

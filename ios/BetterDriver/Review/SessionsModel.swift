@@ -321,6 +321,8 @@ final class SessionsModel {
         let id = session.id
         Task {
             let failure = await Task.detached { ReviewBridge.delete(id) }.value
+            // As Android's "delete <id>: <result>", so a log shows each delete (FBBD-427).
+            AppLog.i("Sessions", "delete \(id): \(failure ?? "deleted")")
             if let failure { message = failure }
             revision += 1
             reload()
@@ -357,10 +359,11 @@ final class SessionsModel {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
             do {
                 if ReviewBridge.isForeign(url) {
-                    // A VBO or RaceChrono CSV becomes a new session with a new id: nothing to ask.
-                    try ReviewBridge.importForeign(url) { read, total in
+                    // A VBO or RaceChrono CSV becomes a new session with a new id; a drive already here is refused (FBBD-427).
+                    let id = try ReviewBridge.importForeign(url) { read, total in
                         Task { @MainActor in self.importing?.read = read; self.importing?.total = total }
                     }
+                    AppLog.i("Imports", "imported \(name) as \(id)")
                     await self.imported()
                 } else {
                     let received = try ReviewBridge.receive(url) { read, total in
@@ -425,6 +428,7 @@ final class SessionsModel {
 
     private func failed(_ name: String, _ error: Error) {
         importing = nil
+        AppLog.w("Imports", "\(name) not imported: \(error.localizedDescription)")
         message = "\(name) was not imported: \(error.localizedDescription)"
         next()
     }

@@ -5,6 +5,7 @@ import com.flappedear.betterdriver.timing.replay.LapAlignment
 import com.flappedear.betterdriver.timing.replay.LapTrace
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.round
 
 // The lap review's timing (FBBD-93), common Kotlin so the iPad review plays two laps as Android
 // does (FBBD-331). Android's Comparison wraps TraceComparison with the laps' sessions and video.
@@ -69,7 +70,8 @@ data class FollowStep(val seekMillis: Long?, val speed: Float)
 /**
  * Keeps a video player on its target (FBBD-93). Paused or scrubbing, it seeks to every new frame.
  * Playing, small drift is taken out by playing slightly faster or slower, so the picture never
- * jumps; only drift beyond [MaxDriftMillis] (after a stall or a clip change) seeks.
+ * jumps; only drift beyond [MaxDriftMillis] (after a stall or a clip change) seeks. The correction
+ * moves in [SpeedStep]s, so the same drift gives the same speed frame after frame (FBBD-429).
  * [rate] is how fast the target moves against real time.
  *
  * [justStopped]: the player played until now. Its position is where it was while playing, and it
@@ -92,7 +94,10 @@ fun followStep(
         abs(err) <= DeadbandMillis -> FollowStep(null, base.toFloat())
         else -> {
             val k = (1 - err.toDouble() / CorrectionMillis).coerceIn(1 - MaxCorrection, 1 + MaxCorrection)
-            FollowStep(null, (base * k).coerceIn(MinSpeed, MaxSpeed).toFloat())
+            // In whole steps: the player's rate then changes a few times a correction, not on every
+            // display frame. Each rate change resyncs the player's clock and audio (FBBD-429).
+            val stepped = round(k / SpeedStep) * SpeedStep
+            FollowStep(null, (base * stepped).coerceIn(MinSpeed, MaxSpeed).toFloat())
         }
     }
 }
@@ -114,6 +119,17 @@ fun seekPending(step: FollowStep, lastSeekMillis: Long?): Boolean =
     step.seekMillis?.let { seekDue(it, lastSeekMillis) } == true
 
 /**
+ * Whether a playing player should be set to [wantedSpeed] now. [currentSpeed] is the speed it was
+ * last set to, null when it has just started playing or the review speed changed (then at once);
+ * [sinceLastMillis] is how long ago that was. A drift correction changes the rate at most every
+ * [MinRateGapMillis]: on the iPad app on a Mac every AVPlayer rate change restarted its audio
+ * pipeline, and with a new rate on nearly every display frame (~14 a second) the players fell
+ * behind and stayed pinned at the fastest correction (FBBD-429).
+ */
+fun rateChangeDue(currentSpeed: Float?, wantedSpeed: Float, sinceLastMillis: Long): Boolean =
+    currentSpeed == null || (wantedSpeed != currentSpeed && sinceLastMillis >= MinRateGapMillis)
+
+/**
  * Whether the review needs the next display frame: while it plays, while a finger scrubs, and
  * until both players have made their last seek. Otherwise the screen stays idle until the cursor,
  * play or scrub changes, so a paused review costs no frames.
@@ -128,6 +144,12 @@ fun advance(lapMicros: Long, elapsedNanos: Long, speed: Double, lengthMicros: Lo
 const val PausedToleranceMillis = 20L
 const val MaxDriftMillis = 350L
 const val DeadbandMillis = 30L
+
+/** The shortest time between two drift-correction rate changes of a playing player (FBBD-429). */
+const val MinRateGapMillis = 500L
+
+/** The drift correction's speed steps, as a share of the review speed (FBBD-429). */
+const val SpeedStep = 0.02
 
 /** Drift of this many milliseconds is taken out over about a second. */
 private const val CorrectionMillis = 1_000.0
