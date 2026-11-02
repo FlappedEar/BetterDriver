@@ -479,6 +479,12 @@ data class ActiveSession(
     /** The listed Wi-Fi OBD-II adapters, tried after the Bluetooth ones ([SessionEquipment]). */
     val obdWifi: List<WifiObd> get() = SessionEquipment.obdWifi(carData)
 
+    /**
+     * The OBD-II adapter the OBD page and Settings name: the one the connection is using ([adapter],
+     * its name), else the one tried first ([SessionEquipment.obdShown]).
+     */
+    fun obdShownFor(adapter: String?): Equipment? = SessionEquipment.obdShown(carData, adapter)
+
     /** The heart-rate strap the session records, null with none listed ([SessionEquipment]). */
     val heartRateStrap: Equipment? get() = SessionEquipment.heartRateStrap(sensors)
 

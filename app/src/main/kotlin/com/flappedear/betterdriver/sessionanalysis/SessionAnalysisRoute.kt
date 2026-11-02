@@ -70,6 +70,7 @@ import com.flappedear.betterdriver.feature.analysis.withCar
 import com.flappedear.betterdriver.feature.analysis.withHeartRate
 import com.flappedear.betterdriver.feature.analysis.withQuality
 import com.flappedear.betterdriver.feature.track.editor.EditorSession
+import com.flappedear.betterdriver.feature.track.editor.KeepGoogleSession
 import com.flappedear.betterdriver.recorder.log.DebugLog
 import com.flappedear.betterdriver.recorder.log.HeartRateLogIds
 import com.flappedear.betterdriver.recorder.store.SessionData
@@ -329,9 +330,11 @@ internal fun SessionAnalysisRoute(
     val sessions = remember { Sessions.get(context) }
     val listed = sessions.list.firstOrNull { it.id == id }
     val source = CornerSource(done?.loaded?.analysis, done?.loaded?.session, done?.lapVideo, load is Load.Failed)
-    // MapTiler's photo under the perfect lap in 3D once a key is entered on the editor's map (UI-201 B).
-    val mapKey = tracks.tiles.mapTilerKey
-    val ground = remember(mapKey) { mapKey?.let { MapTilerGround(tracks.tiles, it) } }
+    // The satellite photo under the perfect lap in 3D once a key is entered on the editor's map
+    // (UI-201 B): Google's (FBBD-412), else MapTiler's. Made again when its credit grows.
+    val tiles = tracks.tiles
+    KeepGoogleSession(tiles)
+    val ground = remember(tiles.mapTilerKey, tiles.google, tiles.googleCredit) { satelliteGround(tiles) }
     CornerLapsRoute(nav, id, source, corner) {
         CompositionLocalProvider(LocalPerfectLapGround provides ground) {
             AnalysisScreen(
