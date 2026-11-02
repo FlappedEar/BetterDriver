@@ -4,6 +4,7 @@ import com.flappedear.betterdriver.analysis.review.SessionFacts
 import com.flappedear.betterdriver.analysis.review.recordedFacts
 import com.flappedear.betterdriver.analysis.review.sessionRowDetail
 import com.flappedear.betterdriver.analysis.review.trackFor
+import com.flappedear.betterdriver.analysis.review.offersVideo
 import com.flappedear.betterdriver.analysis.review.withLaps
 import com.flappedear.betterdriver.format.formatLapTime
 import com.flappedear.betterdriver.recorder.store.SessionStore
@@ -12,8 +13,11 @@ import com.flappedear.betterdriver.timing.replay.replayLaps
 import com.flappedear.betterdriver.timing.track.Track
 import platform.Foundation.NSLock
 
-/** A session's row in Sessions, as Android's (UI-139 C): "Corolla · 22 min · 14 laps · OBD" and its best lap. */
-class SessionRowFacts(val detail: String, val best: String?)
+/**
+ * A session's row in Sessions, as Android's (UI-139 C): "Corolla · 22 min · 14 laps · OBD" and its best lap.
+ * [video]: the row offers Watch video (FBBD-426), only with a whole video file to play.
+ */
+class SessionRowFacts(val detail: String, val best: String?, val video: Boolean = false)
 
 /**
  * Reads each listed session's [SessionFacts] with the shared core, as Android's ReviewLaps: its laps
@@ -41,8 +45,11 @@ internal class SessionRows(
                 val stamp = Stamp(s.durationMicros, revisions)
                 val facts = cache[s.id]?.takeIf { it.first == stamp }?.second ?: facts(s, saved)
                 cache[s.id] = stamp to facts
-                val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, hasVideo(s.id))
-                s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime))
+                val video = hasVideo(s.id)
+                val detail = sessionRowDetail(s.info.car, s.durationMicros, facts, video)
+                // A listed session is not recording: the recorder adds it once it ends.
+                val offers = offersVideo(video, recording = false)
+                s.id to SessionRowFacts(detail, facts.bestMillis?.let(::formatLapTime), offers)
             }
         } finally {
             lock.unlock()

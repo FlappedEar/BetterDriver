@@ -121,11 +121,14 @@ struct SessionsListView: View {
         }
     }
 
-    /// Android's session card buttons: Watch video (FBBD-341), Add for each camera started by hand without
+    /// Android's session card buttons: Watch video (FBBD-341, only with video), Add for each camera started by hand without
     /// video here yet (UI-32), Delete, Share, and the coach's review. Behind ⋮ on the row, as Android,
     /// and on a long press.
     @ViewBuilder private func rowActions(_ session: SessionRow) -> some View {
-        Button("Watch video") { watching = session }
+        // Only with a whole video file to play (FBBD-426): left out, not greyed out, without, as Android.
+        if model.rowFacts[session.id]?.video == true && !PhoneVideoFinishing.shared.busy(sessionId: session.id) {
+            Button("Watch video") { watching = session }
+        }
         ForEach(model.addableCameras(session), id: \.sourceId) { camera in
             Button("Add \(camera.name) video") { addFiles(session, camera) }
         }

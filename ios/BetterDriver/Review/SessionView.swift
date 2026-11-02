@@ -96,7 +96,13 @@ struct SessionView: View {
         .task(id: "\(session.id)#\(revision)") { await load() }
         .task(id: session.id) {
             let id = session.id
-            hasVideo = await Task.detached { Exports.make().hasVideo(id: id) }.value
+            // Video entry points only with a whole video to play (FBBD-426), the shared core's rule.
+            hasVideo = await Task.detached {
+                VideoOfferKt.offersVideo(
+                    hasVideo: Exports.make().hasVideo(id: id),
+                    recording: PhoneVideoFinishing.shared.busy(sessionId: id)
+                )
+            }.value
         }
     }
 
@@ -112,7 +118,7 @@ struct SessionView: View {
         } else if let summary {
             switch tab {
             case .summary:
-                SummaryTab(summary: summary, sessionId: session.id, screen: screen, compare: { pick(index: $0, summary) }, openLine: { mapView = .line; tab = .map })
+                SummaryTab(summary: summary, sessionId: session.id, video: hasVideo, screen: screen, compare: { pick(index: $0, summary) }, openLine: { mapView = .line; tab = .map })
             case .compare: CompareTab(compare: compare, summary: summary, states: screen?.compare)
             case .laps: LapsTab(summary: summary) { lap in pick(index: lap.index, summary) }
             case .map: MapTab(line: summary.line, laps: screen?.map, view: $mapView)
@@ -221,6 +227,8 @@ private struct TabRow: View {
 private struct SummaryTab: View {
     let summary: SessionSummary
     let sessionId: String
+    /// The session offers its video (FBBD-426): the realistic optimal video under the lap times only then.
+    let video: Bool
     let screen: AnalysisUi?
     let compare: (Int) -> Void
     let openLine: () -> Void
@@ -229,7 +237,7 @@ private struct SummaryTab: View {
         CardColumn {
             if let ui = screen, !summary.laps.isEmpty {
                 SummaryFocusCard(ui: ui, lineTotalSeconds: summary.line?.totalSeconds, compare: compare, openLine: openLine)
-                SummaryTimesCard(ui: ui, sessionId: sessionId)
+                SummaryTimesCard(ui: ui, sessionId: sessionId, video: video)
                 if let hr = ui.heartRate { SummaryHeartRateCard(hr: hr) }
                 // The conditions the lap times were driven in (FBBD-403), under them as on Android.
                 SummaryWeatherCard(sessionId: sessionId)

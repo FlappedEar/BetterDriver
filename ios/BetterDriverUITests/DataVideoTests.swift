@@ -82,6 +82,8 @@ final class DataVideoTests: XCTestCase {
         openSessions()
         let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
         XCTAssertTrue(rows.element(boundBy: 0).waitForExistence(timeout: 120), "no demo sessions")
+        // The row's menu offers Watch video once the row has read that the session has video (FBBD-426).
+        waitForLabel(rows.element(boundBy: 0), containing: "Video")
         rows.element(boundBy: 0).press(forDuration: 1.2)
         app.buttons["Watch video"].firstMatch.tap()
         XCTAssertTrue(app.descendants(matching: .any)["dataVideoPlayer"].firstMatch.waitForExistence(timeout: 60), "no player")
@@ -90,6 +92,45 @@ final class DataVideoTests: XCTestCase {
         assertLandscape()
         keep("Watch video")
         app.buttons["dataVideoClose"].firstMatch.tap()
+    }
+
+    /// A session without video offers no Watch video (Arek 2026-11-02, FBBD-426): left out of the row's
+    /// menu, not greyed out, and no Video tab or realistic optimal video in the session.
+    func testASessionWithoutVideoOffersNoWatchVideo() {
+        app.launchArguments = ["-freshInstall", "-demoSessions"]
+        app.launch()
+        openSessions()
+        let rows = app.descendants(matching: .any).matching(identifier: "sessionRow")
+        let row = rows.element(boundBy: 0)
+        XCTAssertTrue(row.waitForExistence(timeout: 120), "no demo sessions")
+        // The row's facts are read: its laps are listed.
+        waitForLabel(row, containing: "laps")
+        XCTAssertFalse(row.label.contains("Video"), row.label)
+        row.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Share"].firstMatch.waitForExistence(timeout: 10), "no session menu")
+        XCTAssertFalse(app.buttons["Watch video"].firstMatch.exists, "Watch video offered without video")
+        keep("No Watch video without video")
+
+        // In the session: no Video tab, no realistic optimal video under the lap times. A fresh start
+        // closes the menu without tapping into it.
+        app.terminate()
+        app.launch()
+        openSessions()
+        XCTAssertTrue(row.waitForExistence(timeout: 120), "no demo sessions")
+        row.tap()
+        XCTAssertTrue(app.staticTexts["BEST ACTUAL LAP"].waitForExistence(timeout: 120), "no summary")
+        XCTAssertTrue(app.buttons["tabSummary"].firstMatch.waitForExistence(timeout: 30), "no tab row")
+        // The session's video is looked for off the main queue; give it time to (wrongly) appear.
+        sleep(5)
+        XCTAssertFalse(app.buttons["tabVideo"].firstMatch.exists, "a Video tab without video")
+        XCTAssertFalse(app.buttons["optimalVideoButton"].firstMatch.exists, "realistic optimal video without video")
+        keep("No video entry points in the session")
+    }
+
+    /// Waits until [element]'s label holds [text].
+    private func waitForLabel(_ element: XCUIElement, containing text: String) {
+        let has = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS %@", text), object: element)
+        XCTAssertEqual(XCTWaiter.wait(for: [has], timeout: 60), .completed, "\(text) not in \(element.label)")
     }
 
     /// A session with video has a Video tab (Arek, 2026-10-30): Watch plays it in landscape and

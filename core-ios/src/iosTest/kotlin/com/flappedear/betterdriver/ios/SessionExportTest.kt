@@ -129,6 +129,24 @@ class SessionExportTest {
         assertFalse(SessionExport("$base/sessions", "$base/tracks", "$base/out").hasVideo(session.id))
     }
 
+    /**
+     * The session list offers Watch video only with a whole video file (FBBD-426): the phone's video,
+     * known from the session's events, counts; a session without video offers none.
+     */
+    @Test
+    fun theSessionRowOffersWatchVideoOnlyWithVideo() {
+        val withVideo = record()
+        val without = LiveSession.start(
+            "$base/sessions", "$base/tracks", CircuitList.Empty,
+            SessionInfo(gnss.startUtcMillis + 60_000, channels = GnssChannels.ALL), receiverHasG = false,
+        )
+        without.submit(SampleSet(0, gnss.fix(0)))
+        without.stop()
+        val rows = ReviewLibrary(base).sessionRows()
+        assertEquals(true, rows[withVideo]?.video)
+        assertEquals(false, rows[without.id]?.video)
+    }
+
     /** iOS asks the shared parser (audit BD-07): a moov header alone, or one cut short, is no whole file. */
     @Test
     fun aVideoIsWholeOnlyWithItsWholeIndex() {

@@ -129,19 +129,7 @@ class SessionExport(
         return folder
     }
 
-    /**
-     * The clips of the camera the export uses, from the session's events and its clip index
-     * (clips.json, which wins, as on Android); a file cut off before it was finished (no moov) is left out.
-     */
-    private fun clips(id: String): List<VideoClip> {
-        val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
-        val index = NSString.stringWithContentsOfFile("$videoDir/$ClipIndexFile", NSUTF8StringEncoding, null)
-            ?.let(::indexedClips).orEmpty()
-        val timeline = VideoTimeline.from(store.read(id, samples = false).events, index)
-        val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
-        val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
-        return present.filter { it.camera == camera }
-    }
+    private fun clips(id: String): List<VideoClip> = wholeVideoClips(store, id)
 
     /** An empty folder for this export of [id]: an earlier one is removed. */
     private fun freshDir(id: String): String {
@@ -242,6 +230,21 @@ private class TextFile(private val path: String) : Appendable, AutoCloseable {
     private companion object {
         const val FlushChars = 64 * 1024
     }
+}
+
+/**
+ * The clips of the camera session [id]'s video uses, from its events and its clip index (clips.json,
+ * which wins, as on Android); a file cut off before it was finished (no moov) is left out. Empty: the
+ * session has no video to play or export (FBBD-426).
+ */
+internal fun wholeVideoClips(store: SessionStore, id: String): List<VideoClip> {
+    val videoDir = "${store.dir(id)}/${VideoFiles.DIR}"
+    val index = NSString.stringWithContentsOfFile("$videoDir/$ClipIndexFile", NSUTF8StringEncoding, null)
+        ?.let(::indexedClips).orEmpty()
+    val timeline = VideoTimeline.from(store.read(id, samples = false).events, index)
+    val present = timeline.clips.filter { Mp4Files.isComplete("$videoDir/${it.file}") }
+    val camera = present.firstOrNull { it.camera == CameraIds.PHONE }?.camera ?: present.firstOrNull()?.camera
+    return present.filter { it.camera == camera }
 }
 
 /** MP4 files as the recorder leaves them. */
