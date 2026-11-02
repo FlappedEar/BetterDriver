@@ -248,6 +248,7 @@ struct DataVideoPlayerPage: View {
     @State private var wide = false
     /// The seek bar's place while a finger or the pointer holds it.
     @State private var dragging: Double?
+    @Environment(\.scenePhase) private var phase
 
     init(playback: DataVideoPlayback, onClose: @escaping () -> Void) {
         self.playback = playback
@@ -318,6 +319,8 @@ struct DataVideoPlayerPage: View {
         }
         .onAppear { transport.start() }
         .onDisappear { transport.stop() }
+        // Never plays unseen: home, the lock button or another app stops it, as on Android.
+        .onChange(of: phase) { _, p in if p != .active { transport.pause() } }
         .landscape()
     }
 }
@@ -337,6 +340,7 @@ final class DataVideoTransport: ObservableObject {
     private var queued: (micros: Int64, exact: Bool)?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    private var rateObserver: NSKeyValueObservation?
     /// The screen was kept on here, and is let go here.
     private var keptAwake = false
 
@@ -366,7 +370,22 @@ final class DataVideoTransport: ObservableObject {
                 }
             }
         }
+        if rateObserver == nil {
+            // iOS stopped it (an interruption, the app left): Play/Pause and the screen follow.
+            rateObserver = player.observe(\.rate, options: [.new]) { [weak self] p, _ in
+                let stopped = p.rate == 0
+                Task { @MainActor in
+                    guard let self, stopped, self.playing, self.player.rate == 0 else { return }
+                    self.setPlaying(false)
+                }
+            }
+        }
         setPlaying(true)
+    }
+
+    /// Stops it where it is (the app left the screen), as Android's on pause.
+    func pause() {
+        if playing { setPlaying(false) }
     }
 
     func stop() {
@@ -375,6 +394,8 @@ final class DataVideoTransport: ObservableObject {
         timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        rateObserver?.invalidate()
+        rateObserver = nil
     }
 
     func playPause() {
