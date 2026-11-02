@@ -13,6 +13,11 @@ The full notes of every release are on
   **Video** tab in a session; the iPad laid out as an Android tablet, without **Drive**.
   See [iPhone and iPad](ios.md).
 
+## 1.28.1
+
+- The OBD page and Settings name the Bluetooth LE OBD-II adapter in use, not the Wi-Fi adapter
+  listed before it. On the iPhone, the Wi-Fi adapter's page shows its address.
+
 ## 1.28.0
 
 - Android: a new look outside the car (dark cards, amber headings, Inter font). A session's
